@@ -98,6 +98,12 @@ const SETTLE_DISTANCE_PENALTY: f64 = 0.9;
 /// correctly gets no roles at all rather than arbitrary ones.
 const ROLE_MARGIN: f64 = 1.15;
 
+/// Production utility of one envoy. Keep this identical to the value already
+/// assigned to the Diplomatic Quarter's immediate envoy so the income
+/// treatment prices the same resource consistently whether it arrives now or
+/// through influence later.
+const ENVOY_PRODUCTION_VALUE: f64 = 170.0;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GrandStrategy {
     Expansion,
@@ -107,6 +113,21 @@ pub enum GrandStrategy {
     Diplomacy,
     Conquest,
     Recovery,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StrategyTrigger {
+    DefensiveWar,
+    Emergency,
+    TimingAttack,
+    AssignedLane,
+    VictoryDenial,
+    ActiveWar,
+    ProphetRace,
+    OpportunisticWar,
+    LaneProgress,
+    ExpansionNeed,
+    BestLane,
 }
 
 impl GrandStrategy {
@@ -499,6 +520,7 @@ pub struct AdvancedAi {
     major_war_since: Option<u32>,
     last_campaign_progress: u32,
     last_city_count: usize,
+    strategy_since: u32,
     peace_until: u32,
     victory_planning: bool,
     victory_target: Option<VictoryTarget>,
@@ -1085,6 +1107,31 @@ pub struct AdvancedAi {
     /// Reachable as `advanced_congress_votes`, and as
     /// `advanced_congress_counter_hard` with both flags set.
     pub congress_counter_votes: bool,
+
+    /// Value the infrastructure that produces city-state influence.
+    ///
+    /// The allocation layer already spends every envoy it earns, while the
+    /// production governor assigns no value to the Consulate or Chancery's
+    /// only economic output. The treatment converts their per-turn influence
+    /// into the envoys it can produce before the turn limit, using the active
+    /// government's threshold and envoy payout. It also lets a first
+    /// Diplomatic Quarter see part of the Consulate stream it unlocks.
+    ///
+    /// Off until the paired gameplay gate clears. The evaluator exposes the
+    /// infrastructure-only and combined arms separately so a policy-card gain
+    /// cannot be misattributed to production.
+    pub envoy_infrastructure: bool,
+
+    /// Hold a strategy through short-lived score and power fluctuations while
+    /// still responding immediately to wars, emergencies, city deficits,
+    /// assigned lanes, and finite Prophet races.
+    ///
+    /// The deployment evaluator observes 2–3 unanchored midgame changes per
+    /// seat-game. A generic cooldown would hide real alarms, so this treatment
+    /// is trigger-scoped: only best-lane/progress changes and opportunistic
+    /// wars can be delayed. Recovery exits remain immediate because the first
+    /// screen showed that lingering there erased cities and production.
+    pub strategic_commitment: bool,
 }
 
 impl Default for AdvancedAi {
@@ -1141,6 +1188,7 @@ impl AdvancedAi {
             major_war_since: None,
             last_campaign_progress: 0,
             last_city_count: 0,
+            strategy_since: 0,
             peace_until: 0,
             victory_planning,
             victory_target,
@@ -1182,6 +1230,8 @@ impl AdvancedAi {
             early_score_alarm: false,
             congress_counter_leader: false,
             congress_counter_votes: false,
+            envoy_infrastructure: false,
+            strategic_commitment: false,
         }
     }
 
@@ -2477,6 +2527,27 @@ impl AdvancedAi {
         self.urgent_victory_threat(g, target)
     }
 
+    fn soft_commitment_holds(
+        current: GrandStrategy,
+        candidate: GrandStrategy,
+        trigger: StrategyTrigger,
+        strategy_age: u32,
+        commitment_turns: u32,
+    ) -> bool {
+        if current == candidate
+            || current == GrandStrategy::Recovery
+            || strategy_age >= commitment_turns
+        {
+            return false;
+        }
+        matches!(
+            trigger,
+            StrategyTrigger::OpportunisticWar
+                | StrategyTrigger::LaneProgress
+                | StrategyTrigger::BestLane
+        )
+    }
+
     fn assess(&self, g: &Game, pid: usize) -> StrategicPlan {
         let cities = g.player_city_ids(pid);
         let my_power = g.military_power(pid);
@@ -2566,18 +2637,31 @@ impl AdvancedAi {
         // cost nothing to build; they exist so the spectator's reasoning log
         // can say which of these tests the empire's whole plan turned on
         // instead of only naming the strategy that came out.
-        let (strategy, because) = if at_war
+        let (mut strategy, mut because, trigger) = if at_war
             && (threatened_city.is_some() || my_power * 1.25 < strongest_rival)
         {
-            (GrandStrategy::Recovery, "at war and losing ground at home")
+            (
+                GrandStrategy::Recovery,
+                "at war and losing ground at home",
+                StrategyTrigger::DefensiveWar,
+            )
         } else if emergency_objective.is_some() {
-            (GrandStrategy::Conquest, "an emergency objective is standing")
+            (
+                GrandStrategy::Conquest,
+                "an emergency objective is standing",
+                StrategyTrigger::Emergency,
+            )
         } else if basil_tagma_timing {
-            (GrandStrategy::Conquest, "Tagma timing is live")
+            (
+                GrandStrategy::Conquest,
+                "Tagma timing is live",
+                StrategyTrigger::TimingAttack,
+            )
         } else if rush_victim.is_some() {
             (
                 GrandStrategy::Conquest,
                 "a neighbour is inside the ancient window and cannot wall in time",
+                StrategyTrigger::TimingAttack,
             )
         } else if let Some(target) = active_victory_target {
             // The assigned-Religion arm is the only one that does not first ask
@@ -2592,28 +2676,56 @@ impl AdvancedAi {
                 && g.players[pid].religion.is_none()
                 && !may_expand_first
             {
-                (GrandStrategy::Religion, "the religion lane still needs a religion")
+                (
+                    GrandStrategy::Religion,
+                    "the religion lane still needs a religion",
+                    StrategyTrigger::AssignedLane,
+                )
             } else if cities.len() < desired_cities && has_site && g.turn < g.standard_duration(175)
             {
-                (GrandStrategy::Expansion, "the assigned lane can still afford to expand first")
+                (
+                    GrandStrategy::Expansion,
+                    "the assigned lane can still afford to expand first",
+                    StrategyTrigger::AssignedLane,
+                )
             } else {
-                (target.strategy(), "following the assigned victory lane")
+                (
+                    target.strategy(),
+                    "following the assigned victory lane",
+                    StrategyTrigger::AssignedLane,
+                )
             }
         } else if let Some((_, counter)) = denial {
-            (counter, "countering a rival close to winning")
+            (
+                counter,
+                "countering a rival close to winning",
+                StrategyTrigger::VictoryDenial,
+            )
         } else if at_war {
-            (GrandStrategy::Conquest, "already at war")
+            (
+                GrandStrategy::Conquest,
+                "already at war",
+                StrategyTrigger::ActiveWar,
+            )
         } else if self.prophet_before_opportunism && self.religious_opening_viable(g, pid) {
             // Same arm as the one below, tested one step earlier. See
             // `prophet_before_opportunism` for why the order is contested.
-            (GrandStrategy::Religion, "a Prophet is a finite race worth entering now")
+            (
+                GrandStrategy::Religion,
+                "a Prophet is a finite race worth entering now",
+                StrategyTrigger::ProphetRace,
+            )
         } else if (g.turn >= 55 && cities.len() >= 2 && my_power > weakest_rival * 1.80 + 20.0)
             || (military_civ
                 && g.turn >= 35
                 && cities.len() >= 2
                 && my_power >= strongest_rival * 1.10)
         {
-            (GrandStrategy::Conquest, "strong enough to take what a neighbour has")
+            (
+                GrandStrategy::Conquest,
+                "strong enough to take what a neighbour has",
+                StrategyTrigger::OpportunisticWar,
+            )
         } else if self.religious_opening_viable(g, pid) {
             // A Prophet is a finite global race, not an economic goal that can
             // wait until the generic city target is complete. Religious
@@ -2622,14 +2734,45 @@ impl AdvancedAi {
             // Keep that commitment independent of the generic progress race:
             // improving a contender's science readiness must not make it
             // abandon a nearly earned, globally limited Prophet.
-            (GrandStrategy::Religion, "a Prophet is a finite race worth entering now")
+            (
+                GrandStrategy::Religion,
+                "a Prophet is a finite race worth entering now",
+                StrategyTrigger::ProphetRace,
+            )
         } else if victory.progress >= 65 {
-            (victory.strategy, "already well down its best victory lane")
+            (
+                victory.strategy,
+                "already well down its best victory lane",
+                StrategyTrigger::LaneProgress,
+            )
         } else if cities.len() < desired_cities && has_site && Self::expansion_window_open(g) {
-            (GrandStrategy::Expansion, "short of cities with land still open")
+            (
+                GrandStrategy::Expansion,
+                "short of cities with land still open",
+                StrategyTrigger::ExpansionNeed,
+            )
         } else {
-            (victory.strategy, "its best available victory lane")
+            (
+                victory.strategy,
+                "its best available victory lane",
+                StrategyTrigger::BestLane,
+            )
         };
+        if self.strategic_commitment {
+            if let Some(current) = self.plan.as_ref().map(|plan| plan.strategy) {
+                let age = g.turn.saturating_sub(self.strategy_since);
+                if Self::soft_commitment_holds(
+                    current,
+                    strategy,
+                    trigger,
+                    age,
+                    g.standard_duration(40).max(1),
+                ) {
+                    strategy = current;
+                    because = "honoring a recent strategy until a hard trigger replaces it";
+                }
+            }
+        }
         think!(self.journal(), Strategy, Strategy,
                "Grand strategy: {}", strategy.as_str();
                "{because} — {} cities of {desired_cities} wanted, power {my_power:.0} \
@@ -8541,6 +8684,55 @@ impl AdvancedAi {
         current
     }
 
+    /// Raw production utility of an influence stream beginning after
+    /// `starts_after` turns. A stream matters only after this empire has met a
+    /// city-state it does not already control; this makes the treatment
+    /// fog-honest and keeps zero-city-state games bit-identical.
+    fn envoy_income_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        influence_per_turn: f64,
+        starts_after: f64,
+        remaining_turns: f64,
+    ) -> f64 {
+        if !self.envoy_infrastructure || influence_per_turn <= 0.0 {
+            return 0.0;
+        }
+        let contestable = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.alive
+                    && player.is_minor
+                    && !player.is_barbarian
+                    && !player.is_free_city
+                    && g.has_met(pid, player.id)
+                    && g.suzerain_of(player.id) != Some(pid)
+            })
+            .count();
+        if contestable == 0 {
+            return 0.0;
+        }
+        let Some(government) = g.players[pid]
+            .government
+            .as_deref()
+            .and_then(|government| g.rules.governments.get(government))
+        else {
+            return 0.0;
+        };
+        if government.influence_threshold <= 0.0 || government.envoys_per_threshold <= 0 {
+            return 0.0;
+        }
+        let active_turns = (remaining_turns - starts_after).max(0.0);
+        let expected_envoys = influence_per_turn * active_turns / government.influence_threshold
+            * government.envoys_per_threshold as f64;
+        // Three envoys establish first suzerainty. Extra income is still
+        // useful for defense, but projecting beyond three per currently open
+        // contest lets a very long score game crowd out every other system.
+        expected_envoys.min(contestable as f64 * 3.0) * ENVOY_PRODUCTION_VALUE
+    }
+
     fn production_value(
         &self,
         g: &Game,
@@ -8901,6 +9093,17 @@ impl AdvancedAi {
                         .into_iter()
                         .map(|kind| spec.great_person_points.get(kind).copied().unwrap_or(0.0))
                         .sum::<f64>();
+                    let influence_income = if self.envoy_infrastructure {
+                        self.envoy_income_value(
+                            g,
+                            pid,
+                            spec.effects.get("influence_points").copied().unwrap_or(0.0),
+                            turns,
+                            remaining_turns,
+                        )
+                    } else {
+                        0.0
+                    };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
                         + spec.housing * (22.0 + housing_need * 18.0)
                         + spec.amenity * (30.0 + amenity_need * 22.0)
@@ -8917,6 +9120,7 @@ impl AdvancedAi {
                                 10.0
                             }
                         + spec.effects.get("tourism").copied().unwrap_or(0.0) * 80.0
+                        + influence_income
                         + if building == "monument" && g.turn < 120 {
                             240.0
                         } else {
@@ -9011,7 +9215,7 @@ impl AdvancedAi {
                         * if plan.strategy == GrandStrategy::Diplomacy {
                             300.0
                         } else {
-                            170.0
+                            ENVOY_PRODUCTION_VALUE
                         }
                     + effects
                         .get("envoy_if_adjacent_city_center")
@@ -9021,7 +9225,7 @@ impl AdvancedAi {
                             if plan.strategy == GrandStrategy::Diplomacy {
                                 300.0
                             } else {
-                                170.0
+                                ENVOY_PRODUCTION_VALUE
                             }
                         } else {
                             0.0
@@ -9115,6 +9319,25 @@ impl AdvancedAi {
                     "aerodrome" if district_count == 0 && counts.aircraft > 0 => 260.0,
                     _ => 0.0,
                 };
+                let envoy_unlock = if self.envoy_infrastructure
+                    && family == "diplomatic_quarter"
+                    && district_count == 0
+                {
+                    // The district's direct envoy is already in `effect_value`.
+                    // This is only the discounted Consulate stream that the
+                    // district makes producible. Estimate its onset from the
+                    // building's real cost and this city's current output.
+                    let consulate_turns = g
+                        .rules
+                        .buildings
+                        .get("consulate")
+                        .map(|building| building.cost / production)
+                        .unwrap_or(0.0);
+                    self.envoy_income_value(g, pid, 2.0, turns + consulate_turns, remaining_turns)
+                        * 0.65
+                } else {
+                    0.0
+                };
                 let development_penalty = if spec.specialty
                     && !city.districts.is_empty()
                     && city.buildings.len() <= city.districts.len()
@@ -9146,6 +9369,7 @@ impl AdvancedAi {
                     + balanced_core
                     + strategic_family
                     + first_copy
+                    + envoy_unlock
                     + effect_value
                     + development_penalty
             }
@@ -13422,7 +13646,15 @@ impl AdvancedAi {
         self.resolve_city_dispositions(g, pid, disposition_strategy);
         self.observe_campaign(g, pid);
         if rush_routes_frozen || self.plan_stale(g, pid) {
-            self.plan = Some(self.assess(g, pid));
+            let next = self.assess(g, pid);
+            if self
+                .plan
+                .as_ref()
+                .is_none_or(|current| current.strategy != next.strategy)
+            {
+                self.strategy_since = g.turn;
+            }
+            self.plan = Some(next);
         }
         let plan = self.plan.clone().unwrap();
         // Production for a Conquest plan without an assigned victory target
@@ -17004,6 +17236,104 @@ mod tests {
             resumed > fresh,
             "incremental evaluation should prefer finishing invested infrastructure"
         );
+    }
+
+    #[test]
+    fn envoy_infrastructure_prices_only_reachable_future_envoys() {
+        let mut game = Game::new_full(1, 20, 14, 71_004, 200, 1, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.players[0].government = Some("chiefdom".to_string());
+        game.turn = 30;
+        install_ai_test_district(&mut game, city, "diplomatic_quarter");
+
+        let consulate = Item::Building {
+            building: crate::name!("consulate"),
+        };
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let stock = AdvancedAi::new();
+        let mut treatment = AdvancedAi::new();
+        treatment.envoy_infrastructure = true;
+        let counts = stock.counts(&game, 0);
+        let unseen = treatment.production_value(&game, 0, city, &consulate, &plan, &counts);
+        let stock_value = stock.production_value(&game, 0, city, &consulate, &plan, &counts);
+        assert_eq!(
+            unseen, stock_value,
+            "an unmet city-state must not leak into production valuation"
+        );
+
+        let minor = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
+            .map(|player| player.id)
+            .expect("fixture needs a city-state");
+        game.record_contact(0, minor);
+        let reachable = treatment.production_value(&game, 0, city, &consulate, &plan, &counts);
+        assert!(
+            reachable > stock_value,
+            "a met, uncontrolled city-state must make Consulate influence valuable"
+        );
+
+        game.turn = game.max_turns;
+        let expired = treatment.production_value(&game, 0, city, &consulate, &plan, &counts);
+        let expired_stock = stock.production_value(&game, 0, city, &consulate, &plan, &counts);
+        assert_eq!(
+            expired, expired_stock,
+            "income that begins after the game ends has no envoy value"
+        );
+    }
+
+    #[test]
+    fn strategic_commitment_delays_only_soft_replans() {
+        assert!(AdvancedAi::soft_commitment_holds(
+            GrandStrategy::Science,
+            GrandStrategy::Conquest,
+            StrategyTrigger::OpportunisticWar,
+            5,
+            10,
+        ));
+        assert!(!AdvancedAi::soft_commitment_holds(
+            GrandStrategy::Recovery,
+            GrandStrategy::Science,
+            StrategyTrigger::BestLane,
+            5,
+            10,
+        ));
+        assert!(!AdvancedAi::soft_commitment_holds(
+            GrandStrategy::Recovery,
+            GrandStrategy::Conquest,
+            StrategyTrigger::ActiveWar,
+            5,
+            10,
+        ));
+        assert!(!AdvancedAi::soft_commitment_holds(
+            GrandStrategy::Science,
+            GrandStrategy::Recovery,
+            StrategyTrigger::DefensiveWar,
+            5,
+            10,
+        ));
+        assert!(!AdvancedAi::soft_commitment_holds(
+            GrandStrategy::Science,
+            GrandStrategy::Conquest,
+            StrategyTrigger::OpportunisticWar,
+            10,
+            10,
+        ));
     }
 
     #[test]

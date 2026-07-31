@@ -9,6 +9,7 @@ use civvis::rules::Rules;
 use civvis::setup::{MapPoles, MapScript, MapTopology};
 use civvis::strategic::ReviewCensus;
 use std::collections::{BTreeMap, BTreeSet};
+use std::process::Command;
 
 const PROMOTION_MIN_MAPS: usize = 20;
 const Z_95: f64 = 1.959_963_984_540_054;
@@ -717,6 +718,259 @@ fn number(args: &[String], flag: &str, default: i64) -> i64 {
         .unwrap_or(default)
 }
 
+#[derive(Clone, Copy)]
+struct MatrixProfile {
+    name: &'static str,
+    players: usize,
+    width: i32,
+    height: i32,
+    city_states: usize,
+    turns: u32,
+    speed: &'static str,
+    requirement: MatrixRequirement,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MatrixRequirement {
+    NoRegression,
+    Strength,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum MatrixVerdict {
+    Pass,
+    Retain,
+    Inconclusive,
+    Insufficient,
+}
+
+const PROMOTION_PROFILES: [MatrixProfile; 2] = [
+    MatrixProfile {
+        name: "compact-standard",
+        players: 4,
+        width: 24,
+        height: 16,
+        city_states: 4,
+        turns: 500,
+        speed: "standard",
+        requirement: MatrixRequirement::NoRegression,
+    },
+    MatrixProfile {
+        name: "deployment-online",
+        players: 6,
+        width: 74,
+        height: 46,
+        city_states: 9,
+        turns: 250,
+        speed: "online",
+        requirement: MatrixRequirement::Strength,
+    },
+];
+
+fn matrix_child_args(
+    challenger: &str,
+    incumbent: &str,
+    pairs: usize,
+    jobs: usize,
+    seed: u64,
+    profile: MatrixProfile,
+    difficulty: &str,
+    require_artifacts: bool,
+) -> Vec<String> {
+    let mut args: Vec<String> = [
+        challenger.to_string(),
+        incumbent.to_string(),
+        "--pairs".to_string(),
+        pairs.to_string(),
+        "--jobs".to_string(),
+        jobs.max(1).to_string(),
+        "--seed".to_string(),
+        seed.to_string(),
+        "--players".to_string(),
+        profile.players.to_string(),
+        "--width".to_string(),
+        profile.width.to_string(),
+        "--height".to_string(),
+        profile.height.to_string(),
+        "--city-states".to_string(),
+        profile.city_states.to_string(),
+        "--turns".to_string(),
+        profile.turns.to_string(),
+        "--speed".to_string(),
+        profile.speed.to_string(),
+        "--map".to_string(),
+        "continents".to_string(),
+        "--shape".to_string(),
+        "planet".to_string(),
+        "--poles".to_string(),
+        "poles".to_string(),
+        "--randomize-civs".to_string(),
+        "--victories".to_string(),
+        "science,culture,domination".to_string(),
+        "--difficulty".to_string(),
+        difficulty.to_string(),
+    ]
+    .into_iter()
+    .collect();
+    if require_artifacts {
+        args.push("--require-artifacts".to_string());
+    }
+    args
+}
+
+fn matrix_verdict(output: &[u8]) -> Option<MatrixVerdict> {
+    let output = String::from_utf8_lossy(output);
+    if output.contains("promotion gate: PASS —") {
+        Some(MatrixVerdict::Pass)
+    } else if output.contains("promotion gate: RETAIN ") {
+        Some(MatrixVerdict::Retain)
+    } else if output.contains("promotion gate: INCONCLUSIVE —") {
+        Some(MatrixVerdict::Inconclusive)
+    } else if output.contains("promotion gate: INSUFFICIENT —") {
+        Some(MatrixVerdict::Insufficient)
+    } else {
+        None
+    }
+}
+
+fn matrix_profile_accepts(requirement: MatrixRequirement, verdict: MatrixVerdict) -> bool {
+    match requirement {
+        MatrixRequirement::Strength => verdict == MatrixVerdict::Pass,
+        MatrixRequirement::NoRegression => {
+            matches!(verdict, MatrixVerdict::Pass | MatrixVerdict::Inconclusive)
+        }
+    }
+}
+
+fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
+    const PROFILE_FLAGS: [&str; 11] = [
+        "--players",
+        "--width",
+        "--height",
+        "--city-states",
+        "--turns",
+        "--speed",
+        "--map",
+        "--shape",
+        "--poles",
+        "--victories",
+        "--randomize-civs",
+    ];
+    if let Some(flag) = PROFILE_FLAGS
+        .into_iter()
+        .find(|flag| args.iter().any(|argument| argument == flag))
+    {
+        eprintln!("--matrix owns the promotion profiles; remove conflicting profile flag {flag}");
+        std::process::exit(2);
+    }
+    let pairs = number(args, "--pairs", 50).max(1) as usize;
+    let artifact_dir = text(args, "--artifact-dir", ARTIFACT_DIR);
+    if artifact_dir != ARTIFACT_DIR {
+        eprintln!(
+            "--matrix cannot use --artifact-dir {artifact_dir}; agent construction resolves {ARTIFACT_DIR}"
+        );
+        std::process::exit(2);
+    }
+    let total_jobs = match number(args, "--jobs", 0) {
+        requested if requested > 0 => requested as usize,
+        _ => civvis::parallel::default_jobs(),
+    };
+    let jobs_per_profile = (total_jobs / PROMOTION_PROFILES.len()).max(1);
+    let seed = number(args, "--seed", 4000).max(0) as u64;
+    let difficulty = text(args, "--difficulty", &default_difficulty());
+    let require_artifacts = args
+        .iter()
+        .any(|argument| argument == "--require-artifacts");
+    let executable = std::env::current_exe().expect("resolve ai_eval executable");
+
+    let outputs = if total_jobs < PROMOTION_PROFILES.len() {
+        PROMOTION_PROFILES
+            .into_iter()
+            .enumerate()
+            .map(|(index, profile)| {
+                let profile_seed = seed + index as u64 * (pairs as u64 + 1_000_000);
+                let child_args = matrix_child_args(
+                    challenger,
+                    incumbent,
+                    pairs,
+                    1,
+                    profile_seed,
+                    profile,
+                    &difficulty,
+                    require_artifacts,
+                );
+                let output = Command::new(&executable)
+                    .args(child_args)
+                    .output()
+                    .expect("run ai_eval promotion profile");
+                (profile, output)
+            })
+            .collect::<Vec<_>>()
+    } else {
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = PROMOTION_PROFILES
+                .into_iter()
+                .enumerate()
+                .map(|(index, profile)| {
+                    let executable = executable.clone();
+                    let difficulty = difficulty.clone();
+                    scope.spawn(move || {
+                        let profile_seed = seed + index as u64 * (pairs as u64 + 1_000_000);
+                        let child_args = matrix_child_args(
+                            challenger,
+                            incumbent,
+                            pairs,
+                            jobs_per_profile,
+                            profile_seed,
+                            profile,
+                            &difficulty,
+                            require_artifacts,
+                        );
+                        let output = Command::new(executable)
+                            .args(child_args)
+                            .output()
+                            .expect("run ai_eval promotion profile");
+                        (profile, output)
+                    })
+                })
+                .collect();
+            handles
+                .into_iter()
+                .map(|handle| handle.join().expect("promotion profile worker panicked"))
+                .collect::<Vec<_>>()
+        })
+    };
+
+    let mut passed = 0usize;
+    for (profile, output) in outputs {
+        println!("\n===== promotion profile: {} =====", profile.name);
+        print!("{}", String::from_utf8_lossy(&output.stdout));
+        eprint!("{}", String::from_utf8_lossy(&output.stderr));
+        let verdict = matrix_verdict(&output.stdout);
+        let profile_pass = output.status.success()
+            && verdict.is_some_and(|verdict| matrix_profile_accepts(profile.requirement, verdict));
+        passed += profile_pass as usize;
+        println!(
+            "matrix profile result: {} ({:?}) — {} ({:?})",
+            profile.name,
+            profile.requirement,
+            if profile_pass { "ACCEPT" } else { "REJECT" },
+            verdict,
+        );
+    }
+    if passed == PROMOTION_PROFILES.len() {
+        println!(
+            "\nmulti-profile promotion gate: PASS — {challenger} cleared every required profile"
+        );
+        std::process::exit(0);
+    }
+    println!(
+        "\nmulti-profile promotion gate: RETAIN {incumbent} — {challenger} cleared {passed}/{} required profiles",
+        PROMOTION_PROFILES.len()
+    );
+    std::process::exit(1);
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let a = args.first().map(|name| name.as_str()).unwrap_or("advanced");
@@ -727,6 +981,9 @@ fn main() {
             BUILTIN_AIS.contains(&name) || EVAL_ONLY_AIS.contains(&name),
             "unknown AI {name:?}: builtins {BUILTIN_AIS:?}; evaluator-only {EVAL_ONLY_AIS:?}"
         );
+    }
+    if args.iter().any(|argument| argument == "--matrix") {
+        run_profile_matrix(&args, a, b);
     }
     // A learned name is only worth recording if its artifacts actually
     // loaded. Say what each entrant resolved to before playing anything, so
@@ -1329,6 +1586,77 @@ fn main() {
 mod tests {
     use super::*;
     use civvis::rng::Rng;
+
+    #[test]
+    fn promotion_matrix_pins_compact_and_deployment_profiles() {
+        let compact = matrix_child_args(
+            "challenger",
+            "incumbent",
+            60,
+            4,
+            90_000,
+            PROMOTION_PROFILES[0],
+            "prince",
+            false,
+        );
+        let deployment = matrix_child_args(
+            "challenger",
+            "incumbent",
+            60,
+            4,
+            1_090_060,
+            PROMOTION_PROFILES[1],
+            "prince",
+            false,
+        );
+        for args in [&compact, &deployment] {
+            assert_eq!(text(args, "--map", "missing"), "continents");
+            assert_eq!(text(args, "--shape", "missing"), "planet");
+            assert_eq!(text(args, "--poles", "missing"), "poles");
+            assert!(args.iter().any(|argument| argument == "--randomize-civs"));
+            assert!(!args.iter().any(|argument| argument == "--matrix"));
+        }
+        assert_eq!(number(&compact, "--players", 0), 4);
+        assert_eq!(number(&compact, "--turns", 0), 500);
+        assert_eq!(text(&compact, "--speed", "missing"), "standard");
+        assert_eq!(number(&deployment, "--players", 0), 6);
+        assert_eq!(number(&deployment, "--width", 0), 74);
+        assert_eq!(number(&deployment, "--height", 0), 46);
+        assert_eq!(number(&deployment, "--turns", 0), 250);
+        assert_eq!(text(&deployment, "--speed", "missing"), "online");
+    }
+
+    #[test]
+    fn promotion_matrix_requires_strength_at_deployment_and_safety_elsewhere() {
+        assert_eq!(
+            matrix_verdict(b"promotion gate: PASS \xe2\x80\x94 challenger cleared"),
+            Some(MatrixVerdict::Pass)
+        );
+        assert_eq!(
+            matrix_verdict(b"promotion gate: RETAIN incumbent \xe2\x80\x94 regression"),
+            Some(MatrixVerdict::Retain)
+        );
+        assert!(matrix_profile_accepts(
+            MatrixRequirement::Strength,
+            MatrixVerdict::Pass
+        ));
+        assert!(!matrix_profile_accepts(
+            MatrixRequirement::Strength,
+            MatrixVerdict::Inconclusive
+        ));
+        assert!(matrix_profile_accepts(
+            MatrixRequirement::NoRegression,
+            MatrixVerdict::Inconclusive
+        ));
+        assert!(!matrix_profile_accepts(
+            MatrixRequirement::NoRegression,
+            MatrixVerdict::Retain
+        ));
+        assert!(!matrix_profile_accepts(
+            MatrixRequirement::NoRegression,
+            MatrixVerdict::Insufficient
+        ));
+    }
 
     /// A 95% interval for the mean of paired map scores that uses their
     /// observed variance instead of the worst case.

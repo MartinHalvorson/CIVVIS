@@ -6284,3 +6284,98 @@ the known historical contract for compatibility; the canonical 40-game ledger
 writes it explicitly. Raw-game replay continues to reproduce the same aggregate
 and anchored ratings, so this closes an identity gap without changing the
 baseline experiment.
+
+## 2026-07-31 — AI-strength audit: causal controls and a profile-matrix gate
+
+The largest replicated oracle ceiling is still city-state control: perfect
+suzerainty measured 56.7% against 22.7% control over 400 maps. New censuses
+located the reachable bottleneck before changing play. The agent held 0.00
+unspent envoys, but on the 6p 74×46 sample controlled only 7% of met
+city-states; it built a Diplomatic Quarter in 1/6 games and never built a
+Consulate or Chancery. Allocation is not the problem. Income is.
+
+The implementation therefore added independent evaluator arms for the live
+policy deck, explicit influence valuation, influence infrastructure, and the
+combined economy. Infrastructure converts `influence_points` into expected
+envoys using the active government's threshold and payout, the remaining turn
+horizon, and only met city-states not already controlled. It also lets the
+first Diplomatic Quarter see a discounted Consulate stream. Zero-city-state,
+unmet, already-controlled, and expired-horizon cases receive exactly zero new
+value.
+
+The screens correctly refused the initial causal story:
+
+| comparison | profile/maps | paired score | terminal score | envoy diagnostic |
+|---|---:|---:|---:|---|
+| infrastructure vs stock | 4p Online, 12 | 50.0% (+0) | 49.8% | 6.6 vs 5.9 |
+| influence weight vs live-deck control | 4p Online, 12 | 43.8% (−44) | 50.8% | 5.0 vs 4.0 |
+| combined vs stock | 4p Online, 12 | 52.1% (+14) | 50.4% | 9.0 vs 7.6; suzerainty 0.40 vs 0.21 |
+| combined vs stock | 6p deployment, 12 | 54.2% (+29) | 50.5% | 17.6 vs 15.0; suzerainty 0.67 vs 0.56 |
+| live-deck control vs stock | 6p deployment, 8 | 53.1% (+22) | 51.4% | 13.5 vs 12.3 |
+| influence weight vs live-deck control | 6p deployment, 8 | 50.0% (+0) | 50.6% | 16.6 vs 16.9 |
+| infrastructure vs stock | 6p deployment, 8 | 53.1% (+22) | 50.4% | 14.4 vs 14.1 |
+
+Those component rows use disjoint seeds and are not additive. They show that
+the combined deployment direction cannot be attributed to influence income:
+the influence-only component was flat and infrastructure did not materially
+move envoys on its deployment sample. The pre-existing live deck accounts for
+at least as much of the direction. All four arms remain reproducible; none of
+the new envoy behavior is enabled in `advanced`.
+
+The second direct treatment addressed strategy churn. A 40-Standard-turn
+(20 Online turns) commitment applies only to soft best-lane, lane-progress,
+and opportunistic-war changes. Wars, threats, emergencies, assigned lanes,
+city deficits, Prophet races, and exits from Recovery remain immediate. Final
+review caught an earlier version that could still linger in Recovery; its −73
+deployment screen is not evidence about the corrected treatment.
+
+The corrected arm completed a 20-map matrix. Compact midgame switches fell
+from 3.74 to 2.90 per seat-game and unanchored switches from 1.98 to 1.44; it
+scored 53.8% (+26) with 50.6% terminal score. Deployment switches fell 2.99 to
+2.69 and unanchored switches 1.79 to 1.66; the arm scored 55.0% (+35), with an
+8–3 direction (p=0.2266) and flat 50.1% terminal score. Both verdicts were
+INCONCLUSIVE. Compact therefore passed the safety requirement, deployment did
+not meet the strength requirement, and the matrix retained `advanced`. The
+treatment remains evaluator-only: reduced churn is demonstrated, strength is
+not.
+
+### The matrix gate
+
+`ai_eval --matrix` now runs both required profiles concurrently with disjoint
+seeds and a shared total job budget:
+
+```sh
+cargo run --release --bin ai_eval -- challenger advanced \
+  --matrix --pairs 120 --jobs 12 --seed 12000000
+```
+
+The compact safety profile is 4p 24×16, four city-states, Standard speed and
+500 turns. The strength profile is the 6p 74×46, nine-city-state, Online
+250-turn deployment. Both use Continents, Planet topology, poles, randomized
+civilizations, and science/culture/domination victories. Deployment must earn
+an ordinary `promotion gate: PASS`; compact must have at least 20 maps and
+must not earn `RETAIN` for the incumbent. Any failed child process, insufficient
+sample, compact regression, or deployment result short of PASS retains the
+incumbent and exits non-zero. Profile-shaping flags are rejected in matrix mode
+so a caller cannot silently rename a different experiment as the gate.
+
+The first 20-map matrix application tested `advanced_policy_live_control`
+against stock `advanced`. Compact Standard scored 47.5% (−17 Elo direction),
+with 52.4% terminal score; its verdict was INCONCLUSIVE, so it satisfied the
+no-regression safety requirement. Deployment Online scored 53.8% (+26), won
+14 games against 11, and took 52.1% terminal score; terminal direction was
+15–5 (sign p=0.0414), but the win-based promotion verdict remained
+INCONCLUSIVE. The matrix therefore accepted 1/2 profiles, exited non-zero, and
+retained `advanced`. That is exactly the intended distinction between a
+promising follow-up and a production-strength claim.
+
+An independent 40-map check then compared the retained controller with the
+source-pinned `advanced_v1` anchor on the matrix's deployment profile (nine
+city-states and randomized civilizations, seed 10042000). `advanced` scored
+47.5% (−17 Elo-equivalent, 95% CI −124..+89), with 7 maps favoring it, 10
+favoring the anchor, and 23 neutral (sign p=0.6291). Terminal score was 49.0%
+(14–26 direction, p=0.0807). The result is **INCONCLUSIVE**, not a reversal of
+the earlier +207/PASS result on the six-city-state fixed-roster profile and not
+evidence that `advanced` is universally strongest. It establishes the narrower
+claim needed here: none of the new treatments displaced the incumbent, and the
+incumbent/anchor ordering itself must remain profile-qualified.
