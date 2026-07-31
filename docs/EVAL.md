@@ -6547,3 +6547,22 @@ and Chanceries, any terminal chain stage still queued and its remaining
 production cost, plus cities, population, research, yields, military, and
 ordinary queue cost. The primary decision remains completed-game wins; none of
 these diagnostics can substitute for it.
+
+### Execution incident and frozen engine repair
+
+The first execution completed the deployment child but aborted the compact
+child on seed 32,051,026. A cloned forcing-reply line captured a civilization's
+last Settler; elimination then removed a foreign Battering Ram that was still
+linked to the attacking Pike and Shot, and `enter_tile` dereferenced that
+cached formation partner. The invalid cross-owner link originated when levy
+control transferred only the military member of a city-state escort
+formation.
+
+No challenger or control behavior was adjusted. Before restarting the fixed
+prefix, the engine was changed so every unit-ownership transfer atomically
+unlinks both formation members, linked leaders require same-owner symmetric
+co-location, and tile entry revalidates its cached partner after capture and
+elimination callbacks. Targeted regressions cover both levy directions and the
+exact elimination shape; seed 32,051,026 then completed. The full matrix must
+be rerun from seed 32,051,000 under the original command and decision rule;
+the already observed deployment result is not reused as the promotion result.

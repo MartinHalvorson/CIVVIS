@@ -10847,6 +10847,39 @@ mod district_building_wonder_runtime_tests {
     }
 
     #[test]
+    fn levy_control_changes_unlink_escort_formations() {
+        let (mut game, _city, _position) = one_city(774_4041);
+        let minor = game.players.len();
+        game.players.push(Player::new(minor, "Geneva", true));
+        game.players[0].envoys.push((minor, 3));
+        let position = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| game.city_at(*position).is_none())
+            .unwrap();
+        let warrior = game.spawn_unit("warrior", minor, position);
+        let city_state_ram = game.spawn_unit("battering_ram", minor, position);
+        game.do_link_units(minor, warrior, city_state_ram).unwrap();
+        game.players[0].gold = 200.0;
+
+        game.do_levy_military(0, minor).unwrap();
+        assert_eq!(game.units[&warrior].owner, 0);
+        assert_eq!(game.units[&warrior].linked_to, None);
+        assert_eq!(game.units[&city_state_ram].linked_to, None);
+
+        let suzerain_ram = game.spawn_unit("battering_ram", 0, position);
+        game.do_link_units(0, warrior, suzerain_ram).unwrap();
+        game.turn += STANDARD_DEAL_TURNS;
+        game.process_levies(0);
+
+        assert_eq!(game.units[&warrior].owner, minor);
+        assert_eq!(game.units[&warrior].linked_to, None);
+        assert_eq!(game.units[&suzerain_ram].linked_to, None);
+    }
+
+    #[test]
     fn a_returning_levy_never_shares_a_tile_with_its_own_class() {
         let (mut game, _city, _position) = one_city(774_407);
         let minor = game.players.len();
@@ -20796,7 +20829,7 @@ impl Game {
             return Err("no adjacent Barbarian units".into());
         }
         for target in targets {
-            self.units.get_mut(&target).unwrap().owner = pid;
+            self.transfer_unit_owner(target, pid);
         }
         let apostle = self.units.get_mut(&uid).unwrap();
         apostle.charges -= 1;
@@ -22643,8 +22676,8 @@ impl Game {
         self.players[pid].gold -= cost;
         let levied_until = self.turn + self.standard_duration(STANDARD_DEAL_TURNS);
         for unit_id in units {
+            self.transfer_unit_owner(unit_id, pid);
             let unit = self.units.get_mut(&unit_id).unwrap();
-            unit.owner = pid;
             unit.levied_from = Some(minor);
             unit.levied_until = levied_until;
             unit.moves_left = 0.0;
@@ -22697,9 +22730,9 @@ impl Game {
                 self.remove_unit(unit_id);
                 continue;
             }
+            self.transfer_unit_owner(unit_id, minor);
             let (class, current_pos) = {
                 let unit = self.units.get_mut(&unit_id).unwrap();
-                unit.owner = minor;
                 unit.levied_from = None;
                 unit.levied_until = 0;
                 unit.moves_left = 0.0;
@@ -27258,6 +27291,25 @@ impl Game {
         }
     }
 
+    /// Change control of a unit without leaving an escort formation spanning
+    /// two owners. Levies, captures and conversions can all transfer only one
+    /// member of a linked pair; every formation consumer assumes that both
+    /// members still belong to the same player.
+    fn transfer_unit_owner(&mut self, uid: u32, owner: usize) {
+        let (old_owner, peer) = {
+            let unit = &self.units[&uid];
+            (unit.owner, unit.linked_to)
+        };
+        if old_owner == owner {
+            return;
+        }
+        self.units.get_mut(&uid).unwrap().linked_to = None;
+        if let Some(peer) = peer.and_then(|peer| self.units.get_mut(&peer)) {
+            peer.linked_to = None;
+        }
+        self.units.get_mut(&uid).unwrap().owner = owner;
+    }
+
     /// Move a unit and keep the occupancy index and revealed ground with it.
     ///
     /// Crate-visible because `oracle.rs` places units directly. Writing
@@ -29598,6 +29650,9 @@ impl Game {
         let Some(peer) = unit.linked_to.and_then(|id| self.units.get(&id)) else {
             return false;
         };
+        if peer.owner != unit.owner || peer.pos != unit.pos || peer.linked_to != Some(uid) {
+            return false;
+        }
         let spec = &self.rules.units[unit.kind];
         let peer_spec = &self.rules.units[peer.kind];
         spec.class == "military"
@@ -37778,6 +37833,14 @@ impl Game {
             .filter(|_| self.is_linked_leader(uid));
         self.resolve_entered_units(uid, pos);
         self.relocate(uid, pos);
+        let linked = linked.filter(|peer| {
+            self.units
+                .get(&uid)
+                .is_some_and(|unit| unit.linked_to == Some(*peer))
+                && self.units.get(peer).is_some_and(|unit| {
+                    unit.linked_to == Some(uid) && unit.owner == self.units[&uid].owner
+                })
+        });
         if let Some(peer) = linked {
             self.relocate(peer, pos);
             let peer_max = self.unit_max_moves(peer);
@@ -37822,7 +37885,7 @@ impl Game {
             let class = self.rules.units[kind].class.as_str();
             if can_capture && matches!(kind.as_str(), "builder" | "settler") {
                 affected_owners.insert(self.units[&oid].owner);
-                self.units.get_mut(&oid).unwrap().owner = owner;
+                self.transfer_unit_owner(oid, owner);
             } else if matches!(class, "civilian" | "support") {
                 affected_owners.insert(self.units[&oid].owner);
                 self.remove_unit(oid);
@@ -49566,7 +49629,7 @@ impl Game {
             for oid in self.units_at(position) {
                 if self.units[&oid].owner == old {
                     if matches!(self.units[&oid].kind.as_str(), "builder" | "settler") {
-                        self.units.get_mut(&oid).unwrap().owner = new_owner;
+                        self.transfer_unit_owner(oid, new_owner);
                     } else {
                         self.remove_unit(oid);
                     }
@@ -51724,6 +51787,27 @@ mod combat_scenarios {
         g.current = 0;
         g.at_war.insert(pair(0, 1));
         (g, center, ring.to_vec())
+    }
+
+    #[test]
+    fn tile_entry_ignores_a_foreign_link_removed_by_elimination() {
+        let (mut g, target, ring) = controlled_game(3001);
+        let attacker = g.spawn_unit("warrior", 1, ring[0]);
+        let stale_peer = g.spawn_unit("battering_ram", 0, ring[0]);
+        let settler = g.spawn_unit("settler", 0, target);
+
+        // Old saves and pre-fix levy transitions can contain this invalid
+        // cross-owner link. Capturing player 0's final Settler eliminates the
+        // player and removes the ram while `enter_tile` is in progress.
+        g.units.get_mut(&attacker).unwrap().linked_to = Some(stale_peer);
+        g.units.get_mut(&stale_peer).unwrap().linked_to = Some(attacker);
+        g.enter_tile(attacker, target);
+
+        assert_eq!(g.units[&attacker].pos, target);
+        assert_eq!(g.units[&attacker].linked_to, None);
+        assert_eq!(g.units[&settler].owner, 1);
+        assert!(!g.units.contains_key(&stale_peer));
+        assert!(!g.players[0].alive);
     }
 
     fn found_controlled_home(game: &mut Game, center: Pos) -> (u32, Pos) {
