@@ -28,8 +28,9 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::legacy()` still constructs through `configured` with every
 /// treatment disabled; its existing shared decision behavior is unchanged.
 // Re-pinned after adding the default-empty qualified action-override hook.
-// Legacy construction never installs an artifact, so this path is inert.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5136_1f62_fa0a_b8f0;
+// Re-pinned again after adding the default-off expansion sequence search.
+// Legacy construction installs neither treatment, so this path is inert.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9530_ce24_32d2_b6e5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

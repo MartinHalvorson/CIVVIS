@@ -1,5 +1,5 @@
 //! Paired, seat-balanced head-to-head evaluator for built-in AIs.
-use civvis::ai::Ai;
+use civvis::ai::{Ai, ExpansionSearchCensus};
 use civvis::elo::{
     builtin_arm, builtin_arm_degraded, builtin_provenances, builtin_spec, collapsed_entrants,
     AgentProvenance, ARTIFACT_DIR, BUILTIN_AIS, EVAL_ONLY_AIS,
@@ -552,6 +552,8 @@ struct Metrics {
     /// Seats whose agent reports a search at all, distinguishing "searched
     /// zero times" from "has no search to report".
     searching_seats: usize,
+    expansion_searching_seats: usize,
+    expansion_census: ExpansionSearchCensus,
 }
 
 impl Metrics {
@@ -1228,6 +1230,7 @@ fn main() {
         traces: Vec<PlanTrace>,
         targets: Vec<&'static str>,
         censuses: Vec<Option<ReviewCensus>>,
+        expansion_censuses: Vec<Option<ExpansionSearchCensus>>,
     }
 
     // Games share nothing but the immutable ruleset, and every one is fully
@@ -1292,12 +1295,16 @@ fn main() {
                 .map(|pid| plan_target(&game, pid, ais[pid].as_ref()))
                 .collect();
             let censuses = (0..players).map(|pid| ais[pid].review_census()).collect();
+            let expansion_censuses = (0..players)
+                .map(|pid| ais[pid].expansion_search_census())
+                .collect();
             PlayedGame {
                 game,
                 seats,
                 traces,
                 targets,
                 censuses,
+                expansion_censuses,
             }
         });
         for (index, result) in played.into_iter().enumerate() {
@@ -1307,6 +1314,7 @@ fn main() {
                 traces,
                 targets,
                 censuses,
+                expansion_censuses,
             } = result;
             total_turns += game.reported_turn() as u64;
             let score = game_score(game.winner, &seats, a);
@@ -1327,6 +1335,11 @@ fn main() {
                     let metrics = totals.get_mut(*name).unwrap();
                     metrics.census.merge(census);
                     metrics.searching_seats += 1;
+                }
+                if let Some(census) = expansion_censuses[pid] {
+                    let metrics = totals.get_mut(*name).unwrap();
+                    metrics.expansion_census.absorb(census);
+                    metrics.expansion_searching_seats += 1;
                 }
                 totals.get_mut(*name).unwrap().record(
                     &game,
@@ -1683,6 +1696,29 @@ fn main() {
             println!(
                 "  warning: neither entrant reached its macro search, so this run \
                  compares priors and the scripted parent, not search or evaluator"
+            );
+        }
+    }
+    if [a, b]
+        .iter()
+        .any(|name| totals[*name].expansion_searching_seats > 0)
+    {
+        println!("\nExpansion sequence search exposure:");
+        for name in [a, b] {
+            let metrics = &totals[name];
+            if metrics.expansion_searching_seats == 0 {
+                println!("  {name:<11} no expansion search to report");
+                continue;
+            }
+            let census = metrics.expansion_census;
+            println!(
+                "  {name:<11} {} reviews / {} branches; {} commitments, {} controls, {} branch failures across {} seats",
+                census.reviews,
+                census.branches,
+                census.commitments,
+                census.controls,
+                census.branch_failures,
+                metrics.expansion_searching_seats,
             );
         }
     }

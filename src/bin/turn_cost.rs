@@ -47,6 +47,10 @@ fn number(args: &[String], flag: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
+fn present(args: &[String], flag: &str) -> bool {
+    args.iter().any(|arg| arg == flag)
+}
+
 /// One fleet's run over one seed.
 struct Run {
     seconds: f64,
@@ -80,6 +84,7 @@ fn play_mixed(
     turns: u32,
     cs: usize,
     searching: usize,
+    expansion: bool,
 ) -> Run {
     let mut game = Game::new(seats, width, height, seed, turns, cs);
     // One agent per player: city-states and barbarians take turns too, and a
@@ -92,7 +97,13 @@ fn play_mixed(
         .map(|(pid, player)| {
             let major = !player.is_minor && !player.is_barbarian;
             if major && pid < searching {
-                Box::new(StrategicAi::new()) as Box<dyn civvis::ai::Ai>
+                if expansion {
+                    let mut ai = AdvancedAi::new();
+                    ai.expansion_sequence_search = true;
+                    Box::new(ai) as Box<dyn civvis::ai::Ai>
+                } else {
+                    Box::new(StrategicAi::new()) as Box<dyn civvis::ai::Ai>
+                }
             } else {
                 Box::new(AdvancedAi::new()) as Box<dyn civvis::ai::Ai>
             }
@@ -106,6 +117,36 @@ fn play_mixed(
     }
 }
 
+struct ParallelRun {
+    run: Run,
+    snapshot: Vec<u8>,
+}
+
+fn play_expansion_parallel(
+    seed: u64,
+    seats: usize,
+    width: i32,
+    height: i32,
+    turns: u32,
+    cs: usize,
+    threads: usize,
+) -> ParallelRun {
+    let mut game = Game::new(seats, width, height, seed, turns, cs);
+    let mut fleet = AdvancedAi::fleet_parallel(&game, threads);
+    for ai in &mut fleet {
+        ai.expansion_sequence_search = true;
+    }
+    let started = Instant::now();
+    run_game(&mut game, &mut fleet);
+    ParallelRun {
+        run: Run {
+            seconds: started.elapsed().as_secs_f64(),
+            turns: game.turn.max(1),
+        },
+        snapshot: serde_json::to_vec(&game).expect("serialize expansion cost replay"),
+    }
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let games = number(&args, "--games", 4);
@@ -115,10 +156,19 @@ fn main() {
     let turns = number(&args, "--turns", 120) as u32;
     let city_states = number(&args, "--city-states", 9);
     let seed = number(&args, "--seed", 105_000) as u64;
+    let expansion = present(&args, "--expansion");
 
     println!(
         "turn_cost: {games} seeds, {seats} players, {width}x{height}, cap {turns} turns, \
          {city_states} city-states"
+    );
+    println!(
+        "treatment: {}",
+        if expansion {
+            "full-sequence expansion search"
+        } else {
+            "strategic macro search"
+        }
     );
     println!("interleaved, single-threaded, ratio-first -- this box is shared and absolutes drift");
 
@@ -135,8 +185,26 @@ fn main() {
         let this = seed + index as u64;
         // Back to back on the same seed, so both meet the same neighbours.
         let a = play_advanced(this, seats, width, height, turns, city_states);
-        let one = play_mixed(this, seats, width, height, turns, city_states, 1);
-        let s = play_mixed(this, seats, width, height, turns, city_states, seats);
+        let one = play_mixed(
+            this,
+            seats,
+            width,
+            height,
+            turns,
+            city_states,
+            1,
+            expansion,
+        );
+        let s = play_mixed(
+            this,
+            seats,
+            width,
+            height,
+            turns,
+            city_states,
+            seats,
+            expansion,
+        );
         let a_per = a.seconds / a.turns as f64;
         let one_per = one.seconds / one.turns as f64;
         let s_per = s.seconds / s.turns as f64;
@@ -169,28 +237,71 @@ fn main() {
     let seat_median = seat_ratios[seat_ratios.len() / 2];
     let one_per = 1000.0 * one_total / one_turns.max(1) as f64;
 
+    let treatment_label = if expansion { "expansion" } else { "strategic" };
     println!("\nadvanced:  {advanced_per:.1} ms a game-turn ({advanced_turns} turns)");
-    println!("strategic: {strategic_per:.1} ms a game-turn ({strategic_turns} turns)");
+    println!("{treatment_label}: {strategic_per:.1} ms a game-turn ({strategic_turns} turns)");
     println!("one searching seat among {}: {one_per:.1} ms a game-turn", seats - 1);
     println!("ratio, all searching: median {median:.1}x, range {low:.1}x..{high:.1}x over {games} seeds");
     println!("ratio, ONE searching seat: median {seat_median:.1}x  <- the cost of seating one entry");
 
+    if expansion {
+        let replay_seed = seed + games as u64;
+        let one = play_expansion_parallel(
+            replay_seed,
+            seats,
+            width,
+            height,
+            turns,
+            city_states,
+            1,
+        );
+        let four = play_expansion_parallel(
+            replay_seed,
+            seats,
+            width,
+            height,
+            turns,
+            city_states,
+            4,
+        );
+        assert_eq!(
+            one.snapshot, four.snapshot,
+            "one- and four-worker expansion games diverged"
+        );
+        let one_per = one.run.seconds / one.run.turns as f64;
+        let four_per = four.run.seconds / four.run.turns as f64;
+        println!(
+            "ordered branch replay seed {replay_seed}: one worker {:.1} ms/turn, four workers {:.1} ms/turn ({:.2}x speedup), exact outcome matched",
+            one_per * 1000.0,
+            four_per * 1000.0,
+            one_per / four_per.max(1e-9),
+        );
+    }
+
     // The consequence is spelled out because the whole point is to decide
     // something, and a ratio without a threshold is a number nobody acts on.
-    println!(
-        "\nwhat this means: {}",
-        if seat_median < 3.0 {
-            "cheap enough to seat -- anchoring a searching agent in the league is the \
-             highest-value change available, because the loop cannot otherwise see search"
-        } else if seat_median < 10.0 {
-            "seatable at a real cost -- a league round would take several times as long, \
-             so it is a deliberate trade rather than a free addition"
-        } else {
-            "too expensive to seat as it stands -- making the search stronger spends effort \
-             on an agent that cannot ship, and the direction is to make it cheaper instead"
-        }
-    );
-    println!(
-        "note: the joint axis (#589) costs about 2.5x again on top of whatever this says."
-    );
+    if expansion {
+        println!(
+            "\nexpansion cost gate (one treated seat <= 3.0x): {}",
+            if seat_median <= 3.0 { "PASS" } else { "FAIL" }
+        );
+        println!("strength remains a separate required gate; cost alone never promotes the treatment.");
+    } else {
+        println!(
+            "\nwhat this means: {}",
+            if seat_median < 3.0 {
+                "cheap enough to seat -- anchoring a searching agent in the league is the \
+                 highest-value change available, because the loop cannot otherwise see search"
+            } else if seat_median < 10.0 {
+                "seatable at a real cost -- a league round would take several times as long, \
+                 so it is a deliberate trade rather than a free addition"
+            } else {
+                "too expensive to seat as it stands -- making the search stronger spends effort \
+                 on an agent that cannot ship, and the direction is to make it cheaper instead"
+            }
+        );
+        println!(
+            "note: the joint axis (#589) costs about 2.5x again on top of whatever this says."
+        );
+    }
 }

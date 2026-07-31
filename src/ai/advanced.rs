@@ -93,6 +93,18 @@ const SETTLE_LAG: u32 = 3;
 /// and the population the settler cost, not where it has become good.
 const SETTLE_PAYBACK: u32 = 15;
 
+/// Full-sequence expansion branches must see the build, the measured median
+/// march, founding, and enough of the new city's return to distinguish it from
+/// its production and population cost.
+const EXPANSION_SEQUENCE_HORIZON: u32 = 50;
+/// A declined commitment remains declined until the underlying economy and
+/// map have had time to change materially. Scaled by game speed at the call
+/// site, like the horizon.
+const EXPANSION_SEQUENCE_REVIEW_EVERY: u32 = 20;
+/// Score-share separation required before a searched Settler commitment may
+/// displace the untouched scripted control.
+const EXPANSION_SEQUENCE_MARGIN: f64 = 0.005;
+
 
 
 /// The per-tile discount `settle_sites` already applies inside the search
@@ -245,6 +257,31 @@ impl StrategyCensus {
         self.recover += other.recover;
         self.hold_threatened += other.hold_threatened;
         self.hold_weak += other.hold_weak;
+    }
+}
+
+/// What the full-sequence expansion treatment actually searched and played.
+///
+/// Counts are deliberately small and causal. A review owns one untouched
+/// control and one branch per legal city; `branches` includes the control.
+/// `branch_failures` should remain zero and is exposed so an evaluator cannot
+/// mistake a broken candidate for abstention.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ExpansionSearchCensus {
+    pub reviews: u32,
+    pub branches: u32,
+    pub commitments: u32,
+    pub controls: u32,
+    pub branch_failures: u32,
+}
+
+impl ExpansionSearchCensus {
+    pub fn absorb(&mut self, other: ExpansionSearchCensus) {
+        self.reviews += other.reviews;
+        self.branches += other.branches;
+        self.commitments += other.commitments;
+        self.controls += other.controls;
+        self.branch_failures += other.branch_failures;
     }
 }
 
@@ -542,6 +579,15 @@ pub struct AdvancedAi {
     /// The authoritative game is never shared: only owned search branches
     /// cross this boundary, and their results return in candidate order.
     work_pool: Option<Arc<WorkPool>>,
+    /// Compare the untouched scripted turn with every legal real Settler
+    /// commitment on cloned full-game trajectories.
+    ///
+    /// Off in every production constructor. The evaluator-only treatment
+    /// enables it explicitly; branch agents disable it before rolling forward
+    /// so the bounded search cannot recurse into itself.
+    pub expansion_sequence_search: bool,
+    expansion_sequence_next_review: u32,
+    expansion_search_census: ExpansionSearchCensus,
     /// Route Recovery and Bastion pressure through visible or decaying
     /// last-seen enemy units instead of current hidden unit positions and HP.
     /// Own defenders and city strength remain exact.
@@ -1254,6 +1300,9 @@ impl AdvancedAi {
             force_groups_dirty: false,
             belief: BeliefState::new(),
             work_pool: None,
+            expansion_sequence_search: false,
+            expansion_sequence_next_review: 0,
+            expansion_search_census: ExpansionSearchCensus::default(),
             fog_honest_pressure: false,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
@@ -3105,6 +3154,184 @@ impl AdvancedAi {
         let endgame_reserve = g.standard_duration(50);
         let deadline = payback_window.min(g.max_turns.saturating_sub(endgame_reserve));
         g.turn < deadline
+    }
+
+    fn expansion_sequence_score_share(g: &Game, pid: usize) -> f64 {
+        if !g.players.get(pid).is_some_and(|player| player.alive) {
+            return 0.0;
+        }
+        let mut own = 0.0;
+        let mut total = 0.0;
+        for player in &g.players {
+            if player.is_minor || player.is_barbarian || !player.alive {
+                continue;
+            }
+            let score = g.score(player.id).max(0) as f64;
+            total += score;
+            if player.id == pid {
+                own = score;
+            }
+        }
+        if total > 0.0 { own / total } else { 0.5 }
+    }
+
+    /// Play one untouched or forced-Settler branch from the exact decision
+    /// point. Only owned clones enter this helper, so a failed candidate cannot
+    /// damage the authoritative game. The focal live controller is preserved;
+    /// rivals use the same production controller class in every branch.
+    fn expansion_sequence_branch_state_owned(
+        mut sim: Game,
+        mut focal: AdvancedAi,
+        pid: usize,
+        city: Option<u32>,
+        horizon: u32,
+    ) -> Option<Game> {
+        sim.set_fog_memory(false);
+        focal.expansion_sequence_search = false;
+        if let Some(city) = city {
+            sim.apply(
+                pid,
+                &Action::Produce {
+                    city,
+                    item: Item::Unit {
+                        unit: crate::name!("settler"),
+                    },
+                },
+            )
+            .ok()?;
+        }
+        let mut fleet = AdvancedAi::fleet(&sim);
+        fleet[pid] = focal;
+        let stop = sim.turn.saturating_add(horizon.max(1));
+        while sim.winner.is_none() && sim.turn < stop && sim.turn <= sim.max_turns {
+            let current = sim.current;
+            fleet[current].take_turn(&mut sim, current);
+            if sim.winner.is_none() && sim.current == current {
+                let _ = sim.apply(current, &Action::EndTurn);
+            }
+        }
+        Some(sim)
+    }
+
+    fn expansion_sequence_branch_value_owned(
+        sim: Game,
+        focal: AdvancedAi,
+        pid: usize,
+        city: Option<u32>,
+        horizon: u32,
+    ) -> Option<f64> {
+        let sim = Self::expansion_sequence_branch_state_owned(sim, focal, pid, city, horizon)?;
+        Some(match sim.winner {
+            Some(winner) if winner == pid => 1.0,
+            Some(_) => 0.0,
+            None => Self::expansion_sequence_score_share(&sim, pid),
+        })
+    }
+
+    fn expansion_sequence_values(
+        &self,
+        g: &Game,
+        pid: usize,
+        candidates: &[Option<u32>],
+    ) -> Vec<Option<f64>> {
+        let horizon = g.standard_duration(EXPANSION_SEQUENCE_HORIZON).max(1);
+        let inputs = candidates
+            .iter()
+            .map(|city| (g.clone(), self.clone(), *city))
+            .collect::<Vec<_>>();
+        match &self.work_pool {
+            Some(pool) if inputs.len() > 1 => pool.map_owned(inputs, move |(game, ai, city)| {
+                Self::expansion_sequence_branch_value_owned(game, ai, pid, city, horizon)
+            }),
+            _ => inputs
+                .into_iter()
+                .map(|(game, ai, city)| {
+                    Self::expansion_sequence_branch_value_owned(game, ai, pid, city, horizon)
+                })
+                .collect(),
+        }
+    }
+
+    /// Search one complete expansion commitment and apply it only when its
+    /// full-trajectory value clears the untouched control by the fixed margin.
+    fn consider_expansion_sequence(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Option<u32> {
+        if !self.expansion_sequence_search
+            || self.base.book_pos < 4
+            || g.turn < self.expansion_sequence_next_review
+            || g.player_city_ids(pid).len() >= plan.desired_cities
+            || self.counts(g, pid).settlers > 0
+        {
+            return None;
+        }
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let cities = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|city| g.producible_items(pid, *city).contains(&settler))
+            .collect::<Vec<_>>();
+        if cities.is_empty() {
+            return None;
+        }
+
+        let mut candidates = Vec::with_capacity(cities.len() + 1);
+        candidates.push(None);
+        candidates.extend(cities.into_iter().map(Some));
+        self.expansion_sequence_next_review = g.turn.saturating_add(
+            g.standard_duration(EXPANSION_SEQUENCE_REVIEW_EVERY)
+                .max(1),
+        );
+        self.expansion_search_census.reviews += 1;
+        self.expansion_search_census.branches += candidates.len() as u32;
+
+        let values = self.expansion_sequence_values(g, pid, &candidates);
+        self.expansion_search_census.branch_failures +=
+            values.iter().filter(|value| value.is_none()).count() as u32;
+        let Some(control) = values.first().copied().flatten() else {
+            self.expansion_search_census.controls += 1;
+            return None;
+        };
+        let best = candidates
+            .iter()
+            .copied()
+            .zip(values.iter().copied())
+            .skip(1)
+            .filter_map(|(city, value)| Some((city?, value?)))
+            .max_by(|left, right| {
+                left.1
+                    .total_cmp(&right.1)
+                    .then_with(|| right.0.cmp(&left.0))
+            });
+        let Some((city, value)) = best else {
+            self.expansion_search_census.controls += 1;
+            return None;
+        };
+        if value <= control + EXPANSION_SEQUENCE_MARGIN {
+            self.expansion_search_census.controls += 1;
+            return None;
+        }
+        if g
+            .apply(
+                pid,
+                &Action::Produce {
+                    city,
+                    item: settler,
+                },
+            )
+            .is_err()
+        {
+            self.expansion_search_census.branch_failures += 1;
+            self.expansion_search_census.controls += 1;
+            return None;
+        }
+        self.expansion_search_census.commitments += 1;
+        Some(city)
     }
 
     /// Lower is a more attractive rival: nearby, weak empires with valuable
@@ -13972,6 +14199,11 @@ impl Ai for AdvancedAi {
         })
     }
 
+    fn expansion_search_census(&self) -> Option<ExpansionSearchCensus> {
+        self.expansion_sequence_search
+            .then_some(self.expansion_search_census)
+    }
+
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
         // Stamp the context once, for every layer. Nothing below repeats the
         // turn number or the acting civilization.
@@ -14021,6 +14253,11 @@ impl AdvancedAi {
             self.plan = Some(next);
         }
         let plan = self.plan.clone().unwrap();
+        // The treatment compares complete trajectories before this turn can
+        // spend or fill a city queue. Its chosen real Produce action then
+        // flows through all ordinary production, movement, and settlement
+        // code below; with the flag off this is an exact no-op.
+        self.consider_expansion_sequence(g, pid, &plan);
         // Production for a Conquest plan without an assigned victory target
         // runs through `BasicAi::cities`, not `advanced_production`, so the
         // rush has to raise the standing-army floor there or it plans a war it
@@ -15350,6 +15587,109 @@ mod tests {
         game.turn = 300;
         assert!(!AdvancedAi::expansion_window_open(&game));
         assert!(ai.production_value(&game, 0, city, &item, &plan, &counts) < -9_000.0);
+    }
+
+    fn expansion_sequence_test_position(seed: u64) -> (Game, AdvancedAi, StrategicPlan, u32) {
+        let mut game = Game::new_full(2, 24, 16, seed, 160, 0, false);
+        for pid in 0..2 {
+            let settler = game
+                .player_unit_ids(pid)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .unwrap();
+            game.current = pid;
+            game.apply(pid, &Action::FoundCity { unit: settler })
+                .unwrap();
+        }
+        game.current = 0;
+        game.turn = 30;
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 4;
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let cost = game.item_cost_for_city(0, city, &settler);
+        game.cities.get_mut(&city).unwrap().production = cost - 0.1;
+        assert!(game.producible_items(0, city).contains(&settler));
+        let mut ai = AdvancedAi::new();
+        ai.base.book_pos = 4;
+        ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: Some(1),
+            target_city: game.player_city_ids(1).first().copied(),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        });
+        (game, ai.clone(), ai.plan.clone().unwrap(), city)
+    }
+
+    #[test]
+    fn expansion_sequence_branch_pays_population_and_founds_the_city() {
+        let (game, ai, _, city) = expansion_sequence_test_position(7_114);
+        let initial_pop = game.cities[&city].pop;
+        let initial_cities = game.player_city_ids(0).len();
+
+        let trained = AdvancedAi::expansion_sequence_branch_state_owned(
+            game.clone(),
+            ai.clone(),
+            0,
+            Some(city),
+            1,
+        )
+        .unwrap();
+        assert_eq!(trained.players[0].counters["trained:settler"], 1);
+        assert!(trained.cities[&city].pop < initial_pop);
+        assert!(trained
+            .units
+            .values()
+            .any(|unit| unit.owner == 0 && unit.kind == "settler"));
+
+        let settled = AdvancedAi::expansion_sequence_branch_state_owned(
+            game,
+            ai,
+            0,
+            Some(city),
+            EXPANSION_SEQUENCE_HORIZON,
+        )
+        .unwrap();
+        assert!(settled.player_city_ids(0).len() > initial_cities);
+        assert!(settled
+            .log
+            .iter()
+            .any(|(pid, action)| *pid == 0 && matches!(action, Action::FoundCity { .. })));
+    }
+
+    #[test]
+    fn expansion_sequence_values_are_ordered_parallel_and_non_mutating() {
+        let (game, ai, _, city) = expansion_sequence_test_position(7_115);
+        let candidates = [None, Some(city)];
+        let before = serde_json::to_string(&game).unwrap();
+        let expected = ai.expansion_sequence_values(&game, 0, &candidates);
+        assert_eq!(serde_json::to_string(&game).unwrap(), before);
+
+        let mut one = ai.clone();
+        one.work_pool = Some(Arc::new(WorkPool::new(1)));
+        let mut four = ai;
+        four.work_pool = Some(Arc::new(WorkPool::new(4)));
+        assert_eq!(one.expansion_sequence_values(&game, 0, &candidates), expected);
+        assert_eq!(four.expansion_sequence_values(&game, 0, &candidates), expected);
+    }
+
+    #[test]
+    fn expansion_sequence_is_default_off_and_reports_real_reviews() {
+        assert!(AdvancedAi::new().expansion_search_census().is_none());
+        let (mut game, mut ai, plan, _) = expansion_sequence_test_position(7_116);
+        ai.expansion_sequence_search = true;
+        let _ = ai.consider_expansion_sequence(&mut game, 0, &plan);
+        let census = ai.expansion_search_census().unwrap();
+        assert_eq!(census.reviews, 1);
+        assert_eq!(census.branches, 2);
+        assert_eq!(census.commitments + census.controls, 1);
+        assert_eq!(census.branch_failures, 0);
+        let _ = ai.consider_expansion_sequence(&mut game, 0, &plan);
+        assert_eq!(ai.expansion_search_census().unwrap(), census);
     }
 
     #[test]

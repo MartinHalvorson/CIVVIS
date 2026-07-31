@@ -58,8 +58,8 @@ const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 
 mod advanced;
 pub use advanced::{
-    AdvancedAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
-    StrategyCensus, VictoryTarget,
+    AdvancedAi, ExpansionSearchCensus, ForceDomain, ForceGroup, ForcePosture, GrandStrategy,
+    StrategicPlan, StrategyCensus, VictoryTarget,
 };
 
 const TECH_PRIORITY: [&str; 15] = [
@@ -145,6 +145,13 @@ pub trait Ai {
         None
     }
 
+    /// Exposure of the bounded full-sequence expansion search, for evaluators
+    /// only. `None` distinguishes an ordinary scripted agent from a treatment
+    /// that was enabled but never found a legal review.
+    fn expansion_search_census(&self) -> Option<ExpansionSearchCensus> {
+        None
+    }
+
     /// Write this agent's reasoning into an observer's log.
     ///
     /// Every seat at a watched table is handed a handle on the *same*
@@ -170,6 +177,10 @@ impl<T: Ai + ?Sized> Ai for Box<T> {
 
     fn review_census(&self) -> Option<crate::strategic::ReviewCensus> {
         (**self).review_census()
+    }
+
+    fn expansion_search_census(&self) -> Option<ExpansionSearchCensus> {
+        (**self).expansion_search_census()
     }
 
     fn attach_journal(&mut self, journal: Journal) {
