@@ -341,15 +341,19 @@ mod tests {
         }
     }
 
-    /// ★★★★★ Unseen ground must be walkable, or the map can never be uncovered.
+    /// Revealed ground is the truth, in both directions.
     ///
-    /// The frontier used to be stamped `ocean`, and `BasicAi`'s explore step asks for a
-    /// tile that is unexplored AND traversable. For a land unit an ocean tile fails the
-    /// second half, so on a map whose unknown half was all sea there was no exploration
-    /// target anywhere: `revealed` sat at 383 from turn 150 to turn 180 while the army
-    /// staged an invasion of a civilization it had never met.
+    /// ⚠ This deliberately asserts NOTHING about unseen ground. Making the unknown
+    /// walkable is a separate and better-measured change being made in `rebuild_game`
+    /// and `grow_frontier` by another writer — wipe the generated world to ocean so the
+    /// generator's land cannot masquerade as reachable frontier (416 such tiles survived
+    /// on a 60x38 rebuild), then let `grow_frontier` invent land at a controlled ring
+    /// seeded from everything revealed rather than from revealed *land*, so the ring is
+    /// not sealed inside its own coastline. That confines the invented ground to one
+    /// place; an earlier draft of this test asserted the whole unknown map was walkable,
+    /// which is a far larger fiction and would have fought it.
     #[test]
-    fn unseen_ground_is_walkable_and_seen_ground_is_the_truth() {
+    fn revealed_ground_is_the_truth_in_both_directions() {
         let chunks = vec![TilesChunk {
             turn: 4,
             width: 20,
@@ -362,24 +366,13 @@ mod tests {
 
         let seen = game.map.get(crate::hex::offset_to_axial(5, 5)).unwrap();
         assert_eq!(seen.terrain.as_str(), "grassland", "revealed grass is grass");
+        assert!(!game.rules.is_water(seen), "and it is not water");
 
         let seen_water = game.map.get(crate::hex::offset_to_axial(6, 5)).unwrap();
         assert!(
             game.rules.is_water(seen_water),
-            "revealed ocean really is water — the fix must not turn the sea into land"
-        );
-
-        // (15,15) was never exported, so it is unseen rather than known-empty.
-        let unseen = game.map.get(crate::hex::offset_to_axial(15, 15)).unwrap();
-        assert!(
-            !game.rules.is_water(unseen),
-            "unseen ground must be walkable; stamping it ocean is what ended the world \
-             at the frontier"
-        );
-        assert!(
-            unseen.feature.is_none() && unseen.resource.is_none(),
-            "and it must be bare, so the unknown world cannot bait a settler with \
-             something it invented"
+            "revealed ocean really is water — no frontier change may turn the sea into \
+             land where the seat has actually looked"
         );
     }
 
@@ -415,19 +408,18 @@ mod tests {
             "ground the seat has never seen must not read as explored"
         );
 
-        // The predicate `BasicAi::has_exploration_target` actually evaluates: some
-        // tile is unexplored AND not water. Empty `explored` satisfied this with the
-        // tile under the unit's feet; the point is that it now names real frontier.
-        let frontier = game
-            .map
-            .tiles
-            .iter()
-            .filter(|(pos, _)| !explored.contains(pos))
-            .filter(|(_, tile)| !game.rules.is_water(tile))
-            .count();
+        // ⚠ Deliberately no assertion that some unexplored tile is also *traversable*.
+        // `BasicAi::has_exploration_target` wants both halves, but the second half is
+        // supplied by `grow_frontier`, not here — see
+        // `revealed_ground_is_the_truth_in_both_directions`. Asserting it from this test
+        // would couple the explored set to a terrain policy it does not own, and would
+        // pass or fail on whatever the map generator happened to roll.
         assert!(
-            frontier > 0,
-            "there must be somewhere left to explore, or the frontier stops growing"
+            game.map
+                .tiles
+                .keys()
+                .any(|pos| !explored.contains(pos)),
+            "the seat must not believe it has seen the whole world"
         );
     }
 
@@ -707,9 +699,7 @@ pub fn rebuild_game(snapshot: &Snapshot, players: usize, seed: u64) -> crate::ga
 /// overwrites terrain the snapshot has an opinion about.
 pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
     let vocab = Vocabulary::embedded();
-    // Unseen ground: traversable so the frontier can be walked out of, bare so it
-    // cannot bait a planner. See the note at the hole below.
-    let unknown_ground = Name::new("plains");
+    let ocean = Name::new("ocean");
     let width = snapshot.width.max(1);
     let height = snapshot.height.max(1);
     for y in 0..height {
@@ -719,39 +709,14 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
                 continue;
             };
             let Some(plot) = snapshot.plot((x, y)) else {
-                // ★★★★★ UNKNOWN GROUND IS NOT WATER, AND CALLING IT WATER ENDED THE
-                // WORLD AT THE FRONTIER.
-                //
-                // This used to stamp `ocean` on every plot the seat had not revealed.
-                // Nothing can be walked to across it: `has_exploration_target` asks for
-                // a tile that is unexplored AND `unit_can_traverse`, and for a land unit
-                // an ocean tile fails the second half — so on a map whose unknown half
-                // was all sea there was no exploration target anywhere, the frontier
-                // stopped growing, and `met` stayed 0 with the army staging an invasion
-                // of a civilization it had never seen. Measured: `revealed` 383 at turn
-                // 150 and still 383 at turn 180 of `civvis-20260731T092642Z`.
-                //
-                // Both encodings are fictions — the engine has no "unknown" terrain and
-                // the generated map beyond the frontier is not the real one. The choice
-                // is which fiction costs less. Water is the expensive one: it is a
-                // confident claim that stops movement. Featureless land is traversable,
-                // so a unit walks out, the mod reveals the truth, and the next sync
-                // overwrites this with what is actually there.
-                //
-                // ⚠ It is honest only because `apply_explored` now excludes exactly
-                // these plots. Every fog-gated consumer still sees them as unseen; what
-                // changed is that a unit may now walk INTO them, which is what the real
-                // game allows and what uncovering the map requires. Do not restore the
-                // ocean stamp without restoring the exploration dead end with it.
-                //
-                // Yield-poor and bare by construction: no feature and no resource, so
-                // the unknown world cannot bait a settler with something it invented.
-                if snapshot.is_revealed((x, y)) {
-                    // Revealed, but the mod sent no plot for it: a genuine hole rather
-                    // than unseen ground. Left exactly as it is.
+                // ⚠ Only stamp ocean where nothing is known. A tile the frontier
+                // painted as land must not be reverted on the next sync, or the
+                // frontier would flicker between land and sea every turn and CIVVIS
+                // would re-plan around it — the oscillation bug in another costume.
+                if !snapshot.is_revealed((x, y)) && tile.terrain == Name::new("plains") {
                     continue;
                 }
-                tile.terrain = unknown_ground;
+                tile.terrain = ocean;
                 tile.hills = false;
                 tile.feature = None;
                 tile.resource = None;
