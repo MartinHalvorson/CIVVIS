@@ -927,6 +927,21 @@ where
     })
 }
 
+/// One district a city has placed, in OFFSET coordinates like everything the
+/// export sends.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateDistrict {
+    /// The Civilization VI type name, e.g. `DISTRICT_CAMPUS`.
+    #[serde(default, rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub x: i32,
+    #[serde(default)]
+    pub y: i32,
+    #[serde(default)]
+    pub pillaged: bool,
+}
+
 /// One city as Civilization VI reported it, in OFFSET coordinates.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateCity {
@@ -942,6 +957,20 @@ pub struct StateCity {
     /// Civ 6 building type names this city has already finished.
     #[serde(default)]
     pub buildings: Vec<String>,
+    /// Districts this city has placed, each with the plot it sits on.
+    ///
+    /// ★★★★★ The plot is why this exists. `Item::District` carries a `pos`, so
+    /// without one `civvis_production_item` had to refuse every district — and a
+    /// city BUILDING a district then read as idle, so CIVVIS re-decided the same
+    /// production every turn. Measured on run `civvis-20260731T163924Z`: 60
+    /// `DISTRICT_GOVERNMENT` orders between t46 and t128, all `applied: true`, on a
+    /// capital that still showed three buildings at t130.
+    ///
+    /// Empty when the export could not read the city's plots, which is the same
+    /// "could not ask" the Lua side leaves nil — not an assertion that there are
+    /// none.
+    #[serde(default)]
+    pub districts: Vec<StateDistrict>,
     /// What Civilization VI is CURRENTLY building here, by type name.
     ///
     /// ★★★★ Exported as a raw hash for the whole project (`producing:
@@ -1567,6 +1596,7 @@ pub fn refused_improve_sites(path: &std::path::Path) -> std::collections::BTreeS
 fn civvis_production_item(
     rules: &crate::rules::Rules,
     civ6: Option<&str>,
+    districts: &[StateDistrict],
 ) -> Option<crate::game::Item> {
     let civ6 = civ6?.trim();
     if civ6.is_empty() {
@@ -1580,6 +1610,30 @@ fn civvis_production_item(
     if let Some(name) = civvis_node_name(&rules.buildings, civ6, "BUILDING_") {
         return Some(crate::game::Item::Building {
             building: crate::name::Name::new(&name),
+        });
+    }
+    // ★★★★★ A DISTRICT, once the export says WHERE.
+    //
+    // This used to return None for every district on the honest grounds that
+    // `Item::District` needs a `pos` and inventing one would place a district on
+    // arbitrary ground. The consequence was worse than the guess it avoided: a city
+    // building a district read as IDLE, so CIVVIS re-decided its production every
+    // turn and ordered the same district again. Measured on run
+    // civvis-20260731T163924Z — 60 `DISTRICT_GOVERNMENT` orders between t46 and
+    // t128, every one answered `applied: true`, on a capital still showing three
+    // buildings at t130. Sixty of that run's ~91 build orders.
+    //
+    // Nothing is invented here: Civilization VI assigns the plot when the district
+    // is placed, and the export now carries it. Still None when the plot is absent,
+    // because refusing to guess was never the wrong half.
+    if let Some(name) = civvis_node_name(&rules.districts, civ6, "DISTRICT_") {
+        let plot = districts
+            .iter()
+            .find(|d| d.kind.eq_ignore_ascii_case(civ6))
+            .map(|d| crate::hex::offset_to_axial(d.x, d.y))?;
+        return Some(crate::game::Item::District {
+            district: crate::name::Name::new(&name),
+            pos: plot,
         });
     }
     None
@@ -1885,7 +1939,8 @@ pub fn rebuild_from_state(
                 // from scratch each turn with no knowledge of work in progress —
                 // which is what a run alternating Builder / Monument / Campus every
                 // second turn looks like from the inside.
-                if let Some(item) = civvis_production_item(&game_rules, city.producing.as_deref())
+                if let Some(item) =
+                    civvis_production_item(&game_rules, city.producing.as_deref(), &city.districts)
                 {
                     if built.queue.is_empty() {
                         built.queue.push(item);
@@ -2622,12 +2677,12 @@ mod host_fact_tests {
     #[test]
     fn civ6_production_names_become_civvis_queue_items() {
         let rules = crate::rules::Rules::shared();
-        let settler = civvis_production_item(&rules, Some("UNIT_SETTLER"));
+        let settler = civvis_production_item(&rules, Some("UNIT_SETTLER"), &[]);
         assert!(
             matches!(settler, Some(crate::game::Item::Unit { .. })),
             "UNIT_SETTLER should map to a CIVVIS unit build, got {settler:?}"
         );
-        let monument = civvis_production_item(&rules, Some("BUILDING_MONUMENT"));
+        let monument = civvis_production_item(&rules, Some("BUILDING_MONUMENT"), &[]);
         assert!(
             matches!(monument, Some(crate::game::Item::Building { .. })),
             "BUILDING_MONUMENT should map to a CIVVIS building, got {monument:?}"
@@ -2636,11 +2691,45 @@ mod host_fact_tests {
         // ⚠ Refusing to guess is the point. A wrong item tells CIVVIS a city is busy
         // with something it is not, which SUPPRESSES a real production decision —
         // worse than the repeated one this fixes.
-        assert!(civvis_production_item(&rules, Some("UNIT_NOT_A_REAL_THING")).is_none());
-        assert!(civvis_production_item(&rules, Some("")).is_none());
-        assert!(civvis_production_item(&rules, None).is_none());
-        // Districts carry a `pos` the export does not provide; inventing one would
-        // place a district on arbitrary ground.
-        assert!(civvis_production_item(&rules, Some("DISTRICT_CAMPUS")).is_none());
+        assert!(civvis_production_item(&rules, Some("UNIT_NOT_A_REAL_THING"), &[]).is_none());
+        assert!(civvis_production_item(&rules, Some(""), &[]).is_none());
+        assert!(civvis_production_item(&rules, None, &[]).is_none());
+        // A district still refuses when the export did not say WHERE — inventing a
+        // plot would place it on arbitrary ground, which is the one thing worse
+        // than repeating the order.
+        assert!(civvis_production_item(&rules, Some("DISTRICT_CAMPUS"), &[]).is_none());
+        // ...and resolves once the plot is carried, which is what stops a city
+        // building a district from reading as idle for sixty turns.
+        let campus = civvis_production_item(
+            &rules,
+            Some("DISTRICT_CAMPUS"),
+            &[StateDistrict {
+                kind: "DISTRICT_CAMPUS".into(),
+                x: 12,
+                y: 7,
+                pillaged: false,
+            }],
+        );
+        match campus {
+            // ⚠ AXIAL, not the offset the export sent. Mixing the two is this
+            // bridge's oldest trap and nothing complains, because both are pairs of
+            // small integers.
+            Some(crate::game::Item::District { pos, .. }) => {
+                assert_eq!(pos, crate::hex::offset_to_axial(12, 7));
+            }
+            other => panic!("a district with a plot should be an Item::District: {other:?}"),
+        }
+        // A plot for a DIFFERENT district does not answer for this one.
+        assert!(civvis_production_item(
+            &rules,
+            Some("DISTRICT_CAMPUS"),
+            &[StateDistrict {
+                kind: "DISTRICT_HOLY_SITE".into(),
+                x: 3,
+                y: 4,
+                pillaged: false,
+            }],
+        )
+        .is_none());
     }
 }
