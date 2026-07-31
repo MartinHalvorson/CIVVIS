@@ -1297,6 +1297,41 @@ impl AdvancedAi {
         self.settler_targets.get(&uid).copied()
     }
 
+    /// Forget unit-keyed memory in this agent and its baseline, keeping the plan.
+    ///
+    /// See [`BasicAi::forget_unit_memory`] for why: the board this agent mirrors has
+    /// its unit ids reassigned every turn, so anything keyed to one describes a
+    /// different unit than it did last turn.
+    pub fn forget_unit_memory(&mut self) {
+        self.base.forget_unit_memory();
+        self.settler_targets.clear();
+        self.builder_targets.clear();
+        self.force_groups.clear();
+        self.force_groups_dirty = true;
+    }
+
+    /// Carry unit-keyed memory across a rebuilt board. See
+    /// [`BasicAi::remap_unit_memory`] for why forgetting it is what makes settlers
+    /// wander and what makes the livelock detector unreachable in the Civ 6 bridge.
+    pub fn remap_unit_memory(&mut self, map: &BTreeMap<u32, u32>) {
+        self.base.remap_unit_memory(map);
+        let remap = |old: &BTreeMap<u32, Pos>| -> BTreeMap<u32, Pos> {
+            old.iter()
+                .filter_map(|(uid, value)| map.get(uid).map(|new| (*new, *value)))
+                .collect()
+        };
+        self.settler_targets = remap(&self.settler_targets);
+        self.builder_targets = remap(&self.builder_targets);
+        self.settler_stalls = self
+            .settler_stalls
+            .iter()
+            .filter_map(|(uid, stalls)| map.get(uid).map(|new| (*new, *stalls)))
+            .collect();
+        // Rebuilt from the board every turn regardless, so there is nothing to carry.
+        self.force_groups.clear();
+        self.force_groups_dirty = true;
+    }
+
     pub fn targeting(target: VictoryTarget) -> AdvancedAi {
         Self::configured(BasicAi::new(), true, Some(target))
     }
@@ -4102,7 +4137,7 @@ impl AdvancedAi {
                     .as_ref()
                     .is_none_or(|civic| g.players[pid].civics.contains(civic))
             })
-            .filter_map(|policy| policy.replaces.clone())
+            .flat_map(|policy| policy.replaces.iter().copied())
             .collect();
         let obsolete_active: Vec<Name> = g.players[pid]
             .policies
@@ -10375,13 +10410,40 @@ impl AdvancedAi {
             - liberation_value
     }
 
+    /// Rank settleable ground the way this agent would, for a caller outside the
+    /// engine.
+    ///
+    /// `civvis-advise` uses this to turn a mirrored Civilization VI board into a
+    /// settle plan the control mod can prefer. It is deliberately the SAME ranking
+    /// the agent settles by — a plan derived from a second, parallel notion of a good
+    /// site would be measuring something no CIVVIS game has ever played.
+    ///
+    /// ⚠ `from` and the returned positions are AXIAL, like everything else in the
+    /// engine. The Civilization VI export is OFFSET; convert at the boundary with
+    /// `hex::offset_to_axial`. Getting this wrong is silent — both are pairs of small
+    /// integers — and it cost this project a run that reported "no legal revealed
+    /// site" on a map with 323 revealed plots.
+    pub fn settle_ranking(
+        &self,
+        g: &Game,
+        pid: usize,
+        from: Pos,
+        radius: i32,
+    ) -> Vec<(Pos, f64)> {
+        self.settle_sites(g, pid, from, radius)
+    }
+
     fn settle_sites(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Vec<(Pos, f64)> {
         let mut sites = Vec::new();
         let distance_penalty = if radius > 12 { 0.45 } else { 0.9 };
         for pos in g.wdisk(from, radius) {
             let Some(tile) = g.map.get(pos) else { continue };
-            if g.rules.is_water(tile)
+            // A site the HOST engine refused is not settleable however good it looks;
+            // see `Game::blocked_city_sites`, which is empty in an ordinary game.
+            if g.blocked_city_sites.contains(&pos)
+                || g.rules.is_water(tile)
                 || !g.rules.is_passable(tile)
+                || g.tile_is_natural_wonder(tile)
                 || g.cities.values().any(|c| g.wdist(c.pos, pos) < 4)
                 || tile
                     .owner_city

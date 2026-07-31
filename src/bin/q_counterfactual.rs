@@ -9,8 +9,12 @@
 //! successful action prefix to the first move with a same-unit alternative,
 //! then branches the exact pre-action game. Every candidate starts with the
 //! same game, the same policy memory, and the same matched opponent doctrine.
-//! A resolved continuation returns 1/0; an unresolved one returns score share
-//! among living major civilizations, matching the shipped strategic search.
+//! In the default `score-share` mode, a resolved continuation returns 1/0 and
+//! an unresolved one returns score share among living major civilizations,
+//! matching the shipped strategic search. `--return-mode terminal` instead
+//! continues every branch through the game result and emits only 1/0 replica
+//! labels (whose CSV `return` is their mean); it fails closed if the turn cap
+//! does not decide a winner.
 //!
 //! The simulation is deterministic. Replicas therefore vary bounded opponent
 //! doctrines rather than pretending repeated identical continuations are
@@ -33,6 +37,31 @@ use std::fs;
 use std::io::Write as _;
 
 const DISCRIMINATING_SPREAD: f64 = 0.005;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ReturnMode {
+    ScoreShare,
+    Terminal,
+}
+
+impl ReturnMode {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "score-share" => Ok(Self::ScoreShare),
+            "terminal" => Ok(Self::Terminal),
+            _ => Err(format!(
+                "unknown return mode {value:?}; expected score-share or terminal"
+            )),
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::ScoreShare => "score-share",
+            Self::Terminal => "terminal",
+        }
+    }
+}
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
@@ -238,6 +267,7 @@ fn rollout(
     decision: &ObservedDecision,
     candidate: &Action,
     horizon: u32,
+    return_mode: ReturnMode,
     replica: usize,
 ) -> Result<BranchOutcome, String> {
     let mut sim = decision.game.clone();
@@ -258,7 +288,10 @@ fn rollout(
         fleet[player.id].reweight(doctrine.apply(&baseline));
     }
     let stop = sim.turn.saturating_add(horizon.max(1));
-    while sim.winner.is_none() && sim.turn < stop && sim.turn <= sim.max_turns {
+    while sim.winner.is_none()
+        && sim.turn <= sim.max_turns
+        && (return_mode == ReturnMode::Terminal || sim.turn < stop)
+    {
         let current = sim.current;
         fleet[current].take_turn(&mut sim, current);
         if sim.winner.is_none() && sim.current == current {
@@ -268,7 +301,13 @@ fn rollout(
     let value = match sim.winner {
         Some(winner) if winner == decision.seat => 1.0,
         Some(_) => 0.0,
-        None => score_share(&sim, decision.seat),
+        None if return_mode == ReturnMode::ScoreShare => score_share(&sim, decision.seat),
+        None => {
+            return Err(format!(
+                "game {} turn {} terminal return reached turn cap {} without a winner",
+                decision.game_id, decision.game.turn, sim.max_turns
+            ))
+        }
     };
     Ok(BranchOutcome {
         value,
@@ -307,7 +346,12 @@ fn write_row(out: &mut String, decision: &ObservedDecision, candidate: usize, re
     out.push('\n');
 }
 
-fn harvest_decision(decision: &ObservedDecision, horizon: u32, replicas: usize) -> DecisionHarvest {
+fn harvest_decision(
+    decision: &ObservedDecision,
+    horizon: u32,
+    return_mode: ReturnMode,
+    replicas: usize,
+) -> DecisionHarvest {
     let replicas = replicas.max(1);
     let mut outcomes = vec![vec![0.0; replicas]; decision.candidates.len()];
     let mut rows = String::new();
@@ -319,13 +363,13 @@ fn harvest_decision(decision: &ObservedDecision, horizon: u32, replicas: usize) 
         decision.candidates.iter().zip(&mut outcomes).enumerate()
     {
         for (replica, value) in returns.iter_mut().enumerate() {
-            match rollout(decision, candidate, horizon, replica) {
+            match rollout(decision, candidate, horizon, return_mode, replica) {
                 Ok(outcome) => {
                     *value = outcome.value;
                     branches += 1;
                     resolved += outcome.winner.is_some() as usize;
                     if candidate_index == 0 && replica == 0 {
-                        match rollout(decision, candidate, horizon, replica) {
+                        match rollout(decision, candidate, horizon, return_mode, replica) {
                             Ok(repeated) if repeated == outcome => {}
                             Ok(_) => nondeterministic += 1,
                             Err(_) => rejected += 1,
@@ -401,6 +445,7 @@ fn harvest_game(
     decisions: usize,
     alternatives: usize,
     horizon: u32,
+    return_mode: ReturnMode,
     replicas: usize,
 ) -> GameHarvest {
     let options = GameOptions {
@@ -426,7 +471,7 @@ fn harvest_game(
         }
         match observe_move(&game, &fleet, game_id, alternatives) {
             Ok(Some(decision)) => {
-                let measured = harvest_decision(&decision, horizon, replicas);
+                let measured = harvest_decision(&decision, horizon, return_mode, replicas);
                 harvest.rows.push_str(&measured.rows);
                 harvest.decisions.push(measured);
             }
@@ -473,6 +518,11 @@ fn main() {
     let decisions = number(&args, "--decisions-per-game", 1);
     let alternatives = number(&args, "--alternatives", 3);
     let horizon = number(&args, "--horizon", 80).max(1) as u32;
+    let return_mode = ReturnMode::parse(&text(&args, "--return-mode", "score-share"))
+        .unwrap_or_else(|error| {
+            eprintln!("q_counterfactual: {error}");
+            std::process::exit(2);
+        });
     let replicas = number(&args, "--replicas", Doctrine::ALL.len()).max(1);
     let seed = number(&args, "--seed", 940_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
@@ -486,7 +536,13 @@ fn main() {
     println!(
         "q_counterfactual: {games} games, {players}p {width}x{height}, {speed}, \
          warmup {warmup}, {decisions} decision(s)/game every {spacing} turns, \
-         {alternatives} alternatives, horizon {horizon}, {replicas} matched replicas, jobs {jobs}"
+         {alternatives} alternatives, return {}, {}, {replicas} matched replicas, jobs {jobs}",
+        return_mode.name(),
+        if return_mode == ReturnMode::Terminal {
+            "through the turn-cap result".to_string()
+        } else {
+            format!("horizon {horizon}")
+        }
     );
 
     let harvests = parallel::map(games, jobs, |index| {
@@ -505,6 +561,7 @@ fn main() {
             decisions,
             alternatives,
             horizon,
+            return_mode,
             replicas,
         )
     });
@@ -562,6 +619,12 @@ fn main() {
          {resolved}/{branches} branches resolved to a victory",
         100.0 * vote_share / samples.max(1) as f64
     );
+    if return_mode == ReturnMode::Terminal {
+        println!(
+            "terminal labels: {resolved}/{branches} continuations reached a game winner; \
+             every replica return is binary"
+        );
+    }
     println!(
         "integrity: {rejected} rejected candidate branches, {nondeterministic} repeated-branch mismatches, \
          {} observation errors",
@@ -587,7 +650,9 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{harvest_game, header, move_candidates, observe_move, rollout};
+    use super::{
+        harvest_game, header, move_candidates, observe_move, rollout, ObservedDecision, ReturnMode,
+    };
     use civvis::ai::{AdvancedAi, Ai};
     use civvis::game::{Action, Game};
 
@@ -597,6 +662,25 @@ mod tests {
             let candidates = move_candidates(&legal, chosen, 3, 7);
             (candidates.len() >= 2).then(|| (chosen.clone(), candidates))
         })
+    }
+
+    fn observed_move(game_id: u64, turns: u32) -> ObservedDecision {
+        let mut game = Game::new(3, 24, 16, game_id, turns, 0);
+        game.set_fog_memory(false);
+        let mut fleet = AdvancedAi::fleet(&game);
+        for _ in 0..8 {
+            if game.current == 0 {
+                if let Some(decision) = observe_move(&game, &fleet, game_id, 2).unwrap() {
+                    return decision;
+                }
+            }
+            let current = game.current;
+            fleet[current].take_turn(&mut game, current);
+            if game.winner.is_none() && game.current == current {
+                game.apply(current, &Action::EndTurn).unwrap();
+            }
+        }
+        panic!("AdvancedAi exposes a move choice")
     }
 
     #[test]
@@ -614,32 +698,73 @@ mod tests {
 
     #[test]
     fn an_observed_branch_repeats_exactly() {
-        let mut game = Game::new(3, 24, 16, 712, 40, 0);
-        game.set_fog_memory(false);
-        let mut fleet = AdvancedAi::fleet(&game);
-        let mut decision = None;
-        for _ in 0..8 {
-            if game.current == 0 {
-                decision = observe_move(&game, &fleet, 712, 2).unwrap();
-                if decision.is_some() {
-                    break;
-                }
-            }
-            let current = game.current;
-            fleet[current].take_turn(&mut game, current);
-            if game.winner.is_none() && game.current == current {
-                game.apply(current, &Action::EndTurn).unwrap();
-            }
-        }
-        let decision = decision.expect("AdvancedAi exposes a move choice");
-        let first = rollout(&decision, &decision.candidates[0], 3, 0).unwrap();
-        let second = rollout(&decision, &decision.candidates[0], 3, 0).unwrap();
+        let decision = observed_move(712, 40);
+        let first = rollout(
+            &decision,
+            &decision.candidates[0],
+            3,
+            ReturnMode::ScoreShare,
+            0,
+        )
+        .unwrap();
+        let second = rollout(
+            &decision,
+            &decision.candidates[0],
+            3,
+            ReturnMode::ScoreShare,
+            0,
+        )
+        .unwrap();
         assert_eq!(first, second);
     }
 
     #[test]
+    fn terminal_rollout_uses_a_binary_game_result_even_at_a_one_turn_horizon() {
+        let decision = observed_move(713, 16);
+        let outcome = rollout(
+            &decision,
+            &decision.candidates[0],
+            1,
+            ReturnMode::Terminal,
+            0,
+        )
+        .unwrap();
+        assert!(outcome.winner.is_some(), "terminal mode cannot use a proxy");
+        assert!(outcome.value == 0.0 || outcome.value == 1.0);
+        let expected = if outcome.winner == Some(decision.seat) {
+            1.0
+        } else {
+            0.0
+        };
+        assert_eq!(outcome.value, expected);
+    }
+
+    #[test]
+    fn return_mode_is_explicit_and_closed() {
+        assert_eq!(ReturnMode::parse("score-share"), Ok(ReturnMode::ScoreShare));
+        assert_eq!(ReturnMode::parse("terminal"), Ok(ReturnMode::Terminal));
+        assert!(ReturnMode::parse("score").is_err());
+    }
+
+    #[test]
     fn harvest_rows_match_the_declared_schema() {
-        let run = harvest_game(919, 0, 3, 24, 16, 40, 0, "standard", 3, 1, 1, 2, 2, 1);
+        let run = harvest_game(
+            919,
+            0,
+            3,
+            24,
+            16,
+            40,
+            0,
+            "standard",
+            3,
+            1,
+            1,
+            2,
+            2,
+            ReturnMode::ScoreShare,
+            1,
+        );
         assert!(run.errors.is_empty(), "{:?}", run.errors);
         assert!(!run.decisions.is_empty(), "pilot found no decision");
         let columns = header(1).trim_end().split(',').count();

@@ -84,6 +84,54 @@ This would be a useful accelerator — it would replace a three-minute restart
 per question with a round trip — but it is not required, and the sweep above is
 where a future attempt should resume rather than starting over.
 
+### ★★★★★ The inbound channel EXISTS: `DB.Query` can ATTACH a database we own
+
+⚠ THIS DOCUMENT USED TO SAY THERE WAS NO INBOUND CHANNEL, and that claim shaped the
+whole architecture — a settle plan baked in at install, and a hand-written Lua
+heuristic for every other decision. It is false.
+
+From the InGame gameplay context:
+
+```lua
+DB.Query("ATTACH DATABASE '/Users/martin/civvis-civ6-runs/orders.sqlite' AS civvis")
+DB.Query("SELECT turn, payload FROM civvis.orders WHERE id = 1")
+```
+
+Measured on run `sqlprobe-20260730T103836Z` over 29 turns: ATTACH returned no error and
+the SELECT returned **23 distinct payloads** tracking a nonce an outside process
+rewrote every second. The value FOLLOWED the external writer — that is the check that
+matters, not that the name resolves.
+
+So CIVVIS decides per turn and this mod actuates. See `tools/civ6_brain.py`,
+`src/bin/civvis_orders.rs`, and `tools/civ6_civvis_status.py` for the fires-check.
+
+**Measured DEAD on this build — do not spend time on these again:**
+
+- `ModUserData` — nil. Does not exist; zero hits in the shipped UI either.
+- `io`, `loadfile`, `dofile` — nil. The sandbox claim is real.
+- `UIManager` — exists, but only `SetClipboardString`. There is no getter, so the
+  clipboard is useless inbound.
+- `Options.GetAppOption` / `GetUserOption`, `GameConfiguration.GetValue`,
+  `UserConfiguration.GetValue` — all nil for a custom key, even with a `[Civvis]`
+  section written into `AppOptions.txt`/`UserOptions.txt` on disk.
+
+`tools/civ6_control/probe_channel.py` is the harness that found it: it writes a
+CHANGING nonce into every candidate sink, and the mod emits what each candidate
+answers. Existence is not a channel.
+
+⚠⚠ **The outbound leg drops its last line.** `Automation.Log` does not terminate its
+record — the log's final byte was `}` — and `watch.py` holds the unterminated tail as
+`partial`, so the most recent event is never delivered until the next one flushes it.
+Harmless while the mod only reports; fatal once it WAITS, because the last line written
+before the wait is the `state` export the brain must answer. Two runs deadlocked on
+turn 2 with the game spinning at 139% CPU. Fixed at the source with
+`Automation.Log(line .. "\n")`.
+
+⚠ And do not busy-wait on the channel from inside the mod:
+`GameCoreEventPublishComplete` fires thousands of times per turn, so a `DB.Query` per
+tick starves the very log flush the brain depends on. Poll every ~30 ticks, and count
+the wait in POLLS rather than ticks.
+
 ### The mod is the control channel
 
 Two Lua contexts, installed by `tools/civ6_control/install.py`:
@@ -298,6 +346,47 @@ frame rate a loaded machine was managing, not drift.
   turn instead. Operations and commands are looked up through
   `GameInfo.UnitOperations` / `GameInfo.UnitCommands` and their resolution is
   reported at startup.
+
+## The lobby a run sets up
+
+**The map size IS the player count.** There is no separate player-count control on
+the Create Game screen for the harness to set, and Civilization VI derives both the
+majors and the city-states from the size. Straight from the shipped `Maps` table
+(`Cache/DebugGameplay.sqlite`):
+
+| `MapSizeType` | `DefaultPlayers` | grid |
+|---|---|---|
+| `MAPSIZE_DUEL` | 2 | 44×26 |
+| `MAPSIZE_TINY` | 4 | 60×38 |
+| **`MAPSIZE_SMALL`** | **6** | **74×46** |
+| `MAPSIZE_STANDARD` | 8 | 84×54 |
+
+74×46 is also the board CIVVIS' own exhibition and league games run on, so a Small
+Civilization VI game and a CIVVIS game are the same size.
+
+`docs/COMPETITIVE.md` pins the competitive lobby CIVVIS aims at, and its size line
+is *"Firaxis-default map size and city-states for the player count"*. So a six-player
+game is `MAPSIZE_SMALL`, and that is the default for `civ6_play.py`,
+`civ6_civvis_climb.py` and `civ6_climb.py`. Duel and Tiny were measuring two- and
+four-player games against rules written for six.
+
+| setting | value | why |
+|---|---|---|
+| map size | `MAPSIZE_SMALL` | six majors, Firaxis-default city-states |
+| speed | `GAMESPEED_ONLINE` | the competitive lobby's speed |
+| start era | Ancient | the competitive lobby's start |
+| game modes | none | the competitive lobby disables all of them |
+
+⚠ **`MapScript` in the baked config is ignored** — the FrontEnd context that would
+read it never loads, so every game is whatever the Create Game screen defaults to.
+Selecting the map on-screen was tried and reverted; see the comment in
+`configure_and_start`.
+
+**None of this is assumed.** The `seat` event reports the difficulty, size, speed
+and player count the game actually generated, read from inside it, and `configured`
+is false unless they match what the run asked for — so a misclick on the setup
+screen shows up as a run that says so rather than as a Small result recorded under a
+Duel heading.
 
 ## The ladder
 

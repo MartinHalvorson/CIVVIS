@@ -2,7 +2,7 @@
   "schema_version": 3,
   "base_rating": 1500.0,
   "profile": {
-    "protocol_version": 2,
+    "protocol_version": 3,
     "rules_fingerprint": "fnv1a64:3423bd46da2b8cd7",
     "setup_contract": "base=civ6;era=0;difficulty=prince;barbarians=true;disasters=2;modes=none;leader-pool=civ6;civilizations=stock-fill;randomize-civs=false;human-seats=none;teams=free-for-all;victories=science+culture+religious+diplomatic+domination+score",
     "rating_anchor": "advanced_v1",
@@ -26,60 +26,60 @@
   },
   "players": [
     {
-      "player": "advanced-20260731",
-      "elo": 1570.5172122540362,
+      "player": "advanced-20260731-settlement",
+      "elo": 1614.9711243267784,
       "games": 40,
-      "wins": 27
+      "wins": 28
     },
     {
       "player": "advanced_v1",
       "elo": 1500.0,
       "games": 40,
-      "wins": 12
+      "wins": 11
     },
     {
-      "player": "basic-20260730",
-      "elo": 1355.1439762755815,
+      "player": "basic-20260731-settlement",
+      "elo": 1398.8956772878566,
       "games": 40,
       "wins": 1
     },
     {
       "player": "random-20260730",
-      "elo": 1167.7951551607196,
+      "elo": 1189.465111223462,
       "games": 40,
       "wins": 0
     }
   ],
   "ratings": [
     {
-      "player": "advanced-20260731",
+      "player": "advanced-20260731-settlement",
       "leader": "Cleopatra",
       "civilization": "Egypt",
-      "elo": 1489.6384181833305,
+      "elo": 1511.4645120001585,
       "games": 10,
       "wins": 8
     },
     {
-      "player": "advanced-20260731",
+      "player": "advanced-20260731-settlement",
       "leader": "Pericles",
       "civilization": "Greece",
-      "elo": 1466.7284608969678,
+      "elo": 1496.5752474849105,
       "games": 10,
       "wins": 6
     },
     {
-      "player": "advanced-20260731",
+      "player": "advanced-20260731-settlement",
       "leader": "Qin Shi Huang",
       "civilization": "China",
-      "elo": 1459.2655683618989,
+      "elo": 1500.473713323378,
       "games": 10,
-      "wins": 6
+      "wins": 7
     },
     {
-      "player": "advanced-20260731",
+      "player": "advanced-20260731-settlement",
       "leader": "Trajan",
       "civilization": "Rome",
-      "elo": 1479.5802948898847,
+      "elo": 1508.5453875966307,
       "games": 10,
       "wins": 7
     },
@@ -87,15 +87,15 @@
       "player": "advanced_v1",
       "leader": "Cleopatra",
       "civilization": "Egypt",
-      "elo": 1443.3945460408574,
+      "elo": 1457.437817677071,
       "games": 10,
-      "wins": 4
+      "wins": 3
     },
     {
       "player": "advanced_v1",
       "leader": "Pericles",
       "civilization": "Greece",
-      "elo": 1456.6089379068308,
+      "elo": 1477.0427155606897,
       "games": 10,
       "wins": 3
     },
@@ -103,7 +103,7 @@
       "player": "advanced_v1",
       "leader": "Qin Shi Huang",
       "civilization": "China",
-      "elo": 1432.7946046611378,
+      "elo": 1444.6142315084246,
       "games": 10,
       "wins": 1
     },
@@ -111,39 +111,39 @@
       "player": "advanced_v1",
       "leader": "Trajan",
       "civilization": "Rome",
-      "elo": 1458.2767114516491,
+      "elo": 1485.765768562468,
       "games": 10,
       "wins": 4
     },
     {
-      "player": "basic-20260730",
+      "player": "basic-20260731-settlement",
       "leader": "Cleopatra",
       "civilization": "Egypt",
-      "elo": 1369.589329859188,
+      "elo": 1401.3696536656932,
       "games": 10,
       "wins": 0
     },
     {
-      "player": "basic-20260730",
+      "player": "basic-20260731-settlement",
       "leader": "Pericles",
       "civilization": "Greece",
-      "elo": 1383.224418210045,
+      "elo": 1418.056178216296,
       "games": 10,
       "wins": 0
     },
     {
-      "player": "basic-20260730",
+      "player": "basic-20260731-settlement",
       "leader": "Qin Shi Huang",
       "civilization": "China",
-      "elo": 1372.035953708058,
+      "elo": 1397.9490985500847,
       "games": 10,
       "wins": 0
     },
     {
-      "player": "basic-20260730",
+      "player": "basic-20260731-settlement",
       "leader": "Trajan",
       "civilization": "Rome",
-      "elo": 1386.2576965090673,
+      "elo": 1434.9732178828606,
       "games": 10,
       "wins": 1
     },
@@ -151,7 +151,7 @@
       "player": "random-20260730",
       "leader": "Cleopatra",
       "civilization": "Egypt",
-      "elo": 1285.231157185564,
+      "elo": 1319.7947111306898,
       "games": 10,
       "wins": 0
     },
@@ -159,7 +159,7 @@
       "player": "random-20260730",
       "leader": "Pericles",
       "civilization": "Greece",
-      "elo": 1284.7656243368033,
+      "elo": 1312.279951446653,
       "games": 10,
       "wins": 0
     },
@@ -167,7 +167,7 @@
       "player": "random-20260730",
       "leader": "Qin Shi Huang",
       "civilization": "China",
-      "elo": 1298.8618414825307,
+      "elo": 1319.6212431250246,
       "games": 10,
       "wins": 0
     },
@@ -175,7 +175,7 @@
       "player": "random-20260730",
       "leader": "Trajan",
       "civilization": "Rome",
-      "elo": 1307.5718110775356,
+      "elo": 1327.364203621352,
       "games": 10,
       "wins": 0
     }
@@ -183,7 +183,7 @@
   "history_complete": true,
   "games": [
     {
-      "id": "v2:00000000000000000000:0000000000:00000000000000000000:15:random-20260730|11:advanced_v1|14:basic-20260730|17:advanced-20260731",
+      "id": "v3:00000000000000000000:0000000000:00000000000000000000:15:random-20260730|11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement",
       "players": [
         {
           "key": {
@@ -205,7 +205,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
@@ -214,7 +214,7 @@
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
@@ -225,7 +225,7 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000001:00000000000000000001:11:advanced_v1|14:basic-20260730|17:advanced-20260731|15:random-20260730",
+      "id": "v3:00000000000000000000:0000000001:00000000000000000001:11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730",
       "players": [
         {
           "key": {
@@ -233,25 +233,25 @@
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 1044,
+          "score": 1088,
           "won": true
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 463,
+          "score": 524,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 555,
+          "score": 434,
           "won": false
         },
         {
@@ -260,18 +260,18 @@
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 62,
+          "score": 52,
           "won": false
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000002:00000000000000000002:14:basic-20260730|17:advanced-20260731|15:random-20260730|11:advanced_v1",
+      "id": "v3:00000000000000000000:0000000002:00000000000000000002:25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1",
       "players": [
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
@@ -280,7 +280,7 @@
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
@@ -309,11 +309,11 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000003:00000000000000000003:17:advanced-20260731|15:random-20260730|11:advanced_v1|14:basic-20260730",
+      "id": "v3:00000000000000000000:0000000003:00000000000000000003:28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1|25:basic-20260731-settlement",
       "players": [
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
@@ -340,7 +340,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
@@ -351,7 +351,7 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000004:00000000000000000004:15:random-20260730|11:advanced_v1|14:basic-20260730|17:advanced-20260731",
+      "id": "v3:00000000000000000000:0000000004:00000000000000000004:15:random-20260730|11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement",
       "players": [
         {
           "key": {
@@ -373,7 +373,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
@@ -382,7 +382,7 @@
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
@@ -393,7 +393,7 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000005:00000000000000000005:11:advanced_v1|14:basic-20260730|17:advanced-20260731|15:random-20260730",
+      "id": "v3:00000000000000000000:0000000005:00000000000000000005:11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730",
       "players": [
         {
           "key": {
@@ -406,7 +406,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
@@ -415,7 +415,7 @@
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
@@ -435,11 +435,11 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000006:00000000000000000006:14:basic-20260730|17:advanced-20260731|15:random-20260730|11:advanced_v1",
+      "id": "v3:00000000000000000000:0000000006:00000000000000000006:25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1",
       "players": [
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
@@ -448,7 +448,7 @@
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
@@ -477,15 +477,15 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000007:00000000000000000007:17:advanced-20260731|15:random-20260730|11:advanced_v1|14:basic-20260730",
+      "id": "v3:00000000000000000000:0000000007:00000000000000000007:28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1|25:basic-20260731-settlement",
       "players": [
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 394,
+          "score": 606,
           "won": true
         },
         {
@@ -494,7 +494,7 @@
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 42,
+          "score": 40,
           "won": false
         },
         {
@@ -503,23 +503,23 @@
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 348,
+          "score": 550,
           "won": false
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 276,
+          "score": 409,
           "won": false
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000008:00000000000000000008:15:random-20260730|11:advanced_v1|14:basic-20260730|17:advanced-20260731",
+      "id": "v3:00000000000000000000:0000000008:00000000000000000008:15:random-20260730|11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement",
       "players": [
         {
           "key": {
@@ -527,7 +527,7 @@
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 49,
+          "score": 50,
           "won": false
         },
         {
@@ -536,32 +536,32 @@
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 374,
+          "score": 300,
           "won": false
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 311,
+          "score": 362,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 428,
+          "score": 354,
           "won": true
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000009:00000000000000000009:11:advanced_v1|14:basic-20260730|17:advanced-20260731|15:random-20260730",
+      "id": "v3:00000000000000000000:0000000009:00000000000000000009:11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730",
       "players": [
         {
           "key": {
@@ -569,25 +569,25 @@
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 384,
+          "score": 335,
           "won": false
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 225,
+          "score": 228,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 279,
+          "score": 293,
           "won": true
         },
         {
@@ -595,108 +595,108 @@
             "player": "random-20260730",
             "leader": "Qin Shi Huang",
             "civilization": "China"
+          },
+          "score": 44,
+          "won": false
+        }
+      ],
+      "k": 24.0
+    },
+    {
+      "id": "v3:00000000000000000000:0000000010:00000000000000000010:25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1",
+      "players": [
+        {
+          "key": {
+            "player": "basic-20260731-settlement",
+            "leader": "Trajan",
+            "civilization": "Rome"
+          },
+          "score": 373,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "advanced-20260731-settlement",
+            "leader": "Cleopatra",
+            "civilization": "Egypt"
+          },
+          "score": 302,
+          "won": true
+        },
+        {
+          "key": {
+            "player": "random-20260730",
+            "leader": "Pericles",
+            "civilization": "Greece"
+          },
+          "score": 22,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "advanced_v1",
+            "leader": "Qin Shi Huang",
+            "civilization": "China"
+          },
+          "score": 545,
+          "won": false
+        }
+      ],
+      "k": 24.0
+    },
+    {
+      "id": "v3:00000000000000000000:0000000011:00000000000000000011:28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1|25:basic-20260731-settlement",
+      "players": [
+        {
+          "key": {
+            "player": "advanced-20260731-settlement",
+            "leader": "Trajan",
+            "civilization": "Rome"
+          },
+          "score": 510,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "random-20260730",
+            "leader": "Cleopatra",
+            "civilization": "Egypt"
+          },
+          "score": 139,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "advanced_v1",
+            "leader": "Pericles",
+            "civilization": "Greece"
+          },
+          "score": 299,
+          "won": true
+        },
+        {
+          "key": {
+            "player": "basic-20260731-settlement",
+            "leader": "Qin Shi Huang",
+            "civilization": "China"
+          },
+          "score": 448,
+          "won": false
+        }
+      ],
+      "k": 24.0
+    },
+    {
+      "id": "v3:00000000000000000000:0000000012:00000000000000000012:15:random-20260730|11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement",
+      "players": [
+        {
+          "key": {
+            "player": "random-20260730",
+            "leader": "Trajan",
+            "civilization": "Rome"
           },
           "score": 29,
           "won": false
-        }
-      ],
-      "k": 24.0
-    },
-    {
-      "id": "v2:00000000000000000000:0000000010:00000000000000000010:14:basic-20260730|17:advanced-20260731|15:random-20260730|11:advanced_v1",
-      "players": [
-        {
-          "key": {
-            "player": "basic-20260730",
-            "leader": "Trajan",
-            "civilization": "Rome"
-          },
-          "score": 516,
-          "won": true
-        },
-        {
-          "key": {
-            "player": "advanced-20260731",
-            "leader": "Cleopatra",
-            "civilization": "Egypt"
-          },
-          "score": 428,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "random-20260730",
-            "leader": "Pericles",
-            "civilization": "Greece"
-          },
-          "score": 25,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "advanced_v1",
-            "leader": "Qin Shi Huang",
-            "civilization": "China"
-          },
-          "score": 754,
-          "won": false
-        }
-      ],
-      "k": 24.0
-    },
-    {
-      "id": "v2:00000000000000000000:0000000011:00000000000000000011:17:advanced-20260731|15:random-20260730|11:advanced_v1|14:basic-20260730",
-      "players": [
-        {
-          "key": {
-            "player": "advanced-20260731",
-            "leader": "Trajan",
-            "civilization": "Rome"
-          },
-          "score": 588,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "random-20260730",
-            "leader": "Cleopatra",
-            "civilization": "Egypt"
-          },
-          "score": 70,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "advanced_v1",
-            "leader": "Pericles",
-            "civilization": "Greece"
-          },
-          "score": 390,
-          "won": true
-        },
-        {
-          "key": {
-            "player": "basic-20260730",
-            "leader": "Qin Shi Huang",
-            "civilization": "China"
-          },
-          "score": 492,
-          "won": false
-        }
-      ],
-      "k": 24.0
-    },
-    {
-      "id": "v2:00000000000000000000:0000000012:00000000000000000012:15:random-20260730|11:advanced_v1|14:basic-20260730|17:advanced-20260731",
-      "players": [
-        {
-          "key": {
-            "player": "random-20260730",
-            "leader": "Trajan",
-            "civilization": "Rome"
-          },
-          "score": 34,
-          "won": false
         },
         {
           "key": {
@@ -704,32 +704,32 @@
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 610,
+          "score": 809,
           "won": true
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 75,
+          "score": 63,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 70,
+          "score": 140,
           "won": false
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000013:00000000000000000013:11:advanced_v1|14:basic-20260730|17:advanced-20260731|15:random-20260730",
+      "id": "v3:00000000000000000000:0000000013:00000000000000000013:11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730",
       "players": [
         {
           "key": {
@@ -742,7 +742,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
@@ -751,7 +751,7 @@
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
@@ -771,25 +771,25 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000014:00000000000000000014:14:basic-20260730|17:advanced-20260731|15:random-20260730|11:advanced_v1",
+      "id": "v3:00000000000000000000:0000000014:00000000000000000014:25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1",
       "players": [
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 196,
-          "won": false
+          "score": 384,
+          "won": true
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 395,
-          "won": true
+          "score": 677,
+          "won": false
         },
         {
           "key": {
@@ -797,7 +797,7 @@
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 36,
+          "score": 40,
           "won": false
         },
         {
@@ -806,18 +806,18 @@
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 362,
+          "score": 818,
           "won": false
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000015:00000000000000000015:17:advanced-20260731|15:random-20260730|11:advanced_v1|14:basic-20260730",
+      "id": "v3:00000000000000000000:0000000015:00000000000000000015:28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1|25:basic-20260731-settlement",
       "players": [
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
@@ -844,7 +844,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
@@ -855,7 +855,7 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000016:00000000000000000016:15:random-20260730|11:advanced_v1|14:basic-20260730|17:advanced-20260731",
+      "id": "v3:00000000000000000000:0000000016:00000000000000000016:15:random-20260730|11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement",
       "players": [
         {
           "key": {
@@ -877,7 +877,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
@@ -886,7 +886,7 @@
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
@@ -897,7 +897,7 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000017:00000000000000000017:11:advanced_v1|14:basic-20260730|17:advanced-20260731|15:random-20260730",
+      "id": "v3:00000000000000000000:0000000017:00000000000000000017:11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730",
       "players": [
         {
           "key": {
@@ -910,7 +910,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
@@ -919,7 +919,7 @@
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
@@ -939,11 +939,11 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000018:00000000000000000018:14:basic-20260730|17:advanced-20260731|15:random-20260730|11:advanced_v1",
+      "id": "v3:00000000000000000000:0000000018:00000000000000000018:25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1",
       "players": [
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
@@ -952,7 +952,7 @@
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
@@ -981,15 +981,15 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000019:00000000000000000019:17:advanced-20260731|15:random-20260730|11:advanced_v1|14:basic-20260730",
+      "id": "v3:00000000000000000000:0000000019:00000000000000000019:28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1|25:basic-20260731-settlement",
       "players": [
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 145,
+          "score": 555,
           "won": false
         },
         {
@@ -998,7 +998,7 @@
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 34,
+          "score": 39,
           "won": false
         },
         {
@@ -1007,23 +1007,23 @@
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 1503,
+          "score": 878,
           "won": true
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 376,
+          "score": 360,
           "won": false
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000020:00000000000000000020:15:random-20260730|11:advanced_v1|14:basic-20260730|17:advanced-20260731",
+      "id": "v3:00000000000000000000:0000000020:00000000000000000020:15:random-20260730|11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement",
       "players": [
         {
           "key": {
@@ -1045,7 +1045,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
@@ -1054,7 +1054,7 @@
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
@@ -1065,7 +1065,7 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000021:00000000000000000021:11:advanced_v1|14:basic-20260730|17:advanced-20260731|15:random-20260730",
+      "id": "v3:00000000000000000000:0000000021:00000000000000000021:11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730",
       "players": [
         {
           "key": {
@@ -1073,25 +1073,25 @@
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 1197,
+          "score": 302,
           "won": false
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 59,
+          "score": 122,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 972,
+          "score": 249,
           "won": true
         },
         {
@@ -1100,31 +1100,31 @@
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 68,
+          "score": 70,
           "won": false
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000022:00000000000000000022:14:basic-20260730|17:advanced-20260731|15:random-20260730|11:advanced_v1",
+      "id": "v3:00000000000000000000:0000000022:00000000000000000022:25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1",
       "players": [
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 409,
+          "score": 428,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 333,
+          "score": 391,
           "won": true
         },
         {
@@ -1133,7 +1133,7 @@
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 110,
+          "score": 92,
           "won": false
         },
         {
@@ -1142,18 +1142,18 @@
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 220,
+          "score": 234,
           "won": false
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000023:00000000000000000023:17:advanced-20260731|15:random-20260730|11:advanced_v1|14:basic-20260730",
+      "id": "v3:00000000000000000000:0000000023:00000000000000000023:28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1|25:basic-20260731-settlement",
       "players": [
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
@@ -1180,7 +1180,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
@@ -1191,7 +1191,7 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000024:00000000000000000024:15:random-20260730|11:advanced_v1|14:basic-20260730|17:advanced-20260731",
+      "id": "v3:00000000000000000000:0000000024:00000000000000000024:15:random-20260730|11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement",
       "players": [
         {
           "key": {
@@ -1213,7 +1213,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
@@ -1222,7 +1222,7 @@
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
@@ -1233,7 +1233,7 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000025:00000000000000000025:11:advanced_v1|14:basic-20260730|17:advanced-20260731|15:random-20260730",
+      "id": "v3:00000000000000000000:0000000025:00000000000000000025:11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730",
       "players": [
         {
           "key": {
@@ -1241,25 +1241,25 @@
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 836,
+          "score": 759,
           "won": false
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 389,
+          "score": 383,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 655,
+          "score": 804,
           "won": true
         },
         {
@@ -1275,24 +1275,24 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000026:00000000000000000026:14:basic-20260730|17:advanced-20260731|15:random-20260730|11:advanced_v1",
+      "id": "v3:00000000000000000000:0000000026:00000000000000000026:25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1",
       "players": [
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 497,
+          "score": 553,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 511,
+          "score": 482,
           "won": true
         },
         {
@@ -1301,7 +1301,7 @@
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 91,
+          "score": 80,
           "won": false
         },
         {
@@ -1310,22 +1310,22 @@
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 800,
+          "score": 579,
           "won": false
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000027:00000000000000000027:17:advanced-20260731|15:random-20260730|11:advanced_v1|14:basic-20260730",
+      "id": "v3:00000000000000000000:0000000027:00000000000000000027:28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1|25:basic-20260731-settlement",
       "players": [
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 530,
+          "score": 495,
           "won": true
         },
         {
@@ -1334,7 +1334,7 @@
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 78,
+          "score": 96,
           "won": false
         },
         {
@@ -1343,91 +1343,91 @@
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 123,
+          "score": 85,
           "won": false
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
-          },
-          "score": 170,
-          "won": false
-        }
-      ],
-      "k": 24.0
-    },
-    {
-      "id": "v2:00000000000000000000:0000000028:00000000000000000028:15:random-20260730|11:advanced_v1|14:basic-20260730|17:advanced-20260731",
-      "players": [
-        {
-          "key": {
-            "player": "random-20260730",
-            "leader": "Trajan",
-            "civilization": "Rome"
-          },
-          "score": 37,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "advanced_v1",
-            "leader": "Cleopatra",
-            "civilization": "Egypt"
-          },
-          "score": 222,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "basic-20260730",
-            "leader": "Pericles",
-            "civilization": "Greece"
-          },
-          "score": 346,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "advanced-20260731",
-            "leader": "Qin Shi Huang",
-            "civilization": "China"
-          },
-          "score": 442,
-          "won": true
-        }
-      ],
-      "k": 24.0
-    },
-    {
-      "id": "v2:00000000000000000000:0000000029:00000000000000000029:11:advanced_v1|14:basic-20260730|17:advanced-20260731|15:random-20260730",
-      "players": [
-        {
-          "key": {
-            "player": "advanced_v1",
-            "leader": "Trajan",
-            "civilization": "Rome"
-          },
-          "score": 324,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "basic-20260730",
-            "leader": "Cleopatra",
-            "civilization": "Egypt"
           },
           "score": 165,
           "won": false
+        }
+      ],
+      "k": 24.0
+    },
+    {
+      "id": "v3:00000000000000000000:0000000028:00000000000000000028:15:random-20260730|11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement",
+      "players": [
+        {
+          "key": {
+            "player": "random-20260730",
+            "leader": "Trajan",
+            "civilization": "Rome"
+          },
+          "score": 43,
+          "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced_v1",
+            "leader": "Cleopatra",
+            "civilization": "Egypt"
+          },
+          "score": 202,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "basic-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 312,
+          "score": 397,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "advanced-20260731-settlement",
+            "leader": "Qin Shi Huang",
+            "civilization": "China"
+          },
+          "score": 476,
+          "won": true
+        }
+      ],
+      "k": 24.0
+    },
+    {
+      "id": "v3:00000000000000000000:0000000029:00000000000000000029:11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730",
+      "players": [
+        {
+          "key": {
+            "player": "advanced_v1",
+            "leader": "Trajan",
+            "civilization": "Rome"
+          },
+          "score": 280,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "basic-20260731-settlement",
+            "leader": "Cleopatra",
+            "civilization": "Egypt"
+          },
+          "score": 157,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "advanced-20260731-settlement",
+            "leader": "Pericles",
+            "civilization": "Greece"
+          },
+          "score": 258,
           "won": true
         },
         {
@@ -1436,31 +1436,31 @@
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 24,
+          "score": 31,
           "won": false
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000030:00000000000000000030:14:basic-20260730|17:advanced-20260731|15:random-20260730|11:advanced_v1",
+      "id": "v3:00000000000000000000:0000000030:00000000000000000030:25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1",
       "players": [
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 320,
+          "score": 240,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 332,
+          "score": 356,
           "won": true
         },
         {
@@ -1469,7 +1469,7 @@
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 104,
+          "score": 68,
           "won": false
         },
         {
@@ -1478,18 +1478,18 @@
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 197,
+          "score": 201,
           "won": false
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000031:00000000000000000031:17:advanced-20260731|15:random-20260730|11:advanced_v1|14:basic-20260730",
+      "id": "v3:00000000000000000000:0000000031:00000000000000000031:28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1|25:basic-20260731-settlement",
       "players": [
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
@@ -1516,7 +1516,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
@@ -1527,7 +1527,7 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000032:00000000000000000032:15:random-20260730|11:advanced_v1|14:basic-20260730|17:advanced-20260731",
+      "id": "v3:00000000000000000000:0000000032:00000000000000000032:15:random-20260730|11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement",
       "players": [
         {
           "key": {
@@ -1535,7 +1535,7 @@
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 35,
+          "score": 25,
           "won": false
         },
         {
@@ -1544,32 +1544,32 @@
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 531,
-          "won": true
+          "score": 638,
+          "won": false
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 34,
+          "score": 391,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 125,
-          "won": false
+          "score": 519,
+          "won": true
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000033:00000000000000000033:11:advanced_v1|14:basic-20260730|17:advanced-20260731|15:random-20260730",
+      "id": "v3:00000000000000000000:0000000033:00000000000000000033:11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730",
       "players": [
         {
           "key": {
@@ -1577,25 +1577,25 @@
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 515,
+          "score": 1017,
           "won": true
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 216,
+          "score": 161,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 140,
+          "score": 1086,
           "won": false
         },
         {
@@ -1604,140 +1604,140 @@
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 34,
+          "score": 42,
           "won": false
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000034:00000000000000000034:14:basic-20260730|17:advanced-20260731|15:random-20260730|11:advanced_v1",
+      "id": "v3:00000000000000000000:0000000034:00000000000000000034:25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1",
       "players": [
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
+          },
+          "score": 359,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "advanced-20260731-settlement",
+            "leader": "Cleopatra",
+            "civilization": "Egypt"
+          },
+          "score": 540,
+          "won": true
+        },
+        {
+          "key": {
+            "player": "random-20260730",
+            "leader": "Pericles",
+            "civilization": "Greece"
+          },
+          "score": 42,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "advanced_v1",
+            "leader": "Qin Shi Huang",
+            "civilization": "China"
+          },
+          "score": 304,
+          "won": false
+        }
+      ],
+      "k": 24.0
+    },
+    {
+      "id": "v3:00000000000000000000:0000000035:00000000000000000035:28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1|25:basic-20260731-settlement",
+      "players": [
+        {
+          "key": {
+            "player": "advanced-20260731-settlement",
+            "leader": "Trajan",
+            "civilization": "Rome"
+          },
+          "score": 344,
+          "won": true
+        },
+        {
+          "key": {
+            "player": "random-20260730",
+            "leader": "Cleopatra",
+            "civilization": "Egypt"
+          },
+          "score": 108,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "advanced_v1",
+            "leader": "Pericles",
+            "civilization": "Greece"
+          },
+          "score": 122,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "basic-20260731-settlement",
+            "leader": "Qin Shi Huang",
+            "civilization": "China"
+          },
+          "score": 66,
+          "won": false
+        }
+      ],
+      "k": 24.0
+    },
+    {
+      "id": "v3:00000000000000000000:0000000036:00000000000000000036:15:random-20260730|11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement",
+      "players": [
+        {
+          "key": {
+            "player": "random-20260730",
+            "leader": "Trajan",
+            "civilization": "Rome"
+          },
+          "score": 51,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "advanced_v1",
+            "leader": "Cleopatra",
+            "civilization": "Egypt"
+          },
+          "score": 450,
+          "won": false
+        },
+        {
+          "key": {
+            "player": "basic-20260731-settlement",
+            "leader": "Pericles",
+            "civilization": "Greece"
           },
           "score": 331,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
-            "leader": "Cleopatra",
-            "civilization": "Egypt"
-          },
-          "score": 492,
-          "won": true
-        },
-        {
-          "key": {
-            "player": "random-20260730",
-            "leader": "Pericles",
-            "civilization": "Greece"
-          },
-          "score": 40,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "advanced_v1",
+            "player": "advanced-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 397,
-          "won": false
-        }
-      ],
-      "k": 24.0
-    },
-    {
-      "id": "v2:00000000000000000000:0000000035:00000000000000000035:17:advanced-20260731|15:random-20260730|11:advanced_v1|14:basic-20260730",
-      "players": [
-        {
-          "key": {
-            "player": "advanced-20260731",
-            "leader": "Trajan",
-            "civilization": "Rome"
-          },
-          "score": 554,
-          "won": true
-        },
-        {
-          "key": {
-            "player": "random-20260730",
-            "leader": "Cleopatra",
-            "civilization": "Egypt"
-          },
-          "score": 139,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "advanced_v1",
-            "leader": "Pericles",
-            "civilization": "Greece"
-          },
-          "score": 197,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "basic-20260730",
-            "leader": "Qin Shi Huang",
-            "civilization": "China"
-          },
-          "score": 111,
-          "won": false
-        }
-      ],
-      "k": 24.0
-    },
-    {
-      "id": "v2:00000000000000000000:0000000036:00000000000000000036:15:random-20260730|11:advanced_v1|14:basic-20260730|17:advanced-20260731",
-      "players": [
-        {
-          "key": {
-            "player": "random-20260730",
-            "leader": "Trajan",
-            "civilization": "Rome"
-          },
-          "score": 65,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "advanced_v1",
-            "leader": "Cleopatra",
-            "civilization": "Egypt"
-          },
-          "score": 437,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "basic-20260730",
-            "leader": "Pericles",
-            "civilization": "Greece"
-          },
-          "score": 370,
-          "won": false
-        },
-        {
-          "key": {
-            "player": "advanced-20260731",
-            "leader": "Qin Shi Huang",
-            "civilization": "China"
-          },
-          "score": 575,
+          "score": 493,
           "won": true
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000037:00000000000000000037:11:advanced_v1|14:basic-20260730|17:advanced-20260731|15:random-20260730",
+      "id": "v3:00000000000000000000:0000000037:00000000000000000037:11:advanced_v1|25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730",
       "players": [
         {
           "key": {
@@ -1750,7 +1750,7 @@
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
@@ -1759,7 +1759,7 @@
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Pericles",
             "civilization": "Greece"
           },
@@ -1779,24 +1779,24 @@
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000038:00000000000000000038:14:basic-20260730|17:advanced-20260731|15:random-20260730|11:advanced_v1",
+      "id": "v3:00000000000000000000:0000000038:00000000000000000038:25:basic-20260731-settlement|28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1",
       "players": [
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 345,
+          "score": 427,
           "won": false
         },
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 326,
+          "score": 355,
           "won": true
         },
         {
@@ -1805,7 +1805,7 @@
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 42,
+          "score": 38,
           "won": false
         },
         {
@@ -1814,22 +1814,22 @@
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 349,
+          "score": 375,
           "won": false
         }
       ],
       "k": 24.0
     },
     {
-      "id": "v2:00000000000000000000:0000000039:00000000000000000039:17:advanced-20260731|15:random-20260730|11:advanced_v1|14:basic-20260730",
+      "id": "v3:00000000000000000000:0000000039:00000000000000000039:28:advanced-20260731-settlement|15:random-20260730|11:advanced_v1|25:basic-20260731-settlement",
       "players": [
         {
           "key": {
-            "player": "advanced-20260731",
+            "player": "advanced-20260731-settlement",
             "leader": "Trajan",
             "civilization": "Rome"
           },
-          "score": 83,
+          "score": 93,
           "won": false
         },
         {
@@ -1838,7 +1838,7 @@
             "leader": "Cleopatra",
             "civilization": "Egypt"
           },
-          "score": 60,
+          "score": 64,
           "won": false
         },
         {
@@ -1847,16 +1847,16 @@
             "leader": "Pericles",
             "civilization": "Greece"
           },
-          "score": 498,
+          "score": 651,
           "won": true
         },
         {
           "key": {
-            "player": "basic-20260730",
+            "player": "basic-20260731-settlement",
             "leader": "Qin Shi Huang",
             "civilization": "China"
           },
-          "score": 163,
+          "score": 249,
           "won": false
         }
       ],

@@ -22,7 +22,25 @@ const NOMINAL_TURNS: u32 = 250;
 const OBSERVE_THROUGH: u32 = 320;
 const FROZEN_AI: &str = "advanced_evolved";
 const FROZEN_CHAMPION_GENERATION: u32 = 14;
-const FROZEN_CHAMPION_FNV1A: u64 = 0x40b1_fbb2_a5b8_8bc6;
+/// Fingerprint of `data/evolved/best.json`, re-pinned 2026-07-31.
+///
+/// The Spaceport preregistration froze `advanced_evolved` so its screens
+/// stayed interpretable, and it reached its own **STOP**: the registered
+/// result retains stock `AdvancedAi`, the primary endpoint moved
+/// +0.117 points per map against a required +0.5 at `p = 1.0000`, and seed
+/// 9,984,000 and the whole 120-map holdout were left unopened by protocol.
+/// Those numbers were measured on the gen-14 champion as it stood then and
+/// this re-pin does not revise them.
+///
+/// The champion has since been replaced deliberately — the same genome with
+/// `docs/GENOME.md`'s eleven economy and expansion genes reverted to
+/// `Weights::default()`, promoted on three `ai_eval --matrix` runs at 300 maps
+/// per profile, all `PASS`. See `docs/EVAL.md`.
+///
+/// ⚠ Any future run of this evaluator is therefore on a different agent than
+/// the registered one, and a new number must say which champion it ran
+/// against. The reserved holdout was closed by the STOP, not by this change.
+const FROZEN_CHAMPION_FNV1A: u64 = 0x31cd_12c3_a1ba_5302;
 const EMBEDDED_CHAMPION: &str = include_str!("../../data/evolved/best.json");
 const DEPLOYMENT_PLAYERS: [usize; 7] = [4, 6, 8, 10, 5, 7, 9];
 const DEPLOYMENT_SCRIPTS: [MapScript; 9] = [
