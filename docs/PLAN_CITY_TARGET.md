@@ -53,9 +53,10 @@ number that decides is the one that knows least about the map.
 
 The champion's value sits *below the opening floor of three*. It was bred at
 4p 24×16 = 96 tiles per player; the promotion gate's deployment profile is
-6p 74×46 = 567 tiles per player. `docs/AI_GAPS.md` §5 records that champion as
-**+58 and PASS on the profile it was bred on, and −9, inconclusive, at
-deployment**.
+6p 74×46 = 567 tiles per player. `docs/EVAL.md`'s matrix table records that
+champion at 120 maps per profile as **+51 on compact and −30 at deployment,
+verdict retain stock** (`docs/AI_GAPS.md` §5 has the same shape as +58/−9 on an
+older comparison).
 
 Meanwhile the league — which plays six-player games continuously — has bred
 its leader to `city_target = 9.681` over 1011 six-player games (19.7% outright
