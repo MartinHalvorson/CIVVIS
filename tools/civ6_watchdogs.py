@@ -208,6 +208,10 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
             })
     reach["furthest_ever"] = ever
     reach["furthest_ever_turn"] = ever_turn
+    # How far into the game this judgement is being made. A scout has not had time to
+    # get anywhere by turn 26, and a detector that cries wolf on every young run is one
+    # people learn to scroll past.
+    reach["last_turn"] = states[-1].get("turn") if states else None
 
     frozen = [
         (uid, kinds.get(uid, "?"), last_seen[uid] - first)
@@ -387,7 +391,9 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
             f"Founding a city and holding it are different problems and the peak "
             f"count hides the second one.")
     reach = idle.get("reach") or {}
-    if reach.get("furthest_ever") is not None and reach["furthest_ever"] <= 8:
+    if (reach.get("furthest_ever") is not None
+            and reach["furthest_ever"] <= 8
+            and (reach.get("last_turn") or 0) >= 60):
         out.append(
             f"THE EMPIRE NEVER REACHED: the furthest any unit ever got from one of our "
             f"cities was {reach['furthest_ever']} tiles, at turn "
