@@ -47,6 +47,82 @@ FIELD_LABELS = {
 }
 PLACEHOLDERS = {"", "todo", "tbd", "fill me", "n/a"}
 
+# --- R3: an effect size must carry its evidence into the record -------------
+#
+# Every headline number in this repository is the point estimate of the run that
+# promoted it, so every one is conditioned on having passed a gate and is biased
+# upward. They replicate in direction and fail downward in size: +207 -> +86,
+# +92 -> +61, and `strategic_deep`'s +45 -> -8, which #482 *excluded* rather
+# than merely failed to reproduce. See `docs/EVAL_INTEGRITY.md` §4.
+#
+# The instance that motivates a mechanical check is the last one. The +45 lived
+# in `docs/GENOME.md` as a bare promoted figure; the refutation reached a PR body
+# and never reached the document, so the discovery estimate stayed in the record
+# and the replication did not. A bare number in a document outlives the run that
+# produced it, and nothing here could tell the two apart.
+#
+# The rule is therefore about *evidence adjacency*, not about the number: an Elo
+# figure added to a document must sit near something that says where it came
+# from. That admits well-sourced prose — including a refutation citing the number
+# it refutes, which necessarily carries a CI, a map count or a PR reference — and
+# rejects the bare promoted claim, which by construction carries none.
+EVIDENCE_DOC_RE = re.compile(r"^(docs/.*\.md|README\.md)$")
+EFFECT_SIZE_RE = re.compile(
+    r"""(?ix)
+    (?: elo[-\s]?equivalent \s* [+−-]? \d+     # "Elo-equivalent +207"
+      | [+−-] \d{2,4} \s* elo                  # "+45 Elo"
+      | \b elo \s* (?:of|at) \s* [+−-]? \d+    # "Elo of +61"
+    )
+    """
+)
+EVIDENCE_RE = re.compile(
+    r"""(?ix)
+    (?: \b seeds? \b
+      | \b CI \b | 95\s*% | ±                  # an interval
+      | \b\d+\s*(?:maps|pairs|games)\b              # the evidence base
+      | \bPR\s*\#?\d+ | \#\d{2,}                    # where it was measured
+      | discovery\s+estimate | confirmed\s+on | disjoint
+      | p\s*[=<>]                                   # a reported p-value
+    )
+    """
+)
+
+
+#: How much added prose around a figure counts as "beside it". Wide enough to
+#: reach the sentence that sources the number, narrow enough that an unrelated
+#: measurement elsewhere in the same hunk cannot launder a bare claim.
+EVIDENCE_WINDOW_CHARS = 320
+
+
+def unevidenced_effect_sizes(added: Dict[str, Sequence[str]]) -> List[str]:
+    """Added doc prose that states an effect size without saying where it came from.
+
+    Matched against the added lines *joined*, not line by line. These documents
+    are wrapped at 80 columns, so the real instance this exists to catch —
+    ``strategic_deep`` at +45 / Elo in `docs/GENOME.md` — puts the figure at the
+    end of one line and the unit at the start of the next, and a per-line scan
+    sees neither.
+    """
+    problems: List[str] = []
+    for path in sorted(added):
+        if not EVIDENCE_DOC_RE.match(path):
+            continue
+        joined = " ".join(line.strip() for line in added[path])
+        for match in EFFECT_SIZE_RE.finditer(joined):
+            start = max(0, match.start() - EVIDENCE_WINDOW_CHARS)
+            window = joined[start : match.end() + EVIDENCE_WINDOW_CHARS]
+            if EVIDENCE_RE.search(window):
+                continue
+            quoted = joined[max(0, match.start() - 40) : match.end() + 40].strip()
+            problems.append(
+                f"{path} adds an effect size with no evidence beside it: "
+                f"...{quoted}... A promoted number is selected on having passed a "
+                "gate, so it is biased upward and is not quotable alone "
+                "(docs/EVAL_INTEGRITY.md §4). Cite the seed, the interval, the map "
+                "count or the PR it was measured in, or mark it a DISCOVERY ESTIMATE."
+            )
+    return problems
+
 
 class CommandError(RuntimeError):
     pass
@@ -228,6 +304,7 @@ def validate_pr(
     ranges: Optional[Dict[str, Optional[List[Tuple[int, int]]]]] = None,
     other_ranges: Optional[Dict[int, Dict[str, Optional[List[Tuple[int, int]]]]]] = None,
     advisories: Optional[List[str]] = None,
+    added_lines: Optional[Dict[str, Sequence[str]]] = None,
 ) -> List[str]:
     number = int(pr.get("number", 0))
     branch = str(pr.get("headRefName") or pr.get("head", {}).get("ref") or "")
@@ -270,6 +347,8 @@ def validate_pr(
     for subject in commit_subjects:
         if subject.lower().startswith("autosync:"):
             errors.append(f"mutating autosync commit is forbidden: {subject}")
+
+    errors.extend(unevidenced_effect_sizes(added_lines or {}))
 
     coordinated = split_coordination(claims.get("coordinated", ""))
     mine = as_range_map(files, ranges)
@@ -363,6 +442,34 @@ def pr_file_ranges(
     return ranges
 
 
+def patch_added_lines(patch: str) -> List[str]:
+    """The added-side content of a unified diff, without the '+' marker.
+
+    `+++ b/path` is a header, not an addition; it is the only '+'-prefixed line
+    that must not be treated as content.
+    """
+    return [
+        line[1:]
+        for line in patch.splitlines()
+        if line.startswith("+") and not line.startswith("+++")
+    ]
+
+
+def pr_added_lines(repository: str, number: int, token: str) -> Dict[str, List[str]]:
+    """Map every changed path to the lines this PR adds to it.
+
+    A path with no inlined patch (binary, or a diff too large) maps to an empty
+    list: the effect-size gate can only judge text it can see, and silently
+    passing an unreadable diff is the correct failure direction for a lint.
+    """
+    rows = github_json(f"/repos/{repository}/pulls/{number}/files?per_page=100", token)
+    added: Dict[str, List[str]] = {}
+    for row in rows:
+        patch = row.get("patch")
+        added[str(row["filename"])] = patch_added_lines(str(patch)) if patch else []
+    return added
+
+
 def pr_commit_subjects(repository: str, number: int, token: str) -> List[str]:
     rows = github_json(f"/repos/{repository}/pulls/{number}/commits?per_page=100", token)
     return [str(row["commit"]["message"]).splitlines()[0] for row in rows]
@@ -400,6 +507,7 @@ def check_pr_action(event_path: Path, token: str, repository: str) -> int:
         ranges=ranges,
         other_ranges=other_ranges,
         advisories=advisories,
+        added_lines=pr_added_lines(repository, number, token),
     )
     if not current["isDraft"]:
         base_sha = str(current.get("base", {}).get("sha") or "")
