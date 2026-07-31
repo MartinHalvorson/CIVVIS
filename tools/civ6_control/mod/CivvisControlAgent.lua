@@ -4892,6 +4892,31 @@ local function beginTurn(player, pid, turn)
 		end
 	end
 
+	-- ★★★★★ REPORT THE PREVIOUS TURN'S RESIDUAL BEFORE CLEARING IT.
+	--
+	-- ⚠⚠ `residual` HAS BEEN STRUCTURALLY MEANINGLESS ON THE CIVVIS PATH, and it is
+	-- the field this project has been quoting as proof that nothing but CIVVIS
+	-- decides anything. The order of a turn is: reset here, the game core fires its
+	-- end-turn blockers and `answerBlocker` counts them, and `applyOrders` emits the
+	-- turn record. But `applyOrders` runs when CIVVIS's orders ARRIVE, which is
+	-- BEFORE most blockers fire — so the tally it copied was almost always empty, and
+	-- the entries that arrived after it were wiped by this reset without ever being
+	-- emitted. Every run of this ladder reported `residual: none`.
+	--
+	-- What it was hiding, measured on run `civvis-20260731T075743Z`: 29
+	-- `ENDTURN_BLOCKING_PRODUCTION` answers, each one a call to `driveProduction`,
+	-- which picks the item ITSELF from the hand-written ladder. CIVVIS issued 11
+	-- produce orders that run; the heuristic issued 33 builds, including TEN battering
+	-- rams in a game with one rival met and no war. On attempt 4 it was 338 against
+	-- 270. That is not a pass re-running CIVVIS's own order — it is a different
+	-- program choosing what the empire makes.
+	--
+	-- Emitted as its own event for the turn that just ended, so the count is taken
+	-- after everything that can add to it and no longer races the turn record.
+	if next(residualAnswers) ~= nil then
+		emit("residual", { turn = awaiting.turn, counts = residualAnswers });
+	end
+
 	awaiting.turn = turn;
 	awaiting.ticks = 0;
 	awaiting.polls = 0;

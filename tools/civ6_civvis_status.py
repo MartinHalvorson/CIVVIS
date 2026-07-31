@@ -120,6 +120,19 @@ def main() -> int:
     # supposed to prove the heuristics are quiet must not have a shape it silently
     # ignores; this one has already been wrong in the reassuring direction once.
     residual = Counter()
+    # ★★★★★ THE `residual` EVENT, WHICH IS THE ONLY HONEST SOURCE. The field on the
+    # turn record is copied when CIVVIS's orders arrive, which is BEFORE most end-turn
+    # blockers fire — so it was almost always empty and the entries that came after it
+    # were wiped by the next turn's reset. Every run reported `residual: none` while
+    # `driveProduction` was choosing what the empire built.
+    for line in (run / "events.jsonl").read_text(errors="replace").splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("kind") == "residual":
+            for key, value in (event.get("counts") or {}).items():
+                residual[key] += value
     for turn in turns:
         entries = turn.get("residual")
         if isinstance(entries, dict):
@@ -129,7 +142,28 @@ def main() -> int:
             for entry in entries:
                 residual[str(entry)] += 1
     print(f"  residual (built-ins on a CIVVIS turn): "
-          f"{dict(residual.most_common(6)) if residual else 'none'}")
+          f"{dict(residual.most_common(8)) if residual else 'none'}")
+    # ⚠ AND THE ONE THAT IS NOT A PASS. `ENDTURN_BLOCKING_PRODUCTION` routes into
+    # `driveProduction`, which picks the item ITSELF from the hand-written ladder — so
+    # unlike `units`, this blocker's answer is a DECISION, and it competes with
+    # CIVVIS's own produce orders. Printed as a fraction because that is the only form
+    # that distinguishes "the heuristic filled a gap" from "the heuristic ran the
+    # economy": run civvis-20260731T075743Z was 11 CIVVIS produce orders against 33
+    # heuristic builds, with ten battering rams among them.
+    heuristic_builds = 0
+    for line in (run / "events.jsonl").read_text(errors="replace").splitlines():
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("kind") == "build":
+            heuristic_builds += 1
+    civvis_produce = sum((o.get("by") or {}).get("produce", 0) for o in orders)
+    total_builds = heuristic_builds + civvis_produce
+    if total_builds:
+        print(f"  ⚠ PRODUCTION: CIVVIS chose {civvis_produce}, the built-in ladder "
+              f"chose {heuristic_builds} "
+              f"({100 * heuristic_builds // total_builds}% of build decisions)")
 
     # ★★★★★ CROSS-CHECK THE COUNTER AGAINST THE EVENT LOG, because the counter has
     # already been wrong once and a zero read as proof.
