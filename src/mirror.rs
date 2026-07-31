@@ -794,7 +794,26 @@ pub struct StateCity {
 pub struct StateUnit {
     #[serde(default)]
     pub id: i64,
-    #[serde(default)]
+    /// ★★★★★ `type` IS AN ALIAS AND IT WAS MISSING, SO EVERY BARBARIAN WAS DROPPED.
+    ///
+    /// Our own units are exported as `kind`; the `hostiles` list — which is the ONLY
+    /// way barbarians reach this bridge, because `rivals` is built from
+    /// `GetAliveMajorIDs()` and cannot contain them — exports `type`. With only
+    /// `kind` deserialized every hostile arrived with an EMPTY name, failed the
+    /// ruleset lookup, and was silently discarded.
+    ///
+    /// So `state.hostiles` has been exported, passed to `plant_unit`, and thrown away
+    /// 100% of the time. CIVVIS has never once had a barbarian on its board in this
+    /// bridge — which means the settler danger rule built on `captor_within` was
+    /// looking at an empty threat list, and every "the settler walked into a
+    /// barbarian" diagnosis was about a unit CIVVIS could not see.
+    ///
+    /// ⚠ Found only because `dropped_units` started naming what did not make it onto
+    /// the board: the entries read `@37,14:untranslatable` with NO unit type at all,
+    /// and an empty name is not a translation failure, it is a field that was never
+    /// read. `unmapped` could not show it either — it records the offending name, and
+    /// the name was `""`.
+    #[serde(default, alias = "type")]
     pub kind: String,
     pub x: i32,
     pub y: i32,
@@ -1112,6 +1131,13 @@ pub struct Reconstruction {
     pub placed_rival_cities: usize,
     pub placed_rival_units: usize,
     pub unmapped: Vec<String>,
+    /// Every unit the export named that did NOT end up on the board, with the reason.
+    ///
+    /// ⚠⚠ A unit the mirror drops is a unit CIVVIS never orders, and it then stands
+    /// where it was built for the rest of the game. That is the operator's "units
+    /// stacking up in the capital, unused", arriving by a route nobody had looked at,
+    /// and `unmapped` could not show it: these are not translation failures.
+    pub dropped_units: Vec<String>,
 }
 
 /// `UNIT_BATTERING_RAM` -> `battering_ram`. Mechanical, then CHECKED against the
@@ -1605,12 +1631,28 @@ pub fn rebuild_from_state(
         }
     }
 
+    let mut dropped: Vec<String> = Vec::new();
     let mut plant_unit = |game: &mut crate::game::Game,
                           owner: usize,
                           u: &StateUnit,
-                          unmapped: &mut Vec<String>|
+                          unmapped: &mut Vec<String>,
+                          dropped: &mut Vec<String>|
      -> Option<u32> {
+        // ★★★★★ NAME EVERY UNIT THAT DOES NOT MAKE IT ONTO THE BOARD.
+        //
+        // ⚠⚠ A UNIT THE MIRROR DROPS IS A UNIT CIVVIS NEVER ORDERS, and it then stands
+        // exactly where it was built for the rest of the game — which is the operator's
+        // "units stacking up in the capital, unused", arriving by a route nobody had
+        // looked at. Measured on run `civvis-20260731T070956Z` at turn 147: the export
+        // carries 21 units and the reconstruction reported `units=15`. Two of the SIX
+        // missing were settlers that had been motionless for fourteen turns, and every
+        // report in the project read green — `unmapped` was EMPTY, because these were
+        // not translation failures.
+        //
+        // Four distinct reasons, counted apart, because they need different repairs and
+        // "6 units missing" is not a diagnosis.
         if !snapshot.is_revealed((u.x, u.y)) {
+            dropped.push(format!("{}@{},{}:unrevealed", u.kind, u.x, u.y));
             return None;
         }
         let name = civvis_unit_name(&u.kind);
@@ -1618,6 +1660,7 @@ pub fn rebuild_from_state(
             if !unmapped.contains(&u.kind) {
                 unmapped.push(u.kind.clone());
             }
+            dropped.push(format!("{}@{},{}:untranslatable", u.kind, u.x, u.y));
             return None;
         }
         let pos = crate::hex::offset_to_axial(u.x, u.y);
@@ -1627,9 +1670,19 @@ pub fn rebuild_from_state(
             .map(|tile| game.rules.is_water(tile))
             .unwrap_or(true);
         if water {
+            dropped.push(format!("{}@{},{}:water", u.kind, u.x, u.y));
             return None;
         }
+        let before = game.units.len();
         let uid = game.spawn_unit(&name, owner, pos);
+        // ⚠ `spawn_unit` returns an id whether or not the unit ended up on the board.
+        // Civilization VI stacks civilians with military freely and CIVVIS does not,
+        // so a tile that holds three units in the real game can hold fewer here — and
+        // the loser is silently absent rather than refused.
+        if game.units.len() == before || !game.units.contains_key(&uid) {
+            dropped.push(format!("{}@{},{}:tile_taken", u.kind, u.x, u.y));
+            return None;
+        }
         // Carry damage across: a unit at 30 hp is a unit CIVVIS should pull out,
         // and defaulting it to full health is how an army gets thrown away.
         if let Some(unit) = game.units.get_mut(&uid) {
@@ -1643,7 +1696,7 @@ pub fn rebuild_from_state(
     };
 
     for unit in &state.units {
-        if let Some(uid) = plant_unit(&mut game, 0, unit, &mut unmapped) {
+        if let Some(uid) = plant_unit(&mut game, 0, unit, &mut unmapped, &mut dropped) {
             unit_ids.insert(uid, unit.id);
             placed_units += 1;
         }
@@ -1679,7 +1732,7 @@ pub fn rebuild_from_state(
             }
         }
         for unit in &rival.units {
-            if plant_unit(&mut game, owner, unit, &mut unmapped).is_some() {
+            if plant_unit(&mut game, owner, unit, &mut unmapped, &mut dropped).is_some() {
                 placed_rival_units += 1;
             }
         }
@@ -1691,7 +1744,7 @@ pub fn rebuild_from_state(
     let barbarian_seat = game.players.iter().position(|player| player.is_barbarian);
     if let Some(barb) = barbarian_seat {
         for unit in &state.hostiles {
-            if plant_unit(&mut game, barb, unit, &mut unmapped).is_some() {
+            if plant_unit(&mut game, barb, unit, &mut unmapped, &mut dropped).is_some() {
                 placed_rival_units += 1;
             }
         }
@@ -1708,6 +1761,7 @@ pub fn rebuild_from_state(
         placed_rival_cities,
         placed_rival_units,
         unmapped,
+        dropped_units: dropped,
     }
 }
 
@@ -1872,6 +1926,10 @@ pub struct LiveMirror {
     rival_units: Vec<u32>,
     rival_cities: std::collections::BTreeSet<(i32, i32)>,
     pub unmapped: Vec<String>,
+    /// See [`Reconstruction::dropped_units`]. Carried onto the live mirror so the
+    /// decider can report it every turn: a unit that is missing from the board is a
+    /// unit that will stand still, and nothing else in the telemetry can say so.
+    pub dropped_units: Vec<String>,
     pub turns_synced: u32,
 }
 
@@ -1915,6 +1973,7 @@ impl LiveMirror {
             rival_units: Vec::new(),
             rival_cities: std::collections::BTreeSet::new(),
             unmapped: rebuilt.unmapped,
+            dropped_units: rebuilt.dropped_units,
             turns_synced: 1,
         }
     }

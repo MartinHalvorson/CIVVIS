@@ -274,6 +274,20 @@ fn decide(
     if !mirror_state.unmapped.is_empty() {
         note_bits.push(format!("unmapped: {}", mirror_state.unmapped.join(",")));
     }
+    // ★★★★★ UNITS THE EXPORT NAMED THAT NEVER REACHED THE BOARD. A unit CIVVIS cannot
+    // see gets no order and stands where it was built for the rest of the game — the
+    // "units stacking up in the capital" the operator reported, arriving by a route
+    // nobody had looked at. `unmapped` cannot show these: they are not translation
+    // failures, they are units the reconstruction refused for a REASON, and the reason
+    // is what says whether it is fog, water, an untranslatable type, or a tile CIVVIS
+    // will not stack the way Civilization VI does.
+    if !mirror_state.dropped_units.is_empty() {
+        note_bits.push(format!(
+            "dropped_units={} [{}]",
+            mirror_state.dropped_units.len(),
+            mirror_state.dropped_units.join(" ")
+        ));
+    }
     if !skipped.is_empty() {
         let text = skipped
             .iter()
