@@ -75,10 +75,13 @@ The sample contained 366 unit-position, 181 unit-HP, and 167 city-HP
 treatments; 545 targeted an active war. A separate 32-map run at seed 860000
 found 24 decision divergences in 348 valid probes (6.9%), including five action
 traces. A four-map seed-863000 spot check produced the exact same counts and
-witnesses with one worker and four workers. Together, those divergences are
-evidence that `AdvancedAi` reads full `Game` state that the tensor does not
-reveal. They do **not** measure every possible leak, and a zero result on any
-finite treatment set would not establish fog honesty.
+witnesses with one worker and four workers. On a larger deployment-style
+six-player 74x46 profile (12 maps, 250-turn cap, seed 864000), all 142 controls
+also matched and 16 decisions diverged (11.3%; eight plan reports and nine
+action traces). Together, those divergences are evidence that `AdvancedAi`
+reads full `Game` state that the tensor does not reveal. They do **not** measure
+every possible leak, and a zero result on any finite treatment set would not
+establish fog honesty.
 
 ## Scope and limitations
 
