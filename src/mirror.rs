@@ -1677,21 +1677,23 @@ pub fn rebuild_from_state(
         //
         // Four distinct reasons, counted apart, because they need different repairs and
         // "6 units missing" is not a diagnosis.
-        // ⚠ FOG HONESTY IS ABOUT OTHER PEOPLE'S UNITS, NOT OUR OWN. A plot one of OUR
-        // units is standing on is revealed by definition — Civilization VI is telling
-        // us the unit is there. What the gate was actually catching is the tile export
-        // being on a slower cadence than the unit export (`--tile-export-every 4`), so
-        // a scout that walks onto fresh ground vanishes from CIVVIS's board until the
-        // map catches up. Measured on run `civvis-20260731T090445Z`: units dropped
-        // `unrevealed` on 6 of the first 39 turns, two at once at worst — and a unit
-        // CIVVIS cannot see gets no order and stands where it was built.
+        // ⚠⚠ THE FOG GATE BELONGS AT THE EXPORT, AND IT IS ALREADY THERE. This used
+        // to refuse any unit whose plot the SNAPSHOT had not marked revealed, which
+        // sounds like fog honesty and is not: the mod only ever exports units the seat
+        // can see. Our own units by definition, and hostiles behind an explicit
+        // `plotRevealed(pid, ux, uy)` gate in `exportState`. So a unit arriving here
+        // has ALREADY passed a visibility test made by the game itself.
         //
-        // Rivals and hostiles keep the gate: reporting an enemy on ground this seat has
-        // not seen would grant contact it has not earned.
-        if owner != 0 && !snapshot.is_revealed((u.x, u.y)) {
-            dropped.push(format!("{}@{},{}:unrevealed", u.kind, u.x, u.y));
-            return None;
-        }
+        // What this check actually measured is the TILE export being on a slower
+        // cadence than the unit export (`--tile-export-every 4`), so anything standing
+        // on ground the map has not caught up with vanishes from CIVVIS's board for a
+        // few turns. Measured after exempting our own units only:
+        // `civvis-20260731T094902Z` still dropped 23 across 14 turns, four at once.
+        //
+        // A unit CIVVIS cannot see gets no order — and for a hostile it is worse than
+        // that, because the settler danger rule reads exactly this list. The tile is
+        // still checked for EXISTENCE below; that is the honest gate.
+        let _ = &snapshot;
         let name = civvis_unit_name(&u.kind);
         if !game.rules.units.contains_key(&name) {
             if !unmapped.contains(&u.kind) {
