@@ -13,7 +13,6 @@
 //! estimate is deliberately regularized toward score share because the
 //! counterfactual rollout endpoints remain out of distribution for ordinary
 //! self-play trajectories.
-use crate::name::Name;
 use crate::ai::{run_game, AdvancedAi, Ai, PlanReport, VictoryTarget, Weights};
 use crate::evolve::features;
 use crate::game::{Action, ActionFamilies, Game, Item};

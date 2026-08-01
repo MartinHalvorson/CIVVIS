@@ -2,7 +2,6 @@
 //! 3/civic, 5/city, 2/district (4 unique), 1/building, 1/Citizen,
 //! 5/Great Person, 10 founding a religion + 2 per foreign follower city,
 //! 2/technology, 15/wonder, plus Era Score.
-use crate::name::Name;
 use super::{Action, Game};
 
 fn one_city_game() -> (Game, u32) {
