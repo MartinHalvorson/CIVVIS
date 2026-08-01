@@ -930,6 +930,80 @@ mod tests {
         assert_eq!(plain.religion_turns, 0);
     }
 
+    /// ★★★★ A border that grows after the mirror is built must still be learned.
+    ///
+    /// `apply_territory` ran only in `rebuild_from_state`, which a persistent mirror
+    /// calls once — at construction. Every border that grew afterwards stayed unowned
+    /// on CIVVIS's board for the rest of the game. Measured on live run
+    /// `civvis-20260801T012454Z` at turn 43: **28 of 243** paired plots were owned in
+    /// Civilization VI and unowned in CIVVIS, and **none** the other way.
+    ///
+    /// ⚠ Asserted through `valid_improvements`, not against `owner_city` directly,
+    /// because that is where the cost lands: the function returns an empty list for a
+    /// tile whose `owner_city` is None, so a builder on ground the seat really owns is
+    /// offered nothing to build. A test that only compared the ownership field would
+    /// pass on an ownership nothing consults.
+    #[test]
+    fn a_border_that_grows_after_construction_is_still_learned() {
+        let founded = |x: i32, y: i32| StateCity {
+            id: 1,
+            name: "Nidaros".to_string(),
+            x,
+            y,
+            pop: 4,
+            ..StateCity::default()
+        };
+        // Turn 4: one plot revealed and owned, and the city that owns it.
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let first = Snapshot::from_chunks(&[TilesChunk {
+            turn: 4,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, -1)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(founded(5, 5));
+
+        let mut mirror = LiveMirror::new(&first, &state, 4, 1, 500, 0);
+        let grown = crate::hex::offset_to_axial(5, 6);
+        assert!(
+            mirror.game.map.get(grown).is_some_and(|t| t.owner_city.is_none()),
+            "the plot starts unowned, which is what the export said on turn 4"
+        );
+
+        // Turn 8: the border has grown over it. Nothing else about the world changed.
+        let later = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 0)],
+        }]);
+        state.turn = 8;
+        mirror.sync(&later, &state, 0);
+
+        assert!(
+            mirror.game.map.get(grown).is_some_and(|t| t.owner_city.is_some()),
+            "a border that grew after construction must be learned — this is the whole \
+             defect, and before the fix it stayed unowned for the rest of the game"
+        );
+        // And the consequence that actually costs games: ground the seat owns must
+        // offer a builder something to do on it.
+        assert!(
+            !mirror.game.valid_improvements(0, grown).is_empty(),
+            "owned ground must offer improvements; an unowned tile offers none, which \
+             is how a stale border silently stops an empire developing"
+        );
+    }
+
     #[test]
     fn a_hostile_lands_on_the_barbarian_seat_and_not_on_dormant_free_cities() {
         // ⚠ The roster has TWO players carrying `is_barbarian`, and only one of them
@@ -3151,6 +3225,29 @@ impl LiveMirror {
             apply_terrain(&mut self.game, snapshot);
             grow_frontier(&mut self.game, snapshot, frontier_depth);
         }
+        // ★★★★ BORDERS MOVE, AND THIS USED TO LEARN THEM ONCE AND NEVER AGAIN.
+        //
+        // `apply_territory` ran only in `rebuild_from_state`, which a persistent mirror
+        // calls exactly once — at construction. Every border that grew afterwards, and
+        // every owned plot revealed afterwards, stayed unowned on CIVVIS's board for
+        // the rest of the game.
+        //
+        // Measured on live run civvis-20260801T012454Z at turn 43, over the 243 plots
+        // paired between the export and the board:
+        //
+        //     Civ 6 says OWNED, CIVVIS says unowned : 28
+        //     CIVVIS says OWNED, Civ 6 says unowned :  0
+        //     agreement                              : 88.5%
+        //
+        // ⚠ The error has a direction, and it is the expensive one.
+        // `Game::valid_improvements` returns an empty list for a tile whose
+        // `owner_city` is None, so a builder standing on ground the seat really owns is
+        // offered NOTHING to build there — the empire silently stops developing the
+        // land it just took. It also under-reports the seat's own territory to every
+        // consumer that reasons about it.
+        //
+        // It is cheap: one pass over the revealed set, the same work the rebuild does.
+        apply_territory(&mut self.game, snapshot, state);
 
         // --- our units -------------------------------------------------------
         let mut seen: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
