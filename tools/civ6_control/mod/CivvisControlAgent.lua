@@ -2539,6 +2539,26 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	if wanted ~= nil then
 		local row = playable(wanted);
 		if row ~= nil then return wanted, row, "civvis"; end
+		-- ★★★★★ SAY WHAT CIVVIS ASKED FOR AND COULD NOT HAVE.
+		--
+		-- When `playable` refuses CIVVIS's choice the ladder silently takes the turn,
+		-- and until now NOTHING recorded what the choice was. The `build` event says
+		-- the ladder decided; it cannot say what it overrode.
+		--
+		-- That is the whole of the open question. On run civvis-20260801T065721Z only
+		-- **16 of 97 builds** were CIVVIS's -- floor 21, develop 20, grow 10, improve
+		-- 9, expand 8 -- and no telemetry anywhere could name a single item CIVVIS
+		-- wanted instead. The same anonymity around `no_params` hid one district for
+		-- an entire project until the refusal carried its verb.
+		--
+		-- ⚠ `item`, not `kind`: `emit` claims `kind`, `ctx` and `run`, and a payload
+		-- field named `kind` is overwritten before the line is written. That already
+		-- cost this file one blind instrument.
+		emit("civvis_build_unplayable", {
+			turn = turn,
+			city = try(function() return city:GetID(); end, -1),
+			item = tostring(wanted),
+		});
 	end
 	for _, entry in ipairs(ladder) do
 		local row = playable(entry[1]);
