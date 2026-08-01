@@ -1049,12 +1049,6 @@ fn main() {
         // Food consumption is two per population in Civilization VI, so the
         // surplus -- not the gross yield -- is what actually grows the city.
         let eaten = 2.0 * pops.iter().sum::<f64>() / pops.len().max(1) as f64;
-        // "At cap" means the housing headroom is under one population, i.e.
-        // growth is housing-bound rather than food-bound.
-        let capped = rows
-            .iter()
-            .filter(|(_, pop, h, ..)| (*pop as f64) >= *h - 1.0)
-            .count();
         let (pop_mean, pop_se) = mean_se(&pops);
         let (house_mean, house_se) = mean_se(&house);
         let (food_mean, food_se) = mean_se(&food);
