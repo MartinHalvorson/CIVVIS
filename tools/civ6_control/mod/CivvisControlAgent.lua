@@ -291,6 +291,12 @@ local function survey()
 			diplomatic = try(function() return Game.IsVictoryEnabled("VICTORY_DIPLOMATIC"); end, nil),
 		},
 		players = try(function() return #PlayerManager.GetAliveMajorIDs(); end, -1),
+		-- Reserve every configured city-state seat in the persistent mirror. The
+		-- `minors` state list contains only actors already met, so sizing from that
+		-- list on turn 1 leaves nowhere to put a city-state discovered later.
+		city_states = try(function()
+			return GameConfiguration.GetValue("CITY_STATE_COUNT");
+		end, 0),
 		-- Left behind by the setup context; see CivvisControlSetup.lua. Absent
 		-- means this game was started some other way -- by a person clicking
 		-- Play Now, say -- so its settings are the game's defaults and not the
@@ -4008,6 +4014,9 @@ local function exportState(player, pid, turn)
 		pcall(function()
 			local mid = minor:GetID();
 			if diplomacy == nil or not diplomacy:HasMet(mid) then return; end
+			local civilization = try(function()
+				return PlayerConfigurations[mid]:GetCivilizationTypeName();
+			end, "");
 			local theirCities, theirUnits = {}, {};
 			pcall(function()
 				for _, city in minor:GetCities():Members() do
@@ -4042,12 +4051,17 @@ local function exportState(player, pid, turn)
 					end);
 				end
 			end);
+			-- `GetAliveMinors()` includes the aggregate Free Cities player from
+			-- turn 1 even though it is dormant. Publishing that empty placeholder
+			-- used to zip it onto CIVVIS's first generated city-state and turn Kabul
+			-- into an enemy. Keep it only once there is an actor to mirror.
+			if civilization == "CIVILIZATION_BARBARIAN" then return; end
+			if civilization == "CIVILIZATION_FREE_CITIES"
+				and #theirCities == 0 and #theirUnits == 0 then return; end
 			local influence = try(function() return minor:GetInfluence(); end);
 			minors[#minors + 1] = {
 				player = mid,
-				civ = try(function()
-					return PlayerConfigurations[mid]:GetCivilizationTypeName();
-				end, ""),
+				civ = civilization,
 				at_war = try(function() return diplomacy:IsAtWarWith(mid); end, false),
 				score = try(function() return minor:GetScore(); end, -1),
 				military = try(function() return minor:GetStats():GetMilitaryStrength(); end, -1),
@@ -4277,20 +4291,43 @@ end
 -- chance. Meanwhile 132 of 513 revealed plots really were fresh water.
 --
 -- Civilization VI stores a river on three of a plot's six edges — W, NW and NE.
--- The other three edges are the same segments seen from the neighbouring plots,
--- so exporting these three for every revealed plot carries the whole network,
--- minus edges whose other side we have not revealed. That omission is honest:
--- it is exactly the part of the river the seat has not seen.
+-- The other three edges are the same segments held by neighbouring plots. Read
+-- those neighbours too: the segment itself is visible from this revealed tile,
+-- even when the terrain across it has not been revealed.
 --
 -- Sent as one small bitmask rather than three booleans to keep this loop's per
 -- plot cost down — it already runs over every plot on the map.
 local RIVER_W, RIVER_NW, RIVER_NE = 1, 2, 4;
+local RIVER_E, RIVER_SE, RIVER_SW = 8, 16, 32;
 
 local function riverMask(plot)
 	local mask = 0;
 	if try(function() return plot:IsWOfRiver(); end, false) then mask = mask + RIVER_W; end
 	if try(function() return plot:IsNWOfRiver(); end, false) then mask = mask + RIVER_NW; end
 	if try(function() return plot:IsNEOfRiver(); end, false) then mask = mask + RIVER_NE; end
+	-- The engine stores the other three edges on the neighbouring plot. Querying
+	-- those flags reveals no hidden terrain: all three segments are visibly on
+	-- this revealed plot. Without them a boundary tile can report `ri=true` and
+	-- `rv=0`, so the reconstructed board necessarily loses a known river.
+	local x, y = plot:GetX(), plot:GetY();
+	local west = try(function()
+		return Map.GetAdjacentPlot(x, y, DirectionTypes.DIRECTION_WEST);
+	end);
+	local northwest = try(function()
+		return Map.GetAdjacentPlot(x, y, DirectionTypes.DIRECTION_NORTHWEST);
+	end);
+	local northeast = try(function()
+		return Map.GetAdjacentPlot(x, y, DirectionTypes.DIRECTION_NORTHEAST);
+	end);
+	if west ~= nil and try(function() return west:IsWOfRiver(); end, false) then
+		mask = mask + RIVER_E;
+	end
+	if northwest ~= nil and try(function() return northwest:IsNWOfRiver(); end, false) then
+		mask = mask + RIVER_SE;
+	end
+	if northeast ~= nil and try(function() return northeast:IsNEOfRiver(); end, false) then
+		mask = mask + RIVER_SW;
+	end
 	return mask;
 end
 

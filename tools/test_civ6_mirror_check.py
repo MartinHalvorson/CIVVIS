@@ -139,6 +139,31 @@ class MirrorCheckTest(unittest.TestCase):
             civ6_mirror_check.minor_fact_mismatches(state, board, 44)[0],
         )
 
+    def test_dormant_free_cities_is_not_a_city_state(self) -> None:
+        state = {"minors": [{
+            "player": 62, "civ": "CIVILIZATION_FREE_CITIES",
+            "at_war": True, "cities": [], "units": [],
+        }]}
+        self.assertEqual(civ6_mirror_check.mirrored_minor_sources(state), [])
+        self.assertEqual(civ6_mirror_check.minor_fact_mismatches(state, {}, 44), [])
+
+    def test_present_free_city_uses_the_dedicated_seat(self) -> None:
+        source = {
+            "player": 62, "civ": "CIVILIZATION_FREE_CITIES",
+            "score": 20, "military": 35,
+            "cities": [{"x": 18, "y": 35, "name": "Free City"}], "units": [],
+        }
+        state = {"rivals": [], "minors": [source]}
+        board = {
+            "players": [{
+                "id": 6, "civ": "Free Cities", "is_minor": True,
+                "is_barbarian": True, "is_free_city": True,
+                "score": 20, "military": 35,
+            }],
+            "cities": [{"owner": 6, "pos": [14, 9], "name": "Free City"}],
+        }
+        self.assertEqual(civ6_mirror_check.minor_fact_mismatches(state, board, 44), [])
+
     def test_production_identifiers_match_civvis_queue_items(self) -> None:
         self.assertEqual(civ6_mirror_check.production_item_name("UNIT_BUILDER"),
                          ("unit", "builder"))

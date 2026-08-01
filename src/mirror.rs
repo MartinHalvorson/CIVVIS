@@ -666,6 +666,25 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_known_river_edge_survives_when_its_firaxis_holder_is_hidden() {
+        let mut wet = plot(5, 6, "TERRAIN_GRASS");
+        wet.rv = 8;
+        wet.ri = true;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![wet],
+        }]);
+        let game = rebuild_game(&snapshot, 4, 7);
+        let pos = crate::hex::offset_to_axial(5, 6);
+        let west = (pos.0 + crate::hex::DIRS[3].0, pos.1 + crate::hex::DIRS[3].1);
+        assert!(game.map.has_river_edge(pos, west));
+        assert!(game.map.tiles[&pos].has_river());
+    }
+
     /// ★★★★ A card the host has retired must stop being offered.
     ///
     /// `POLICY_ILKUM` was chosen and refused **105 times** on live run
@@ -1336,6 +1355,133 @@ mod tests {
             city.owner == minor.id && city.name == "Kabul"
         }));
         assert!(recon.game.units.values().any(|unit| unit.owner == minor.id));
+    }
+
+    #[test]
+    fn dormant_free_cities_does_not_turn_kabul_into_a_turn_one_enemy() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 1,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_PLAINS")],
+        }]);
+        let state = StateSnapshot {
+            turn: 1,
+            minors: vec![StateMinor {
+                player: 62,
+                civ: "CIVILIZATION_FREE_CITIES".to_string(),
+                at_war: true,
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let recon = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        assert_eq!(
+            recon
+                .game
+                .players
+                .iter()
+                .filter(|player| player.is_minor && !player.is_barbarian)
+                .count(),
+            0,
+            "an empty Firaxis Free Cities placeholder must consume no city-state seat"
+        );
+        let free = recon.game.players.iter().find(|player| player.is_free_city).unwrap();
+        assert!(!free.alive);
+        assert!(!recon.game.at_war.contains(&(0, free.id)));
+    }
+
+    #[test]
+    fn a_present_free_city_uses_the_dedicated_free_cities_seat() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 80,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_PLAINS")],
+        }]);
+        let state = StateSnapshot {
+            turn: 80,
+            minors: vec![StateMinor {
+                player: 62,
+                civ: "CIVILIZATION_FREE_CITIES".to_string(),
+                score: 20,
+                military: 35.0,
+                at_war: true,
+                cities: vec![StateCity {
+                    id: 70,
+                    name: "Free City".to_string(),
+                    x: 5,
+                    y: 5,
+                    pop: 4,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let recon = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        let free = recon.game.players.iter().find(|player| player.is_free_city).unwrap();
+        assert!(free.alive);
+        assert!(recon.game.is_at_war(0, free.id));
+        assert_eq!(recon.game.score(free.id), 20);
+        assert_eq!(recon.game.military_power(free.id), 35.0);
+        assert!(recon.game.cities.values().any(|city| city.owner == free.id));
+    }
+
+    #[test]
+    fn a_city_state_met_later_uses_a_seat_reserved_by_the_lobby() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 1,
+            width: 24,
+            height: 24,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_PLAINS"), plot(6, 5, "TERRAIN_PLAINS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 1,
+            seat: Seat {
+                city_states: 2,
+                ..Seat::default()
+            },
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+        assert_eq!(
+            mirror
+                .game
+                .players
+                .iter()
+                .filter(|player| player.is_minor && !player.is_barbarian)
+                .count(),
+            2
+        );
+
+        state.turn = 2;
+        state.minors.push(StateMinor {
+            player: 6,
+            civ: "CIVILIZATION_KABUL".to_string(),
+            cities: vec![StateCity {
+                id: 70,
+                name: "Kabul".to_string(),
+                x: 6,
+                y: 5,
+                pop: 2,
+                ..StateCity::default()
+            }],
+            ..StateMinor::default()
+        });
+        mirror.sync(&snapshot, &state, 0);
+        let kabul = mirror
+            .game
+            .players
+            .iter()
+            .find(|player| player.civ == "Kabul")
+            .expect("the newly met city-state uses a reserved seat");
+        assert!(mirror.game.cities.values().any(|city| city.owner == kabul.id));
     }
 
     #[test]
@@ -2588,10 +2734,10 @@ pub(crate) fn apply_rivers(game: &mut crate::game::Game, snapshot: &Snapshot) {
             continue;
         }
         let pos = crate::hex::offset_to_axial(x, y);
-        // Bits 8/16/32 are used by the north-up staging reflection. The raw
-        // Firaxis export needs only E/SE/SW, but reflection maps those onto all
-        // six directions and keeping the edge on its known endpoint avoids
-        // dropping a riverside boundary plot whose other side is still fogged.
+        // Bits 8/16/32 carry W/NW/NE edges read from the neighbouring Firaxis
+        // holders. The exporter includes them even when that neighbour is hidden:
+        // the segment on this revealed plot is itself known. North-up staging can
+        // also map any of the six directions onto any other one.
         for (bit, direction) in [(1u8, 0usize), (2, 1), (4, 2), (8, 3), (16, 4), (32, 5)] {
             if plot.rv & bit == 0 {
                 continue;
@@ -3169,12 +3315,67 @@ pub struct StateMinor {
     pub units: Vec<StateUnit>,
 }
 
+impl StateMinor {
+    fn is_free_cities(&self) -> bool {
+        self.civ == "CIVILIZATION_FREE_CITIES"
+    }
+
+    fn is_barbarian(&self) -> bool {
+        self.civ == "CIVILIZATION_BARBARIAN"
+    }
+
+    fn is_city_state(&self) -> bool {
+        !self.civ.is_empty() && !self.is_free_cities() && !self.is_barbarian()
+    }
+
+    fn is_present_free_cities(&self) -> bool {
+        self.is_free_cities() && (!self.cities.is_empty() || !self.units.is_empty())
+    }
+}
+
 fn unknown_strength() -> f64 {
     -1.0
 }
 
 fn unknown_metric() -> f64 {
     f64::NAN
+}
+
+/// Pair exported non-major actors with the matching CIVVIS seats.
+///
+/// Firaxis includes the aggregate Free Cities player in `GetAliveMinors()` even
+/// on turn 1, when it owns nothing. Treating that placeholder as the first real
+/// city-state turned CIVVIS's generated Kabul seat into an enemy and put the
+/// planner into conquest before the capital was founded. A present Free Cities
+/// actor uses the dedicated dormant seat; only actual city-states consume the
+/// generated city-state roster.
+fn minor_actor_assignments<'a>(
+    game: &crate::game::Game,
+    state: &'a StateSnapshot,
+) -> Vec<(&'a StateMinor, usize)> {
+    let mut city_state_seats = game
+        .players
+        .iter()
+        .filter(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
+        .map(|player| player.id);
+    let free_city_seat = game
+        .players
+        .iter()
+        .find(|player| player.is_free_city)
+        .map(|player| player.id);
+    let mut out = Vec::new();
+    for minor in &state.minors {
+        if minor.is_city_state() {
+            if let Some(seat) = city_state_seats.next() {
+                out.push((minor, seat));
+            }
+        } else if minor.is_present_free_cities() {
+            if let Some(seat) = free_city_seat {
+                out.push((minor, seat));
+            }
+        }
+    }
+    out
 }
 
 /// The whole board as one `state` event described it.
@@ -3391,6 +3592,9 @@ fn restore_active_trade_routes(
 pub struct Seat {
     #[serde(default)]
     pub players: usize,
+    /// Configured city-state seats, including ones this player has not met yet.
+    #[serde(default)]
+    pub city_states: usize,
     #[serde(default)]
     pub max_turns: i64,
     #[serde(default)]
@@ -3496,13 +3700,10 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
     for (index, rival) in state.rivals.iter().enumerate() {
         note(index + 1, &rival.civ, &mut unmapped);
     }
-    let minor_seats: Vec<usize> = game
-        .players
-        .iter()
-        .filter(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
-        .map(|player| player.id)
-        .collect();
-    for (minor, seat) in state.minors.iter().zip(minor_seats) {
+    for (minor, seat) in minor_actor_assignments(game, state)
+        .into_iter()
+        .filter(|(minor, _)| minor.is_city_state())
+    {
         let bare = minor
             .civ
             .trim()
@@ -4405,7 +4606,13 @@ pub fn rebuild_from_state(
         snapshot,
         players.max(2),
         seed,
-        state.minors.len(),
+        state.seat.city_states.max(
+            state
+                .minors
+                .iter()
+                .filter(|minor| minor.is_city_state())
+                .count(),
+        ),
     );
     // Keep the generated minor player slots, but none of their generated cities
     // or territory describes the Firaxis world being mirrored.
@@ -4919,12 +5126,6 @@ pub fn rebuild_from_state(
     // Met city-states are public actors, not anonymous blocked territory. Keep
     // their real cities, visible units, war state, Envoys and Suzerain so settling,
     // diplomacy and military planning see the same board as the Firaxis seat.
-    let minor_seats: Vec<usize> = game
-        .players
-        .iter()
-        .filter(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
-        .map(|player| player.id)
-        .collect();
     let mut seat_of_host: std::collections::BTreeMap<usize, usize> = state
         .rivals
         .iter()
@@ -4932,8 +5133,15 @@ pub fn rebuild_from_state(
         .map(|(index, rival)| (rival.player, index + 1))
         .collect();
     seat_of_host.insert(0, 0);
-    for (minor, owner) in state.minors.iter().zip(minor_seats.iter().copied()) {
+    for player in game.players.iter_mut().filter(|player| player.is_free_city) {
+        player.alive = false;
+    }
+    let minor_assignments = minor_actor_assignments(&game, state);
+    for &(minor, owner) in &minor_assignments {
         seat_of_host.insert(minor.player, owner);
+        if game.players[owner].is_free_city {
+            game.players[owner].alive = true;
+        }
         game.players[0].met.insert(owner);
         game.players[owner].met.insert(0);
         set_mirrored_envoys(&mut game.players[0], owner, minor.envoys.max(0));
@@ -4965,8 +5173,8 @@ pub fn rebuild_from_state(
     }
     // The suzerain is public even when it is another major. Seed the minimum
     // winning delegation after every host id has a compact seat mapping.
-    for (minor, owner) in state.minors.iter().zip(minor_seats) {
-        if minor.suzerain >= 0 {
+    for (minor, owner) in minor_assignments {
+        if minor.is_city_state() && minor.suzerain >= 0 {
             if let Some(&holder) = seat_of_host.get(&(minor.suzerain as usize)) {
                 let current = mirrored_envoys(&game.players[holder], owner);
                 let winning = if holder == 0 {
@@ -5107,12 +5315,7 @@ fn apply_territory(
     for (index, rival) in state.rivals.iter().enumerate() {
         seat_of.insert(rival.player as i32, index + 1);
     }
-    let minor_seats = game
-        .players
-        .iter()
-        .filter(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
-        .map(|player| player.id);
-    for (minor, seat) in state.minors.iter().zip(minor_seats) {
+    for (minor, seat) in minor_actor_assignments(game, state) {
         seat_of.insert(minor.player as i32, seat);
     }
     for city in &state.cities {
@@ -5936,13 +6139,6 @@ impl LiveMirror {
             }
         }
 
-        let minor_seats: Vec<usize> = self
-            .game
-            .players
-            .iter()
-            .filter(|player| player.is_minor && !player.is_barbarian && !player.is_free_city)
-            .map(|player| player.id)
-            .collect();
         let mut seat_of_host: std::collections::BTreeMap<usize, usize> = state
             .rivals
             .iter()
@@ -5950,8 +6146,25 @@ impl LiveMirror {
             .map(|(index, rival)| (rival.player, index + 1))
             .collect();
         seat_of_host.insert(0, 0);
-        for (minor, owner) in state.minors.iter().zip(minor_seats.iter().copied()) {
+        let free_city_seats: Vec<usize> = self
+            .game
+            .players
+            .iter()
+            .filter(|player| player.is_free_city)
+            .map(|player| player.id)
+            .collect();
+        for owner in free_city_seats {
+            self.game.players[owner].alive = false;
+            self.game.at_war.remove(&(0, owner));
+            self.game.observed_score.remove(&owner);
+            self.game.observed_military_power.remove(&owner);
+        }
+        let minor_assignments = minor_actor_assignments(&self.game, state);
+        for &(minor, owner) in &minor_assignments {
             seat_of_host.insert(minor.player, owner);
+            if self.game.players[owner].is_free_city {
+                self.game.players[owner].alive = true;
+            }
             self.game.players[0].met.insert(owner);
             self.game.players[owner].met.insert(0);
             set_mirrored_envoys(&mut self.game.players[0], owner, minor.envoys.max(0));
@@ -6000,8 +6213,8 @@ impl LiveMirror {
                 }
             }
         }
-        for (minor, owner) in state.minors.iter().zip(minor_seats) {
-            if minor.suzerain >= 0 {
+        for (minor, owner) in minor_assignments {
+            if minor.is_city_state() && minor.suzerain >= 0 {
                 if let Some(&holder) = seat_of_host.get(&(minor.suzerain as usize)) {
                     let current = mirrored_envoys(&self.game.players[holder], owner);
                     let winning = if holder == 0 {

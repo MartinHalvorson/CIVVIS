@@ -195,50 +195,70 @@ def public_fact_mismatches(state, board):
     return mismatches
 
 
+def mirrored_minor_sources(state):
+    """Return real city-states and non-dormant Free Cities actors."""
+    out = []
+    for source in state.get("minors") or []:
+        civ = source.get("civ")
+        if civ == "CIVILIZATION_BARBARIAN":
+            continue
+        if civ == "CIVILIZATION_FREE_CITIES" \
+                and not (source.get("cities") or source.get("units")):
+            continue
+        if civ:
+            out.append(source)
+    return out
+
+
 def minor_fact_mismatches(state, board, top):
-    """Compare met city-state identities, cities and public diplomacy facts."""
-    actual = [player for player in board.get("players") or []
+    """Compare non-major identities, cities and public diplomacy facts."""
+    sources = mirrored_minor_sources(state)
+    players = list(board.get("players") or [])
+    actual = [player for player in players
               if player.get("is_minor") and not player.get("is_barbarian")]
+    free_cities = next((player for player in players if player.get("is_free_city")), None)
     cities = {tuple(city.get("pos") or []): city for city in board.get("cities") or []}
     host_to_board = {0: 0}
     host_to_board.update({rival.get("player"): seat
                           for seat, rival in enumerate(state.get("rivals") or [], start=1)})
-    for source in state.get("minors") or []:
+    for source in sources:
         want = civ6_id(source.get("civ"), "CIVILIZATION_").replace("_", " ")
-        matched = next((candidate for candidate in actual
-                        if str(candidate.get("civ") or "").lower() == want), None)
+        matched = free_cities if source.get("civ") == "CIVILIZATION_FREE_CITIES" else next(
+            (candidate for candidate in actual
+             if str(candidate.get("civ") or "").lower() == want), None
+        )
         if matched is not None:
             host_to_board[source.get("player")] = matched.get("id")
     mismatches = []
-    for source in state.get("minors") or []:
+    for source in sources:
         want = civ6_id(source.get("civ"), "CIVILIZATION_").replace("_", " ")
-        player = next(
+        player = free_cities if source.get("civ") == "CIVILIZATION_FREE_CITIES" else next(
             (candidate for candidate in actual
-             if str(candidate.get("civ") or "").lower() == want),
-            None,
+             if str(candidate.get("civ") or "").lower() == want), None
         )
         if player is None:
-            mismatches.append(f"missing city-state {want or source.get('player')}")
+            mismatches.append(f"missing minor actor {want or source.get('player')}")
             continue
         for key in ("score", "military"):
             expected, got = source.get(key), player.get(key)
             if isinstance(expected, (int, float)) and expected >= 0 \
                     and (not isinstance(got, (int, float)) or abs(got - expected) > 0.51):
                 mismatches.append(f"{want} {key} Civ6={expected:g} CIVVIS={got!r}")
-        expected_envoys = source.get("envoys")
-        if isinstance(expected_envoys, (int, float)) \
-                and player.get("my_envoys") != expected_envoys:
-            mismatches.append(
-                f"{want} envoys Civ6={expected_envoys:g} CIVVIS={player.get('my_envoys')!r}"
-            )
-        suzerain = source.get("suzerain")
-        expected_suzerain = None if suzerain in (None, -1) else host_to_board.get(suzerain)
-        if (suzerain in (None, -1) or expected_suzerain is not None) \
-                and player.get("suzerain") != expected_suzerain:
-            mismatches.append(
-                f"{want} suzerain Civ6={suzerain!r} "
-                f"CIVVIS={player.get('suzerain')!r}"
-            )
+        if source.get("civ") != "CIVILIZATION_FREE_CITIES":
+            expected_envoys = source.get("envoys")
+            if isinstance(expected_envoys, (int, float)) \
+                    and player.get("my_envoys") != expected_envoys:
+                mismatches.append(
+                    f"{want} envoys Civ6={expected_envoys:g} CIVVIS={player.get('my_envoys')!r}"
+                )
+            suzerain = source.get("suzerain")
+            expected_suzerain = None if suzerain in (None, -1) else host_to_board.get(suzerain)
+            if (suzerain in (None, -1) or expected_suzerain is not None) \
+                    and player.get("suzerain") != expected_suzerain:
+                mismatches.append(
+                    f"{want} suzerain Civ6={suzerain!r} "
+                    f"CIVVIS={player.get('suzerain')!r}"
+                )
         for city in source.get("cities") or []:
             pos = axial(city.get("x", 0), top - city.get("y", 0))
             mirrored = cities.get(pos)
@@ -664,15 +684,16 @@ def main(argv=None):
     else:
         print(f"RIVALS   {len(state.get('rivals') or [])} met identities   OK")
 
+    minor_sources = mirrored_minor_sources(state)
     minor_mismatches = minor_fact_mismatches(state, board, best)
     if minor_mismatches:
         problems.append("city-states")
-        print(f"MINORS   {len(state.get('minors') or [])} met   ⚠ "
+        print(f"MINORS   {len(minor_sources)} present   ⚠ "
               + "; ".join(minor_mismatches))
     elif "minors" not in state:
         print("MINORS   export has no city-state records (old control mod)")
     else:
-        print(f"MINORS   {len(state.get('minors') or [])} met city-state(s)   OK")
+        print(f"MINORS   {len(minor_sources)} present minor actor(s)   OK")
 
     public_mismatches = public_fact_mismatches(state, board)
     if public_mismatches:

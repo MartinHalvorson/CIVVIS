@@ -17,6 +17,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import subprocess
 import sys
@@ -898,6 +899,10 @@ def play(args: argparse.Namespace) -> int:
     try:
         return _play(args)
     finally:
+        # The installation is exclusively ours while this lock is held. An
+        # interrupt or unexpected exception must not leave the game advancing
+        # after its event stream and mirror have stopped.
+        launcher.stop()
         gamelock.release()
 
 
@@ -984,6 +989,10 @@ def _play(args: argparse.Namespace) -> int:
         if brain_log is not None:
             brain_log.close()
             brain_log = None
+
+    # Covers KeyboardInterrupt and unexpected exceptions between the explicit
+    # cleanup sites below. Calling it again after a normal run is harmless.
+    atexit.register(stop_brain)
 
     launcher.clear_run_logs()
     launcher.launch(stdout=run_dir / "stdout.log")

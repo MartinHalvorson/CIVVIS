@@ -217,7 +217,7 @@ def transform_river_masks(source_edges, events, top):
         if y > top:
             continue
         start = offset_to_axial(x, y)
-        for bit, direction in ((1, 0), (2, 1), (4, 2)):
+        for direction, bit in enumerate(encoded):
             if not mask & bit:
                 continue
             delta = directions[direction]
