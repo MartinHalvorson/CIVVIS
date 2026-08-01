@@ -1733,6 +1733,67 @@ fn backfill_win_profiles(dir: &str, league: &mut League) -> bool {
     true
 }
 
+/// The strategy this league can best defend as its strongest, for a seat that may
+/// already know which civilization it is playing.
+///
+/// ★★★★ **RANKED ON `strength_bound`, NOT ON `rating`.** Both `Strategy::rating` and
+/// `CivRating::rating` carry a warning that they are the *placement* Glicko — they
+/// predict finishing order, which is what matchmaking needs, and they must never
+/// answer "which strategy is better". Ranking on the point estimate named a
+/// different strategy in 23 of 50 qualifying pairs, and `AI_PLAYER_ELO_RANKINGS.md`
+/// is sorted on it too, so the top of that table is not the answer to this question.
+/// The outright-win lower bound is.
+///
+/// `civ` narrows to the per-civilization table when that pair has been played,
+/// because a strategy's strength is not uniform across civilizations. Civilization VI
+/// deals the seat its civ rather than letting anything choose it, so this is the only
+/// direction the mapping can run: read what was dealt, then pick for it.
+///
+/// ⚠ Returns `None` rather than a default when nothing qualifies. A silent fallback
+/// to the stock genome is exactly how this project has previously "used" an evaluator
+/// that never loaded; the caller must be able to say which happened.
+pub fn strongest_strategy<'a>(league: &'a League, civ: Option<&str>) -> Option<&'a Strategy> {
+    league
+        .strategies
+        .iter()
+        .filter(|s| !s.human)
+        .filter(|s| genome_of(&s.kind).is_some())
+        .max_by(|a, b| {
+            strategy_strength(a, civ)
+                .partial_cmp(&strategy_strength(b, civ))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+}
+
+/// A strategy's defensible strength, for `civ` when that pair has history.
+///
+/// Falls back to the global bound when the pair is unplayed — which is the common
+/// case, because the league has only ever rated a handful of civilizations while
+/// Civilization VI deals from its whole roster.
+pub fn strategy_strength(strategy: &Strategy, civ: Option<&str>) -> f64 {
+    if let Some(civ) = civ {
+        let rated = strategy
+            .leader_elo
+            .values()
+            .filter_map(|civs| civs.get(civ))
+            .filter(|rating| rating.games > 0)
+            .map(|rating| rating.strength_bound())
+            .fold(f64::NEG_INFINITY, f64::max);
+        if rated.is_finite() {
+            return rated;
+        }
+    }
+    strategy.strength_bound()
+}
+
+/// The genome and victory lane a named strategy plays with, if it has one.
+///
+/// Built-ins without a `Weights` genome (random, neural, …) answer `None`, the same
+/// rule breeding uses.
+pub fn strategy_genome(strategy: &Strategy) -> Option<(Weights, Option<String>)> {
+    genome_of(&strategy.kind).map(|weights| (weights, target_of(&strategy.kind)))
+}
+
 pub fn load_league(dir: &str) -> Option<League> {
     let raw = fs::read_to_string(Path::new(dir).join("league.json")).ok()?;
     let mut league = parse_league(&raw)?;
