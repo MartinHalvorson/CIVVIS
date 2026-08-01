@@ -190,17 +190,22 @@ def remap_river_masks(events, top):
         new bit2(P) = old bit4(NE(P))    NE(x,y) = (x + (y&1),     y + 1)
         new bit4(P) = old bit2(NW(P))    NW(x,y) = (x - 1 + (y&1), y + 1)
 
-    Returns the number of segments nothing can carry after the flip: a diagonal
-    flag whose gathering plot is not in the export (the fog frontier), or an E
-    segment lying wholly in the one polar row the reflection drops. Bounded,
-    counted, and logged by the caller — never silent.
+    Returns the number of segments nothing can carry after the flip FOR THE
+    NEWEST EXPORT TURN — the board the mirror actually shows: a diagonal flag
+    whose gathering plot is not in the export (the fog frontier), or an E
+    segment lying wholly in the one polar row the reflection drops. Earlier
+    exports are remapped identically but not counted, because summing losses
+    over every historical fog frontier reads as a hole in the visible board
+    (141 "lost" on a board missing 4). Bounded, counted, and logged by the
+    caller — never silent.
     """
-    lost = 0
+    lost_by_turn = {}
     by_turn = {}
     for event in events:
         if isinstance(event, dict) and event.get("kind") == "tiles":
             by_turn.setdefault(event.get("turn"), []).append(event)
-    for chunks in by_turn.values():
+    for turn, chunks in by_turn.items():
+        lost = lost_by_turn.setdefault(turn, 0)
         width = next((c["width"] for c in chunks if isinstance(c.get("width"), int)), 0)
         if width <= 0:
             continue
@@ -231,7 +236,8 @@ def remap_river_masks(events, top):
                 lost += 1
             if rv & 4 and ((x - 1 + par) % width, y - 1) not in plots:
                 lost += 1
-    return lost
+        lost_by_turn[turn] = lost
+    return lost_by_turn[max(lost_by_turn)] if lost_by_turn else 0
 
 
 def stage_events(lines, height):
