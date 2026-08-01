@@ -671,6 +671,12 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     # should have opened. No submenu means the menu was not up yet, which is a
     # reason to wait, not a reason to give up: an earlier run bailed with "no
     # game window found" while the game was still showing the 2K logo.
+    # Consecutive attempts that saw neither a menu nor a submenu. Three in a
+    # row means "stuck on a full screen" (the Additional Content screen shows
+    # ≤1 row to BOTH readers — indistinguishable from a menu that has not
+    # loaded yet), not "still booting"; the BACK click is empty artwork on a
+    # genuinely unready menu, so a false strike costs nothing.
+    blind_strikes = 0
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
         focus_game(GAME_SIDE, GAME_FRACTION)
         time.sleep(2.0)
@@ -686,21 +692,65 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         click_at(int(x + w * 0.15), int(y + h * 0.85))
         time.sleep(1.5)
 
-        click_menu("single_player", bounds)
+        # ★ Read the TOP-LEVEL menu off the screen before aiming. The 2026-08
+        # "Civ VII" promo banner shifted the whole column ~0.11 of the window
+        # DOWN, so the fixed fraction clicked empty artwork ABOVE the menu —
+        # sixteen attempts of nothing, a whole batch dead on arrival. The
+        # first row is "Single Player" on this build (Continue lives inside
+        # the submenu as "Resume"). The fixed fraction stays as the fallback
+        # when the read fails, so a vision-less host behaves exactly as before.
+        menushot = run_dir / f"menu-attempt{attempt}.png"
+        screenshot(menushot)
+        toprows = vision.menu_rows(menushot, bounds) if vision.available() else []
+        sp_y = MENU["single_player"][1]
+        pitch = 0.029
+        if len(toprows) >= 4:
+            sp_y = toprows[0]
+            pitch = toprows[1] - toprows[0]
+            print(f"attempt {attempt}: menu read at {sp_y:.3f} "
+                  f"(pitch {pitch:.3f}, {len(toprows)} rows)", file=sys.stderr)
+        else:
+            print(f"attempt {attempt}: top menu not readable "
+                  f"({len(toprows)} rows) -- using the fixed fraction",
+                  file=sys.stderr)
+        click_at(int(x + w * MENU["single_player"][0]), int(y + h * sp_y))
         time.sleep(2.5)
         # Read the submenu rather than assume its shape. Which entries it has
         # depends on whether there is a save and a game to resume, so where
-        # "Create Game" lands moves between runs.
+        # "Create Game" lands moves between runs. The crop follows the read
+        # menu position for the same reason the aim does.
         submenu = run_dir / f"submenu-attempt{attempt}.png"
         screenshot(submenu)
-        rows = vision.submenu_rows(submenu, bounds) if vision.available() else []
+        rows = (vision.submenu_rows(submenu, bounds, near=sp_y, pitch=pitch)
+                if vision.available() else [])
         if len(rows) < 3:
+            blind_strikes = blind_strikes + 1 if len(toprows) < 4 else 0
             print(f"attempt {attempt}: no submenu ({len(rows)} rows) -- "
-                  "the menu is not ready yet", file=sys.stderr)
+                  f"the menu is not ready yet (blind strike {blind_strikes})",
+                  file=sys.stderr)
             if not env.game_pids():
                 print("the game exited while starting", file=sys.stderr)
                 return False
-            time.sleep(20.0)
+            if blind_strikes >= 3:
+                print("three blind attempts -- assuming a stuck full screen "
+                      "and clicking BACK", file=sys.stderr)
+                click_at(int(x + w * 0.723), int(y + h * 0.177))
+                blind_strikes = 0
+                time.sleep(3.0)
+            else:
+                time.sleep(20.0)
+            continue
+        blind_strikes = 0
+        if len(rows) > 6:
+            # A full-screen LIST -- the Additional Content screen a mis-aimed
+            # click can walk into -- not a menu submenu. Its exit is the BACK
+            # button at the top right; Escape does nothing there (measured
+            # 2026-08-01 on the live screen). The same click is empty artwork
+            # on the plain menu, so a false positive is a no-op.
+            print(f"attempt {attempt}: {len(rows)} rows is a list screen, not "
+                  "a submenu -- clicking BACK", file=sys.stderr)
+            click_at(int(x + w * 0.723), int(y + h * 0.177))
+            time.sleep(2.0)
             continue
         target = rows[-3]
         print(f"create game row: {target:.4f} (read from {len(rows)} submenu rows)")
