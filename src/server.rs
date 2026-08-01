@@ -7117,7 +7117,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
         // A masthead row is one line: civilization carries the capital action,
-        // followed by the explicit watch action, identity and ten values.
+        // followed by the explicit watch action, identity and eleven values.
         // Watch-as deliberately has no column heading; the button carries its
         // own visible label.
         assert!(EMBEDDED_INDEX.contains(
@@ -7127,11 +7127,11 @@ mod tests {
         // The values claim their width first and the identity block flexes, so a
         // narrow masthead ellipsizes a name rather than running two figures
         // together. A percentage identity column with a 300px floor never
-        // yielded, which left the ten values 27px each at 1600px.
+        // yielded, which left the eleven values 27px each at 1600px.
         //
         // Every data column is now a share rather than a pixel count, and each
         // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 7 identity columns totalling 11.387 against 10 value
+        // inside it — 7 identity columns totalling 11.387 against 11 value
         // columns of 1. That identity is not decoration: it is what lets the
         // bar between the two blocks move width across itself, and it is the
         // ratio the table uses at every width. Changing one number here without
@@ -7146,8 +7146,10 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
-             calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);"
+             calc(var(--hud-stat-min) * 11 + var(--hud-stat-gap) * 10), 11fr);"
         ));
+        assert!(EMBEDDED_INDEX
+            .contains("--hud-stat-tracks: repeat(11, minmax(var(--hud-stat-min), 1fr));"));
         // The floors stay in the stylesheet so the width breakpoints can lower
         // them; the shares belong to the viewer. A breakpoint that rewrote a
         // share would undo a dragged column on the next window resize, so no
@@ -7182,9 +7184,51 @@ mod tests {
         // reason a dragged column moves the figures under it as well as its
         // own head.
         assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-stat-tracks);").count(), 2,
-            "the value heads and the value cells are the same ten tracks");
+            "the value heads and the value cells are the same eleven tracks");
         assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
             "the identity heads and the identity cells are the same tracks");
+        // All three render-time lists must stay in one reading order: the
+        // column model lays out and drags the cells, the heading names them,
+        // and playerHudStats supplies their figures. Food comes from the
+        // existing public yield payload rather than a separate request.
+        fn assert_hud_stat_order(source: &str, section: &str) {
+            let expected = [
+                "cities", "food", "production", "science", "culture", "faith", "gold",
+                "military", "wonders", "suzerain", "score",
+            ];
+            let mut cursor = 0;
+            for key in expected {
+                let needle = format!("\"{key}\"");
+                let offset = source[cursor..]
+                    .find(&needle)
+                    .unwrap_or_else(|| panic!("{section} is missing the {key} statistic"));
+                cursor += offset + needle.len();
+            }
+        }
+        let stat_columns = EMBEDDED_INDEX
+            .split_once("const PLAYER_HUD_COLUMNS = [")
+            .expect("player HUD column model")
+            .1
+            .split_once("];\n// One bar per seam")
+            .expect("end of player HUD column model")
+            .0;
+        assert_hud_stat_order(stat_columns, "player HUD column model");
+        let stat_figures = EMBEDDED_INDEX
+            .split_once("function playerHudStats(player, rank) {")
+            .expect("player HUD stat figures")
+            .1
+            .split_once("// Rebuilding the ribbon")
+            .expect("end of player HUD stat figures")
+            .0;
+        assert_hud_stat_order(stat_figures, "player HUD stat figures");
+        let stat_headers = EMBEDDED_INDEX
+            .split_once(r#"<span class="diplomacy-stat-head">` +"#)
+            .expect("player HUD stat headings")
+            .1
+            .split_once(".map(([kind, label, title])")
+            .expect("end of player HUD stat headings")
+            .0;
+        assert_hud_stat_order(stat_headers, "player HUD stat headings");
         // Player, ELO, the Start/Now pair, AGE and PLAN are drawn inside one button spanning
         // five of those tracks, so that button divides itself with `subgrid` — the
         // same tracks, not a copy of their ratios. A copy is what shipped
