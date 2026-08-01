@@ -2644,6 +2644,24 @@ local function buildParams(row, city)
 	elseif row.Kind == "KIND_PROJECT" then
 		params[CityOperationTypes.PARAM_PROJECT_TYPE] = row.Hash;
 	else
+		-- ★★★★★ SAY WHAT WE COULD NOT BUILD. A bare `no_params` is 100 discarded
+		-- decisions with no name on any of them.
+		--
+		-- Measured on run civvis-20260801T012454Z over 126 turns: 2070 orders, 391
+		-- refused, and `no_params` was 100 of them -- the second largest reason after
+		-- movement. `build_no_plot` accounted for only 5, so ~95 fell through this
+		-- branch and NOTHING said which item or which Kind.
+		--
+		-- What that costs is not the order, it is the decision. A produce order that
+		-- dies here leaves the city with nothing queued, `ENDTURN_BLOCKING_PRODUCTION`
+		-- fires, and `driveProduction` picks from the hand-written ladder instead. On
+		-- that run only **16 of 64 builds were CIVVIS's** -- floor 21, improve 9,
+		-- develop 8, army 4, expand 3, grow 2, scout 1 -- while every turn event
+		-- reported `orders_source: civvis` with `residual: []`.
+		emit("build_unknown_kind", {
+			item = row.Type or tostring(row.Hash),
+			row_kind = row.Kind or "(nil)",
+		});
 		return nil;
 	end
 	return params;
@@ -4738,7 +4756,10 @@ local function applyOrder(player, pid, row, turn)
 		verb = resolved;
 		civvisBuild[tonumber(subject) or -1] = resolved;
 		local params = buildParams(row2, city);
-		if params == nil then return false, "no_params"; end
+		-- ⚠ The verb goes in the reason. `refusals` is aggregated by reason string, so
+		-- a bare "no_params" collapses every distinct failure into one anonymous
+		-- number -- which is exactly how 100 of them went unexplained.
+		if params == nil then return false, "no_params_" .. tostring(verb); end
 		-- ★★★★ DO NOT RE-ISSUE WHAT THE CITY IS ALREADY BUILDING.
 		--
 		-- Every produce order carries `VALUE_REPLACE_AT`, so re-sending one REPLACES the
@@ -4822,7 +4843,8 @@ local function applyOrder(player, pid, row, turn)
 		elseif row2.Kind == "KIND_DISTRICT" then
 			params[CityCommandTypes.PARAM_DISTRICT_TYPE] = row2.Hash;
 		else
-			return false, "no_params";
+			-- Same reasoning as the produce arm above: name it or it cannot be chased.
+			return false, "no_params_" .. tostring(row2.Kind or verb);
 		end
 		local gold = try(function() return GameInfo.Yields["YIELD_GOLD"].Index; end);
 		if gold == nil then return false, "no_yield"; end
