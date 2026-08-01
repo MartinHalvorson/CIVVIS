@@ -14542,7 +14542,8 @@ impl AdvancedAi {
         self.strategic_governors(g, pid, &plan);
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // religions, and envoys. Research is already selected.
-        self.base.research_without_government(g, pid);
+        self.base
+            .research_without_government_with_pool(g, pid, self.work_pool.as_deref());
         self.strategic_government(g, pid, plan.strategy);
         self.base.corporations(g, pid);
         self.advanced_products(g, pid, plan.strategy);

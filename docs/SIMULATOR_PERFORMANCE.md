@@ -50,6 +50,46 @@ Four deliberately small changes produced that result:
    A successful `Game::apply` clears it, and game clones and saves start empty,
    so normal mutation and search branches cannot reuse a stale menu.
 
+## Live policy-deck counterfactuals (2026-08-01)
+
+The live policy deck was a newly isolated serial island inside an otherwise
+parallel single simulation. On a review, it removes and restores every legal
+or held card, reading the whole empire before and after each change. The
+sampling evidence put this work under `BasicAi::research_with_government`, but
+the expensive child was the counterfactual `empire_reading`, not technology
+selection.
+
+Two bounded changes keep its semantics intact:
+
+1. Each read-only empire valuation holds one `QueryMemo` scope, so the city
+   yield and ownership derivations shared by its cities are reused only while
+   the policy slate is unchanged.
+2. A fleet with its existing persistent `WorkPool` scores independent cards on
+   worker-private game snapshots. Results return in the original candidate
+   order, and the authoritative game's existing sort and serial deck commit
+   remain the only mutation path. Interactive and baseline `BasicAi` runs
+   retain their serial path.
+
+Release `simulate` was measured on two fixed six-player, 74-by-46 maps with
+nine city-states, 150 turns, online speed, and seeds 7,311,002 and 7,311,003.
+Baseline and candidate order alternated across the two seeds. These are
+shared-host elapsed times, so they establish a reproducible directional result
+rather than a universal machine-level throughput promise.
+
+| Internal workers | Baseline total | Candidate total | Change |
+| --- | ---: | ---: | ---: |
+| 1 | 15.150s | 14.067s | -7.1% |
+| 4 | 13.968s | 11.404s | -18.4% |
+| 18 | 14.183s | 12.057s | -15.0% |
+
+After removing the simulator's elapsed-time line, every baseline/candidate
+report had the same SHA-256 hash for each seed and worker count. A focused
+regression also compares a full live-deck review with one versus four workers
+and requires identical action logs and serialized game state. Four workers
+were the best observed count for this limited workload; that is evidence for a
+separate default-worker calibration experiment, not grounds to silently cap
+all hosts or workload shapes.
+
 ## Production-catalog follow-up
 
 The production catalog was the narrow first experiment from the profile. Its
