@@ -318,15 +318,26 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
 
 # --------------------------------------------------------------------------- 2
 
-# The improvements CIVVIS models. Anything else the mirror stores as None, so the
-# tile reads UNIMPROVED — honest for a name that cannot be translated, and also the
-# exact condition that made CIVVIS order 19 builders for one city. Counted apart from
-# a disagreement, because it is a known gap rather than a wrong hex.
-MODELLED_IMPROVEMENTS = {
-    "farm", "mine", "quarry", "pasture", "plantation", "camp", "fishing_boats",
-    "lumber_mill", "oil_well", "offshore_oil_rig", "fort", "airstrip",
-    "national_park", "industry", "seaside_resort", "ski_resort",
-}
+def _modelled_improvements() -> set[str]:
+    """The improvements CIVVIS models, READ FROM THE RULESET.
+
+    ⚠ THIS WAS A HARDCODED SET AND IT DRIFTED, in both this file and `mirror.rs`.
+    CIVVIS models 36 improvements; the two copies listed 16. The twenty dropped
+    included `barbarian_camp`, `goody_hut` and `meteor_goody` — exactly the three
+    `AdvancedAi` looks for in `invalidates_followers`, so the mirror stored None and
+    the AI's own guard was blind to every barbarian camp on the map.
+
+    A checker with its own copy of the thing it checks will eventually disagree with
+    it for reasons that have nothing to do with the game. Read the same source.
+    """
+    try:
+        data = json.loads((HERE.parent / "data" / "improvements.json").read_text())
+    except (OSError, ValueError):
+        return set()
+    return set(data)
+
+
+MODELLED_IMPROVEMENTS = _modelled_improvements()
 
 
 def production_health(events: list[dict], builder_per_city: float = 0.8) -> dict:
@@ -612,7 +623,14 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
             f"playable, so this counts turns nothing better was chosen.")
     late = prod.get("prod_blocks_after_t100") or 0
     unans = prod.get("prod_blocks_after_t100_unanswered") or 0
-    if late and unans:
+    # ⚠ A MINIMUM DENOMINATOR, like every other check here has. Without it a single
+    # blocked event reads "1/1 (100%) unanswered" and shouts — which is exactly what
+    # a run that died early looks like, and exactly when this report is being read
+    # most carefully. The other three verdicts guard on `floor_builds >= 5`,
+    # `overshoot >= 2.0` and `>= 20` war turns with `>= 5` late-war builds; this one
+    # was the odd case out. Eight is the smallest sample that can distinguish a real
+    # budget exhaustion (which runs at ~50% on a six-city empire) from noise.
+    if late >= 8 and unans:
         out.append(
             f"PRODUCTION BLOCKED AND UNANSWERED: {unans}/{late} of the "
             f"ENDTURN_BLOCKING_PRODUCTION blocks after turn 100 got no answer. It "
