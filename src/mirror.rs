@@ -986,6 +986,81 @@ mod tests {
     }
 
     #[test]
+    /// ★★★★★ A building CIVVIS does not model must not take the decider down.
+    ///
+    /// `BUILDING_CASTLE` **panicked the whole decider** on live run
+    /// `civvis-20260801T012454Z` at turn 238:
+    ///
+    /// ```text
+    /// panicked at src/specmap.rs: no ruleset entry named "castle"
+    ///   Game::building_district_is_active -> Game::spawn_unit
+    ///     -> mirror::rebuild_from_state -> LiveMirror::new
+    /// ```
+    ///
+    /// The city's buildings were lowercased rather than translated, so an unmodelled
+    /// name entered the list and `rules.buildings[..]` — a direct index — panicked on
+    /// it. Afterwards the brain reported `0 orders in 0.04s` every turn, the mod sat
+    /// on `await` past 98 polls, and the run fell back to the heuristic ladder
+    /// (`orders_source: "fallback"`). One Castle ends a run permanently, because
+    /// every rebuild hits it again.
+    ///
+    /// ⚠ The assertion is that the rebuild SURVIVES and SAYS SO. A silent drop would
+    /// also stop the panic and would be the wrong fix — the name has to be counted.
+    #[test]
+    fn a_building_civvis_does_not_model_is_reported_not_fatal() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 8,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "London".to_string(),
+            x: 5,
+            y: 5,
+            pop: 6,
+            buildings: vec![
+                "BUILDING_MONUMENT".to_string(),
+                // Real, shipped, and not in CIVVIS's ruleset.
+                "BUILDING_CASTLE".to_string(),
+            ],
+            ..StateCity::default()
+        });
+
+        // Before the fix this line panicked rather than returning.
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+
+        let city = recon
+            .game
+            .cities
+            .values()
+            .find(|c| c.owner == 0)
+            .expect("the seat's city must be on the board");
+        assert!(
+            city.buildings.contains(&Name::new("monument")),
+            "a building CIVVIS does model still crosses"
+        );
+        assert!(
+            !city.buildings.iter().any(|b| b.as_str() == "castle"),
+            "and one it does not model must never enter the list — that name is what \
+             `rules.buildings[..]` panics on"
+        );
+        assert!(
+            recon
+                .unmapped
+                .iter()
+                .any(|entry| entry.contains("BUILDING_CASTLE")),
+            "and it must be COUNTED, not silently dropped: {:?}",
+            recon.unmapped
+        );
+    }
+
     fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
         // ⚠ THIS FIELD EXISTED AND WAS NEVER FILLED. `religion` was null on all
         // 26,954 city records ever exported — the schema had it, the mod never sent
@@ -2886,14 +2961,33 @@ pub fn rebuild_from_state(
                 // forever and CIVVIS re-orders the same development every turn:
                 // measured 19 Builders and 17 Granaries for ONE city, against one
                 // Warrior — the mirror image of the old all-army failure.
+                // ⚠⚠ TRANSLATED, NOT LOWERCASED. This used to strip the prefix and
+                // push whatever came out, so a building CIVVIS does not model entered
+                // the city's list under a name no ruleset entry answers to — and
+                // `rules.buildings[..]` is a direct index.
+                //
+                // `BUILDING_CASTLE` PANICKED THE WHOLE DECIDER. Reproduced on live run
+                // civvis-20260801T012454Z at turn 238:
+                //
+                //     panicked at src/specmap.rs: no ruleset entry named "castle"
+                //     Game::building_district_is_active -> Game::spawn_unit
+                //       -> mirror::rebuild_from_state -> LiveMirror::new
+                //
+                // The brain then reported `0 orders in 0.04s` on every turn, the mod
+                // sat on `await` past 98 polls, and the run fell back to the heuristic
+                // ladder (`orders_source: "fallback"`). One Castle ends a run
+                // permanently, because every rebuild hits it again.
                 for civ6 in &city.buildings {
-                    let name = civ6
-                        .strip_prefix("BUILDING_")
-                        .unwrap_or(civ6)
-                        .to_ascii_lowercase();
-                    let named = crate::name::Name::new(&name);
-                    if !built.buildings.contains(&named) {
-                        built.buildings.push(named);
+                    match civvis_node_name(&game.rules.buildings, civ6, "BUILDING_") {
+                        Some(name) => {
+                            let named = crate::name::Name::new(&name);
+                            if !built.buildings.contains(&named) {
+                                built.buildings.push(named);
+                            }
+                        }
+                        // Counted, never guessed at. A building the ruleset cannot name
+                        // is a gap the reader can see, which is the whole standing rule.
+                        None => unmapped.push(format!("{civ6}:building")),
                     }
                 }
             }
@@ -3533,14 +3627,16 @@ impl LiveMirror {
                     if city.loyalty >= 0.0 {
                         live.loyalty = city.loyalty;
                     }
+                    // Same translation as the rebuild path, and for the same reason:
+                    // an untranslated name here panics `rules.buildings[..]` later.
                     for civ6 in &city.buildings {
-                        let name = civ6
-                            .strip_prefix("BUILDING_")
-                            .unwrap_or(civ6)
-                            .to_ascii_lowercase();
-                        let named = crate::name::Name::new(&name);
-                        if !live.buildings.contains(&named) {
-                            live.buildings.push(named);
+                        if let Some(name) =
+                            civvis_node_name(&self.game.rules.buildings, civ6, "BUILDING_")
+                        {
+                            let named = crate::name::Name::new(&name);
+                            if !live.buildings.contains(&named) {
+                                live.buildings.push(named);
+                            }
                         }
                     }
                 }
