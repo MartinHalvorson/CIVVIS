@@ -1,0 +1,184 @@
+#!/usr/bin/env python3
+
+import importlib.util
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest import mock
+
+
+MODULE_PATH = Path(__file__).with_name("civvis_match_machine.py")
+SPEC = importlib.util.spec_from_file_location("civvis_match_machine", MODULE_PATH)
+machine = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+sys.modules[SPEC.name] = machine
+SPEC.loader.exec_module(machine)
+
+
+class MatchMachineTests(unittest.TestCase):
+    def test_game_contract_is_online_continents_free_for_all(self):
+        command = machine.game_command(
+            Path("/tmp/civvis"), Path("/tmp/league"), 42, 8870, visible=False
+        )
+        value = lambda flag: command[command.index(flag) + 1]
+        self.assertEqual(value("--players"), "8")
+        self.assertEqual((value("--width"), value("--height")), ("84", "54"))
+        self.assertEqual(value("--city-states"), "12")
+        self.assertEqual(value("--turns"), "250")
+        self.assertEqual(value("--speed"), "online")
+        self.assertEqual(value("--map"), "continents")
+        self.assertNotIn("--teams", command)
+        self.assertIn("--league-record", command)
+        self.assertIn("--no-open", command)
+
+    def test_game_contract_accepts_explicit_speed_and_turn_override(self):
+        command = machine.game_command(
+            Path("civvis"),
+            Path("league"),
+            1,
+            2,
+            visible=False,
+            speed="standard",
+            turns=600,
+        )
+        value = lambda flag: command[command.index(flag) + 1]
+        self.assertEqual(value("--speed"), "standard")
+        self.assertEqual(value("--turns"), "600")
+
+    def test_cli_derives_the_stock_turn_limit_for_the_selected_speed(self):
+        online = machine.parse_args(["--watch-pid", "1"])
+        standard = machine.parse_args(["--watch-pid", "1", "--speed", "standard"])
+        self.assertEqual((online.speed, online.turns), ("online", 250))
+        self.assertEqual((standard.speed, standard.turns), ("standard", 500))
+
+    def test_first_visible_game_opens_browser_and_replacements_reuse_tab(self):
+        visible = machine.game_command(Path("civvis"), Path("league"), 1, 2, visible=True)
+        replacement = machine.game_command(
+            Path("civvis"),
+            Path("league"),
+            2,
+            2,
+            visible=True,
+            open_browser=False,
+        )
+        headless = machine.game_command(Path("civvis"), Path("league"), 1, 2, visible=False)
+        self.assertNotIn("--no-open", visible)
+        self.assertIn("--no-open", replacement)
+        self.assertIn("--no-open", headless)
+
+    def test_fill_slots_replaces_a_completed_visible_game(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        subject.games = []
+        subject.visible_started = True
+        subject.launch = mock.Mock()
+
+        subject.fill_slots(machine.Resources(20, 20, 12, 0, False))
+
+        subject.launch.assert_called_once_with(visible=True)
+
+    def test_cpu_parser_uses_the_last_top_sample(self):
+        report = "CPU usage: 10.0% user, 5.0% sys, 85.0% idle\nCPU usage: 20.0% user, 9.5% sys, 70.5% idle"
+        self.assertEqual(machine.parse_top_cpu(report), 29.5)
+        self.assertIsNone(machine.parse_top_cpu("not top"))
+
+    def test_resource_ceiling_is_hard_and_resume_has_headroom(self):
+        safe = machine.Resources(59.0, 20.0, 12.0, 0.0, False)
+        edge = machine.Resources(70.0, 20.0, 12.0, 0.0, False)
+        thermal = machine.Resources(1.0, 1.0, 1.0, 1.0, True)
+        self.assertTrue(safe.comfortably_below(70))
+        self.assertFalse(safe.overloaded(70))
+        self.assertTrue(edge.overloaded(70))
+        self.assertTrue(thermal.overloaded(70))
+        self.assertEqual(machine.resource_action(machine.Resources(49, 20, 12, 0, False), 70), "resume")
+        self.assertEqual(machine.resource_action(machine.Resources(55, 20, 12, 0, False), 70), "shed_one")
+        self.assertEqual(machine.resource_action(machine.Resources(60, 20, 12, 0, False), 70), "shed_headless")
+        self.assertEqual(machine.resource_action(edge, 70), "shed_all")
+
+    def test_match_lookup_finds_a_concurrent_out_of_order_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            league = Path(directory)
+            (league / "matches.csv").write_text(
+                "round,seed,turns,victory,placements\n"
+                "60,12,300,science,a@Trajan@Rome@0|b@Cleopatra@Egypt@1\n"
+                "61,10,250,culture,b@Trajan@Rome@0|a@Cleopatra@Egypt@1\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(machine.match_row(league, 12)["victory"], "science")
+            self.assertIsNone(machine.match_row(league, 99))
+
+    def test_recorded_result_is_authoritative_over_later_server_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            league = Path(directory)
+            (league / "matches.csv").write_text(
+                "round,seed,turns,victory,placements\n"
+                "60,12,423,science,a@Trajan@Rome@0|b@Cleopatra@Egypt@1\n",
+                encoding="utf-8",
+            )
+            row = machine.match_row(league, 12)
+            self.assertEqual(machine.winner_placement(row), "a@Trajan@Rome@0")
+
+    def test_state_write_is_atomic_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "state.json"
+            machine.atomic_json(target, {"active": 8})
+            self.assertEqual(json.loads(target.read_text()), {"active": 8})
+            self.assertFalse(target.with_suffix(".json.tmp").exists())
+
+    def test_game_lifecycle_events_do_not_collide_with_event_kind(self):
+        with tempfile.TemporaryDirectory() as directory:
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.args = SimpleNamespace(port=8870)
+            subject.binary = Path("/tmp/civvis")
+            subject.league = Path(directory) / "league"
+            subject.logs = Path(directory) / "logs"
+            subject.logs.mkdir()
+            subject.current_revision = "abc123"
+            subject.next_seed = 100
+            subject.games = []
+            subject.visible_started = False
+            subject.visible_completed = False
+            subject.visible_completed_count = 0
+            subject.visible_browser_opened = False
+            subject.completed = 0
+            subject.failed = 0
+            events = []
+            subject.event = lambda kind, **values: events.append((kind, values))
+            process = mock.Mock(pid=1234)
+
+            with mock.patch.object(machine.subprocess, "Popen", return_value=process):
+                subject.launch(visible=True)
+            subject.games[0].last_status = {
+                "turn": 435,
+                "winner": 1,
+                "victory_type": "religious",
+            }
+            with mock.patch.object(machine, "stop_process"), mock.patch.object(
+                machine,
+                "match_row",
+                return_value={
+                    "seed": "100",
+                    "turns": "423",
+                    "victory": "science",
+                    "placements": "a@Trajan@Rome@0|b@Cleopatra@Egypt@1",
+                },
+            ):
+                subject.finish(subject.games[0], failed=False, reason="winner recorded")
+
+            self.assertEqual(events[0][0], "game_started")
+            self.assertEqual(events[0][1]["game_kind"], "visible")
+            self.assertEqual(events[1][0], "game_completed")
+            self.assertEqual(events[1][1]["game_kind"], "visible")
+            self.assertEqual(events[1][1]["turn"], "423")
+            self.assertEqual(events[1][1]["victory"], "science")
+            self.assertIsNone(events[1][1]["winner"])
+            self.assertEqual(events[1][1]["winner_placement"], "a@Trajan@Rome@0")
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -3,7 +3,9 @@
 //! `BasicAi` deliberately remains the small deterministic baseline.  This
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
-use super::{Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, UnitDoctrine, Weights};
+use super::{
+    Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine, Weights,
+};
 use crate::belief::{BeliefState, CitySighting};
 use crate::name::Name;
 use crate::parallel::WorkPool;
@@ -13,6 +15,7 @@ use crate::game::{
 use crate::reasoning::{plain, Journal};
 use crate::rules::Yields;
 use crate::think;
+use crate::world::TileBits;
 use crate::Pos;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::sync::Arc;
@@ -109,6 +112,12 @@ const ROLE_MARGIN: f64 = 1.15;
 /// treatment prices the same resource consistently whether it arrives now or
 /// through influence later.
 const ENVOY_PRODUCTION_VALUE: f64 = 170.0;
+
+/// A purchase-menu batch is bounded by the number of cities, while each active
+/// worker owns a full game snapshot. Three workers are enough to overlap the
+/// expensive city-local menus without paying for a snapshot per pool thread;
+/// wider workers remain available to the larger unit and visibility frontiers.
+const PURCHASE_MENU_MAX_WORKERS: usize = 3;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GrandStrategy {
@@ -423,6 +432,19 @@ pub struct ForceGroup {
     pub local_strength_ratio: f64,
 }
 
+/// The information available when a major civilization starts one turn.
+///
+/// Battlefront planning creates a turn-level commitment.  It must not acquire
+/// a different information set merely because an earlier action in that turn
+/// moved a scout or a detector.  Keep both the visible tile frame and the
+/// observed unit identities: `unit_visible_to` can itself change when a
+/// detector moves even if a tile was already visible.
+#[derive(Clone)]
+struct BattlefrontFrame {
+    visible: TileBits,
+    units: BTreeSet<u32>,
+}
+
 #[derive(Clone, Copy, Default)]
 struct EmpireCounts {
     settlers: usize,
@@ -583,6 +605,10 @@ pub struct AdvancedAi {
     /// that compatibility boundary is guarded by the source contract in the
     /// CLI tests.
     battlefront_observation: bool,
+    /// Immutable information frame captured before this major acts.  It is
+    /// cleared after the turn so direct evaluators outside a turn still read
+    /// the game's current observation.
+    battlefront_frame: Option<BattlefrontFrame>,
     /// Hold only the force groups that could actually reach the threatened
     /// city, instead of every group in the empire.
     ///
@@ -1304,8 +1330,48 @@ impl Default for AdvancedAi {
 }
 
 impl AdvancedAi {
+    /// Production Advanced: the confirmed live-policy and envoy-production
+    /// composite. Keep the three changes together here so every ordinary
+    /// construction path (including weighted and explicitly targeted agents)
+    /// has one auditable definition.
     pub fn new() -> AdvancedAi {
+        Self::promoted_policy_envoy(Weights::default(), None)
+    }
+
+    /// Exact pre-2026-08-01 Advanced configuration used only by evaluator
+    /// controls. It intentionally retains the Legacy deck and leaves both
+    /// envoy-production flags off; it is not the frozen `advanced_v1` anchor.
+    pub(crate) fn pre_policy_envoy() -> AdvancedAi {
         Self::configured(BasicAi::new(), true, None)
+    }
+
+    /// Weighted counterpart to [`Self::pre_policy_envoy`]. Keeping this
+    /// separate prevents an evaluator control from accidentally inheriting
+    /// today's production defaults through [`Self::with_weights`].
+    pub(crate) fn pre_policy_envoy_with_weights(weights: Weights) -> AdvancedAi {
+        Self::configured(BasicAi::with_weights(weights), true, None)
+    }
+
+    fn production_weights(mut weights: Weights) -> Weights {
+        // `policy_deck` is deliberately not a gene, so a generated or legacy
+        // weight vector cannot silently withdraw the confirmed production
+        // policy layer when it enters an Advanced controller.
+        weights.policy_deck = PolicyDeck::Live;
+        weights
+    }
+
+    fn promoted_policy_envoy(
+        weights: Weights,
+        victory_target: Option<VictoryTarget>,
+    ) -> AdvancedAi {
+        let mut ai = Self::configured(
+            BasicAi::with_weights(Self::production_weights(weights)),
+            true,
+            victory_target,
+        );
+        ai.envoy_infrastructure = true;
+        ai.envoy_priority = true;
+        ai
     }
 
     /// Where this agent tells an observer what it is doing.
@@ -1364,7 +1430,7 @@ impl AdvancedAi {
     }
 
     pub fn targeting(target: VictoryTarget) -> AdvancedAi {
-        Self::configured(BasicAi::new(), true, Some(target))
+        Self::promoted_policy_envoy(Weights::default(), Some(target))
     }
 
     /// Frozen control for measuring future strategic changes against the
@@ -1399,6 +1465,7 @@ impl AdvancedAi {
             work_pool: None,
             belief: BeliefState::new(),
             battlefront_observation: true,
+            battlefront_frame: None,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
@@ -1448,11 +1515,11 @@ impl AdvancedAi {
     }
 
     pub fn with_weights(weights: Weights) -> AdvancedAi {
-        Self::configured(BasicAi::with_weights(weights), true, None)
+        Self::promoted_policy_envoy(weights, None)
     }
 
     pub fn with_weights_and_target(weights: Weights, target: VictoryTarget) -> AdvancedAi {
-        Self::configured(BasicAi::with_weights(weights), true, Some(target))
+        Self::promoted_policy_envoy(weights, Some(target))
     }
 
     /// Redirect an existing agent at a new explicit victory target without
@@ -1481,7 +1548,14 @@ impl AdvancedAi {
     /// variable a rollout planner can search over. The strategic plan is
     /// dropped so the next turn re-assesses under the new genome.
     pub fn reweight(&mut self, weights: Weights) {
-        self.base.w = weights;
+        // `advanced_v1` is allowed to retain the historical non-gene deck.
+        // Every production Advanced instance keeps the promoted live deck when
+        // a searcher swaps its numerical genome underneath it.
+        self.base.w = if self.victory_planning {
+            Self::production_weights(weights)
+        } else {
+            weights
+        };
         self.plan = None;
     }
 
@@ -1821,6 +1895,42 @@ impl AdvancedAi {
     /// live durability or garrison-derived strength.
     fn remembered_city(&self, cid: u32) -> Option<&CitySighting> {
         self.belief.cities.get(&cid)
+    }
+
+    /// Capture one coherent battlefront observation before any action can
+    /// reveal more of the map.  The stored unit set matters for camouflage:
+    /// moving a detector later in the turn must not cause the planning frame
+    /// to treat a formerly hidden unit as known at turn start.
+    fn capture_battlefront_frame(&mut self, g: &Game, pid: usize) {
+        if !self.battlefront_observation {
+            self.battlefront_frame = None;
+            return;
+        }
+        let visible = g.player_vision_now(pid);
+        let units = g
+            .units
+            .values()
+            .filter(|unit| g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid))
+            .map(|unit| unit.id)
+            .collect();
+        self.battlefront_frame = Some(BattlefrontFrame { visible, units });
+    }
+
+    /// The battlefront's turn-start tile frame, or current vision when this
+    /// helper is used outside a controller turn (including focused tests).
+    fn battlefront_visibility(&self, g: &Game, pid: usize) -> TileBits {
+        self.battlefront_frame
+            .as_ref()
+            .map(|frame| frame.visible.clone())
+            .unwrap_or_else(|| g.player_vision_now(pid))
+    }
+
+    /// Whether a unit belonged to the same turn-start observation frame.
+    fn battlefront_unit_visible(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.battlefront_frame
+            .as_ref()
+            .map(|frame| frame.units.contains(&uid))
+            .unwrap_or_else(|| g.unit_visible_to(uid, pid))
     }
 
     fn city_pressure_with_belief(
@@ -6697,19 +6807,27 @@ impl AdvancedAi {
         }
 
         let city_ids = Arc::new(city_ids);
-        let active = pool.threads().min(city_ids.len());
+        let active = pool
+            .threads()
+            .min(city_ids.len())
+            .min(PURCHASE_MENU_MAX_WORKERS);
         let states = (0..active).map(|_| g.clone()).collect::<Vec<_>>();
-        let per_city = pool.map_stateful(city_ids.len(), states, move |game, indices| {
-            let _memo = game.query_memo();
-            indices
-                .map(|index| {
-                    (
-                        index,
-                        game.legal_purchase_actions_for_city(pid, city_ids[index]),
-                    )
-                })
-                .collect()
-        });
+        let per_city = pool.map_stateful_limited(
+            city_ids.len(),
+            PURCHASE_MENU_MAX_WORKERS,
+            states,
+            move |game, indices| {
+                let _memo = game.query_memo();
+                indices
+                    .map(|index| {
+                        (
+                            index,
+                            game.legal_purchase_actions_for_city(pid, city_ids[index]),
+                        )
+                    })
+                    .collect()
+            },
+        );
         let mut actions = Vec::new();
         actions.extend(
             per_city
@@ -10267,7 +10385,7 @@ impl AdvancedAi {
                 .unwrap_or_else(|| g.city_strength(city.id))
         });
         let observed_owner = sighting.map(|report| report.owner).unwrap_or(city.owner);
-        let visible = g.player_vision_now(pid);
+        let visible = self.battlefront_visibility(g, pid);
         let core_distance = g
             .player_city_ids(pid)
             .into_iter()
@@ -10333,7 +10451,8 @@ impl AdvancedAi {
             .filter(|unit| unit.owner == observed_owner && g.wdist(unit.pos, city.pos) <= 7)
             .filter(|unit| {
                 !self.battlefront_observation
-                    || (g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid))
+                    || (g.sees(&visible, unit.pos)
+                        && self.battlefront_unit_visible(g, pid, unit.id))
             })
             .filter(|unit| g.rules.units[unit.kind].class == "military")
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
@@ -10341,9 +10460,10 @@ impl AdvancedAi {
             + self
                 .battlefront_observation
                 .then(|| {
-                    self.belief.remembered_hidden_military_threat(
+                    self.belief.remembered_hidden_military_threat_in_view(
                         g,
                         pid,
+                        &visible,
                         city.pos,
                         7,
                         BELIEF_PRESSURE_HORIZON,
@@ -11293,7 +11413,7 @@ impl AdvancedAi {
         anchor: Pos,
         enemies: &[usize],
     ) -> Pos {
-        let visible = g.player_vision_now(pid);
+        let visible = self.battlefront_visibility(g, pid);
         // An ancient rush keeps its objective. `threatened_city` outranks
         // `target_city` here and is an empire-wide fact, so the turn the
         // victim's counter-raid puts any city of ours under pressure the whole
@@ -11322,7 +11442,8 @@ impl AdvancedAi {
                 .filter(|unit| {
                     enemies.contains(&unit.owner)
                         && (!self.battlefront_observation
-                            || (g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid)))
+                            || (g.sees(&visible, unit.pos)
+                                && self.battlefront_unit_visible(g, pid, unit.id)))
                         && match domain {
                             ForceDomain::Sea => BasicAi::waterborne(g, unit.id),
                             ForceDomain::Land => !BasicAi::waterborne(g, unit.id),
@@ -11348,7 +11469,8 @@ impl AdvancedAi {
                             .values()
                             .filter(|unit| enemies.contains(&unit.owner))
                             .filter(|unit| {
-                                g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid)
+                                g.sees(&visible, unit.pos)
+                                    && self.battlefront_unit_visible(g, pid, unit.id)
                             })
                             .min_by_key(|unit| (g.wdist(anchor, unit.pos), unit.id))
                             .map(|unit| unit.pos)
@@ -11367,7 +11489,8 @@ impl AdvancedAi {
             .filter(|unit| {
                 enemies.contains(&unit.owner)
                     && (!self.battlefront_observation
-                        || (g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid)))
+                        || (g.sees(&visible, unit.pos)
+                            && self.battlefront_unit_visible(g, pid, unit.id)))
                     && BasicAi::waterborne(g, unit.id)
             })
             .min_by_key(|unit| (g.wdist(anchor, unit.pos), unit.id))
@@ -11441,7 +11564,7 @@ impl AdvancedAi {
         enemies: &[usize],
         plan: &StrategicPlan,
     ) -> Option<Pos> {
-        let visible = g.player_vision_now(pid);
+        let visible = self.battlefront_visibility(g, pid);
         let mut targets = BTreeSet::new();
         for uid in units {
             let unit = &g.units[uid];
@@ -11462,7 +11585,7 @@ impl AdvancedAi {
                             .is_some_and(|city| enemies.contains(&g.cities[&city].owner))
                             || g.units_at(pos).into_iter().any(|other| {
                                 enemies.contains(&g.units[&other].owner)
-                                    && g.unit_visible_to(other, pid)
+                                    && self.battlefront_unit_visible(g, pid, other)
                             }))
                 } else {
                     self.base.is_enemy_tile(g, pos, enemies)
@@ -11509,7 +11632,8 @@ impl AdvancedAi {
                     .iter()
                     .filter_map(|uid| {
                         (enemies.contains(&g.units[uid].owner)
-                            && (!self.battlefront_observation || g.unit_visible_to(*uid, pid)))
+                            && (!self.battlefront_observation
+                                || self.battlefront_unit_visible(g, pid, *uid)))
                         .then_some(g.units[uid].hp)
                     })
                     .min()
@@ -11533,7 +11657,7 @@ impl AdvancedAi {
         enemies: &[usize],
         objective: Pos,
     ) -> f64 {
-        let visible = g.player_vision_now(pid);
+        let visible = self.battlefront_visibility(g, pid);
         let friendly: f64 = units
             .iter()
             .filter_map(|uid| {
@@ -11549,7 +11673,8 @@ impl AdvancedAi {
             .filter(|unit| enemies.contains(&unit.owner) && g.wdist(unit.pos, objective) <= 6)
             .filter(|unit| {
                 !self.battlefront_observation
-                    || (g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid))
+                    || (g.sees(&visible, unit.pos)
+                        && self.battlefront_unit_visible(g, pid, unit.id))
             })
             .filter(|unit| g.rules.units[unit.kind].class == "military")
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
@@ -11591,7 +11716,7 @@ impl AdvancedAi {
         if enemies.is_empty() {
             return;
         }
-        let visible = g.player_vision_now(pid);
+        let visible = self.battlefront_visibility(g, pid);
 
         let mut remaining: BTreeSet<u32> = g
             .player_unit_ids(pid)
@@ -11662,7 +11787,8 @@ impl AdvancedAi {
                 let low_hp_unit = g.units_at(target).into_iter().any(|unit| {
                     enemies.contains(&g.units[&unit].owner)
                         && (!self.battlefront_observation
-                            || (g.sees(&visible, target) && g.unit_visible_to(unit, pid)))
+                            || (g.sees(&visible, target)
+                                && self.battlefront_unit_visible(g, pid, unit)))
                         && g.units[&unit].hp <= 35
                 });
                 let capturable_city = g.city_at(target).is_some_and(|city| {
@@ -11709,7 +11835,7 @@ impl AdvancedAi {
                         enemies.contains(&enemy.owner)
                             && (!self.battlefront_observation
                                 || (g.sees(&visible, enemy.pos)
-                                    && g.unit_visible_to(enemy.id, pid)))
+                                    && self.battlefront_unit_visible(g, pid, enemy.id)))
                             && g.wdist(g.units[uid].pos, enemy.pos) <= 2
                             && (local_strength_ratio >= LOCAL_SUPERIORITY_FLOOR
                                 || plan.threatened_city.is_some()
@@ -11810,6 +11936,16 @@ impl AdvancedAi {
         enemies: &[usize],
         decline_settlers: bool,
     ) -> bool {
+        // The force order is committed against the turn-start frame.  Its
+        // one-ply mover must use that same evidence: otherwise a hidden
+        // hostile's current strength or position can still reroute a unit
+        // after the force planner correctly declined to see it.
+        // Avoid building a visibility frame for the frozen legacy control;
+        // its deliberate full-state behavior remains bit-for-bit on its
+        // original path.
+        let visible = self
+            .battlefront_observation
+            .then(|| self.battlefront_visibility(g, pid));
         let unit = &g.units[&uid];
         let upos = unit.pos;
         let role = Self::force_role(g, uid);
@@ -11866,7 +12002,13 @@ impl AdvancedAi {
             for enemy in g
                 .units
                 .values()
-                .filter(|other| enemies.contains(&other.owner))
+                .filter(|other| {
+                    enemies.contains(&other.owner)
+                        && visible.as_ref().is_none_or(|visible| {
+                            g.sees(visible, other.pos)
+                                && self.battlefront_unit_visible(g, pid, other.id)
+                        })
+                })
             {
                 let enemy_spec = &g.rules.units[enemy.kind];
                 if enemy_spec.class != "military"
@@ -14373,6 +14515,7 @@ impl Ai for AdvancedAi {
 
 impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
+        self.battlefront_frame = None;
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);
@@ -14383,6 +14526,7 @@ impl AdvancedAi {
             self.base.take_turn(g, pid);
             return;
         }
+        self.capture_battlefront_frame(g, pid);
         // Campaign and battlefront planning share this fog-safe history. A
         // refresh sees only the acting seat's current vision, so a hidden
         // heal, garrison move, or ownership change cannot rewrite a plan.
@@ -14444,7 +14588,8 @@ impl AdvancedAi {
         self.strategic_governors(g, pid, &plan);
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // religions, and envoys. Research is already selected.
-        self.base.research_without_government(g, pid);
+        self.base
+            .research_without_government_with_pool(g, pid, self.work_pool.as_deref());
         self.strategic_government(g, pid, plan.strategy);
         self.base.corporations(g, pid);
         self.advanced_products(g, pid, plan.strategy);
@@ -14568,6 +14713,7 @@ impl AdvancedAi {
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }
+        self.battlefront_frame = None;
     }
 }
 
@@ -14581,6 +14727,93 @@ mod tests {
     fn legacy_controller_keeps_battlefront_observation_off() {
         assert!(AdvancedAi::new().battlefront_observation);
         assert!(!AdvancedAi::legacy().battlefront_observation);
+    }
+
+    #[test]
+    fn production_policy_envoy_default_is_distinct_from_evaluator_and_legacy_controls() {
+        let production = AdvancedAi::new();
+        assert_eq!(production.weights().policy_deck, PolicyDeck::Live);
+        assert!(production.envoy_infrastructure);
+        assert!(production.envoy_priority);
+
+        let pre_promotion = AdvancedAi::pre_policy_envoy();
+        assert_eq!(pre_promotion.weights().policy_deck, PolicyDeck::Legacy);
+        assert!(!pre_promotion.envoy_infrastructure);
+        assert!(!pre_promotion.envoy_priority);
+        assert!(pre_promotion.victory_planning);
+
+        let legacy = AdvancedAi::legacy();
+        assert_eq!(legacy.weights().policy_deck, PolicyDeck::Legacy);
+        assert!(!legacy.envoy_infrastructure);
+        assert!(!legacy.envoy_priority);
+        assert!(!legacy.victory_planning);
+
+        let mut weighted = Weights::default();
+        weighted.pol_influence = 4.0;
+        let weighted_production = AdvancedAi::with_weights(weighted);
+        assert_eq!(weighted_production.weights().policy_deck, PolicyDeck::Live);
+        assert_eq!(weighted_production.weights().pol_influence, 4.0);
+    }
+
+    #[test]
+    fn battlefront_frame_keeps_later_reveals_out_of_turn_start_planning() {
+        let mut game = Game::new_full(2, 30, 18, 411_009, 120, 0, false);
+        let mut ai = AdvancedAi::new();
+        let start = game.player_vision_now(0);
+        let hidden = game
+            .map
+            .tiles
+            .values()
+            .filter(|tile| {
+                !game.sees(&start, tile.pos)
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.city_at(tile.pos).is_none()
+                    && game.units_at(tile.pos).is_empty()
+            })
+            .map(|tile| tile.pos)
+            .next()
+            .expect("test map needs a hidden passable tile");
+        let enemy = game.spawn_test_unit("warrior", 1, hidden);
+        ai.capture_battlefront_frame(&game, 0);
+        assert!(!ai.battlefront_unit_visible(&game, 0, enemy));
+
+        let scout_positions = game
+            .wdisk(hidden, 2)
+            .into_iter()
+            .filter(|position| {
+                *position != hidden
+                    && game.city_at(*position).is_none()
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .collect::<Vec<_>>();
+        let scout = scout_positions
+            .into_iter()
+            .find_map(|position| {
+                let scout = game.spawn_test_unit("scout", 0, position);
+                if game.sees(&game.player_vision_now(0), hidden) {
+                    Some(scout)
+                } else {
+                    game.remove_unit(scout);
+                    None
+                }
+            })
+            .expect("a nearby scout must be able to reveal the hidden tile");
+        assert!(game.sees(&game.player_vision_now(0), hidden));
+        assert!(game.unit_visible_to(enemy, 0));
+        assert!(game.units.contains_key(&scout));
+        assert!(
+            !game.sees(&ai.battlefront_visibility(&game, 0), hidden)
+                && !ai.battlefront_unit_visible(&game, 0, enemy),
+            "a unit that an earlier move reveals is not part of the turn-start frame"
+        );
+
+        ai.battlefront_frame = None;
+        assert!(game.sees(&ai.battlefront_visibility(&game, 0), hidden));
+        assert!(ai.battlefront_unit_visible(&game, 0, enemy));
     }
 
     fn found_test_city(game: &mut Game, pid: usize) -> u32 {
@@ -18128,8 +18361,8 @@ mod tests {
             assessed_turn: game.turn,
             rush: false,
         };
-        let stock = AdvancedAi::new();
-        let mut treatment = AdvancedAi::new();
+        let stock = AdvancedAi::pre_policy_envoy();
+        let mut treatment = AdvancedAi::pre_policy_envoy();
         treatment.envoy_infrastructure = true;
         let counts = stock.counts(&game, 0);
         let unseen = treatment.production_value(&game, 0, city, &consulate, &plan, &counts);
@@ -18201,9 +18434,9 @@ mod tests {
             assessed_turn: game.turn,
             rush: false,
         };
-        let mut treatment = AdvancedAi::new();
-        treatment.envoy_infrastructure = true;
-        treatment.envoy_priority = true;
+        // The confirmed production default carries the direct infrastructure
+        // route; this test pins its safety gates rather than a separate arm.
+        let treatment = AdvancedAi::new();
 
         let mut unmet = game.clone();
         assert!(!treatment.prioritize_envoy_infrastructure(&mut unmet, 0, &plan));
@@ -20403,6 +20636,31 @@ mod tests {
     }
 
     #[test]
+    fn bounded_purchase_menu_workers_keep_four_city_order_exact() {
+        let mut game = Game::new_full(1, 40, 24, 7_106_002, 160, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let first = game.player_city_ids(0)[0];
+        let anchor = game.cities[&first].pos;
+        for _ in 0..3 {
+            found_nearby_test_city(&mut game, 0, anchor);
+        }
+        game.players[0].gold = 5_000.0;
+
+        let serial = AdvancedAi::targeting(VictoryTarget::Science);
+        let serial_actions = serial.legal_purchase_actions(&game, 0);
+        assert!(!serial_actions.is_empty());
+
+        let mut parallel = serial.clone();
+        parallel.work_pool = Some(Arc::new(WorkPool::new(PURCHASE_MENU_MAX_WORKERS + 1)));
+        assert_eq!(parallel.legal_purchase_actions(&game, 0), serial_actions);
+    }
+
+    #[test]
     fn adaptive_turn_uses_its_live_plan_for_gold_purchases() {
         // The fixture needs a capital with somewhere to put a Campus, which is
         // a fact about the map rather than the thing under test. Take the first
@@ -21817,6 +22075,93 @@ mod tests {
             moved * 2 > army.len(),
             "expected most coordinated troops to advance; moved {moved}/{}",
             army.len()
+        );
+    }
+
+    #[test]
+    fn coordinated_mover_ignores_a_hostile_missing_from_its_turn_start_frame() {
+        let choose = |ai: &AdvancedAi, game: &mut Game, unit: u32, orders: &ForceGroup| {
+            ai.coordinated_tactical_step(game, 0, unit, orders, &[1], false).then(|| ())?;
+            match game.log.last() {
+                Some((actor, Action::Move { unit: moved, to }))
+                    if *actor == 0 && *moved == unit =>
+                {
+                    Some(*to)
+                }
+                _ => None,
+            }
+        };
+
+        // Find a real open tactical fork, then prove that a threat beside the
+        // ordinary move is material to the legacy mover.  The production
+        // mover captures its frame before that hostile exists, which is the
+        // same information boundary as a hidden enemy changing position or
+        // HP in the counterfactual census.
+        let mut game = Game::new_full(2, 24, 16, 82_000, 80, 0, false);
+        let existing: Vec<u32> = game.units.keys().copied().collect();
+        for unit in existing {
+            game.remove_unit(unit);
+        }
+        // A level plain makes this a fixed local fork rather than a search
+        // over map generation. Only the tactical score varies below.
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        game.at_war.insert((0, 1));
+        let positions = game.map.tiles.keys().copied().collect::<Vec<_>>();
+        let origin = positions
+            .iter()
+            .copied()
+            .find(|origin| game.nbrs(*origin).len() == 6)
+            .expect("the fixed map needs an interior tactical origin");
+        let (game, unit, orders, expected, hidden) = game
+            .wdisk(origin, 4)
+            .into_iter()
+            .filter(|target| game.wdist(origin, *target) == 4)
+            .find_map(|target| {
+                let mut base = game.clone();
+                let unit = base.spawn_test_unit("warrior", 0, origin);
+                let orders = ForceGroup {
+                    id: unit,
+                    domain: ForceDomain::Land,
+                    units: vec![unit],
+                    anchor: origin,
+                    objective: target,
+                    focus_target: None,
+                    posture: ForcePosture::Advance,
+                    readiness: 1.0,
+                    local_strength_ratio: 2.0,
+                };
+                let mut unthreatened = base.clone();
+                let expected = choose(&AdvancedAi::legacy(), &mut unthreatened, unit, &orders)?;
+                game.wdisk(expected, 3)
+                    .into_iter()
+                    .filter(|position| game.wdist(*position, expected) == 3)
+                    .filter(|hidden| *hidden != origin && *hidden != target)
+                    .find_map(|hidden| {
+                        let mut legacy = base.clone();
+                        legacy.spawn_test_unit("giant_death_robot", 1, hidden);
+                        let detour = choose(&AdvancedAi::legacy(), &mut legacy, unit, &orders)?;
+                        (detour != expected)
+                            .then_some((base.clone(), unit, orders.clone(), expected, hidden))
+                    })
+            })
+            .expect("the fixed open map needs a tactical fork affected by a hostile threat");
+
+        let mut observed = game;
+        let mut ai = AdvancedAi::new();
+        ai.capture_battlefront_frame(&observed, 0);
+        let enemy = observed.spawn_test_unit("giant_death_robot", 1, hidden);
+        assert!(
+            !ai.battlefront_unit_visible(&observed, 0, enemy),
+            "the threat was added after the turn-start frame"
+        );
+        assert_eq!(
+            choose(&ai, &mut observed, unit, &orders),
+            Some(expected),
+            "a hostile absent from the turn-start frame must not reroute the force"
         );
     }
 
@@ -24873,18 +25218,13 @@ mod tests {
 
     /// The agent a census must measure: the one that ships.
     ///
-    /// ⚠ `AdvancedAi::new()` carries `Weights::default()`, whose `policy_deck`
-    /// is `PolicyDeck::Legacy` — and `revise_policy_deck` returns before the
-    /// counterfactual scoring on that branch. The evolved champion, embedded in
-    /// the binary since #471 and played by the exhibition, deserializes to
-    /// `PolicyDeck::Live` and behaves differently: it slots
-    /// `charismatic_leader` on 39.4% of turns where the default slots it on
-    /// 0.0%.
-    ///
-    /// #612 measured the default and reported the 0.0% as a property of "the
-    /// agent". Every census here uses this instead, so that cannot recur.
+    /// Since the 2026-08-01 policy/envoy promotion, `AdvancedAi::new()` is the
+    /// exact production controller: it forces the non-gene policy deck to
+    /// `Live` and enables the two confirmed envoy-production mechanisms. A
+    /// census must not substitute a champion merely because a historical
+    /// champion happened to share the live deck.
     fn deployed_agent() -> AdvancedAi {
-        AdvancedAi::with_weights(crate::evolve::load_champion("evolved").unwrap_or_default())
+        AdvancedAi::new()
     }
 
     /// Census, not an assertion: is the envoy gap a resource shortfall or an

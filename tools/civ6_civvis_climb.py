@@ -116,9 +116,53 @@ def teardown() -> None:
         run(["pkill", "-f", pattern])
     time.sleep(1)
     run(["osascript", "-e", 'tell application "Civ6" to quit'])
-    time.sleep(6)
-    run(["pkill", "-f", "Civ6_Exe"])
-    time.sleep(2)
+    # ⚠⚠ VERIFY, AND ESCALATE. This used to be `pkill -f Civ6_Exe` followed by a
+    # two-second sleep and nothing else, and CIVILIZATION VI SURVIVES SIGTERM.
+    #
+    # Measured directly: `pkill -f Civ6_Exe` against a live `Civ6_Exe_Child` left the
+    # process alive, and calling this very function left it alive too — same pid
+    # before and after. `launcher.stop` waits for the process to actually go and
+    # escalates to `pkill -9`, which is why every manual stop in this project works
+    # and this one did not.
+    #
+    # What that cost: an attempt that fails to start leaves the game running with ITS
+    # run tag installed, and `gamelock.foreign_run` then refuses every LATER attempt
+    # in the same batch -- each one blocked by its own predecessor. Batch
+    # civvis-20260801T053852Z died with "5 starts in a row produced no game", and all
+    # four retries were blocked by attempt 1 rather than by anything of their own.
+    # The docstring above already named this failure; the code did not achieve it.
+    if not launcher.stop(timeout_s=45.0):
+        print("[teardown] the game is STILL running after stop(); the next attempt "
+              "will be refused as a foreign run", flush=True)
+    # ★★★★ AND CLEAR THE RUN TAG, because stopping the process is not enough.
+    #
+    # `gamelock.foreign_run` refuses when a game is up AND the installed tag is not
+    # ours. Every attempt in a batch gets a NEW tag, so a tag left behind by a failed
+    # attempt is "foreign" to its own successor — which is precisely the failure the
+    # comment above describes and `launcher.stop` was meant to end.
+    #
+    # It did not end it: `stop()` only settles the PROCESS, and the check races it.
+    # Measured on batch `climb4` — Civilization VI was DOWN and the next attempt was
+    # still refused with "a game is running under run tag
+    # 'civvis-20260801T155857Z'", the corpse of the attempt before it.
+    #
+    # A tag with no game behind it describes nothing. Clearing it makes the refusal
+    # impossible regardless of how the process check races, which is the property
+    # wanted here — not a better-timed check.
+    try:
+        # Asked of `install`, the module that WRITES this file, so the two cannot
+        # disagree about where it lives.
+        from civ6_control import install  # noqa: PLC0415
+        config = install.install_dir() / "config.json"
+        if config.is_file():
+            data = json.loads(config.read_text())
+            if data.get("RunTag") is not None:
+                data["RunTag"] = None
+                config.write_text(json.dumps(data, indent=1))
+                print("[teardown] cleared the installed run tag", flush=True)
+    except (OSError, json.JSONDecodeError) as exc:
+        # Never fatal: a batch that cannot tidy up must still be able to run.
+        print(f"[teardown] could not clear the run tag: {exc}", flush=True)
     run([sys.executable, str(HERE / "civ6_control" / "gamelock.py"), "--break-stale"])
     dismiss_crash_dialogs()
 
@@ -348,7 +392,18 @@ def main() -> int:
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
     ap.add_argument("--timeout", type=float, default=5400.0)
+    # ⚠ Passed straight to the brain, and domination is currently unreachable:
+    # `findWarTarget` needs a REVEALED rival city and meeting a civilization
+    # reveals none of its land, so the target set stays empty for the whole game.
+    # Measured 2026-07-31: `met: 1` with `cities_SEEN: 0` at t125 and zero
+    # declarations in every unforced run. A ladder left on this default measures a
+    # plan that cannot complete. See the note on `--victory` in civ6_brain.py.
     ap.add_argument("--victory", default="domination")
+    # Passed straight through to the brain; see its `--strategy` note for why the
+    # default changed from the built-in AdvancedAi and what would undo it.
+    ap.add_argument("--strategy", default="auto",
+                    help="strategy the decider loads; `auto` is the strongest by "
+                         "outright-win lower bound, empty keeps the built-in")
     ap.add_argument("--war-from-plan", action="store_true", default=False,
                     help="pass through to the brain; see its note for why")
     ap.add_argument("--tile-export-every", type=int, default=4,
@@ -370,6 +425,26 @@ def main() -> int:
     if busy():
         print("something already holds the game; tearing it down first", flush=True)
     teardown()
+
+    # ★★★★ GATE THE BATCH ON PREFLIGHT. `civ6_preflight.py` says in its own docstring
+    # that "exit status is 0 only when every check passes, so this can gate a ladder"
+    # -- and nothing called it. A gate nothing invokes is a gate that does not exist.
+    #
+    # Every check it runs corresponds to a defect that actually shipped, and the
+    # newest one is the reason this wiring is worth the second it costs: a diagnostic
+    # `println` on the decider's stdout shifts the whole --serve protocol by one line,
+    # so CIVVIS decides correctly into a pipe nobody reads and the run silently falls
+    # back to the hand-written ladder. That cost a live run 236 turns in.
+    #
+    # ⚠ `--skip-engine`: the ladder is being launched, not the test suite, and cargo
+    # test here would add minutes to every batch. The engine is gated at merge.
+    preflight = run([sys.executable, str(HERE / "civ6_preflight.py"), "--skip-engine",
+                     "--orders-bin", str(orders_bin)], timeout=300.0)
+    print(preflight.rstrip(), flush=True)
+    if "PREFLIGHT FAILED" in preflight:
+        print("refusing to start a batch on a broken bridge; fix the failures above",
+              flush=True)
+        return 4
 
     # A batch is a COMPARISON, so it is pinned to one program by default. Opting out
     # is a deliberate act with a name, not the silent default it used to be.
@@ -466,7 +541,8 @@ def main() -> int:
              "--run-dir", str(RUN_ROOT / tag),
              "--mode", "civvis",
              "--bin", str(orders_bin),
-             "--victory", args.victory]
+             "--victory", args.victory,
+             "--strategy", args.strategy]
             + (["--war-from-plan"] if args.war_from_plan else [])
             + [
              "--seconds", str(args.timeout + 300)],

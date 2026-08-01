@@ -52,7 +52,7 @@ const MIN_GAMES_TO_RETIRE: u32 = 20;
 const MAX_RD_TO_RETIRE: f64 = 110.0;
 /// Immutable work/result protocol. Bump this whenever a binary can no longer
 /// execute a pending round exactly as an older binary would.
-const WORK_SCHEMA_VERSION: u32 = 4;
+const WORK_SCHEMA_VERSION: u32 = 5;
 /// A dead simulator's game becomes available again after this lease. Duplicate
 /// execution is harmless because results have deterministic IDs and publish
 /// with create-if-absent semantics.
@@ -124,6 +124,11 @@ pub struct CivRating {
     pub vol: f64,
     pub games: u32,
     pub wins: u32,
+    /// UTC calendar day of the most recent finished game credited to this
+    /// exact player/leader/civilization rating. Old snapshots without retained
+    /// timing evidence leave this absent rather than inventing a date.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_played: Option<String>,
 }
 
 impl CivRating {
@@ -165,6 +170,7 @@ impl Default for CivRating {
             vol: BASE_VOL,
             games: 0,
             wins: 0,
+            last_played: None,
         }
     }
 }
@@ -569,6 +575,8 @@ struct StoredOutcome {
     seed: u64,
     turn: u32,
     victory: String,
+    /// UTC calendar day on which this worker finished the game.
+    played_on: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -583,6 +591,52 @@ fn unix_now() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
+}
+
+/// Return today's UTC calendar date without adding a date crate to the engine.
+fn utc_date_now() -> String {
+    utc_date_from_unix(i64::try_from(unix_now()).unwrap_or(i64::MAX))
+}
+
+/// Days-to-civil-date, Howard Hinnant's algorithm. The `civ6` launcher uses
+/// the same conversion for its run tags; league evidence needs only the day.
+fn utc_date_from_unix(secs: i64) -> String {
+    let days = secs.div_euclid(86_400);
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1_460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let day = (doy - (153 * mp + 2) / 5 + 1) as u32;
+    let month = if mp < 10 { mp + 3 } else { mp - 9 } as u32;
+    let year = if month <= 2 { y + 1 } else { y };
+    format!("{year:04}-{month:02}-{day:02}")
+}
+
+fn valid_utc_date(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    if bytes.len() != 10
+        || bytes[4] != b'-'
+        || bytes[7] != b'-'
+        || [0, 1, 2, 3, 5, 6, 8, 9]
+            .into_iter()
+            .any(|index| !bytes[index].is_ascii_digit())
+    {
+        return false;
+    }
+    let year = value[..4].parse::<u32>().unwrap_or_default();
+    let month = value[5..7].parse::<u32>().unwrap_or_default();
+    let day = value[8..10].parse::<u32>().unwrap_or_default();
+    let days_in_month = match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        _ => return false,
+    };
+    year > 0 && day > 0 && day <= days_in_month
 }
 
 fn work_engine() -> String {
@@ -635,6 +689,7 @@ fn leader_prior(global: Glicko) -> CivRating {
         vol: global.sigma,
         games: 0,
         wins: 0,
+        last_played: None,
     }
 }
 
@@ -1561,6 +1616,7 @@ fn validate_result(
         || result.won.len() != count
         || result.civs.iter().any(|civ| civ.trim().is_empty())
         || result.leaders.iter().any(|leader| leader.trim().is_empty())
+        || !valid_utc_date(&result.played_on)
         || expected != actual
         || !valid_ranks
         || winners > 1
@@ -1731,6 +1787,67 @@ fn backfill_win_profiles(dir: &str, league: &mut League) -> bool {
         strategy.wins_by_table_size = evidence;
     }
     true
+}
+
+/// The strategy this league can best defend as its strongest, for a seat that may
+/// already know which civilization it is playing.
+///
+/// ★★★★ **RANKED ON `strength_bound`, NOT ON `rating`.** Both `Strategy::rating` and
+/// `CivRating::rating` carry a warning that they are the *placement* Glicko — they
+/// predict finishing order, which is what matchmaking needs, and they must never
+/// answer "which strategy is better". Ranking on the point estimate named a
+/// different strategy in 23 of 50 qualifying pairs, and `AI_PLAYER_ELO_RANKINGS.md`
+/// is sorted on it too, so the top of that table is not the answer to this question.
+/// The outright-win lower bound is.
+///
+/// `civ` narrows to the per-civilization table when that pair has been played,
+/// because a strategy's strength is not uniform across civilizations. Civilization VI
+/// deals the seat its civ rather than letting anything choose it, so this is the only
+/// direction the mapping can run: read what was dealt, then pick for it.
+///
+/// ⚠ Returns `None` rather than a default when nothing qualifies. A silent fallback
+/// to the stock genome is exactly how this project has previously "used" an evaluator
+/// that never loaded; the caller must be able to say which happened.
+pub fn strongest_strategy<'a>(league: &'a League, civ: Option<&str>) -> Option<&'a Strategy> {
+    league
+        .strategies
+        .iter()
+        .filter(|s| !s.human)
+        .filter(|s| genome_of(&s.kind).is_some())
+        .max_by(|a, b| {
+            strategy_strength(a, civ)
+                .partial_cmp(&strategy_strength(b, civ))
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+}
+
+/// A strategy's defensible strength, for `civ` when that pair has history.
+///
+/// Falls back to the global bound when the pair is unplayed — which is the common
+/// case, because the league has only ever rated a handful of civilizations while
+/// Civilization VI deals from its whole roster.
+pub fn strategy_strength(strategy: &Strategy, civ: Option<&str>) -> f64 {
+    if let Some(civ) = civ {
+        let rated = strategy
+            .leader_elo
+            .values()
+            .filter_map(|civs| civs.get(civ))
+            .filter(|rating| rating.games > 0)
+            .map(|rating| rating.strength_bound())
+            .fold(f64::NEG_INFINITY, f64::max);
+        if rated.is_finite() {
+            return rated;
+        }
+    }
+    strategy.strength_bound()
+}
+
+/// The genome and victory lane a named strategy plays with, if it has one.
+///
+/// Built-ins without a `Weights` genome (random, neural, …) answer `None`, the same
+/// rule breeding uses.
+pub fn strategy_genome(strategy: &Strategy) -> Option<(Weights, Option<String>)> {
+    genome_of(&strategy.kind).map(|weights| (weights, target_of(&strategy.kind)))
 }
 
 pub fn load_league(dir: &str) -> Option<League> {
@@ -2043,6 +2160,8 @@ struct Outcome {
     seed: u64,
     turn: u32,
     victory: String,
+    /// UTC calendar day on which the game actually finished.
+    played_on: String,
 }
 
 /// Put a finished set of player ids into the league's canonical competition
@@ -2148,6 +2267,7 @@ fn play_job(manifest: &RoundManifest, job: &WorkJob, worker: &str) -> StoredOutc
         seed: job.seed,
         turn: game.reported_turn(),
         victory: game.victory_type.clone().unwrap_or_default(),
+        played_on: utc_date_now(),
     }
 }
 
@@ -2195,6 +2315,7 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
     let mut combination_results =
         BTreeMap::<(usize, String, String), Vec<(Glicko, f64, f64)>>::new();
     for outcome in outcomes {
+        debug_assert!(valid_utc_date(&outcome.played_on));
         let p = &outcome.placements;
         let table_size = u32::try_from(p.len()).expect("a table size fits in u32");
         let comparison_weight = 1.0 / p.len().saturating_sub(1).max(1) as f64;
@@ -2256,6 +2377,13 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
             on_combination.games += 1;
             if outcome.won[rank] {
                 on_combination.wins += 1;
+            }
+            if on_combination
+                .last_played
+                .as_deref()
+                .is_none_or(|last_played| last_played < outcome.played_on.as_str())
+            {
+                on_combination.last_played = Some(outcome.played_on.clone());
             }
         }
     }
@@ -2394,6 +2522,7 @@ pub fn record_ranked_game(
         seed,
         turn,
         victory: victory.to_string(),
+        played_on: utc_date_now(),
     };
     let names: Vec<String> = seats
         .iter()
@@ -2956,6 +3085,7 @@ fn resolve_outcome(league: &League, stored: &StoredOutcome) -> io::Result<Outcom
         seed: stored.seed,
         turn: stored.turn,
         victory: stored.victory.clone(),
+        played_on: stored.played_on.clone(),
     })
 }
 
@@ -3550,6 +3680,7 @@ mod tests {
             seed: 0,
             turn: 50,
             victory: String::new(),
+            played_on: "2026-07-21".into(),
         };
         apply_round(&mut league, &[outcome], true);
         assert!((league.strategies[0].rating - BASE_RATING).abs() < 1e-9);
@@ -3596,6 +3727,7 @@ mod tests {
             seed: 0,
             turn: 10,
             victory: "score".into(),
+            played_on: "2026-07-23".into(),
         }];
         apply_round(&mut league, &outcomes, true);
         assert!(league.strategies[0].rating > BASE_RATING);
@@ -3607,7 +3739,51 @@ mod tests {
         let egypt = &league.strategies[1].leader_elo["Cleopatra"]["Egypt"];
         assert!(rome.rating > BASE_RATING && rome.games == 1 && rome.wins == 1);
         assert!(egypt.rating < BASE_RATING && egypt.games == 1 && egypt.wins == 0);
+        assert_eq!(rome.last_played.as_deref(), Some("2026-07-23"));
+        assert_eq!(egypt.last_played.as_deref(), Some("2026-07-23"));
         assert!(league.strategies[0].leader_elo.get("Cleopatra").is_none());
+    }
+
+    #[test]
+    fn exact_rating_keeps_the_latest_credited_game_date() {
+        let mut league = League {
+            round: 0,
+            strategies: vec![
+                Strategy::new("a", StrategyKind::Builtin { ai: "basic".into() }, 0),
+                Strategy::new("b", StrategyKind::Builtin { ai: "basic".into() }, 0),
+            ],
+            calibration: Calibration::default(),
+        };
+        let outcome = |played_on: &str| Outcome {
+            placements: vec![0, 1],
+            leaders: vec!["Trajan".into(), "Cleopatra".into()],
+            civs: vec!["Rome".into(), "Egypt".into()],
+            ranks: vec![0, 1],
+            won: vec![true, false],
+            seed: 0,
+            turn: 10,
+            victory: "score".into(),
+            played_on: played_on.into(),
+        };
+        // Results can be finalized in job order rather than completion order.
+        // Never regress a pair's recency when a slower worker reports later.
+        apply_round(
+            &mut league,
+            &[outcome("2026-07-24"), outcome("2026-07-23")],
+            true,
+        );
+        assert_eq!(
+            league.strategies[0].leader_elo["Trajan"]["Rome"]
+                .last_played
+                .as_deref(),
+            Some("2026-07-24")
+        );
+    }
+
+    #[test]
+    fn utc_date_conversion_uses_the_gregorian_calendar() {
+        assert_eq!(utc_date_from_unix(0), "1970-01-01");
+        assert_eq!(utc_date_from_unix(86_400), "1970-01-02");
     }
 
     /// A finished game rated on its own moves only the strategies that
@@ -3636,6 +3812,7 @@ mod tests {
             seed: 3,
             turn: 90,
             victory: "science".into(),
+            played_on: "2026-07-24".into(),
         }];
         apply_round(&mut league, &outcomes, false);
         assert!(league.strategies[0].rating > BASE_RATING);
@@ -3764,6 +3941,12 @@ mod tests {
         assert!(first.strategies[0].rating > BASE_RATING);
         assert!(first.strategies[1].rating < 1600.0);
         assert_eq!(first.strategies[0].leader_elo["Trajan"]["Rome"].wins, 1);
+        assert!(valid_utc_date(
+            first.strategies[0].leader_elo["Trajan"]["Rome"]
+                .last_played
+                .as_deref()
+                .expect("a recorded game has a date")
+        ));
 
         // Reloaded from disk, not from the caller's copy.
         let second = record_game(dir, &placements, 6, 130, "culture").expect("rated");
@@ -4228,6 +4411,7 @@ mod tests {
             seed: job.seed,
             turn: 80,
             victory: "science".into(),
+            played_on: "2026-07-25".into(),
         };
         assert!(validate_result(&manifest, job, &result).is_ok());
         result.worker.clear();
@@ -4237,6 +4421,9 @@ mod tests {
         assert!(validate_result(&manifest, job, &result).is_err());
         result.placements = job.table.clone();
         result.ranks = vec![0, 0];
+        assert!(validate_result(&manifest, job, &result).is_err());
+        result.ranks = vec![0, 1];
+        result.played_on = "2026-02-29".into();
         assert!(validate_result(&manifest, job, &result).is_err());
     }
 
@@ -4575,6 +4762,7 @@ mod tests {
             seed,
             turn: 100,
             victory: "science".into(),
+            played_on: "2026-07-26".into(),
         };
         apply_round(
             &mut league,
@@ -4981,8 +5169,9 @@ mod tests {
         assert!(table.contains("1500 elo"));
     }
 
-    /// Same seed, fresh dirs -> byte-identical league state, so `--jobs`
-    /// and reruns cannot change ratings.
+    /// Same seed, fresh dirs -> byte-identical rating state, so `--jobs`
+    /// and reruns cannot change ratings. The actual play day is intentionally
+    /// wall-clock evidence, so check it separately before comparing state.
     #[test]
     fn league_runs_are_deterministic() {
         let base = std::env::temp_dir().join(format!("civvis-league-test-{}", std::process::id()));
@@ -5006,7 +5195,19 @@ mod tests {
                 worker_id: "determinism-test".to_string(),
                 lease_seconds: 5,
             };
-            let league = run_league(&cfg);
+            let mut league = run_league(&cfg);
+            for strategy in &mut league.strategies {
+                for civilizations in strategy.leader_elo.values_mut() {
+                    for rating in civilizations.values_mut() {
+                        let played_on = rating
+                            .last_played
+                            .as_deref()
+                            .expect("a batch-recorded pair has a date");
+                        assert!(valid_utc_date(played_on));
+                        rating.last_played = None;
+                    }
+                }
+            }
             serde_json::to_string(&league).unwrap()
         };
         let a = run("a", 1);
@@ -5037,6 +5238,7 @@ mod tests {
                 seed: job.seed,
                 turn: 80,
                 victory: "science".into(),
+                played_on: "2026-07-27".into(),
             },
         )
         .unwrap();

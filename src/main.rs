@@ -15,7 +15,7 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// blend two players into one lifetime average and erase the very improvement
 /// the longitudinal tournament is supposed to expose.
 const DEFAULT_TOURNAMENT_ENTRANTS: &str =
-    "advanced-20260731-settlement=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random";
+    "advanced-20260801-policy-envoy=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random";
 
 /// `advanced_v1` freezes the planning configuration, but deliberately shares
 /// the production Basic/Advanced implementation. Pin those sources so a code
@@ -115,7 +115,57 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// way the entries above are: a matched `ai_eval advanced basic --pairs 10
 /// --players 4 --turns 200 --seed 31337 --jobs 1` on a clean `origin/main`
 /// build and on this branch, compared in full.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x60d2_aced_ac3a_e4e3;
+///
+/// #719 freezes that live battlefront observation at the start of a major
+/// turn, including camouflage detection. `advanced_v1` still disables the
+/// observation path. Clean before/after release builds produced byte-identical
+/// output from the same 10-map deployment comparison as #682: 16/20
+/// `advanced_v1` game wins, 80.0% paired-map score, six sweeps, and 4,264
+/// observed Advanced-v1 player-turns. The contract is re-pinned because the
+/// gated legacy path did not move; the Elo protocol does not change.
+///
+/// #746 promotes the confirmed policy/envoy composite only through the public
+/// production constructors. `AdvancedAi::legacy()` still calls `configured`
+/// directly and cannot reach that wrapper. A release build of `e46d1b7` and a
+/// separately targeted release build of this change produced byte-identical
+/// `ai_eval advanced_v1 basic --pairs 10 --jobs 1 --seed 31337 --players 4
+/// --turns 200 --deployment-comparison` reports. This is a compatibility
+/// re-pin, not an Elo protocol change.
+///
+/// #757 filters only the production controller's coordinated tactical threat
+/// score behind `battlefront_observation`; `AdvancedAi::legacy()` keeps that
+/// gate off. Clean `1c93908` and candidate release reports from the same
+/// 10-map deployment comparison were byte-identical after Cargo's build
+/// prelude (SHA-256
+/// `e37ae6f3014c6f13c75ef964027e7b57f5e57e9289f0fdb36cae80f5bb863341`).
+/// This is a compatibility re-pin, not an Elo protocol change.
+///
+/// #761 parallelizes only live policy-card counterfactual scoring. The pool
+/// exists only in `AdvancedAi::fleet_parallel`; `AdvancedAi::legacy()` keeps
+/// `work_pool` at `None`, so its ancillary pass selects the literal serial
+/// scorer. The new `QueryMemo` is confined to an unchanged read-only policy
+/// valuation and drops before a card is changed. Clean `cb7969d` and candidate
+/// release builds produced byte-identical SHA-256 reports from `ai_eval
+/// advanced_v1 basic --pairs 10 --jobs 1 --seed 31337 --players 4 --turns 200
+/// --deployment-comparison` (20 games and 4,264 observed Advanced-v1 turns).
+/// This is a compatibility re-pin, not an Elo protocol change.
+///
+/// #762 bounds that same production-only card scorer to four worker-private
+/// snapshots even when its persistent fleet pool is wider. The `None` branch
+/// used by `AdvancedAi::legacy()` still chooses the literal serial scorer.
+/// Clean `0b04a59` and candidate release builds produced byte-identical
+/// reports from the same 20-game deployment comparison (SHA-256
+/// `932cfabf125e729a5264ce43d2fd8b05d013d3fe84939b1dcd366ff122ddc84a`).
+/// This is a compatibility re-pin, not an Elo protocol change.
+///
+/// #766 bounds only the live controller's clone-heavy purchase-menu batch to
+/// three workers. `AdvancedAi::legacy()` has no `work_pool` and continues to
+/// select the literal serial action enumeration. Clean `8812d36` and candidate
+/// release builds produced byte-identical reports from the same 20-game
+/// deployment comparison (SHA-256
+/// `932cfabf125e729a5264ce43d2fd8b05d013d3fe84939b1dcd366ff122ddc84a`).
+/// This is a compatibility re-pin, not an Elo protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbd8f_a998_04b8_07bd;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -564,15 +614,29 @@ fn standings(g: &Game) {
     }
 }
 
-/// Available simulation workers. Batch commands assign whole games to them;
-/// `simulate` assigns independent tactical branches within its one game.
-/// Defaults to one per core, while `--jobs 1` is the equivalence baseline.
+/// Available batch workers default to one per core. An explicit `--jobs`
+/// always wins, while a single simulation has its own bounded default below.
 fn jobs_arg(args: &[String]) -> usize {
     let requested = arg(args, "--jobs", 0);
     if requested > 0 {
         requested as usize
     } else {
         civvis::parallel::default_jobs()
+    }
+}
+
+/// Independent frontiers inside one simulation share cloned worlds, so their
+/// useful parallelism reaches its measured knee before every host core. Keep
+/// an explicit `--jobs` authoritative and leave outer multi-game workloads on
+/// [`jobs_arg`]'s one-core-per-job default.
+const SINGLE_SIMULATION_DEFAULT_MAX_JOBS: usize = 4;
+
+fn single_simulation_jobs_arg(args: &[String]) -> usize {
+    let requested = arg(args, "--jobs", 0);
+    if requested > 0 {
+        requested as usize
+    } else {
+        civvis::parallel::default_jobs().min(SINGLE_SIMULATION_DEFAULT_MAX_JOBS)
     }
 }
 
@@ -603,7 +667,7 @@ fn main() {
     match cmd {
         "simulate" => {
             let players = arg(&args, "--players", 4);
-            let jobs = jobs_arg(&args);
+            let jobs = single_simulation_jobs_arg(&args);
             let g0 = Instant::now();
             let mut g = Game::new_with(game_options(
                 &args,
@@ -1652,18 +1716,19 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_tournament_entrants, strict_f64_arg, strict_i64_arg,
-        ADVANCED_V1_SOURCE_CONTRACT_FNV,
+        jobs_arg, parse_tournament_entrants, single_simulation_jobs_arg, strict_f64_arg,
+        strict_i64_arg, ADVANCED_V1_SOURCE_CONTRACT_FNV, DEFAULT_TOURNAMENT_ENTRANTS,
+        SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
     use civvis::game::{Action, Game};
 
     #[test]
     fn tournament_entrants_separate_immutable_identity_from_controller() {
         let entrants = parse_tournament_entrants(
-            "advanced-20260731=advanced, advanced_v1, basic-20260730=basic, random-20260730=random",
+            "advanced-20260801-policy-envoy=advanced, advanced_v1, basic-20260730=basic, random-20260730=random",
         )
         .unwrap();
-        assert_eq!(entrants[0].identity, "advanced-20260731");
+        assert_eq!(entrants[0].identity, "advanced-20260801-policy-envoy");
         assert_eq!(entrants[0].controller, "advanced");
         assert_eq!(entrants[1].identity, "advanced_v1");
         assert_eq!(entrants[1].controller, "advanced_v1");
@@ -1671,6 +1736,25 @@ mod tests {
         assert_eq!(entrants[2].controller, "basic");
         assert!(parse_tournament_entrants("candidate=").is_err());
         assert!(parse_tournament_entrants("advanced,,basic").is_err());
+
+        let default = parse_tournament_entrants(DEFAULT_TOURNAMENT_ENTRANTS).unwrap();
+        assert_eq!(default[0].identity, "advanced-20260801-policy-envoy");
+        assert_eq!(default[0].controller, "advanced");
+    }
+
+    #[test]
+    fn implicit_single_simulation_workers_are_bounded_without_changing_batches() {
+        let implicit = Vec::new();
+        let host_default = civvis::parallel::default_jobs();
+        assert_eq!(jobs_arg(&implicit), host_default);
+        assert_eq!(
+            single_simulation_jobs_arg(&implicit),
+            host_default.min(SINGLE_SIMULATION_DEFAULT_MAX_JOBS)
+        );
+
+        let explicit = vec!["simulate".to_string(), "--jobs".to_string(), "9".to_string()];
+        assert_eq!(jobs_arg(&explicit), 9);
+        assert_eq!(single_simulation_jobs_arg(&explicit), 9);
     }
 
     #[test]

@@ -20,6 +20,7 @@ import argparse
 import json
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
@@ -475,33 +476,137 @@ def screenshot(path: Path) -> None:
                    capture_output=True)
 
 
-def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str) -> bool:
-    """Open one Create Game dropdown and pick a value by its position in the list."""
+def option_strip(bounds: tuple[int, int, int, int], name: str) -> tuple[int, int, int, int]:
+    """The screen rectangle an open list covers, in physical pixels.
+
+    Physical, not logical: `screencapture` works in device pixels and this Mac is
+    2x, so a rectangle in points addresses a quarter of the intended area.
+    """
+    x, y, w, h = bounds
+    box = DROPDOWN[name]
+    # ⚠ Narrow, and only as tall as THIS list. A strip the full width of the window
+    # is 90% background: the list is about a tenth of it across, so an open list
+    # moved only ~5% of the rectangle and read as closed. Measured against a real
+    # open map-size list before this was tightened.
+    rows = len(OPTIONS[name])
+    top = y + h * (box + OPTION_FIRST * 0.5)
+    bottom = y + h * (box + OPTION_FIRST + (rows - 1) * OPTION_STEP)
+    left = x + w * (SETUP_X - 0.08)
+    right = x + w * (SETUP_X + 0.08)
+    return (int(left * 2), int(top * 2), int(right * 2), int(bottom * 2))
+
+
+def list_opened(before: Path, after: Path, rect: tuple[int, int, int, int]) -> bool:
+    """Did clicking the box actually drop a list over the rows beneath it?
+
+    An open list repaints that whole strip, so the two shots differ across a
+    large share of it. A closed one leaves the Create Game rows exactly as they
+    were — the menu's animated background is *behind* the panel and does not
+    reach here, which is why a plain difference is enough.
+    """
+    try:
+        from PIL import Image, ImageChops
+    except ImportError:
+        return True  # cannot look; fall back to the old blind behaviour
+    try:
+        a = Image.open(before).convert("L").crop(rect)
+        b = Image.open(after).convert("L").crop(rect)
+    except Exception:
+        return True
+    diff = ImageChops.difference(a, b)
+    changed = sum(1 for v in diff.getdata() if v > 24)
+    return changed > 0.10 * (diff.size[0] * diff.size[1])
+
+
+def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
+                 run_dir: Path | None = None) -> bool:
+    """Open one Create Game dropdown and pick a value by its position in the list.
+
+    ★★★★★ **THE SECOND CLICK USED TO GO OUT BLIND, AND ON A SMALL MAP IT LANDED ON
+    THE DRAMATIC AGES TOGGLE.**
+
+    This function used to click the box, sleep, and click the option without ever
+    checking that a list had appeared — the comment on `configure_and_start` said so
+    outright, on the reasoning that the agent's readback from inside the game catches
+    a wrong setting. It does. What it cannot undo is a click that changed something
+    *else*, and there is something else directly underneath:
+
+    ```
+    MAPSIZE_SMALL is option index 2
+      fy = 0.4841 + 0.02174 + 2*0.018637 = 0.5431
+    GAME MODES row 1, measured on screen
+      fy = 0.5433 at 1728x1084, 0.5498 at the harness's own 864x542
+    ```
+
+    and `SETUP_X = 0.500` is icon 3 of that row, whose tooltip is *"Players in Dark
+    Ages will have a portion of their empire immediately fall into Free Cities"* —
+    Dramatic Ages. Verified by experiment, not by arithmetic: one held click there
+    put a checkmark in the box, a second cleared it, and a difference of the two
+    screenshots over the whole GAME MODES block changed in exactly that one square.
+
+    ⚠ The collision belongs to **Small**, and Small is the tournament requirement.
+    Duel is option 0 (fy 0.5058) and never reached the row, so every earlier run was
+    safe and #701 — which moved the launchers to `MAPSIZE_SMALL` to make the game
+    tournament-shaped — is what aimed the click at the toggle.
+
+    The failure mode that gets it there is ordinary: a click on the closed box does
+    not always open the list (the first click on an unfocused window only hovers),
+    and then the option click has nothing above the modes row to land on.
+
+    **So the list is now verified, retried once, and — if it still will not open —
+    NOT clicked.** Leaving the setting at its default is strictly better than
+    clicking blind: a wrong difficulty or map size is reported by the `seat` event
+    and refused, while a toggled game mode arms a whole run of the wrong game.
+    Returns False when it gave up, so the caller can say so.
+    """
     if value not in OPTIONS[name]:
         return False
     x, y, w, h = bounds
     box = DROPDOWN[name]
-    click_at(int(x + w * SETUP_X), int(y + h * box))
-    time.sleep(1.2)
     index = OPTIONS[name].index(value)
-    click_at(int(x + w * SETUP_X),
-             int(y + h * (box + OPTION_FIRST + index * OPTION_STEP)))
-    time.sleep(1.2)
-    return True
+    rect = option_strip(bounds, name)
+    shots = run_dir if run_dir is not None else Path(tempfile.gettempdir())
+    before = shots / f"dropdown-{name}-closed.png"
+    after = shots / f"dropdown-{name}-open.png"
+
+    for attempt in (1, 2):
+        screenshot(before)
+        click_at(int(x + w * SETUP_X), int(y + h * box))
+        time.sleep(1.2)
+        screenshot(after)
+        if list_opened(before, after, rect):
+            click_at(int(x + w * SETUP_X),
+                     int(y + h * (box + OPTION_FIRST + index * OPTION_STEP)))
+            time.sleep(1.2)
+            return True
+        print(f"[setup] {name}: list did not open (attempt {attempt})", flush=True)
+    # ⚠ Deliberately no click. See the docstring: the blind click is the defect.
+    print(f"[setup] {name}: LEAVING AT DEFAULT rather than clicking blind — "
+          f"a stray click here toggles a game mode", flush=True)
+    return False
 
 
 def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namespace,
                         run_dir: Path) -> None:
     """Set this run's game up on the Create Game screen and start it.
 
-    Nothing here is verified by looking at the screen -- the agent's first
-    report from inside the game is the check, and it names the difficulty, map
-    size and speed the game actually has. A misclick therefore shows up as a
-    run that says so, not as a Deity result quietly recorded as Settler.
+    The agent's first report from inside the game remains the check on the VALUES
+    -- it names the difficulty, map size and speed the game actually has, so a
+    misclick shows up as a run that says so rather than a Deity result quietly
+    recorded as Settler.
+
+    ⚠ But that readback was never sufficient on its own, and this used to say it
+    was. It can only report what the setting IS; it cannot undo what a stray click
+    changed on the way. On a Small map the option click landed on the Dramatic Ages
+    toggle -- see `set_dropdown`, which now verifies the list opened and declines to
+    click at all rather than click blind.
     """
-    set_dropdown(bounds, "difficulty", args.difficulty)
-    set_dropdown(bounds, "map_size", args.map_size)
-    set_dropdown(bounds, "speed", args.speed)
+    for name, value in (("difficulty", args.difficulty),
+                        ("map_size", args.map_size),
+                        ("speed", args.speed)):
+        if not set_dropdown(bounds, name, value, run_dir):
+            print(f"[setup] {name} was NOT set; the seat event will report what the "
+                  f"game actually has", flush=True)
     # The map has to be chosen HERE. `MapScript` in the baked config is ignored,
     # because the FrontEnd context that would read it never loads, so every game so
     # far has been Continents whatever was asked for. On Continents a seat can start

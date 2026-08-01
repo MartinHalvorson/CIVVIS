@@ -318,15 +318,133 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
 
 # --------------------------------------------------------------------------- 2
 
-# The improvements CIVVIS models. Anything else the mirror stores as None, so the
-# tile reads UNIMPROVED — honest for a name that cannot be translated, and also the
-# exact condition that made CIVVIS order 19 builders for one city. Counted apart from
-# a disagreement, because it is a known gap rather than a wrong hex.
-MODELLED_IMPROVEMENTS = {
-    "farm", "mine", "quarry", "pasture", "plantation", "camp", "fishing_boats",
-    "lumber_mill", "oil_well", "offshore_oil_rig", "fort", "airstrip",
-    "national_park", "industry", "seaside_resort", "ski_resort",
-}
+def _modelled_improvements() -> set[str]:
+    """The improvements CIVVIS models, READ FROM THE RULESET.
+
+    ⚠ THIS WAS A HARDCODED SET AND IT DRIFTED, in both this file and `mirror.rs`.
+    CIVVIS models 36 improvements; the two copies listed 16. The twenty dropped
+    included `barbarian_camp`, `goody_hut` and `meteor_goody` — exactly the three
+    `AdvancedAi` looks for in `invalidates_followers`, so the mirror stored None and
+    the AI's own guard was blind to every barbarian camp on the map.
+
+    A checker with its own copy of the thing it checks will eventually disagree with
+    it for reasons that have nothing to do with the game. Read the same source.
+    """
+    try:
+        data = json.loads((HERE.parent / "data" / "improvements.json").read_text())
+    except (OSError, ValueError):
+        return set()
+    return set(data)
+
+
+MODELLED_IMPROVEMENTS = _modelled_improvements()
+
+
+def production_health(events: list[dict], builder_per_city: float = 0.8) -> dict:
+    """Did production keep working as the empire and the eras grew.
+
+    ⚠ WRITTEN BECAUSE THREE CONSTANTS FROZE PRODUCTION AND NOTHING COULD GO RED.
+    Run `civvis-20260801T065721Z` lost all six cities and the game, and every
+    existing report read healthy throughout: orders applied, mirror agreeing,
+    `residual` clean. The three faults were each a number that is right for a small
+    Ancient empire and silently wrong later:
+
+      ArmyCap 10 UNITS          the army block never fired again past ~10 units, so
+                                nothing re-armed through the war that ended the run
+      the production floor      its fallbacks (campus project, warrior, slinger) all
+                                need a Campus or go OBSOLETE; UNIT_BUILDER never
+                                does, so the floor decayed into a builder factory
+      MaxProductionPasses 4     the blocker fires once per CITY, so past four cities
+                                the budget ran out and later blockers were answered
+                                with nothing
+
+    Fixed in #745 and #748. Each metric below is the one that WOULD have caught it,
+    as a numerator over a denominator per this file's standing rule — a mechanism
+    that works and one that has seized both read "producing".
+    """
+    at_war: set[int] = set()
+    last_cities = 0
+    peak_cities = 0
+    # ⚠ ALIVE, not built. Civilization VI builders are CONSUMED — three charges and
+    # they vanish — so a cumulative build count is not a stock and must not be judged
+    # against a stock target. Measured: a healthy run built 7 builders over 90 turns
+    # and never had more than TWO alive, which the old check called a 2.9x surplus.
+    peak_builders = 0
+    for event in events:
+        if event.get("kind") != "state":
+            continue
+        turn = event.get("turn") or 0
+        last_cities = len(event.get("cities") or [])
+        peak_cities = max(peak_cities, last_cities)
+        peak_builders = max(peak_builders, sum(
+            1 for unit in (event.get("units") or [])
+            if unit.get("kind") == "UNIT_BUILDER"))
+        if any(r.get("at_war") for r in (event.get("rivals") or [])):
+            at_war.add(turn)
+
+    # The halfway point of the war, so "did it keep arming" is asked of the stretch
+    # where losses actually mount rather than of the opening.
+    war_midpoint = (min(at_war) + max(at_war)) // 2 if at_war else 0
+    floor_builds = floor_builders = builders = 0
+    late_war_builds = late_war_military = 0
+    for event in events:
+        if event.get("kind") != "build" or not event.get("applied"):
+            continue
+        item = str(event.get("item") or "")
+        turn = event.get("turn") or 0
+        if event.get("reason") == "floor":
+            floor_builds += 1
+            if item == "UNIT_BUILDER":
+                floor_builders += 1
+        if item == "UNIT_BUILDER":
+            builders += 1
+        # "Did it re-arm while losing" — the question the army cap answered wrongly.
+        #
+        # ⚠ MEASURED OVER THE SECOND HALF OF THE WAR, NOT THE WHOLE WAR, and the
+        # distinction is the whole detector. Run `civvis-20260801T065721Z` built 9
+        # military units across 79 war turns, so a "was it ever zero" test reads
+        # 9/79 and stays SILENT — while the truth is that all nine came before turn
+        # 100 and the last 40 turns of a war being lost produced 14 builders, 2
+        # settlers, 1 trader and NOTHING that fights. A detector that cannot go red
+        # for the run it was written for is the failure this file exists to stop.
+        if turn in at_war and turn >= war_midpoint:
+            late_war_builds += 1
+            if item.startswith("UNIT_") and item not in (
+                "UNIT_BUILDER", "UNIT_SETTLER", "UNIT_TRADER"
+            ):
+                late_war_military += 1
+
+    # The production-pass budget only bites once the empire outgrows it, so the
+    # early game must NOT be averaged in — it dilutes a total failure to a third.
+    prod_late = prod_late_unanswered = 0
+    for event in events:
+        if (event.get("kind") != "blocked"
+                or event.get("blocker") != "ENDTURN_BLOCKING_PRODUCTION"):
+            continue
+        if (event.get("turn") or 0) < 100:
+            continue
+        prod_late += 1
+        if event.get("answered") is None:
+            prod_late_unanswered += 1
+
+    target = max(1.0, peak_cities * builder_per_city)
+    return {
+        "floor_builds": floor_builds,
+        "floor_builder_builds": floor_builders,
+        "floor_builder_fraction": (floor_builders / floor_builds) if floor_builds else None,
+        # Kept for context — it is what production SPENT — but never the verdict.
+        "builders_built": builders,
+        "builder_target": round(target, 1),
+        "peak_builders_alive": peak_builders,
+        "builder_overshoot": round(peak_builders / target, 1) if target else None,
+        "peak_cities": peak_cities,
+        "war_turns": len(at_war),
+        "war_midpoint": war_midpoint,
+        "builds_late_war": late_war_builds,
+        "military_builds_late_war": late_war_military,
+        "prod_blocks_after_t100": prod_late,
+        "prod_blocks_after_t100_unanswered": prod_late_unanswered,
+    }
 
 
 def load_vocab() -> dict:
@@ -498,6 +616,45 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
             f"FROZEN UNITS: {idle['frozen_units']} of {idle['units_seen']} units never "
             f"moved once in their whole life — {idle.get('frozen_by_kind')} "
             f"(longest: {idle.get('frozen_worst')})")
+    prod = report.get("production_health") or {}
+    ff = prod.get("floor_builder_fraction")
+    if ff is not None and ff >= 0.8 and (prod.get("floor_builds") or 0) >= 5:
+        out.append(
+            f"THE PRODUCTION FLOOR HAS DECAYED: {prod['floor_builder_builds']}/"
+            f"{prod['floor_builds']} ({ff:.0%}) of floor builds are UNIT_BUILDER. Its "
+            f"other entries need a Campus or have gone obsolete, so the fallback that "
+            f"exists to stop an empty queue is now the only thing choosing.")
+    over = prod.get("builder_overshoot")
+    if over is not None and over >= 2.0:
+        out.append(
+            f"BUILDER SURPLUS: {prod['peak_builders_alive']} builders ALIVE AT ONCE "
+            f"against a target of {prod['builder_target']} for {prod['peak_cities']} "
+            f"cities ({over}x); {prod['builders_built']} built in total. Builders are "
+            f"what production falls back to when nothing else is playable, so a "
+            f"standing surplus counts turns nothing better was chosen.")
+    late = prod.get("prod_blocks_after_t100") or 0
+    unans = prod.get("prod_blocks_after_t100_unanswered") or 0
+    # ⚠ A MINIMUM DENOMINATOR, like every other check here has. Without it a single
+    # blocked event reads "1/1 (100%) unanswered" and shouts — which is exactly what
+    # a run that died early looks like, and exactly when this report is being read
+    # most carefully. The other three verdicts guard on `floor_builds >= 5`,
+    # `overshoot >= 2.0` and `>= 20` war turns with `>= 5` late-war builds; this one
+    # was the odd case out. Eight is the smallest sample that can distinguish a real
+    # budget exhaustion (which runs at ~50% on a six-city empire) from noise.
+    if late >= 8 and unans:
+        out.append(
+            f"PRODUCTION BLOCKED AND UNANSWERED: {unans}/{late} of the "
+            f"ENDTURN_BLOCKING_PRODUCTION blocks after turn 100 got no answer. It "
+            f"fires once per city, so this is the pass budget running out before the "
+            f"empire is served — it reads as 'nothing was buildable' and is not that.")
+    if ((prod.get("war_turns") or 0) >= 20
+            and (prod.get("builds_late_war") or 0) >= 5
+            and prod.get("military_builds_late_war") == 0):
+        out.append(
+            f"NOTHING RE-ARMED: {prod['builds_late_war']} things built after turn "
+            f"{prod['war_midpoint']} — the second half of a {prod['war_turns']}-turn "
+            f"war — and NOT ONE was a military unit. An army that cannot replace its "
+            f"losses loses the war it is in.")
     mirror = report.get("mirror") or {}
     if mirror.get("error"):
         out.append(f"MIRROR NOT CHECKED: {mirror['error']}")
@@ -557,6 +714,7 @@ def main() -> int:
             # run was still playing can be told apart from the final one.
             "events_bytes": (run / "events.jsonl").stat().st_size,
             "idle_stack": idle_stack(events, args.frozen_turns),
+            "production_health": production_health(events),
         }
         if not args.no_mirror:
             report["mirror"] = mirror_agreement(run, events, Path(args.orders_bin))
@@ -575,6 +733,12 @@ def main() -> int:
               f" ({idle['stuck_fraction']})  surplus-on-centres "
               f"{idle['surplus_on_centres_unit_turns']}  worst stack {idle['worst_stack']}"
               f" at {idle['worst_stack_at']}  frozen {idle['frozen_units']}/{idle['units_seen']}")
+        prod = report["production_health"]
+        print(f"  production: floor {prod['floor_builder_builds']}/{prod['floor_builds']}"
+              f" builders  built {prod['builders_built']}/{prod['builder_target']} target"
+              f"  late-war military {prod['military_builds_late_war']}/{prod['builds_late_war']}"
+              f"  late blocks unanswered {prod['prod_blocks_after_t100_unanswered']}"
+              f"/{prod['prod_blocks_after_t100']}")
         if "mirror" in report:
             mirror = report["mirror"]
             if mirror.get("error"):

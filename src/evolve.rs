@@ -16,6 +16,7 @@ use crate::game::{Action, Game, GameOptions};
 use crate::rng::Rng;
 use crate::setup::MapSize;
 
+#[derive(Clone, Debug)]
 pub struct EvoCfg {
     pub generations: u32,
     pub pop: usize,
@@ -46,6 +47,116 @@ pub struct EvoCfg {
     /// will be evaluated matters; speed is one field in that profile, and this
     /// is the field.
     pub speed: String,
+}
+
+/// Every internal promotion screen first measures the incumbent against the
+/// exact mixed table that the candidate will face. This table contains one
+/// frozen-default anchor and otherwise champion-weighted opponents, so nominal
+/// `1 / players` is not the win rate of a genome equal to the champion.
+pub const PROMOTION_CALIBRATION_GAMES: usize = 240;
+const PROMOTION_CONFIRMATION_GAMES: usize = 200;
+const PROMOTION_EFFECT_MARGIN: f64 = 0.10;
+const PROMOTION_SPRT_BOUND: f64 = 2.94;
+const PROMOTION_CALIBRATION_Z: f64 = 1.959_963_984_540_054;
+
+/// A sequential promotion screen with a null derived from an independently
+/// seeded champion self-play calibration.
+///
+/// The calibration uses a one-sided 97.5% Wilson *upper* bound, rather than
+/// its raw observed rate. That makes a noisy calibration conservative: an
+/// equal incumbent is less likely to be called an improvement merely because
+/// its calibration block happened to run low.
+#[derive(Clone, Copy, Debug)]
+pub struct PromotionGate {
+    p0: f64,
+    p1: f64,
+    win_log_likelihood: f64,
+    loss_log_likelihood: f64,
+    max_games: usize,
+}
+
+impl PromotionGate {
+    /// Construct the gate from the completed incumbent calibration.
+    pub fn from_calibration(wins: usize, games: usize, max_games: usize) -> PromotionGate {
+        assert!(games > 0, "a promotion calibration needs at least one game");
+        assert!(
+            wins <= games,
+            "a promotion calibration cannot win more games than it plays"
+        );
+        assert!(max_games > 0, "a promotion screen needs at least one game");
+        let probability_floor = 1e-9;
+        let p0 = wilson_upper(wins, games, PROMOTION_CALIBRATION_Z)
+            .clamp(probability_floor, 1.0 - 2.0 * probability_floor);
+        // The alternative asks for a material ten-point win-rate lift. Near
+        // probability one only the feasible portion of that margin remains;
+        // such a calibration is not expected for an ordinary mixed table but
+        // retaining a strict ordering keeps the likelihood ratio well-defined.
+        let p1 = (p0 + PROMOTION_EFFECT_MARGIN).min(1.0 - probability_floor);
+        PromotionGate {
+            p0,
+            p1,
+            win_log_likelihood: (p1 / p0).ln(),
+            loss_log_likelihood: ((1.0 - p1) / (1.0 - p0)).ln(),
+            max_games,
+        }
+    }
+
+    pub fn null_rate(self) -> f64 {
+        self.p0
+    }
+
+    pub fn alternative_rate(self) -> f64 {
+        self.p1
+    }
+
+    /// `Some(true)` accepts, `Some(false)` rejects, and `None` remains open.
+    pub fn verdict(self, wins: usize, losses: usize) -> Option<bool> {
+        let llr = wins as f64 * self.win_log_likelihood + losses as f64 * self.loss_log_likelihood;
+        if llr >= PROMOTION_SPRT_BOUND {
+            return Some(true);
+        }
+        if llr <= -PROMOTION_SPRT_BOUND {
+            return Some(false);
+        }
+        (wins + losses >= self.max_games).then_some(false)
+    }
+}
+
+/// Report the exact calibration and conservative gate used for one incumbent.
+#[derive(Clone, Copy, Debug)]
+pub struct PromotionCalibration {
+    wins: usize,
+    games: usize,
+    gate: PromotionGate,
+}
+
+impl PromotionCalibration {
+    pub fn wins(self) -> usize {
+        self.wins
+    }
+
+    pub fn games(self) -> usize {
+        self.games
+    }
+
+    pub fn observed_rate(self) -> f64 {
+        self.wins as f64 / self.games.max(1) as f64
+    }
+
+    pub fn gate(self) -> PromotionGate {
+        self.gate
+    }
+}
+
+fn wilson_upper(wins: usize, games: usize, z: f64) -> f64 {
+    assert!(games > 0, "Wilson interval needs at least one game");
+    let n = games as f64;
+    let p = wins as f64 / n;
+    let z2 = z * z;
+    let denominator = 1.0 + z2 / n;
+    let center = (p + z2 / (2.0 * n)) / denominator;
+    let radius = z * ((p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt()) / denominator;
+    (center + radius).min(1.0)
 }
 
 /// One observation from the exact game schedule `evolve` ranks.
@@ -237,6 +348,41 @@ fn eval_game(
     (observation.selection_value(cfg.players), observation.won)
 }
 
+/// Calibrate the current champion on the precise mixed table used by the
+/// promotion screen. `epoch` gives each incumbent a fresh, deterministic seed
+/// stream that cannot overlap that incumbent's later confirmation stream.
+pub fn calibrate_promotion_gate(
+    champion: &Weights,
+    cfg: &EvoCfg,
+    epoch: u32,
+    games: usize,
+) -> PromotionCalibration {
+    assert!(games > 0, "a promotion calibration needs games");
+    let champion = champion.clone();
+    let wins = crate::parallel::map(games, cfg.threads.max(1), |game| {
+        let seat = game % cfg.players;
+        let seed = 6_000_000 + epoch as u64 * 10_000 + game as u64;
+        usize::from(
+            eval_game(
+                &champion,
+                std::slice::from_ref(&champion),
+                seat,
+                cfg,
+                seed,
+                game % 3 == 2,
+            )
+            .1,
+        )
+    })
+    .into_iter()
+    .sum();
+    PromotionCalibration {
+        wins,
+        games,
+        gate: PromotionGate::from_calibration(wins, games, PROMOTION_CONFIRMATION_GAMES),
+    }
+}
+
 /// Evaluate one genome on the exact common-random-number schedule used by a
 /// training generation.
 ///
@@ -388,24 +534,19 @@ fn play_sampled(
     g.winner == Some(seat)
 }
 
-/// Fishtest-style SPRT match vs the champion: H0 win rate 0.25 (parity at a
-/// 4-seat table), H1 0.40, α=β≈0.05. Returns (accepted, wins, losses).
-/// Side effect: a quarter of the games feed the value-net position dataset.
+/// Fishtest-style sequential match vs the champion using the conservative,
+/// calibrated mixed-table null. Returns (accepted, wins, losses). Side effect:
+/// a quarter of the games feed the value-net position dataset.
 fn sprt_confirm(
     cand: &Weights,
     champ: &Weights,
     cfg: &EvoCfg,
     gen: u32,
+    gate: PromotionGate,
     rows: &mut Vec<(Vec<f32>, bool)>,
 ) -> (bool, u32, u32) {
-    let (p0, p1) = (
-        1.0 / cfg.players as f64,
-        0.40f64.max(1.6 / cfg.players as f64),
-    );
-    let (lw, ll) = ((p1 / p0).ln(), ((1.0 - p1) / (1.0 - p0)).ln());
-    let bound = 2.94;
-    let (mut llr, mut w, mut l) = (0.0, 0u32, 0u32);
-    for i in 0..200u64 {
+    let (mut w, mut l) = (0u32, 0u32);
+    for i in 0..PROMOTION_CONFIRMATION_GAMES as u64 {
         let seat = (i as usize) % cfg.players;
         let seed = 7_000_000 + gen as u64 * 10_000 + i;
         let won = if i % 4 == 0 {
@@ -423,16 +564,12 @@ fn sprt_confirm(
         };
         if won {
             w += 1;
-            llr += lw;
         } else {
             l += 1;
-            llr += ll;
         }
-        if llr >= bound {
-            return (true, w, l);
-        }
-        if llr <= -bound {
-            return (false, w, l);
+        match gate.verdict(w as usize, l as usize) {
+            Some(accepted) => return (accepted, w, l),
+            None => {}
         }
     }
     (false, w, l)
@@ -621,6 +758,9 @@ pub fn evolve(cfg: &EvoCfg) {
         .as_ref()
         .map(|record| record.weights.clone())
         .unwrap_or_default();
+    // Reuse one independent calibration for every candidate facing this
+    // incumbent. A promotion replaces the table, so it invalidates the cache.
+    let mut promotion_calibration: Option<PromotionCalibration> = None;
     let validation_games = validation_game_count(cfg);
     let mut champ_validation = validation_score(&champ, cfg, validation_games);
     let mut archive = load_archive(dir);
@@ -690,8 +830,22 @@ pub fn evolve(cfg: &EvoCfg) {
         // that Bernoulli term; promotion still does in the SPRT below.
         let screening_threshold = 65.0;
         if fits[best] > screening_threshold {
+            let calibration = *promotion_calibration.get_or_insert_with(|| {
+                let calibration =
+                    calibrate_promotion_gate(&champ, cfg, gen, PROMOTION_CALIBRATION_GAMES);
+                println!(
+                    "  promotion calibration {}/{} = {:.3}; conservative H0={:.3}, H1={:.3}",
+                    calibration.wins(),
+                    calibration.games(),
+                    calibration.observed_rate(),
+                    calibration.gate().null_rate(),
+                    calibration.gate().alternative_rate(),
+                );
+                calibration
+            });
             let mut rows: Vec<(Vec<f32>, bool)> = Vec::new();
-            let (ok, w, l) = sprt_confirm(&pop[best], &champ, cfg, gen, &mut rows);
+            let (ok, w, l) =
+                sprt_confirm(&pop[best], &champ, cfg, gen, calibration.gate(), &mut rows);
             if let Ok(mut f) = fs::OpenOptions::new()
                 .create(true)
                 .append(true)
@@ -705,7 +859,9 @@ pub fn evolve(cfg: &EvoCfg) {
             let holdout_ok = candidate_validation + 1e-9 >= champ_validation;
             promoted = ok && holdout_ok;
             sprt_note = format!(
-                "  SPRT {w}-{l} {} · holdout {:.1}/{:.1} {}",
+                "  SPRT {w}-{l} (H0 {:.3}, H1 {:.3}) {} · holdout {:.1}/{:.1} {}",
+                calibration.gate().null_rate(),
+                calibration.gate().alternative_rate(),
                 if promoted {
                     "ACCEPT → NEW CHAMPION"
                 } else if ok {
@@ -725,6 +881,7 @@ pub fn evolve(cfg: &EvoCfg) {
         if promoted {
             champ = pop[best].clone();
             champ_validation = candidate_validation;
+            promotion_calibration = None;
             archive.push(champ.clone());
             save_archive(dir, &archive);
             save_champ(
@@ -1013,6 +1170,54 @@ mod tests {
             let win_bonus = observation.value - observation.selection_value(cfg.players);
             (win_bonus - if observation.won { 100.0 } else { 0.0 }).abs() < 1e-9
         }));
+    }
+
+    #[test]
+    fn promotion_gate_uses_a_conservative_self_table_null() {
+        // The recorded four-player calibration was 86/240 = 0.358. The old
+        // nominal H0=0.25 would call this ordinary incumbent behavior an
+        // improvement; the calibrated gate must not.
+        let gate = PromotionGate::from_calibration(86, 240, 200);
+        assert!(gate.null_rate() > 86.0 / 240.0);
+        assert!((gate.alternative_rate() - gate.null_rate() - 0.10).abs() < 1e-12);
+        assert_eq!(
+            gate.verdict(72, 128),
+            Some(false),
+            "a 200-game candidate at the incumbent's observed rate must not pass"
+        );
+        assert_eq!(
+            gate.verdict(120, 80),
+            Some(true),
+            "the conservative gate must still admit a large real advantage"
+        );
+        let saturated = PromotionGate::from_calibration(4, 4, 200);
+        assert!(saturated.alternative_rate() > saturated.null_rate());
+        assert!(saturated.alternative_rate() < 1.0);
+    }
+
+    #[test]
+    fn promotion_calibration_runs_the_mixed_table_on_its_own_stream() {
+        let cfg = EvoCfg {
+            generations: 1,
+            pop: 1,
+            games: 2,
+            players: 2,
+            width: 20,
+            height: 14,
+            max_turns: 8,
+            seed: 96,
+            threads: 1,
+            dir: String::new(),
+            speed: crate::game::default_speed(),
+        };
+        let champion = Weights::default();
+        let first = calibrate_promotion_gate(&champion, &cfg, 4, 4);
+        let second = calibrate_promotion_gate(&champion, &cfg, 4, 4);
+        assert_eq!(first.wins(), second.wins());
+        assert_eq!(first.games(), 4);
+        assert!((0.0..=1.0).contains(&first.observed_rate()));
+        assert!(first.gate().null_rate() > first.observed_rate());
+        assert!(first.gate().alternative_rate() > first.gate().null_rate());
     }
 
     #[test]

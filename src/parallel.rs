@@ -253,11 +253,39 @@ impl WorkPool {
         T: Send + 'static,
         F: Fn(S, WorkIndices) -> Vec<(usize, T)> + Send + Sync + 'static,
     {
+        self.map_stateful_limited(count, self.workers.len(), states, job)
+    }
+
+    /// Evaluate a stateful batch with no more than `max_workers` active jobs.
+    ///
+    /// A state may be a whole cloned [`crate::game::Game`], so a small batch
+    /// can benefit from fewer snapshots even when the persistent pool serves
+    /// wider frontiers elsewhere in the same simulation. Work remains
+    /// dynamically balanced and results remain ordered exactly as in
+    /// [`Self::map_stateful`]. Zero retains the pool's serial-fallback meaning
+    /// of one worker. `states` must contain
+    /// `min(self.threads(), count, max_workers.max(1))` entries.
+    pub fn map_stateful_limited<S, T, F>(
+        &self,
+        count: usize,
+        max_workers: usize,
+        states: Vec<S>,
+        job: F,
+    ) -> Vec<T>
+    where
+        S: Send + 'static,
+        T: Send + 'static,
+        F: Fn(S, WorkIndices) -> Vec<(usize, T)> + Send + Sync + 'static,
+    {
         if count == 0 {
             assert!(states.is_empty(), "an empty work batch needs no states");
             return Vec::new();
         }
-        let active = self.workers.len().min(count);
+        let active = self
+            .workers
+            .len()
+            .min(count)
+            .min(max_workers.max(1));
         assert_eq!(
             states.len(),
             active,
@@ -508,7 +536,7 @@ mod tests {
     use super::WorkPool;
     use std::collections::HashSet;
     use std::panic::AssertUnwindSafe;
-    use std::sync::{Arc, Barrier};
+    use std::sync::{Arc, Barrier, Mutex};
 
     #[test]
     fn results_come_back_in_job_order() {
@@ -647,6 +675,23 @@ mod tests {
             visits.sort_unstable();
             assert_eq!(visits, (0..visits.len()).collect::<Vec<_>>());
         }
+    }
+
+    #[test]
+    fn limited_stateful_batch_uses_only_its_requested_workers() {
+        let pool = WorkPool::new(6);
+        let barrier = Arc::new(Barrier::new(3));
+        let seen = Arc::new(Mutex::new(HashSet::new()));
+        let states = (0..3)
+            .map(|state| (state, Arc::clone(&barrier), Arc::clone(&seen)))
+            .collect();
+        let values = pool.map_stateful_limited(48, 3, states, |(state, barrier, seen), indices| {
+            barrier.wait();
+            seen.lock().unwrap().insert(std::thread::current().id());
+            indices.map(|index| (index, state)).collect()
+        });
+        assert_eq!(values.len(), 48, "results remain ordered and complete");
+        assert_eq!(seen.lock().unwrap().len(), 3);
     }
 
     #[test]

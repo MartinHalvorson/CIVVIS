@@ -89,7 +89,30 @@ fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
         Item::Building { building } => Some(format!("BUILDING_{}", upper(building))),
         Item::District { district, .. } => Some(format!("DISTRICT_{}", upper(district))),
         Item::Wonder { wonder, .. } => Some(format!("BUILDING_{}", upper(wonder))),
-        Item::Project { project } => Some(format!("PROJECT_{}", upper(project))),
+        // ⚠ CIVVIS'S DISTRICT PROJECTS ARE NOT NAMED LIKE CIVILIZATION VI'S, and the
+        // mechanical uppercase below produced names the game has never heard of.
+        //
+        // `campus_research_grants` became `PROJECT_CAMPUS_RESEARCH_GRANTS`, which
+        // appears in ZERO shipped Assets — live run `civvis-20260801T145302Z`
+        // refused it as `unknown_PROJECT_CAMPUS_RESEARCH_GRANTS` ten times. Firaxis
+        // names every district project `PROJECT_ENHANCE_DISTRICT_<DISTRICT>`; CIVVIS
+        // names each one after what it DOES. All seven were silently unbuildable.
+        Item::Project { project } => Some(match project.as_str() {
+            "campus_research_grants" => "PROJECT_ENHANCE_DISTRICT_CAMPUS".to_string(),
+            "commercial_hub_investment" => {
+                "PROJECT_ENHANCE_DISTRICT_COMMERCIAL_HUB".to_string()
+            }
+            "encampment_training" => "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT".to_string(),
+            "harbor_shipping" => "PROJECT_ENHANCE_DISTRICT_HARBOR".to_string(),
+            "holy_site_prayers" => "PROJECT_ENHANCE_DISTRICT_HOLY_SITE".to_string(),
+            "industrial_zone_logistics" => {
+                "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE".to_string()
+            }
+            "theater_square_festival" => "PROJECT_ENHANCE_DISTRICT_THEATER".to_string(),
+            // The rest ARE mechanical: `build_nuclear_device` really is
+            // `PROJECT_BUILD_NUCLEAR_DEVICE`. Only the district projects diverge.
+            _ => format!("PROJECT_{}", upper(project)),
+        }),
         _ => None,
     }
 }
@@ -273,6 +296,13 @@ fn decide(
 
     if !mirror_state.unmapped.is_empty() {
         note_bits.push(format!("unmapped: {}", mirror_state.unmapped.join(",")));
+    }
+    // ★★★★ HOW FAR OFF THE RECONSTRUCTED ECONOMY IS. The board is openly partial and
+    // nothing has ever said by how much; research valuations are spent in these units,
+    // so a rate half again too fast makes an unaffordable plan look affordable.
+    // Reported, never injected — see `mirror::economy_drift`.
+    if let Some(drift) = civvis::mirror::economy_drift(&mirror_state.game, state) {
+        note_bits.push(drift);
     }
     // ★★★★★ UNITS THE EXPORT NAMED THAT NEVER REACHED THE BOARD. A unit CIVVIS cannot
     // see gets no order and stands where it was built for the rest of the game — the
@@ -614,6 +644,115 @@ fn translate(
     }
 }
 
+/// A league genome this run will play with, and enough provenance to defend it.
+struct ChosenStrategy {
+    name: String,
+    source: String,
+    civ: Option<String>,
+    strength: f64,
+    per_civ: bool,
+    /// The victory lane this genome was bred and rated in, if it has one.
+    ///
+    /// ⚠ Reported because `--victory` stays authoritative and the two can disagree:
+    /// the strongest genome by outright wins is currently a RELIGIOUS one, and the
+    /// harness asks for domination. That is a real mismatch, not a detail — a genome
+    /// tuned for a lane it is not being pointed at is not the thing that was rated.
+    lane: Option<String>,
+    weights: civvis::ai::Weights,
+}
+
+/// Where `data/league` is, without trusting the working directory.
+///
+/// ⚠ **Never resolve an asset relative to the cwd here.** This binary is launched by
+/// `civ6_brain.py` from whatever directory the harness happened to be in, and every
+/// cwd-relative asset read in this project has eventually resolved to nothing
+/// somewhere real — the champion genome, the league roster, and a value net that has
+/// never once loaded. The executable's own location is stable; the cwd is not.
+fn league_dirs(args: &[String]) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::new();
+    if let Some(dir) = arg_text(args, "--league") {
+        out.push(std::path::PathBuf::from(dir));
+    }
+    if let Ok(exe) = std::env::current_exe() {
+        // target/release/civvis_orders -> <repo>/data/league
+        for up in [3usize, 2, 1] {
+            let mut base = exe.clone();
+            for _ in 0..up {
+                base.pop();
+            }
+            out.push(base.join("data").join("league"));
+        }
+    }
+    out.push(std::path::PathBuf::from("data/league"));
+    out
+}
+
+/// Pick the genome this seat should play, or `None` to keep the shipped default.
+///
+/// ★★★★ **`--strategy` IS OPT-IN, AND THAT IS DELIBERATE.** The league's leader is not
+/// automatically the right controller for a real Civilization VI game: the champion
+/// measured **+48 in the compact evaluation and −53 deployed**, and the shipped
+/// default genome is already the deployment-capable one. So this makes the rated
+/// genome *reachable and reportable* without silently changing how every run plays;
+/// deciding which is better is a matched pair, not an assumption.
+///
+/// `--strategy auto` ranks on `league::strategy_strength`, which is the outright-win
+/// lower bound rather than the placement rating — see `league::strongest_strategy`.
+/// `--civ` narrows to the per-civilization table when that pair has history; the civ
+/// comes from the `seat` event because Civilization VI deals it and nothing can
+/// choose it.
+fn resolve_strategy(args: &[String]) -> Option<ChosenStrategy> {
+    let want = arg_text(args, "--strategy")?;
+    let civ = arg_text(args, "--civ");
+    // ⚠ Through CIVVIS's own roster, not by string surgery. `CIVILIZATION_ROME`
+    // is `Rome` here; a civilization CIVVIS does not model answers None and the
+    // ranking falls back to the global bound rather than inventing a key that
+    // matches nothing.
+    let civ_key = civ
+        .as_deref()
+        .and_then(civvis::mirror::civvis_civ_name)
+        .map(str::to_string);
+    let mut tried = Vec::new();
+    for dir in league_dirs(args) {
+        tried.push(dir.display().to_string());
+        let Some(league) = civvis::league::load_league(&dir.display().to_string()) else {
+            continue;
+        };
+        let picked = if want == "auto" {
+            civvis::league::strongest_strategy(&league, civ_key.as_deref())
+        } else {
+            league.strategies.iter().find(|s| s.name == want)
+        };
+        let Some(strategy) = picked else {
+            eprintln!("[genome] no strategy '{want}' in {}", dir.display());
+            return None;
+        };
+        let Some((weights, lane)) = civvis::league::strategy_genome(strategy) else {
+            eprintln!("[genome] '{}' carries no Weights genome", strategy.name);
+            return None;
+        };
+        let per_civ = civ_key.as_deref().is_some_and(|c| {
+            strategy
+                .leader_elo
+                .values()
+                .any(|civs| civs.get(c).is_some_and(|r| r.games > 0))
+        });
+        return Some(ChosenStrategy {
+            name: strategy.name.clone(),
+            source: dir.display().to_string(),
+            civ: civ_key.clone(),
+            strength: civvis::league::strategy_strength(strategy, civ_key.as_deref()),
+            per_civ,
+            lane,
+            weights,
+        });
+    }
+    // ⚠ Loud. A league that did not load must not read as "played with the default
+    // on purpose".
+    eprintln!("[genome] --strategy {want} requested but NO league loaded; tried: {tried:?}");
+    None
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let Some(dir) = arg_text(&args, "--mirror") else {
@@ -630,6 +769,7 @@ fn main() {
         .and_then(|v| v.parse().ok())
         .unwrap_or(6);
     let victory = arg_text(&args, "--victory").unwrap_or_else(|| "domination".to_string());
+    let rated = resolve_strategy(&args);
     let mut ai = match victory.as_str() {
         // ★ NAMING THE OBJECTIVE IS NOT MAKING THE DECISIONS. `targeting` pins which
         // victory CIVVIS plays for and leaves every choice about how to reach it —
@@ -646,6 +786,44 @@ fn main() {
             std::process::exit(2);
         }
     };
+    // ⚠ Applied AFTER the victory lane so `--victory` keeps meaning what it meant;
+    // `reweight` swaps the genome and leaves the target alone.
+    if let Some(chosen) = &rated {
+        ai.reweight(chosen.weights.clone());
+    }
+    // ★★★ SAY WHICH GENOME IS PLAYING, ALWAYS — INCLUDING "the stock one".
+    //
+    // An axis nothing reports does not exist, and this project has already shipped a
+    // learned evaluator that never once loaded while its documentation called it
+    // good and inert. A run that does not name its genome cannot be told apart from
+    // a run whose league file failed to resolve.
+    //
+    // ⚠⚠ STDERR, NOT STDOUT — AND THAT IS PROTOCOL, NOT STYLE.
+    //
+    // `--serve` speaks a strict one-line-per-request protocol: `civ6_brain.py` writes
+    // a turn number and does exactly ONE `readline()`, then reads `payload["orders"]`.
+    // Printing this to stdout put a line in front of the first response, and it is
+    // valid JSON with no `orders` key — so it parsed cleanly, yielded an empty list,
+    // and shifted every later turn by one. No error was raised anywhere.
+    //
+    // Measured after this line shipped: `turn 1: 0 orders in 0.33s` on a fresh run,
+    // and a live run that had been 236 turns of `orders_source: civvis` flipped to
+    // `fallback` the moment a binary carrying it was swapped in — the hand-written
+    // ladder playing while CIVVIS decided correctly into a pipe nobody read. The
+    // decider was never wrong; `why.log` showed it founding the capital on the very
+    // turn the brain recorded zero orders.
+    //
+    // Anything this binary emits that is not a response belongs on stderr.
+    eprintln!("{}", serde_json::json!({
+        "kind": "genome",
+        "strategy": rated.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "stock".into()),
+        "source": rated.as_ref().map(|c| c.source.clone()).unwrap_or_else(|| "AdvancedAi::new".into()),
+        "civ": rated.as_ref().and_then(|c| c.civ.clone()),
+        "strength_bound": rated.as_ref().map(|c| c.strength),
+        "per_civ": rated.as_ref().map(|c| c.per_civ),
+        "lane": rated.as_ref().and_then(|c| c.lane.clone()),
+        "victory": victory.clone(),
+    }));
 
     // ★★★★ HOLD THE SITE ACROSS A TURN THE SETTLER COULD NOT MOVE.
     //

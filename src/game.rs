@@ -15046,6 +15046,48 @@ pub struct Game {
     /// with seven builders alive against an army of one.
     #[serde(default)]
     pub blocked_improvement_sites: BTreeSet<Pos>,
+    /// Policy cards a HOST ruleset has retired, for the same reasons and with the
+    /// same emptiness in an ordinary game as [`Game::blocked_city_sites`].
+    ///
+    /// ★★★★ Measured on live run `civvis-20260801T012454Z`: `POLICY_ILKUM` was chosen
+    /// and refused **105 times**, `DISCIPLINE` 6 and `AGOGE` 1 — **112 of 813
+    /// refusals**, third behind movement and `no_params`. Civilization VI knew every
+    /// time (`culture:IsPolicyObsolete`) and said so in the refusal reason; nothing
+    /// carried it back, so CIVVIS re-derived the same card from the same board on
+    /// almost every turn of the game.
+    ///
+    /// [`Game::available_policies`] already computes an obsolete set from each card's
+    /// `replaces` list. That is the right mechanism and it is under-populated — 22 of
+    /// 41 shipped rows carry no successor — but **filling it in is what PR #703 is
+    /// blocked on**: the rows are ruleset data, so changing them moves
+    /// `Rules::source_fingerprint` and the Elo ledger rejects new games at bind time.
+    ///
+    /// ⚠ This set deliberately does NOT go near that. It is per-game reconstruction
+    /// state carried beside the board, exactly like the two above, so the fingerprint
+    /// does not move and no rated game is invalidated. It fixes the mirrored game
+    /// without pretending to fix the ruleset — and an ordinary CIVVIS game leaves it
+    /// empty, so nothing about simulated play changes.
+    #[serde(default)]
+    pub blocked_policies: BTreeSet<Name>,
+    /// Districts a HOST ruleset will not place, per city, for the same reasons and
+    /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
+    ///
+    /// ★★★★ Measured on live run `civvis-20260801T024428Z`: `DISTRICT_GOVERNMENT`
+    /// refused **24** times by turn 115 and `build_no_plot` fired **39** times, every
+    /// one of them the same district. Civilization VI offers no plot for a Government
+    /// Plaza once one exists — it is one per civilization — and CIVVIS re-chose it
+    /// from the same board turn after turn. Each discard leaves the city with nothing
+    /// queued, so `ENDTURN_BLOCKING_PRODUCTION` fires and the hand-written ladder
+    /// picks instead; on that run only 11 of 55 builds were CIVVIS's.
+    ///
+    /// ⚠⚠ **KEYED BY CITY, AND THAT IS THE WHOLE CARE IN THIS FIX.** The host refuses
+    /// a district for two opposite reasons: it is impossible *anywhere* (Government
+    /// Plaza), or *this* city has no room. A global set would stop CIVVIS building
+    /// Campuses across the empire the first time one city ran out of space — trading a
+    /// small waste for a large one. The mod now sends the city id with the refusal so
+    /// the block can be scoped; before this it sent only a bare hash.
+    #[serde(default)]
+    pub blocked_districts: BTreeMap<u32, BTreeSet<Name>>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -15354,6 +15396,8 @@ impl From<GameSer> for Game {
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
+            blocked_policies: BTreeSet::new(),
+            blocked_districts: BTreeMap::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
@@ -15693,6 +15737,8 @@ impl Game {
             at_war: BTreeSet::new(),
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
+            blocked_policies: BTreeSet::new(),
+            blocked_districts: BTreeMap::new(),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),
@@ -23626,6 +23672,9 @@ impl Game {
             .filter(|(name, s)| {
                 !p.policies.contains(*name)
                     && !obsolete.contains(*name)
+                    // A card the HOST ruleset has retired, learned from its own
+                    // refusals. Empty in an ordinary game; see `blocked_policies`.
+                    && !self.blocked_policies.contains(*name)
                     && s.offered(&p.age, self.world_era)
                     && s.civic
                         .as_ref()
@@ -28419,7 +28468,12 @@ impl Game {
         visible
     }
 
-    fn remember_city(&self, city: &City) -> RememberedCity {
+    /// Build the memory a seat keeps of a city it has seen.
+    ///
+    /// `pub(crate)` for the Civilization VI bridge: `mirror::apply_city_memory` needs
+    /// the same shape the engine's own fog bookkeeping produces, and duplicating it
+    /// there would let the two drift.
+    pub(crate) fn remember_city(&self, city: &City) -> RememberedCity {
         RememberedCity {
             id: city.id,
             name: city.name.clone(),
@@ -33703,6 +33757,15 @@ impl Game {
 
     pub fn district_sites(&self, cid: u32, dname: impl AsName) -> Vec<Pos> {
         let dname = dname.as_name();
+        // A district the HOST refused to place IN THIS CITY. Empty in an ordinary
+        // game; see `blocked_districts` for why this is per city and not global.
+        if self
+            .blocked_districts
+            .get(&cid)
+            .is_some_and(|blocked| blocked.contains(&dname))
+        {
+            return vec![];
+        }
         let city = &self.cities[&cid];
         let spec = &self.rules.districts[dname];
         let mut out: Vec<Pos> = city

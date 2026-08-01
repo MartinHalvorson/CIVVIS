@@ -1,0 +1,128 @@
+{
+  "seed": 2004,
+  "civs": [
+    "Australia",
+    "Ethiopia",
+    "Gaul",
+    "Egypt",
+    "Babylon",
+    "Norway",
+    "Kabul",
+    "Geneva",
+    "Hattusa",
+    "Mohenjo-Daro",
+    "Yerevan",
+    "Zanzibar",
+    "Auckland",
+    "Valletta",
+    "Vilnius",
+    "Free Cities",
+    "Barbarians"
+  ],
+  "events": [
+    {
+      "turn": 189,
+      "civ": "Babylon",
+      "project": "launch_earth_satellite"
+    },
+    {
+      "turn": 199,
+      "civ": "Babylon",
+      "project": "launch_moon_landing"
+    },
+    {
+      "turn": 202,
+      "civ": "Norway",
+      "project": "manhattan_project"
+    },
+    {
+      "turn": 206,
+      "civ": "Gaul",
+      "project": "launch_earth_satellite"
+    },
+    {
+      "turn": 212,
+      "civ": "Gaul",
+      "project": "launch_moon_landing"
+    },
+    {
+      "turn": 213,
+      "civ": "Babylon",
+      "project": "launch_mars_colony"
+    },
+    {
+      "turn": 219,
+      "civ": "Egypt",
+      "project": "launch_earth_satellite"
+    },
+    {
+      "turn": 227,
+      "civ": "Egypt",
+      "project": "launch_moon_landing"
+    },
+    {
+      "turn": 235,
+      "civ": "Norway",
+      "project": "operation_ivy"
+    },
+    {
+      "turn": 242,
+      "civ": "Egypt",
+      "project": "launch_mars_colony"
+    },
+    {
+      "turn": 242,
+      "civ": "Babylon",
+      "project": "exoplanet_expedition"
+    },
+    {
+      "turn": 254,
+      "civ": "Egypt",
+      "project": "exoplanet_expedition"
+    },
+    {
+      "turn": 255,
+      "civ": "Norway",
+      "project": "launch_earth_satellite"
+    },
+    {
+      "turn": 260,
+      "civ": "Norway",
+      "project": "launch_moon_landing"
+    },
+    {
+      "turn": 266,
+      "civ": "Norway",
+      "project": "launch_mars_colony"
+    },
+    {
+      "turn": 267,
+      "civ": "Babylon",
+      "project": "manhattan_project"
+    },
+    {
+      "turn": 271,
+      "civ": "Babylon",
+      "project": "operation_ivy"
+    },
+    {
+      "turn": 273,
+      "civ": "Norway",
+      "project": "exoplanet_expedition"
+    },
+    {
+      "turn": 274,
+      "civ": "Ethiopia",
+      "project": "launch_earth_satellite"
+    }
+  ],
+  "victory": {
+    "type": "science",
+    "turn": 282,
+    "winner": "Babylon"
+  },
+  "first_expedition": {
+    "turn": 243,
+    "civ": "Babylon"
+  }
+}

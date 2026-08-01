@@ -50,6 +50,148 @@ Four deliberately small changes produced that result:
    A successful `Game::apply` clears it, and game clones and saves start empty,
    so normal mutation and search branches cannot reuse a stale menu.
 
+## Live policy-deck counterfactuals (2026-08-01)
+
+The live policy deck was a newly isolated serial island inside an otherwise
+parallel single simulation. On a review, it removes and restores every legal
+or held card, reading the whole empire before and after each change. The
+sampling evidence put this work under `BasicAi::research_with_government`, but
+the expensive child was the counterfactual `empire_reading`, not technology
+selection.
+
+Two bounded changes keep its semantics intact:
+
+1. Each read-only empire valuation holds one `QueryMemo` scope, so the city
+   yield and ownership derivations shared by its cities are reused only while
+   the policy slate is unchanged.
+2. A fleet with its existing persistent `WorkPool` scores independent cards on
+   worker-private game snapshots. Results return in the original candidate
+   order, and the authoritative game's existing sort and serial deck commit
+   remain the only mutation path. Interactive and baseline `BasicAi` runs
+   retain their serial path.
+
+Release `simulate` was measured on two fixed six-player, 74-by-46 maps with
+nine city-states, 150 turns, online speed, and seeds 7,311,002 and 7,311,003.
+Baseline and candidate order alternated across the two seeds. These are
+shared-host elapsed times, so they establish a reproducible directional result
+rather than a universal machine-level throughput promise.
+
+| Internal workers | Baseline total | Candidate total | Change |
+| --- | ---: | ---: | ---: |
+| 1 | 15.150s | 14.067s | -7.1% |
+| 4 | 13.968s | 11.404s | -18.4% |
+| 18 | 14.183s | 12.057s | -15.0% |
+
+After removing the simulator's elapsed-time line, every baseline/candidate
+report had the same SHA-256 hash for each seed and worker count. A focused
+regression also compares a full live-deck review with one versus four workers
+and requires identical action logs and serialized game state. Four workers
+were the best observed count for this limited workload; that is evidence for a
+separate default-worker calibration experiment, not grounds to silently cap
+all hosts or workload shapes.
+
+### Bounded policy-score fan-out (2026-08-01)
+
+The fleet pool is intentionally still sized by `--jobs`: unit, tactical,
+purchase, and visibility frontiers can use every worker. A policy-deck review
+has a much smaller independent batch, however, and each active scorer owns a
+full `Game` snapshot. The scorer therefore caps only that batch at four active
+workers and leaves the rest of the persistent pool available to later work.
+
+This compared the uncapped #761 build with the cap on four fixed six-player,
+74-by-46, nine-city-state, 150-turn online games (seeds 7,311,002 through
+7,311,005), at `--jobs 18`. Baseline/candidate order alternated by seed. These
+are shared-host elapsed times, so they show a directional single-machine win,
+not a universal hardware default.
+
+| Policy-score workers | Four-game total | Change |
+| --- | ---: | ---: |
+| Pool-wide (18) | 23.335s | baseline |
+| Capped (4) | 22.764s | -2.4% |
+
+Every normalized report had the same SHA-256 hash for its seed. A fixed
+`--jobs 4` report was also identical before and after the cap, as expected
+because the limit is already met. The evidence is specific to this clone-heavy
+frontier; it does not change the global worker default.
+
+### Single-simulation worker default (2026-08-01)
+
+The remaining global choice is different from a batch default. `simulate`
+uses one persistent pool for clone-heavy inner frontiers, whereas `soak`,
+evaluation, and other batch commands assign whole independent games to their
+workers. On this 18-core host, an omitted `simulate --jobs` therefore now uses
+`min(available_parallelism, 4)`; an explicit `--jobs` remains authoritative
+and all batch defaults remain one worker per available core.
+
+Four fixed six-player, 74-by-46, nine-city-state, 150-turn online games
+(seeds 7,311,030 through 7,311,033) compared four workers with the old
+18-worker implicit setting. Run order alternated by seed. As with the other
+single-host measurements, this supports the selected default here rather than
+a universal hardware claim.
+
+| `simulate` workers | Four-game total | Change |
+| --- | ---: | ---: |
+| 18 (former implicit setting) | 19.030s | baseline |
+| 4 (new implicit maximum) | 18.649s | -2.0% |
+
+Every normalized report had the same SHA-256 hash across worker counts. The
+full observed curve also rose from 4 to 6, 8, 12, and 18 workers on the first
+two seeds, while explicit user choices remain available for hosts or workloads
+with a different knee.
+
+### Bounded purchase-menu fan-out (2026-08-01)
+
+`AdvancedAi::legal_purchase_actions` distributes independent city menus, but
+every active worker owns a complete `Game` snapshot. A developed empire often
+has only a few cities, so using every persistent-pool worker creates more
+snapshots than the menu work can repay. The frontier now has its own cap of
+three workers; results are still collected by city index and flattened in the
+stock purchase-then-empire order before the authoritative AI chooses an
+action.
+
+The three-way calibration used four fixed six-player, 74-by-46,
+nine-city-state, 150-turn online games at `--jobs 4` (seeds 7,311,055 through
+7,311,058), rotating the run order. It selected three workers rather than a
+generic low cap:
+
+| Purchase-menu workers | Four-game total | Change |
+| --- | ---: | ---: |
+| Pool-wide (4) | 21.404s | baseline |
+| Capped (2) | 21.232s | -0.8% |
+| Capped (3) | 21.057s | -1.6% |
+
+A separate four-seed default-path confirmation (seeds 7,311,063 through
+7,311,066) improved from 19.997s to 19.477s. Together, the eight `--jobs 4`
+games improved from 41.401s to 40.534s (**-2.1%**). Four additional explicit
+`--jobs 18` games (seeds 7,311,067 through 7,311,070) improved from 23.643s
+to 23.138s (**-2.1%**). Every normalized baseline/candidate report had the
+same SHA-256 hash. The cap is local to this clone-heavy, bounded frontier; it
+does not resize the fleet pool or alter the single-simulation worker default.
+
+### Advanced-unit planner fan-out: rejected (2026-08-01)
+
+`AdvancedAi::advanced_units` is also clone-heavy, but unlike the policy and
+purchase frontiers it is a broad, expensive unit-intent planner. Its existing
+dynamic batch gives every worker a private game and planner state, then plans
+many general units from it. A local cap would preserve intent order and replay,
+but did not repay the lost planning throughput.
+
+Three alternating release comparisons used the same six-player, 74-by-46,
+nine-city-state, 150-turn online workload. Each baseline/candidate pair had
+an identical normalized report hash.
+
+| Pool / cap experiment | Seeds | Baseline total | Capped total | Change |
+| --- | --- | ---: | ---: | ---: |
+| `--jobs 4`, pool-wide 4 vs cap 2 | 7,311,081–084 | 21.71s | 22.59s | +4.1% |
+| `--jobs 4`, pool-wide 4 vs cap 3 | 7,311,085–088 | 22.62s | 23.47s | +3.8% |
+| `--jobs 18`, pool-wide 18 vs cap 4 | 7,311,089–092 | 18.50s | 18.94s | +2.4% |
+
+No unit-planner cap is retained. This is a useful boundary on the earlier
+worker caps: a complete snapshot is not alone evidence that fewer workers
+help. The next experiment in this hotspot should reduce work *inside* a unit
+intent or reuse a measured immutable derivation, rather than suppress a
+planner worker.
+
 ## Production-catalog follow-up
 
 The production catalog was the narrow first experiment from the profile. Its
