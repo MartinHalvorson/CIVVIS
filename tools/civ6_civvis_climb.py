@@ -134,6 +134,35 @@ def teardown() -> None:
     if not launcher.stop(timeout_s=45.0):
         print("[teardown] the game is STILL running after stop(); the next attempt "
               "will be refused as a foreign run", flush=True)
+    # ★★★★ AND CLEAR THE RUN TAG, because stopping the process is not enough.
+    #
+    # `gamelock.foreign_run` refuses when a game is up AND the installed tag is not
+    # ours. Every attempt in a batch gets a NEW tag, so a tag left behind by a failed
+    # attempt is "foreign" to its own successor — which is precisely the failure the
+    # comment above describes and `launcher.stop` was meant to end.
+    #
+    # It did not end it: `stop()` only settles the PROCESS, and the check races it.
+    # Measured on batch `climb4` — Civilization VI was DOWN and the next attempt was
+    # still refused with "a game is running under run tag
+    # 'civvis-20260801T155857Z'", the corpse of the attempt before it.
+    #
+    # A tag with no game behind it describes nothing. Clearing it makes the refusal
+    # impossible regardless of how the process check races, which is the property
+    # wanted here — not a better-timed check.
+    try:
+        # Asked of `install`, the module that WRITES this file, so the two cannot
+        # disagree about where it lives.
+        from civ6_control import install  # noqa: PLC0415
+        config = install.install_dir() / "config.json"
+        if config.is_file():
+            data = json.loads(config.read_text())
+            if data.get("RunTag") is not None:
+                data["RunTag"] = None
+                config.write_text(json.dumps(data, indent=1))
+                print("[teardown] cleared the installed run tag", flush=True)
+    except (OSError, json.JSONDecodeError) as exc:
+        # Never fatal: a batch that cannot tidy up must still be able to run.
+        print(f"[teardown] could not clear the run tag: {exc}", flush=True)
     run([sys.executable, str(HERE / "civ6_control" / "gamelock.py"), "--break-stale"])
     dismiss_crash_dialogs()
 
