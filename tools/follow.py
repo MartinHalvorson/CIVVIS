@@ -51,7 +51,7 @@ LOG = os.path.join(RIG, "follow.log")
 STATUS = os.path.join(RIG, "status.json")
 STAGE = os.path.join(RIG, "stage")
 
-POLL_SECONDS = 8.0
+POLL_SECONDS = 2.0
 # A rebuild costs a process launch, so don't do it for every appended line; a
 # turn here takes minutes, and this still tracks units moving within a turn.
 MIN_REPUBLISH_SECONDS = 30.0

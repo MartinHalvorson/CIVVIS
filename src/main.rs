@@ -165,7 +165,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// deployment comparison (SHA-256
 /// `932cfabf125e729a5264ce43d2fd8b05d013d3fe84939b1dcd366ff122ddc84a`).
 /// This is a compatibility re-pin, not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe2e4_6d5b_d8bb_82b7;
+///
+/// #782 repairs runaway military production and wartime science/culture
+/// neglect only for the live controller. Every new strategic branch is gated
+/// by `victory_planning`; `AdvancedAi::legacy()` sets that flag false. The
+/// regression test checks the legacy yield weights and production choice as
+/// well as the live behavior. The source contract is deliberately re-pinned;
+/// the Elo protocol does not move.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1c35_6046_7f52_f39e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
