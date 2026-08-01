@@ -4096,6 +4096,39 @@ local function typeName(table_name, column, index)
 	end);
 end
 
+-- ★★★★★ THE RIVERS ON THE CIVVIS BOARD WERE INVENTED, NOT MIRRORED.
+--
+-- Nothing here ever exported a river and nothing on the Rust side ever wrote one
+-- (`grep -c river src/mirror.rs` answered 0) — but the board was NOT river-less,
+-- which is why this survived. `rebuild_game` starts from `Game::new`, which
+-- generates an ordinary CIVVIS map complete with its own river network, and
+-- `apply_terrain` overwrites terrain, feature, resource and improvement while
+-- leaving `river_edges` untouched. So the generated world's rivers showed
+-- through, in the wrong places, on every mirrored game ever played.
+--
+-- Measured on the live run civvis-20260731T235836Z at turn 112: a Civilization VI
+-- river plot is fresh water BY DEFINITION, yet only **12 of 33** CIVVIS river
+-- tiles (36.4%) were fresh water in the export, against a **25.7%** base rate —
+-- chance. Meanwhile 132 of 513 revealed plots really were fresh water.
+--
+-- Civilization VI stores a river on three of a plot's six edges — W, NW and NE.
+-- The other three edges are the same segments seen from the neighbouring plots,
+-- so exporting these three for every revealed plot carries the whole network,
+-- minus edges whose other side we have not revealed. That omission is honest:
+-- it is exactly the part of the river the seat has not seen.
+--
+-- Sent as one small bitmask rather than three booleans to keep this loop's per
+-- plot cost down — it already runs over every plot on the map.
+local RIVER_W, RIVER_NW, RIVER_NE = 1, 2, 4;
+
+local function riverMask(plot)
+	local mask = 0;
+	if try(function() return plot:IsWOfRiver(); end, false) then mask = mask + RIVER_W; end
+	if try(function() return plot:IsNWOfRiver(); end, false) then mask = mask + RIVER_NW; end
+	if try(function() return plot:IsNEOfRiver(); end, false) then mask = mask + RIVER_NE; end
+	return mask;
+end
+
 local function exportTiles(player, pid, turn)
 	if cfg.ExportState ~= true then return; end
 	local every = cfg.TileExportEvery or 25;
@@ -4162,6 +4195,17 @@ local function exportTiles(player, pid, turn)
 						-- no-economy failure, and just as self-defeating.
 						im = typeName("Improvements", "ImprovementType",
 						              try(function() return plot:GetImprovementType(); end, -1)),
+						-- This plot's own three river edges, as a bitmask: 1 = W,
+						-- 2 = NW, 4 = NE. See `riverMask` above for why the other
+						-- three edges do not need sending.
+						rv = riverMask(plot),
+						-- Whether ANY of the six edges carries a river, which is not
+						-- derivable from `rv` alone: a river running only along this
+						-- plot's E, SE or SW edge is recorded on the NEIGHBOUR's
+						-- flags, so `rv` is 0 here while the plot is still riverside.
+						-- Carried separately so a fresh-water check does not have to
+						-- wait for the neighbour to be revealed.
+						ri = try(function() return plot:IsRiver(); end, false),
 					};
 					if index >= (cfg.TileChunk or 250) then
 						flush(); index = 0;

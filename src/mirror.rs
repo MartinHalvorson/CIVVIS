@@ -157,6 +157,19 @@ pub struct Plot {
     /// Improvement type name already built here, e.g. `IMPROVEMENT_FARM`.
     #[serde(default)]
     pub im: Option<String>,
+    /// This plot's own river edges as a bitmask: 1 = W, 2 = NW, 4 = NE.
+    ///
+    /// Civilization VI records a river on three of a plot's six edges; the other
+    /// three are the same segments held by the neighbouring plots. See
+    /// [`apply_rivers`].
+    #[serde(default)]
+    pub rv: u8,
+    /// Whether any of the six edges carries a river.
+    ///
+    /// Not derivable from `rv`: a river along only this plot's E, SE or SW edge
+    /// lives on the neighbour's flags, so `rv` is 0 while the plot is riverside.
+    #[serde(default)]
+    pub ri: bool,
 }
 
 fn minus_one() -> i32 {
@@ -280,6 +293,8 @@ mod tests {
             w: false,
             i: false,
             fw: false,
+            rv: 0,
+            ri: false,
         }
     }
 
@@ -519,6 +534,75 @@ mod tests {
         }
     }
 
+    /// ★★★★★ The board's rivers must be Civilization VI's, and ONLY Civilization VI's.
+    ///
+    /// The generated map `Game::new` builds has its own river network, and nothing used
+    /// to remove it — so "does the board have rivers" answered yes while every one of
+    /// them was invented. Both halves are asserted here: the exported segment lands on
+    /// the right edge of the right tile, **and** no other tile carries a river at all.
+    /// The second assertion is the one that fails without `clear_rivers`.
+    #[test]
+    fn the_rivers_on_the_board_are_the_ones_civ6_exported() {
+        let mut wet = plot(5, 6, "TERRAIN_GRASS");
+        // W and NE, so the mapping is pinned on two different edges rather than one
+        // that might be right by luck.
+        wet.rv = 1 | 4;
+        let chunks = vec![TilesChunk {
+            turn: 8,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![
+                wet,
+                plot(4, 6, "TERRAIN_GRASS"),
+                plot(5, 5, "TERRAIN_GRASS"),
+                plot(6, 6, "TERRAIN_GRASS"),
+            ],
+        }];
+        let snapshot = Snapshot::from_chunks(&chunks);
+        let game = rebuild_game(&snapshot, 4, 7);
+
+        let pos = crate::hex::offset_to_axial(5, 6);
+        let west = (pos.0 + crate::hex::DIRS[3].0, pos.1 + crate::hex::DIRS[3].1);
+        let north_east = (pos.0 + crate::hex::DIRS[5].0, pos.1 + crate::hex::DIRS[5].1);
+        assert!(
+            game.map.has_river_edge(pos, west),
+            "the W flag must put a river on the western edge"
+        );
+        assert!(
+            game.map.has_river_edge(pos, north_east),
+            "the NE flag must put a river on the north-eastern edge"
+        );
+        // Written from both sides, so the two tiles cannot disagree about one segment.
+        assert!(
+            game.map.has_river_edge(west, pos),
+            "and the neighbour must carry the same segment"
+        );
+
+        assert!(
+            game.map.get(pos).is_some_and(|tile| tile.has_river()),
+            "the plot itself reads as riverside"
+        );
+
+        // ⚠ The assertion that fails without `clear_rivers`. Before this fix the
+        // generated world's network survived here: 33 invented river tiles on a live
+        // run, only 36.4% of them on ground Civilization VI even calls fresh water.
+        let riverside: Vec<crate::Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| tile.has_river())
+            .map(|(pos, _)| *pos)
+            .collect();
+        assert_eq!(
+            riverside.len(),
+            3,
+            "exactly the exporting plot and the two neighbours across its segments \
+             carry a river — every other river on this board was invented by the map \
+             generator, and found at {riverside:?}"
+        );
+    }
+
     #[test]
     fn civ6_encodes_hills_in_the_terrain_and_civvis_does_not() {
         let vocab = Vocabulary::embedded();
@@ -663,6 +747,8 @@ mod tests {
                 w: false,
                 i: false,
                 fw: true,
+                rv: 0,
+                ri: false,
             }],
         }];
         let snapshot = Snapshot::from_chunks(&chunks);
@@ -773,6 +859,8 @@ mod tests {
                         w: false,
                         i: false,
                         fw: false,
+                        rv: 0,
+                        ri: false,
                     })
                 })
                 .collect(),
@@ -958,6 +1046,9 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
             });
         }
     }
+    // Rivers before the memory below, so what the seat remembers is the mirrored
+    // network and not the generated one.
+    apply_rivers(game, snapshot);
     // Called from here, and never separately, because a map and an explored set that
     // disagree is the defect this pair repairs — see `apply_explored`.
     apply_explored(game, snapshot);
@@ -1012,6 +1103,76 @@ pub(crate) fn apply_explored(game: &mut crate::game::Game, snapshot: &Snapshot) 
         .revealed_positions()
         .map(|(x, y)| crate::hex::offset_to_axial(x, y))
         .collect();
+}
+
+/// Put Civilization VI's rivers on the board, and take the invented ones off it.
+///
+/// ★★★★★ **THE BOARD WAS NEVER RIVER-LESS, WHICH IS WHY THIS SURVIVED.** Nothing in
+/// this bridge ever wrote a river — `grep -c river src/mirror.rs` answered **0** — and
+/// the honest conclusion from that alone would have been "the mirror has no rivers".
+/// It had 33 of them. `rebuild_game` starts from `Game::new`, which generates an
+/// ordinary CIVVIS map complete with a river network, and `apply_terrain` overwrites
+/// terrain, feature, resource and improvement while leaving `river_edges` untouched.
+/// The generated world's rivers therefore showed through on every mirrored game ever
+/// played, in places the real game has no river at all.
+///
+/// The same trap as `explored` (35 invented plots) and `remembered_tiles` (33 tiles of
+/// a different world): **a populated field is not a mirrored one**, and the check that
+/// would have caught it is agreement against the export, never "is it non-empty".
+///
+/// **The control that settles it.** A Civilization VI river plot is fresh water *by
+/// definition*, and `fw` (`IsFreshWater`) has been exported all along. Measured on the
+/// live run `civvis-20260731T235836Z` at turn 112, before this fix:
+///
+/// | | |
+/// |---|---|
+/// | revealed plots paired with the board | 513 |
+/// | plots Civilization VI calls fresh water | 132 (25.7%) |
+/// | CIVVIS tiles carrying a river | 33 |
+/// | ...of those, fresh water in the export | **12 (36.4%)** |
+///
+/// 36.4% against a 25.7% base rate is chance. Real rivers would read ~100%.
+///
+/// ⚠ **Clears before it writes.** `WorldMap::clear_rivers` runs first for the same
+/// reason `apply_explored` replaces rather than extends: leaving the generated network
+/// in place and adding to it keeps every invented river forever, and they are the whole
+/// defect.
+///
+/// ## The edge mapping
+///
+/// Civilization VI holds a river on three of a plot's six edges — W, NW, NE — and the
+/// other three are the same segments seen from the neighbours, so exporting three per
+/// plot carries the whole network. In this reconstruction `r` **is** Civilization VI's
+/// `y`, and Civ 6's `y` grows north, so the axial directions in [`crate::hex::DIRS`]
+/// read as E, SE, SW, W, NW, NE and the three flags land on indices 3, 4 and 5.
+///
+/// ⚠ Written through `set_river_edge`, which sets the reciprocal edge on the neighbour
+/// too, so the two tiles cannot disagree about a segment they share. A river whose far
+/// side is not revealed is simply not written — that is the part of the network the
+/// seat has not seen, and inventing it is what this function exists to stop.
+pub(crate) fn apply_rivers(game: &mut crate::game::Game, snapshot: &Snapshot) {
+    // Civ 6 flag -> index into `hex::DIRS`, in this reconstruction's frame.
+    const W: usize = 3;
+    const NW: usize = 4;
+    const NE: usize = 5;
+    game.map.clear_rivers();
+    for (x, y) in snapshot.revealed_positions() {
+        let Some(plot) = snapshot.plot((x, y)) else {
+            continue;
+        };
+        if plot.rv == 0 {
+            continue;
+        }
+        let pos = crate::hex::offset_to_axial(x, y);
+        for (bit, direction) in [(1u8, W), (2, NW), (4, NE)] {
+            if plot.rv & bit == 0 {
+                continue;
+            }
+            let delta = crate::hex::DIRS[direction];
+            let neighbour = (pos.0 + delta.0, pos.1 + delta.1);
+            game.map.set_river_edge(pos, neighbour, true);
+        }
+    }
 }
 
 /// Tell the seat what the ground it has seen actually LOOKED like.
