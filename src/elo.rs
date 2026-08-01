@@ -4324,7 +4324,7 @@ mod tests {
     #[test]
     fn league_genome_challenger_loads_a_win_selected_searching_agent() {
         let (name, _) = league_generalist().expect("committed league has a generalist genome");
-        assert_eq!(name, "g20-21", "update the documented transfer candidate");
+        assert_eq!(name, "g4-10", "update the documented transfer candidate");
         let ai = builtin_ai("strategic_deep_league", 1);
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_deep_league", "unused");
