@@ -612,7 +612,14 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
             f"playable, so this counts turns nothing better was chosen.")
     late = prod.get("prod_blocks_after_t100") or 0
     unans = prod.get("prod_blocks_after_t100_unanswered") or 0
-    if late and unans:
+    # ⚠ A MINIMUM DENOMINATOR, like every other check here has. Without it a single
+    # blocked event reads "1/1 (100%) unanswered" and shouts — which is exactly what
+    # a run that died early looks like, and exactly when this report is being read
+    # most carefully. The other three verdicts guard on `floor_builds >= 5`,
+    # `overshoot >= 2.0` and `>= 20` war turns with `>= 5` late-war builds; this one
+    # was the odd case out. Eight is the smallest sample that can distinguish a real
+    # budget exhaustion (which runs at ~50% on a six-city empire) from noise.
+    if late >= 8 and unans:
         out.append(
             f"PRODUCTION BLOCKED AND UNANSWERED: {unans}/{late} of the "
             f"ENDTURN_BLOCKING_PRODUCTION blocks after turn 100 got no answer. It "
