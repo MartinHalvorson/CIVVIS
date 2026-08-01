@@ -727,8 +727,23 @@ end
 -- upgraded them, while the treasury sat on 478 unspent Gold. UNITCOMMAND_UPGRADE
 -- is in this build's resolved command list, so this is available and was simply
 -- never attempted.
+-- ⚠ WHETHER THE ARMY CAN RE-ARM AT ALL, WHICH NO COUNTER HAS EVER SAID.
+--
+-- Run `civvis-20260801T065721Z` fielded nothing but Ancient units for 195 turns and
+-- `upgrade` appears in no `by` map on the whole run -- yet `upgradeUnit` is called
+-- for EVERY combat unit EVERY turn, first, from `orderFor`. So it was attempted
+-- thousands of times and silently refused every single time, and nothing anywhere
+-- recorded whether the block was gold, tech, or a missing strategic resource.
+--
+-- That is the same shape as `no_params` x 221 and `move_refused` x 33: an anonymous
+-- count. Both times naming it made the cause fall out immediately and both times the
+-- standing hypothesis was wrong, so this names it BEFORE anything is changed.
+local upgradeTried, upgradeBlocked = 0, {};
 local function upgradeUnit(unit)
+	upgradeTried = upgradeTried + 1;
 	if commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"]) then return "upgrade"; end
+	local name = unitTypeName(unit) or "?";
+	upgradeBlocked[name] = (upgradeBlocked[name] or 0) + 1;
 	return nil;
 end
 
@@ -2248,6 +2263,48 @@ end
 
 -- --------------------------------------------------------- city production
 
+-- ★★★★★ WHETHER A WAR IS BEING LOST, WHICH THE ARMY GATE COULD NOT SEE.
+--
+-- `wantArmy` is capped at `ArmyCap` (10 by default) and `counts.military` counts
+-- UNITS. Run `civvis-20260801T065721Z` held ~40 units, so `counts.military <
+-- wantArmy` was false from the early game onward and **the army block never fired
+-- again** -- through a two-front war that took all six cities and ended the run in
+-- defeat at turn 195. Builds after turn 140, at war and losing: 14 builders, 2
+-- settlers, 1 trader, and ZERO military.
+--
+--     turn |  us | p1  | p2  | p3  | p4  | p5
+--       74 | 185 |  -  |  57 |  -  |  -  |  29     <- we declared here, correctly
+--      140 | 194 | 264 | 235 | 315 | 192 | 425
+--      190 | 130 | 537 | 320 | 120 | 472 | 821
+--
+-- Our strength sat flat at ~190 from turn 70 to 166 -- strongest civ on the map to
+-- weakest -- while every unit we ever built stayed Ancient era (warrior, slinger,
+-- spearman, archer, battering ram, heavy chariot).
+--
+-- Unit COUNT cannot see any of that: forty warriors and forty musketmen are the same
+-- number. `GetMilitaryStrength` can, it is what the game's own diplomacy ribbon shows
+-- a human, and the mod already exports it for us and for every rival -- so the number
+-- needed to fix this was in hand the whole time and nothing consulted it.
+local function warPressure()
+	local player = localPlayer();
+	if player == nil then return false, 0, 0; end
+	local ours = try(function() return player:GetStats():GetMilitaryStrength(); end, 0) or 0;
+	local diplomacy = try(function() return player:GetDiplomacy(); end, nil);
+	if diplomacy == nil then return false, ours, 0; end
+	local atWar, worst = false, 0;
+	for _, otherId in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+		if try(function() return diplomacy:IsAtWarWith(otherId); end, false) then
+			atWar = true;
+			local other = Players[otherId];
+			local theirs = other ~= nil
+				and (try(function() return other:GetStats():GetMilitaryStrength(); end, 0) or 0)
+				or 0;
+			if theirs > worst then worst = theirs; end
+		end
+	end
+	return atWar, ours, worst;
+end
+
 local function chooseProduction(city, counts, nCities, turn, refused)
 	refused = refused or {};
 	-- ★★★★★ ANSWER WITH CIVVIS'S CHOICE WHEN IT HAS ONE.
@@ -2378,6 +2435,21 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		cfg.ArmyCap or ((cfg.WarArmy or 4) + 6)));
 	if turn >= (cfg.WarFromTurn or 25) - 10 then
 		wantArmy = math.max(wantArmy, (cfg.WarArmy or 4) + 2);
+	end
+	-- ★★★★★ AND THE CAP MUST LIFT WHILE A WAR IS BEING LOST. See `warPressure`.
+	--
+	-- The cap above is right for the problem it was written for -- an army target that
+	-- grew with the empire forever and starved development. It is wrong in the one
+	-- state that ends runs: outmatched, at war, and building nothing that fights.
+	-- Keeping the target two ABOVE the current count means the army block always fires
+	-- while we are losing, and the ordinary cap resumes the moment we are not, so this
+	-- cannot produce a runaway peacetime army.
+	--
+	-- ⚠ Deliberately gated on STRENGTH, not on being at war. A war we are winning does
+	-- not need this, and the whole defect was a gate that could not tell those apart.
+	local atWar, ourStrength, enemyStrength = warPressure();
+	if atWar and enemyStrength > ourStrength then
+		wantArmy = math.max(wantArmy, (counts.military or 0) + 2);
 	end
 	-- ★★★ A BATTERING RAM, AND IT MUST COME BEFORE THE ARMY.
 	--
@@ -5351,7 +5423,17 @@ local function applyOrders(player, pid, turn, rows)
 		-- working and being told no; this is the bridge reporting success for
 		-- something that did not happen.
 		missed = missed,
+		-- See `upgradeUnit`. `tried` is every combat unit reached this turn and
+		-- `blocked` is what the engine would not upgrade, by unit type, so a run that
+		-- fields Ancient units in 1100 AD can finally say WHY. Gold rides along
+		-- because "no gold" is the first hypothesis and the cheapest to eliminate.
+		upgrade_tried = upgradeTried,
+		upgrade_blocked = upgradeBlocked,
+		upgrade_gold = try(function()
+			return math.floor(player:GetTreasury():GetGoldBalance());
+		end, -1),
 	});
+	upgradeTried, upgradeBlocked = 0, {};
 
 	-- ⚠⚠ A CIVVIS TURN MUST STILL EMIT A `turn` RECORD. The full one lives at the
 	-- end of `playTurn`, which no longer runs when CIVVIS is deciding — so run

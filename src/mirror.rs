@@ -1381,6 +1381,160 @@ mod tests {
         );
     }
 
+    /// ★★★★★ A city Civilization VI says is AT its district cap must stop offering
+    /// district sites on the board.
+    ///
+    /// Run `civvis-20260801T065721Z` (Rome, 195 turns, defeat) discarded **157**
+    /// district requests through `build_no_plot`, and **157 of 157** were made while
+    /// the city was at or over Civilization VI's population cap:
+    ///
+    /// ```text
+    /// city      pop  specialty  cap=ceil(pop/3)   requests
+    /// Ravenna     4          3                2        79
+    /// Gao         5          3                2        23
+    /// Ostia       8          4                3        19
+    /// ```
+    ///
+    /// CIVVIS models the cap correctly and always has — `Game::district_sites`
+    /// computes `1 + (pop - 1) / 3`, the same 1/4/7 ladder Civilization VI uses. So
+    /// the rule is not the defect; the only way CIVVIS can ask anyway is if the
+    /// MIRRORED city carries the wrong population or is missing the districts it has
+    /// already built. This test pins both through the reconstruction rather than
+    /// asserting the rule in isolation, which `Game`'s own tests already do.
+    ///
+    /// ⚠ Two-sided on purpose. "No sites" passes trivially when the city owns no
+    /// workable ground, so the under-cap case must FIRST prove a site is offered.
+    #[test]
+    fn a_city_at_its_civ6_district_cap_offers_no_more_sites() {
+        // A city needs workable ground before `district_sites` can offer anything.
+        // ⚠ Ownership is not decoration here. A mirrored city works only the ground
+        // the export says it owns, so plots left at `o: -1` give it none and
+        // `district_sites` is empty for every district regardless of the cap.
+        let plots: Vec<_> = (0..12)
+            .flat_map(|y| (0..12).map(move |x| (x, y)))
+            .map(|(x, y)| {
+                let mut p = plot(x, y, "TERRAIN_GRASS");
+                if (x - 5).abs() <= 3 && (y - 5).abs() <= 3 {
+                    p.o = 0;
+                }
+                p
+            })
+            .collect();
+        let build = |districts: Vec<&str>, pop: i32| {
+            let snapshot = Snapshot::from_chunks(&[TilesChunk {
+                turn: 30,
+                width: 12,
+                height: 12,
+                chunk: 1,
+                plots: plots.clone(),
+            }]);
+            let mut state = StateSnapshot {
+                turn: 30,
+                ..StateSnapshot::default()
+            };
+            state.cities.push(StateCity {
+                id: 1,
+                name: "Ravenna".to_string(),
+                x: 5,
+                y: 5,
+                pop,
+                districts: districts
+                    .iter()
+                    .enumerate()
+                    .map(|(i, kind)| StateDistrict {
+                        kind: (*kind).to_string(),
+                        x: 4 + i as i32 % 3,
+                        y: 4,
+                        pillaged: false,
+                    })
+                    .collect(),
+                ..StateCity::default()
+            });
+            let mut recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+            // Districts are tech- and civic-gated, and a reconstruction starts with
+            // neither, so without this the precondition fails on unlocks rather than
+            // on anything to do with the cap.
+            let techs: Vec<Name> = recon
+                .game
+                .rules
+                .techs
+                .keys()
+                .map(|t| Name::new(t.as_str()))
+                .collect();
+            let civics: Vec<Name> = recon
+                .game
+                .rules
+                .civics
+                .keys()
+                .map(|c| Name::new(c.as_str()))
+                .collect();
+            for tech in techs {
+                recon.game.players[0].techs.insert(tech);
+            }
+            for civic in civics {
+                recon.game.players[0].civics.insert(civic);
+            }
+            recon
+        };
+
+        // Ravenna's real shape: population 4, so the cap is 2.
+        let under = build(vec!["DISTRICT_CITY_CENTER"], 4);
+        let (&cid, city) = under
+            .game
+            .cities
+            .iter()
+            .find(|(_, c)| c.owner == 0)
+            .expect("the seat's city must be on the board");
+        assert_eq!(
+            city.pop, 4,
+            "the mirrored city must carry the population Civilization VI reported"
+        );
+
+        // ⚠ DISCOVERED, not hardcoded — placement rules differ per district, so
+        // naming one risks failing on siting rather than on the cap.
+        let probe = under
+            .game
+            .rules
+            .districts
+            .iter()
+            .filter(|(_, spec)| spec.specialty)
+            .map(|(name, _)| Name::new(name.as_str()))
+            .find(|name| !under.game.district_sites(cid, name).is_empty())
+            .expect("a pop-4 city under its cap must be able to site SOME specialty district");
+
+        // Same city, same population, but three specialty districts already built.
+        let at_cap = build(
+            vec![
+                "DISTRICT_CITY_CENTER",
+                "DISTRICT_CAMPUS",
+                "DISTRICT_HOLY_SITE",
+                "DISTRICT_INDUSTRIAL_ZONE",
+            ],
+            4,
+        );
+        let (&capped, city) = at_cap
+            .game
+            .cities
+            .iter()
+            .find(|(_, c)| c.owner == 0)
+            .expect("the seat's city must be on the board");
+        let built = city
+            .districts
+            .keys()
+            .filter(|name| at_cap.game.rules.districts[*name].specialty)
+            .count();
+        assert_eq!(
+            built, 3,
+            "every specialty district Civilization VI has built must reach the board — \
+             a city that reads as bare ground is exactly how CIVVIS asked 79 times"
+        );
+        assert!(
+            at_cap.game.district_sites(capped, &probe).is_empty(),
+            "population 4 allows 1 + (4-1)/3 = 2 specialty districts and this city has 3, \
+             so CIVVIS must stop choosing {probe}"
+        );
+    }
+
     /// ★★★★★ An enemy city under fog must stay on the board — the SAME defect as the
     /// tile memory, one field over, and I only fixed the tiles.
     ///
