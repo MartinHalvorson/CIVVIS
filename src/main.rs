@@ -193,7 +193,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// gates to the shared Advanced source. `AdvancedAi::legacy()` explicitly
 /// keeps the historical settlement scorer and disables those gates, so the
 /// source contract is deliberately re-pinned without moving the Elo protocol.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9d23_2356_1f8b_5d5c;
+/// #802 adds a settle-scoring adjacency term gated behind
+/// `AdvancedAi::adjacency_site_planning` — on in `promoted_policy_envoy`,
+/// off in `configured()`, so `AdvancedAi::legacy()` never evaluates it.
+/// Checked the same way: baseline and branch builds produced byte-identical
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
+/// 31337` reports. Another compatibility re-pin over the merged sources,
+/// not an Elo protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdf5f_2d78_2244_bcd5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -585,6 +585,12 @@ const SETTLEMENT_ROUTE_CANDIDATE_LIMIT: usize = 160;
 /// the one-turn approach warning used to order otherwise safe routes.
 const SETTLER_STEP_RISK_LIMIT: f64 = 30.0;
 
+/// A sparse-map fallback may keep one reachable global site alive when every
+/// ordinary candidate is below the normal score floor. It is only considered
+/// after the normal site set is empty, so this cannot make a mediocre distant
+/// city outrank a good nearby one.
+const SETTLEMENT_EMERGENCY_SITE_MIN: f64 = 8.0;
+
 #[derive(Clone)]
 pub struct AdvancedAi {
     base: BasicAi,
@@ -800,6 +806,12 @@ pub struct AdvancedAi {
     /// distance, and the cost of marching the route. Standard Advanced
     /// constructors enable it; the frozen `legacy` control disables it.
     pub settlement_safety: bool,
+    /// Price a settle site's district adjacency potential — what a Campus,
+    /// Commercial Hub or Harbor would earn at its best plot within two rings
+    /// — via `Game::settlement_adjacency_summary`.  Gated so the frozen
+    /// `advanced_v1` rating anchor keeps scoring sites exactly as it always
+    /// has; `promoted_policy_envoy` turns it on for the live controller.
+    pub adjacency_site_planning: bool,
     /// Tell this empire's governors to want food while it is still short of
     /// its city target.
     ///
@@ -1393,6 +1405,7 @@ impl AdvancedAi {
         );
         ai.envoy_infrastructure = true;
         ai.envoy_priority = true;
+        ai.adjacency_site_planning = true;
         ai
     }
 
@@ -1497,6 +1510,7 @@ impl AdvancedAi {
             assigned_religion_may_expand: false,
             defensible_sites: false,
             settlement_safety: true,
+            adjacency_site_planning: false,
             food_first: 0.0,
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
@@ -10458,71 +10472,23 @@ impl AdvancedAi {
         completion_discount * raw / (7.0 + turns.max(1.0))
     }
 
-    fn district_yield_value(yields: Yields, district: &str) -> f64 {
-        match district {
-            "campus" => yields.science,
-            "commercial_hub" => yields.gold,
-            "industrial_zone" => yields.production,
-            "holy_site" => yields.faith,
-            "theater_square" => yields.culture,
-            "harbor" => yields.gold + yields.production * 0.5,
-            _ => yields.total(),
+    /// Price the future district economy through the engine's canonical
+    /// adjacency calculator. The calculator treats the proposed center as a
+    /// city and counts planned foundations, while this wrapper keeps the
+    /// delayed district yields half-weighted and capped in the site score.
+    fn settlement_adjacency_value(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        if !self.adjacency_site_planning {
+            return 0.0;
         }
-    }
-
-    /// Estimate the districts a city can grow into, without pretending that a
-    /// district is already built. `Game::district_yields` supplies the ruleset
-    /// adjacency ledger; the city-center source is added explicitly because a
-    /// prospective city has no `City` record yet.
-    fn district_site_potential(&self, g: &Game, center: Pos) -> f64 {
-        const DISTRICTS: [(&str, f64); 6] = [
-            ("campus", 2.8),
-            ("industrial_zone", 3.0),
-            ("commercial_hub", 1.8),
-            ("harbor", 1.6),
-            ("theater_square", 1.4),
-            ("holy_site", 1.4),
-        ];
-        DISTRICTS
-            .into_iter()
-            .filter_map(|(district, weight)| {
-                let spec = g.rules.districts.get(district)?;
-                let mut best: f64 = 0.0;
-                for position in g.wdisk(center, 3) {
-                    let Some(tile) = g.map.get(position) else {
-                        continue;
-                    };
-                    if position == center
-                        || g.rules.is_water(tile) != spec.water
-                        || !g.rules.is_passable(tile)
-                        || tile.owner_city.is_some()
-                        || tile.district.is_some()
-                        || tile.district_foundation.is_some()
-                        || tile.wonder.is_some()
-                        || g.tile_is_natural_wonder(tile)
-                    {
-                        continue;
-                    }
-                    let mut adjacency = g
-                        .district_adjacency_sources(Name::new(district), position)
-                        .into_iter()
-                        .map(|source| Self::district_yield_value(source.yields, district))
-                        .sum::<f64>();
-                    if g.wdist(center, position) == 1 {
-                        adjacency += spec
-                            .adjacency
-                            .get("city_center")
-                            .copied()
-                            .map(|bonus| Self::district_yield_value(bonus, district))
-                            .unwrap_or(0.0);
-                    }
-                    let potential = Self::district_yield_value(spec.yields, district) * 0.35
-                        + adjacency * 4.0;
-                    best = best.max(potential);
-                }
-                Some(best * weight)
-            })
-            .sum()
+        let potential = g.settlement_adjacency_summary(pid, pos, 2);
+        ((potential.food * 2.0
+            + potential.production * 2.2
+            + potential.gold * 0.7
+            + potential.science * 1.2
+            + potential.culture * 1.2
+            + potential.faith * 0.4)
+            * 0.5)
+            .min(24.0)
     }
 
     /// The historical score retained for the frozen Advanced control and for
@@ -10570,6 +10536,7 @@ impl AdvancedAi {
         } else {
             -5.0
         };
+        value += self.settlement_adjacency_value(g, pid, pos);
         let enemy_distance = g
             .cities
             .values()
@@ -10650,7 +10617,7 @@ impl AdvancedAi {
         } else {
             -6.0
         };
-        value += self.district_site_potential(g, pos);
+        value += self.settlement_adjacency_value(g, pid, pos);
 
         let enemy_distance = g
             .cities
@@ -11138,6 +11105,7 @@ impl AdvancedAi {
 
     fn settle_sites(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Vec<(Pos, f64)> {
         let mut sites = Vec::new();
+        let mut emergency_sites = Vec::new();
         let visible = self.battlefront_visibility(g, pid);
         let distance_penalty = if self.settlement_safety {
             if radius > 12 { 0.78 } else { 1.25 }
@@ -11175,7 +11143,15 @@ impl AdvancedAi {
             let value = site_value - distance as f64 * distance_penalty - overreach;
             if value >= 12.0 {
                 sites.push((pos, value));
+            } else if self.settlement_safety
+                && radius > 12
+                && value >= SETTLEMENT_EMERGENCY_SITE_MIN
+            {
+                emergency_sites.push((pos, value));
             }
+        }
+        if sites.is_empty() {
+            sites = emergency_sites;
         }
         sites.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         sites
@@ -17598,12 +17574,13 @@ mod tests {
                     && district.map.get(*position).is_some()
             })
             .expect("the district site has an adjacency tile");
-        let without_mountain = ai.district_site_potential(&district, center);
+        let without_mountain = ai.settlement_adjacency_value(&district, 0, center);
         district.map.tiles.get_mut(&mountain).unwrap().terrain = Name::new("mountain");
-        let with_mountain = ai.district_site_potential(&district, center);
+        let with_mountain = ai.settlement_adjacency_value(&district, 0, center);
         assert!(
-            with_mountain > without_mountain + 5.0,
-            "future campus adjacency should survive into the founding score"
+            with_mountain > without_mountain + 0.1,
+            "future campus adjacency should survive into the founding score: \
+             with={with_mountain}, without={without_mountain}"
         );
     }
 
@@ -25452,6 +25429,96 @@ mod tests {
             );
         }
         println!();
+    }
+
+    #[test]
+    fn settle_value_prices_district_adjacency_geometry() {
+        // Three mountains cost the same worked yields wherever they stand.
+        // Clustered around one plot they are a +3 Campus; scattered so no
+        // plot touches two, the best Campus is +1. The settle score must
+        // prefer the cluster — that difference is the adjacency calculator
+        // speaking, not the tile mix.
+        let scorer = AdvancedAi::new();
+        let mut game = Game::new_full(2, 28, 18, 91_779, 200, 0, false);
+        let mut land: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        land.sort();
+        let center = land
+            .into_iter()
+            .find(|pos| {
+                game.map.get(*pos).is_some_and(|tile| {
+                    !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                }) && game
+                    .units
+                    .values()
+                    .all(|unit| game.wdist(unit.pos, *pos) > 5)
+                    && game
+                        .wdisk(*pos, 3)
+                        .iter()
+                        .all(|ring| game.map.get(*ring).is_some())
+            })
+            .expect("map has an interior patch of open ground");
+        // Flatten out to radius 3 so the mountains' own surroundings are
+        // controlled too, and silence rivers so fresh-water and Commercial
+        // Hub terms cannot differ between the two layouts.
+        for pos in game.wdisk(center, 3) {
+            let tile = game.map.tiles.get_mut(&pos).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.river_edges = [false; 6];
+        }
+        let ring2: Vec<Pos> = game
+            .wdisk(center, 2)
+            .into_iter()
+            .filter(|pos| game.wdist(*pos, center) == 2)
+            .collect();
+        assert!(ring2.len() >= 12, "interior ring two is complete");
+
+        // Scattered: ring-two plots pairwise three apart. Two mountains a
+        // plot could see together would be at most two apart, so this
+        // guarantees no plot sees more than one.
+        let mut scattered: Vec<Pos> = Vec::new();
+        for pos in &ring2 {
+            if scattered.len() < 3
+                && scattered.iter().all(|picked| game.wdist(*picked, *pos) >= 3)
+            {
+                scattered.push(*pos);
+            }
+        }
+        assert_eq!(scattered.len(), 3, "ring two admits three mutually distant peaks");
+        for pos in &scattered {
+            game.map.tiles.get_mut(pos).unwrap().terrain = crate::name!("mountain");
+        }
+        let scattered_value = scorer.settle_value(&game, 0, center);
+        for pos in &scattered {
+            game.map.tiles.get_mut(pos).unwrap().terrain = crate::name!("plains");
+        }
+
+        // Clustered: the three ring-two neighbours of one ring-one plot.
+        let anchor = game
+            .nbrs(center)
+            .into_iter()
+            .find(|pos| game.map.get(*pos).is_some())
+            .unwrap();
+        let cluster: Vec<Pos> = game
+            .nbrs(anchor)
+            .into_iter()
+            .filter(|pos| game.wdist(*pos, center) == 2)
+            .collect();
+        assert_eq!(cluster.len(), 3, "a ring-one plot touches three ring-two plots");
+        for pos in &cluster {
+            game.map.tiles.get_mut(pos).unwrap().terrain = crate::name!("mountain");
+        }
+        let clustered_value = scorer.settle_value(&game, 0, center);
+
+        assert!(
+            clustered_value > scattered_value,
+            "clustered ridge must outscore scattered peaks: {clustered_value} vs {scattered_value}"
+        );
     }
 
     /// Census, not an assertion: is `settle_siting_census` measuring the site
