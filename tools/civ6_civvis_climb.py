@@ -116,9 +116,24 @@ def teardown() -> None:
         run(["pkill", "-f", pattern])
     time.sleep(1)
     run(["osascript", "-e", 'tell application "Civ6" to quit'])
-    time.sleep(6)
-    run(["pkill", "-f", "Civ6_Exe"])
-    time.sleep(2)
+    # ⚠⚠ VERIFY, AND ESCALATE. This used to be `pkill -f Civ6_Exe` followed by a
+    # two-second sleep and nothing else, and CIVILIZATION VI SURVIVES SIGTERM.
+    #
+    # Measured directly: `pkill -f Civ6_Exe` against a live `Civ6_Exe_Child` left the
+    # process alive, and calling this very function left it alive too — same pid
+    # before and after. `launcher.stop` waits for the process to actually go and
+    # escalates to `pkill -9`, which is why every manual stop in this project works
+    # and this one did not.
+    #
+    # What that cost: an attempt that fails to start leaves the game running with ITS
+    # run tag installed, and `gamelock.foreign_run` then refuses every LATER attempt
+    # in the same batch -- each one blocked by its own predecessor. Batch
+    # civvis-20260801T053852Z died with "5 starts in a row produced no game", and all
+    # four retries were blocked by attempt 1 rather than by anything of their own.
+    # The docstring above already named this failure; the code did not achieve it.
+    if not launcher.stop(timeout_s=45.0):
+        print("[teardown] the game is STILL running after stop(); the next attempt "
+              "will be refused as a foreign run", flush=True)
     run([sys.executable, str(HERE / "civ6_control" / "gamelock.py"), "--break-stale"])
     dismiss_crash_dialogs()
 
