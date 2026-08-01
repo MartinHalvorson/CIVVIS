@@ -1425,6 +1425,68 @@ mod tests {
         assert_eq!(floored, 0, "wall hp must clamp at zero");
     }
 
+    /// ★★★★ A trade route Civilization VI is running must OCCUPY a slot on the board.
+    ///
+    /// `active_routes` counts `game.routes`, which the mirror never filled, so it read
+    /// 0 forever. Base capacity from Foreign Trade is ONE, so one live route is the
+    /// whole difference between "a slot is open" and "none is" — and `AdvancedAi`
+    /// scores a trader at +280 against -10_000 on exactly that boolean.
+    #[test]
+    fn a_running_trade_route_occupies_a_slot_on_the_board() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30, width: 10, height: 10, chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS"), plot(6, 6, "TERRAIN_GRASS")],
+        }]);
+        let build = |routes: Vec<StateTradeRoute>| {
+            let mut state = StateSnapshot { turn: 30, ..StateSnapshot::default() };
+            state.cities.push(StateCity {
+                id: 11, name: "Rome".to_string(), x: 3, y: 3, pop: 6,
+                ..StateCity::default()
+            });
+            state.cities.push(StateCity {
+                id: 22, name: "Cumae".to_string(), x: 6, y: 6, pop: 4,
+                ..StateCity::default()
+            });
+            state.trade_routes = routes;
+            rebuild_from_state(&snapshot, &state, 4, 1, 500, 0)
+        };
+
+        assert_eq!(
+            build(vec![]).game.active_routes(0), 0,
+            "no exported routes must leave the board empty"
+        );
+
+        let one = build(vec![StateTradeRoute {
+            origin_player: 0, origin_city: 11, dest_player: 0, dest_city: 22,
+        }]);
+        assert_eq!(
+            one.game.active_routes(0), 1,
+            "a route Civilization VI reports must occupy a slot"
+        );
+        // ⚠ The endpoints must be the real cities, not a placeholder: two callers in
+        // `advanced.rs` ask whether a given pair is ALREADY connected, and a
+        // self-referential route would answer that wrongly.
+        let route = one.game.routes.iter().find(|r| r.owner == 0).expect("planted");
+        assert_ne!(route.origin, route.dest, "both endpoints must resolve to real cities");
+
+        // A route to a city we have NOT mirrored still occupies a slot — dropping it
+        // would restore the exact bug this exists to fix.
+        let rival = build(vec![StateTradeRoute {
+            origin_player: 0, origin_city: 11, dest_player: 5, dest_city: 9_999,
+        }]);
+        assert_eq!(
+            rival.game.active_routes(0), 1,
+            "a route to an unmirrored city still uses up our capacity"
+        );
+
+        // Rebuilding must not accumulate: the board is rebuilt every turn.
+        let twice = build(vec![
+            StateTradeRoute { origin_player: 0, origin_city: 11, dest_player: 0, dest_city: 22 },
+            StateTradeRoute { origin_player: 0, origin_city: 22, dest_player: 0, dest_city: 11 },
+        ]);
+        assert_eq!(twice.game.active_routes(0), 2, "each reported route counts once");
+    }
+
     /// ★★★★★ The game speed Civilization VI is running must reach the board.
     ///
     /// The ladder plays `GAMESPEED_ONLINE`, whose costs are HALF of Standard, and a
@@ -2369,6 +2431,59 @@ pub(crate) fn apply_landmass(game: &mut crate::game::Game, snapshot: &Snapshot) 
 /// ⚠ Replaces rather than extends, for the same reason [`apply_explored`] does:
 /// `Game::new` generates a world with cities of its own, and a memory of THOSE is a
 /// memory of somewhere the real seat has never been.
+/// Plant the trade routes Civilization VI already has running.
+///
+/// ★★★★ WITHOUT THIS CIVVIS BELIEVES ITS WHOLE TRADE CAPACITY IS FREE, and the
+/// consequence is not a wasted order — it is a discarded DECISION.
+///
+/// `Game::active_routes` counts `game.routes`, which the mirror never populated, so
+/// it read 0 on every turn of every run. Base capacity from the Foreign Trade civic
+/// is ONE, so with a single trader already on a route:
+///
+/// ```text
+/// real free slots      = 1 - 1 = 0
+/// what CIVVIS believed = 1 - 0 = 1
+/// ```
+///
+/// The error is not one slot in N, it is one in one. `AdvancedAi` then scores a
+/// trader at +280 instead of -10_000, `UNIT_TRADER` becomes **81% of everything
+/// CIVVIS asks to produce**, and the mod's `playable()` — which uses
+/// `CanProduce(hash, false, true)`, the engine's can-it-START test — refuses it and
+/// DROPS the choice, so the ladder builds a builder instead.
+///
+/// ⚠ Routes whose endpoints cannot be resolved to CIVVIS cities are still counted,
+/// with the origin standing in for the destination. A route to a rival city we have
+/// not mirrored is real and occupies a slot; dropping it would restore the exact bug
+/// this function exists to fix. `already_connected` reads the endpoints, so a
+/// self-referential dest matches nothing — which is what it does today.
+/// `cid_of` is Civilization VI's city id to CIVVIS's, which is the direction the
+/// route endpoints arrive in.
+fn apply_trade_routes(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    cid_of: &std::collections::BTreeMap<i64, u32>,
+) {
+    // Ours are rebuilt from the export every turn; a rival's are not ours to know.
+    game.routes.retain(|route| route.owner != 0);
+    for route in &state.trade_routes {
+        let Some(&origin) = cid_of.get(&route.origin_city) else {
+            continue;
+        };
+        let dest = cid_of.get(&route.dest_city).copied().unwrap_or(origin);
+        game.routes.push(crate::game::TradeRoute {
+            origin,
+            dest,
+            owner: 0,
+            // The remaining duration is not exported. `ends` is only read to expire a
+            // route inside a simulated game, and a mirrored board is rebuilt every
+            // turn rather than ticked, so any future turn keeps the route alive for
+            // exactly as long as Civilization VI says it exists: until it stops
+            // being reported.
+            ends: game.turn.saturating_add(1),
+        });
+    }
+}
+
 pub(crate) fn apply_city_memory(game: &mut crate::game::Game) {
     let turn = game.turn.max(1);
     let seen: Vec<(u32, crate::game::RememberedCity)> = game
@@ -2777,6 +2892,21 @@ fn unknown_strength() -> f64 {
     -1.0
 }
 
+/// One outgoing trade route, as `city:GetTrade():GetOutgoingRoutes()` reports it.
+///
+/// Field names copied from Firaxis's own `TradeSupport.lua` rather than guessed.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateTradeRoute {
+    #[serde(default)]
+    pub origin_player: i64,
+    #[serde(default)]
+    pub origin_city: i64,
+    #[serde(default)]
+    pub dest_player: i64,
+    #[serde(default)]
+    pub dest_city: i64,
+}
+
 /// The whole board as one `state` event described it.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateSnapshot {
@@ -2889,6 +3019,14 @@ pub struct StateSnapshot {
     /// lost was made with an instrument blind to the likeliest cause.
     #[serde(default)]
     pub hostiles: Vec<StateUnit>,
+    /// Trade routes already running out of our own cities.
+    ///
+    /// ★★★★ Without these `Game::active_routes` counts an empty list, so CIVVIS
+    /// believes its whole trade capacity is free. Base capacity from Foreign Trade
+    /// is ONE, so a single trader on a route is the difference between "a slot is
+    /// open" and "none is" — see `apply_trade_routes`.
+    #[serde(default)]
+    pub trade_routes: Vec<StateTradeRoute>,
 }
 
 /// The identity Civilization VI gave this game: who we play, and under what rules.
@@ -4266,6 +4404,11 @@ pub fn rebuild_from_state(
     apply_tile_memory(&mut game, snapshot);
     // ⚠ AFTER every city is planted, ours and the rivals', or the seat remembers only
     // the ones that happened to exist earlier in the rebuild.
+    apply_trade_routes(
+        &mut game,
+        state,
+        &city_ids.iter().map(|(cid, civ6)| (*civ6, *cid)).collect(),
+    );
     apply_city_memory(&mut game);
 
     // Districts the host has refused to place, mapped onto CIVVIS's cities. Done here
@@ -4616,6 +4759,7 @@ impl LiveMirror {
         // ⚠ Every sync, not just the rebuild. Rival cities are placed as they are
         // revealed, so a memory taken once at construction would hold only whatever
         // existed on turn 1 — the same staleness `apply_territory` above was fixed for.
+        apply_trade_routes(&mut self.game, state, &self.cid_of);
         apply_city_memory(&mut self.game);
 
         // --- our units -------------------------------------------------------
