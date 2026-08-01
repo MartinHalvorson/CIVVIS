@@ -1271,6 +1271,44 @@ mod tests {
         );
     }
 
+    /// ★★★★★ `DISTRICT_GOVERNMENT` is CIVVIS's `government_plaza`, and missing that
+    /// cost two separate bugs.
+    ///
+    /// Prefix-stripping gives `government`, which is in no table, so `civvis_node_name`
+    /// returned None and both callers did the honest thing with a wrong answer:
+    /// `civvis_production_item` read a city building one as IDLE (60 repeat orders in
+    /// one measured run), and #729's blocked-districts reader dropped the name, so the
+    /// block never engaged for the one district it was built for —
+    /// `no_params_DISTRICT_GOVERNMENT` still read **9** after it shipped.
+    #[test]
+    fn a_civ6_name_that_truncates_a_civvis_one_resolves_only_when_unambiguous() {
+        let rules = crate::rules::Rules::embedded();
+        assert_eq!(
+            civvis_node_name(&rules.districts, "DISTRICT_GOVERNMENT", "DISTRICT_").as_deref(),
+            Some("government_plaza"),
+            "the truncated Civilization VI name must reach CIVVIS's fuller one"
+        );
+        // The ordinary case must not regress: an exact name still wins outright.
+        assert_eq!(
+            civvis_node_name(&rules.districts, "DISTRICT_CAMPUS", "DISTRICT_").as_deref(),
+            Some("campus")
+        );
+        // ⚠ And a stem that is not a whole word must NOT match. `dam` is a real
+        // district; without the boundary check it would swallow anything starting
+        // "dam...".
+        assert!(
+            civvis_node_name(&rules.districts, "DISTRICT_DAM", "DISTRICT_").as_deref()
+                == Some("dam"),
+            "an exact short name resolves to itself, not to a longer neighbour"
+        );
+        // A name CIVVIS genuinely does not have still answers None rather than
+        // guessing at the nearest thing.
+        assert!(
+            civvis_node_name(&rules.districts, "DISTRICT_NOT_A_REAL_ONE", "DISTRICT_").is_none(),
+            "an unknown district must not resolve to something plausible"
+        );
+    }
+
     fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
         // ⚠ THIS FIELD EXISTED AND WAS NEVER FILLED. `religion` was null on all
         // 26,954 city records ever exported — the schema had it, the mod never sent
@@ -2515,11 +2553,48 @@ fn civvis_node_name<T>(
     if table.contains_key(&base) {
         return Some(base);
     }
-    let without_article = base.strip_prefix("the_")?;
-    if table.contains_key(without_article) {
-        return Some(without_article.to_string());
+    if let Some(without_article) = base.strip_prefix("the_") {
+        if table.contains_key(without_article) {
+            return Some(without_article.to_string());
+        }
     }
-    None
+    // ★★★★★ CIVILIZATION VI TRUNCATES WHERE CIVVIS SPELLS IT OUT, AND THAT COST TWO
+    // SEPARATE BUGS.
+    //
+    // `DISTRICT_GOVERNMENT` is CIVVIS's `government_plaza`. Prefix-stripping gives
+    // `government`, which is in no table, so this returned None — and both callers
+    // then did the honest thing with a wrong answer:
+    //
+    // - `civvis_production_item` returned None, so a city BUILDING a Government Plaza
+    //   read as idle and CIVVIS re-ordered it. Its own comment records the cost: **60
+    //   `DISTRICT_GOVERNMENT` orders between t46 and t128**, sixty of that run's ~91
+    //   build orders.
+    // - the blocked-districts reader (#729) dropped the name, so the block it exists
+    //   to apply never engaged for the one district that needed it. Measured after
+    //   #729 shipped: `no_params_DISTRICT_GOVERNMENT` still **9**, when the whole
+    //   claim was that it would be zero.
+    //
+    // So a Civilization VI name that is a proper prefix of exactly one CIVVIS name
+    // resolves to it.
+    //
+    // ⚠ EXACTLY ONE, and only at a word boundary. `government` matches
+    // `government_plaza` and nothing else; if two entries shared the stem this refuses
+    // rather than picking one, because a confident wrong translation is what this
+    // whole file exists to prevent. The boundary check stops `dam` matching `damascus`.
+    let mut matches = table
+        .keys()
+        .filter(|known| {
+            known
+                .as_str()
+                .strip_prefix(base.as_str())
+                .is_some_and(|rest| rest.starts_with('_'))
+        })
+        .map(|known| known.as_str().to_string());
+    let only = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(only)
 }
 
 /// What a reconstruction produced, including what it could NOT translate.
