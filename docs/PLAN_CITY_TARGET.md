@@ -133,17 +133,18 @@ The current integration revision re-ran the same ignored census after merging
 current `main` and its newer embedded champion/controller changes:
 
 ```text
-[eval 4p 24x16]       plan_city_target=false  cities 3.17 / plan target 3.83   score 212
-[eval 4p 24x16]       plan_city_target=true   cities 3.50 / plan target 3.83   score 208
-[deployment 6p 74x46] plan_city_target=false  cities 5.50 / plan target 4.83   score 403
-[deployment 6p 74x46] plan_city_target=true   cities 4.67 / plan target 5.00   score 388
+[eval 4p 24x16]       plan_city_target=false  cities 3.67 / plan target 3.83   score 206
+[eval 4p 24x16]       plan_city_target=true   cities 3.67 / plan target 3.83   score 204
+[deployment 6p 74x46] plan_city_target=false  cities 5.17 / plan target 4.83   score 397
+[deployment 6p 74x46] plan_city_target=true   cities 5.50 / plan target 5.00   score 385
 ```
 
-The compact city count now moves upward but score still falls; deployment loses
-both cities and score. This is a refreshed fires check, not a pre-registered
-outcome evaluation, so it supplies no promotion evidence and does not change
-the arm's default-off status. It also means the old numerical two-regime reading
-is historical rather than a claim about the current controller.
+The compact city count is now unchanged while score falls; deployment gains
+cities but still loses score. This is a refreshed fires check, not a
+pre-registered outcome evaluation, so it supplies no promotion evidence and
+does not change the arm's default-off status. It also means the old numerical
+two-regime reading is historical rather than a claim about the current
+controller.
 
 ### Why the historical result occurred, and why it remains useful
 
