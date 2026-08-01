@@ -2636,7 +2636,25 @@ local function buildParams(row, city)
 		params[CityOperationTypes.PARAM_DISTRICT_TYPE] = row.Hash;
 		local where = districtPlot(city, row.Hash);
 		if where == nil then
-			emit("build_no_plot", { district = row.DistrictType or tostring(row.Hash) });
+			-- ★★★★ NAME THE DISTRICT AND THE CITY. This used to send
+			-- `row.DistrictType`, which does not exist on a `GameInfo.Types` row, so
+			-- every one of these arrived as a bare hash -- 39 of them on run
+			-- civvis-20260801T024428Z, all reading `-1743686858`, which no reader could
+			-- turn back into a name.
+			--
+			-- ⚠ The CITY matters as much as the name. Civilization VI offers no plot
+			-- either because the district is impossible ANYWHERE (Government Plaza is
+			-- one per civilization) or because THIS city has no room for it, and those
+			-- want opposite responses. Without the city id a consumer can only block
+			-- globally, which would stop CIVVIS building Campuses everywhere the first
+			-- time one city ran out of space.
+			-- ⚠ The id comes off the live city object, not from `subject`: this is a
+			-- top-level function and `subject` belongs to the order handler. The scope
+			-- checker caught that, which is exactly what it is for.
+			emit("build_no_plot", {
+				city = try(function() return city:GetID(); end, -1),
+				district = row.Type or tostring(row.Hash),
+			});
 			return nil;
 		end
 		params[CityOperationTypes.PARAM_X] = where.x;

@@ -1061,6 +1061,92 @@ mod tests {
         );
     }
 
+    /// ★★★★ A district the host will not place must stop being chosen — IN THAT CITY.
+    ///
+    /// `DISTRICT_GOVERNMENT` was refused **24** times by turn 115 on live run
+    /// `civvis-20260801T024428Z`, and `build_no_plot` fired **39** times, every one the
+    /// same district. A Government Plaza is one per civilization, so once it exists
+    /// Civilization VI offers no plot anywhere, and CIVVIS re-chose it from the same
+    /// board turn after turn. Each discard leaves the city with nothing queued and the
+    /// hand-written ladder picks instead.
+    ///
+    /// ⚠⚠ The second assertion is the one that matters. The host refuses a district
+    /// for two opposite reasons — impossible anywhere, or no room in THIS city — and a
+    /// global block would stop CIVVIS building Campuses across the empire the first
+    /// time one city ran out of space. That would trade a small waste for a large one.
+    #[test]
+    fn a_district_the_host_will_not_place_is_blocked_in_that_city_only() {
+        let mut game = crate::game::Game::new(4, 20, 20, 7, 500, 0);
+        let mut ours: Vec<u32> = game
+            .cities
+            .values()
+            .filter(|c| c.owner == 0)
+            .map(|c| c.id)
+            .collect();
+        while ours.len() < 2 {
+            // A one-city fixture cannot show the scoping, which is the whole point.
+            let seed = ours.len() as i32;
+            let pos = (seed * 5 + 6, seed * 5 + 6);
+            if !game.map.tiles.contains_key(&pos) {
+                break;
+            }
+            game.place_city(0, pos, None);
+            ours = game
+                .cities
+                .values()
+                .filter(|c| c.owner == 0)
+                .map(|c| c.id)
+                .collect();
+        }
+        assert!(ours.len() >= 2, "need two cities to prove the block is scoped");
+        let (blocked_city, other_city) = (ours[0], ours[1]);
+        // A fresh city has one population and no research, so it can site nothing at
+        // all — the fixture, not the change, is what would fail. Unlock everything and
+        // grow both cities so the question under test is the block and only the block.
+        let techs: Vec<Name> = game.rules.techs.keys().map(|t| Name::new(t.as_str())).collect();
+        for tech in techs {
+            game.players[0].techs.insert(tech);
+        }
+        let civics: Vec<Name> = game.rules.civics.keys().map(|c| Name::new(c.as_str())).collect();
+        for civic in civics {
+            game.players[0].civics.insert(civic);
+        }
+        for cid in [blocked_city, other_city] {
+            if let Some(city) = game.cities.get_mut(&cid) {
+                city.pop = 12;
+            }
+        }
+
+        // ⚠ DISCOVERED, not hardcoded. Which districts a fresh city can site depends on
+        // population and tech, so naming one made the precondition fail on an
+        // unremarkable fixture rather than on anything to do with this change.
+        let district = game
+            .rules
+            .districts
+            .keys()
+            .map(|name| crate::name::Name::new(name.as_str()))
+            .find(|name| {
+                !game.district_sites(blocked_city, name).is_empty()
+                    && !game.district_sites(other_city, name).is_empty()
+            })
+            .expect("some district must be sitable in both cities for this to prove anything");
+
+        game.blocked_districts
+            .entry(blocked_city)
+            .or_default()
+            .insert(district.clone());
+
+        assert!(
+            game.district_sites(blocked_city, &district).is_empty(),
+            "the city the host refused must stop offering it"
+        );
+        assert!(
+            !game.district_sites(other_city, &district).is_empty(),
+            "and every OTHER city must be untouched — a global block would cost far \
+             more than the waste it prevents"
+        );
+    }
+
     fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
         // ⚠ THIS FIELD EXISTED AND WAS NEVER FILLED. `religion` was null on all
         // 26,954 city records ever exported — the schema had it, the mod never sent
@@ -2074,6 +2160,12 @@ pub struct StateSnapshot {
     /// ruleset is in hand; see [`refused_policies`].
     #[serde(default)]
     pub refused_policy_names: std::collections::BTreeSet<String>,
+    /// Districts Civilization VI refused to place, by ITS city id, from
+    /// `build_no_plot`. Mapped onto CIVVIS cities where `city_ids` is in hand; see
+    /// [`refused_districts`].
+    #[serde(default)]
+    pub refused_districts:
+        std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     /// Barbarian units this seat can SEE.
     ///
     /// ★★★★ The rival export is built from `GetAliveMajorIDs`, so barbarians could
@@ -2233,6 +2325,7 @@ pub fn state_from_events(
         state.refused_sites = refused_city_sites(path);
         state.refused_improves = refused_improve_sites(path);
         state.refused_policy_names = refused_policies(path);
+        state.refused_districts = refused_districts(path);
     }
     best
 }
@@ -2539,6 +2632,82 @@ pub fn refused_sites_of_kind(
     refused
 }
 
+/// Translate host refusals onto CIVVIS's own city and district names.
+///
+/// Split out because the rebuild and every `sync` both need it, and neither may guess:
+/// an entry under a name no district answers to filters nothing while making the set
+/// look populated.
+fn blocked_districts_from(
+    refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    city_ids: &std::collections::BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> BTreeMap<u32, std::collections::BTreeSet<Name>> {
+    let mut out: BTreeMap<u32, std::collections::BTreeSet<Name>> = Default::default();
+    for (cid, civ6_id) in city_ids {
+        let Some(names) = refused.get(civ6_id) else {
+            continue;
+        };
+        let translated: std::collections::BTreeSet<Name> = names
+            .iter()
+            .filter_map(|civ6| civvis_node_name(&rules.districts, civ6, "DISTRICT_"))
+            .map(|name| Name::new(&name))
+            .collect();
+        if !translated.is_empty() {
+            out.insert(*cid, translated);
+        }
+    }
+    out
+}
+
+/// Districts the host refused to place, per Civilization VI city id.
+///
+/// ★★★★ Read from `build_no_plot`, which the mod emits when
+/// `CityManager.GetOperationTargets` offers no plot for a district. Measured on live
+/// run `civvis-20260801T024428Z`: **39** of them by turn 115, every one the Government
+/// Plaza — one per civilization, so once it exists there is no plot anywhere, and
+/// CIVVIS re-chose it from the same board turn after turn.
+///
+/// ⚠ Returns Civilization VI's own city ids and district names. The caller maps ids to
+/// CIVVIS cities and names through the shipped district table, and drops what it
+/// cannot name rather than inventing a key — a blocked set full of unmatched names
+/// would look populated and filter nothing.
+///
+/// ⚠ Older exports sent a bare hash with no city. Those carry no usable name and are
+/// skipped, so an old stream reads as "nothing blocked" rather than blocking something
+/// arbitrary.
+pub fn refused_districts(
+    path: &std::path::Path,
+) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
+    let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
+        Default::default();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return refused;
+    };
+    for line in raw.lines() {
+        if !line.contains("build_no_plot") {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|k| k.as_str()) != Some("build_no_plot") {
+            continue;
+        }
+        let (Some(city), Some(district)) = (
+            event.get("city").and_then(|v| v.as_i64()),
+            event.get("district").and_then(|v| v.as_str()),
+        ) else {
+            continue;
+        };
+        // A bare hash is an old export; it names nothing this side can use.
+        if !district.starts_with("DISTRICT_") {
+            continue;
+        }
+        refused.entry(city).or_default().insert(district.to_string());
+    }
+    refused
+}
+
 /// Policy cards the host ruleset has retired, learned from its own refusals.
 ///
 /// ★★★★ **NO NEW MOD EVENT WAS NEEDED — THE ANSWER WAS ALREADY IN THE STREAM.**
@@ -2739,6 +2908,8 @@ pub fn rebuild_from_state(
     game.blocked_city_sites = state.refused_sites.clone();
     game.blocked_improvement_sites = state.refused_improves.clone();
     game.blocked_policies = blocked_policies_from(&state.refused_policy_names, &game.rules);
+    // ⚠ Wired after `city_ids` below would be too late for the rebuild, so this is
+    // filled in at the end of the function where both are in hand.
 
     // Identity first: city naming reads it, so this cannot wait until after the
     // cities are placed. See `apply_identity`.
@@ -3192,6 +3363,11 @@ pub fn rebuild_from_state(
     // revealed set.
     apply_tile_memory(&mut game, snapshot);
 
+    // Districts the host has refused to place, mapped onto CIVVIS's cities. Done here
+    // because it needs `city_ids`, which is only complete once every city is planted.
+    game.blocked_districts =
+        blocked_districts_from(&state.refused_districts, &city_ids, &game.rules);
+
     Reconstruction {
         game,
         unit_ids,
@@ -3447,6 +3623,14 @@ impl LiveMirror {
         // retired, and the set is rebuilt from the whole event log each time.
         let retired = blocked_policies_from(&state.refused_policy_names, &self.game.rules);
         self.game.blocked_policies.extend(retired);
+        let refused = blocked_districts_from(
+            &state.refused_districts,
+            &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
+            &self.game.rules,
+        );
+        for (cid, names) in refused {
+            self.game.blocked_districts.entry(cid).or_default().extend(names);
+        }
         // Rivals are met as the game goes on, so identity is not a one-time job at
         // reconstruction: a civilization first seen on turn 90 arrives here.
         apply_identity(&mut self.game, state);

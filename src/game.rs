@@ -15069,6 +15069,25 @@ pub struct Game {
     /// empty, so nothing about simulated play changes.
     #[serde(default)]
     pub blocked_policies: BTreeSet<Name>,
+    /// Districts a HOST ruleset will not place, per city, for the same reasons and
+    /// with the same emptiness in an ordinary game as [`Game::blocked_city_sites`].
+    ///
+    /// ★★★★ Measured on live run `civvis-20260801T024428Z`: `DISTRICT_GOVERNMENT`
+    /// refused **24** times by turn 115 and `build_no_plot` fired **39** times, every
+    /// one of them the same district. Civilization VI offers no plot for a Government
+    /// Plaza once one exists — it is one per civilization — and CIVVIS re-chose it
+    /// from the same board turn after turn. Each discard leaves the city with nothing
+    /// queued, so `ENDTURN_BLOCKING_PRODUCTION` fires and the hand-written ladder
+    /// picks instead; on that run only 11 of 55 builds were CIVVIS's.
+    ///
+    /// ⚠⚠ **KEYED BY CITY, AND THAT IS THE WHOLE CARE IN THIS FIX.** The host refuses
+    /// a district for two opposite reasons: it is impossible *anywhere* (Government
+    /// Plaza), or *this* city has no room. A global set would stop CIVVIS building
+    /// Campuses across the empire the first time one city ran out of space — trading a
+    /// small waste for a large one. The mod now sends the city id with the refusal so
+    /// the block can be scoped; before this it sent only a bare hash.
+    #[serde(default)]
+    pub blocked_districts: BTreeMap<u32, BTreeSet<Name>>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -15378,6 +15397,7 @@ impl From<GameSer> for Game {
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
+            blocked_districts: BTreeMap::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
@@ -15718,6 +15738,7 @@ impl Game {
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
+            blocked_districts: BTreeMap::new(),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),
@@ -33731,6 +33752,15 @@ impl Game {
 
     pub fn district_sites(&self, cid: u32, dname: impl AsName) -> Vec<Pos> {
         let dname = dname.as_name();
+        // A district the HOST refused to place IN THIS CITY. Empty in an ordinary
+        // game; see `blocked_districts` for why this is per city and not global.
+        if self
+            .blocked_districts
+            .get(&cid)
+            .is_some_and(|blocked| blocked.contains(&dname))
+        {
+            return vec![];
+        }
         let city = &self.cities[&cid];
         let spec = &self.rules.districts[dname];
         let mut out: Vec<Pos> = city
