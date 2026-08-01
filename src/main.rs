@@ -149,7 +149,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// reports from the same 20-game deployment comparison (SHA-256
 /// `932cfabf125e729a5264ce43d2fd8b05d013d3fe84939b1dcd366ff122ddc84a`).
 /// This is a compatibility re-pin, not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc0ee_05e1_860b_b164;
+///
+/// #766 bounds only the live controller's clone-heavy purchase-menu batch to
+/// three workers. `AdvancedAi::legacy()` has no `work_pool` and continues to
+/// select the literal serial action enumeration. Clean `8812d36` and candidate
+/// release builds produced byte-identical reports from the same 20-game
+/// deployment comparison (SHA-256
+/// `932cfabf125e729a5264ce43d2fd8b05d013d3fe84939b1dcd366ff122ddc84a`).
+/// This is a compatibility re-pin, not an Elo protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa387_09a5_e525_962f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
