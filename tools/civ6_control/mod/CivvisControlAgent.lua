@@ -5177,6 +5177,51 @@ local function applyOrder(player, pid, row, turn)
 						local plot = Map.GetPlot(x, y);
 						return plot and plot:GetOwner() or -1;
 					end, -1),
+					-- ⚠ WHAT THE MOVE WAS AIMED AT, which nothing recorded — so the
+					-- refusals could be counted and attributed but never EXPLAINED.
+					--
+					-- With `unit_kind` in place, run `civvis-20260801T065721Z` splits its
+					-- 300 refusals as: TRADER 117 (fixed in #742), BATTERING_RAM 57,
+					-- GALLEY 44, HEAVY_CHARIOT 34, ARCHER 25. Those are different bugs
+					-- wearing one number, and the owner field alone cannot separate them:
+					--
+					--   a GALLEY aimed at dry land  -> CIVVIS pathing a ship overland
+					--   a RAM aimed at a mountain   -> impassable ground
+					--   any unit into foreign soil  -> the boxed-in case, `owner` says it
+					--
+					-- 125 of the 300 were aimed at UNOWNED ground, which rules the
+					-- borders explanation out for most of them and leaves no candidate
+					-- at all — the terrain is the missing half of the question.
+					--
+					-- `dest_domain` is the unit's own domain, not the plot's: a ship
+					-- ordered onto land and a land unit ordered into the sea are the same
+					-- defect and both are invisible without it.
+					dest_water = try(function()
+						local plot = Map.GetPlot(x, y);
+						return plot ~= nil and plot:IsWater() or false;
+					end, false),
+					dest_impassable = try(function()
+						local plot = Map.GetPlot(x, y);
+						return plot ~= nil and plot:IsImpassable() or false;
+					end, false),
+					-- ⚠ Through `typeName`, NOT a hand-rolled `GameInfo.Terrains[i]`.
+					-- `GetTerrainType` returns a ROW INDEX, and the one other place
+					-- this file resolves one carries the warning: indexing the table
+					-- directly means guessing its ordering, and a wrong guess reports a
+					-- DIFFERENT terrain rather than failing. `typeName` sends nil when
+					-- the type does not resolve, which is the honest answer.
+					dest_terrain = try(function()
+						local plot = Map.GetPlot(x, y);
+						if plot == nil then return nil; end
+						return typeName("Terrains", "TerrainType", plot:GetTerrainType());
+					end),
+					-- `GameInfo.Units[name]` is the proven lookup here (`row.Combat`
+					-- uses it); only the Domain column is new, and an absent column
+					-- reads nil rather than a plausible wrong value.
+					unit_domain = try(function()
+						local row = GameInfo.Units[unitTypeName(unit)];
+						return row ~= nil and row.Domain or nil;
+					end),
 				});
 			end
 			return moved, verb;
