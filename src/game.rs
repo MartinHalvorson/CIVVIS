@@ -23760,6 +23760,16 @@ impl Game {
             .sum()
     }
 
+    /// Numeric abilities inherent to the unit type plus earned promotions.
+    fn unit_effect(&self, unit: &Unit, effect: &str) -> f64 {
+        self.rules.units[unit.kind]
+            .effects
+            .get(effect)
+            .copied()
+            .unwrap_or(0.0)
+            + self.promotion_effect(unit, effect)
+    }
+
     pub fn available_promotions(&self, uid: u32) -> Vec<Name> {
         let Some(unit) = self.units.get(&uid) else {
             return vec![];
@@ -24676,9 +24686,9 @@ impl Game {
     }
 
     fn ranged_defense_bonus(&self, unit: &Unit, city_attack: bool) -> f64 {
-        self.promotion_effect(unit, "defend_ranged")
+        self.unit_effect(unit, "defend_ranged")
             + if city_attack {
-                self.promotion_effect(unit, "defend_city_attack")
+                self.unit_effect(unit, "defend_city_attack")
             } else {
                 0.0
             }
@@ -28326,7 +28336,7 @@ impl Game {
         {
             cost = 1.0;
         }
-        if self.promotion_effect(unit, "woods_move_cost") > 0.0
+        if self.unit_effect(unit, "woods_move_cost") > 0.0
             && matches!(tile.feature.as_deref(), Some("forest" | "jungle"))
         {
             cost = 1.0;
@@ -28803,7 +28813,7 @@ impl Game {
 
     fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
         let unit = &self.units[&uid];
-        if self.promotion_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
+        if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
             let attacker_height = self.see_from_level(unit.pos);
             return self.tile_has_visibility_line(
                 &mut HeightField::none(),
@@ -29053,7 +29063,7 @@ impl Game {
         let spec = &self.rules.units[unit.kind];
         let origin = unit.air_patrol_pos.unwrap_or(unit.pos);
         let sight = self.unit_sight(uid);
-        let see_through_woods = self.promotion_effect(unit, "see_through_woods") > 0.0;
+        let see_through_woods = self.unit_effect(unit, "see_through_woods") > 0.0;
         let flying = spec.domain.as_deref() == Some("air");
         let viewer_height = self.see_from_level(origin);
         let key = vision_key(&[
@@ -52355,6 +52365,24 @@ mod visibility_tests {
             };
             assert_eq!(spec.sight, expected, "incorrect stock sight for {unit}");
         }
+    }
+
+    #[test]
+    fn kongo_shield_bearer_matches_firaxis_identity_movement_sight_and_defense() {
+        let (mut game, origin) = controlled_game(91_011);
+        let woods = along(&game, origin, 1);
+        let beyond = along(&game, origin, 2);
+        game.map.tiles.get_mut(&woods).unwrap().feature = Some(crate::name!("forest"));
+        let unit = game.spawn_unit("kongo_shield_bearer", 0, origin);
+        let spec = &game.rules.units["kongo_shield_bearer"];
+
+        assert_eq!((spec.cost, spec.maintenance, spec.strength), (110.0, 2.0, 38.0));
+        assert_eq!(spec.resource_cost, 5.0);
+        assert_eq!(spec.replaces.as_deref(), Some("swordsman"));
+        assert_eq!(spec.upgrade_to.as_deref(), Some("man_at_arms"));
+        assert_eq!(game.unit_step_cost(unit, origin, woods), 1.0);
+        assert!(game.unit_visible_tiles(unit).contains(&beyond));
+        assert_eq!(game.ranged_defense_bonus(&game.units[&unit], false), 10.0);
     }
 
     #[test]

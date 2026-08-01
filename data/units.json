@@ -458,6 +458,27 @@
     "upgrade_to": "man_at_arms",
     "obsolete_tech": "replaceable_parts"
   },
+  "kongo_shield_bearer": {
+    "class": "military",
+    "cost": 110,
+    "maintenance": 2,
+    "moves": 2,
+    "strength": 38,
+    "tech": "iron_working",
+    "requires_resource": "iron",
+    "resource_cost": 5,
+    "unique_to": "Kongo",
+    "replaces": "swordsman",
+    "promotion_class": "melee",
+    "zone_of_control": true,
+    "upgrade_to": "man_at_arms",
+    "obsolete_tech": "replaceable_parts",
+    "effects": {
+      "defend_ranged": 10,
+      "see_through_woods": 1,
+      "woods_move_cost": 1
+    }
+  },
   "hoplite": {
     "class": "military",
     "cost": 65,
