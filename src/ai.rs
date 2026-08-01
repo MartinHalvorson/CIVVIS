@@ -55,6 +55,10 @@ const MINOR_DEFENSE_RADIUS: i32 = 6;
 /// instead of letting an idle Engineer pave the stockpile down to zero.
 const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 
+/// The ranked candidate for an immediate border purchase: its utility, a
+/// deterministic city/position tie-breaker, and the legal action to replay.
+type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
+
 mod advanced;
 mod tactics;
 pub use advanced::{
@@ -532,7 +536,7 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkP
         return;
     }
     let held: Vec<Name> = g.players[pid].policies.iter().cloned().collect();
-    if held.len() as i64 >= total && g.turn % POLICY_REVIEW_EVERY != 0 {
+    if held.len() as i64 >= total && !g.turn.is_multiple_of(POLICY_REVIEW_EVERY) {
         return;
     }
 
@@ -2829,7 +2833,7 @@ impl BasicAi {
                         pid,
                         &Action::FoundReligion {
                             follower: Name::new(&follower),
-                            founder: Name::new(&founder),
+                            founder: Name::new(founder),
                         },
                     )
                     .is_ok()
@@ -2861,7 +2865,7 @@ impl BasicAi {
                     "pingala", "magnus", "liang", "reyna", "victor", "moksha", "amani",
                 ]
                 .into_iter()
-                .find(|governor| !g.players[pid].governor_roster.contains_key(*governor));
+                .find(|governor| !g.players[pid].governor_roster.contains_key(governor));
                 if let Some(governor) = governor {
                     if g.apply(
                         pid,
@@ -3001,7 +3005,7 @@ impl BasicAi {
                         state.city.is_none(),
                         governor == "victor",
                         source_loyalty,
-                        std::cmp::Reverse(governor.clone()),
+                        std::cmp::Reverse(*governor),
                         action,
                     ))
             })
@@ -3501,7 +3505,7 @@ impl BasicAi {
         let front_line = Self::front_line_strength(g, pid, &city_ids);
         let mut force = 0.0;
         for uid in g.player_unit_ids(pid) {
-            let kind = g.units[&uid].kind.clone();
+            let kind = g.units[&uid].kind;
             match kind.as_str() {
                 "settler" => settlers += 1,
                 "builder" => builders += 1,
@@ -3960,7 +3964,7 @@ impl BasicAi {
             if !matches_role {
                 continue;
             }
-            if !g.can_produce(pid, cid, &Item::Unit { unit: name.clone() }) {
+            if !g.can_produce(pid, cid, &Item::Unit { unit: *name }) {
                 continue;
             }
             let power = spec.strength.max(spec.ranged_attack_strength());
@@ -3989,7 +3993,7 @@ impl BasicAi {
                         pid,
                         cid,
                         &Item::Unit {
-                            unit: (*name).clone(),
+                            unit: **name,
                         },
                     )
             })
@@ -4011,7 +4015,7 @@ impl BasicAi {
                     }
                     _ => 0.0,
                 };
-                (power * 3.0 + role - spec.cost * 0.04, name.clone())
+                (power * 3.0 + role - spec.cost * 0.04, *name)
             })
             .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| b.1.cmp(&a.1)))
             .map(|(_, name)| name)
@@ -4039,7 +4043,7 @@ impl BasicAi {
                     pid,
                     *cid,
                     &Item::Unit {
-                        unit: name.clone(),
+                        unit: *name,
                     },
                 ) {
                     continue;
@@ -4194,7 +4198,7 @@ impl BasicAi {
                     }
                     let price = spec.cost * 4.0;
                     if price > budget + 1e-9
-                        || !g.can_produce(pid, *cid, &Item::Unit { unit: name.clone() })
+                        || !g.can_produce(pid, *cid, &Item::Unit { unit: *name })
                     {
                         continue;
                     }
@@ -4263,7 +4267,7 @@ impl BasicAi {
                         pid,
                         *cid,
                         &Item::Building {
-                            building: building.clone(),
+                            building: *building,
                         },
                     )
                 {
@@ -4349,7 +4353,7 @@ impl BasicAi {
     /// unit upgrades and emergency purchases.
     fn buy_gold_plot(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
         let bank = g.players[pid].gold;
-        let mut best: Option<(f64, std::cmp::Reverse<(u32, Pos)>, Action)> = None;
+        let mut best: Option<PlotPurchaseCandidate> = None;
         for action in g.legal_actions_within(pid, ActionFamilies::PURCHASES) {
             let Action::BuyPlot { city, pos, cost } = action else {
                 continue;
@@ -4542,7 +4546,7 @@ impl BasicAi {
                     pid,
                     cid,
                     &Item::Building {
-                        building: (*building).clone(),
+                        building: **building,
                     },
                 )
             })
@@ -4552,8 +4556,8 @@ impl BasicAi {
                     net_gold / spec.cost.max(1.0),
                     net_gold,
                     std::cmp::Reverse(spec.cost as i64),
-                    std::cmp::Reverse(building.clone()),
-                    building.clone(),
+                    std::cmp::Reverse(*building),
+                    *building,
                 )
             })
             .max_by(|left, right| {
@@ -4612,7 +4616,7 @@ impl BasicAi {
             .filter(|(_, spec)| !spec.wonder && spec.maintenance <= f64::EPSILON)
             .filter_map(|(name, spec)| {
                 let item = Item::Building {
-                    building: name.clone(),
+                    building: *name,
                 };
                 if !g.can_produce(pid, cid, &item) {
                     return None;
@@ -4628,7 +4632,7 @@ impl BasicAi {
                 (value > 0.0).then_some((
                     value / spec.cost.max(1.0),
                     value,
-                    std::cmp::Reverse(name.clone()),
+                    std::cmp::Reverse(*name),
                     item,
                 ))
             })
@@ -4654,7 +4658,7 @@ impl BasicAi {
                     )
             })
             .map(|(project, _)| Item::Project {
-                project: project.clone(),
+                project: *project,
             })
             .filter(|item| g.can_produce(pid, cid, item))
             .min_by(|left, right| {
@@ -4666,19 +4670,19 @@ impl BasicAi {
 
     fn minor_district_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
         let family = Self::minor_district_family(g, pid);
-        if g.city_has_district_family(&g.cities[&cid], Name::new(&family)) {
+        if g.city_has_district_family(&g.cities[&cid], Name::new(family)) {
             return None;
         }
         let district = Self::civ_district(g, pid, family);
-        g.district_sites(cid, &district)
+        g.district_sites(cid, district)
             .into_iter()
             .filter_map(|pos| {
                 let item = Item::District {
-                    district: district,
+                    district,
                     pos,
                 };
                 g.can_produce(pid, cid, &item).then_some((
-                    g.district_yields(&district, pos).total(),
+                    g.district_yields(district, pos).total(),
                     std::cmp::Reverse(pos),
                     item,
                 ))
@@ -4833,7 +4837,7 @@ impl BasicAi {
             {
                 return Some(product);
             }
-            let mut projects: Vec<Item> = g
+            let projects: Vec<Item> = g
                 .rules
                 .projects
                 .iter()
@@ -4845,7 +4849,7 @@ impl BasicAi {
                         )
                 })
                 .map(|(project, _)| Item::Project {
-                    project: project.clone(),
+                    project: *project,
                 })
                 .filter(|item| {
                     let Item::Project { project } = item else {
@@ -4921,11 +4925,11 @@ impl BasicAi {
             && !g.city_has_district_family(&g.cities[&cid], crate::name!("harbor"))
         {
             let harbor = Self::civ_district(g, pid, "harbor");
-            let sites = g.district_sites(cid, &harbor);
+            let sites = g.district_sites(cid, harbor);
             if let Some(pos) = sites.into_iter().max_by(|a, b| {
-                g.district_yields(&harbor, *a)
+                g.district_yields(harbor, *a)
                     .total()
-                    .partial_cmp(&g.district_yields(&harbor, *b).total())
+                    .partial_cmp(&g.district_yields(harbor, *b).total())
                     .unwrap()
                     .then(a.cmp(b))
             }) {
@@ -4978,7 +4982,7 @@ impl BasicAi {
                     continue;
                 }
             }
-            if g.city_has_district_family(&g.cities[&cid], Name::new(&family)) {
+            if g.city_has_district_family(&g.cities[&cid], Name::new(family)) {
                 continue;
             }
             // Ask for the district this civilization actually builds. Greece
@@ -5005,8 +5009,8 @@ impl BasicAi {
                 let best = *sites
                     .iter()
                     .max_by(|a, b| {
-                        let ya = g.district_yields(&dname, **a).total();
-                        let yb = g.district_yields(&dname, **b).total();
+                        let ya = g.district_yields(dname, **a).total();
+                        let yb = g.district_yields(dname, **b).total();
                         ya.partial_cmp(&yb).unwrap().then(a.cmp(b))
                     })
                     .unwrap();
@@ -5074,7 +5078,7 @@ impl BasicAi {
         // districts, or district buildings. A completely developed city-state
         // may instead leave its production queue empty.
         if !self.barb && !self.minor {
-            let mut projects: Vec<Item> = g
+            let projects: Vec<Item> = g
                 .rules
                 .projects
                 .iter()
@@ -5086,7 +5090,7 @@ impl BasicAi {
                         )
                 })
                 .map(|(project, _)| Item::Project {
-                    project: project.clone(),
+                    project: *project,
                 })
                 .filter(|item| g.can_produce(pid, cid, item))
                 .collect();
@@ -5116,7 +5120,7 @@ impl BasicAi {
             .cities
             .values()
             .filter_map(|city| match city.queue.first() {
-                Some(Item::Wonder { wonder, .. }) => Some(wonder.clone()),
+                Some(Item::Wonder { wonder, .. }) => Some(*wonder),
                 _ => None,
             })
             .collect();
@@ -5154,7 +5158,7 @@ impl BasicAi {
                 if g.units[&uid].moves_left <= 0.0 {
                     break;
                 }
-                let kind = g.units[&uid].kind.clone();
+                let kind = g.units[&uid].kind;
                 let acted = match kind.as_str() {
                     "settler" => self.settler_step(g, pid, uid),
                     "builder" => self.builder_step(g, pid, uid),
@@ -5909,9 +5913,9 @@ impl BasicAi {
             .districts
             .iter()
             .find(|(_, spec)| {
-                spec.replaces == Some(Name::new(&family)) && spec.unique_to.as_deref() == Some(civ)
+                spec.replaces == Some(Name::new(family)) && spec.unique_to.as_deref() == Some(civ)
             })
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| *name)
             .unwrap_or_else(|| Name::new(family))
     }
 
@@ -5930,9 +5934,9 @@ impl BasicAi {
         g.rules
             .buildings
             .iter()
-            .filter(|(_, spec)| spec.replaces == Some(Name::new(&family)))
+            .filter(|(_, spec)| spec.replaces == Some(Name::new(family)))
             .map(|(name, _)| Item::Building {
-                building: name.clone(),
+                building: *name,
             })
             .find(|item| g.can_produce(pid, cid, item))
     }
@@ -5943,7 +5947,7 @@ impl BasicAi {
     /// with a Farm forfeits that permanently. Otherwise take the most
     /// valuable yield, weighted the way the rest of this AI values output.
     fn best_improvement(g: &Game, pos: Pos, options: &[Name]) -> Option<Name> {
-        let resource = g.map.get(pos).and_then(|tile| tile.resource.clone());
+        let resource = g.map.get(pos).and_then(|tile| tile.resource);
         options
             .iter()
             .max_by(|a, b| {
@@ -6957,7 +6961,7 @@ impl BasicAi {
         let target = {
             let unit = &g.units[&uid];
             let upos = unit.pos;
-            if g.unit_upgrade_target(pid, &unit.kind).is_none() {
+            if g.unit_upgrade_target(pid, unit.kind).is_none() {
                 return false;
             }
             let at_home = g
@@ -7510,7 +7514,7 @@ mod tests {
             "kinds={:?}",
             veterans
                 .iter()
-                .map(|uid| g.units[uid].kind.clone())
+                .map(|uid| g.units[uid].kind)
                 .collect::<Vec<_>>()
         );
         // Every Warrior in the empire modernized, at 110 Gold each.
@@ -9819,7 +9823,7 @@ mod tests {
             panic!("expected a Commercial Hub, got {district:?}");
         };
         assert_eq!(district, "commercial_hub");
-        g.map.tiles.get_mut(&commercial_hub).unwrap().district = Some(district.clone());
+        g.map.tiles.get_mut(&commercial_hub).unwrap().district = Some(district);
         g.cities
             .get_mut(&cid)
             .unwrap()
@@ -10137,7 +10141,7 @@ mod tests {
             }
         );
 
-        let tower_tech = g.rules.units["siege_tower"].tech.clone().unwrap();
+        let tower_tech = g.rules.units["siege_tower"].tech.unwrap();
         g.players[0].techs.insert(tower_tech);
         let tower = ai.pick_item(&g, 0, home, 1, 0, 1, 0, 0, 2, 2, 0).unwrap();
         assert_eq!(

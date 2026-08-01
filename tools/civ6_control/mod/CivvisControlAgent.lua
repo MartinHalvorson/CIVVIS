@@ -5119,7 +5119,27 @@ local function applyOrder(player, pid, row, turn)
 		if target == nil then return false, "no_slot_for_" .. resolved; end
 		local addList = {};
 		addList[target] = row2.Hash;
-		local ok = pcall(function() culture:RequestPolicyChanges({}, addList); end);
+		-- ★★★★★ THE SLOT MUST BE CLEARED IN THE SAME REQUEST, EVEN WHEN EMPTY.
+		-- Copied from the shipped GovernmentScreen.lua OnConfirmPolicies (:1560),
+		-- which puts EVERY slot it writes into clearList first, with the comment
+		-- "removals done first, otherwise swapping may fail ... the engine will
+		-- think a policy is still active in its slot". This arm sent an empty
+		-- clearList, and run civvis-20260801T221459Z (Netherlands) measured the
+		-- result: from the Oligarchy switch (~t57) to t250 exactly ONE card
+		-- stayed slotted while slots grew to 6 and 551 policy orders counted
+		-- `applied` — accepted by pcall, discarded by the engine.
+		local ok = pcall(function()
+			culture:RequestPolicyChanges({ target }, addList);
+		end);
+		-- The policy layer had ZERO provenance events, so an accepted-but-
+		-- discarded request was invisible for 140 turns. Name slot and card;
+		-- the next turn's `state.policies` export is the verdict on whether it
+		-- stuck (a same-tick read-back cannot be trusted — the request is
+		-- processed by the game core, not synchronously by this context).
+		emit("policy_request", {
+			turn = turn, slot = target, policy = resolved,
+			cleared = true, threw = not ok,
+		});
 		return ok, ok and resolved or "throw";
 	end
 

@@ -177,7 +177,18 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// demand decisions to the shared Basic and Advanced diplomacy paths. The
 /// frozen `advanced_v1` controller invokes that shared path, so the combined
 /// source contract intentionally moves to protocol v4 with a fresh ledger.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfb5d_c726_9658_e590;
+///
+/// #801 makes compiler-equivalent `BasicAi` cleanup only: redundant clones of
+/// `Copy` values and needless references become direct values, a periodic
+/// modulo test becomes `is_multiple_of`, a candidate tuple gains a name, and
+/// unused mutability goes away. It changes no choice condition, score, or
+/// iteration/action ordering. This was checked rather than inferred: clean
+/// `e3481e4` and candidate release builds produced byte-identical reports from
+/// `ai_eval advanced_v1 basic --pairs 10 --jobs 1 --seed 31337 --players 4
+/// --turns 200 --deployment-comparison` (SHA-256
+/// `f6d9e17ee19fe298e14a573f97a896280a75a767306dca6ef0d80d2020384b2c`).
+/// This is a compatibility re-pin, not an Elo protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0d57_917a_b495_a091;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1575,6 +1586,10 @@ fn main() {
                         (!dir.is_empty()).then_some(dir)
                     },
                     league_record: args.iter().any(|a| a == "--league-record"),
+                    force_strategy: {
+                        let name = arg_text(&args, "--force-strategy", "");
+                        (!name.is_empty()).then_some(name)
+                    },
                 },
                 mirrored.or(resumed),
                 args.iter().any(|a| a == "--paused"),
@@ -1716,7 +1731,7 @@ fn main() {
                       [--leader-pool civ6|expanded] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
-                      [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
+                      [--spectate] [--supervised] [--force-strategy NAME] [--resume checkpoint.json] [--strict] \
                       [--league dir] [--league-record] [--standings [--civ Rome | --civs]] [--rounds N] \
                       [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N] \
                       [rating: --dir league/ --backtest|--sweep|--stages --burn-in F --stage-decay F --anchors a,b]"

@@ -157,6 +157,12 @@
 				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
 			</Properties>
 		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseWorldCongressPopup">
+			<Properties>
+				<LuaContext>WorldCongressPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 		<ReplaceUIScript id="CivvisControlAutoCloseDedicationPopup">
 			<Properties>
 				<LuaContext>DedicationPopup</LuaContext>

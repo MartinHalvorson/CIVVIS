@@ -17,12 +17,12 @@ Quick demo:
 <!-- BEGIN CIV6 LEADER STRATEGY RANKING -->
 ## Which strategy suits which civilization, where the evidence says so
 
-League round **60**, over the canonical 50-civilization Civ VI roster. A pair is listed
-only when the leading strategy's conservative outright-win bound clears the optimistic
-bound of every rival — the same lower-1.96σ Wilson bound the league itself selects
-parents, retirement and live seating on. **0 of 50 pairs meet that bar.** The rest are
-reported as coverage rather than ranked, because on this evidence they have no best
-strategy.
+League round **1809**, over the canonical 50-civilization Civ VI roster. A pair is
+listed only when the leading strategy's conservative outright-win bound clears the
+optimistic bound of every rival — the same lower-1.96σ Wilson bound the league itself
+selects parents, retirement and live seating on. **0 of 50 pairs meet that bar.** The
+rest are reported as coverage rather than ranked, because on this evidence they have no
+best strategy.
 
 Refresh after the live league changes:
 
@@ -41,25 +41,56 @@ report who has been seated, not what suits the civilization.
 
 | Civilization | Leader | Candidates | Games | Leading strategy | Its record |
 |---|---|---:|---:|---|---:|
-| China | Qin Shi Huang | 8 | 325 | `g20-21` | 32/70 |
-| Egypt | Cleopatra | 9 | 321 | `g28-28` | 16/43 |
-| Greece | Pericles | 9 | 316 | `g48-44` | 8/17 |
-| Rome | Trajan | 8 | 301 | `g20-21` | 24/46 |
-
-The remaining **46 of 50** pairs have no strategy with 5 games in this snapshot, so
-there is nothing to rank and nothing to contest: America (Abraham Lincoln), Arabia
-(Saladin), Australia (John Curtin), Aztec (Montezuma), Babylon (Hammurabi), Brazil
-(Pedro II), Byzantium (Basil II), Canada (Wilfrid Laurier), Cree (Poundmaker), England
-(Victoria), Ethiopia (Menelik II), France (Catherine de Medici), Gaul (Ambiorix),
-Georgia (Tamar), Germany (Frederick Barbarossa), Gran Colombia (Simón Bolívar), Hungary
-(Matthias Corvinus), Inca (Pachacuti), India (Gandhi), Indonesia (Gitarja), Japan (Hojo
-Tokimune), Khmer (Jayavarman VII), Kongo (Mvemba a Nzinga), Korea (Seondeok), Macedon
-(Alexander), Mali (Mansa Musa), Maori (Kupe), Mapuche (Lautaro), Maya (Lady Six Sky),
-Mongolia (Genghis Khan), Netherlands (Wilhelmina), Norway (Harald Hardrada), Nubia
-(Amanitore), Ottomans (Suleiman), Persia (Cyrus), Phoenicia (Dido), Poland (Jadwiga),
-Portugal (João III), Russia (Peter), Scotland (Robert the Bruce), Scythia (Tomyris),
-Spain (Philip II), Sumeria (Gilgamesh), Sweden (Kristina), Vietnam (Ba Trieu), Zulu
-(Shaka).
+| Egypt | Cleopatra | 34 | 913 | `g28-28` | 19/70 |
+| Greece | Pericles | 34 | 908 | `g28-28` | 17/69 |
+| China | Qin Shi Huang | 33 | 887 | `g4-10` | 22/47 |
+| Rome | Trajan | 34 | 874 | `g4-10` | 21/43 |
+| Aztec | Montezuma | 9 | 309 | `g28-28` | 9/37 |
+| Mongolia | Genghis Khan | 9 | 307 | `g48-43` | 4/25 |
+| Portugal | João III | 9 | 304 | `advanced_evolved` | 7/39 |
+| Persia | Cyrus | 9 | 296 | `advanced_evolved` | 5/37 |
+| India | Gandhi | 9 | 293 | `g44-41` | 8/33 |
+| Japan | Hojo Tokimune | 9 | 293 | `g48-43` | 7/42 |
+| Ethiopia | Menelik II | 9 | 292 | `g28-28` | 6/38 |
+| Netherlands | Wilhelmina | 9 | 292 | `g56-50` | 4/24 |
+| Nubia | Amanitore | 9 | 292 | `g48-43` | 4/34 |
+| Gaul | Ambiorix | 9 | 291 | `advanced` | 6/36 |
+| Indonesia | Gitarja | 9 | 289 | `g28-28` | 6/30 |
+| Canada | Wilfrid Laurier | 9 | 288 | `g48-44` | 8/37 |
+| Babylon | Hammurabi | 9 | 287 | `g48-43` | 7/33 |
+| Arabia | Saladin | 9 | 286 | `g28-28` | 6/36 |
+| Sweden | Kristina | 9 | 286 | `g48-44` | 8/42 |
+| Zulu | Shaka | 9 | 286 | `g44-41` | 6/34 |
+| Brazil | Pedro II | 9 | 285 | `g48-44` | 6/38 |
+| France | Catherine de Medici | 9 | 285 | `g20-21` | 9/37 |
+| Australia | John Curtin | 9 | 284 | `g48-43` | 8/30 |
+| Inca | Pachacuti | 9 | 284 | `g20-21` | 13/46 |
+| Germany | Frederick Barbarossa | 9 | 283 | `g44-41` | 7/43 |
+| Mapuche | Lautaro | 9 | 282 | `g28-28` | 6/33 |
+| Russia | Peter | 9 | 282 | `advanced` | 6/27 |
+| America | Abraham Lincoln | 9 | 281 | `g44-41` | 8/43 |
+| Mali | Mansa Musa | 9 | 280 | `advanced_v1` | 6/25 |
+| Ottomans | Suleiman | 9 | 280 | `advanced_evolved` | 7/29 |
+| Macedon | Alexander | 9 | 279 | `advanced_evolved` | 8/39 |
+| Maya | Lady Six Sky | 9 | 279 | `g44-41` | 13/43 |
+| Scotland | Robert the Bruce | 9 | 278 | `g44-41` | 10/42 |
+| Byzantium | Basil II | 9 | 276 | `g28-28` | 7/34 |
+| Georgia | Tamar | 9 | 276 | `g44-41` | 7/38 |
+| Cree | Poundmaker | 9 | 275 | `g48-43` | 4/21 |
+| Khmer | Jayavarman VII | 9 | 274 | `g48-43` | 8/23 |
+| Korea | Seondeok | 9 | 273 | `advanced` | 7/27 |
+| Maori | Kupe | 9 | 272 | `g56-50` | 8/24 |
+| Scythia | Tomyris | 9 | 272 | `g48-43` | 5/30 |
+| England | Victoria | 9 | 270 | `g28-28` | 5/34 |
+| Kongo | Mvemba a Nzinga | 9 | 270 | `g44-41` | 7/22 |
+| Poland | Jadwiga | 9 | 268 | `g20-21` | 9/36 |
+| Gran Colombia | Simón Bolívar | 9 | 267 | `g44-41` | 4/30 |
+| Phoenicia | Dido | 9 | 267 | `advanced_evolved` | 5/25 |
+| Vietnam | Ba Trieu | 9 | 264 | `g48-44` | 11/34 |
+| Sumeria | Gilgamesh | 9 | 263 | `g48-43` | 7/32 |
+| Hungary | Matthias Corvinus | 9 | 255 | `g48-44` | 7/42 |
+| Norway | Harald Hardrada | 9 | 245 | `g44-41` | 6/31 |
+| Spain | Philip II | 9 | 243 | `advanced` | 7/29 |
 
 A strategy needs at least 5 games with that exact pair to qualify. The league's Glicko
 rating is deliberately not shown: it orders matchmaking, not strength, and ranking on it
@@ -102,31 +133,54 @@ Design and rationale: `docs/EVAL_INTEGRITY.md` §5.
 
 ## How CivVis uses AI
 
-Every civilization in the clip is controlled locally by Rust code. There is no
-runtime LLM, prompt, model API, or generated move commentary — the crate's
-entire runtime dependency list is `serde` and `serde_json`, so nothing in the
-binary can reach a hosted model. The plan and reasoning panels expose
-deterministic records emitted by the same controllers that choose the moves;
-`src/reasoning.rs` keeps that journal write-only, so a seat that records
-nothing plays exactly the same game as one that records everything.
+Every civilization in the clip is controlled locally by Rust code. CIVVIS does
+not call an LLM, prompt service, model API, or remote move commentator at
+runtime. Instead, `src/ai.rs` defines the small `Ai` interface: on each turn a
+controller examines the simulation and applies concrete, engine-validated
+`Action`s. Given the same game seed and controller state, those decisions are
+replayable.
 
-The agents are a set of production controllers, baselines, and experiments—not
-a six-rung strength ladder:
+### The decision pipeline
+
+`BasicAi` is the deterministic executor. It uses hand-authored weights and
+local game queries to choose legal research, civics, policy cards, production,
+purchases, diplomacy, civilian work, and unit actions. It is deliberately
+lightweight, which makes it a useful baseline and the practical controller for
+city-states and barbarians.
+
+`AdvancedAi` owns a `BasicAi` and adds the long-lived layer a major
+civilization needs: a grand strategy and victory target, campaign and
+force-group plans, settlement and builder targets, threat/belief state, and
+strategy-aware diplomacy and production. It periodically reassesses that
+state, then delegates the concrete city and unit work to the stable base
+executor. The optional joint-tactics module evaluates a small set of complete
+multi-unit turns on cloned game states; it is an experiment rather than a
+hidden source of nondeterminism.
+
+The spectator's plan and reasoning panels are observability, not another
+decision system. `PlanReport` describes the controller's current intent and
+`src/reasoning.rs` records its decisions through a write-only journal; neither
+can feed a move back into the game. The built-in controllers currently inspect
+the full internal `Game`, so they are not fog-of-war fair-play agents.
+
+The repository also contains baselines and evaluator experiments. They are
+useful for measuring a specific hypothesis, not a linear strength ladder:
 
 | controller | actual role | state in a normal checkout |
 |---|---|---|
-| `RandomAi` | uniform legal-action baseline for tests and tournaments | runs |
-| `BasicAi` | cheap deterministic controller for city-states and barbarians; also a fallback and explicit entrant | runs |
-| `AdvancedAi` | stateful scripted controller for major civilizations; the stock default and the parent of most league strategies | runs |
-| `NeuralAi` | experimental `BasicAi` whose war decision can use rollout endpoints scored by a value net | **never runs** — resolves to `BasicAi` |
-| `StrategicAi` | experimental `AdvancedAi` wrapper that rolls out victory-lane commitments; it can run without a value net | runs, on score share; never seated live |
-| `PolicyAi` | experimental one-ply value-net action selector with `AdvancedAi` fallback | **never runs** — resolves to `AdvancedAi` |
-| `ProductionSearchAi` | evaluator-only production rollout retained as a negative result | runs |
+| `RandomAi` | seeded legal-action baseline for tests and tournaments | runs |
+| `BasicAi` | lightweight deterministic executor for city-states, barbarians, fallbacks, and explicit entrants | runs |
+| `AdvancedAi` | stateful major-civilization controller and stock default | runs |
+| `NeuralAi` | experimental `BasicAi` war layer backed by a value net when one is available | falls back to `BasicAi` |
+| `StrategicAi` | experimental `AdvancedAi` wrapper that rolls out victory-lane commitments | runs on score share; never seated live |
+| `PolicyAi` | experimental one-ply value-net action selector with an `AdvancedAi` fallback | falls back to `AdvancedAi` |
+| `ProductionSearchAi` | evaluator-only production rollout retained as a negative result | runs only when selected |
 
 `Oracle<Ai>` is a diagnostic wrapper that grants a subsystem for free to
 measure headroom. It is deliberately impossible to select as a rated player.
-The 78 further names `ai_eval` accepts are controls and treatments built from
-these seven controllers, not more deployed AI architectures.
+The additional names accepted by `ai_eval` are parameterized controls and
+treatments built from these controller families, not more deployed AI
+architectures.
 
 ### What actually runs
 
