@@ -135,6 +135,57 @@ def filter_orders(rows: list[tuple], skip_kinds: set[str], skip_verbs: set[str],
     return out
 
 
+def seat_civ(run_dir: Path) -> str | None:
+    """The civilization Civilization VI dealt this seat, as the league names it.
+
+    ★★★★ THE OTHER HALF OF THE OPERATOR'S BRIEF — "the provably highest ELO
+    player-strategy CIVVIS has THAT MAPS TO THE CORRECT CIV". `--strategy auto` alone
+    answers only the first half and reports `per_civ:false`, because Civ 6 DEALS the
+    civ and nothing knew it. The seat event carries it and lands early (line 25 of a
+    real run), while the decider starts lazily on the first turn — so by the time it
+    is needed it is already on disk.
+
+    Why it is worth passing: the per-civ table changes the pick and RAISES the
+    confidence bound where it has history.
+
+        --civ Rome    -> g56-48         per_civ=True   bound=0.510
+        --civ China   -> adv-religious  per_civ=False  bound=0.410   (falls back)
+        --civ Egypt   -> adv-religious  per_civ=False  bound=0.410
+        --civ Greece  -> adv-religious  per_civ=False  bound=0.410
+
+    ⚠ The league rates only FOUR civs, so most deals fall back to the overall pick —
+    which is correct, not a failure. `resolve_strategy` narrows only where that pair
+    has history, so a civ it has never seen degrades to exactly today's behaviour.
+
+    ⚠ AND THIS PARTLY ANSWERS A CONFOUND IN #752. `adv-religious` — what `auto` picks
+    overall — has 116 games and **zero** per-civ pairs, while `advanced` and `g20-21`
+    have all four. The strategies were not rated on the same civ pool, so the headline
+    "50.0% against 27.5%" is not a like-for-like comparison. Narrowing by civ compares
+    within one pool, which is the stronger claim available.
+
+    Name mapping is deliberately dumb: strip `CIVILIZATION_` and title-case, which is
+    exact for the four rated civs (Rome, China, Egypt, Greece). A wrong guess costs
+    nothing — the decider finds no history and falls back.
+    """
+    events = run_dir / "events.jsonl"
+    if not events.exists():
+        return None
+    for line in events.read_text(errors="replace").splitlines():
+        if '"seat"' not in line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("kind") != "seat":
+            continue
+        civ = event.get("civ") or ""
+        if civ.startswith("CIVILIZATION_"):
+            return civ[len("CIVILIZATION_"):].title()
+        return civ or None
+    return None
+
+
 class Decider:
     """A long-lived `civvis-orders --serve --fresh-board` process.
 
@@ -186,6 +237,7 @@ class Decider:
             [str(self.binary), "--mirror", str(self.run_dir), "--serve",
              "--fresh-board", "--explain", "--victory", self.victory]
             + (["--strategy", self.strategy] if self.strategy else [])
+            + (["--civ", civ] if self.strategy and (civ := seat_civ(self.run_dir)) else [])
             + (["--war-from-plan"] if self.war_from_plan else []),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=why, text=True, bufsize=1,

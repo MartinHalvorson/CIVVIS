@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import io
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -104,3 +105,35 @@ class DeciderProtocol(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SeatCivTest(unittest.TestCase):
+    """The civ Civilization VI dealt must reach the decider, or `--strategy auto`
+    answers only half the brief and reports `per_civ:false`."""
+
+    def _run(self, *lines: str) -> Path:
+        run = Path(tempfile.mkdtemp())
+        (run / "events.jsonl").write_text("\n".join(lines))
+        return run
+
+    def test_the_dealt_civ_is_read_and_stripped_to_the_league_name(self) -> None:
+        run = self._run(
+            '{"kind":"tiles","turn":1}',
+            '{"kind":"seat","civ":"CIVILIZATION_ROME","leader":"LEADER_JULIUS_CAESAR"}',
+        )
+        self.assertEqual(civ6_brain.seat_civ(run), "Rome")
+
+    def test_a_run_with_no_seat_event_yet_is_none_not_a_guess(self) -> None:
+        """⚠ None, never a default. A wrong civ would narrow the league to a table
+        that does not describe this game; no civ correctly falls back to the
+        overall pick."""
+        self.assertIsNone(civ6_brain.seat_civ(self._run('{"kind":"tiles","turn":1}')))
+
+    def test_a_missing_run_directory_does_not_raise(self) -> None:
+        """The decider starts lazily and this runs on the way in; an exception here
+        would take the whole turn down over a naming detail."""
+        self.assertIsNone(civ6_brain.seat_civ(Path("/nonexistent-run-dir")))
+
+    def test_an_unprefixed_civ_is_passed_through(self) -> None:
+        run = self._run('{"kind":"seat","civ":"Rome"}')
+        self.assertEqual(civ6_brain.seat_civ(run), "Rome")
