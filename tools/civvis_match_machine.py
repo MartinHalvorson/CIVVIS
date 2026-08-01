@@ -45,8 +45,14 @@ PLAYERS = 8
 WIDTH = 84
 HEIGHT = 54
 CITY_STATES = 12
-TURNS = 500
-SPEED = "standard"
+DEFAULT_SPEED = "online"
+SPEED_TURNS = {
+    "online": 250,
+    "quick": 330,
+    "standard": 500,
+    "epic": 750,
+    "marathon": 1500,
+}
 MAP = "continents"
 SHAPE = "flat"
 POLES = "poles"
@@ -241,7 +247,10 @@ def game_command(
     port: int,
     *,
     visible: bool,
+    speed: str = DEFAULT_SPEED,
+    turns: int | None = None,
 ) -> list[str]:
+    turns = SPEED_TURNS[speed] if turns is None else turns
     args = [
         str(binary),
         "play",
@@ -249,8 +258,8 @@ def game_command(
         "--width", str(WIDTH),
         "--height", str(HEIGHT),
         "--city-states", str(CITY_STATES),
-        "--turns", str(TURNS),
-        "--speed", SPEED,
+        "--turns", str(turns),
+        "--speed", speed,
         "--map", MAP,
         "--shape", SHAPE,
         "--poles", POLES,
@@ -417,8 +426,12 @@ class MatchMachine:
                 "dimensions": [WIDTH, HEIGHT],
                 "city_states": CITY_STATES,
                 "map": MAP,
-                "speed": SPEED,
-                "turns": TURNS,
+                "speed": getattr(self.args, "speed", DEFAULT_SPEED),
+                "turns": getattr(
+                    self.args,
+                    "turns",
+                    SPEED_TURNS[getattr(self.args, "speed", DEFAULT_SPEED)],
+                ),
                 "teams": None,
                 "ruleset": "stock Civ 6 defaults",
             },
@@ -552,8 +565,18 @@ class MatchMachine:
         kind = "visible" if visible else "headless"
         log = self.logs / f"{kind}-{seed}-{self.current_revision[:12]}.log"
         handle = log.open("w", encoding="utf-8")
+        speed = getattr(self.args, "speed", DEFAULT_SPEED)
+        turns = getattr(self.args, "turns", SPEED_TURNS[speed])
         process = subprocess.Popen(
-            game_command(self.binary, self.league, seed, port, visible=visible),
+            game_command(
+                self.binary,
+                self.league,
+                seed,
+                port,
+                visible=visible,
+                speed=speed,
+                turns=turns,
+            ),
             cwd=self.binary.parent,
             stdout=handle,
             stderr=subprocess.STDOUT,
@@ -811,14 +834,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--resource-log-interval", type=float, default=60)
     parser.add_argument("--record-timeout", type=float, default=45)
     parser.add_argument("--start-timeout", type=float, default=90)
+    parser.add_argument(
+        "--speed",
+        choices=tuple(SPEED_TURNS),
+        default=DEFAULT_SPEED,
+        help="Civ VI game speed (default: online)",
+    )
+    parser.add_argument(
+        "--turns",
+        type=int,
+        default=None,
+        help="turn limit (default: the stock limit for --speed)",
+    )
     parser.add_argument("--visible-pace", type=int, default=250, help="milliseconds per visible turn")
     parser.add_argument("--port", type=int, default=8870)
     parser.add_argument("--seed", type=int, default=int(time.time()) & 0x7FFF_FFFF)
     args = parser.parse_args(argv)
+    if args.turns is None:
+        args.turns = SPEED_TURNS[args.speed]
     if not 0 < args.limit <= 70:
         parser.error("--limit must be in (0, 70]")
-    if args.duration <= 0 or args.headless < 1 or args.max_processes < 2:
-        parser.error("duration, headless, and max-processes must be positive")
+    if args.duration <= 0 or args.headless < 1 or args.max_processes < 2 or args.turns < 1:
+        parser.error("duration, headless, max-processes, and turns must be positive")
     if args.build_jobs < 1:
         parser.error("--build-jobs must be positive")
     build_share = 100.0 * args.build_jobs / max(1, os.cpu_count() or 1)

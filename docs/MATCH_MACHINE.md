@@ -7,7 +7,7 @@ Civ VI contract:
 
 - eight major civilizations, no teams;
 - Standard map size (84x54, 12 city-states), Continents, flat with poles;
-- Standard speed and its natural 500-turn budget;
+- Online speed and its natural 250-turn budget;
 - Ancient start, stock leader pool, barbarians, disaster intensity 2, all
   victory conditions, and no optional game modes.
 
@@ -28,8 +28,13 @@ python3 tools/civvis_match_machine.py \
   --duration 86400 \
   --headless 8 \
   --max-processes 8 \
-  --limit 70
+  --limit 70 \
+  --speed online
 ```
+
+`--speed` defaults to `online`, with the stock 250-turn Online limit. The
+operator derives the natural turn limit for every supported Civ VI speed;
+`--turns` is available only when an explicit non-stock cap is intended.
 
 The default of eight total game processes means the visible game temporarily
 occupies one slot; after it finishes, all eight slots are headless. Closing the
