@@ -1487,6 +1487,53 @@ mod tests {
         assert_eq!(twice.game.active_routes(0), 2, "each reported route counts once");
     }
 
+    /// ★★★★ A rival's unique unit must reach the board as what it REPLACES.
+    ///
+    /// `UNIT_NORWEGIAN_LONGSHIP` was dropped on every turn it was visible on live run
+    /// `civvis-20260801T145302Z` — CIVVIS models no Norwegian uniques — so an enemy
+    /// warship was not on the board at all. A Longship replaces a Galley, which
+    /// CIVVIS does model.
+    #[test]
+    fn a_rivals_unique_unit_lands_as_what_it_replaces() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12, width: 8, height: 8, chunk: 1,
+            plots: vec![plot(2, 2, "TERRAIN_OCEAN"), plot(4, 4, "TERRAIN_GRASS")],
+        }]);
+        let build = |kind: &str, base: Option<&str>| {
+            let mut state = StateSnapshot { turn: 12, ..StateSnapshot::default() };
+            state.units.push(StateUnit {
+                id: 7,
+                kind: kind.to_string(),
+                base: base.map(|b| b.to_string()),
+                x: 2, y: 2, hp: 100.0, ..StateUnit::default()
+            });
+            rebuild_from_state(&snapshot, &state, 4, 1, 500, 0)
+        };
+
+        // ⚠ Precondition: the unique must genuinely be untranslatable, or this test
+        // passes for the wrong reason.
+        let bare = build("UNIT_NORWEGIAN_LONGSHIP", None);
+        assert!(
+            bare.game.units.is_empty(),
+            "the fixture must be a unit CIVVIS cannot name, or the fallback is untested"
+        );
+
+        let with_base = build("UNIT_NORWEGIAN_LONGSHIP", Some("UNIT_GALLEY"));
+        let unit = with_base.game.units.values().next()
+            .expect("a unique with a known base must reach the board");
+        assert_eq!(unit.kind.as_str(), "galley", "it lands as what it replaces");
+        // ⚠ And it must SAY it approximated. A collapsed distinction that nobody can
+        // see is the failure the mapping rule names.
+        assert!(
+            with_base.dropped_units.iter().any(|d| d.contains("approximated_as_galley")),
+            "the approximation must be reported, not silent: {:?}", with_base.dropped_units
+        );
+
+        // A base CIVVIS also cannot name must still not invent a unit.
+        let nonsense = build("UNIT_NORWEGIAN_LONGSHIP", Some("UNIT_NOT_A_REAL_UNIT"));
+        assert!(nonsense.game.units.is_empty(), "an unknown base must not be guessed at");
+    }
+
     /// ★★★★★ The game speed Civilization VI is running must reach the board.
     ///
     /// The ladder plays `GAMESPEED_ONLINE`, whose costs are HALF of Standard, and a
@@ -2857,6 +2904,10 @@ pub struct StateUnit {
     /// the name was `""`.
     #[serde(default, alias = "type")]
     pub kind: String,
+    /// What this unit REPLACES, when it is a civilization unique — Civ 6's
+    /// `UnitReplaces.ReplacesUnitType`. See the fallback in `plant_unit`.
+    #[serde(default)]
+    pub base: Option<String>,
     pub x: i32,
     pub y: i32,
     #[serde(default)]
@@ -4257,6 +4308,32 @@ pub fn rebuild_from_state(
             if let Some(bare) = civvis_unit_name_unqualified(&u.kind) {
                 if game.rules.units.contains_key(&bare) {
                     name = bare;
+                }
+            }
+        }
+        if !game.rules.units.contains_key(&name) {
+            // ★★★★ WHAT IT REPLACES, rather than nothing at all.
+            //
+            // A rival's unique unit is untranslatable and was therefore DISCARDED.
+            // Live run `civvis-20260801T145302Z` dropped `UNIT_NORWEGIAN_LONGSHIP`
+            // on every turn it was visible — CIVVIS models no Norwegian uniques at
+            // all — so an enemy WARSHIP was simply not on the board. That is not one
+            // unit; it is every civilization's uniques, for every civilization met.
+            //
+            // A Longship replaces a Galley and CIVVIS models `galley`, so the base
+            // type is a true statement about the unit where the exact name is not.
+            //
+            // ⚠ Recorded as `approximated`, never silently. Collapsing a distinction
+            // without saying so is the failure this project's mapping rule names
+            // explicitly, and a reader must be able to see that the board holds a
+            // Galley where Civilization VI has a Longship.
+            if let Some(base) = u.base.as_ref().filter(|b| !b.is_empty()) {
+                let from_base = civvis_unit_name(base);
+                if game.rules.units.contains_key(&from_base) {
+                    dropped.push(format!(
+                        "{}@{},{}:approximated_as_{from_base}", u.kind, u.x, u.y
+                    ));
+                    name = from_base;
                 }
             }
         }
