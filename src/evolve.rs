@@ -8,6 +8,7 @@
 use std::fs;
 use std::io::Write;
 use std::path::Path;
+use std::sync::OnceLock;
 
 use serde::{Deserialize, Serialize};
 
@@ -106,6 +107,24 @@ struct ArchiveState {
 
 pub fn load_champion(dir: &str) -> Option<Weights> {
     load_champion_record(Path::new(dir)).map(|champion| champion.weights)
+}
+
+/// The immutable champion compiled into this binary.
+///
+/// Unlike [`load_champion`], this deliberately never consults a cwd-relative
+/// `evolved/best.json`. A local evolution run is a useful evaluator input, but
+/// it must not silently replace the controller a released binary calls
+/// production `advanced`. The snapshot is parsed once and cloned for each
+/// controller construction, so the production path is both stable and cheap.
+pub fn embedded_champion_weights() -> Weights {
+    static WEIGHTS: OnceLock<Weights> = OnceLock::new();
+    WEIGHTS
+        .get_or_init(|| {
+            serde_json::from_str::<Champion>(EMBEDDED_CHAMPION)
+                .expect("embedded champion must remain valid JSON")
+                .weights
+        })
+        .clone()
 }
 
 /// Read a champion from `dir`, falling back to the committed snapshot under
@@ -789,7 +808,7 @@ fn save_champ(
 
 #[cfg(test)]
 mod champion_snapshot_tests {
-    use super::load_champion;
+    use super::{embedded_champion_weights, load_champion};
 
     /// The committed champion must load from a checkout with no local
     /// `evolved/` directory — which is every fresh clone, the exhibition and
@@ -827,6 +846,17 @@ mod champion_snapshot_tests {
             genes != crate::ai::Weights::default().to_vec(),
             "the committed champion is identical to the defaults, so shipping it \
              changes nothing and the snapshot is pointless"
+        );
+    }
+
+    #[test]
+    fn production_champion_is_the_embedded_snapshot_not_a_cwd_override() {
+        let embedded: super::Champion = serde_json::from_str(super::EMBEDDED_CHAMPION)
+            .expect("the embedded champion must parse");
+        assert_eq!(
+            embedded_champion_weights().to_vec(),
+            embedded.weights.to_vec(),
+            "production must take its weights from the binary, not an optional cwd artifact"
         );
     }
 }
