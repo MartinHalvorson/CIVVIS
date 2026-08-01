@@ -237,21 +237,37 @@ def main():
     # board tile and every position still looks covered. The count catches that.
     # Position-matching, in turn, names WHICH unit is gone when the count is equal
     # but the board holds a different one.
-    short = len(civ6_units) - len(ours)
-    if short > 0 or missing_units:
+    # ⚠ CATEGORISE, DO NOT SUPPRESS. CIVVIS does not model Great People as units at
+    # all, so they are absent from the board on EVERY run. Failing the gate on a
+    # documented modelling gap means the gate always fails, which is the same as
+    # having no gate -- and it buries the drop that is actually new.
+    #
+    # They are still counted and still printed. What changes is that a known gap does
+    # not set the exit status, so a NEW disappearance stands out against it.
+    # ⚠ Counted from the EXPORT, not from `missing_units`. Great People stack with
+    # other units, so position-matching covers them and they never appear in the
+    # missing list -- the count path is where they land, and that is where they have
+    # to be discounted. Getting this wrong left the gate failing on them anyway.
+    great_people = [u for u in civ6_units if "GREAT_" in (u.get("kind") or "")]
+    unexplained = [u for u in missing_units if "GREAT_" not in u]
+    short = len(civ6_units) - len(ours) - len(great_people)
+    if short > 0 or unexplained:
         problems.append("units")
     detail = ""
-    if missing_units:
-        detail = f"   ⚠ NOT on the board: {missing_units}"
+    if unexplained:
+        detail = f"   ⚠ NOT on the board: {unexplained}"
+    elif great_people and short <= 0:
+        detail = (f"   OK — {len(great_people)} Great People absent, which CIVVIS does "
+                  f"not model as units")
     elif short > 0:
         # ⚠ Do NOT name the cause. From the board alone a collapsed stack and an
         # unmodelled type (Great People are not units in CIVVIS) look identical, and
         # this line used to assert "a STACK was collapsed" when the decider's own
         # `dropped_units` was saying `great_person`. Report the fact, point at the
         # field that knows why.
-        detail = (f"   ⚠ {short} fewer on the board, every position covered — a stack "
-                  f"collapsed or a type CIVVIS does not model; the decider's "
-                  f"`dropped_units` names which")
+        detail = (f"   ⚠ {short} fewer on the board beyond the {len(great_people)} "
+                  f"Great People, every position covered — a stack collapsed or a type "
+                  f"CIVVIS does not model; the decider's `dropped_units` names which")
     print(f"UNITS    export {len(civ6_units)}  board {len(ours)}"
           + (detail or "   OK"))
     # ⚠ Non-zero on a real disagreement, so this can gate a run rather than only
