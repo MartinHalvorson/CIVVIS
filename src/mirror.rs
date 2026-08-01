@@ -1147,6 +1147,55 @@ mod tests {
         );
     }
 
+    /// ★★★★ The reconstruction's economic error must be a NUMBER, not a shrug.
+    ///
+    /// Measured live on `civvis-20260801T024428Z`: `economy civ6/civvis science
+    /// 5.8/9.2 +59% culture 7.1/9.4 +33%`. Research valuations are spent in these
+    /// units, so a rate half again too fast makes an unaffordable plan look
+    /// affordable — and until this line existed nothing said so.
+    #[test]
+    fn the_economic_drift_is_reported_and_an_old_export_reads_as_unknown() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 8,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Washington".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+
+        // ⚠ An export with no yields must read as UNKNOWN, never as agreement. An
+        // older mod that reports nothing would otherwise look like a perfect match,
+        // which is the failure mode this bridge specialises in.
+        assert!(
+            economy_drift(&recon.game, &state).is_none(),
+            "no yields exported means no claim about drift"
+        );
+
+        state.science = 5.8;
+        state.culture = 7.1;
+        let drift = economy_drift(&recon.game, &state).expect("yields present");
+        assert!(
+            drift.contains("science 5.8/"),
+            "the game's own number leads, so the comparison is readable: {drift}"
+        );
+        assert!(
+            drift.contains('%'),
+            "and the gap is expressed as a percentage: {drift}"        );
+    }
+
     fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
         // ⚠ THIS FIELD EXISTED AND WAS NEVER FILLED. `religion` was null on all
         // 26,954 city records ever exported — the schema had it, the mod never sent
@@ -2132,6 +2181,31 @@ pub struct StateSnapshot {
     /// faith is a stockpile and crosses cleanly, exactly like gold.
     #[serde(default)]
     pub faith: i64,
+    /// Civilization VI's own science and culture PER TURN.
+    ///
+    /// ⚠⚠ **CARRIED FOR COMPARISON, DELIBERATELY NOT INJECTED.** The note on `faith`
+    /// above is right and stands: these are derived yields, and setting them while the
+    /// board that produces them says otherwise would fight the simulation rather than
+    /// inform it.
+    ///
+    /// What was missing is not the values, it is a **number for how far off CIVVIS
+    /// is**. The reconstruction is openly partial, and until now nothing said by how
+    /// much on the economy. Measured on live run `civvis-20260801T024428Z` at turn 60:
+    ///
+    /// | | Civilization VI | CIVVIS | drift |
+    /// |---|---|---|---|
+    /// | science | 5.80 | 8.6 | **+48%** |
+    /// | culture | 7.08 | 8.9 | **+26%** |
+    ///
+    /// That matters because research VALUATIONS are spent in these units — CIVVIS
+    /// rates a tech "worth 42 to the expansion plan" and times its plan against a rate
+    /// half again too fast. An axis nothing reports does not exist; this makes the
+    /// approximation's size visible on every turn so it can be tracked, and so any
+    /// future decision to close it starts from evidence rather than from a guess.
+    #[serde(default)]
+    pub science: f64,
+    #[serde(default)]
+    pub culture: f64,
     #[serde(default)]
     pub score: i64,
     #[serde(default = "unknown_strength")]
@@ -2707,6 +2781,51 @@ pub fn refused_districts(
     }
     refused
 }
+
+/// How far CIVVIS's own economy has drifted from the one Civilization VI reports.
+///
+/// ★★★★ The reconstruction is openly partial, and nothing has ever said BY HOW MUCH.
+/// Measured on live run `civvis-20260801T024428Z` at turn 60: science 5.80 in the game
+/// against 8.6 on the board (**+48%**), culture 7.08 against 8.9 (**+26%**).
+///
+/// That matters because research valuations are spent in these units — CIVVIS rates a
+/// tech "worth 42 to the expansion plan" and times the plan against a rate half again
+/// too fast, so a plan that looks affordable is not.
+///
+/// ⚠ REPORTED, NOT INJECTED. `StateSnapshot::science` says why: these are derived
+/// yields and overriding them while the board that produces them disagrees would fight
+/// the simulation instead of informing it. This turns an unmeasured axis into a number
+/// on every turn; closing the gap is a separate decision that now has evidence behind
+/// it rather than a guess.
+///
+/// `None` when the export carried no yields — an older mod must read as unknown, never
+/// as agreement.
+pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<String> {
+    if state.science <= 0.0 && state.culture <= 0.0 {
+        return None;
+    }
+    let mut science = 0.0f64;
+    let mut culture = 0.0f64;
+    for city in game.cities.values().filter(|city| city.owner == 0) {
+        let yields = game.city_yields(city.id);
+        science += yields.science;
+        culture += yields.culture;
+    }
+    let pct = |ours: f64, theirs: f64| {
+        if theirs.abs() < 1e-6 {
+            return "n/a".to_string();
+        }
+        format!("{:+.0}%", 100.0 * (ours - theirs) / theirs)
+    };
+    Some(format!(
+        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}",
+        state.science,
+        science,
+        pct(science, state.science),
+        state.culture,
+        culture,
+        pct(culture, state.culture),
+    ))}
 
 /// Policy cards the host ruleset has retired, learned from its own refusals.
 ///
