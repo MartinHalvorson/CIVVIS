@@ -1381,6 +1381,50 @@ mod tests {
         );
     }
 
+    /// ★★★★★ A walled city Civilization VI reports as UNDAMAGED must not read as razed.
+    ///
+    /// `wall_hp` was never written, so it kept its 0 default while `city_max_wall_hp`
+    /// summed the walls the city had — and CIVVIS's gate is `wall_hp < max`. Every
+    /// walled city therefore looked destroyed forever. Replaying run
+    /// `civvis-20260801T065721Z` showed **47 turns** wanting
+    /// `PROJECT_REPAIR_OUTER_DEFENSES` while the exported defence was RISING.
+    #[test]
+    fn a_walled_city_reported_undamaged_is_not_read_as_razed() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30, width: 8, height: 8, chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let build = |damage: f64| {
+            let mut state = StateSnapshot { turn: 30, ..StateSnapshot::default() };
+            state.cities.push(StateCity {
+                id: 1, name: "Rome".to_string(), x: 3, y: 3, pop: 6,
+                buildings: vec!["BUILDING_WALLS".to_string()],
+                damage,
+                ..StateCity::default()
+            });
+            let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+            let city = recon.game.cities.values().find(|c| c.owner == 0)
+                .expect("the seat's city must be on the board").clone();
+            let max = recon.game.city_max_wall_hp(&city);
+            (city.wall_hp, max)
+        };
+
+        let (hp, max) = build(0.0);
+        // ⚠ The precondition. With no walls modelled `max` is 0 and `wall_hp < max`
+        // is false for any hp, so the test would pass for the wrong reason.
+        assert!(max > 0, "the fixture city must actually have walls, or this proves nothing");
+        assert_eq!(hp, max, "an undamaged walled city must read at FULL wall hp");
+
+        let (hurt, max2) = build(20.0);
+        assert_eq!(hurt, max2 - 20, "reported damage must come off the wall hp");
+        assert!(hurt < max2, "a damaged city must still be repairable");
+
+        // Damage beyond the wall total must floor at zero, not go negative:
+        // `damage` is a `try` read in Lua and cannot be trusted to be in range.
+        let (floored, _) = build(9_999.0);
+        assert_eq!(floored, 0, "wall hp must clamp at zero");
+    }
+
     /// ★★★★★ The game speed Civilization VI is running must reach the board.
     ///
     /// The ladder plays `GAMESPEED_ONLINE`, whose costs are HALF of Standard, and a
@@ -2649,6 +2693,15 @@ pub struct StateCity {
     pub capital: bool,
     #[serde(default)]
     pub defense: f64,
+    /// Outer-defence damage. The mod's `cityDefence` has read
+    /// `district:GetDefenseDamage()` and exported `damage` since #697, and nothing
+    /// deserialized it — see the wall-hp note in the city reconstruction.
+    ///
+    /// ⚠ Defaults to 0, which reads as FULL HEALTH once `wall_hp` is set from it.
+    /// That is the safe direction: a city wrongly believed healthy stops asking to
+    /// repair, while a city wrongly believed razed asks forever, which is the bug.
+    #[serde(default)]
+    pub damage: f64,
     /// Current loyalty, 0-100. Below ~50 and falling, the city is on its way to
     /// revolting to whoever is pressing on it.
     #[serde(default = "unknown_strength")]
@@ -3942,6 +3995,41 @@ pub fn rebuild_from_state(
                         None => unmapped.push(format!("{civ6}:building")),
                     }
                 }
+                // ★★★★★ A MIRRORED CITY'S WALLS ALWAYS READ AS DESTROYED, so CIVVIS
+                // asked to repair healthy defences for the whole game.
+                //
+                // `City::wall_hp` was never written by the mirror, so it kept its 0
+                // default, while `city_max_wall_hp` sums the outer defence of the
+                // walls the city HAS. CIVVIS's gate is
+                //
+                //     max > 0 && city.wall_hp < max && turn - last_attacked >= 3
+                //
+                // so the moment a city built Ancient Walls it read as razed to the
+                // ground, permanently. Measured by replaying run
+                // `civvis-20260801T065721Z`: **47 turns** asking for
+                // `PROJECT_REPAIR_OUTER_DEFENSES` while the exported defence was
+                // RISING (39 -> 44 -> 46) — the walls were never damaged at all. It
+                // was the second most-wanted item in the whole run, and Civilization
+                // VI cannot start that project on an undamaged city, so every one of
+                // those decisions was discarded and production fell to the ladder.
+                //
+                // The damage figure was there the whole time: `cityDefence` reads
+                // `district:GetDefenseDamage()` and the export has carried `damage`
+                // since #697. `StateCity` simply never deserialized it — the same
+                // carried-and-dropped shape as the districts below and the game speed
+                // in `apply_identity`.
+                let max_wall: i32 = built
+                    .buildings
+                    .iter()
+                    .map(|building| game.rules.buildings[building].outer_defense)
+                    .sum();
+                // ⚠ Clamped, not trusted. `damage` is a `try` read in Lua and returns
+                // nil where the accessor is missing on a build, which arrives here as
+                // 0 — and 0 damage on a walled city is the CORRECT reading, full
+                // health, which is what stops the loop. A damage larger than the
+                // wall total would otherwise drive this negative.
+                built.wall_hp = (max_wall - city.damage.round() as i32).clamp(0, max_wall);
+
                 // ★★★★★ THE DISTRICTS A CITY HAS ALREADY BUILT. Exported since the
                 // districts fix, and NEVER APPLIED — `StateDistrict` was defined,
                 // carried on `StateCity`, handed to `civvis_production_item` to locate
