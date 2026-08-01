@@ -2925,12 +2925,6 @@ fn rebuild_game_with_city_states(
 pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
     let vocab = Vocabulary::embedded();
     let ocean = Name::new("ocean");
-    let known_improvements: std::collections::BTreeSet<String> = game
-        .rules
-        .improvements
-        .keys()
-        .map(|name| name.as_str().to_string())
-        .collect();
     let visible_resources: std::collections::BTreeSet<crate::name::Name> = game
         .rules
         .resources
@@ -2940,6 +2934,26 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
         .collect();
     let width = snapshot.width.max(1);
     let height = snapshot.height.max(1);
+    // ⚠ THE REAL IMPROVEMENT SET, taken from the ruleset ONCE before the loop.
+    //
+    // This used to be a hardcoded list of sixteen names, because checking the ruleset
+    // inside the loop needs a second borrow of `game` while `game.map.tiles` is held
+    // mutably. The list then drifted: CIVVIS models **36** improvements and the list
+    // named 16, so TWENTY modelled improvements read as unimproved ground — including
+    // `barbarian_camp`, `goody_hut` and `meteor_goody`, which are precisely the three
+    // `AdvancedAi` looks for when deciding whether a move invalidates a plan
+    // (`advanced.rs`, `invalidates_followers`).
+    //
+    // Found on live run `civvis-20260801T141601Z`: the mirror check reported
+    // `IMPROVEMENT_BARBARIAN_CAMP` among "improvements CIVVIS does not model", which
+    // contradicted the ruleset. Hoisting the lookup costs one allocation per rebuild
+    // and cannot drift again.
+    let modelled_improvements: std::collections::BTreeSet<String> = game
+        .rules
+        .improvements
+        .keys()
+        .map(|name| name.as_str().to_string())
+        .collect();
     for y in 0..height {
         for x in 0..width {
             let pos = crate::hex::offset_to_axial(x, y);
@@ -2986,7 +3000,7 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
             // translate.
             tile.improvement = plot.im.as_ref().and_then(|name| {
                 let short = name.strip_prefix("IMPROVEMENT_").unwrap_or(name).to_ascii_lowercase();
-                if known_improvements.contains(&short) {
+                if modelled_improvements.contains(&short) {
                     Some(Name::new(&short))
                 } else {
                     None

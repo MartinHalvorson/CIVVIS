@@ -190,6 +190,15 @@ def steam_account_id() -> int | None:
     return max(found)
 
 
+def game_running() -> bool:
+    """Civilization VI being up is proof Steam authorised it, whatever argv says."""
+    try:
+        done = subprocess.run(["pgrep", "-f", "Civ6_Exe_Child"], capture_output=True)
+    except OSError:
+        return False
+    return done.returncode == 0
+
+
 def check_host(report: Report) -> None:
     """Can a game start AT ALL on this machine right now.
 
@@ -209,7 +218,19 @@ def check_host(report: Report) -> None:
 
     if launcher.steam_running():
         account = steam_account_id()
-        if account == 0:
+        # ⚠ ZERO IS "CANNOT CONFIRM", NOT "SIGNED OUT" — and I had this backwards.
+        #
+        # `-steamid=` is baked into the helper's argv when the helper STARTS. A helper
+        # launched before the user logs in keeps `-steamid=0` for the rest of its life
+        # even after a successful login. Measured 2026-08-01: the operator signed in,
+        # Civilization VI launched and drew a window, and every helper still read 0 —
+        # so this check FAILED preflight and would have refused the very run that had
+        # just become possible.
+        #
+        # A non-zero id is positive evidence of a live session. Its absence is not
+        # evidence of the opposite, so it warns rather than fails. Blocking a working
+        # host is worse than the 40 minutes a genuinely signed-out one wastes.
+        if account == 0 and not game_running():
             # ⚠ A FAILURE, unlike every other host check, and the asymmetry is the
             # point. "Steam not running" is recoverable — the launcher starts it —
             # so it warns. Signed out is NOT recoverable by anything the harness can
@@ -217,11 +238,13 @@ def check_host(report: Report) -> None:
             # batch only on `PREFLIGHT FAILED`, so warning here would let it start
             # and burn every attempt against a host where zero games are possible,
             # which is precisely what this tool was written to stop.
-            report.fail(
+            report.warn(
                 "Steam",
-                "running but SIGNED OUT (steamid=0) — no game can launch; "
-                "sign in to Steam, a saved password is not a live session",
+                "cannot confirm a live session (every helper reads steamid=0, which "
+                "is a start-time snapshot); if launches do nothing, sign in to Steam",
             )
+        elif account == 0:
+            report.ok("Steam", "signed in (Civilization VI is running)")
         elif account is None:
             report.ok("Steam", "running (sign-in state unreadable)")
         else:
