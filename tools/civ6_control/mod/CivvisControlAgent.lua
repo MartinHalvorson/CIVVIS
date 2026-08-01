@@ -2530,7 +2530,28 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- to escort them or to stop parking half the army on approach tiles (`surround`
 	-- 47 against `advance` 46 at the same turn) — neither is attempted here, because
 	-- one change at a time is the rule while pairing is unavailable.
-	if warTarget ~= nil and (counts.siege or 0) < (cfg.SiegeUnits or 4) then
+	-- ★★★★★ AND NOT WHILE BEING OVERRUN. A ram BREAKS a city; it cannot hold one.
+	--
+	-- FIFTH instance of this file's recurring class, after `ArmyCap`, the production
+	-- floor, `MaxProductionPasses` and `expand`: a gate that is right when attacking
+	-- and wrong in the one state that ends runs.
+	--
+	-- `UNIT_BATTERING_RAM` is a SUPPORT unit with no combat strength of its own — it
+	-- only boosts an adjacent melee unit attacking a wall. Measured on live run
+	-- `civvis-20260801T175955Z` (Egypt), builds from turn 60 while losing three of
+	-- four cities:
+	--
+	--     siege 23    improve 11    ranged 7    army 7    civvis 4
+	--
+	-- **43% of wartime production**, and at the end ZERO rams were alive: all 23 were
+	-- built, sent at the enemy and destroyed, while the empire went from four cities
+	-- to one. The cap works (`counts.siege < SiegeUnits`); it just refills a hole.
+	--
+	-- The gate asked only whether a war TARGET exists, never whether WE are the ones
+	-- under siege. Rams belong in an offensive, and an offensive is not what a seat
+	-- losing its cities is conducting.
+	if warTarget ~= nil and not losingWar
+			and (counts.siege or 0) < (cfg.SiegeUnits or 4) then
 		ladder[#ladder + 1] = { "UNIT_BATTERING_RAM", "siege" };
 	end
 	-- ★★ A PURE MELEE ARMY CANNOT REDUCE A CITY, only walk into one.
