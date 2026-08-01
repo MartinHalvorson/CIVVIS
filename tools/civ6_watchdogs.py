@@ -23,7 +23,8 @@ because a snapshot of one turn cannot tell a garrison from a traffic jam:
 
   stuck_unit_turns / unit_turns   a unit-turn is stuck when the unit did not change
                                   plot since the previous state AND is standing on
-                                  one of our own city centres.
+                                  one of our own city centres. Bridge-managed Great
+                                  People are counted separately, not in either side.
   worst_stack                     most own units sharing a single city-centre plot.
   frozen_units                    units that never moved at all, over their lifetime,
                                   and lived at least `--frozen-turns` turns.
@@ -66,6 +67,13 @@ from pathlib import Path
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 HERE = Path(__file__).resolve().parent
+GREAT_PERSON_UNIQUE_TYPES = {"UNIT_COMANDANTE_GENERAL"}
+
+
+def is_bridge_managed_great_person(unit: dict) -> bool:
+    """Whether this physical unit uses the Great Person bridge instead of the model."""
+    kind = unit.get("kind") or unit.get("type") or ""
+    return kind.startswith("UNIT_GREAT_") or kind in GREAT_PERSON_UNIQUE_TYPES
 
 
 def newest_run() -> Path | None:
@@ -163,11 +171,19 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
     worst_stack = 0
     worst_at: tuple | None = None
     per_turn: list[tuple[int, int, int, int]] = []
+    managed_great_people = 0
 
     for state in states:
         turn = state.get("turn")
         centres = {(c["x"], c["y"]) for c in (state.get("cities") or [])}
-        units = state.get("units") or []
+        exported_units = state.get("units") or []
+        managed_great_people += sum(
+            is_bridge_managed_great_person(unit) for unit in exported_units
+        )
+        units = [
+            unit for unit in exported_units
+            if not is_bridge_managed_great_person(unit)
+        ]
         occupancy: dict[tuple[int, int], list[int]] = defaultdict(list)
         turn_units = 0
         turn_stuck = 0
@@ -244,7 +260,10 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
     ever, ever_turn = None, None
     for state in states:
         centres = [(c["x"], c["y"]) for c in (state.get("cities") or [])]
-        units = state.get("units") or []
+        units = [
+            unit for unit in (state.get("units") or [])
+            if not is_bridge_managed_great_person(unit)
+        ]
         if not centres or not units:
             continue
         spread = [
@@ -281,6 +300,8 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
     tracks: dict[int, list] = defaultdict(list)
     for state in states:
         for unit in state.get("units") or []:
+            if is_bridge_managed_great_person(unit):
+                continue
             uid = unit.get("id")
             if uid is not None:
                 tracks[uid].append((unit.get("x"), unit.get("y")))
@@ -330,6 +351,7 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
         "frozen_by_kind": dict(Counter(kind for _, kind, _ in frozen).most_common()),
         "frozen_worst": sorted(frozen, key=lambda row: -row[2])[:4],
         "units_seen": len(first_seen),
+        "bridge_managed_great_person_observations": managed_great_people,
         "per_turn_tail": per_turn[-8:],
     }
 
@@ -748,8 +770,11 @@ def main() -> int:
               f"  late-war military {prod['military_builds_late_war']}/{prod['builds_late_war']}"
               f"  late blocks unanswered {prod['prod_blocks_after_t100_unanswered']}"
               f"/{prod['prod_blocks_after_t100']}")
-        managed_people = report["dropped_units"].get(
-            "bridge_managed_great_person_observations", 0
+        managed_people = max(
+            report["dropped_units"].get(
+                "bridge_managed_great_person_observations", 0
+            ),
+            idle.get("bridge_managed_great_person_observations", 0),
         )
         if managed_people:
             print(f"  bridge: {managed_people} physical Great Person observation(s) "

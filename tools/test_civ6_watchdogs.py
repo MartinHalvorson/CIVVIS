@@ -45,6 +45,47 @@ class DroppedUnitTest(unittest.TestCase):
         self.assertEqual(report["bridge_managed_great_person_observations"], 1)
 
 
+class IdleStackTest(unittest.TestCase):
+    def test_bridge_managed_great_people_do_not_inflate_ordinary_stack_metrics(self) -> None:
+        city = {"x": 8, "y": 4}
+        events = [
+            {
+                "kind": "state",
+                "turn": 10,
+                "cities": [city],
+                "units": [
+                    {"id": 1, "kind": "UNIT_WARRIOR", "x": 8, "y": 4},
+                    {"id": 2, "kind": "UNIT_GREAT_WRITER", "x": 8, "y": 4},
+                ],
+            },
+            {
+                "kind": "state",
+                "turn": 11,
+                "cities": [city],
+                "units": [
+                    {"id": 1, "kind": "UNIT_WARRIOR", "x": 9, "y": 4},
+                    {"id": 2, "kind": "UNIT_GREAT_WRITER", "x": 8, "y": 4},
+                ],
+            },
+        ]
+
+        report = civ6_watchdogs.idle_stack(events)
+
+        self.assertEqual(report["unit_turns"], 1)
+        self.assertEqual(report["stuck_unit_turns"], 0)
+        self.assertEqual(report["worst_stack"], 1)
+        self.assertEqual(report["units_seen"], 1)
+        self.assertEqual(report["bridge_managed_great_person_observations"], 2)
+
+    def test_unique_great_person_uses_the_same_bridge_managed_classification(self) -> None:
+        self.assertTrue(civ6_watchdogs.is_bridge_managed_great_person({
+            "kind": "UNIT_COMANDANTE_GENERAL"
+        }))
+        self.assertFalse(civ6_watchdogs.is_bridge_managed_great_person({
+            "kind": "UNIT_WARRIOR"
+        }))
+
+
 class ReachVerdictTest(unittest.TestCase):
     @staticmethod
     def report(first: int, last: int) -> dict:
