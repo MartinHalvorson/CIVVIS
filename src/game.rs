@@ -2787,6 +2787,7 @@ fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
     position
 }
 
+pub mod adjacency;
 pub mod quests;
 
 #[cfg(test)]
@@ -31408,6 +31409,21 @@ impl Game {
         &self,
         dname: impl AsName,
         dpos: Pos,
+        detail: Option<&mut Vec<AdjacencySource>>,
+    ) -> Yields {
+        self.district_adjacency_assuming(dname, dpos, None, detail)
+    }
+
+    /// [`Game::district_adjacency`] with planning assumptions layered in — an
+    /// assumed city center (settlement planning) and foundations counted as
+    /// the districts they will become (build-order planning).  Every live
+    /// yield path passes `None` above and is unchanged; only the adjacency
+    /// calculator (`game::adjacency`) passes assumptions.
+    pub(crate) fn district_adjacency_assuming(
+        &self,
+        dname: impl AsName,
+        dpos: Pos,
+        assume: Option<&crate::game::adjacency::PlanAssumption>,
         mut detail: Option<&mut Vec<AdjacencySource>>,
     ) -> Yields {
         let dname = dname.as_name();
@@ -31474,7 +31490,14 @@ impl Game {
                     "district" => neighbors
                         .iter()
                         .filter(|t| {
-                            !gaul && (t.district.is_some() || self.city_at(t.pos).is_some())
+                            !gaul
+                                && (t.district.is_some()
+                                    || self.city_at(t.pos).is_some()
+                                    || assume.is_some_and(|plan| {
+                                        plan.treats_as_city_center(t.pos)
+                                            || (plan.foundations
+                                                && t.district_foundation.is_some())
+                                    }))
                         })
                         .count(),
                     "city_center" => neighbors
@@ -31483,6 +31506,8 @@ impl Game {
                             t.owner_city
                                 .and_then(|cid| self.cities.get(&cid))
                                 .is_some_and(|city| city.pos == t.pos)
+                                || assume
+                                    .is_some_and(|plan| plan.treats_as_city_center(t.pos))
                         })
                         .count(),
                     "wonder" => neighbors.iter().filter(|t| t.wonder.is_some()).count(),
@@ -31523,6 +31548,16 @@ impl Game {
                             .filter(|t| {
                                 t.district.is_some_and(|district| {
                                     self.district_is_family(district, Name::new(&district_family))
+                                }) || assume.is_some_and(|plan| {
+                                    plan.foundations
+                                        && t.district_foundation.as_ref().is_some_and(
+                                            |foundation| {
+                                                self.district_is_family(
+                                                    foundation.district,
+                                                    Name::new(&district_family),
+                                                )
+                                            },
+                                        )
                                 })
                             })
                             .count()
