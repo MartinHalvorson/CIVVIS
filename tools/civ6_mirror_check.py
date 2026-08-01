@@ -205,7 +205,7 @@ def main():
     # ⚠ Counts alone are the weak check this project keeps getting burned by --
     # 21 units exported and 15 reconstructed once read as healthy because nothing
     # compared them. So compare the SETS, and name what is missing.
-    state = latest_state(run)
+    state = latest_state(run, upto=board["turn"])
     if state is None:
         print("ENTITIES (no state event yet)")
         return 0
@@ -244,8 +244,14 @@ def main():
     if missing_units:
         detail = f"   ⚠ NOT on the board: {missing_units}"
     elif short > 0:
-        detail = (f"   ⚠ {short} fewer on the board with every position covered — "
-                  f"a STACK was collapsed; see `dropped_units` for the reason")
+        # ⚠ Do NOT name the cause. From the board alone a collapsed stack and an
+        # unmodelled type (Great People are not units in CIVVIS) look identical, and
+        # this line used to assert "a STACK was collapsed" when the decider's own
+        # `dropped_units` was saying `great_person`. Report the fact, point at the
+        # field that knows why.
+        detail = (f"   ⚠ {short} fewer on the board, every position covered — a stack "
+                  f"collapsed or a type CIVVIS does not model; the decider's "
+                  f"`dropped_units` names which")
     print(f"UNITS    export {len(civ6_units)}  board {len(ours)}"
           + (detail or "   OK"))
     # ⚠ Non-zero on a real disagreement, so this can gate a run rather than only
@@ -258,8 +264,19 @@ def main():
     return 0
 
 
-def latest_state(run):
-    """The most recent `state` event, or None."""
+def latest_state(run, upto=None):
+    """The `state` event as of `upto`, or the most recent one.
+
+    ⚠ BOUND IT, for exactly the reason `load_export` is bounded. The mirror
+    republishes on a cadence; the export keeps going. Comparing the LATEST unit
+    positions against a board published several turns earlier reports units that
+    have simply MOVED as units that were dropped -- this checker did that and
+    named four healthy units as missing, while a same-turn read showed 25 against
+    25 with the rosters matching type for type.
+
+    That is the third time publish lag has fooled this file. If a future check
+    reads the run directory, bound it too.
+    """
     latest = None
     with open(os.path.join(run, "events.jsonl")) as handle:
         for line in handle:
@@ -269,8 +286,11 @@ def latest_state(run):
                 event = json.loads(line)
             except ValueError:
                 continue
-            if (event.get("kind") or event.get("event")) == "state":
-                latest = event
+            if (event.get("kind") or event.get("event")) != "state":
+                continue
+            if upto is not None and (event.get("turn") or 0) > upto:
+                continue
+            latest = event
     return latest
 
 
