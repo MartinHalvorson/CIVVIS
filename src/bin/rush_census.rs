@@ -464,7 +464,7 @@ fn main() {
         let (mut walled, mut strength, mut garrison, mut military) = (0.0, 0.0, 0.0, 0.0);
         let (mut melee, mut staged, mut atwar, mut adjacent) = (0.0, 0.0, 0.0, 0.0);
         let (mut maxadj, mut maxstg) = (0.0_f64, 0.0_f64);
-        let (mut iron, mut mason, mut craft) = (0.0, 0.0, 0.0);
+        let (mut mason, mut craft) = (0.0, 0.0);
         for m in per_map.iter() {
             let s = &m.marks[index];
             caps += s.capitals as f64;
@@ -478,7 +478,6 @@ fn main() {
             maxadj = maxadj.max(s.max_adjacent);
             maxstg = maxstg.max(s.max_staged);
             atwar += s.at_war as f64;
-            iron += s.iron as f64;
             mason += s.masonry as f64;
             craft += s.craftsmanship as f64;
         }

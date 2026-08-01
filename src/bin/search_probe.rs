@@ -767,8 +767,6 @@ fn audit_outcome(
 ) {
     struct Decision {
         candidates: usize,
-        /// Candidates whose continuation this seat won.
-        wins: usize,
         /// The proxy's pick also won its continuation.
         proxy_pick_won: bool,
         /// Proxy pick and outcome pick are the same item.
@@ -882,7 +880,6 @@ fn audit_outcome(
             let high = rates.iter().copied().fold(f64::NEG_INFINITY, f64::max);
             out.push(Decision {
                 candidates: labelled.len(),
-                wins,
                 proxy_pick_won: proxy_pick.2,
                 agrees: outcome_pick.is_none_or(|(name, _, _)| *name == proxy_pick.0),
                 discriminates: wins > 0 && wins < labelled.len(),

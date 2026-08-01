@@ -300,7 +300,6 @@ fn main() {
 
     // The verdict is stated rather than left to the reader, because the whole
     // point is to settle whether the objection to the split survives.
-    let rate = proxy_hits as f64 / n.max(1) as f64;
     println!(
         "\nverdict: the proxy is {}",
         if low > chance * 1.5 {
