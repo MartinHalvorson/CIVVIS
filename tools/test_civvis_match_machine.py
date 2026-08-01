@@ -20,7 +20,7 @@ SPEC.loader.exec_module(machine)
 
 
 class MatchMachineTests(unittest.TestCase):
-    def test_game_contract_is_standard_continents_free_for_all(self):
+    def test_game_contract_is_online_continents_free_for_all(self):
         command = machine.game_command(
             Path("/tmp/civvis"), Path("/tmp/league"), 42, 8870, visible=False
         )
@@ -28,12 +28,32 @@ class MatchMachineTests(unittest.TestCase):
         self.assertEqual(value("--players"), "8")
         self.assertEqual((value("--width"), value("--height")), ("84", "54"))
         self.assertEqual(value("--city-states"), "12")
-        self.assertEqual(value("--turns"), "500")
-        self.assertEqual(value("--speed"), "standard")
+        self.assertEqual(value("--turns"), "250")
+        self.assertEqual(value("--speed"), "online")
         self.assertEqual(value("--map"), "continents")
         self.assertNotIn("--teams", command)
         self.assertIn("--league-record", command)
         self.assertIn("--no-open", command)
+
+    def test_game_contract_accepts_explicit_speed_and_turn_override(self):
+        command = machine.game_command(
+            Path("civvis"),
+            Path("league"),
+            1,
+            2,
+            visible=False,
+            speed="standard",
+            turns=600,
+        )
+        value = lambda flag: command[command.index(flag) + 1]
+        self.assertEqual(value("--speed"), "standard")
+        self.assertEqual(value("--turns"), "600")
+
+    def test_cli_derives_the_stock_turn_limit_for_the_selected_speed(self):
+        online = machine.parse_args(["--watch-pid", "1"])
+        standard = machine.parse_args(["--watch-pid", "1", "--speed", "standard"])
+        self.assertEqual((online.speed, online.turns), ("online", 250))
+        self.assertEqual((standard.speed, standard.turns), ("standard", 500))
 
     def test_visible_game_is_the_only_command_that_opens_a_browser(self):
         visible = machine.game_command(Path("civvis"), Path("league"), 1, 2, visible=True)
