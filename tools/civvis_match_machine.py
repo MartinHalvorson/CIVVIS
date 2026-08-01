@@ -51,6 +51,11 @@ MAP = "continents"
 SHAPE = "flat"
 POLES = "poles"
 RESULT_HOLD_SECONDS = 10.0
+SHED_ONE_MARGIN = 15.0
+SHED_HEADLESS_MARGIN = 10.0
+RESUME_MARGIN = 20.0
+RESUME_COOLDOWN_SECONDS = 15.0
+RESUME_STEP_SECONDS = 5.0
 
 
 def utc_now() -> str:
@@ -296,6 +301,27 @@ def match_row(league: Path, seed: int) -> dict[str, str] | None:
     return next((row for row in reversed(rows) if row.get("seed") == str(seed)), None)
 
 
+def winner_placement(row: dict[str, str] | None) -> str | None:
+    if row is None:
+        return None
+    return next(
+        (placement for placement in row.get("placements", "").split("|") if placement.endswith("@0")),
+        None,
+    )
+
+
+def resource_action(sample: Resources, limit: float) -> str:
+    if sample.overloaded(limit):
+        return "shed_all"
+    if sample.maximum() >= limit - SHED_HEADLESS_MARGIN:
+        return "shed_headless"
+    if sample.maximum() >= limit - SHED_ONE_MARGIN:
+        return "shed_one"
+    if sample.comfortably_below(limit, margin=RESUME_MARGIN):
+        return "resume"
+    return "hold"
+
+
 @dataclass
 class GameProcess:
     process: subprocess.Popen[str]
@@ -343,6 +369,7 @@ class MatchMachine:
         self.watch_identity = process_identity(args.watch_pid) if args.watch_pid else None
         self.caffeinate: subprocess.Popen[str] | None = None
         self.maxima = {"cpu": 0.0, "memory": 0.0, "disk": 0.0, "gpu": 0.0}
+        self.resume_not_before = 0.0
 
     def event(self, kind: str, **values: Any) -> None:
         event = {"at": utc_now(), "kind": kind, **values}
@@ -574,9 +601,10 @@ class MatchMachine:
             seed=game.seed,
             revision=game.revision,
             reason=reason,
-            turn=status.get("turn"),
-            winner=status.get("winner"),
-            victory=status.get("victory_type"),
+            turn=row.get("turns") if row else status.get("turn"),
+            winner=status.get("winner") if row is None else None,
+            winner_placement=winner_placement(row),
+            victory=row.get("victory") if row else status.get("victory_type"),
             match_row=row,
             elapsed_seconds=round(time.monotonic() - game.started_monotonic, 1),
             log=game.log,
@@ -590,6 +618,15 @@ class MatchMachine:
             if code is not None:
                 self.finish(game, failed=True, reason=f"process exited {code}")
                 changed = True
+                continue
+            recorded = match_row(self.league, game.seed) is not None
+            if recorded:
+                if game.winner_seen is None:
+                    game.winner_seen = now
+                hold = RESULT_HOLD_SECONDS if game.visible else 0.5
+                if now - game.winner_seen >= hold:
+                    self.finish(game, failed=False, reason="rated result recorded")
+                    changed = True
                 continue
             if game.paused:
                 continue
@@ -609,12 +646,7 @@ class MatchMachine:
                 continue
             if game.winner_seen is None:
                 game.winner_seen = now
-            recorded = match_row(self.league, game.seed) is not None
-            hold = RESULT_HOLD_SECONDS if game.visible else 0.5
-            if recorded and now - game.winner_seen >= hold:
-                self.finish(game, failed=False, reason="rated result recorded")
-                changed = True
-            elif now - game.winner_seen >= self.args.record_timeout:
+            if now - game.winner_seen >= self.args.record_timeout:
                 self.finish(game, failed=True, reason="winner was not appended to matches.csv")
                 changed = True
         return changed
@@ -624,11 +656,17 @@ class MatchMachine:
             value = getattr(sample, name)
             if value is not None:
                 self.maxima[name] = max(self.maxima[name], round(value, 1))
-        # Begin shedding one game five points before the hard ceiling. If a
-        # host-wide spike has already reached the ceiling, stop every headless
-        # group immediately; the next sample decides which one can resume.
-        near_limit = sample.thermal_pressure is True or sample.maximum() >= self.args.limit - 5.0
-        if sample.overloaded(self.args.limit):
+        # Keep enough headroom for a host-wide burst: shed one process fifteen
+        # points early and every headless process ten points early. Recovery is
+        # deliberately slower than shedding so a transient cannot oscillate
+        # the whole pool back on before the host has settled.
+        action = resource_action(sample, self.args.limit)
+        now = time.monotonic()
+        if action != "resume":
+            self.resume_not_before = max(
+                self.resume_not_before, now + RESUME_COOLDOWN_SECONDS
+            )
+        if action == "shed_all":
             for game in sorted(self.games, key=lambda game: game.visible):
                 if game.paused or (
                     game.visible
@@ -638,23 +676,33 @@ class MatchMachine:
                 if set_paused(game.process, True):
                     game.paused = True
                     self.event("game_paused_for_resources", seed=game.seed, resources=asdict(sample))
-        elif near_limit:
+        elif action == "shed_headless":
+            for game in self.games:
+                if game.visible or game.paused:
+                    continue
+                if set_paused(game.process, True):
+                    game.paused = True
+                    self.event("game_paused_for_resources", seed=game.seed, resources=asdict(sample))
+        elif action == "shed_one":
             candidates = sorted(self.games, key=lambda game: (game.visible, game.paused))
             candidate = next((game for game in candidates if not game.paused), None)
             if candidate and set_paused(candidate.process, True):
                 candidate.paused = True
                 self.event("game_paused_for_resources", seed=candidate.seed, resources=asdict(sample))
-        elif sample.comfortably_below(self.args.limit):
+        elif action == "resume" and now >= self.resume_not_before:
             candidate = next((game for game in self.games if game.paused), None)
             if candidate and set_paused(candidate.process, False):
                 candidate.paused = False
+                self.resume_not_before = now + RESUME_STEP_SECONDS
                 self.event("game_resumed", seed=candidate.seed, resources=asdict(sample))
 
     def fill_slots(self, sample: Resources) -> None:
         # Admit only one process per fresh resource sample. Starting the whole
         # pool from one idle reading could cross the ceiling before the next
         # measurement had a chance to govern it.
-        if self.pending_revision or not sample.comfortably_below(self.args.limit):
+        if self.pending_revision or not sample.comfortably_below(
+            self.args.limit, margin=RESUME_MARGIN
+        ):
             return
         if not self.visible_started:
             self.launch(visible=True)
@@ -759,7 +807,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--build-timeout", type=float, default=1800)
     parser.add_argument("--build-retry", type=float, default=60)
     parser.add_argument("--sync-interval", type=float, default=300)
-    parser.add_argument("--poll", type=float, default=2)
+    parser.add_argument("--poll", type=float, default=1)
     parser.add_argument("--resource-log-interval", type=float, default=60)
     parser.add_argument("--record-timeout", type=float, default=45)
     parser.add_argument("--start-timeout", type=float, default=90)

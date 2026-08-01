@@ -54,6 +54,10 @@ class MatchMachineTests(unittest.TestCase):
         self.assertFalse(safe.overloaded(70))
         self.assertTrue(edge.overloaded(70))
         self.assertTrue(thermal.overloaded(70))
+        self.assertEqual(machine.resource_action(machine.Resources(49, 20, 12, 0, False), 70), "resume")
+        self.assertEqual(machine.resource_action(machine.Resources(55, 20, 12, 0, False), 70), "shed_one")
+        self.assertEqual(machine.resource_action(machine.Resources(60, 20, 12, 0, False), 70), "shed_headless")
+        self.assertEqual(machine.resource_action(edge, 70), "shed_all")
 
     def test_match_lookup_finds_a_concurrent_out_of_order_result(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -66,6 +70,17 @@ class MatchMachineTests(unittest.TestCase):
             )
             self.assertEqual(machine.match_row(league, 12)["victory"], "science")
             self.assertIsNone(machine.match_row(league, 99))
+
+    def test_recorded_result_is_authoritative_over_later_server_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            league = Path(directory)
+            (league / "matches.csv").write_text(
+                "round,seed,turns,victory,placements\n"
+                "60,12,423,science,a@Trajan@Rome@0|b@Cleopatra@Egypt@1\n",
+                encoding="utf-8",
+            )
+            row = machine.match_row(league, 12)
+            self.assertEqual(machine.winner_placement(row), "a@Trajan@Rome@0")
 
     def test_state_write_is_atomic_json(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -95,8 +110,20 @@ class MatchMachineTests(unittest.TestCase):
 
             with mock.patch.object(machine.subprocess, "Popen", return_value=process):
                 subject.launch(visible=True)
+            subject.games[0].last_status = {
+                "turn": 435,
+                "winner": 1,
+                "victory_type": "religious",
+            }
             with mock.patch.object(machine, "stop_process"), mock.patch.object(
-                machine, "match_row", return_value={"seed": "100"}
+                machine,
+                "match_row",
+                return_value={
+                    "seed": "100",
+                    "turns": "423",
+                    "victory": "science",
+                    "placements": "a@Trajan@Rome@0|b@Cleopatra@Egypt@1",
+                },
             ):
                 subject.finish(subject.games[0], failed=False, reason="winner recorded")
 
@@ -104,6 +131,10 @@ class MatchMachineTests(unittest.TestCase):
             self.assertEqual(events[0][1]["game_kind"], "visible")
             self.assertEqual(events[1][0], "game_completed")
             self.assertEqual(events[1][1]["game_kind"], "visible")
+            self.assertEqual(events[1][1]["turn"], "423")
+            self.assertEqual(events[1][1]["victory"], "science")
+            self.assertIsNone(events[1][1]["winner"])
+            self.assertEqual(events[1][1]["winner_placement"], "a@Trajan@Rome@0")
 
 
 if __name__ == "__main__":
