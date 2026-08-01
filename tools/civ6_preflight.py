@@ -35,6 +35,7 @@ from __future__ import annotations
 import argparse
 import ast
 import json
+import re
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
@@ -145,6 +146,38 @@ def check_installed(report: Report) -> None:
             report.ok(path.name, "matches worktree")
 
 
+def steam_account_id() -> int | None:
+    """Which Steam account the running client is signed in AS, or None if unreadable.
+
+    ⚠ RUNNING IS NOT SIGNED IN, and this check exists because that distinction cost
+    a whole loop. On 2026-08-01 every launch produced no game, no window, no log and
+    no crash report, while preflight reported `PASS Steam — running`. The Steam
+    Helper argv said why:
+
+        -steamid=0        <-- signed out
+
+    An unauthenticated client accepts `steam://rungameid/...` and silently does
+    nothing, so the failure surfaces four layers away as "could not start a game
+    from the main menu" and reads exactly like a harness defect. Civ 6's own
+    `stdout.log` carries the same fact as `[API loaded no]`.
+
+    Read from the live process rather than from `loginusers.vdf`: that file still
+    listed the account with `RememberPassword=1` throughout, because the saved
+    credential is not the session.
+    """
+    try:
+        out = subprocess.run(
+            ["pgrep", "-fl", "Steam Helper"], capture_output=True, text=True
+        ).stdout
+    except OSError:
+        return None
+    found = {int(v) for v in re.findall(r"-steamid=(\d+)", out)}
+    if not found:
+        return None
+    # Signed in on any helper is signed in; a fresh helper can lag at 0.
+    return max(found)
+
+
 def check_host(report: Report) -> None:
     """Can a game start AT ALL on this machine right now.
 
@@ -163,7 +196,24 @@ def check_host(report: Report) -> None:
     from civ6_control import launcher
 
     if launcher.steam_running():
-        report.ok("Steam", "running")
+        account = steam_account_id()
+        if account == 0:
+            # ⚠ A FAILURE, unlike every other host check, and the asymmetry is the
+            # point. "Steam not running" is recoverable — the launcher starts it —
+            # so it warns. Signed out is NOT recoverable by anything the harness can
+            # do: it needs a human and a Steam Guard code. The climb loop refuses a
+            # batch only on `PREFLIGHT FAILED`, so warning here would let it start
+            # and burn every attempt against a host where zero games are possible,
+            # which is precisely what this tool was written to stop.
+            report.fail(
+                "Steam",
+                "running but SIGNED OUT (steamid=0) — no game can launch; "
+                "sign in to Steam, a saved password is not a live session",
+            )
+        elif account is None:
+            report.ok("Steam", "running (sign-in state unreadable)")
+        else:
+            report.ok("Steam", f"signed in as {account}")
     else:
         report.warn("Steam", "not running; a ladder started now plays no games")
     # Asked of the launcher rather than rebuilt from INSTALLED: the real binary is
