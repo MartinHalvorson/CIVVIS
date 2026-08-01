@@ -318,15 +318,26 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
 
 # --------------------------------------------------------------------------- 2
 
-# The improvements CIVVIS models. Anything else the mirror stores as None, so the
-# tile reads UNIMPROVED — honest for a name that cannot be translated, and also the
-# exact condition that made CIVVIS order 19 builders for one city. Counted apart from
-# a disagreement, because it is a known gap rather than a wrong hex.
-MODELLED_IMPROVEMENTS = {
-    "farm", "mine", "quarry", "pasture", "plantation", "camp", "fishing_boats",
-    "lumber_mill", "oil_well", "offshore_oil_rig", "fort", "airstrip",
-    "national_park", "industry", "seaside_resort", "ski_resort",
-}
+def _modelled_improvements() -> set[str]:
+    """The improvements CIVVIS models, READ FROM THE RULESET.
+
+    ⚠ THIS WAS A HARDCODED SET AND IT DRIFTED, in both this file and `mirror.rs`.
+    CIVVIS models 36 improvements; the two copies listed 16. The twenty dropped
+    included `barbarian_camp`, `goody_hut` and `meteor_goody` — exactly the three
+    `AdvancedAi` looks for in `invalidates_followers`, so the mirror stored None and
+    the AI's own guard was blind to every barbarian camp on the map.
+
+    A checker with its own copy of the thing it checks will eventually disagree with
+    it for reasons that have nothing to do with the game. Read the same source.
+    """
+    try:
+        data = json.loads((HERE.parent / "data" / "improvements.json").read_text())
+    except (OSError, ValueError):
+        return set()
+    return set(data)
+
+
+MODELLED_IMPROVEMENTS = _modelled_improvements()
 
 
 def production_health(events: list[dict], builder_per_city: float = 0.8) -> dict:
