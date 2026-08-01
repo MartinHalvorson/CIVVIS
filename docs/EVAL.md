@@ -6684,3 +6684,84 @@ file updates both the on-disk artifact and the embedded fallback, and it is
 resolved by 38 evaluator arms, the league seeding and that fallback. **Every
 strength number measured against `advanced_evolved` before this change is
 measured against a different agent after it.**
+
+## 2026-08-01 — post-policy/envoy champion confirmation retained the incumbent
+
+The three #708 matrices established that the revised embedded champion beat the
+then-current stock controller, but #746 later promoted the live policy deck,
+envoy infrastructure, and envoy priority. That composition is a different
+production controller, so the earlier result was not treated as sufficient to
+change its numerical weights.
+
+Before reading this outcome, a candidate binary held those three promoted
+mechanisms constant for both sides and compared only the 40 numerical weights:
+
+```sh
+target/release/ai_eval advanced advanced_stock_control \
+  --matrix --pairs 300 --jobs 10 --seed 74000000
+```
+
+Within that candidate binary, `advanced` meant the immutable revised champion
+plus the live policy/envoy composite, and `advanced_stock_control` meant the
+same composite with the incumbent stock weights. The compact profile used
+seeds `74000000..=74000299`; deployment used the disjoint
+`75000000..=75000299` prefix. No sample size, profile, seed, or treatment knob
+was changed after this command was fixed.
+
+| profile | paired score for champion candidate | directions | anytime-valid evidence | matrix result |
+|---|---:|---:|---:|---|
+| compact Standard | 52.9% (95% Wilson 47.3%..58.5%), +20 Elo-equivalent | 91 champion / 60 stock, p=0.0144 | peak e=4.418e2; crossed map 212 | accept: no established regression |
+| deployment Online | 50.6% (95% Wilson 45.0%..56.2%), +4 Elo-equivalent | 83 champion / 82 stock, p=1.0000 | no crossing; peak e=1.000 | reject: strength is inconclusive |
+
+The matrix therefore returned `RETAIN advanced_stock_control — advanced cleared
+1/2 required profiles`. The temporary production-default change was reverted:
+current production `advanced` remains the stock-weight, live-policy,
+envoy-production composite. The revised genome remains evaluator-only. The
+compact reading is useful evidence about a profile-qualified effect, but cannot
+support a general or deployment-strength promotion claim.
+
+## 2026-08-01 — conservative calibration closes the breeder's false-positive gate
+
+The internal evolutionary screen plays a candidate in a mixed table: one
+frozen-default anchor and otherwise champion-weighted opponents. Consequently,
+an incumbent equal to the champion does not have the nominal `1 / players`
+win probability. The prior independent calibration made that visible on the
+four-player Standard breeding profile:
+
+```text
+champion against its own table, seed 9000: 86/240 = 0.358
+champion against its own table, seed 9100: 83/240 = 0.346
+nominal null:                                  0.250
+```
+
+The old `evolve::sprt_confirm` used H0=0.250 and H1=0.400, so it could accept a
+candidate merely equal to the champion. The holdout caught two such candidates,
+but a veto after the fact is not a calibrated acceptance rule.
+
+After the repair was implemented, a fresh release calibration on the same
+four-player breeding geometry used a previously unread stream:
+
+```sh
+target/release/genome_gate --calibrate --players 4 --width 24 --height 16 \
+  --turns 500 --jobs 10 --seed 9901000 --calibrate-games 240
+```
+
+It returned `74/240 = 0.308; conservative H0=0.369, H1=0.469`. The point
+estimate differs from the earlier independent blocks, but the conservative
+null remains 11.9 percentage points above the old nominal H0. This observation
+did not select or alter the sample count, confidence bound, margin, or any
+candidate genome.
+
+The repaired screen performs one 240-game incumbent calibration before its
+first candidate test for each champion epoch. Its seeds are disjoint from that
+incumbent's later candidate-confirmation stream. H0 is the calibration's
+one-sided 97.5% Wilson upper bound—not the observed point estimate—and H1 is a
+10-point lift above that conservative bound (bounded only by probability one).
+The 200-game sequential limit and fixed score holdout remain in force. A new
+champion resets the cached calibration, so no candidate is ever screened with
+its predecessor's baseline.
+
+This is evaluation integrity, not a gameplay-strength result. It changes no
+production controller or committed snapshot. Any candidate that clears it still
+requires a separately pre-registered `ai_eval` promotion matrix on the
+controller that would ship.

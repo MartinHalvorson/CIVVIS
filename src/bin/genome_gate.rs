@@ -37,12 +37,16 @@
 //! This is a hypothesis with a cheap falsification: run both at equal total
 //! games and compare promotions, then compare the promoted genomes head to
 //! head. If ranking carries signal this loses, and that is worth knowing too.
+//! The calibration and sequential-gate mathematics are shared with `evolve` so
+//! a tool intended to audit allocation cannot accidentally use a looser null.
 //!
 //! ```text
 //! genome_gate --budget 20000 --players 4 --turns 500 --width 24 --height 16
 //! ```
 use civvis::ai::Weights;
-use civvis::evolve::{fitness_observations, load_champion, EvoCfg};
+use civvis::evolve::{
+    calibrate_promotion_gate, fitness_observations, load_champion, EvoCfg, PromotionGate,
+};
 use civvis::parallel;
 
 fn flag_present(args: &[String], name: &str) -> bool {
@@ -83,48 +87,6 @@ fn draw(base: &Weights, index: usize, gene_frac: f64, step: f64) -> Weights {
     Weights::from_vec(&genes)
 }
 
-/// One sequential match, decided as early as the evidence allows.
-///
-/// A replica of `evolve::sprt_confirm`'s test, which is private: H0 is parity
-/// at the table (`1/players`), H1 is `max(0.40, 1.6/players)`, and the log
-/// likelihood ratio is walked to ±2.94. Replicated rather than shared because
-/// the point of this binary is to be a *control* for the shipped breeder — if
-/// it called the same function the comparison would not be independent of it.
-/// The parameters are copied deliberately so the gates are identical and only
-/// the allocation differs.
-struct Gate {
-    accept: f64,
-    lose: f64,
-    win: f64,
-    max_games: usize,
-}
-
-impl Gate {
-    /// Build the test from a MEASURED null rather than a nominal one. See
-    /// `--calibrate`: at a four-player table with a frozen-default anchor the
-    /// champion beats its own table 0.358 of the time, not 0.250.
-    fn calibrated(p0: f64, p1: f64, max_games: usize) -> Gate {
-        Gate {
-            accept: 2.94,
-            win: (p1 / p0).ln(),
-            lose: ((1.0 - p1) / (1.0 - p0)).ln(),
-            max_games,
-        }
-    }
-
-    /// `Some(true)` accepted, `Some(false)` rejected, `None` undecided.
-    fn verdict(&self, wins: usize, losses: usize) -> Option<bool> {
-        let llr = wins as f64 * self.win + losses as f64 * self.lose;
-        if llr >= self.accept {
-            return Some(true);
-        }
-        if llr <= -self.accept {
-            return Some(false);
-        }
-        (wins + losses >= self.max_games).then_some(false)
-    }
-}
-
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let budget = number(&args, "--budget", 20_000);
@@ -135,7 +97,7 @@ fn main() {
     let seed = number(&args, "--seed", 9_000) as u64;
     let jobs = number(&args, "--jobs", 10);
     let chunk = number(&args, "--chunk", 12);
-    let max_games = number(&args, "--max-games", 200);
+    let max_games = number(&args, "--max-games", 200).max(1);
     let dir = args
         .iter()
         .position(|a| a == "--dir")
@@ -144,64 +106,47 @@ fn main() {
         .unwrap_or_else(|| "evolved".to_string());
 
     let mut champion = load_champion(&dir).unwrap_or_default();
-
-    // Calibrate H0 before trusting any verdict.
-    //
-    // `make_table` seats the candidate, ONE frozen-default anchor, and
-    // champions. The shipped champion is +49 Elo over the default, so the
-    // anchor is the weakest seat and the other three split more than their
-    // nominal share. That makes parity for a candidate *equal to the champion*
-    // higher than `1/players`, and an SPRT with H0 = 1/players will accept
-    // candidates that are merely equal.
-    //
-    // The champion played against its own table is exactly that parity. If it
-    // comes back near H1 rather than near H0, the test is mis-specified and
-    // every acceptance it produces is uninterpretable — including this
-    // binary's, and including the ones `evolve::sprt_confirm` produces, which
-    // uses the same H0 and the same table.
-    let calibrate = |games: usize| -> f64 {
-        let champ = champion.clone();
-        let blocks = games.div_ceil(chunk);
-        let wins: usize = parallel::map(blocks, jobs, move |b| {
-            let cfg = EvoCfg {
-                generations: 1, pop: 1, games: chunk, players, width, height,
-                max_turns: turns, seed, threads: 1, dir: String::new(),
-                speed: civvis::game::default_speed(),
-            };
-            fitness_observations(&champ, std::slice::from_ref(&champ), &cfg, b as u32, chunk)
-                .iter()
-                .filter(|o| o.won)
-                .count()
-        })
-        .into_iter()
-        .sum();
-        let played = blocks * chunk;
-        let rate = wins as f64 / played as f64;
-        let nominal = 1.0 / players as f64;
-        println!("H0 calibration: the champion against its own table");
-        println!("  {wins}/{played} = {rate:.3}   (nominal 1/players = {nominal:.3})");
-        if rate > nominal + 0.03 {
-            println!(
-                "  -> the nominal null is mis-specified; a candidate merely equal to the \
-                 champion wins {rate:.3}, because the frozen-default anchor is the weakest seat"
-            );
-        }
-        rate
+    let cfg = EvoCfg {
+        generations: 1,
+        pop: 1,
+        games: chunk,
+        players,
+        width,
+        height,
+        max_turns: turns,
+        seed,
+        threads: jobs,
+        dir: dir.clone(),
+        speed: civvis::game::default_speed(),
     };
-
-    // Always calibrate. A sequential test against a null that is 10 points too
-    // low accepts candidates that are merely equal, which is how the first
-    // version of this binary produced four "improvements" of which two were at
-    // or below true parity.
-    let parity = calibrate(number(&args, "--calibrate-games", 240));
+    let calibration_games = number(&args, "--calibrate-games", 240).max(1);
+    // The shared production gate fixes a material lift at ten percentage
+    // points. Keep the old flag accepting its historic default, but refuse a
+    // silent divergence from `evolve`.
+    let requested_margin = number(&args, "--margin-pct", 10);
+    if requested_margin != 10 {
+        eprintln!(
+            "genome_gate fixes --margin-pct at 10 so its conservative promotion gate matches evolve"
+        );
+        std::process::exit(2);
+    }
+    let mut calibration_epoch = (seed ^ (seed >> 32)) as u32;
+    // The shared calibration uses the actual candidate table, including its
+    // frozen-default anchor, and turns the one-sided upper bound into H0.
+    let mut calibration =
+        calibrate_promotion_gate(&champion, &cfg, calibration_epoch, calibration_games);
+    println!("H0 calibration: the champion against its own table");
+    println!(
+        "  {}/{} = {:.3}; conservative H0={:.3}, H1={:.3}",
+        calibration.wins(),
+        calibration.games(),
+        calibration.observed_rate(),
+        calibration.gate().null_rate(),
+        calibration.gate().alternative_rate(),
+    );
     if flag_present(&args, "--calibrate") {
         return;
     }
-    // H1 is set a fixed margin above the MEASURED parity rather than at a
-    // constant, so the test asks "is this genuinely better than the champion"
-    // rather than "is this better than a table average that no equal candidate
-    // achieves".
-    let margin = number(&args, "--margin-pct", 10) as f64 / 100.0;
     // Mutation scale. The default reproduces the first run: +-25% on about a
     // third of genes. 121 draws at that scale produced no candidate worth
     // +72 Elo, which is either an exhausted neighbourhood or too small a step
@@ -211,8 +156,9 @@ fn main() {
 
     println!(
         "genome_gate: budget {budget} games · {players}p {width}x{height} {turns}t · \
-         SPRT H0={parity:.3} (measured) H1={:.3} bound 2.94, max {max_games} games/candidate",
-        parity + margin
+         SPRT H0={:.3} (conservative calibration) H1={:.3} bound 2.94, max {max_games} games/candidate",
+        calibration.gate().null_rate(),
+        calibration.gate().alternative_rate(),
     );
     println!(
         "  mutation: +-{:.0}% on {:.0}% of genes · every game is a gate game, none spent ranking",
@@ -241,29 +187,17 @@ fn main() {
             })
             .collect();
         let champ = champion.clone();
-        // EvoCfg is not Clone, so rebuild it per batch from the same inputs.
-        let cfg = EvoCfg {
-            generations: 1,
-            pop: 1,
-            games: chunk,
-            players,
-            width,
-            height,
-            max_turns: turns,
-            seed,
-            threads: jobs,
-            dir: dir.clone(),
-            speed: civvis::game::default_speed(),
-        };
+        let gate =
+            PromotionGate::from_calibration(calibration.wins(), calibration.games(), max_games);
+        let batch_cfg = cfg.clone();
         let results = parallel::map(contenders.len(), jobs, move |i| {
             let (index, contender) = &contenders[i];
-                let gate = Gate::calibrated(parity, parity + margin, max_games);
             let (mut wins, mut losses) = (0usize, 0usize);
             loop {
                 let obs = fitness_observations(
                     contender,
                     std::slice::from_ref(&champ),
-                    &cfg,
+                    &batch_cfg,
                     (*index * 97 + wins + losses) as u32,
                     chunk,
                 );
@@ -288,17 +222,26 @@ fn main() {
                 // against the old one and are not comparable to it.
                 promoted += 1;
                 champion = contender;
+                calibration_epoch = calibration_epoch.wrapping_add(1);
+                calibration =
+                    calibrate_promotion_gate(&champion, &cfg, calibration_epoch, calibration_games);
                 println!(
                     "  candidate {index}: {wins}-{losses} ACCEPT -> new champion \
                      (after {spent} games, {tested} tested)"
+                );
+                println!(
+                    "    recalibrated {}/{} = {:.3}; conservative H0={:.3}, H1={:.3}",
+                    calibration.wins(),
+                    calibration.games(),
+                    calibration.observed_rate(),
+                    calibration.gate().null_rate(),
+                    calibration.gate().alternative_rate(),
                 );
                 println!("    restarting the search against the new champion");
                 continue 'search;
             }
         }
-        println!(
-            "  batch of {batch}: {tested} tested, {spent} games spent, no acceptance"
-        );
+        println!("  batch of {batch}: {tested} tested, {spent} games spent, no acceptance");
         if spent >= budget {
             break;
         }
@@ -309,14 +252,17 @@ fn main() {
     println!("  promotions                        {promoted}");
     println!("  games spent                       {spent}");
     if tested > 0 {
-        println!("  games per candidate               {:.0}", spent as f64 / tested as f64);
+        println!(
+            "  games per candidate               {:.0}",
+            spent as f64 / tested as f64
+        );
     }
     println!();
     println!(
         "  For comparison, `evolve --pop 24 --games {chunk}` would have spent about
          {} games ranking, to send {} candidate to this same gate.",
         24 * chunk,
-1
+        1
     );
     println!(
         "\\nThis is a control, not a promotion path: a genome accepted here has beaten the \

@@ -57,6 +57,8 @@ import urllib.request
 from collections import Counter
 from pathlib import Path
 
+from civ6_fidelity import ALIASES as IDENTIFIER_ALIASES
+
 # The same root `civ6_civvis_climb.py` writes to, resolved from $HOME rather than
 # hardcoded so this works on any machine that runs the ladder.
 RUNS = str(Path.home() / "civvis-civ6-runs" / "control")
@@ -66,6 +68,9 @@ VOCABULARY = json.loads(
 )
 MIRRORED_IMPROVEMENTS = set(json.loads(
     (Path(__file__).resolve().parent.parent / "data" / "improvements.json").read_text()
+))
+MIRRORED_WONDERS = set(json.loads(
+    (Path(__file__).resolve().parent.parent / "data" / "wonders.json").read_text()
 ))
 RESOURCE_RULES = json.loads(
     (Path(__file__).resolve().parent.parent / "data" / "resources.json").read_text()
@@ -285,19 +290,65 @@ def city_fact_mismatches(state, board, top):
             if isinstance(want, (int, float)) and want >= 0 \
                     and (not isinstance(got, (int, float)) or abs(got - want) > tolerance):
                 mismatches.append(f"{name or pos} {key} Civ6={want:g} CIVVIS={got!r}")
+        damage, max_damage = source.get("damage"), source.get("max_damage")
+        if all(isinstance(value, (int, float)) and value >= 0
+               for value in (damage, max_damage)) and max_damage > 0:
+            want_hp = max(1, min(200, int(200 * (max_damage - damage) / max_damage + 0.5)))
+            if city.get("hp") != want_hp:
+                mismatches.append(
+                    f"{name or pos} hp Civ6={want_hp} CIVVIS={city.get('hp')!r}"
+                )
+        wall_damage = source.get("wall_damage")
+        max_wall_damage = source.get("max_wall_damage")
+        if all(isinstance(value, (int, float)) and value >= 0
+               for value in (wall_damage, max_wall_damage)):
+            want_wall_max = int(max_wall_damage + 0.5)
+            want_wall_hp = int(max(0, min(max_wall_damage,
+                                          max_wall_damage - wall_damage)) + 0.5)
+            if city.get("wall_max") != want_wall_max:
+                mismatches.append(
+                    f"{name or pos} wall_max Civ6={want_wall_max} "
+                    f"CIVVIS={city.get('wall_max')!r}"
+                )
+            if city.get("wall_hp") != want_wall_hp:
+                mismatches.append(
+                    f"{name or pos} wall_hp Civ6={want_wall_hp} "
+                    f"CIVVIS={city.get('wall_hp')!r}"
+                )
         want_religion = civ6_id(source.get("religion"), "RELIGION_").replace("_", " ")
         got_religion = str(city.get("religion") or "").lower()
         if want_religion and want_religion != got_religion:
             mismatches.append(
                 f"{name or pos} religion Civ6={want_religion!r} CIVVIS={got_religion!r}"
             )
-        want_buildings = {civ6_id(value, "BUILDING_") for value in source.get("buildings") or []}
+        exported_buildings = {
+            IDENTIFIER_ALIASES.get(name, name)
+            for value in source.get("buildings") or []
+            for name in [civ6_id(value, "BUILDING_")]
+        }
+        want_buildings = exported_buildings - MIRRORED_WONDERS
         got_buildings = {str(value).lower() for value in city.get("buildings") or []}
         if want_buildings != got_buildings:
             mismatches.append(
                 f"{name or pos} buildings missing={sorted(want_buildings - got_buildings)} "
                 f"extra={sorted(got_buildings - want_buildings)}"
             )
+        if "wonders" in source:
+            want_wonders = {
+                IDENTIFIER_ALIASES.get(
+                    civ6_id(wonder.get("type"), "BUILDING_"),
+                    civ6_id(wonder.get("type"), "BUILDING_"),
+                ): axial(wonder.get("x", 0), top - wonder.get("y", 0))
+                for wonder in source.get("wonders") or []
+            }
+            got_wonders = {
+                str(wonder).lower(): tuple(position)
+                for wonder, position in (city.get("wonders") or {}).items()
+            }
+            if want_wonders != got_wonders:
+                mismatches.append(
+                    f"{name or pos} wonders Civ6={want_wonders!r} CIVVIS={got_wonders!r}"
+                )
         want_districts = {
             civ6_id(district.get("type"), "DISTRICT_")
             for district in source.get("districts") or []
@@ -309,6 +360,43 @@ def city_fact_mismatches(state, board, top):
                 f"{name or pos} districts missing={sorted(want_districts - got_districts)} "
                 f"extra={sorted(got_districts - want_districts)}"
             )
+    return mismatches
+
+
+def unit_fact_mismatches(state, board, top):
+    """Compare own-unit facts where type and position identify one board unit."""
+    by_pos = {}
+    for unit in board.get("units") or []:
+        if unit.get("owner") == board.get("view_player", 0):
+            by_pos.setdefault(tuple(unit.get("pos") or []), []).append(unit)
+    mismatches = []
+    for source in state.get("units") or []:
+        pos = axial(source.get("x", 0), top - source.get("y", 0))
+        raw_kind = civ6_id(source.get("kind"), "UNIT_")
+        kind = IDENTIFIER_ALIASES.get(raw_kind, raw_kind)
+        candidates = [unit for unit in by_pos.get(pos, [])
+                      if str(unit.get("type") or "").lower() == kind]
+        if len(candidates) != 1:
+            continue
+        unit = candidates[0]
+        hp = source.get("hp")
+        if isinstance(hp, (int, float)) and hp > 0 and unit.get("hp") != int(hp + 0.5):
+            mismatches.append(
+                f"{source.get('kind') or '?'}@{pos} hp Civ6={hp:g} CIVVIS={unit.get('hp')!r}"
+            )
+        if "fortified" in source and unit.get("fortified") is not bool(source.get("fortified")):
+            mismatches.append(
+                f"{source.get('kind') or '?'}@{pos} fortified "
+                f"Civ6={bool(source.get('fortified'))} CIVVIS={unit.get('fortified')!r}"
+            )
+        turns = source.get("fortify_turns")
+        if isinstance(turns, (int, float)) and turns >= 0:
+            wanted = max(0, min(2, int(turns)))
+            if unit.get("fortify_turns") != wanted:
+                mismatches.append(
+                    f"{source.get('kind') or '?'}@{pos} fortify_turns "
+                    f"Civ6={wanted} CIVVIS={unit.get('fortify_turns')!r}"
+                )
     return mismatches
 
 
@@ -716,7 +804,7 @@ def main(argv=None):
         problems.append("city facts")
         print("CITYDATA ⚠ " + "; ".join(city_mismatches))
     else:
-        print("CITYDATA population, food, loyalty, defense, religion and development   OK")
+        print("CITYDATA population, health, loyalty, defense, religion and development   OK")
 
     # --- production: an in-progress city must not read as idle -------------
     # A completed item used to stay in the mirror queue, then a new real item
@@ -787,6 +875,12 @@ def main(argv=None):
         for u in civ6_units
         if axial(u.get("x", 0), best - u.get("y", 0)) not in on_board
     ]
+    unit_mismatches = unit_fact_mismatches(state, board, best)
+    if unit_mismatches:
+        problems.append("unit facts")
+        print("UNITDATA ⚠ " + "; ".join(unit_mismatches))
+    else:
+        print("UNITDATA type, position, health and fortification   OK")
     # ⚠ COUNT AND POSITION, because neither alone is enough. Position-matching
     # cannot see a STACKED drop -- Civilization VI puts a civilian and a military
     # unit on one tile and CIVVIS does not, so two exported units collapse onto one

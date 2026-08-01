@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Focused persistence checks for CIVVIS brain restarts."""
+"""Focused persistence, strategy-selection and decider protocol checks."""
 
 from __future__ import annotations
 
 import json
+import io
 import sys
 import tempfile
 import unittest
@@ -12,6 +13,46 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_brain  # noqa: E402
+
+
+class FakeProc:
+    def __init__(self, lines: list[str]) -> None:
+        self.stdout = io.StringIO("".join(lines))
+        self.stdin = io.StringIO()
+
+    def poll(self):
+        return None
+
+
+class _Decider(civ6_brain.Decider):
+    def __init__(self, lines: list[str]) -> None:
+        self.proc = FakeProc(lines)
+        self.binary = Path("/nonexistent")
+        self.run_dir = Path("/nonexistent")
+        self.victory = "domination"
+
+    def start(self) -> None:  # pragma: no cover - must never be reached
+        raise AssertionError("the canned process must not be replaced")
+
+
+class DeciderProtocolTest(unittest.TestCase):
+    def test_a_plain_response_is_read(self) -> None:
+        decider = _Decider([
+            '{"turn":1,"orders":[{"kind":"unit","subject":7,"verb":"MOVE_TO",'
+            '"x":3,"y":4}],"note":"ok"}\n'
+        ])
+        rows, note = decider.ask(1)
+        self.assertEqual(rows, [("unit", 7, "MOVE_TO", 3, 4)])
+        self.assertEqual(note, "ok")
+
+    def test_non_response_json_is_skipped(self) -> None:
+        decider = _Decider([
+            '{"kind":"genome","strategy":"stock"}\n',
+            '{"turn":1,"orders":[],"note":"real"}\n',
+        ])
+        rows, note = decider.ask(1)
+        self.assertEqual(rows, [])
+        self.assertEqual(note, "real")
 
 
 class Civ6BrainTest(unittest.TestCase):
@@ -63,3 +104,39 @@ class Civ6BrainTest(unittest.TestCase):
         self.assertIn("--fresh-board", command)
         self.assertEqual(command[command.index("--strategy") + 1], "auto")
         self.assertEqual(command[command.index("--civ") + 1], "CIVILIZATION_ROME")
+
+
+class SeatCivTest(unittest.TestCase):
+    """The civ Civilization VI dealt must reach the decider, or `--strategy auto`
+    answers only half the brief and reports `per_civ:false`."""
+
+    def _run(self, *lines: str) -> Path:
+        run = Path(tempfile.mkdtemp())
+        (run / "events.jsonl").write_text("\n".join(lines))
+        return run
+
+    def test_the_dealt_civ_is_read_and_stripped_to_the_league_name(self) -> None:
+        run = self._run(
+            '{"kind":"tiles","turn":1}',
+            '{"kind":"seat","civ":"CIVILIZATION_ROME","leader":"LEADER_JULIUS_CAESAR"}',
+        )
+        self.assertEqual(civ6_brain.seat_civ(run), "Rome")
+
+    def test_a_run_with_no_seat_event_yet_is_none_not_a_guess(self) -> None:
+        """⚠ None, never a default. A wrong civ would narrow the league to a table
+        that does not describe this game; no civ correctly falls back to the
+        overall pick."""
+        self.assertIsNone(civ6_brain.seat_civ(self._run('{"kind":"tiles","turn":1}')))
+
+    def test_a_missing_run_directory_does_not_raise(self) -> None:
+        """The decider starts lazily and this runs on the way in; an exception here
+        would take the whole turn down over a naming detail."""
+        self.assertIsNone(civ6_brain.seat_civ(Path("/nonexistent-run-dir")))
+
+    def test_an_unprefixed_civ_is_passed_through(self) -> None:
+        run = self._run('{"kind":"seat","civ":"Rome"}')
+        self.assertEqual(civ6_brain.seat_civ(run), "Rome")
+
+
+if __name__ == "__main__":
+    unittest.main()

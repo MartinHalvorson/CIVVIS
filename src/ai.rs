@@ -2,6 +2,7 @@
 //! sparring partner, not a fair-play agent.
 use crate::name::{AsName, Name};
 use crate::game::{effective_strength, Action, ActionFamilies, Game, Item};
+use crate::parallel::WorkPool;
 use crate::reasoning::{plain, Journal};
 use crate::rng::Rng;
 use crate::think;
@@ -314,6 +315,12 @@ const POLICY_PRIORITY: [&str; 20] = [
 /// scale of a civic unlocking, not of a turn passing.
 const POLICY_REVIEW_EVERY: u32 = 8;
 
+/// A policy review has only a few dozen independent cards, while each active
+/// worker needs a full private game snapshot. Four branches are the measured
+/// knee on the deployment-shaped single-game workload; use the rest of the
+/// persistent pool for wider unit, tactical, purchase, and visibility work.
+const POLICY_SCORE_MAX_WORKERS: usize = 4;
+
 /// What `pid`'s empire is worth to `w` right now, in yield-equivalent points.
 ///
 /// Read either side of a candidate card, the difference is that card's entire
@@ -328,6 +335,10 @@ const POLICY_REVIEW_EVERY: u32 = 8;
 /// measured, rather than a regression predicting what cards tend to accompany
 /// winning. `docs/SUPERHUMAN.md` §0 is the evidence for preferring the former.
 fn empire_reading(g: &Game, pid: usize, w: &Weights) -> f64 {
+    // A card counterfactual is a read-only whole-empire sweep. Keep one memo
+    // scope over it so the city-yield and ownership derivations shared by its
+    // cities are answered once, then drop it before the caller changes cards.
+    let _memo = g.query_memo();
     let mut value = 0.0;
     for cid in g.player_city_ids(pid) {
         let y = g.city_yields(cid);
@@ -472,7 +483,41 @@ pub(crate) fn choose_dedications(g: &mut Game, pid: usize, choice: DedicationCho
 /// Ordering falls back to `POLICY_PRIORITY` on ties, so wherever the
 /// counterfactual is silent — a card the engine gives no effect — the choice
 /// is exactly the one this code has always made.
-fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
+/// Score one candidate against the policy slate the review started with.
+///
+/// The caller restores the exact initial slate before the next score, making
+/// candidate values independent. That lets a headless controller evaluate
+/// this expensive counterfactual batch on worker-private game snapshots while
+/// retaining the serial candidate order and deck commit below.
+fn policy_card_score(
+    g: &mut Game,
+    pid: usize,
+    w: &Weights,
+    candidate: &(usize, String, Name),
+) -> (f64, usize, String, Name) {
+    let (priority, slot, card) = candidate;
+    let incumbent = g.players[pid].policies.contains(card);
+    if incumbent {
+        g.players[pid].policies.remove(card);
+    }
+    let without = empire_reading(g, pid, w);
+    g.players[pid].policies.insert(*card);
+    let with = empire_reading(g, pid, w);
+    if !incumbent {
+        g.players[pid].policies.remove(card);
+    }
+    let gain = with - without;
+    // A sitting card keeps its slot unless beaten by the margin. Without
+    // this the deck reshuffles on arithmetic noise every review.
+    let hysteresis = if incumbent {
+        w.pol_swap_margin * gain.abs()
+    } else {
+        0.0
+    };
+    (gain + hysteresis, *priority, slot.clone(), *card)
+}
+
+fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkPool>) {
     let slots = g.gov_slots(pid);
     let total = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
     if total <= 0 {
@@ -511,32 +556,54 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights) {
             .unwrap_or(POLICY_PRIORITY.len())
     };
 
-    let mut scored: Vec<(f64, usize, String, Name)> = Vec::new();
-    for card in &candidates {
-        let slot = match g.rules.policies.get(card) {
-            Some(spec) => spec.slot.clone(),
-            None => continue, // a priority-list entry the ruleset never had
-        };
-        let incumbent = g.players[pid].policies.contains(card);
-        if incumbent {
-            g.players[pid].policies.remove(card);
+    let candidates: Vec<(usize, String, Name)> = candidates
+        .into_iter()
+        .filter_map(|card| {
+            g.rules
+                .policies
+                .get(&card)
+                .map(|spec| (rank(&card), spec.slot.clone(), card))
+        })
+        .collect();
+    let mut scored: Vec<(f64, usize, String, Name)> = match pool
+        .filter(|pool| pool.threads() > 1 && candidates.len() > 1)
+    {
+        Some(pool) => {
+            // `Game` has worker-local RefCell caches and cannot be shared.
+            // One snapshot per active worker keeps those caches private while
+            // the pool's shared cursor balances uneven candidate costs.
+            let active = pool
+                .threads()
+                .min(candidates.len())
+                .min(POLICY_SCORE_MAX_WORKERS);
+            let states = (0..active).map(|_| g.clone()).collect::<Vec<_>>();
+            let weights = w.clone();
+            pool.map_stateful_limited(
+                candidates.len(),
+                POLICY_SCORE_MAX_WORKERS,
+                states,
+                move |mut branch, indices| {
+                    indices
+                        .map(|index| {
+                            (
+                                index,
+                                policy_card_score(
+                                    &mut branch,
+                                    pid,
+                                    &weights,
+                                    &candidates[index],
+                                ),
+                            )
+                        })
+                        .collect()
+                },
+            )
         }
-        let without = empire_reading(g, pid, w);
-        g.players[pid].policies.insert(*card);
-        let with = empire_reading(g, pid, w);
-        if !incumbent {
-            g.players[pid].policies.remove(card);
-        }
-        let gain = with - without;
-        // A sitting card keeps its slot unless beaten by the margin. Without
-        // this the deck reshuffles on arithmetic noise every review.
-        let hysteresis = if incumbent {
-            w.pol_swap_margin * gain.abs()
-        } else {
-            0.0
-        };
-        scored.push((gain + hysteresis, rank(card), slot, *card));
-    }
+        None => candidates
+            .iter()
+            .map(|candidate| policy_card_score(g, pid, w, candidate))
+            .collect(),
+    };
 
     scored.sort_by(|a, b| {
         b.0.partial_cmp(&a.0)
@@ -2544,7 +2611,7 @@ impl BasicAi {
     }
 
     fn research(&self, g: &mut Game, pid: usize) {
-        self.research_with_government(g, pid, true);
+        self.research_with_government(g, pid, true, None);
     }
 
     /// City-states research enough to defend and express their type without
@@ -2599,17 +2666,30 @@ impl BasicAi {
         }
     }
 
-    /// Choose research and run the baseline ancillary pass without allowing
-    /// the baseline government priority to compete with a strategic caller.
+    /// Choose research and run the ancillary pass without allowing the
+    /// baseline government priority to compete with a strategic caller.
     /// `AdvancedAi` has its own plan-aware government selector later in the
     /// same turn; running both selectors made it adopt two Tier-1 governments
     /// back-to-back and then pay Anarchy when the baseline tried to undo the
-    /// strategic choice on the next turn.
-    fn research_without_government(&self, g: &mut Game, pid: usize) {
-        self.research_with_government(g, pid, false);
+    /// strategic choice on the next turn. A headless caller may also pass its
+    /// persistent pool for the independent live-policy counterfactuals;
+    /// interactive and baseline controllers pass `None`.
+    pub(crate) fn research_without_government_with_pool(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        pool: Option<&WorkPool>,
+    ) {
+        self.research_with_government(g, pid, false, pool);
     }
 
-    fn research_with_government(&self, g: &mut Game, pid: usize, choose_government: bool) {
+    fn research_with_government(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        choose_government: bool,
+        pool: Option<&WorkPool>,
+    ) {
         if g.players[pid].research.is_none() {
             let avail = g.available_techs(pid);
             if !avail.is_empty() {
@@ -2676,7 +2756,7 @@ impl BasicAi {
                 }
             }
         }
-        revise_policy_deck(g, pid, &self.w);
+        revise_policy_deck(g, pid, &self.w, pool);
         if g.players[pid].secret_society.is_none() {
             let society = if self.pursue_religion {
                 "voidsingers"
@@ -6829,6 +6909,50 @@ impl BasicAi {
 mod tests {
     use super::*;
     use crate::ai::advanced::AdvancedAi;
+    use crate::parallel::WorkPool;
+
+    #[test]
+    fn live_policy_counterfactuals_replay_serially_on_workers() {
+        let mut initial = Game::new_full(1, 20, 14, 91_481, 120, 0, false);
+        initial.players[0].civics.extend(
+            [
+                "code_of_laws",
+                "craftsmanship",
+                "foreign_trade",
+                "early_empire",
+                "state_workforce",
+                "military_tradition",
+                "political_philosophy",
+            ]
+            .into_iter()
+            .map(Name::new),
+        );
+        initial.players[0].government = Some("classical_republic".to_string());
+        initial.turn = POLICY_REVIEW_EVERY;
+        assert!(
+            initial.available_policies(0).len() >= 4,
+            "the fixture needs enough independent cards to use every worker"
+        );
+        let weights = Weights {
+            policy_deck: PolicyDeck::Live,
+            ..Weights::default()
+        };
+
+        let mut serial = initial.clone();
+        revise_policy_deck(&mut serial, 0, &weights, None);
+        for threads in [4, 5] {
+            let mut parallel = initial.clone();
+            let pool = WorkPool::new(threads);
+            revise_policy_deck(&mut parallel, 0, &weights, Some(&pool));
+
+            assert_eq!(serial.log, parallel.log, "threads={threads}");
+            assert_eq!(
+                serde_json::to_value(&serial).unwrap(),
+                serde_json::to_value(&parallel).unwrap(),
+                "worker completion order must not change the authoritative game (threads={threads})"
+            );
+        }
+    }
 
     /// A quiet one-player world with a lone Scout, so nothing else on the map
     /// can move the unit or attack it while its whereabouts are recorded.
@@ -6888,7 +7012,7 @@ mod tests {
         // With equal influence, the baseline's stable tie-break would prefer
         // the lower-id hidden state. It must discard that candidate rather
         // than fail its first send and leave the known court unfunded.
-        BasicAi::new().research_without_government(&mut game, 0);
+        BasicAi::new().research_without_government_with_pool(&mut game, 0, None);
 
         assert_eq!(game.players[0].envoys_free, 0);
         assert_eq!(game.envoys_at(0, hidden), 0);

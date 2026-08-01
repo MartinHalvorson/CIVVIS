@@ -639,12 +639,26 @@ end
 -- it a fix is what four attempts at the production ladder cost.
 local function cityDefence(x, y)
 	local plot = try(function() return Map.GetPlot(x, y); end);
-	if plot == nil then return nil, nil; end
+	if plot == nil then return nil, nil, nil, nil, nil; end
 	local district = try(function() return CityManager.GetDistrictAt(plot); end);
-	if district == nil then return nil, nil; end
+	if district == nil then return nil, nil, nil, nil, nil; end
 	local strength = try(function() return district:GetDefenseStrength(); end);
-	local damage = try(function() return district:GetDefenseDamage(); end);
-	return strength, damage;
+	-- These are the exact calls used by Firaxis's CityBannerManager.lua. There is
+	-- no `GetDefenseDamage()` accessor: calling it through `try` omitted `damage`
+	-- from every state event and made the mirror assume every wall was pristine.
+	local damage = try(function()
+		return district:GetDamage(DefenseTypes.DISTRICT_GARRISON);
+	end);
+	local maxDamage = try(function()
+		return district:GetMaxDamage(DefenseTypes.DISTRICT_GARRISON);
+	end);
+	local wallDamage = try(function()
+		return district:GetDamage(DefenseTypes.DISTRICT_OUTER);
+	end);
+	local maxWallDamage = try(function()
+		return district:GetMaxDamage(DefenseTypes.DISTRICT_OUTER);
+	end);
+	return strength, damage, maxDamage, wallDamage, maxWallDamage;
 end
 
 -- ★★★★★ Loyalty, the mechanism that has been quietly destroying the empire.
@@ -733,8 +747,23 @@ end
 -- upgraded them, while the treasury sat on 478 unspent Gold. UNITCOMMAND_UPGRADE
 -- is in this build's resolved command list, so this is available and was simply
 -- never attempted.
+-- ⚠ WHETHER THE ARMY CAN RE-ARM AT ALL, WHICH NO COUNTER HAS EVER SAID.
+--
+-- Run `civvis-20260801T065721Z` fielded nothing but Ancient units for 195 turns and
+-- `upgrade` appears in no `by` map on the whole run -- yet `upgradeUnit` is called
+-- for EVERY combat unit EVERY turn, first, from `orderFor`. So it was attempted
+-- thousands of times and silently refused every single time, and nothing anywhere
+-- recorded whether the block was gold, tech, or a missing strategic resource.
+--
+-- That is the same shape as `no_params` x 221 and `move_refused` x 33: an anonymous
+-- count. Both times naming it made the cause fall out immediately and both times the
+-- standing hypothesis was wrong, so this names it BEFORE anything is changed.
+local upgradeTried, upgradeBlocked = 0, {};
 local function upgradeUnit(unit)
+	upgradeTried = upgradeTried + 1;
 	if commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"]) then return "upgrade"; end
+	local name = unitTypeName(unit) or "?";
+	upgradeBlocked[name] = (upgradeBlocked[name] or 0) + 1;
 	return nil;
 end
 
@@ -2254,6 +2283,48 @@ end
 
 -- --------------------------------------------------------- city production
 
+-- ★★★★★ WHETHER A WAR IS BEING LOST, WHICH THE ARMY GATE COULD NOT SEE.
+--
+-- `wantArmy` is capped at `ArmyCap` (10 by default) and `counts.military` counts
+-- UNITS. Run `civvis-20260801T065721Z` held ~40 units, so `counts.military <
+-- wantArmy` was false from the early game onward and **the army block never fired
+-- again** -- through a two-front war that took all six cities and ended the run in
+-- defeat at turn 195. Builds after turn 140, at war and losing: 14 builders, 2
+-- settlers, 1 trader, and ZERO military.
+--
+--     turn |  us | p1  | p2  | p3  | p4  | p5
+--       74 | 185 |  -  |  57 |  -  |  -  |  29     <- we declared here, correctly
+--      140 | 194 | 264 | 235 | 315 | 192 | 425
+--      190 | 130 | 537 | 320 | 120 | 472 | 821
+--
+-- Our strength sat flat at ~190 from turn 70 to 166 -- strongest civ on the map to
+-- weakest -- while every unit we ever built stayed Ancient era (warrior, slinger,
+-- spearman, archer, battering ram, heavy chariot).
+--
+-- Unit COUNT cannot see any of that: forty warriors and forty musketmen are the same
+-- number. `GetMilitaryStrength` can, it is what the game's own diplomacy ribbon shows
+-- a human, and the mod already exports it for us and for every rival -- so the number
+-- needed to fix this was in hand the whole time and nothing consulted it.
+local function warPressure()
+	local player = localPlayer();
+	if player == nil then return false, 0, 0; end
+	local ours = try(function() return player:GetStats():GetMilitaryStrength(); end, 0) or 0;
+	local diplomacy = try(function() return player:GetDiplomacy(); end, nil);
+	if diplomacy == nil then return false, ours, 0; end
+	local atWar, worst = false, 0;
+	for _, otherId in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+		if try(function() return diplomacy:IsAtWarWith(otherId); end, false) then
+			atWar = true;
+			local other = Players[otherId];
+			local theirs = other ~= nil
+				and (try(function() return other:GetStats():GetMilitaryStrength(); end, 0) or 0)
+				or 0;
+			if theirs > worst then worst = theirs; end
+		end
+	end
+	return atWar, ours, worst;
+end
+
 local function chooseProduction(city, counts, nCities, turn, refused)
 	refused = refused or {};
 	-- ★★★★★ ANSWER WITH CIVVIS'S CHOICE WHEN IT HAS ONE.
@@ -2385,6 +2456,21 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	if turn >= (cfg.WarFromTurn or 25) - 10 then
 		wantArmy = math.max(wantArmy, (cfg.WarArmy or 4) + 2);
 	end
+	-- ★★★★★ AND THE CAP MUST LIFT WHILE A WAR IS BEING LOST. See `warPressure`.
+	--
+	-- The cap above is right for the problem it was written for -- an army target that
+	-- grew with the empire forever and starved development. It is wrong in the one
+	-- state that ends runs: outmatched, at war, and building nothing that fights.
+	-- Keeping the target two ABOVE the current count means the army block always fires
+	-- while we are losing, and the ordinary cap resumes the moment we are not, so this
+	-- cannot produce a runaway peacetime army.
+	--
+	-- ⚠ Deliberately gated on STRENGTH, not on being at war. A war we are winning does
+	-- not need this, and the whole defect was a gate that could not tell those apart.
+	local atWar, ourStrength, enemyStrength = warPressure();
+	if atWar and enemyStrength > ourStrength then
+		wantArmy = math.max(wantArmy, (counts.military or 0) + 2);
+	end
 	-- ★★★ A BATTERING RAM, AND IT MUST COME BEFORE THE ARMY.
 	--
 	-- This is the last broken link in the chain find -> declare -> besiege ->
@@ -2505,7 +2591,18 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	local DEVELOP = { "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
 	                  "DISTRICT_HOLY_SITE", "DISTRICT_COMMERCIAL_HUB",
 	                  "BUILDING_WATER_MILL", "DISTRICT_THEATER",
-	                  "BUILDING_ANCIENT_WALLS" };
+	                  -- ⚠ `BUILDING_WALLS`, not `BUILDING_ANCIENT_WALLS`. Civilization
+	                  -- VI has no such type: grepping every shipped Asset for
+	                  -- `BUILDING_ANCIENT_WALLS` returns exactly ONE file, this mod,
+	                  -- while `BUILDING_WALLS` appears in Firaxis's own DLC data. So
+	                  -- the development rung's only defensive entry could never be
+	                  -- built, on any turn of any run, and nothing said so — the
+	                  -- ladder simply moved to the next line.
+	                  --
+	                  -- Same class as the floor's obsolete units in #748: a list
+	                  -- entry that cannot fire is invisible unless something asks
+	                  -- whether the engine has ever accepted it.
+	                  "BUILDING_WALLS" };
 	local function pushDevelop()
 		for _, name in ipairs(DEVELOP) do
 			ladder[#ladder + 1] = { name, "develop" };
@@ -2532,10 +2629,44 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	if not devFirst then pushDevelop(); end
 	-- Always-available floor. A city with an empty queue and nothing it can
 	-- build is a permanent end-turn blocker; a project never is.
-	for _, name in ipairs({ "PROJECT_CAMPUS_RESEARCH_GRANT", "UNIT_WARRIOR",
-	                        "UNIT_BUILDER", "UNIT_SLINGER" }) do
+	--
+	-- ★★★★★ AND IT DEGENERATED INTO A BUILDER FACTORY. Measured on run
+	-- `civvis-20260801T065721Z`, which lost all six cities and the game:
+	--
+	--     floor:   UNIT_BUILDER 33      <-- and NOTHING else, all game
+	--     improve: UNIT_BUILDER 9
+	--
+	-- Forty-four builders for a six-city empire that wanted five
+	-- (`BuilderPerCity` 0.8). The floor reached its FIRST TWO entries zero times:
+	-- `PROJECT_CAMPUS_RESEARCH_GRANT` needs a Campus in THAT city and most cities
+	-- had none, and `UNIT_WARRIOR` and `UNIT_SLINGER` go OBSOLETE mid-game and stop
+	-- being buildable at all. `UNIT_BUILDER` never obsoletes, so as the eras pass
+	-- every fallback above it evaporates and the floor becomes "build a builder,
+	-- forever" -- including on the turns a war was being lost.
+	--
+	-- ⚠ Same class as the army cap one screen up: correct in the Ancient era and
+	-- silently wrong later. When a list is a fallback, check what remains PLAYABLE
+	-- at turn 150, not what is playable at turn 1.
+	--
+	-- The melee ladder goes in above the builder so the floor stays non-degenerate:
+	-- these are the units the army block already prefers, and `playable` drops the
+	-- obsolete ones, so the first still-buildable tier wins.
+	for _, name in ipairs({ "PROJECT_CAMPUS_RESEARCH_GRANT",
+	                        "UNIT_SWORDSMAN", "UNIT_SPEARMAN", "UNIT_WARRIOR",
+	                        "UNIT_ARCHER", "UNIT_SLINGER" }) do
 		ladder[#ladder + 1] = { name, "floor" };
 	end
+	-- Gated exactly like the `improve` rung, which was the only thing holding the
+	-- builder count down and which the floor bypassed entirely.
+	if counts.builder < math.max(1, nCities * (cfg.BuilderPerCity or 0.8)) then
+		ladder[#ladder + 1] = { "UNIT_BUILDER", "floor" };
+	end
+	-- ⚠ LAST RESORT, deliberately ungated. Everything above can be unplayable --
+	-- no Campus, every military tier obsolete or missing its strategic resource --
+	-- and a city with nothing queued blocks the turn permanently, which is worse
+	-- than a surplus builder. This is the guarantee the original list existed for;
+	-- what changed is that it is now the last line rather than the fourth.
+	ladder[#ladder + 1] = { "UNIT_BUILDER", "floor" };
 
 	-- CIVVIS FIRST. Its choice for this city, this turn, gated by the same `playable`
 	-- the ladder uses — so an item the engine will not start still falls through to
@@ -2545,6 +2676,26 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	if wanted ~= nil then
 		local row = playable(wanted);
 		if row ~= nil then return wanted, row, "civvis"; end
+		-- ★★★★★ SAY WHAT CIVVIS ASKED FOR AND COULD NOT HAVE.
+		--
+		-- When `playable` refuses CIVVIS's choice the ladder silently takes the turn,
+		-- and until now NOTHING recorded what the choice was. The `build` event says
+		-- the ladder decided; it cannot say what it overrode.
+		--
+		-- That is the whole of the open question. On run civvis-20260801T065721Z only
+		-- **16 of 97 builds** were CIVVIS's -- floor 21, develop 20, grow 10, improve
+		-- 9, expand 8 -- and no telemetry anywhere could name a single item CIVVIS
+		-- wanted instead. The same anonymity around `no_params` hid one district for
+		-- an entire project until the refusal carried its verb.
+		--
+		-- ⚠ `item`, not `kind`: `emit` claims `kind`, `ctx` and `run`, and a payload
+		-- field named `kind` is overwritten before the line is written. That already
+		-- cost this file one blind instrument.
+		emit("civvis_build_unplayable", {
+			turn = turn,
+			city = try(function() return city:GetID(); end, -1),
+			item = tostring(wanted),
+		});
 	end
 	for _, entry in ipairs(ladder) do
 		local row = playable(entry[1]);
@@ -3613,7 +3764,30 @@ local function answerBlocker(player, pid, blocker, turn)
 		if not spend("civic", cfg.MaxCivicPasses or 2) then return nil; end
 		return chooseCivic(player, pid);
 	elseif name == "ENDTURN_BLOCKING_PRODUCTION" then
-		if not spend("production", cfg.MaxProductionPasses or 4) then return nil; end
+		-- ★★★★★ THE BUDGET WAS SMALLER THAN THE EMPIRE, so past four cities the
+		-- turn simply stopped answering. `ENDTURN_BLOCKING_PRODUCTION` fires once
+		-- per city that needs something queued, so a fixed 4 is spent before six
+		-- cities have been served and every later blocker returns nil WITHOUT
+		-- TRYING. Measured on run `civvis-20260801T065721Z`:
+		--
+		--     turns    unanswered   answered
+		--     <50               0         15
+		--     50-100            0         23
+		--     100-150          20         24
+		--     150+             18         14
+		--
+		-- Zero failures until turn 102 -- four turns after the sixth city -- then
+		-- 38 of them, until it was failing more often than it succeeded. It reads
+		-- as "the city had nothing it could build", which is a different and much
+		-- more interesting bug, and it is not that at all.
+		--
+		-- ⚠ Third instance of one shape in this file: `ArmyCap` at 10 units, the
+		-- production floor's Ancient-only fallbacks, and this. A constant that is
+		-- right for a small early empire and silently wrong for a real one. The
+		-- budget exists to stop a turn taking ten minutes, and the work it bounds
+		-- is PER CITY -- so the bound has to be per city too.
+		local passes = math.max(cfg.MaxProductionPasses or 4, cityCount(player) + 2);
+		if not spend("production", passes) then return nil; end
 		return driveProduction(player, turn, true) > 0 and "production" or nil;
 	elseif name == "ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT" then
 		if not spend("governor", cfg.MaxGovernorPasses or 2) then return nil; end
@@ -3725,7 +3899,7 @@ local function exportState(player, pid, turn)
 		-- Once per city, not three times: this runs for every city every turn and
 		-- each call is three guarded engine reads.
 		local loyalNow, loyalRate, loyalFallsTo = cityLoyalty(city);
-		local defStrength, defDamage = cityDefence(
+		local defStrength, defDamage, defMax, wallDamage, wallMax = cityDefence(
 			try(function() return city:GetX(); end, -1),
 			try(function() return city:GetY(); end, -1));
 		-- What this city has ALREADY built. Same reason as `im` in the tiles export: a
@@ -3765,11 +3939,13 @@ local function exportState(player, pid, turn)
 		-- this build. Left nil when the plots cannot be read, so "could not ask" stays
 		-- distinguishable from "this city has none" -- the same rule as `built`.
 		local placed = nil;
+		local wonders = nil;
 		local ownedPlots = try(function()
 			return Map.GetCityPlots():GetPurchasedPlots(city);
 		end);
 		if ownedPlots ~= nil then
 			placed = {};
+			wonders = {};
 			for _, plotIndex in ipairs(ownedPlots) do
 				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
 				if plot ~= nil then
@@ -3785,11 +3961,27 @@ local function exportState(player, pid, turn)
 							};
 						end
 					end
+					-- World wonders are Building rows attached to their own map plot.
+					-- `built` above proves ownership but cannot preserve placement, and
+					-- putting every wonder on the City Center changes adjacency rules.
+					local wonderType = try(function() return plot:GetWonderType(); end, -1);
+					if wonderType ~= nil and wonderType >= 0 and
+						try(function() return plot:IsWonderComplete(); end, false) then
+						local wonder = GameInfo.Buildings[wonderType];
+						if wonder ~= nil then
+							wonders[#wonders + 1] = {
+								type = wonder.BuildingType,
+								x = try(function() return plot:GetX(); end, -1),
+								y = try(function() return plot:GetY(); end, -1),
+							};
+						end
+					end
 				end
 			end
 		end
 		cities[#cities + 1] = {
 			districts = placed,
+			wonders = wonders,
 			-- ★★★★★ WHOSE RELIGION THIS CITY FOLLOWS, AND WHAT IS CONVERTING IT.
 			--
 			-- `religion` was **null on all 26,954 city records ever exported**, the
@@ -3839,6 +4031,9 @@ local function exportState(player, pid, turn)
 			-- project's history on every city on the board.
 			defense = defStrength,
 			damage = defDamage,
+			max_damage = defMax,
+			wall_damage = wallDamage,
+			max_wall_damage = wallMax,
 			-- ⚠ THE FIELD WHOSE ABSENCE HID THE BIGGEST DEFECT IN THE PROJECT.
 			-- 45 runs of telemetry recorded cities peaking and then declining with
 			-- no cause attached, because loyalty was never exported. `falls_to` is
@@ -3876,6 +4071,7 @@ local function exportState(player, pid, turn)
 			fortified = try(function()
 				return (unit:GetFortifyTurns() or 0) > 0;
 			end, false),
+			fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
 		};
 	end);
 
@@ -3908,18 +4104,23 @@ local function exportState(player, pid, turn)
 						-- = 12` was measured against WALLED cities late in a game;
 						-- an unwalled capital at turn 40 is a different problem and
 						-- only defence strength tells them apart.
-						local theirDef, theirDmg = cityDefence(cx, cy);
+						local theirDef, theirDmg, theirMax, theirWallDmg, theirWallMax =
+							cityDefence(cx, cy);
 						theirCities[#theirCities + 1] = {
 							id = try(function() return city:GetID(); end, -1),
 							x = cx, y = cy,
 							name = try(function()
 								return Locale.Lookup(city:GetName());
 							end, ""),
+							pop = try(function() return city:GetPopulation(); end, -1),
 							capital = try(function() return city:IsCapital(); end, false),
 							-- Defence is on the city banner when the city is
 							-- visible, so this is information a human has.
 							defense = theirDef,
 							damage = theirDmg,
+							max_damage = theirMax,
+							wall_damage = theirWallDmg,
+							max_wall_damage = theirWallMax,
 						};
 					end
 				end
@@ -3960,8 +4161,13 @@ local function exportState(player, pid, turn)
 							theirUnits[#theirUnits + 1] = {
 								x = ux, y = uy, kind = name,
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
+								moves = try(function() return unit:GetMovesRemaining(); end, -1),
 								combat = row ~= nil and (row.Combat or 0) or 0,
 								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
+								fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+								fortified = try(function()
+									return (unit:GetFortifyTurns() or 0) > 0;
+								end, false),
 							};
 						end
 					end);
@@ -4022,7 +4228,8 @@ local function exportState(player, pid, turn)
 				for _, city in minor:GetCities():Members() do
 					local cx, cy = city:GetX(), city:GetY();
 					if plotRevealed(pid, cx, cy) then
-						local strength, damage = cityDefence(cx, cy);
+						local strength, damage, maxDamage, wallDamage, maxWallDamage =
+							cityDefence(cx, cy);
 						theirCities[#theirCities + 1] = {
 							id = try(function() return city:GetID(); end, -1),
 							x = cx, y = cy,
@@ -4030,6 +4237,9 @@ local function exportState(player, pid, turn)
 							pop = try(function() return city:GetPopulation(); end, -1),
 							capital = try(function() return city:IsCapital(); end, false),
 							defense = strength, damage = damage,
+							max_damage = maxDamage,
+							wall_damage = wallDamage,
+							max_wall_damage = maxWallDamage,
 						};
 					end
 				end
@@ -4044,8 +4254,13 @@ local function exportState(player, pid, turn)
 							theirUnits[#theirUnits + 1] = {
 								x = ux, y = uy, kind = name,
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
+								moves = try(function() return unit:GetMovesRemaining(); end, -1),
 								combat = row ~= nil and (row.Combat or 0) or 0,
 								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
+								fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+								fortified = try(function()
+									return (unit:GetFortifyTurns() or 0) > 0;
+								end, false),
 							};
 						end
 					end);
@@ -4154,11 +4369,21 @@ local function exportState(player, pid, turn)
 					for _, unit in barb:GetUnits():Members() do
 						local ux, uy = unit:GetX(), unit:GetY();
 						if PlayersVisibility[pid]:IsVisible(ux, uy) then
+							local name = try(function()
+								return GameInfo.Units[unit:GetUnitType()].UnitType;
+							end, "?");
+							local row = GameInfo.Units[name];
 							hostiles[#hostiles + 1] = {
 								x = ux, y = uy, player = bid,
-								type = try(function()
-									return GameInfo.Units[unit:GetUnitType()].UnitType;
-								end, "?"),
+								type = name,
+								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
+								moves = try(function() return unit:GetMovesRemaining(); end, -1),
+								combat = row ~= nil and (row.Combat or 0) or 0,
+								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
+								fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+								fortified = try(function()
+									return (unit:GetFortifyTurns() or 0) > 0;
+								end, false),
 							};
 						end
 					end
@@ -5211,6 +5436,51 @@ local function applyOrder(player, pid, row, turn)
 						local plot = Map.GetPlot(x, y);
 						return plot and plot:GetOwner() or -1;
 					end, -1),
+					-- ⚠ WHAT THE MOVE WAS AIMED AT, which nothing recorded — so the
+					-- refusals could be counted and attributed but never EXPLAINED.
+					--
+					-- With `unit_kind` in place, run `civvis-20260801T065721Z` splits its
+					-- 300 refusals as: TRADER 117 (fixed in #742), BATTERING_RAM 57,
+					-- GALLEY 44, HEAVY_CHARIOT 34, ARCHER 25. Those are different bugs
+					-- wearing one number, and the owner field alone cannot separate them:
+					--
+					--   a GALLEY aimed at dry land  -> CIVVIS pathing a ship overland
+					--   a RAM aimed at a mountain   -> impassable ground
+					--   any unit into foreign soil  -> the boxed-in case, `owner` says it
+					--
+					-- 125 of the 300 were aimed at UNOWNED ground, which rules the
+					-- borders explanation out for most of them and leaves no candidate
+					-- at all — the terrain is the missing half of the question.
+					--
+					-- `dest_domain` is the unit's own domain, not the plot's: a ship
+					-- ordered onto land and a land unit ordered into the sea are the same
+					-- defect and both are invisible without it.
+					dest_water = try(function()
+						local plot = Map.GetPlot(x, y);
+						return plot ~= nil and plot:IsWater() or false;
+					end, false),
+					dest_impassable = try(function()
+						local plot = Map.GetPlot(x, y);
+						return plot ~= nil and plot:IsImpassable() or false;
+					end, false),
+					-- ⚠ Through `typeName`, NOT a hand-rolled `GameInfo.Terrains[i]`.
+					-- `GetTerrainType` returns a ROW INDEX, and the one other place
+					-- this file resolves one carries the warning: indexing the table
+					-- directly means guessing its ordering, and a wrong guess reports a
+					-- DIFFERENT terrain rather than failing. `typeName` sends nil when
+					-- the type does not resolve, which is the honest answer.
+					dest_terrain = try(function()
+						local plot = Map.GetPlot(x, y);
+						if plot == nil then return nil; end
+						return typeName("Terrains", "TerrainType", plot:GetTerrainType());
+					end),
+					-- `GameInfo.Units[name]` is the proven lookup here (`row.Combat`
+					-- uses it); only the Domain column is new, and an absent column
+					-- reads nil rather than a plausible wrong value.
+					unit_domain = try(function()
+						local row = GameInfo.Units[unitTypeName(unit)];
+						return row ~= nil and row.Domain or nil;
+					end),
 				});
 			end
 			return moved, verb;
@@ -5514,7 +5784,17 @@ local function applyOrders(player, pid, turn, rows)
 		-- working and being told no; this is the bridge reporting success for
 		-- something that did not happen.
 		missed = missed,
+		-- See `upgradeUnit`. `tried` is every combat unit reached this turn and
+		-- `blocked` is what the engine would not upgrade, by unit type, so a run that
+		-- fields Ancient units in 1100 AD can finally say WHY. Gold rides along
+		-- because "no gold" is the first hypothesis and the cheapest to eliminate.
+		upgrade_tried = upgradeTried,
+		upgrade_blocked = upgradeBlocked,
+		upgrade_gold = try(function()
+			return math.floor(player:GetTreasury():GetGoldBalance());
+		end, -1),
 	});
+	upgradeTried, upgradeBlocked = 0, {};
 
 	-- ⚠⚠ A CIVVIS TURN MUST STILL EMIT A `turn` RECORD. The full one lives at the
 	-- end of `playTurn`, which no longer runs when CIVVIS is deciding — so run

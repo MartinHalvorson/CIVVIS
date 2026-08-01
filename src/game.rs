@@ -15042,6 +15042,10 @@ pub struct Game {
     pub observed_city_loyalty_per_turn: BTreeMap<u32, f64>,
     #[serde(default)]
     pub observed_city_strength: BTreeMap<u32, f64>,
+    /// Host-reported outer-defense capacity for mirrored cities. Native games
+    /// derive this from wall buildings and leave the override empty.
+    #[serde(default)]
+    pub observed_city_max_wall_hp: BTreeMap<u32, i32>,
     /// Sites a HOST ruleset forbids for a reason CIVVIS's own rules cannot see.
     ///
     /// ★★★★ Empty in an ordinary game, and load-bearing when CIVVIS is driving a
@@ -15310,6 +15314,8 @@ struct GameSer {
     #[serde(default)]
     observed_city_strength: BTreeMap<u32, f64>,
     #[serde(default)]
+    observed_city_max_wall_hp: BTreeMap<u32, i32>,
+    #[serde(default)]
     peace_treaties: Vec<((usize, usize), u32)>,
     #[serde(default)]
     wars: Vec<((usize, usize), WarRecord)>,
@@ -15430,6 +15436,7 @@ impl From<GameSer> for Game {
             observed_yield_adjustments: s.observed_yield_adjustments,
             observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
             observed_city_strength: s.observed_city_strength,
+            observed_city_max_wall_hp: s.observed_city_max_wall_hp,
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: BTreeSet::new(),
@@ -15593,6 +15600,7 @@ impl From<Game> for GameSer {
             observed_yield_adjustments: g.observed_yield_adjustments,
             observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
             observed_city_strength: g.observed_city_strength,
+            observed_city_max_wall_hp: g.observed_city_max_wall_hp,
             peace_treaties: g.peace_treaties.into_iter().collect(),
             wars: g.wars.into_iter().collect(),
             concluded_wars: g.concluded_wars,
@@ -15642,6 +15650,7 @@ impl Game {
         self.routes.clear();
         self.observed_city_loyalty_per_turn.clear();
         self.observed_city_strength.clear();
+        self.observed_city_max_wall_hp.clear();
         for tile in self.map.tiles.values_mut() {
             tile.owner_city = None;
         }
@@ -15649,6 +15658,34 @@ impl Game {
             player.remembered_cities.clear();
             player.city_directives.clear();
         }
+    }
+
+    /// Reconcile an authoritative external city roster without firing conquest
+    /// rewards, grievances, population loss, or any other simulated transition.
+    pub(crate) fn mirror_set_city_owner(&mut self, cid: u32, owner: usize) {
+        if let Some(city) = self.cities.get_mut(&cid) {
+            city.owner = owner;
+        }
+        *self.query_memo.city_ids.borrow_mut() = None;
+    }
+
+    /// Remove a city that the authoritative mirror says this seat no longer owns.
+    /// A later observed owner can place it again in the same synchronization pass.
+    pub(crate) fn mirror_remove_city(&mut self, cid: u32) {
+        let Some(city) = self.cities.remove(&cid) else { return };
+        self.city_by_pos.remove(&city.pos);
+        for tile in self.map.tiles.values_mut() {
+            if tile.owner_city == Some(cid) {
+                tile.owner_city = None;
+            }
+        }
+        self.observed_city_loyalty_per_turn.remove(&cid);
+        self.observed_city_strength.remove(&cid);
+        self.observed_city_max_wall_hp.remove(&cid);
+        for player in self.players.iter_mut() {
+            player.city_directives.remove(&cid);
+        }
+        *self.query_memo.city_ids.borrow_mut() = None;
     }
 
     pub fn new(
@@ -15801,6 +15838,7 @@ impl Game {
             observed_yield_adjustments: BTreeMap::new(),
             observed_city_loyalty_per_turn: BTreeMap::new(),
             observed_city_strength: BTreeMap::new(),
+            observed_city_max_wall_hp: BTreeMap::new(),
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
@@ -30460,6 +30498,9 @@ impl Game {
 
     /// Gathering Storm grants 100 HP of Outer Defenses per wall level.
     pub fn city_max_wall_hp(&self, city: &City) -> i32 {
+        if let Some(max) = self.observed_city_max_wall_hp.get(&city.id) {
+            return (*max).max(0);
+        }
         let built: i32 = city
             .buildings
             .iter()

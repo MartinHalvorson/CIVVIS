@@ -868,6 +868,7 @@ fn matrix_child_args(
     profile: MatrixProfile,
     difficulty: &str,
     require_artifacts: bool,
+    confirm_seed: Option<u64>,
 ) -> Vec<String> {
     let mut args: Vec<String> = [
         challenger.to_string(),
@@ -911,7 +912,30 @@ fn matrix_child_args(
     if require_artifacts {
         args.push("--require-artifacts".to_string());
     }
+    if let Some(confirm_seed) = confirm_seed {
+        // A matrix has two independent seed streams. Preserve that shape when
+        // the entire matrix is a confirmation: each child must name the prior
+        // seed for its own profile, not the compact profile base seed.
+        args.push("--confirm".to_string());
+        args.push(confirm_seed.to_string());
+    }
     args
+}
+
+fn matrix_confirmation_base_seed(args: &[String], seed: u64) -> Result<Option<u64>, String> {
+    let Some(index) = args.iter().position(|arg| arg == "--confirm") else {
+        return Ok(None);
+    };
+    let prior = args
+        .get(index + 1)
+        .and_then(|value| value.parse::<u64>().ok())
+        .ok_or_else(|| "--confirm needs the base seed of the matrix being confirmed".to_string())?;
+    if prior == seed {
+        return Err(format!(
+            "--confirm {seed} names the matrix seed being run; a confirmation must use a disjoint matrix base seed"
+        ));
+    }
+    Ok(Some(prior))
 }
 
 fn matrix_verdict(output: &[u8]) -> Option<MatrixVerdict> {
@@ -999,6 +1023,13 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
     };
     let job_budgets = matrix_job_budgets(total_jobs);
     let seed = number(args, "--seed", 4000).max(0) as u64;
+    let confirm_base_seed = match matrix_confirmation_base_seed(args, seed) {
+        Ok(seed) => seed,
+        Err(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+    };
     let difficulty = text(args, "--difficulty", &default_difficulty());
     let require_artifacts = args
         .iter()
@@ -1011,6 +1042,8 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
             .enumerate()
             .map(|(index, profile)| {
                 let profile_seed = matrix_profile_seed(seed, index);
+                let profile_confirm_seed = confirm_base_seed
+                    .map(|prior| matrix_profile_seed(prior, index));
                 let child_args = matrix_child_args(
                     challenger,
                     incumbent,
@@ -1020,6 +1053,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                     profile,
                     &difficulty,
                     require_artifacts,
+                    profile_confirm_seed,
                 );
                 let output = Command::new(&executable)
                     .args(child_args)
@@ -1038,6 +1072,8 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                     let difficulty = difficulty.clone();
                     scope.spawn(move || {
                         let profile_seed = matrix_profile_seed(seed, index);
+                        let profile_confirm_seed = confirm_base_seed
+                            .map(|prior| matrix_profile_seed(prior, index));
                         let child_args = matrix_child_args(
                             challenger,
                             incumbent,
@@ -1047,6 +1083,7 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                             profile,
                             &difficulty,
                             require_artifacts,
+                            profile_confirm_seed,
                         );
                         let output = Command::new(executable)
                             .args(child_args)
@@ -1952,6 +1989,7 @@ mod tests {
             PROMOTION_PROFILES[0],
             "prince",
             false,
+            None,
         );
         let deployment = matrix_child_args(
             "challenger",
@@ -1962,6 +2000,7 @@ mod tests {
             PROMOTION_PROFILES[1],
             "prince",
             false,
+            None,
         );
         for args in [&compact, &deployment] {
             assert_eq!(text(args, "--map", "missing"), "continents");
@@ -1992,8 +2031,57 @@ mod tests {
             PROMOTION_PROFILES[1],
             "prince",
             false,
+            None,
         );
         assert_eq!(number(&extended, "--seed", 0), 1_090_000);
+
+        let confirmed = matrix_child_args(
+            "challenger",
+            "incumbent",
+            120,
+            4,
+            matrix_profile_seed(92_000, 1),
+            PROMOTION_PROFILES[1],
+            "prince",
+            false,
+            Some(matrix_profile_seed(90_000, 1)),
+        );
+        assert_eq!(number(&confirmed, "--seed", 0), 1_092_000);
+        assert_eq!(number(&confirmed, "--confirm", 0), 1_090_000);
+    }
+
+    #[test]
+    fn matrix_confirmation_requires_a_distinct_base_and_preserves_profile_streams() {
+        let confirmed = vec![
+            "challenger".to_string(),
+            "incumbent".to_string(),
+            "--matrix".to_string(),
+            "--seed".to_string(),
+            "82000000".to_string(),
+            "--confirm".to_string(),
+            "80000000".to_string(),
+        ];
+        assert_eq!(
+            matrix_confirmation_base_seed(&confirmed, 82_000_000),
+            Ok(Some(80_000_000))
+        );
+        assert_eq!(
+            matrix_profile_seed(82_000_000, 1),
+            83_000_000,
+            "the deployment child receives the confirmation stream, not the compact seed"
+        );
+        assert_eq!(
+            matrix_profile_seed(80_000_000, 1),
+            81_000_000,
+            "the deployment child names its matching discovery stream"
+        );
+
+        let same_seed = vec!["--confirm".to_string(), "82000000".to_string()];
+        assert!(
+            matrix_confirmation_base_seed(&same_seed, 82_000_000)
+                .expect_err("same matrix seed must be rejected")
+                .contains("disjoint matrix base seed")
+        );
     }
 
     #[test]

@@ -11,9 +11,11 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import fnmatch
+import hashlib
 import json
 import os
 from pathlib import Path
+import plistlib
 import re
 import secrets
 import shutil
@@ -38,6 +40,11 @@ BRANCH_RE = re.compile(
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 TASK_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 PUSH_GUARD_MARKER = "CIVVIS managed pre-push guard v1"
+FRESHNESS_MARKER = "CIVVIS managed Git freshness service v1"
+FRESHNESS_SCHEMA = 1
+FRESHNESS_INTERVAL_SECONDS = 300
+FRESHNESS_STALE_SECONDS = 15 * 60
+FRESHNESS_LOCK_STALE_SECONDS = 30 * 60
 FIELD_LABELS = {
     "machine": "Machine ID",
     "agent": "Agent/session ID",
@@ -1250,6 +1257,34 @@ def install_hooks_command(args: argparse.Namespace) -> int:
     return 0
 
 
+def configure_clone(root: Path) -> None:
+    for key, value in (
+        ("fetch.prune", "true"),
+        ("pull.ff", "only"),
+        ("push.default", "simple"),
+        ("merge.conflictStyle", "zdiff3"),
+        ("rerere.enabled", "true"),
+        ("rerere.autoupdate", "false"),
+    ):
+        git(root, "config", key, value)
+
+
+def bootstrap_command(args: argparse.Namespace) -> int:
+    del args
+    root = repo_root()
+    configure_clone(root)
+    hook = install_push_guard(root)
+    report = refresh_repository(root, wait_seconds=30.0)
+    if report.get("fetch_error") or report.get("skipped"):
+        raise CommandError(str(report.get("fetch_error") or report.get("skipped")))
+    service_paths = install_freshness_service(root)
+    print(f"installed CIVVIS pre-push guard: {hook}")
+    for path in service_paths:
+        print(f"installed CIVVIS freshness service: {path}")
+    print_refresh_report(report)
+    return 0
+
+
 def start_task(args: argparse.Namespace) -> int:
     root = repo_root()
     if not shutil.which("gh"):
@@ -1303,19 +1338,15 @@ def start_task(args: argparse.Namespace) -> int:
 
     if args.machine and machine != configured_machine:
         git(root, "config", "civvis.machine", machine)
-    for key, value in (
-        ("fetch.prune", "true"),
-        ("pull.ff", "only"),
-        ("push.default", "simple"),
-        ("merge.conflictStyle", "zdiff3"),
-        ("rerere.enabled", "true"),
-        ("rerere.autoupdate", "false"),
-    ):
-        git(root, "config", key, value)
-
+    configure_clone(root)
     install_push_guard(root)
-
-    fetch_main(root)
+    report = refresh_repository(root, wait_seconds=30.0)
+    if report.get("fetch_error") or report.get("skipped"):
+        raise CommandError(
+            "cannot start from a verified current origin/main: "
+            + str(report.get("fetch_error") or report.get("skipped"))
+        )
+    install_freshness_service(root)
     git(root, "worktree", "add", "-b", branch, str(worktree), "origin/main")
     git(worktree, "commit", "--allow-empty", "-m", f"claim: {args.task.replace('-', ' ')}")
     git(worktree, "push", "-u", "origin", branch)
@@ -1365,6 +1396,464 @@ def parse_worktrees(raw: str) -> List[Dict[str, str]]:
         key, _, value = line.partition(" ")
         current[key] = value
     return rows
+
+
+def freshness_dir(repo: Path) -> Path:
+    return common_git_dir(repo) / "civvis-freshness"
+
+
+def freshness_key(repo: Path) -> str:
+    value = str(common_git_dir(repo)).encode("utf-8")
+    return hashlib.sha256(value).hexdigest()[:12]
+
+
+def freshness_state_path(repo: Path) -> Path:
+    return freshness_dir(repo) / "state.json"
+
+
+def freshness_worker_path(repo: Path) -> Path:
+    return freshness_dir(repo) / "civvis_collab.py"
+
+
+def atomic_write(path: Path, data: bytes, *, executable: bool = False) -> None:
+    if path.is_symlink():
+        raise CommandError(f"refusing to replace symlink: {path}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(
+        f".{path.name}.civvis-{os.getpid()}-{secrets.token_hex(4)}"
+    )
+    try:
+        with temporary.open("xb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if executable and os.name != "nt":
+            temporary.chmod(
+                temporary.stat().st_mode
+                | stat.S_IXUSR
+                | stat.S_IXGRP
+                | stat.S_IXOTH
+            )
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+class FreshnessLock:
+    """A tiny cross-platform exclusion lock for overlapping timer runs."""
+
+    def __init__(self, repo: Path, *, wait_seconds: float = 0.0):
+        self.path = freshness_dir(repo) / "refresh.lock"
+        self.acquired = False
+        self.deadline = time.monotonic() + max(0.0, wait_seconds)
+
+    def __enter__(self) -> bool:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        while True:
+            try:
+                descriptor = os.open(
+                    self.path,
+                    os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+                    0o600,
+                )
+            except FileExistsError:
+                try:
+                    age = time.time() - self.path.stat().st_mtime
+                except FileNotFoundError:
+                    continue
+                if age > FRESHNESS_LOCK_STALE_SECONDS:
+                    self.path.unlink(missing_ok=True)
+                    continue
+                if time.monotonic() >= self.deadline:
+                    return False
+                time.sleep(0.1)
+                continue
+            with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+                json.dump({"pid": os.getpid(), "started_at": utc_now()}, handle)
+            self.acquired = True
+            return True
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        del exc_type, exc, traceback
+        if self.acquired:
+            self.path.unlink(missing_ok=True)
+
+
+def utc_now() -> str:
+    return dt.datetime.now(dt.timezone.utc).isoformat()
+
+
+def read_freshness_state(repo: Path) -> Optional[Dict[str, Any]]:
+    try:
+        value = json.loads(freshness_state_path(repo).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def write_freshness_state(repo: Path, state: Dict[str, Any]) -> None:
+    encoded = (json.dumps(state, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    atomic_write(freshness_state_path(repo), encoded)
+
+
+def main_worktree(repo: Path) -> Path:
+    rows = parse_worktrees(git(repo, "worktree", "list", "--porcelain"))
+    for row in rows:
+        if row.get("branch") == f"refs/heads/{DEFAULT_BRANCH}":
+            path = Path(row.get("worktree", "")).resolve()
+            if path.is_dir():
+                return path
+    raise CommandError(
+        "this clone needs a stable main management worktree before its "
+        "freshness service can be installed"
+    )
+
+
+def worktree_freshness(repo: Path, origin_main: str) -> List[Dict[str, Any]]:
+    rows: List[Dict[str, Any]] = []
+    registrations = parse_worktrees(git(repo, "worktree", "list", "--porcelain"))
+    for registration in registrations:
+        path_text = registration.get("worktree", "")
+        branch = registration.get("branch", "").removeprefix("refs/heads/")
+        row: Dict[str, Any] = {"path": path_text, "branch": branch or "detached"}
+        if "prunable" in registration or not Path(path_text).exists():
+            row["prunable"] = True
+            rows.append(row)
+            continue
+        path = Path(path_text)
+        row["head"] = git(path, "rev-parse", "HEAD")
+        row["dirty"] = bool(git(path, "status", "--porcelain", check=False))
+        counts = git(
+            path,
+            "rev-list",
+            "--left-right",
+            "--count",
+            f"HEAD...{origin_main}",
+        ).split()
+        row["ahead"] = int(counts[0])
+        row["behind"] = int(counts[1])
+        rows.append(row)
+    return rows
+
+
+def refresh_managed_worker(repo: Path) -> None:
+    target = freshness_worker_path(repo)
+    if not target.exists():
+        return
+    source = git(
+        repo,
+        "show",
+        f"origin/{DEFAULT_BRANCH}:tools/civvis_collab.py",
+    ).encode("utf-8")
+    if FRESHNESS_MARKER.encode("utf-8") not in source:
+        # During this feature's own rollout the installed worker is newer than
+        # main. Keep it until the protected trunk contains the managed version;
+        # after merge, every subsequent fetch can update the worker atomically.
+        return
+    if target.read_bytes() != source:
+        atomic_write(target, source, executable=True)
+
+
+def refresh_repository(repo: Path, *, wait_seconds: float = 0.0) -> Dict[str, Any]:
+    root = repo_root(repo)
+    with FreshnessLock(root, wait_seconds=wait_seconds) as acquired:
+        if not acquired:
+            previous = read_freshness_state(root) or {}
+            return {**previous, "skipped": "another refresh is already running"}
+
+        report: Dict[str, Any] = {
+            "schema": FRESHNESS_SCHEMA,
+            "machine": git(root, "config", "--get", "civvis.machine", check=False),
+            "attempted_at": utc_now(),
+        }
+        try:
+            git(root, "fetch", "--prune", "origin")
+            origin_main = git(root, "rev-parse", f"origin/{DEFAULT_BRANCH}")
+            report["fetched_at"] = utc_now()
+            report["origin_main"] = origin_main
+            report["worktrees"] = worktree_freshness(root, origin_main)
+            refresh_managed_worker(root)
+        except CommandError as error:
+            report["fetch_error"] = str(error)
+        write_freshness_state(root, report)
+        return report
+
+
+def print_refresh_report(report: Dict[str, Any]) -> None:
+    if report.get("skipped"):
+        print(f"freshness: {report['skipped']}")
+        return
+    if report.get("fetch_error"):
+        print(f"freshness ERROR: {report['fetch_error']}", file=sys.stderr)
+        return
+    print(
+        f"origin/{DEFAULT_BRANCH} fetched at {report.get('fetched_at', '?')} "
+        f"({str(report.get('origin_main', ''))[:12]})"
+    )
+    for row in report.get("worktrees", []):
+        if row.get("prunable"):
+            detail = "prunable"
+        else:
+            detail = (
+                f"ahead {row.get('ahead', 0)}, behind {row.get('behind', 0)}, "
+                f"{'dirty' if row.get('dirty') else 'clean'}"
+            )
+        print(f"  {row.get('branch', 'detached')}: {detail} ({row.get('path', '')})")
+
+
+def refresh_command(args: argparse.Namespace) -> int:
+    root = repo_root(Path(args.repo).expanduser()) if args.repo else repo_root()
+    report = refresh_repository(root, wait_seconds=0.0 if args.scheduled else 30.0)
+    if args.json:
+        print(json.dumps(report, indent=2, sort_keys=True))
+    elif not args.scheduled or report.get("fetch_error"):
+        print_refresh_report(report)
+    return 1 if report.get("fetch_error") else 0
+
+
+def install_managed_freshness_worker(repo: Path) -> Path:
+    source = Path(__file__).resolve().read_bytes()
+    if FRESHNESS_MARKER.encode("utf-8") not in source:
+        raise CommandError("refusing to install an unmarked freshness worker")
+    target = freshness_worker_path(repo)
+    if target.exists() and FRESHNESS_MARKER.encode("utf-8") not in target.read_bytes():
+        raise CommandError(f"refusing to replace unmanaged freshness worker: {target}")
+    atomic_write(target, source, executable=True)
+    return target
+
+
+def freshness_service_label(repo: Path) -> str:
+    return f"com.civvis.freshness.{freshness_key(repo)}"
+
+
+def macos_freshness_plist(repo: Path, worker: Path) -> bytes:
+    label = freshness_service_label(repo)
+    log = freshness_dir(repo) / "service.log"
+    payload = {
+        "EnvironmentVariables": {"CIVVIS_FRESHNESS_MARKER": FRESHNESS_MARKER},
+        "Label": label,
+        "ProcessType": "Background",
+        "ProgramArguments": [
+            sys.executable,
+            str(worker),
+            "refresh",
+            "--scheduled",
+            "--repo",
+            str(main_worktree(repo)),
+        ],
+        "RunAtLoad": True,
+        "StandardErrorPath": str(log),
+        "StandardOutPath": str(log),
+        "StartInterval": FRESHNESS_INTERVAL_SECONDS,
+        "ThrottleInterval": 60,
+        "WorkingDirectory": str(main_worktree(repo)),
+    }
+    return plistlib.dumps(payload, sort_keys=True)
+
+
+def systemd_quote(value: str) -> str:
+    return '"' + value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%") + '"'
+
+
+def systemd_freshness_units(repo: Path, worker: Path) -> Tuple[bytes, bytes]:
+    command = " ".join(
+        systemd_quote(value)
+        for value in (
+            sys.executable,
+            str(worker),
+            "refresh",
+            "--scheduled",
+            "--repo",
+            str(main_worktree(repo)),
+        )
+    )
+    service = f"""# {FRESHNESS_MARKER}
+[Unit]
+Description=Refresh CIVVIS Git remote state
+
+[Service]
+Type=oneshot
+WorkingDirectory={systemd_quote(str(main_worktree(repo)))}
+ExecStart={command}
+""".encode("utf-8")
+    timer = f"""# {FRESHNESS_MARKER}
+[Unit]
+Description=Keep CIVVIS Git remote state fresh
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec={FRESHNESS_INTERVAL_SECONDS}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+""".encode("utf-8")
+    return service, timer
+
+
+def write_managed_service(path: Path, data: bytes) -> bool:
+    existing = path.read_bytes() if path.exists() else b""
+    if existing and FRESHNESS_MARKER.encode("utf-8") not in existing:
+        raise CommandError(f"refusing to replace unmanaged scheduler definition: {path}")
+    if existing == data:
+        return False
+    atomic_write(path, data)
+    return True
+
+
+def install_freshness_service(repo: Path) -> List[Path]:
+    root = repo_root(repo)
+    worker = install_managed_freshness_worker(root)
+    key = freshness_key(root)
+    if sys.platform == "darwin":
+        label = freshness_service_label(root)
+        path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+        domain = f"gui/{os.getuid()}"
+        changed = write_managed_service(path, macos_freshness_plist(root, worker))
+        loaded = not run(
+            ("launchctl", "print", f"{domain}/{label}"), check=False
+        ).returncode
+        if loaded and not changed:
+            return [path]
+        if loaded:
+            run(("launchctl", "bootout", f"{domain}/{label}"))
+        run(("launchctl", "bootstrap", domain, str(path)))
+        run(("launchctl", "kickstart", f"{domain}/{label}"))
+        return [path]
+    if os.name == "nt":
+        name = f"CIVVIS Git Freshness {key}"
+        command = subprocess.list2cmdline(
+            (
+                sys.executable,
+                str(worker),
+                "refresh",
+                "--scheduled",
+                "--repo",
+                str(main_worktree(root)),
+            )
+        )
+        run(
+            (
+                "schtasks",
+                "/Create",
+                "/SC",
+                "MINUTE",
+                "/MO",
+                str(max(1, FRESHNESS_INTERVAL_SECONDS // 60)),
+                "/TN",
+                name,
+                "/TR",
+                command,
+                "/F",
+            ),
+            cwd=main_worktree(root),
+        )
+        return [worker]
+    if shutil.which("systemctl"):
+        directory = Path.home() / ".config" / "systemd" / "user"
+        service = directory / f"civvis-freshness-{key}.service"
+        timer = directory / f"civvis-freshness-{key}.timer"
+        service_data, timer_data = systemd_freshness_units(root, worker)
+        changed = write_managed_service(service, service_data)
+        changed = write_managed_service(timer, timer_data) or changed
+        enabled = not run(
+            ("systemctl", "--user", "is-enabled", timer.name), check=False
+        ).returncode
+        if changed:
+            run(("systemctl", "--user", "daemon-reload"))
+        if changed or not enabled:
+            run(("systemctl", "--user", "enable", "--now", timer.name))
+        return [service, timer]
+    raise CommandError("no supported per-user scheduler is available on this computer")
+
+
+def freshness_service_error(repo: Path) -> Optional[str]:
+    root = repo_root(repo)
+    worker = freshness_worker_path(root)
+    if not worker.is_file() or FRESHNESS_MARKER.encode("utf-8") not in worker.read_bytes():
+        return (
+            "managed Git freshness worker is missing; run "
+            "python3 tools/civvis_collab.py bootstrap"
+        )
+    key = freshness_key(root)
+    if sys.platform == "darwin":
+        label = freshness_service_label(root)
+        path = Path.home() / "Library" / "LaunchAgents" / f"{label}.plist"
+        if not path.is_file() or FRESHNESS_MARKER.encode("utf-8") not in path.read_bytes():
+            return "managed Git freshness LaunchAgent is missing or stale; run bootstrap"
+        try:
+            payload = plistlib.loads(path.read_bytes())
+        except (TypeError, ValueError):
+            return "managed Git freshness LaunchAgent is unreadable; run bootstrap"
+        expected_tail = [
+            str(worker),
+            "refresh",
+            "--scheduled",
+            "--repo",
+            str(main_worktree(root)),
+        ]
+        if (
+            list(payload.get("ProgramArguments") or [])[1:] != expected_tail
+            or payload.get("StartInterval") != FRESHNESS_INTERVAL_SECONDS
+            or payload.get("WorkingDirectory") != str(main_worktree(root))
+        ):
+            return "managed Git freshness LaunchAgent is outdated; run bootstrap"
+        domain = f"gui/{os.getuid()}/{label}"
+        if run(("launchctl", "print", domain), check=False).returncode:
+            return "managed Git freshness LaunchAgent is not loaded; run bootstrap"
+        return None
+    if os.name == "nt":
+        name = f"CIVVIS Git Freshness {key}"
+        if run(("schtasks", "/Query", "/TN", name), check=False).returncode:
+            return "managed Git freshness scheduled task is missing; run bootstrap"
+        return None
+    if shutil.which("systemctl"):
+        directory = Path.home() / ".config" / "systemd" / "user"
+        timer = f"civvis-freshness-{key}.timer"
+        service_path = directory / f"civvis-freshness-{key}.service"
+        timer_path = directory / timer
+        try:
+            service_text = service_path.read_text(encoding="utf-8")
+            timer_text = timer_path.read_text(encoding="utf-8")
+        except OSError:
+            return "managed Git freshness systemd units are missing; run bootstrap"
+        if (
+            FRESHNESS_MARKER not in service_text
+            or str(worker) not in service_text
+            or '"refresh" "--scheduled" "--repo"' not in service_text
+            or FRESHNESS_MARKER not in timer_text
+            or f"OnUnitActiveSec={FRESHNESS_INTERVAL_SECONDS}" not in timer_text
+        ):
+            return "managed Git freshness systemd units are outdated; run bootstrap"
+        if run(("systemctl", "--user", "is-enabled", timer), check=False).returncode:
+            return "managed Git freshness timer is not enabled; run bootstrap"
+        return None
+    return "no supported per-user scheduler is available for Git freshness"
+
+
+def freshness_state_error(repo: Path, remote_main: str = "") -> Optional[str]:
+    state = read_freshness_state(repo)
+    if not state:
+        return "Git freshness heartbeat is missing; run python3 tools/civvis_collab.py bootstrap"
+    if state.get("schema") != FRESHNESS_SCHEMA:
+        return "Git freshness heartbeat schema is outdated; run bootstrap"
+    configured_machine = git(repo, "config", "--get", "civvis.machine", check=False)
+    if configured_machine and state.get("machine") != configured_machine:
+        return "Git freshness heartbeat belongs to a different machine identity"
+    if state.get("fetch_error"):
+        return "last Git freshness fetch failed: " + str(state["fetch_error"])
+    try:
+        observed = dt.datetime.fromisoformat(str(state.get("fetched_at", "")))
+        if observed.tzinfo is None:
+            raise ValueError
+        age = (dt.datetime.now(dt.timezone.utc) - observed).total_seconds()
+    except (TypeError, ValueError):
+        return "Git freshness heartbeat timestamp is invalid; run bootstrap"
+    if age > FRESHNESS_STALE_SECONDS:
+        return f"Git freshness heartbeat is stale ({int(age)} seconds old)"
+    if remote_main and state.get("origin_main") != remote_main:
+        return "this computer has not fetched the current GitHub main revision"
+    return None
 
 
 def gh_api_optional(path: str) -> Tuple[int, Any]:
@@ -1471,11 +1960,13 @@ def enforce_github_command(args: argparse.Namespace) -> int:
 def audit_repo(root: Path) -> Dict[str, List[str]]:
     findings: Dict[str, List[str]] = {"errors": [], "warnings": [], "ok": []}
     errors, warnings, ok = findings["errors"], findings["warnings"], findings["ok"]
+    remote_main = ""
 
     if shutil.which("gh"):
         repo = gh_json(("api", f"repos/{REPOSITORY}"), cwd=root)
         heads = remote_heads(root)
         main_sha = heads.get(DEFAULT_BRANCH, "")
+        remote_main = main_sha
         if repo.get("allow_merge_commit") or repo.get("allow_rebase_merge"):
             errors.append("repository permits non-squash merge methods")
         else:
@@ -1642,6 +2133,25 @@ def audit_repo(root: Path) -> Dict[str, List[str]]:
     else:
         ok.append("shared local pre-push guard is installed and current")
 
+    service_error = freshness_service_error(root)
+    if service_error:
+        errors.append(service_error)
+    else:
+        ok.append("fetch-only Git freshness service is installed and enabled")
+    state_error = freshness_state_error(root, remote_main)
+    if state_error:
+        errors.append(state_error)
+    else:
+        ok.append("this computer fetched the current GitHub main recently")
+        state = read_freshness_state(root) or {}
+        for row in state.get("worktrees", []):
+            behind = int(row.get("behind", 0))
+            if behind:
+                warnings.append(
+                    f"local worktree {row.get('branch', 'detached')} is "
+                    f"{behind} commit(s) behind main: {row.get('path', '')}"
+                )
+
     if sys.platform == "darwin":
         agents = Path.home() / "Library" / "LaunchAgents"
         active = sorted(agents.glob("*civvis*autosync*.plist")) if agents.exists() else []
@@ -1774,6 +2284,21 @@ def monitor_command(args: argparse.Namespace) -> int:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="command", required=True)
+
+    bootstrap = sub.add_parser(
+        "bootstrap",
+        help="install clone guards and the fetch-only background freshness service",
+    )
+    bootstrap.set_defaults(func=bootstrap_command)
+
+    refresh = sub.add_parser(
+        "refresh",
+        help="fetch GitHub and report every local worktree's trunk freshness",
+    )
+    refresh.add_argument("--json", action="store_true")
+    refresh.add_argument("--scheduled", action="store_true", help=argparse.SUPPRESS)
+    refresh.add_argument("--repo", default="", help=argparse.SUPPRESS)
+    refresh.set_defaults(func=refresh_command)
 
     start = sub.add_parser("start", help="create a task worktree, branch, and draft PR claim")
     start.add_argument("task", help="lowercase hyphenated task slug")

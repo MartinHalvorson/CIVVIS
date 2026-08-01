@@ -38,9 +38,10 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 78] = [
+pub const EVAL_ONLY_AIS: [&str; 79] = [
     "basic_evolved",
     "advanced_policy_live_control",
+    "advanced_policy_envoy_priority",
     "advanced_envoy_policy",
     "advanced_envoy_infrastructure",
     "advanced_envoy_priority",
@@ -186,6 +187,7 @@ define_arm_kinds! {
     AdvancedMeasuredDedication => "advanced_measured_dedication",
     AdvancedParallelSettlers => "advanced_parallel_settlers",
     AdvancedPolicyLiveControl => "advanced_policy_live_control",
+    AdvancedPolicyEnvoyPriority => "advanced_policy_envoy_priority",
     AdvancedProphetFirst => "advanced_prophet_first",
     AdvancedReliefScoped => "advanced_relief_scoped",
     AdvancedRush => "advanced_rush",
@@ -1405,6 +1407,11 @@ fn artifact_effective_alias_from(
                 ArmKind::AdvancedBlindToLeaders
             }
         }
+        // The independently confirmed composite became the production
+        // controller on 2026-08-01. Retain its pre-registration name as a
+        // historical evaluator alias so old commands fail closed as self-play
+        // instead of rebuilding a second implementation of `advanced`.
+        ArmKind::AdvancedPolicyEnvoyPriority => ArmKind::Advanced,
         ArmKind::AdvancedBankingDedication => advanced_fallback,
         _ => kind,
     }
@@ -1457,24 +1464,23 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.belief_pressure = true;
             Box::new(ai)
         }
-        // Four arms decompose the envoy-acquisition treatment. The live
-        // policy control differs from `advanced` only by enabling the existing
-        // counterfactual deck; the policy treatment then adds only influence
-        // to that deck's valuation. Infrastructure remains on the stock deck,
-        // and the combined arm carries both mechanisms.
+        // These are the exact pre-promotion factorial controls. Production
+        // `advanced` now has Live policy selection plus both direct envoy
+        // mechanisms, so using its ordinary constructors here would collapse
+        // a control into the treatment it is meant to diagnose.
         "advanced_policy_live_control" => {
             let mut weights = Weights::default();
             weights.policy_deck = crate::ai::PolicyDeck::Live;
-            Box::new(AdvancedAi::with_weights(weights))
+            Box::new(AdvancedAi::pre_policy_envoy_with_weights(weights))
         }
         "advanced_envoy_policy" => {
             let mut weights = Weights::default();
             weights.policy_deck = crate::ai::PolicyDeck::Live;
             weights.pol_influence = 4.0;
-            Box::new(AdvancedAi::with_weights(weights))
+            Box::new(AdvancedAi::pre_policy_envoy_with_weights(weights))
         }
         "advanced_envoy_infrastructure" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_policy_envoy();
             ai.envoy_infrastructure = true;
             Box::new(ai)
         }
@@ -1483,7 +1489,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // reserves one empty city for the first legal, horizon-positive stage
         // of the Diplomatic Quarter -> Consulate -> Chancery chain.
         "advanced_envoy_priority" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = AdvancedAi::pre_policy_envoy();
             ai.envoy_infrastructure = true;
             ai.envoy_priority = true;
             Box::new(ai)
@@ -1492,7 +1498,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             let mut weights = Weights::default();
             weights.policy_deck = crate::ai::PolicyDeck::Live;
             weights.pol_influence = 4.0;
-            let mut ai = AdvancedAi::with_weights(weights);
+            let mut ai = AdvancedAi::pre_policy_envoy_with_weights(weights);
             ai.envoy_infrastructure = true;
             Box::new(ai)
         }
@@ -2569,15 +2575,21 @@ impl ArmKind {
     fn treatments(self) -> &'static [&'static str] {
         match self {
             Self::AdvancedBeliefPressure => &["belief-pressure"],
-            Self::AdvancedPolicyLiveControl => &["policy-deck-live"],
-            Self::AdvancedEnvoyPolicy => &["policy-deck-live", "envoy-influence"],
-            Self::AdvancedEnvoyInfrastructure => &["envoy-infrastructure"],
-            Self::AdvancedEnvoyPriority => &["envoy-infrastructure", "envoy-priority"],
-            Self::AdvancedEnvoyEconomy => &[
-                "policy-deck-live",
+            // `advanced` now owns the confirmed Live + infrastructure +
+            // priority composite. The retained arms below are therefore
+            // explicit reversion controls, not forward treatments.
+            Self::AdvancedPolicyLiveControl => {
+                &["envoy-infrastructure-off", "envoy-priority-off"]
+            }
+            Self::AdvancedPolicyEnvoyPriority => &[],
+            Self::AdvancedEnvoyPolicy => &[
                 "envoy-influence",
-                "envoy-infrastructure",
+                "envoy-infrastructure-off",
+                "envoy-priority-off",
             ],
+            Self::AdvancedEnvoyInfrastructure => &["policy-deck-legacy", "envoy-priority-off"],
+            Self::AdvancedEnvoyPriority => &["policy-deck-legacy"],
+            Self::AdvancedEnvoyEconomy => &["envoy-influence", "envoy-priority-off"],
             Self::AdvancedStrategicCommitment | Self::AdvancedEvolvedCommitment => {
                 &["strategy-commitment"]
             }
@@ -2742,7 +2754,14 @@ impl AgentProvenance {
         let missing = self.missing();
         if missing.is_empty() {
             return if self.artifacts.is_empty() {
-                format!("{}: scripted, no artifacts required", self.requested)
+                if self.effective == self.requested {
+                    format!("{}: scripted, no artifacts required", self.requested)
+                } else {
+                    format!(
+                        "{}: plays as {} (scripted, no artifacts required)",
+                        self.requested, self.effective
+                    )
+                }
             } else if self.effective != self.requested {
                 format!(
                     "{}: plays as {} (loaded {})",
@@ -3059,6 +3078,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced" => (Vec::new(), "advanced"),
         "advanced_belief_pressure" => (Vec::new(), "advanced_belief_pressure"),
         "advanced_policy_live_control" => (Vec::new(), "advanced_policy_live_control"),
+        "advanced_policy_envoy_priority" => (Vec::new(), "advanced"),
         "advanced_envoy_policy" => (Vec::new(), "advanced_envoy_policy"),
         "advanced_envoy_infrastructure" => (Vec::new(), "advanced_envoy_infrastructure"),
         "advanced_envoy_priority" => (Vec::new(), "advanced_envoy_priority"),
@@ -4009,8 +4029,44 @@ mod tests {
         let economy = builtin_arm("advanced_envoy_economy").expect("arm is selectable");
         assert_eq!(
             economy.spec.differing_axes(&stock.spec),
-            vec!["policy-deck-live", "envoy-influence", "envoy-infrastructure"],
-            "a composite must expose every changed treatment component"
+            vec!["envoy-influence", "envoy-priority-off"],
+            "the economy control must expose its only changes from the promoted default"
+        );
+
+        let policy_priority = builtin_arm("advanced_policy_envoy_priority")
+            .expect("composite is selectable");
+        assert_eq!(policy_priority.spec, stock.spec);
+        assert_eq!(
+            builtin_provenance("advanced_policy_envoy_priority", ARTIFACT_DIR).line(),
+            "advanced_policy_envoy_priority: plays as advanced (scripted, no artifacts required)"
+        );
+        assert_eq!(
+            collapsed_entrants(
+                &["advanced_policy_envoy_priority", "advanced"],
+                ARTIFACT_DIR
+            ),
+            vec![(
+                "advanced_policy_envoy_priority".to_string(),
+                "advanced".to_string(),
+                "advanced"
+            )],
+            "the promoted composite must be a real factory alias, not a duplicate arm"
+        );
+
+        let live_control = builtin_arm("advanced_policy_live_control")
+            .expect("pre-promotion control is selectable");
+        assert_eq!(
+            live_control.spec.differing_axes(&stock.spec),
+            vec!["envoy-infrastructure-off", "envoy-priority-off"],
+            "the live-policy control must revert only the two promoted envoy mechanisms"
+        );
+
+        let priority = builtin_arm("advanced_envoy_priority")
+            .expect("pre-promotion priority control is selectable");
+        assert_eq!(
+            priority.spec.differing_axes(&stock.spec),
+            vec!["policy-deck-legacy"],
+            "the priority control must retain both direct production mechanisms"
         );
 
         let league_top = builtin_arm("advanced_league_top").expect("arm is selectable");
@@ -4104,14 +4160,16 @@ mod tests {
                 "{name} resolved to unknown {}",
                 resolved.effective
             );
-            // Only the genuinely scripted agents may report no artifacts.
+            // Only genuinely scripted agents and declared historical aliases
+            // may report no artifacts.
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 45] = [
+            const SCRIPTED: [&str; 46] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
+                "advanced_policy_envoy_priority",
                 "advanced_envoy_policy",
                 "advanced_envoy_infrastructure",
                 "advanced_envoy_priority",
@@ -4155,8 +4213,11 @@ mod tests {
                 "basic",
                 "random",
             ];
+            const SCRIPTED_ALIASES: [&str; 1] = ["advanced_policy_envoy_priority"];
             assert!(
-                !resolved.artifacts.is_empty() || SCRIPTED.contains(name),
+                !resolved.artifacts.is_empty()
+                    || SCRIPTED.contains(name)
+                    || SCRIPTED_ALIASES.contains(name),
                 "{name} has no provenance row and inherited the catch-all"
             );
             // The whitelist above is a list of names, so it grows every time
@@ -4164,7 +4225,7 @@ mod tests {
             // does. This does not: the catch-all answers `basic`, so any
             // name that needs no artifacts and still does not resolve to
             // itself reached that arm rather than a row of its own.
-            if resolved.artifacts.is_empty() {
+            if resolved.artifacts.is_empty() && !SCRIPTED_ALIASES.contains(name) {
                 assert_eq!(
                     resolved.effective, *name,
                     "{name} needs no artifacts yet resolves to {}, which only \

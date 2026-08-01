@@ -506,17 +506,28 @@ It also explains a pattern in the 25-generation run recorded above: candidates
 that *won* their SPRT and were then vetoed by the holdout, twice. **The holdout
 was catching what the null let through.**
 
-Three repairs are possible and none is obviously right — calibrate `p0` per
-configuration, drop the anchor from the SPRT table at the cost of the
-intransitivity it exists to prevent, or keep the null and rely on the holdout,
-which demonstrably works. That call belongs to whoever owns `src/evolve.rs`.
+The selected repair is to calibrate the current champion on its actual mixed
+table before its first candidate screen, once per champion epoch. The 240-game
+calibration uses a deterministic seed stream disjoint from that incumbent's
+later confirmation games; `H0` is its one-sided 97.5% Wilson **upper** bound,
+not its raw observed rate, and `H1` is a material ten-point lift above that
+bound. The upper bound makes a low-noise calibration conservative rather than
+permissive. The frozen-default anchor remains, so the screen retains its
+absolute-strength reference and does not substitute a pure champion-only table.
+
+This is a candidate filter, not a production promotion. The existing fixed
+holdout remains necessary, and any saved candidate still owes a pre-registered
+`ai_eval` matrix before it can change the production controller or committed
+snapshot. The shared `genome_gate` utility uses the same gate mathematics so
+the allocation experiment cannot silently reintroduce the nominal-null error.
 
 **Nothing here disturbs the shipped champion.** Its SPRT promotion was marginal
-under the corrected null (22–32 = 0.407 against 0.358), but it was validated
-independently by a pre-registered `ai_eval` against the hand-written defaults
-over 1300 mirrored maps — 54.6%, Wilson 51.9–57.3%, gate PASS — a paired
-comparison that never used the SPRT. That separation is the whole reason the
-result survives its own promotion mechanism turning out to be permissive.
+under the earlier point-calibrated null (22–32 = 0.407 against 0.358), but it
+was validated independently by a pre-registered `ai_eval` against the
+hand-written defaults over 1300 mirrored maps — 54.6%, Wilson 51.9–57.3%, gate
+PASS — a paired comparison that never used the SPRT. That separation is the
+whole reason the result survives its own promotion mechanism turning out to be
+permissive.
 
 ### How much is left on the genome axis
 

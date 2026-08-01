@@ -50,6 +50,95 @@ Four deliberately small changes produced that result:
    A successful `Game::apply` clears it, and game clones and saves start empty,
    so normal mutation and search branches cannot reuse a stale menu.
 
+## Live policy-deck counterfactuals (2026-08-01)
+
+The live policy deck was a newly isolated serial island inside an otherwise
+parallel single simulation. On a review, it removes and restores every legal
+or held card, reading the whole empire before and after each change. The
+sampling evidence put this work under `BasicAi::research_with_government`, but
+the expensive child was the counterfactual `empire_reading`, not technology
+selection.
+
+Two bounded changes keep its semantics intact:
+
+1. Each read-only empire valuation holds one `QueryMemo` scope, so the city
+   yield and ownership derivations shared by its cities are reused only while
+   the policy slate is unchanged.
+2. A fleet with its existing persistent `WorkPool` scores independent cards on
+   worker-private game snapshots. Results return in the original candidate
+   order, and the authoritative game's existing sort and serial deck commit
+   remain the only mutation path. Interactive and baseline `BasicAi` runs
+   retain their serial path.
+
+Release `simulate` was measured on two fixed six-player, 74-by-46 maps with
+nine city-states, 150 turns, online speed, and seeds 7,311,002 and 7,311,003.
+Baseline and candidate order alternated across the two seeds. These are
+shared-host elapsed times, so they establish a reproducible directional result
+rather than a universal machine-level throughput promise.
+
+| Internal workers | Baseline total | Candidate total | Change |
+| --- | ---: | ---: | ---: |
+| 1 | 15.150s | 14.067s | -7.1% |
+| 4 | 13.968s | 11.404s | -18.4% |
+| 18 | 14.183s | 12.057s | -15.0% |
+
+After removing the simulator's elapsed-time line, every baseline/candidate
+report had the same SHA-256 hash for each seed and worker count. A focused
+regression also compares a full live-deck review with one versus four workers
+and requires identical action logs and serialized game state. Four workers
+were the best observed count for this limited workload; that is evidence for a
+separate default-worker calibration experiment, not grounds to silently cap
+all hosts or workload shapes.
+
+### Bounded policy-score fan-out (2026-08-01)
+
+The fleet pool is intentionally still sized by `--jobs`: unit, tactical,
+purchase, and visibility frontiers can use every worker. A policy-deck review
+has a much smaller independent batch, however, and each active scorer owns a
+full `Game` snapshot. The scorer therefore caps only that batch at four active
+workers and leaves the rest of the persistent pool available to later work.
+
+This compared the uncapped #761 build with the cap on four fixed six-player,
+74-by-46, nine-city-state, 150-turn online games (seeds 7,311,002 through
+7,311,005), at `--jobs 18`. Baseline/candidate order alternated by seed. These
+are shared-host elapsed times, so they show a directional single-machine win,
+not a universal hardware default.
+
+| Policy-score workers | Four-game total | Change |
+| --- | ---: | ---: |
+| Pool-wide (18) | 23.335s | baseline |
+| Capped (4) | 22.764s | -2.4% |
+
+Every normalized report had the same SHA-256 hash for its seed. A fixed
+`--jobs 4` report was also identical before and after the cap, as expected
+because the limit is already met. The evidence is specific to this clone-heavy
+frontier; it does not change the global worker default.
+
+### Single-simulation worker default (2026-08-01)
+
+The remaining global choice is different from a batch default. `simulate`
+uses one persistent pool for clone-heavy inner frontiers, whereas `soak`,
+evaluation, and other batch commands assign whole independent games to their
+workers. On this 18-core host, an omitted `simulate --jobs` therefore now uses
+`min(available_parallelism, 4)`; an explicit `--jobs` remains authoritative
+and all batch defaults remain one worker per available core.
+
+Four fixed six-player, 74-by-46, nine-city-state, 150-turn online games
+(seeds 7,311,030 through 7,311,033) compared four workers with the old
+18-worker implicit setting. Run order alternated by seed. As with the other
+single-host measurements, this supports the selected default here rather than
+a universal hardware claim.
+
+| `simulate` workers | Four-game total | Change |
+| --- | ---: | ---: |
+| 18 (former implicit setting) | 19.030s | baseline |
+| 4 (new implicit maximum) | 18.649s | -2.0% |
+
+Every normalized report had the same SHA-256 hash across worker counts. The
+full observed curve also rose from 4 to 6, 8, 12, and 18 workers on the first
+two seeds, while explicit user choices remain available for hosts or workloads
+with a different knee.
+
 ## Production-catalog follow-up
 
 The production catalog was the narrow first experiment from the profile. Its

@@ -143,6 +143,57 @@ def filter_orders(rows: list[tuple], skip_kinds: set[str], skip_verbs: set[str],
     return out
 
 
+def seat_civ(run_dir: Path) -> str | None:
+    """The civilization Civilization VI dealt this seat, as the league names it.
+
+    ★★★★ THE OTHER HALF OF THE OPERATOR'S BRIEF — "the provably highest ELO
+    player-strategy CIVVIS has THAT MAPS TO THE CORRECT CIV". `--strategy auto` alone
+    answers only the first half and reports `per_civ:false`, because Civ 6 DEALS the
+    civ and nothing knew it. The seat event carries it and lands early (line 25 of a
+    real run), while the decider starts lazily on the first turn — so by the time it
+    is needed it is already on disk.
+
+    Why it is worth passing: the per-civ table changes the pick and RAISES the
+    confidence bound where it has history.
+
+        --civ Rome    -> g56-48         per_civ=True   bound=0.510
+        --civ China   -> adv-religious  per_civ=False  bound=0.410   (falls back)
+        --civ Egypt   -> adv-religious  per_civ=False  bound=0.410
+        --civ Greece  -> adv-religious  per_civ=False  bound=0.410
+
+    ⚠ The league rates only FOUR civs, so most deals fall back to the overall pick —
+    which is correct, not a failure. `resolve_strategy` narrows only where that pair
+    has history, so a civ it has never seen degrades to exactly today's behaviour.
+
+    ⚠ AND THIS PARTLY ANSWERS A CONFOUND IN #752. `adv-religious` — what `auto` picks
+    overall — has 116 games and **zero** per-civ pairs, while `advanced` and `g20-21`
+    have all four. The strategies were not rated on the same civ pool, so the headline
+    "50.0% against 27.5%" is not a like-for-like comparison. Narrowing by civ compares
+    within one pool, which is the stronger claim available.
+
+    Name mapping is deliberately dumb: strip `CIVILIZATION_` and title-case, which is
+    exact for the four rated civs (Rome, China, Egypt, Greece). A wrong guess costs
+    nothing — the decider finds no history and falls back.
+    """
+    events = run_dir / "events.jsonl"
+    if not events.exists():
+        return None
+    for line in events.read_text(errors="replace").splitlines():
+        if '"seat"' not in line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("kind") != "seat":
+            continue
+        civ = event.get("civ") or ""
+        if civ.startswith("CIVILIZATION_"):
+            return civ[len("CIVILIZATION_"):].title()
+        return civ or None
+    return None
+
+
 class Decider:
     """A long-lived `civvis-orders --serve --fresh-board` process.
 
@@ -169,6 +220,9 @@ class Decider:
         self.binary = binary
         self.run_dir = run_dir
         self.victory = victory
+        # See the `--strategy` note in main(). Empty means the built-in AdvancedAi,
+        # which is what every run before this used without anyone choosing it.
+        self.strategy = strategy
         # ⚠ Declares war when CIVVIS's PLAN names a target but its own diplomatic
         # bookkeeping cannot fire. That bookkeeping wants a casus belli, or a
         # denouncement matured over five turns, and NOTHING matures in a board rebuilt
@@ -176,7 +230,6 @@ class Decider:
         # ZERO declarations. So the decline is an artefact of the reconstruction
         # rather than a judgement about the war.
         self.war_from_plan = war_from_plan
-        self.strategy = strategy
         self.civ: str | None = None
         self.proc: subprocess.Popen | None = None
 
@@ -385,6 +438,33 @@ def main() -> int:
                     help="which victory CIVVIS plays for; `civvis` lets it choose. "
                          "⚠ domination is unreachable while no rival city is ever "
                          "revealed -- see the note above")
+    # ★★★★ WHICH STRATEGY ACTUALLY PLAYS, which nothing ever chose.
+    #
+    # `civvis_orders` has taken `--strategy` for a while and NO harness script passed
+    # it, so every Civ 6 run has been `AdvancedAi::new` -- the decider's own banner
+    # reads `{"strategy":"stock","source":"AdvancedAi::new"}`. The operator's standing
+    # brief asks for "whatever the provably highest ELO player-strategy CIVVIS has".
+    #
+    # `auto` ranks on `league::strategy_strength`, the outright-win LOWER BOUND, not
+    # the placement rating -- and the two disagree sharply, which is why the default
+    # was wrong rather than merely unset:
+    #
+    #     strategy         rating   games  wins   winrate
+    #     adv-religious      1601     116    58     50.0%   <- what `auto` picks
+    #     advanced           1703     331    91     27.5%   <- what actually played
+    #
+    # The higher-RATED strategy wins barely half as often. Placement Glicko answers
+    # "who should be matched with whom"; it is not a strength ordering.
+    #
+    # ⚠ TRANSFER TO THIS BRIDGE IS UNMEASURED. Those games are CIVVIS-vs-CIVVIS, and
+    # this project has already watched a champion genome go +48 in compact evaluation
+    # and -53 deployed. Treat the first Civ 6 runs under this as the measurement, not
+    # as a settled improvement -- and if outcomes worsen, `--strategy ""` restores the
+    # old behaviour exactly.
+    ap.add_argument("--strategy", default="auto",
+                    help="strategy for the decider to load; `auto` takes the "
+                         "strongest by outright-win lower bound. Empty string keeps "
+                         "the built-in AdvancedAi")
     ap.add_argument("--skip-kinds", default="",
                     help="comma-separated order kinds to drop (bisect only)")
     ap.add_argument("--skip-verbs", default="",
@@ -394,11 +474,6 @@ def main() -> int:
     ap.add_argument("--war-from-plan", action="store_true", default=False,
                     help="declare on CIVVIS's plan target when its own casus-belli "
                          "bookkeeping cannot mature in a rebuilt board")
-    ap.add_argument("--strategy", default="auto",
-                    help="CIVVIS league strategy to use; auto selects the strongest "
-                         "defensible outright-win confidence-bound genome for the "
-                         "civilization reported by the seat event. "
-                         "Use stock to opt out.")
     ap.add_argument("--server", action="store_true", default=True,
                     help="keep one CIVVIS agent alive across turns (plan continuity)")
     ap.add_argument("--no-server", dest="server", action="store_false",

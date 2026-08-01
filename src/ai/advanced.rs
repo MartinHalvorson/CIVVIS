@@ -3,7 +3,9 @@
 //! `BasicAi` deliberately remains the small deterministic baseline.  This
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
-use super::{Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, UnitDoctrine, Weights};
+use super::{
+    Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine, Weights,
+};
 use crate::belief::{BeliefState, CitySighting};
 use crate::name::Name;
 use crate::parallel::WorkPool;
@@ -1295,8 +1297,48 @@ impl Default for AdvancedAi {
 }
 
 impl AdvancedAi {
+    /// Production Advanced: the confirmed live-policy and envoy-production
+    /// composite. Keep the three changes together here so every ordinary
+    /// construction path (including weighted and explicitly targeted agents)
+    /// has one auditable definition.
     pub fn new() -> AdvancedAi {
+        Self::promoted_policy_envoy(Weights::default(), None)
+    }
+
+    /// Exact pre-2026-08-01 Advanced configuration used only by evaluator
+    /// controls. It intentionally retains the Legacy deck and leaves both
+    /// envoy-production flags off; it is not the frozen `advanced_v1` anchor.
+    pub(crate) fn pre_policy_envoy() -> AdvancedAi {
         Self::configured(BasicAi::new(), true, None)
+    }
+
+    /// Weighted counterpart to [`Self::pre_policy_envoy`]. Keeping this
+    /// separate prevents an evaluator control from accidentally inheriting
+    /// today's production defaults through [`Self::with_weights`].
+    pub(crate) fn pre_policy_envoy_with_weights(weights: Weights) -> AdvancedAi {
+        Self::configured(BasicAi::with_weights(weights), true, None)
+    }
+
+    fn production_weights(mut weights: Weights) -> Weights {
+        // `policy_deck` is deliberately not a gene, so a generated or legacy
+        // weight vector cannot silently withdraw the confirmed production
+        // policy layer when it enters an Advanced controller.
+        weights.policy_deck = PolicyDeck::Live;
+        weights
+    }
+
+    fn promoted_policy_envoy(
+        weights: Weights,
+        victory_target: Option<VictoryTarget>,
+    ) -> AdvancedAi {
+        let mut ai = Self::configured(
+            BasicAi::with_weights(Self::production_weights(weights)),
+            true,
+            victory_target,
+        );
+        ai.envoy_infrastructure = true;
+        ai.envoy_priority = true;
+        ai
     }
 
     /// Where this agent tells an observer what it is doing.
@@ -1355,7 +1397,7 @@ impl AdvancedAi {
     }
 
     pub fn targeting(target: VictoryTarget) -> AdvancedAi {
-        Self::configured(BasicAi::new(), true, Some(target))
+        Self::promoted_policy_envoy(Weights::default(), Some(target))
     }
 
     /// Frozen control for measuring future strategic changes against the
@@ -1440,11 +1482,11 @@ impl AdvancedAi {
     }
 
     pub fn with_weights(weights: Weights) -> AdvancedAi {
-        Self::configured(BasicAi::with_weights(weights), true, None)
+        Self::promoted_policy_envoy(weights, None)
     }
 
     pub fn with_weights_and_target(weights: Weights, target: VictoryTarget) -> AdvancedAi {
-        Self::configured(BasicAi::with_weights(weights), true, Some(target))
+        Self::promoted_policy_envoy(weights, Some(target))
     }
 
     /// Enable the narrow Trader adaptation required by a live Civilization VI
@@ -1479,7 +1521,14 @@ impl AdvancedAi {
     /// variable a rollout planner can search over. The strategic plan is
     /// dropped so the next turn re-assesses under the new genome.
     pub fn reweight(&mut self, weights: Weights) {
-        self.base.w = weights;
+        // `advanced_v1` is allowed to retain the historical non-gene deck.
+        // Every production Advanced instance keeps the promoted live deck when
+        // a searcher swaps its numerical genome underneath it.
+        self.base.w = if self.victory_planning {
+            Self::production_weights(weights)
+        } else {
+            weights
+        };
         self.plan = None;
     }
 
@@ -11883,6 +11932,16 @@ impl AdvancedAi {
         enemies: &[usize],
         decline_settlers: bool,
     ) -> bool {
+        // The force order is committed against the turn-start frame.  Its
+        // one-ply mover must use that same evidence: otherwise a hidden
+        // hostile's current strength or position can still reroute a unit
+        // after the force planner correctly declined to see it.
+        // Avoid building a visibility frame for the frozen legacy control;
+        // its deliberate full-state behavior remains bit-for-bit on its
+        // original path.
+        let visible = self
+            .battlefront_observation
+            .then(|| self.battlefront_visibility(g, pid));
         let unit = &g.units[&uid];
         let upos = unit.pos;
         let role = Self::force_role(g, uid);
@@ -11939,7 +11998,13 @@ impl AdvancedAi {
             for enemy in g
                 .units
                 .values()
-                .filter(|other| enemies.contains(&other.owner))
+                .filter(|other| {
+                    enemies.contains(&other.owner)
+                        && visible.as_ref().is_none_or(|visible| {
+                            g.sees(visible, other.pos)
+                                && self.battlefront_unit_visible(g, pid, other.id)
+                        })
+                })
             {
                 let enemy_spec = &g.rules.units[enemy.kind];
                 if enemy_spec.class != "military"
@@ -14537,7 +14602,8 @@ impl AdvancedAi {
         self.strategic_governors(g, pid, &plan);
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // religions, and envoys. Research is already selected.
-        self.base.research_without_government(g, pid);
+        self.base
+            .research_without_government_with_pool(g, pid, self.work_pool.as_deref());
         self.strategic_government(g, pid, plan.strategy);
         self.base.corporations(g, pid);
         self.advanced_products(g, pid, plan.strategy);
@@ -14663,6 +14729,32 @@ mod tests {
     fn legacy_controller_keeps_battlefront_observation_off() {
         assert!(AdvancedAi::new().battlefront_observation);
         assert!(!AdvancedAi::legacy().battlefront_observation);
+    }
+
+    #[test]
+    fn production_policy_envoy_default_is_distinct_from_evaluator_and_legacy_controls() {
+        let production = AdvancedAi::new();
+        assert_eq!(production.weights().policy_deck, PolicyDeck::Live);
+        assert!(production.envoy_infrastructure);
+        assert!(production.envoy_priority);
+
+        let pre_promotion = AdvancedAi::pre_policy_envoy();
+        assert_eq!(pre_promotion.weights().policy_deck, PolicyDeck::Legacy);
+        assert!(!pre_promotion.envoy_infrastructure);
+        assert!(!pre_promotion.envoy_priority);
+        assert!(pre_promotion.victory_planning);
+
+        let legacy = AdvancedAi::legacy();
+        assert_eq!(legacy.weights().policy_deck, PolicyDeck::Legacy);
+        assert!(!legacy.envoy_infrastructure);
+        assert!(!legacy.envoy_priority);
+        assert!(!legacy.victory_planning);
+
+        let mut weighted = Weights::default();
+        weighted.pol_influence = 4.0;
+        let weighted_production = AdvancedAi::with_weights(weighted);
+        assert_eq!(weighted_production.weights().policy_deck, PolicyDeck::Live);
+        assert_eq!(weighted_production.weights().pol_influence, 4.0);
     }
 
     #[test]
@@ -18271,8 +18363,8 @@ mod tests {
             assessed_turn: game.turn,
             rush: false,
         };
-        let stock = AdvancedAi::new();
-        let mut treatment = AdvancedAi::new();
+        let stock = AdvancedAi::pre_policy_envoy();
+        let mut treatment = AdvancedAi::pre_policy_envoy();
         treatment.envoy_infrastructure = true;
         let counts = stock.counts(&game, 0);
         let unseen = treatment.production_value(&game, 0, city, &consulate, &plan, &counts);
@@ -18344,9 +18436,9 @@ mod tests {
             assessed_turn: game.turn,
             rush: false,
         };
-        let mut treatment = AdvancedAi::new();
-        treatment.envoy_infrastructure = true;
-        treatment.envoy_priority = true;
+        // The confirmed production default carries the direct infrastructure
+        // route; this test pins its safety gates rather than a separate arm.
+        let treatment = AdvancedAi::new();
 
         let mut unmet = game.clone();
         assert!(!treatment.prioritize_envoy_infrastructure(&mut unmet, 0, &plan));
@@ -21964,6 +22056,93 @@ mod tests {
     }
 
     #[test]
+    fn coordinated_mover_ignores_a_hostile_missing_from_its_turn_start_frame() {
+        let choose = |ai: &AdvancedAi, game: &mut Game, unit: u32, orders: &ForceGroup| {
+            ai.coordinated_tactical_step(game, 0, unit, orders, &[1], false).then(|| ())?;
+            match game.log.last() {
+                Some((actor, Action::Move { unit: moved, to }))
+                    if *actor == 0 && *moved == unit =>
+                {
+                    Some(*to)
+                }
+                _ => None,
+            }
+        };
+
+        // Find a real open tactical fork, then prove that a threat beside the
+        // ordinary move is material to the legacy mover.  The production
+        // mover captures its frame before that hostile exists, which is the
+        // same information boundary as a hidden enemy changing position or
+        // HP in the counterfactual census.
+        let mut game = Game::new_full(2, 24, 16, 82_000, 80, 0, false);
+        let existing: Vec<u32> = game.units.keys().copied().collect();
+        for unit in existing {
+            game.remove_unit(unit);
+        }
+        // A level plain makes this a fixed local fork rather than a search
+        // over map generation. Only the tactical score varies below.
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        game.at_war.insert((0, 1));
+        let positions = game.map.tiles.keys().copied().collect::<Vec<_>>();
+        let origin = positions
+            .iter()
+            .copied()
+            .find(|origin| game.nbrs(*origin).len() == 6)
+            .expect("the fixed map needs an interior tactical origin");
+        let (game, unit, orders, expected, hidden) = game
+            .wdisk(origin, 4)
+            .into_iter()
+            .filter(|target| game.wdist(origin, *target) == 4)
+            .find_map(|target| {
+                let mut base = game.clone();
+                let unit = base.spawn_test_unit("warrior", 0, origin);
+                let orders = ForceGroup {
+                    id: unit,
+                    domain: ForceDomain::Land,
+                    units: vec![unit],
+                    anchor: origin,
+                    objective: target,
+                    focus_target: None,
+                    posture: ForcePosture::Advance,
+                    readiness: 1.0,
+                    local_strength_ratio: 2.0,
+                };
+                let mut unthreatened = base.clone();
+                let expected = choose(&AdvancedAi::legacy(), &mut unthreatened, unit, &orders)?;
+                game.wdisk(expected, 3)
+                    .into_iter()
+                    .filter(|position| game.wdist(*position, expected) == 3)
+                    .filter(|hidden| *hidden != origin && *hidden != target)
+                    .find_map(|hidden| {
+                        let mut legacy = base.clone();
+                        legacy.spawn_test_unit("giant_death_robot", 1, hidden);
+                        let detour = choose(&AdvancedAi::legacy(), &mut legacy, unit, &orders)?;
+                        (detour != expected)
+                            .then_some((base.clone(), unit, orders.clone(), expected, hidden))
+                    })
+            })
+            .expect("the fixed open map needs a tactical fork affected by a hostile threat");
+
+        let mut observed = game;
+        let mut ai = AdvancedAi::new();
+        ai.capture_battlefront_frame(&observed, 0);
+        let enemy = observed.spawn_test_unit("giant_death_robot", 1, hidden);
+        assert!(
+            !ai.battlefront_unit_visible(&observed, 0, enemy),
+            "the threat was added after the turn-start frame"
+        );
+        assert_eq!(
+            choose(&ai, &mut observed, unit, &orders),
+            Some(expected),
+            "a hostile absent from the turn-start frame must not reroute the force"
+        );
+    }
+
+    #[test]
     fn recon_explores_independently_while_combat_roles_form_the_army() {
         let mut g = Game::new_full(2, 24, 16, 81, 80, 0, false);
         g.at_war.insert((0, 1));
@@ -24924,18 +25103,13 @@ mod tests {
 
     /// The agent a census must measure: the one that ships.
     ///
-    /// ⚠ `AdvancedAi::new()` carries `Weights::default()`, whose `policy_deck`
-    /// is `PolicyDeck::Legacy` — and `revise_policy_deck` returns before the
-    /// counterfactual scoring on that branch. The evolved champion, embedded in
-    /// the binary since #471 and played by the exhibition, deserializes to
-    /// `PolicyDeck::Live` and behaves differently: it slots
-    /// `charismatic_leader` on 39.4% of turns where the default slots it on
-    /// 0.0%.
-    ///
-    /// #612 measured the default and reported the 0.0% as a property of "the
-    /// agent". Every census here uses this instead, so that cannot recur.
+    /// Since the 2026-08-01 policy/envoy promotion, `AdvancedAi::new()` is the
+    /// exact production controller: it forces the non-gene policy deck to
+    /// `Live` and enables the two confirmed envoy-production mechanisms. A
+    /// census must not substitute a champion merely because a historical
+    /// champion happened to share the live deck.
     fn deployed_agent() -> AdvancedAi {
-        AdvancedAi::with_weights(crate::evolve::load_champion("evolved").unwrap_or_default())
+        AdvancedAi::new()
     }
 
     /// Census, not an assertion: is the envoy gap a resource shortfall or an

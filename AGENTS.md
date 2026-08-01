@@ -21,13 +21,15 @@ Read [docs/VERSION_CONTROL.md](docs/VERSION_CONTROL.md) before changing files.
   expansion beyond the requested outcome, an unresolved product choice, or a
   semantic conflict whose intended resolution is unclear.
 
-After cloning on every computer, install the repository guard once:
+After cloning on every computer, bootstrap the clone once:
 
 ```bash
-python3 tools/civvis_collab.py install-hooks
+python3 tools/civvis_collab.py bootstrap
 ```
 
-The launcher refreshes it on every task. Never bypass it with `--no-verify`.
+This installs the repository guard and a five-minute, fetch-only Git freshness
+service. The task launcher repairs both on every task. Never bypass the guard
+with `--no-verify`.
 
 Start every task with the repository launcher; it creates the isolated
 worktree, globally unique branch, checkpoint, and draft ownership PR:
@@ -76,6 +78,10 @@ python3 tools/civvis_collab.py start <task-slug> --machine <machine-id> \
   merges, or pushes development work. Automated builds may fetch and use a
   private detached worktree based on `origin/main`; they must not mutate a
   development checkout.
+- The managed Git freshness service is deliberately fetch-only. It updates
+  remote-tracking refs and a local heartbeat, then reports stale worktrees; it
+  never updates an active branch or changes files. `start` refuses to create a
+  task unless it has fetched current `origin/main` successfully.
 - Do not perform broad formatting, generated-file rewrites, or unrelated
   cleanup in a feature PR. CIVVIS has several large conflict hotspots, notably
   `src/game.rs`, `src/ai.rs`, and `web/index.html`.

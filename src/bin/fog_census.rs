@@ -26,13 +26,14 @@
 //! largest current AI-integrity gap measurable before a fog-honest policy is
 //! trusted to close it.
 
+use civvis::action_space::kind_name;
 use civvis::ai::{AdvancedAi, Ai, PlanReport};
 use civvis::game::{Action, Game};
 use civvis::obs::visibility;
 use civvis::obs_tensor::{obs_tensor, ObsTensor};
 use civvis::{parallel, Pos};
 use serde_json::{json, Value};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
@@ -53,6 +54,7 @@ enum HiddenFact {
     UnitHp {
         id: u32,
         owner: usize,
+        at: Pos,
         before: i32,
         after: i32,
         at_war: bool,
@@ -60,6 +62,7 @@ enum HiddenFact {
     CityHp {
         id: u32,
         owner: usize,
+        at: Pos,
         before: i32,
         after: i32,
         at_war: bool,
@@ -112,6 +115,18 @@ impl HiddenFact {
             Self::UnitPosition { from, to, .. } => {
                 format!("({},{})→({},{})", from.0, from.1, to.0, to.1)
             }
+        }
+    }
+
+    /// The fact's source and treatment locations. HP treatments stay on one
+    /// tile; a position treatment deliberately exposes both sides of its
+    /// hidden relocation. This is evidence metadata only — it does not claim
+    /// that an action whose encoded destination is nearby necessarily read
+    /// this fact.
+    fn positions(self) -> (Pos, Pos) {
+        match self {
+            Self::UnitHp { at, .. } | Self::CityHp { at, .. } => (at, at),
+            Self::UnitPosition { from, to, .. } => (from, to),
         }
     }
 
@@ -256,6 +271,7 @@ fn hidden_unit_hp(g: &Game, pid: usize) -> Option<HiddenFact> {
                 HiddenFact::UnitHp {
                     id,
                     owner: unit.owner,
+                    at: unit.pos,
                     before: unit.hp,
                     after: alternate_hp(unit.hp),
                     at_war,
@@ -276,6 +292,7 @@ fn hidden_city_hp(g: &Game, pid: usize) -> Option<HiddenFact> {
         .map(|city| HiddenFact::CityHp {
             id: city.id,
             owner: city.owner,
+            at: city.pos,
             before: city.hp,
             after: alternate_hp(city.hp),
             at_war: g.is_at_war(pid, city.owner),
@@ -358,6 +375,164 @@ fn counterfactual_branches(g: &Game, fact: HiddenFact) -> Option<(Game, Game)> {
     Some((null_game, altered_game))
 }
 
+/// A logged action retains its acting seat. Comparing only [`Action`] loses an
+/// important distinction when a changed branch changes which controller makes
+/// the first different decision.
+type LoggedAction = (usize, Action);
+type ActionPair = (Option<LoggedAction>, Option<LoggedAction>);
+
+/// A position encoded directly by the action (destination, target, or placed
+/// improvement). Commands addressed only by an entity ID intentionally return
+/// `None`: resolving those IDs after a counterfactual action would create a
+/// misleading spatial explanation.
+fn action_focus(action: &Action) -> Option<Pos> {
+    match action {
+        Action::Move { to, .. }
+        | Action::MoveTo { to, .. }
+        | Action::AirRebase { to, .. }
+        | Action::AirPatrol { to, .. } => Some(*to),
+        Action::Attack { target, .. }
+        | Action::Ranged { target, .. }
+        | Action::CoastalRaid { target, .. }
+        | Action::AirStrike { target, .. }
+        | Action::AirPillage { target, .. }
+        | Action::PriorityTarget { target, .. }
+        | Action::SpyMission { target, .. }
+        | Action::TheologicalAttack { target, .. }
+        | Action::CityStrike { target, .. }
+        | Action::WmdStrike { target, .. }
+        | Action::EncampmentStrike { target, .. } => Some(*target),
+        Action::FoundCorporation { pos }
+        | Action::BuyDistrict { pos, .. }
+        | Action::BuyPlot { pos, .. } => Some(*pos),
+        _ => None,
+    }
+}
+
+fn action_pair_kinds(pair: &ActionPair) -> (&'static str, &'static str) {
+    (
+        pair.0
+            .as_ref()
+            .map(|(_, action)| kind_name(action))
+            .unwrap_or("trace ended"),
+        pair.1
+            .as_ref()
+            .map(|(_, action)| kind_name(action))
+            .unwrap_or("trace ended"),
+    )
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum ActionActorRelation {
+    SameSeat,
+    DifferentSeat,
+    TraceEnded,
+}
+
+impl ActionActorRelation {
+    fn label(self) -> &'static str {
+        match self {
+            Self::SameSeat => "same acting seat",
+            Self::DifferentSeat => "different acting seats",
+            Self::TraceEnded => "one trace ended",
+        }
+    }
+}
+
+fn action_pair_actor_relation(pair: &ActionPair) -> ActionActorRelation {
+    match (&pair.0, &pair.1) {
+        (Some((left, _)), Some((right, _))) if left == right => ActionActorRelation::SameSeat,
+        (Some(_), Some(_)) => ActionActorRelation::DifferentSeat,
+        _ => ActionActorRelation::TraceEnded,
+    }
+}
+
+fn movement_unit(action: &Action) -> Option<u32> {
+    match action {
+        Action::Move { unit, .. }
+        | Action::MoveTo { unit, .. }
+        | Action::AirRebase { unit, .. }
+        | Action::AirPatrol { unit, .. } => Some(*unit),
+        _ => None,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum MovementUnitRelation {
+    SameUnit,
+    DifferentUnit,
+    NotBothMovement,
+}
+
+impl MovementUnitRelation {
+    fn label(self) -> &'static str {
+        match self {
+            Self::SameUnit => "same unit",
+            Self::DifferentUnit => "different units",
+            Self::NotBothMovement => "not two movement commands",
+        }
+    }
+}
+
+fn action_pair_movement_unit_relation(pair: &ActionPair) -> MovementUnitRelation {
+    match (&pair.0, &pair.1) {
+        (Some((_, source)), Some((_, treated))) => {
+            match (movement_unit(source), movement_unit(treated)) {
+                (Some(source), Some(treated)) if source == treated => {
+                    MovementUnitRelation::SameUnit
+                }
+                (Some(_), Some(_)) => MovementUnitRelation::DifferentUnit,
+                _ => MovementUnitRelation::NotBothMovement,
+            }
+        }
+        _ => MovementUnitRelation::NotBothMovement,
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+enum ActionTargetProximity {
+    AtFact,
+    Adjacent,
+    TwoOrThreeHexes,
+    FourOrMoreHexes,
+    NoEncodedHex,
+}
+
+impl ActionTargetProximity {
+    fn label(self) -> &'static str {
+        match self {
+            Self::AtFact => "at its branch fact",
+            Self::Adjacent => "adjacent to its branch fact",
+            Self::TwoOrThreeHexes => "2–3 hexes from its branch fact",
+            Self::FourOrMoreHexes => "4+ hexes from its branch fact",
+            Self::NoEncodedHex => "no encoded destination/target",
+        }
+    }
+}
+
+/// Classify the nearest action destination or target in its respective branch:
+/// source action against the source fact, treated action against the treatment
+/// fact. This is descriptive geometry, not causal attribution to an internal
+/// controller function.
+fn action_pair_proximity(g: &Game, fact: HiddenFact, pair: &ActionPair) -> ActionTargetProximity {
+    let (source_fact_pos, treated_fact_pos) = fact.positions();
+    let source_distance = pair
+        .0
+        .as_ref()
+        .and_then(|(_, action)| action_focus(action).map(|focus| g.wdist(focus, source_fact_pos)));
+    let treated_distance = pair
+        .1
+        .as_ref()
+        .and_then(|(_, action)| action_focus(action).map(|focus| g.wdist(focus, treated_fact_pos)));
+    match source_distance.into_iter().chain(treated_distance).min() {
+        Some(0) => ActionTargetProximity::AtFact,
+        Some(1) => ActionTargetProximity::Adjacent,
+        Some(2 | 3) => ActionTargetProximity::TwoOrThreeHexes,
+        Some(_) => ActionTargetProximity::FourOrMoreHexes,
+        None => ActionTargetProximity::NoEncodedHex,
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 struct TurnTrace {
     actions: Vec<(usize, Action)>,
@@ -397,7 +572,10 @@ struct Divergence {
     action_index: Option<usize>,
     /// The action pair at the first differing index. Either side can be
     /// absent when one trace simply ends first.
-    action_pair: Option<(Option<Action>, Option<Action>)>,
+    action_pair: Option<ActionPair>,
+    action_actor_relation: Option<ActionActorRelation>,
+    movement_unit_relation: Option<MovementUnitRelation>,
+    action_target_proximity: Option<ActionTargetProximity>,
 }
 
 #[derive(Default)]
@@ -422,6 +600,10 @@ struct Reading {
     plan_divergences: u64,
     action_divergences: u64,
     first_action_divergences: u64,
+    first_action_pairs: BTreeMap<(&'static str, &'static str), u64>,
+    first_action_actor_relations: BTreeMap<ActionActorRelation, u64>,
+    first_action_movement_unit_relations: BTreeMap<MovementUnitRelation, u64>,
+    first_action_target_proximities: BTreeMap<ActionTargetProximity, u64>,
     examples: Vec<Divergence>,
 }
 
@@ -527,16 +709,40 @@ fn read_map(
                 .then(|| first_difference(&actual_actions.actions, &altered_actions.actions));
             let action_pair = action_index.map(|index| {
                 (
-                    actual_actions
-                        .actions
-                        .get(index)
-                        .map(|(_, action)| action.clone()),
-                    altered_actions
-                        .actions
-                        .get(index)
-                        .map(|(_, action)| action.clone()),
+                    actual_actions.actions.get(index).cloned(),
+                    altered_actions.actions.get(index).cloned(),
                 )
             });
+            let action_actor_relation = action_pair.as_ref().map(action_pair_actor_relation);
+            let movement_unit_relation =
+                action_pair.as_ref().map(action_pair_movement_unit_relation);
+            let action_target_proximity = action_pair
+                .as_ref()
+                .map(|pair| action_pair_proximity(&game, fact, pair));
+            if let Some(pair) = &action_pair {
+                *reading
+                    .first_action_pairs
+                    .entry(action_pair_kinds(pair))
+                    .or_default() += 1;
+            }
+            if let Some(relation) = action_actor_relation {
+                *reading
+                    .first_action_actor_relations
+                    .entry(relation)
+                    .or_default() += 1;
+            }
+            if let Some(relation) = movement_unit_relation {
+                *reading
+                    .first_action_movement_unit_relations
+                    .entry(relation)
+                    .or_default() += 1;
+            }
+            if let Some(proximity) = action_target_proximity {
+                *reading
+                    .first_action_target_proximities
+                    .entry(proximity)
+                    .or_default() += 1;
+            }
             reading.first_action_divergences +=
                 u64::from(action_index.is_some_and(|index| index == 0));
             if reading.examples.len() < 3 {
@@ -548,6 +754,9 @@ fn read_map(
                     plan_changed,
                     action_index,
                     action_pair,
+                    action_actor_relation,
+                    movement_unit_relation,
+                    action_target_proximity,
                 });
             }
         }
@@ -602,6 +811,27 @@ fn main() {
         total.plan_divergences += reading.plan_divergences;
         total.action_divergences += reading.action_divergences;
         total.first_action_divergences += reading.first_action_divergences;
+        for (pair, count) in reading.first_action_pairs {
+            *total.first_action_pairs.entry(pair).or_default() += count;
+        }
+        for (relation, count) in reading.first_action_actor_relations {
+            *total
+                .first_action_actor_relations
+                .entry(relation)
+                .or_default() += count;
+        }
+        for (relation, count) in reading.first_action_movement_unit_relations {
+            *total
+                .first_action_movement_unit_relations
+                .entry(relation)
+                .or_default() += count;
+        }
+        for (proximity, count) in reading.first_action_target_proximities {
+            *total
+                .first_action_target_proximities
+                .entry(proximity)
+                .or_default() += count;
+        }
         total.examples.extend(reading.examples);
     }
 
@@ -669,6 +899,24 @@ fn main() {
         "  first-action divergences              {}/{}",
         total.first_action_divergences, total.selected
     );
+    if !total.first_action_pairs.is_empty() {
+        println!("  first-difference action kinds (source → treated)");
+        for ((source, treated), count) in &total.first_action_pairs {
+            println!("    {count:>4}  {source} → {treated}");
+        }
+        println!("  first-difference actor relation");
+        for (relation, count) in &total.first_action_actor_relations {
+            println!("    {count:>4}  {}", relation.label());
+        }
+        println!("  first-difference movement-unit relation");
+        for (relation, count) in &total.first_action_movement_unit_relations {
+            println!("    {count:>4}  {}", relation.label());
+        }
+        println!("  encoded target/destination relative to fact");
+        for (proximity, count) in &total.first_action_target_proximities {
+            println!("    {count:>4}  {}", proximity.label());
+        }
+    }
     for example in total.examples.iter().take(8) {
         let evidence = match (example.plan_changed, example.action_index) {
             (true, Some(index)) => format!("plan changed; first action differs at {index}"),
@@ -688,9 +936,34 @@ fn main() {
             example.fact.change(),
             evidence,
         );
-        if let Some((left, right)) = &example.action_pair {
-            println!("      source action:  {left:?}");
-            println!("      treated action: {right:?}");
+        if let Some(pair) = &example.action_pair {
+            let (source_kind, treated_kind) = action_pair_kinds(pair);
+            let relation = example
+                .action_actor_relation
+                .map(ActionActorRelation::label)
+                .unwrap_or("unknown actor relation");
+            let proximity = example
+                .action_target_proximity
+                .map(ActionTargetProximity::label)
+                .unwrap_or("unknown target relation");
+            let movement_unit = example
+                .movement_unit_relation
+                .map(MovementUnitRelation::label)
+                .unwrap_or("unknown movement-unit relation");
+            println!("      first pair: {source_kind} → {treated_kind}; {relation}; {proximity}");
+            println!("      movement-unit relation: {movement_unit}");
+            match &pair.0 {
+                Some((actor, action)) => {
+                    println!("      source action (seat {actor}):  {action:?}")
+                }
+                None => println!("      source action:  trace ended"),
+            }
+            match &pair.1 {
+                Some((actor, action)) => {
+                    println!("      treated action (seat {actor}): {action:?}")
+                }
+                None => println!("      treated action: trace ended"),
+            }
         }
     }
     if total.divergences == 0 {
@@ -778,5 +1051,80 @@ mod tests {
         let end = (0, Action::EndTurn);
         assert_eq!(first_difference(&[end.clone()], &[]), 0);
         assert_eq!(first_difference(&[end.clone()], &[end]), 1);
+    }
+
+    #[test]
+    fn first_action_classifier_preserves_kind_actor_and_fact_geometry() {
+        let game = Game::new(2, 20, 14, 86_104, 80, 0);
+        let fact = HiddenFact::UnitPosition {
+            id: 7,
+            owner: 1,
+            from: (3, 4),
+            to: (4, 4),
+            at_war: true,
+        };
+        let pair = (
+            Some((
+                0,
+                Action::Move {
+                    unit: 10,
+                    to: (3, 4),
+                },
+            )),
+            Some((
+                0,
+                Action::Attack {
+                    unit: 10,
+                    target: (12, 4),
+                },
+            )),
+        );
+        assert_eq!(action_pair_kinds(&pair), ("move", "attack"));
+        assert_eq!(
+            action_pair_actor_relation(&pair),
+            ActionActorRelation::SameSeat
+        );
+        assert_eq!(
+            action_pair_movement_unit_relation(&pair),
+            MovementUnitRelation::NotBothMovement,
+            "an attack is not treated as a second movement command"
+        );
+        let reroute = (
+            Some((
+                0,
+                Action::Move {
+                    unit: 10,
+                    to: (3, 4),
+                },
+            )),
+            Some((
+                0,
+                Action::Move {
+                    unit: 10,
+                    to: (4, 4),
+                },
+            )),
+        );
+        assert_eq!(
+            action_pair_movement_unit_relation(&reroute),
+            MovementUnitRelation::SameUnit
+        );
+        assert_eq!(
+            action_pair_proximity(&game, fact, &pair),
+            ActionTargetProximity::AtFact,
+            "the source destination is evaluated against the source fact position"
+        );
+
+        let ended = (Some((0, Action::EndTurn)), None);
+        assert_eq!(action_pair_kinds(&ended), ("end_turn", "trace ended"));
+        assert_eq!(
+            action_pair_actor_relation(&ended),
+            ActionActorRelation::TraceEnded
+        );
+        assert_eq!(
+            action_pair_movement_unit_relation(&ended),
+            MovementUnitRelation::NotBothMovement
+        );
+        assert_eq!(action_focus(&Action::EndTurn), None);
     }
 }

@@ -100,8 +100,12 @@ class MirrorCheckTest(unittest.TestCase):
         state = {"cities": [{
             "x": 18, "y": 35, "name": "Istanbul", "pop": 9, "food": 15.8281,
             "loyalty": 100, "loyalty_per_turn": 10.2656, "defense": 40,
+            "damage": 50, "max_damage": 200,
+            "wall_damage": 40, "max_wall_damage": 100,
             "religion": "RELIGION_ORTHODOXY",
-            "buildings": ["BUILDING_MONUMENT", "BUILDING_PALACE"],
+            "buildings": ["BUILDING_MONUMENT", "BUILDING_PALACE", "BUILDING_CASTLE",
+                          "BUILDING_PYRAMIDS"],
+            "wonders": [{"type": "BUILDING_PYRAMIDS", "x": 19, "y": 35}],
             "districts": [
                 {"type": "DISTRICT_CITY_CENTER"}, {"type": "DISTRICT_CAMPUS"}
             ],
@@ -109,7 +113,10 @@ class MirrorCheckTest(unittest.TestCase):
         board = {"cities": [{
             "pos": [14, 9], "name": "Istanbul", "pop": 9, "food": 15.8,
             "loyalty": 100.0, "loyalty_per_turn": 10.3, "defense": 40.0,
-            "religion": "Orthodoxy", "buildings": ["monument", "palace"],
+            "hp": 150, "wall_hp": 60, "wall_max": 100,
+            "religion": "Orthodoxy",
+            "buildings": ["monument", "palace", "medieval_walls"],
+            "wonders": {"pyramids": [15, 9]},
             "districts": {"campus": [15, 8]},
         }]}
         self.assertEqual(civ6_mirror_check.city_fact_mismatches(state, board, 44), [])
@@ -118,6 +125,39 @@ class MirrorCheckTest(unittest.TestCase):
             "loyalty_per_turn",
             civ6_mirror_check.city_fact_mismatches(state, board, 44)[0],
         )
+
+    def test_city_health_check_catches_each_independent_pool(self) -> None:
+        state = {"cities": [{
+            "x": 3, "y": 5, "name": "Rome", "damage": 25, "max_damage": 100,
+            "wall_damage": 12, "max_wall_damage": 50,
+        }]}
+        board = {"cities": [{
+            "pos": [1, 5], "name": "Rome", "hp": 150,
+            "wall_hp": 38, "wall_max": 50,
+        }]}
+        self.assertEqual(civ6_mirror_check.city_fact_mismatches(state, board, 10), [])
+
+        board["cities"][0].update(hp=149, wall_hp=37, wall_max=49)
+        mismatches = civ6_mirror_check.city_fact_mismatches(state, board, 10)
+        self.assertTrue(any(" hp " in mismatch for mismatch in mismatches), mismatches)
+        self.assertTrue(any("wall_hp" in mismatch for mismatch in mismatches), mismatches)
+        self.assertTrue(any("wall_max" in mismatch for mismatch in mismatches), mismatches)
+
+    def test_unit_data_check_covers_health_and_fortification(self) -> None:
+        state = {"units": [{
+            "kind": "UNIT_SCYTHIAN_HORSE_ARCHER", "x": 3, "y": 5,
+            "hp": 64, "fortified": True, "fortify_turns": 2,
+        }]}
+        board = {"view_player": 0, "units": [{
+            "owner": 0, "type": "saka_horse_archer", "pos": [1, 5],
+            "hp": 64, "fortified": True, "fortify_turns": 2,
+        }]}
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+        board["units"][0].update(hp=100, fortified=False, fortify_turns=0)
+        mismatches = civ6_mirror_check.unit_fact_mismatches(state, board, 10)
+        self.assertTrue(any(" hp " in mismatch for mismatch in mismatches), mismatches)
+        self.assertTrue(any(" fortified " in mismatch for mismatch in mismatches), mismatches)
+        self.assertTrue(any("fortify_turns" in mismatch for mismatch in mismatches), mismatches)
 
     def test_met_city_state_check_includes_envoys_suzerain_and_city(self) -> None:
         state = {"rivals": [], "minors": [{
