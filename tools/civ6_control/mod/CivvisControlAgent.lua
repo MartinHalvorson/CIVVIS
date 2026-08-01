@@ -727,8 +727,23 @@ end
 -- upgraded them, while the treasury sat on 478 unspent Gold. UNITCOMMAND_UPGRADE
 -- is in this build's resolved command list, so this is available and was simply
 -- never attempted.
+-- ⚠ WHETHER THE ARMY CAN RE-ARM AT ALL, WHICH NO COUNTER HAS EVER SAID.
+--
+-- Run `civvis-20260801T065721Z` fielded nothing but Ancient units for 195 turns and
+-- `upgrade` appears in no `by` map on the whole run -- yet `upgradeUnit` is called
+-- for EVERY combat unit EVERY turn, first, from `orderFor`. So it was attempted
+-- thousands of times and silently refused every single time, and nothing anywhere
+-- recorded whether the block was gold, tech, or a missing strategic resource.
+--
+-- That is the same shape as `no_params` x 221 and `move_refused` x 33: an anonymous
+-- count. Both times naming it made the cause fall out immediately and both times the
+-- standing hypothesis was wrong, so this names it BEFORE anything is changed.
+local upgradeTried, upgradeBlocked = 0, {};
 local function upgradeUnit(unit)
+	upgradeTried = upgradeTried + 1;
 	if commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"]) then return "upgrade"; end
+	local name = unitTypeName(unit) or "?";
+	upgradeBlocked[name] = (upgradeBlocked[name] or 0) + 1;
 	return nil;
 end
 
@@ -5388,7 +5403,17 @@ local function applyOrders(player, pid, turn, rows)
 		-- working and being told no; this is the bridge reporting success for
 		-- something that did not happen.
 		missed = missed,
+		-- See `upgradeUnit`. `tried` is every combat unit reached this turn and
+		-- `blocked` is what the engine would not upgrade, by unit type, so a run that
+		-- fields Ancient units in 1100 AD can finally say WHY. Gold rides along
+		-- because "no gold" is the first hypothesis and the cheapest to eliminate.
+		upgrade_tried = upgradeTried,
+		upgrade_blocked = upgradeBlocked,
+		upgrade_gold = try(function()
+			return math.floor(player:GetTreasury():GetGoldBalance());
+		end, -1),
 	});
+	upgradeTried, upgradeBlocked = 0, {};
 
 	-- ⚠⚠ A CIVVIS TURN MUST STILL EMIT A `turn` RECORD. The full one lives at the
 	-- end of `playTurn`, which no longer runs when CIVVIS is deciding — so run
