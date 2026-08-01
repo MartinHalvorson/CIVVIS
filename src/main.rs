@@ -188,7 +188,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// --turns 200 --deployment-comparison` (SHA-256
 /// `f6d9e17ee19fe298e14a573f97a896280a75a767306dca6ef0d80d2020384b2c`).
 /// This is a compatibility re-pin, not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0d57_917a_b495_a091;
+///
+/// #799 adds the live settlement-site intelligence and visible transit-risk
+/// gates to the shared Advanced source. `AdvancedAi::legacy()` explicitly
+/// keeps the historical settlement scorer and disables those gates, so the
+/// source contract is deliberately re-pinned without moving the Elo protocol.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9d23_2356_1f8b_5d5c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
