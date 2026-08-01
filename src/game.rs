@@ -16257,6 +16257,24 @@ impl Game {
         pid
     }
 
+    /// Seat a minor civilization that arrived from a mirrored game rather than
+    /// from this game's own setup. A mirrored board is built with zero native
+    /// city-states, so the first sighting of one has nowhere to live; this
+    /// pushes an alive minor seat on demand, keyed by name so the same
+    /// city-state lands on the same seat every rebuild.
+    pub fn ensure_minor_seat(&mut self, civ: &str) -> usize {
+        if let Some(player) = self
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian && player.civ == civ)
+        {
+            return player.id;
+        }
+        let pid = self.players.len();
+        self.players.push(Player::new(pid, civ, true));
+        pid
+    }
+
     /// Where a city-state assigned to `preferred` should actually settle.
     /// That tile is used when it clears every major start and existing city by
     /// the stock four-tile minimum; otherwise the roomiest legal tile on the
