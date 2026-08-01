@@ -2539,6 +2539,26 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	if wanted ~= nil then
 		local row = playable(wanted);
 		if row ~= nil then return wanted, row, "civvis"; end
+		-- ★★★★★ SAY WHAT CIVVIS ASKED FOR AND COULD NOT HAVE.
+		--
+		-- When `playable` refuses CIVVIS's choice the ladder silently takes the turn,
+		-- and until now NOTHING recorded what the choice was. The `build` event says
+		-- the ladder decided; it cannot say what it overrode.
+		--
+		-- That is the whole of the open question. On run civvis-20260801T065721Z only
+		-- **16 of 97 builds** were CIVVIS's -- floor 21, develop 20, grow 10, improve
+		-- 9, expand 8 -- and no telemetry anywhere could name a single item CIVVIS
+		-- wanted instead. The same anonymity around `no_params` hid one district for
+		-- an entire project until the refusal carried its verb.
+		--
+		-- ⚠ `item`, not `kind`: `emit` claims `kind`, `ctx` and `run`, and a payload
+		-- field named `kind` is overwritten before the line is written. That already
+		-- cost this file one blind instrument.
+		emit("civvis_build_unplayable", {
+			turn = turn,
+			city = try(function() return city:GetID(); end, -1),
+			item = tostring(wanted),
+		});
 	end
 	for _, entry in ipairs(ladder) do
 		local row = playable(entry[1]);
@@ -4995,7 +5015,42 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X] = x;
 			params[UnitOperationTypes.PARAM_Y] = y;
-			return operate(unit, OP["UNITOPERATION_MOVE_TO"], params), verb;
+			local moved = operate(unit, OP["UNITOPERATION_MOVE_TO"], params);
+			if not moved then
+				-- ★★★★ NAME THE UNIT AND WHERE IT WOULD NOT GO. `refusals` is
+				-- aggregated by REASON, so 127 `MOVE_TO` refusals on one run could not
+				-- say which unit was refused even once -- and that is exactly the
+				-- question that mattered.
+				--
+				-- Measured on run civvis-20260801T060730Z: a settler sat at (61,32) for
+				-- turns 168-171 being ordered `MOVE_TO 60,32` every turn and not
+				-- moving, with every adjacent plot owned by another player. `MISSED`
+				-- was 0 across 2662 orders, so the move was being refused rather than
+				-- lost -- but nothing could tie those refusals to that settler, so
+				-- "the settler is boxed in by borders" stayed a hypothesis.
+				--
+				-- Same shape as `found_refused` and `improve_refused` directly above
+				-- and below, and the same use: the Rust side can feed a NAMED refusal
+				-- back so CIVVIS stops re-deriving the same impossible step.
+				emit("move_refused", {
+					turn = turn,
+					unit = subject,
+					-- ⚠ `unit_kind`, NOT `kind`. `emit` sets `payload.kind = <event kind>`
+					-- on line 105, so a field named `kind` here is CLOBBERED — the
+					-- first run with this event reported `kinds: [('move_refused', 22)]`
+					-- and the unit type was gone. Any payload this file builds must
+					-- avoid `kind`, `ctx` and `run` for the same reason.
+					unit_kind = try(function() return unit:GetType(); end),
+					from_x = try(function() return unit:GetX(); end, -1),
+					from_y = try(function() return unit:GetY(); end, -1),
+					x = x, y = y,
+					owner = try(function()
+						local plot = Map.GetPlot(x, y);
+						return plot and plot:GetOwner() or -1;
+					end, -1),
+				});
+			end
+			return moved, verb;
 		end
 		if verb == "RANGE_ATTACK" then
 			if x == nil or y == nil then return false, "no_dest"; end
