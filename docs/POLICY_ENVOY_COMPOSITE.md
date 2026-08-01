@@ -77,3 +77,28 @@ For each profile, record the paired score, Wilson interval, map-direction sign
 test, terminal-score direction, policy swaps, envoy count, suzerainty share,
 and queued Diplomatic Quarter/Consulate/Chancery stages. The last four are
 mechanism diagnostics only; they cannot override the win-based matrix verdict.
+
+## Recorded outcome
+
+The release evaluator built from commit `1e1993f` ran the registered discovery
+matrix exactly once. Its combined gate returned `PASS`: compact was 51.1% (95%
+Wilson 45.4%..56.7%, +8 Elo-equivalent) and therefore safely inconclusive; the
+deployment profile returned `PASS`. That result authorized the reserved,
+disjoint confirmation without changing any component or evaluation input.
+
+The confirmation matrix also returned `PASS`:
+
+| profile | streams | paired score | 95% Wilson interval | Elo-equivalent | gate |
+|---|---|---:|---:|---:|---|
+| compact-standard | 82000000 vs 80000000 | 52.2% | 46.5%..57.8% | +15 (-24..+54) | `INCONCLUSIVE`, accepted as no regression |
+| deployment-online | 83000000 vs 81000000 | 57.2% | 51.6%..62.7% | **+51 (+11..+90)** | `PASS` |
+
+On deployment, the challenger was favored on 115 map directions to 52 against
+133 neutral, its anytime-valid evidence crossed at map 42, and the evaluator
+printed the +51 estimate as `CONFIRMED`. The mechanism diagnostics move in the
+same direction—20.6 versus 14.4 envoys and 0.72 versus 0.37 suzerainty share—
+but are not inputs to the promotion decision.
+
+The evaluator-only arm is now independently verified. A production-default
+change may use this result, but must be a separate, narrow change that preserves
+the three reported axes and all existing priority safety guards.
