@@ -73,6 +73,7 @@ class Civ6PlayTest(unittest.TestCase):
     def test_setup_does_not_start_when_a_required_dropdown_is_unverified(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "set_dropdown", return_value=False) as setter, \
+             patch.object(civ6_play, "select_requested_leader") as leader, \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "click_at") as click:
             started = civ6_play.configure_and_start((100, 33, 756, 480), args(), Path(temporary))
@@ -82,11 +83,13 @@ class Civ6PlayTest(unittest.TestCase):
             (100, 33, 756, 480), "difficulty", "DIFFICULTY_SETTLER", Path(temporary)
         )
         screenshot.assert_not_called()
+        leader.assert_not_called()
         click.assert_not_called()
 
     def test_setup_starts_only_after_every_required_dropdown_succeeds(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "set_dropdown", return_value=True) as setter, \
+             patch.object(civ6_play, "select_requested_leader", return_value=True) as leader, \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "click_at") as click:
             started = civ6_play.configure_and_start((100, 33, 756, 480), args(), Path(temporary))
@@ -100,9 +103,29 @@ class Civ6PlayTest(unittest.TestCase):
                 call((100, 33, 756, 480), "speed", "GAMESPEED_ONLINE", Path(temporary)),
             ],
         )
+        leader.assert_called_once_with(
+            (100, 33, 756, 480), "LEADER_TRAJAN", Path(temporary)
+        )
         screenshot.assert_called_once_with(Path(temporary) / "setup.png")
         click.assert_called_once_with(100 + int(756 * civ6_play.START_GAME[0]),
                                       33 + int(480 * civ6_play.START_GAME[1]))
+
+    def test_setup_refuses_to_start_when_requested_leader_is_unverified(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "set_dropdown", return_value=True), \
+             patch.object(civ6_play, "select_requested_leader", return_value=False), \
+             patch.object(civ6_play, "screenshot") as screenshot, \
+             patch.object(civ6_play, "click_at") as click:
+            started = civ6_play.configure_and_start(
+                (100, 33, 756, 480), args(), Path(temporary)
+            )
+
+        self.assertFalse(started)
+        screenshot.assert_not_called()
+        click.assert_not_called()
+
+    def test_roster_resolves_requested_leader_to_rendered_name(self) -> None:
+        self.assertEqual(civ6_play.leader_display_name("LEADER_JADWIGA"), "Jadwiga")
 
     def test_seat_match_requires_map_and_leader(self) -> None:
         event = {

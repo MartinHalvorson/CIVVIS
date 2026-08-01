@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -30,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
-from civ6_control import gamelock, launcher, macos_input, vision, watch  # noqa: E402
+from civ6_control import gamelock, launcher, macos_input, macos_ocr, vision, watch  # noqa: E402
 from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
@@ -259,10 +260,9 @@ def build_config(args: argparse.Namespace) -> dict:
         "StartDelayFrames": args.start_delay_frames,
         "TickFrames": args.tick_frames,
     }
-    # The Create Game automation deliberately does not guess at the leader
-    # picker.  A requested leader remains an explicit assertion for callers
-    # that can set one; otherwise the authoritative `seat` event supplies the
-    # actual civilization to the CIVVIS decision worker.
+    # The Create Game automation selects this from the rendered, DLC-dependent
+    # list. The installed config also carries it so the requested setup remains
+    # explicit in the run artefacts and any usable FrontEnd context.
     if args.leader:
         config["Leader"] = args.leader
     return config
@@ -302,6 +302,12 @@ BOOTSTRAP_ATTEMPTS = 16
 START_GAME = (0.500, 0.978)
 BACK = (0.730, 0.144)
 SETUP_X = 0.500
+
+# The civilization control is one fixed Firaxis setup row above difficulty.
+# Expressing that relationship keeps it aligned when a different window height
+# changes the normalized coordinate (measured at 0.277 on 1474x949 and 0.294 on
+# the taller full-screen setup).
+LEADER_PICKER_OFFSET = 0.056
 
 # Each dropdown's closed box, as a fraction of window height.
 DROPDOWN = {
@@ -616,6 +622,117 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
     return False
 
 
+def _normalized_label(value: str) -> str:
+    ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    return "".join(character for character in ascii_value.casefold() if character.isalnum())
+
+
+def leader_display_name(leader: str) -> str:
+    """Resolve a Firaxis leader type to the label CIVVIS expects on the picker."""
+    requested = _normalized_label(leader.removeprefix("LEADER_"))
+    try:
+        roster = json.loads((REPO_ROOT / "data" / "civs.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        roster = {}
+    for civilization in roster.values() if isinstance(roster, dict) else ():
+        name = civilization.get("leader") if isinstance(civilization, dict) else None
+        if isinstance(name, str) and _normalized_label(name) == requested:
+            return name
+    return leader.removeprefix("LEADER_").replace("_", " ").title()
+
+
+def _observation_point(observation: dict) -> tuple[float, float] | None:
+    try:
+        return (
+            float(observation["x"]) + float(observation["width"]) / 2.0,
+            float(observation["y"]) + float(observation["height"]) / 2.0,
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _leader_observation(observations: list[dict], label: str,
+                        bounds: tuple[int, int, int, int],
+                        *, selected: bool = False) -> dict | None:
+    screen = desktop_size()
+    if screen is None:
+        return None
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    wanted = _normalized_label(label)
+    for observation in observations:
+        if _normalized_label(str(observation.get("text", ""))) != wanted:
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = point[0] * screen_w, point[1] * screen_h
+        rx, ry = (px - x) / w, (py - y) / h
+        if 0.40 <= rx <= 0.62 and (
+            0.23 <= ry <= 0.31 if selected else 0.30 <= ry <= 0.76
+        ):
+            return observation
+    return None
+
+
+def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | None,
+                            run_dir: Path) -> bool:
+    """Select and visually verify a leader from Firaxis's DLC-dependent list."""
+    if leader is None:
+        return True
+    label = leader_display_name(leader)
+    x, y, w, h = bounds
+    picker_y = DROPDOWN["difficulty"] - LEADER_PICKER_OFFSET
+    closed_shot = run_dir / "leader-picker-closed.png"
+    open_shot = run_dir / "leader-picker-open.png"
+    picker_rect = (
+        int((x + w * 0.40) * 2),
+        int((y + h * 0.30) * 2),
+        int((x + w * 0.62) * 2),
+        int((y + h * 0.76) * 2),
+    )
+
+    for attempt in (1, 2):
+        screenshot(closed_shot)
+        click_at(int(x + w * SETUP_X), int(y + h * picker_y))
+        time.sleep(1.2)
+        screenshot(open_shot)
+        if list_opened(closed_shot, open_shot, picker_rect):
+            break
+        print(f"[setup] leader list did not open (attempt {attempt})", flush=True)
+    else:
+        return False
+
+    for scroll_step in range(13):
+        shot = run_dir / f"leader-picker-{scroll_step:02d}.png"
+        screenshot(shot)
+        observations = macos_ocr.recognize(shot)
+        match = _leader_observation(observations, label, bounds)
+        if match is not None:
+            point = _observation_point(match)
+            screen = desktop_size()
+            if point is None or screen is None:
+                return False
+            # Use the stable centre of the picker column and only OCR's row.
+            click_at(int(x + w * SETUP_X), int(point[1] * screen[1]))
+            time.sleep(1.2)
+            selected_shot = run_dir / "leader-selected.png"
+            screenshot(selected_shot)
+            selected = macos_ocr.recognize(selected_shot)
+            if _leader_observation(selected, label, bounds, selected=True) is not None:
+                print(f"[setup] leader: selected and verified {label} ({leader})", flush=True)
+                return True
+            print(f"[setup] leader click did not select {label}", flush=True)
+            return False
+        macos_input.move(int(x + w * SETUP_X), int(y + h * 0.55))
+        macos_input.scroll(-30)
+        time.sleep(0.8)
+
+    press_escape(1)
+    print(f"[setup] requested leader {label} ({leader}) was not in the picker", flush=True)
+    return False
+
+
 def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namespace,
                         run_dir: Path) -> bool:
     """Set this run's game up on the Create Game screen and start it.
@@ -638,6 +755,9 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
             print(f"[setup] {name} was NOT set; refusing to start an unverified game",
                   flush=True)
             return False
+    if not select_requested_leader(bounds, args.leader, run_dir):
+        print("[setup] requested leader was NOT selected; refusing to start", flush=True)
+        return False
     # The map has to be chosen HERE. `MapScript` in the baked config is ignored,
     # because the FrontEnd context that would read it never loads, so every game so
     # far has been Continents whatever was asked for. On Continents a seat can start
@@ -1354,12 +1474,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--seed", type=int, default=424242)
     ap.add_argument("--max-turns", type=int, default=150)
     ap.add_argument("--city-target", type=int, default=6)
-    # The current Create Game automation verifies the actual leader in the
-    # `seat` event but does not operate the leader picker.  Leave this unset
-    # to accept Firaxis's assigned leader and bind CIVVIS strategy selection to
-    # its reported civilization; pass a leader only when an external setup has
-    # selected it and needs an exact assertion.
-    ap.add_argument("--leader")
+    ap.add_argument("--leader", help="exact Firaxis leader type to select and verify")
     # The game must stay frontmost to get frames, which makes it unwatchable if
     # it also owns the whole screen. Half is enough for the agent and leaves the
     # other half for a terminal.
