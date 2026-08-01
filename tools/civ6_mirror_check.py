@@ -480,10 +480,13 @@ def production_item_name(value):
     ):
         if value.upper().startswith(prefix):
             name = civ6_id(value, prefix)
-            # Firaxis truncates this district's type identifier; the mirror
-            # correctly restores CIVVIS's full `government_plaza` name.
-            if (kind, name) == ("district", "government"):
-                name = "government_plaza"
+            # Firaxis truncates these district type identifiers; the mirror
+            # restores the full CIVVIS names when it resolves the rules table.
+            if kind == "district":
+                name = {
+                    "government": "government_plaza",
+                    "theater": "theater_square",
+                }.get(name, name)
             return kind, name
     return None
 

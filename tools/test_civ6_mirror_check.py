@@ -279,6 +279,8 @@ class MirrorCheckTest(unittest.TestCase):
                          ("district", "campus"))
         self.assertEqual(civ6_mirror_check.production_item_name("DISTRICT_GOVERNMENT"),
                          ("district", "government_plaza"))
+        self.assertEqual(civ6_mirror_check.production_item_name("DISTRICT_THEATER"),
+                         ("district", "theater_square"))
         self.assertEqual(civ6_mirror_check.production_item_name(None), None)
         self.assertEqual(civ6_mirror_check.queue_item_name({"district": "campus", "pos": [2, 3]}),
                          ("district", "campus"))
