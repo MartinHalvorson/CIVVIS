@@ -640,10 +640,15 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // Civ VI's diplomacy ribbon keeps every major's broad empire
             // output visible.  These are aggregate public indicators rather
             // than hidden city details, and make spectator comparisons useful.
+            let city_ids = g.player_city_ids(o.id);
             let mut output = crate::rules::Yields::default();
-            for cid in g.player_city_ids(o.id) {
+            for &cid in &city_ids {
                 output.add(g.city_yields(cid));
             }
+            let total_population: i32 = city_ids
+                .iter()
+                .map(|&cid| g.cities[&cid].pop)
+                .sum();
             let military = g.military_power(o.id).round() as i64;
             // Founding is permanent history, but the standings marker is
             // about a faith that is still present now. Compute that from the
@@ -690,12 +695,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "anarchy_turns": o.anarchy_turns,
                 "age": o.age,
                 "score": g.score(o.id),
-                "cities": g.player_city_ids(o.id).len(),
+                "cities": city_ids.len(),
+                "population": total_population,
                 "suzerain_count": g.players.iter()
                     .filter(|minor| minor.alive && minor.is_minor && !minor.is_barbarian)
                     .filter(|minor| g.suzerain_of(minor.id) == Some(o.id))
                     .count(),
-                "wonder_count": g.player_city_ids(o.id).iter()
+                "wonder_count": city_ids.iter()
                     .map(|city| g.cities[city].wonders.len())
                     .sum::<usize>(),
                 "victories": if !o.is_minor && !o.is_barbarian {
@@ -1759,6 +1765,7 @@ mod tests {
             "yields",
             "military",
             "cities",
+            "population",
             "gold",
             "leader",
             "agenda",
@@ -2278,6 +2285,8 @@ mod tests {
             })
             .unwrap();
         game.found_city_for(0, capital_position, None);
+        let city_id = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city_id).unwrap().pop = 7;
         let observed = observation_spectator(&game, 0);
         assert_eq!(observed["max_turns"], serde_json::json!(120));
         // The setup panel adopts the running game's handicap, so the
@@ -2298,6 +2307,11 @@ mod tests {
             player["cities"],
             serde_json::json!(game.player_city_ids(0).len()),
         );
+        assert_eq!(
+            player["population"],
+            serde_json::json!(7),
+            "the player HUD payload reports the empire's total population"
+        );
         assert!(player["suzerain_count"].is_number());
         assert!(player["wonder_count"].is_number());
 
@@ -2309,7 +2323,6 @@ mod tests {
             .unwrap();
         assert_eq!(free_cities["alive"], serde_json::json!(false));
 
-        let city_id = game.player_city_ids(0)[0];
         let source_city = &game.cities[&city_id];
         let city = observed["cities"]
             .as_array()
