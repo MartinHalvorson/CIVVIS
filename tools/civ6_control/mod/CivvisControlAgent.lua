@@ -6183,9 +6183,15 @@ local function settleTurn(player, pid, turn, playFallback)
 	emit("await", { turn = turn, polls = awaiting.polls });
 
 	local ready = ordersReady(turn);
-	if ready ~= nil and ready > 0 then
+	if ready ~= nil and ready >= 0 then
 		local rows = fetchOrders(turn);
-		if #rows > 0 then
+		-- `ready.count` is the transaction boundary, including for an empty
+		-- decision. Requiring a positive row count wedged every turn where CIVVIS
+		-- correctly chose no action: the brain had durably written count=0, but the
+		-- game waited until the legacy fallback budget expired. Match the declared
+		-- count so zero completes immediately while a partially visible batch still
+		-- cannot be actuated.
+		if #rows == ready then
 			-- ⚠ BEFORE, not after: `applyOrders` emits the turn record, which reads
 			-- `awaiting.source`. Setting it afterwards made every CIVVIS turn report
 			-- `orders_source: pending` — the one field that proves who drove the game,

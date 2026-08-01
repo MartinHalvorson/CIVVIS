@@ -51,6 +51,17 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('awaiting.source == "civvis"', handler[:completed])
         self.assertIn("driveProduction(player, turn, true)", handler[residual:])
 
+    def test_empty_civvis_order_batch_completes_without_legacy_fallback(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        settle = source.split("local function settleTurn", 1)[1].split(
+            "-- Past the wait", 1
+        )[0]
+
+        self.assertIn("ready ~= nil and ready >= 0", settle)
+        self.assertIn("if #rows == ready then", settle)
+        self.assertNotIn("ready > 0", settle)
+        self.assertNotIn("#rows > 0", settle)
+
     def test_live_rehost_assigns_and_reads_back_the_requested_leader(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         rehost = source.split("local function applyConfiguration()", 1)[1].split(
