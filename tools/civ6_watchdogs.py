@@ -104,6 +104,7 @@ def dropped_units(run: Path) -> dict:
     if not notes.exists():
         return {"checked": False}
     worst, reasons, turns_with = 0, Counter(), 0
+    managed_great_people = 0
     for line in notes.read_text(errors="replace").splitlines():
         try:
             note = json.loads(line).get("note", "")
@@ -112,15 +113,27 @@ def dropped_units(run: Path) -> dict:
         found = re.search(r"dropped_units=(\d+) \[([^\]]*)\]", note)
         if not found:
             continue
-        turns_with += 1
-        worst = max(worst, int(found.group(1)))
+        unmanaged_this_turn = 0
         for entry in found.group(2).split():
-            reasons[entry.rsplit(":", 1)[-1]] += 1
+            reason = entry.rsplit(":", 1)[-1]
+            # Physical Great People intentionally bypass CIVVIS's ordinary unit
+            # model. `great_person_orders` still gives them host-validated move and
+            # activation orders, including the Prophet-specific religion path. They
+            # are bridge-managed, not units that receive no order and freeze.
+            if reason == "great_person":
+                managed_great_people += 1
+                continue
+            reasons[reason] += 1
+            unmanaged_this_turn += 1
+        if unmanaged_this_turn:
+            turns_with += 1
+            worst = max(worst, unmanaged_this_turn)
     return {
         "checked": True,
         "turns_with_drops": turns_with,
         "worst_on_one_turn": worst,
         "by_reason": dict(reasons.most_common(6)),
+        "bridge_managed_great_person_observations": managed_great_people,
     }
 
 
@@ -250,7 +263,12 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
     # How far into the game this judgement is being made. A scout has not had time to
     # get anywhere by turn 26, and a detector that cries wolf on every young run is one
     # people learn to scroll past.
+    reach["first_turn"] = states[0].get("turn") if states else None
     reach["last_turn"] = states[-1].get("turn") if states else None
+    if isinstance(reach["first_turn"], int) and isinstance(reach["last_turn"], int):
+        reach["observed_turn_span"] = reach["last_turn"] - reach["first_turn"]
+    else:
+        reach["observed_turn_span"] = None
 
     # ★★★★ OSCILLATION, WHICH THE IDLE FRACTION CANNOT SEE AT ALL. A unit bouncing
     # between two tiles moves every single turn, so it is never "stuck" and never
@@ -589,7 +607,8 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
     reach = idle.get("reach") or {}
     if (reach.get("furthest_ever") is not None
             and reach["furthest_ever"] <= 8
-            and (reach.get("last_turn") or 0) >= 60):
+            and (reach.get("last_turn") or 0) >= 60
+            and (reach.get("observed_turn_span") or 0) >= 40):
         out.append(
             f"THE EMPIRE NEVER REACHED: the furthest any unit ever got from one of our "
             f"cities was {reach['furthest_ever']} tiles, at turn "
@@ -717,7 +736,8 @@ def main() -> int:
         print(f"  reach: furthest EVER {reach.get('furthest_ever')} tiles "
               f"(at t{reach.get('furthest_ever_turn')}); at the last turn "
               f"{reach.get('furthest')} furthest / {reach.get('mean')} mean "
-              f"over {reach.get('units')} units")
+              f"over {reach.get('units')} units; observed "
+              f"{reach.get('observed_turn_span')} turns")
         print(f"  idle: stuck {idle['stuck_unit_turns']}/{idle['unit_turns']} unit-turns"
               f" ({idle['stuck_fraction']})  surplus-on-centres "
               f"{idle['surplus_on_centres_unit_turns']}  worst stack {idle['worst_stack']}"
@@ -728,6 +748,12 @@ def main() -> int:
               f"  late-war military {prod['military_builds_late_war']}/{prod['builds_late_war']}"
               f"  late blocks unanswered {prod['prod_blocks_after_t100_unanswered']}"
               f"/{prod['prod_blocks_after_t100']}")
+        managed_people = report["dropped_units"].get(
+            "bridge_managed_great_person_observations", 0
+        )
+        if managed_people:
+            print(f"  bridge: {managed_people} physical Great Person observation(s) "
+                  "handled outside the ordinary unit model")
         if "mirror" in report:
             mirror = report["mirror"]
             if mirror.get("error"):
