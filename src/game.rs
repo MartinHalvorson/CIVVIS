@@ -6318,6 +6318,88 @@ mod governor_runtime_tests {
     }
 
     #[test]
+    fn granada_alcazar_matches_firaxis_placement_yields_tourism_and_defense() {
+        let mut game = Game::new_full(2, 24, 16, 91_978, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let alcazar = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(alcazar).into_iter().collect();
+        for position in std::iter::once(alcazar).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&city].owned_tiles.contains(&position) {
+                game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
+            }
+        }
+
+        game.players[1].is_minor = true;
+        game.players[1].civ = "Granada".to_string();
+        assert!(!game
+            .valid_improvements(0, alcazar)
+            .contains(&crate::name!("alcazar")));
+        game.players[0].envoys.push((1, 3));
+        assert!(game
+            .valid_improvements(0, alcazar)
+            .contains(&crate::name!("alcazar")));
+        game.map.tiles.get_mut(&alcazar).unwrap().hills = true;
+        assert!(game
+            .valid_improvements(0, alcazar)
+            .contains(&crate::name!("alcazar")));
+        game.map.tiles.get_mut(&alcazar).unwrap().hills = false;
+        game.map.tiles.get_mut(&alcazar).unwrap().feature = Some(crate::name!("forest"));
+        assert!(!game
+            .valid_improvements(0, alcazar)
+            .contains(&crate::name!("alcazar")));
+        game.map.tiles.get_mut(&alcazar).unwrap().feature = None;
+
+        let appeal = game.tile_appeal(alcazar).max(0) as f64;
+        let bare = game.player_tile_yields(0, alcazar, &game.map.tiles[&alcazar]);
+        game.map.tiles.get_mut(&alcazar).unwrap().improvement = Some(crate::name!("alcazar"));
+        let improved = game.player_tile_yields(0, alcazar, &game.map.tiles[&alcazar]);
+        assert_eq!(improved.culture - bare.culture, 2.0);
+        assert_eq!(improved.science - bare.science, appeal * 0.5);
+        assert_eq!(game.tile_defense_bonus(alcazar), 4.0);
+        let adjacent = neighbors
+            .iter()
+            .copied()
+            .find(|position| *position != centre)
+            .unwrap();
+        assert!(!game
+            .valid_improvements(0, adjacent)
+            .contains(&crate::name!("alcazar")));
+
+        let before_flight = game
+            .tourism_by_tile(0)
+            .get(&alcazar)
+            .copied()
+            .unwrap_or(0.0);
+        game.players[0].techs.insert(crate::name!("flight"));
+        let after_flight = game
+            .tourism_by_tile(0)
+            .get(&alcazar)
+            .copied()
+            .unwrap_or(0.0);
+        assert_eq!(after_flight - before_flight, 2.0);
+
+        let warrior = game.spawn_unit("warrior", 0, adjacent);
+        game.relocate(warrior, alcazar);
+        assert_eq!(game.units[&warrior].fortify_turns, 2);
+        assert_eq!(game.unit_strength(&game.units[&warrior], true), 26.0);
+        game.begin_turn(0);
+        assert_eq!(game.units[&warrior].fortify_turns, 2);
+        game.map.tiles.get_mut(&alcazar).unwrap().pillaged = true;
+        assert_eq!(game.tile_defense_bonus(alcazar), 0.0);
+    }
+
+    #[test]
     fn the_cliffs_of_dover_are_worth_twice_an_ordinary_natural_wonder() {
         // Features.Appeal is +2 for most natural wonders but +4 for the Cliffs
         // of Dover and Uluru, which CIVVIS flattened to a single +2 for every
@@ -28052,10 +28134,28 @@ impl Game {
                 self.occ.remove(&old);
             }
         }
-        self.units.get_mut(&uid).unwrap().pos = pos;
+        let fortification = self.improvement_fortification_at(pos);
+        let unit = self.units.get_mut(&uid).unwrap();
+        unit.pos = pos;
+        unit.fortify_turns = unit.fortify_turns.max(fortification);
         self.occ.entry(pos).or_default().push(uid);
         let sight = self.unit_sight(uid);
         self.reveal(owner, pos, sight);
+    }
+
+    fn improvement_fortification_at(&self, pos: Pos) -> i32 {
+        let tile = &self.map.tiles[&pos];
+        if tile.pillaged {
+            return 0;
+        }
+        tile.improvement
+            .as_deref()
+            .and_then(|improvement| self.rules.improvements.get(improvement))
+            .and_then(|improvement| improvement.effects.get("grant_fortification"))
+            .copied()
+            .unwrap_or(0.0)
+            .round()
+            .clamp(0.0, 2.0) as i32
     }
 
     /// A height table sized to this map, for one visibility sweep.
@@ -32798,6 +32898,13 @@ impl Game {
         }
         if !tile.pillaged {
             if let Some(improvement) = tile.improvement.as_deref() {
+                yields.science += self.rules.improvements[improvement]
+                    .effects
+                    .get("appeal_science_percent")
+                    .copied()
+                    .unwrap_or(0.0)
+                    / 100.0
+                    * self.tile_appeal(pos).max(0) as f64;
                 yields.gold += self.rules.improvements[improvement]
                     .effects
                     .get("appeal_gold")
@@ -48181,6 +48288,8 @@ impl Game {
             let attacks = self.unit_max_attacks(uid);
             let spec = &self.rules.units[kind];
             let embarked = self.is_embarked(&self.units[&uid]);
+            let improvement_fortification =
+                self.improvement_fortification_at(self.units[&uid].pos);
             let heal = if hp < 100
                 && (!acted
                     || (attacks_left < attacks
@@ -48207,6 +48316,7 @@ impl Game {
             } else if acted {
                 u.fortify_turns = 0;
             }
+            u.fortify_turns = u.fortify_turns.max(improvement_fortification);
             u.acted = false;
         }
         // Snapshot ZOC after every per-turn stop flag has been cleared. This

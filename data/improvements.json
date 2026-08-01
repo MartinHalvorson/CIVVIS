@@ -63,6 +63,27 @@
    "tundra"
   ]
  },
+ "alcazar": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "unique_to": "Granada",
+  "same_adjacent_valid": false,
+  "yields": {
+   "culture": 2
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "effects": {
+   "appeal_science_percent": 50,
+   "defense": 4,
+   "grant_fortification": 2
+  }
+ },
  "mound": {
   "plunder_type": "heal",
   "plunder_amount": 50,
