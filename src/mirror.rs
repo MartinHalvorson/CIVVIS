@@ -321,6 +321,91 @@ mod tests {
         assert_eq!(vocab.resource_count(), 54, "all Civ 6 resources");
     }
 
+    #[test]
+    fn recent_host_production_refusals_are_city_scoped_typed_and_expire() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-production-refusal-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("events.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"kind":"civvis_build_unplayable","turn":81,"city":12,"item":"BUILDING_UNIVERSITY"}"#,
+                "\n",
+                r#"{"kind":"civvis_build_unplayable","turn":89,"city":12,"item":"BUILDING_LIBRARY","reasons":["LOC_BUILDING_REQUIRES_DISTRICT"]}"#,
+                "\n",
+                r#"{"kind":"civvis_build_unplayable","turn":90,"city":14,"item":"PROJECT_ENHANCE_DISTRICT_THEATER"}"#,
+                "\n",
+                r#"{"kind":"civvis_build_unplayable","turn":91,"city":12,"item":"DISTRICT_CAMPUS"}"#,
+                "\n",
+            ),
+        )
+        .expect("write events");
+
+        let refused = refused_production(&path, 90);
+        assert_eq!(
+            refused.get(&12),
+            Some(&std::collections::BTreeSet::from([
+                "BUILDING_LIBRARY".to_string()
+            ])),
+            "the stale University, future Campus, and unsupported district event are absent"
+        );
+        assert_eq!(
+            refused.get(&14),
+            Some(&std::collections::BTreeSet::from([
+                "PROJECT_ENHANCE_DISTRICT_THEATER".to_string()
+            ]))
+        );
+
+        let rules = crate::rules::Rules::embedded();
+        let city_ids = BTreeMap::from([(41, 12), (42, 14)]);
+        let blocked = blocked_production_from(&refused, &city_ids, &rules);
+        assert_eq!(
+            blocked.get(&41),
+            Some(&std::collections::BTreeSet::from([
+                "building:library".to_string()
+            ]))
+        );
+        assert_eq!(
+            blocked.get(&42),
+            Some(&std::collections::BTreeSet::from([
+                "project:theater_square_festival".to_string()
+            ])),
+            "Firaxis's district-project name must translate through the same alias as orders"
+        );
+
+        let mut game = crate::game::Game::new(1, 20, 14, 73_001, 120, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &crate::game::Action::FoundCity { unit: settler })
+            .expect("found city");
+        let city = game.player_city_ids(0)[0];
+        let warrior = crate::game::Item::Unit {
+            unit: crate::name!("warrior"),
+        };
+        assert!(game.can_produce(0, city, &warrior));
+        let _ = game.producible_items(0, city);
+        game.replace_blocked_production(BTreeMap::from([(
+            city,
+            std::collections::BTreeSet::from(["unit:warrior".to_string()]),
+        )]));
+        assert!(
+            !game.can_produce(0, city, &warrior),
+            "the cooldown must reach the legal-production chokepoint"
+        );
+        assert!(
+            !game.producible_items(0, city).contains(&warrior),
+            "and invalidate a production menu cached before the host refusal arrived"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A civilization-unique unit resolves; a Great Person does not, and must not be
     /// forced to by stripping a prefix that is not a civilization.
     ///
@@ -3070,6 +3155,11 @@ pub struct StateSnapshot {
     #[serde(default)]
     pub refused_districts:
         std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    /// Production items the host has recently reported as unplayable, by its city id.
+    /// These are translated and applied as a cooldown rather than a permanent ban.
+    #[serde(default)]
+    pub refused_production:
+        std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     /// Barbarian units this seat can SEE.
     ///
     /// ★★★★ The rival export is built from `GetAliveMajorIDs`, so barbarians could
@@ -3275,6 +3365,7 @@ pub fn state_from_events(
         state.refused_improves = refused_improve_sites(path);
         state.refused_policy_names = refused_policies(path);
         state.refused_districts = refused_districts(path);
+        state.refused_production = refused_production(path, state.turn);
     }
     best
 }
@@ -3645,6 +3736,29 @@ fn blocked_districts_from(
     out
 }
 
+/// Translate recent host production refusals onto CIVVIS city ids and typed keys.
+fn blocked_production_from(
+    refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    city_ids: &std::collections::BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> BTreeMap<u32, std::collections::BTreeSet<String>> {
+    let mut out: BTreeMap<u32, std::collections::BTreeSet<String>> = Default::default();
+    for (cid, civ6_id) in city_ids {
+        let Some(names) = refused.get(civ6_id) else {
+            continue;
+        };
+        let translated: std::collections::BTreeSet<String> = names
+            .iter()
+            .filter_map(|name| civvis_production_item(rules, Some(name), &[]))
+            .map(|item| crate::game::Game::production_block_key(&item))
+            .collect();
+        if !translated.is_empty() {
+            out.insert(*cid, translated);
+        }
+    }
+    out
+}
+
 /// Districts the host refused to place, per Civilization VI city id.
 ///
 /// ★★★★ Read from `build_no_plot`, which the mod emits when
@@ -3690,6 +3804,57 @@ pub fn refused_districts(
             continue;
         }
         refused.entry(city).or_default().insert(district.to_string());
+    }
+    refused
+}
+
+/// Host production choices rejected recently enough to still describe this board.
+///
+/// A host `CanProduce` failure is exact for one city and one moment. Remembering it
+/// forever would turn a temporary resource or prerequisite shortage into a permanent
+/// rules change; forgetting it immediately recreates the live loop where Library was
+/// selected and rejected every turn. Eight turns is long enough for another building
+/// to be selected and enter the queue, while guaranteeing a changed city is retried.
+const PRODUCTION_REFUSAL_TTL: u32 = 8;
+
+pub fn refused_production(
+    path: &std::path::Path,
+    current_turn: u32,
+) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
+    let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
+        Default::default();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return refused;
+    };
+    let oldest = current_turn.saturating_sub(PRODUCTION_REFUSAL_TTL);
+    for line in raw.lines() {
+        if !line.contains("civvis_build_unplayable") {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|value| value.as_str())
+            != Some("civvis_build_unplayable")
+        {
+            continue;
+        }
+        let (Some(turn), Some(city), Some(item)) = (
+            event.get("turn").and_then(|value| value.as_u64()),
+            event.get("city").and_then(|value| value.as_i64()),
+            event.get("item").and_then(|value| value.as_str()),
+        ) else {
+            continue;
+        };
+        if city < 0 || turn < u64::from(oldest) || turn > u64::from(current_turn) {
+            continue;
+        }
+        if item.starts_with("UNIT_")
+            || item.starts_with("BUILDING_")
+            || item.starts_with("PROJECT_")
+        {
+            refused.entry(city).or_default().insert(item.to_string());
+        }
     }
     refused
 }
@@ -3820,6 +3985,25 @@ fn civvis_production_item(
     if let Some(name) = civvis_node_name(&rules.buildings, civ6, "BUILDING_") {
         return Some(crate::game::Item::Building {
             building: crate::name::Name::new(&name),
+        });
+    }
+    let project_alias = match civ6 {
+        "PROJECT_ENHANCE_DISTRICT_CAMPUS" => Some("campus_research_grants"),
+        "PROJECT_ENHANCE_DISTRICT_COMMERCIAL_HUB" => Some("commercial_hub_investment"),
+        "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT" => Some("encampment_training"),
+        "PROJECT_ENHANCE_DISTRICT_HARBOR" => Some("harbor_shipping"),
+        "PROJECT_ENHANCE_DISTRICT_HOLY_SITE" => Some("holy_site_prayers"),
+        "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE" => Some("industrial_zone_logistics"),
+        "PROJECT_ENHANCE_DISTRICT_THEATER" => Some("theater_square_festival"),
+        _ => None,
+    };
+    if let Some(name) = project_alias
+        .filter(|name| rules.projects.contains_key(*name))
+        .map(str::to_string)
+        .or_else(|| civvis_node_name(&rules.projects, civ6, "PROJECT_"))
+    {
+        return Some(crate::game::Item::Project {
+            project: crate::name::Name::new(&name),
         });
     }
     // ★★★★★ A DISTRICT, once the export says WHERE.
@@ -4500,6 +4684,9 @@ pub fn rebuild_from_state(
     // because it needs `city_ids`, which is only complete once every city is planted.
     game.blocked_districts =
         blocked_districts_from(&state.refused_districts, &city_ids, &game.rules);
+    let blocked_production =
+        blocked_production_from(&state.refused_production, &city_ids, &game.rules);
+    game.replace_blocked_production(blocked_production);
 
     Reconstruction {
         game,
@@ -4793,6 +4980,14 @@ impl LiveMirror {
         for (cid, names) in refused {
             self.game.blocked_districts.entry(cid).or_default().extend(names);
         }
+        // Unlike impossible district plots, a production refusal can be temporary.
+        // Replace this cooldown snapshot so entries disappear after their TTL.
+        let blocked_production = blocked_production_from(
+            &state.refused_production,
+            &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
+            &self.game.rules,
+        );
+        self.game.replace_blocked_production(blocked_production);
         // Rivals are met as the game goes on, so identity is not a one-time job at
         // reconstruction: a civilization first seen on turn 90 arrives here.
         apply_identity(&mut self.game, state);

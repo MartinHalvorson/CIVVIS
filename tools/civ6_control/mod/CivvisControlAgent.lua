@@ -55,6 +55,10 @@ local residualAnswers = {};
 -- Civ 6 city id -> the item CIVVIS asked that city to build THIS turn. Cleared with
 -- the rest of the per-turn handshake state; see `chooseProduction`.
 local civvisBuild = {};
+-- Per-city production names the engine has already rejected on this turn. This is
+-- deliberately turn-scoped: a strategic resource or prerequisite can change later,
+-- but retrying the same impossible choice in every blocker pass cannot help.
+local refusedByCity = {};
 -- Emitted once: a defeat is not a per-turn condition.
 local defeatReported = false;
 
@@ -620,7 +624,7 @@ local function countUnits(player)
 			counts.military = counts.military + 1;
 			-- Ranged counts as military AND as ranged: a siege needs both kinds and
 			-- the ladder has to be able to tell them apart.
-			if (row.RangedCombat or 0) > 0 then
+			if (row.RangedCombat or 0) > 0 or (row.Bombard or 0) > 0 then
 				counts.ranged = counts.ranged + 1;
 			end
 		end
@@ -2329,6 +2333,21 @@ local function warPressure()
 	return atWar, ours, worst;
 end
 
+local function productionFailureReasons(results)
+	local reasons = {};
+	pcall(function()
+		local failures = results ~= nil
+			and results[CityCommandResults.FAILURE_REASONS]
+			or nil;
+		if failures ~= nil then
+			for _, reason in ipairs(failures) do
+				reasons[#reasons + 1] = tostring(reason);
+			end
+		end
+	end);
+	return reasons;
+end
+
 local function chooseProduction(city, counts, nCities, turn, refused)
 	refused = refused or {};
 	-- Hoisted, because BOTH the expansion gate and the army cap need it and the
@@ -2386,16 +2405,48 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		-- DIFFERENT QUESTION than the one being asked, while every request logs
 		-- `applied = true`. "The request did not throw" is not "the engine took it",
 		-- and here it was not even the right question.
-		local ok, can = pcall(function()
+		local ok, can, results = pcall(function()
 			-- Three-arg form returns (canStart, results); take the verdict only.
-			local canStart = city:GetBuildQueue():CanProduce(row.Hash, false, true);
-			return canStart;
+			return city:GetBuildQueue():CanProduce(row.Hash, false, true);
 		end);
 		if ok and can == true then return row; end
-		return nil;
+		refused[name] = true;
+		return nil, productionFailureReasons(results);
 	end
 
 	local ladder = {};
+	-- Era-proof land forces. The old fixed Warrior/Spearman/Swordsman list becomes
+	-- entirely obsolete, after which a losing modern war silently falls through to a
+	-- Builder. Firaxis's own unit table is the authority on the current ruleset;
+	-- `playable` below still applies every city-specific prerequisite and resource rule.
+	local landUnits = {};
+	for row in GameInfo.Units() do
+		if row.Domain == "DOMAIN_LAND" and (row.Combat or 0) > 0 then
+			landUnits[#landUnits + 1] = {
+				name = row.UnitType,
+				capture = (row.RangedCombat or 0) <= 0 and (row.Bombard or 0) <= 0,
+				strength = math.max(row.Combat or 0, row.RangedCombat or 0,
+				                    row.Bombard or 0),
+			};
+		end
+	end
+	table.sort(landUnits, function(a, b)
+		if a.capture ~= b.capture then return a.capture; end
+		if a.strength ~= b.strength then return a.strength > b.strength; end
+		return a.name < b.name;
+	end);
+	local function pushLandUnits(reason)
+		for _, unit in ipairs(landUnits) do
+			ladder[#ladder + 1] = { unit.name, reason };
+		end
+	end
+	local function pushRangedLandUnits(reason)
+		for _, unit in ipairs(landUnits) do
+			if not unit.capture then
+				ladder[#ladder + 1] = { unit.name, reason };
+			end
+		end
+	end
 	-- ⚠ ONE SETTLER IN FLIGHT AT A TIME.
 	--
 	-- The condition used to be `(nCities + counts.settler) < CityTarget` with no
@@ -2548,9 +2599,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- 518 archer advances and 31 range attacks with zero captures, because ranged
 	-- cannot take a plot. Two or three archers alongside the melee, then melee again.
 	if warTarget ~= nil and (counts.ranged or 0) < (cfg.RangedFloor or 3) then
-		for _, name in ipairs({ "UNIT_ARCHER", "UNIT_SLINGER" }) do
-			ladder[#ladder + 1] = { name, "ranged" };
-		end
+		pushRangedLandUnits("ranged");
 	end
 	-- ★★★★★ THE ECONOMY GOES ABOVE THE OPEN-ENDED ARMY, OR IT IS DEAD CODE.
 	--
@@ -2580,9 +2629,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- would invert the failure and never raise a soldier at all.
 	local defenceFloor = math.max(1, nCities);
 	if counts.military < defenceFloor then
-		for _, name in ipairs({ "UNIT_WARRIOR", "UNIT_SPEARMAN", "UNIT_SLINGER" }) do
-			ladder[#ladder + 1] = { name, "defend" };
-		end
+		pushLandUnits("defend");
 	end
 	if counts.builder < math.max(1, nCities * (cfg.BuilderPerCity or 0.8)) then
 		ladder[#ladder + 1] = { "UNIT_BUILDER", "improve" };
@@ -2616,8 +2663,17 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- below an open-ended target; check what ELSE is down there; and check the target is
 	-- reachable in the state you actually care about.
 	local DEVELOP = { "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
-	                  "DISTRICT_HOLY_SITE", "DISTRICT_COMMERCIAL_HUB",
-	                  "BUILDING_WATER_MILL", "DISTRICT_THEATER",
+	                  "BUILDING_UNIVERSITY", "BUILDING_RESEARCH_LAB",
+	                  "DISTRICT_THEATER", "BUILDING_AMPHITHEATER",
+	                  "BUILDING_ART_MUSEUM", "BUILDING_ARCHAEOLOGICAL_MUSEUM",
+	                  "BUILDING_BROADCAST_CENTER",
+	                  "DISTRICT_COMMERCIAL_HUB", "BUILDING_MARKET",
+	                  "BUILDING_BANK", "BUILDING_STOCK_EXCHANGE",
+	                  "DISTRICT_HARBOR", "BUILDING_LIGHTHOUSE",
+	                  "BUILDING_SHIPYARD", "BUILDING_SEAPORT",
+	                  "DISTRICT_INDUSTRIAL_ZONE", "BUILDING_WORKSHOP",
+	                  "BUILDING_FACTORY", "DISTRICT_HOLY_SITE",
+	                  "BUILDING_WATER_MILL",
 	                  -- ⚠ `BUILDING_WALLS`, not `BUILDING_ANCIENT_WALLS`. Civilization
 	                  -- VI has no such type: grepping every shipped Asset for
 	                  -- `BUILDING_ANCIENT_WALLS` returns exactly ONE file, this mod,
@@ -2646,10 +2702,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		-- anything. Swordsman needs Iron and is often unavailable, so the
 		-- melee that is always buildable comes before the ranged that is
 		-- always tempting.
-		for _, name in ipairs({ "UNIT_SWORDSMAN", "UNIT_SPEARMAN", "UNIT_WARRIOR",
-		                        "UNIT_ARCHER", "UNIT_SLINGER" }) do
-			ladder[#ladder + 1] = { name, "army" };
-		end
+		pushLandUnits("army");
 	end
 	-- The same list below the army on the other two turns in three, so development is
 	-- still preferred over the always-available floor when the army IS satisfied.
@@ -2675,9 +2728,9 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- silently wrong later. When a list is a fallback, check what remains PLAYABLE
 	-- at turn 150, not what is playable at turn 1.
 	--
-	-- The melee ladder goes in above the builder so the floor stays non-degenerate:
-	-- these are the units the army block already prefers, and `playable` drops the
-	-- obsolete ones, so the first still-buildable tier wins.
+	-- The army rung above is now derived from the live unit table and is present only
+	-- while the bounded target is short. The floor therefore does not need a second,
+	-- unconditional military list -- the exact escape hatch that produced 85 units.
 	-- ⚠ `PROJECT_ENHANCE_DISTRICT_CAMPUS`, not `PROJECT_CAMPUS_RESEARCH_GRANT`.
 	-- Civilization VI HAS NO SUCH PROJECT. Grepping every shipped Asset for
 	-- `PROJECT_CAMPUS_RESEARCH_GRANT` returns exactly one file — this mod — while
@@ -2689,11 +2742,16 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- attributed it to "needs a Campus", which was a guess about a name that does
 	-- not resolve at all.
 	--
-	-- ⚠ It still requires a Campus, so it is not a universal fallback either; the
-	-- ungated builder below remains the true last resort.
+	-- One project is offered for every ordinary specialty district. No single project
+	-- is universal, but a developed city can now convert production into its own yield
+	-- instead of falling from a missing Campus project into another military unit.
 	for _, name in ipairs({ "PROJECT_ENHANCE_DISTRICT_CAMPUS",
-	                        "UNIT_SWORDSMAN", "UNIT_SPEARMAN", "UNIT_WARRIOR",
-	                        "UNIT_ARCHER", "UNIT_SLINGER" }) do
+	                        "PROJECT_ENHANCE_DISTRICT_THEATER",
+	                        "PROJECT_ENHANCE_DISTRICT_COMMERCIAL_HUB",
+	                        "PROJECT_ENHANCE_DISTRICT_HARBOR",
+	                        "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE",
+	                        "PROJECT_ENHANCE_DISTRICT_HOLY_SITE",
+	                        "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT" }) do
 		ladder[#ladder + 1] = { name, "floor" };
 	end
 	-- Gated exactly like the `improve` rung, which was the only thing holding the
@@ -2714,7 +2772,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- so the `build` events say which program decided, and the production fraction in
 	-- `civ6_civvis_status.py` can be read honestly.
 	if wanted ~= nil then
-		local row = playable(wanted);
+		local row, reasons = playable(wanted);
 		if row ~= nil then return wanted, row, "civvis"; end
 		-- ★★★★★ SAY WHAT CIVVIS ASKED FOR AND COULD NOT HAVE.
 		--
@@ -2731,11 +2789,16 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		-- ⚠ `item`, not `kind`: `emit` claims `kind`, `ctx` and `run`, and a payload
 		-- field named `kind` is overwritten before the line is written. That already
 		-- cost this file one blind instrument.
-		emit("civvis_build_unplayable", {
-			turn = turn,
-			city = try(function() return city:GetID(); end, -1),
-			item = tostring(wanted),
-		});
+		-- A direct produce order already emits this event before the blocker runs.
+		-- Do not double-count it when the same turn's fallback sees the memo.
+		if reasons ~= nil and #reasons > 0 then
+			emit("civvis_build_unplayable", {
+				turn = turn,
+				city = try(function() return city:GetID(); end, -1),
+				item = tostring(wanted),
+				reasons = reasons,
+			});
+		end
 	end
 	for _, entry in ipairs(ladder) do
 		local row = playable(entry[1]);
@@ -2888,16 +2951,14 @@ end
 -- request, so the "queue is empty" test fires again and again.
 local lastBuild = {};
 
--- Items a given city asked for and never started, remembered across turns.
+-- Items the host's start-now predicate rejected in a city on this turn.
 --
 -- ⚠ The queue does NOT reflect a BUILD request in the same tick it is made, so
 -- a synchronous "did it start?" check reads false for everything and is worse
 -- than no check: it made the ladder re-order all six candidates every turn.
--- The honest place to notice is the FOLLOWING turn — if the queue is still
--- empty then, the order never took, and that item is refused for this city from
--- now on so the ladder can fall through to something it can actually build.
-local refusedByCity = {};
-
+-- This table does not infer anything from that asynchronous queue read. It records
+-- only synchronous `CanProduce(..., false, true)` failures and expires at the next
+-- turn, so the ladder can fall through without inventing a permanent host rule.
 local function driveProduction(player, turn, force)
 	local counts = countUnits(player);
 	local cities = {};
@@ -2912,6 +2973,11 @@ local function driveProduction(player, turn, force)
 			return queue and queue:GetCurrentProductionTypeHash() or 0;
 		end, 0);
 		local cityId = try(function() return city:GetID(); end, -1);
+		local refused = refusedByCity[cityId];
+		if refused == nil or refused.turn ~= turn then
+			refused = { turn = turn };
+			refusedByCity[cityId] = refused;
+		end
 		local remembered = lastBuild[cityId];
 		-- The memo stops per-tick spam, but when the game says it is *blocked*
 		-- on production the whole point is to try again: an order that was
@@ -2948,7 +3014,7 @@ local function driveProduction(player, turn, force)
 			-- `autoclose` events because THIS FILE never loaded. The autoclose
 			-- context lives in a separate file and kept working, which is what
 			-- made it look like a stalled game rather than a broken script.
-			local name, row, why = chooseProduction(city, counts, #cities, turn);
+			local name, row, why = chooseProduction(city, counts, #cities, turn, refused);
 			if row ~= nil then
 				local params = buildParams(row, city);
 				if params ~= nil then
@@ -5052,6 +5118,29 @@ local function applyOrder(player, pid, row, turn)
 		end, 0);
 		if current ~= 0 and row2.Hash ~= nil and current == row2.Hash then
 			return true, "already_building";
+		end
+		-- Ask the same start-now predicate as Firaxis's production panel before
+		-- crediting this order. A successful `pcall` only proves that Lua did not
+		-- throw; the live Library loop showed that the engine can reject the build
+		-- while the bridge reports it applied on every turn.
+		local canOk, canStart, results = pcall(function()
+			return city:GetBuildQueue():CanProduce(row2.Hash, false, true);
+		end);
+		if not canOk or canStart ~= true then
+			local cityId = tonumber(subject) or -1;
+			local refused = refusedByCity[cityId];
+			if refused == nil or refused.turn ~= turn then
+				refused = { turn = turn };
+				refusedByCity[cityId] = refused;
+			end
+			refused[verb] = true;
+			emit("civvis_build_unplayable", {
+				turn = turn,
+				city = cityId,
+				item = tostring(verb),
+				reasons = productionFailureReasons(results),
+			});
+			return false, canOk and ("cannot_start_" .. verb) or "can_produce_throw";
 		end
 		local ok = pcall(function()
 			CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
