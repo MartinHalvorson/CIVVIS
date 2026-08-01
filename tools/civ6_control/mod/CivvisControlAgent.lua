@@ -5015,7 +5015,12 @@ local function applyOrder(player, pid, row, turn)
 				emit("move_refused", {
 					turn = turn,
 					unit = subject,
-					kind = try(function() return unit:GetType(); end),
+					-- ⚠ `unit_kind`, NOT `kind`. `emit` sets `payload.kind = <event kind>`
+					-- on line 105, so a field named `kind` here is CLOBBERED — the
+					-- first run with this event reported `kinds: [('move_refused', 22)]`
+					-- and the unit type was gone. Any payload this file builds must
+					-- avoid `kind`, `ctx` and `run` for the same reason.
+					unit_kind = try(function() return unit:GetType(); end),
 					from_x = try(function() return unit:GetX(); end, -1),
 					from_y = try(function() return unit:GetY(); end, -1),
 					x = x, y = y,
