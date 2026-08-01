@@ -660,9 +660,24 @@ unconfirmed evaluator behavior is promoted by this change.
 | comparison | matrix sample | compact | deployment | production consequence |
 |---|---:|---:|---:|---|
 | policy/envoy composite vs pre-promotion `advanced` | 300 independent maps/profile | 52.2%, +15 | 57.2%, +51 | promoted after deployment PASS |
+| revised embedded champion vs stock policy/envoy composite | 300 independent maps/profile | 52.9%, +20 | 50.6%, +4 | retain incumbent; deployment is inconclusive |
 | commitment vs pre-promotion `advanced` | 120 maps/profile | 51.0%, +7 | 46.5%, −25 | reject treatment |
-| `advanced_evolved` vs pre-promotion `advanced` | 120 maps/profile | 57.3%, +51 | 45.6%, −30 | reject transfer |
+| pre-revision gen-14 champion vs pre-promotion `advanced` | 120 maps/profile | 57.3%, +51 | 45.6%, −30 | reject transfer |
 | live policy deck vs `advanced_v1` | 300 maps/profile | 50.5%, +3 | 53.7%, +26 | anchor retained |
+
+PR #708's revised genome had three prior matrix passes against the then-current
+stock controller. Because #746 subsequently promoted the live policy deck and
+two envoy mechanisms, the 2026-08-01 confirmation repeated the comparison with
+those mechanisms held on for both weight sets. The compact safety profile was
+accepted, but the deployment profile was only 50.6% (+4 Elo-equivalent, 95%
+Wilson 45.0%..56.2%; 83 champion-favored versus 82 stock-favored map
+directions). It did not pass either required deployment strength check.
+
+Production `advanced` consequently remains the stock-weight, live-policy and
+envoy-production composite. The revised embedded snapshot remains an
+evaluator-only candidate; its positive compact result is not a deployment
+strength claim. The exact command and complete outcome are recorded in
+[`EVAL.md`](EVAL.md).
 
 The historical controls now mean the following relative to the promoted
 default: `advanced_policy_live_control` turns off both envoy-production
