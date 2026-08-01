@@ -773,13 +773,14 @@
   .ribbon-stat.gold { --stat-color: #e8c64c; }
   .ribbon-stat.military { --stat-color: #f2a09b; }
   .ribbon-stat.cities { --stat-color: #d6c49b; }
+  .ribbon-stat.population { --stat-color: #d8a36d; }
   .ribbon-stat.suzerain { --stat-color: #8dd6b1; }
   .ribbon-stat.wonders { --stat-color: #e9d88e; }
   .ribbon-stat.score { --stat-color: var(--gold-bright); }
   .ribbon-stat b { color: var(--stat-color); }
   /* Leading a category is a quiet wash behind the figure, not a boxed chip.
-     With eleven categories and one leader each, a 70% border plus an inset glow
-     put ten bright rectangles on the table at once and they read as the
+     With twelve categories and one leader each, a 70% border plus an inset glow
+     put eleven bright rectangles on the table at once and they read as the
      subject rather than as an annotation on it. */
   .ribbon-stat.category-leader {
     border: 0; border-radius: 5px;
@@ -2397,7 +2398,7 @@
        beside it up here — not at --hud-rail-width, which is the wider
        reservation the minimap needs down in the corner. Measuring the seam
        against the rail left 192px of empty map between the two panels at
-       1600px and squeezed the eleven value columns to 27px each, narrower than a
+       1600px and squeezed the twelve value columns to 27px each, narrower than a
        four-digit figure. */
     width: min(var(--player-hud-width, 100%),
       calc(100% - var(--victory-hud-width) - 20px));
@@ -2406,7 +2407,7 @@
        At 68px the button's own text overflowed its content box by a pixel and
        Chrome clipped the final "s" — a control labelled "Watch a". */
     --hud-watch-column: 74px;
-    /* The eleven value columns claim their width first and the identity block is
+    /* The twelve value columns claim their width first and the identity block is
        the flexible one, because a clipped name still reads and a clipped number
        lies. The old arrangement was the other way round — identity held
        minmax(300px, 42%) and the numbers took the remainder — so the figures
@@ -2444,9 +2445,9 @@
     --hud-identity-column: minmax(
       calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)
            + var(--hud-ident-odds-min)), 11.387fr);
-    /* Eleven cells and the ten gutters between them. */
+    /* Twelve cells and the eleven gutters between them. */
     --hud-stats-column: minmax(
-      calc(var(--hud-stat-min) * 11 + var(--hud-stat-gap) * 10), 11fr);
+      calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);
     --hud-column-gap: 6px;
     /* Civilization, leader, player, age and the plan are labels, and their
        cells ellipsize. Elo and the odds pair are figures on the taller floors:
@@ -2462,7 +2463,7 @@
       minmax(var(--hud-ident-odds-min), 1.3fr)
       minmax(var(--hud-ident-min), 1.3fr)
       minmax(var(--hud-ident-min), 2.035fr);
-    --hud-stat-tracks: repeat(11, minmax(var(--hud-stat-min), 1fr));
+    --hud-stat-tracks: repeat(12, minmax(var(--hud-stat-min), 1fr));
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
     display: grid; grid-template-columns: 164px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
@@ -2623,7 +2624,7 @@
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
   /* One line, four regions: the lock, identity with its adjacent Watch-as
-     action, then the eleven values. Civilization itself now carries the former
+     action, then the twelve values. Civilization itself now carries the former
      Empire/capital action. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
@@ -2931,7 +2932,7 @@
      sit below the base #playerhud and #maparea rules: they carry the same
      specificity, so above them they would simply lose — which is exactly how
      the identity column once kept its full 300px on a 1100px screen and
-     squeezed the eleven value columns into 64px. The masthead gives up the
+     squeezed the twelve value columns into 64px. The masthead gives up the
      identity first — it ellipsizes and keeps its tooltip — so that every value
      stays whole, and the rail narrows alongside it. */
   /* Each step narrows the per-identity-column floor and the per-value floor
@@ -2963,7 +2964,7 @@
     }
     #maparea { --hud-rail-width: clamp(240px, 20vw, 300px); }
   }
-  /* Eleven value columns, a turn plate and a standing rail stop fitting side by
+  /* Twelve value columns, a turn plate and a standing rail stop fitting side by
      side around here. */
   @media (max-width: 1300px) {
     #playerhud {
@@ -3002,7 +3003,7 @@
     }
   }
   @media (max-width: 1100px) {
-    /* Seven identity columns plus eleven value columns need the map's full width at
+    /* Seven identity columns plus twelve value columns need the map's full width at
        this point. The instruments stack as bands across the top, with the
        tracker's paths in columns because there is no height left to stack them. */
     #map-controls-dock { right: 0; }
@@ -3086,13 +3087,13 @@
   #playerhud[data-type-size="compact"] > .player-standings:focus-visible {
     outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px;
   }
-  /* Eleven complete numeric columns have a real minimum width. When a custom or
+  /* Twelve complete numeric columns have a real minimum width. When a custom or
      phone-sized box cannot supply it, keep a readable type floor and scroll the
      table inside its own panel instead of crushing or spilling its cells.
-     739px keeps 201px of identity, eleven 32px values with 2px gutters, and the
+     773px keeps 201px of identity, twelve 32px values with 2px gutters, and the
      lock, widened watch action and padding comfortably separated. */
   #playerhud[data-type-size="compact"] .ribbon-stat-heading,
-  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 739px; }
+  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 773px; }
   #playerhud[data-type-size="roomy"] {
     grid-template-columns: 168px minmax(0, 1fr);
     --hud-ident-min: 61px; --hud-column-gap: 7px;
@@ -6282,7 +6283,7 @@ function bindMapAreaEditor() {
 // sees the rail instead of three panels pinned where they no longer belong.
 const HUD_LAYOUT_STORAGE_KEY = "civvis-hud-layout-v3";
 const HUD_WIDGETS = {
-  // A player row is one line: the turn plate, an identity and eleven fixed metric
+  // A player row is one line: the turn plate, an identity and twelve fixed metric
   // columns side by side, which is why the standings want the map's width and
   // very little of its height. They are capped below two-fifths of that height
   // however they are sized — by the player count, by a dragged edge, or by a
@@ -6315,7 +6316,7 @@ const HUD_RESIZE_EDGES = [
 //    open a gap at the end of the row, or make the table start scrolling.
 //    All but one of the bars therefore move their own two columns and nothing
 //    else. The final bar is between the identity block and the
-//    eleven values, and moving it moves width between those two blocks — so the
+//    twelve values, and moving it moves width between those two blocks — so the
 //    columns inside each one take up the slack in their own proportion, which
 //    is what "give the numbers more room" has to mean.
 //
@@ -6341,14 +6342,14 @@ const PLAYER_HUD_COLUMNS = [
   {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-odds-min", width:1.3},
   {key:"age", label:"Age", block:"identity", head:6, min:"--hud-ident-min", width:1.3},
   {key:"plan", label:"Plan", block:"identity", head:7, min:"--hud-ident-min", width:2.035},
-  ...[["cities", "Cities"], ["food", "Food"], ["production", "Production"],
+  ...[["cities", "Cities"], ["population", "Population"], ["food", "Food"], ["production", "Production"],
       ["science", "Science"], ["culture", "Culture"], ["faith", "Faith"],
       ["gold", "Gold"], ["military", "Military"], ["wonders", "Wonders"],
       ["suzerain", "Suzerainty"], ["score", "Score"]]
     .map(([key, label], head) => ({key, label, block:"stats", head, min:"--hud-stat-min", width:1})),
 ];
 // One bar per seam between two adjacent data columns, including the seam where
-// the identity block hands over to the eleven values.
+// the identity block hands over to the twelve values.
 const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1).map((left, index) =>
   ({left, right:PLAYER_HUD_COLUMNS[index + 1], index}));
 const playerHudColumnWidths = new Map(PLAYER_HUD_COLUMNS.map(c => [c.key, c.width]));
@@ -6411,7 +6412,7 @@ function syncPlayerHudColumns(placeGrips = true) {
     stats.map(track).join(" "),
     `minmax(calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) ` +
       `+ var(--hud-ident-odds-min)), ${total(identity).toFixed(4)}fr)`,
-    `minmax(calc(var(--hud-stat-min) * 11 + var(--hud-stat-gap) * 10), ` +
+    `minmax(calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), ` +
       `${total(stats).toFixed(4)}fr)`,
   ];
   if (tracks.join("|") !== playerHudColumnCss) {
@@ -24187,6 +24188,7 @@ function playerHudStats(player, rank) {
   const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
   return [
     ["cities", "CITY", player.cities, `Cities controlled: ${exactStat(player.cities)}`],
+    ["population", "POP", player.population, `Total population: ${exactStat(player.population)}`],
     ["food", "FOOD", y.food, `Food: ${exactStat(y.food)} per turn`],
     ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
     ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
@@ -24234,7 +24236,7 @@ function drawPlayerHud() {
   const repeatedCivs = repeatedCivNames(majors);
   seedOwnSeatLock(seats);
   const lockedKeys = lockedSeats();
-  // One line per row across the masthead — who this is and their eleven values
+  // One line per row across the masthead — who this is and their twelve values
   // side by side — so a row is only as tall as its medallion: 26px, plus the
   // 2px gap under it. The fixed 50px is the heading, the column heads, the
   // gaps and the panel's padding; the floor keeps the turn plate's age, count,
@@ -24246,7 +24248,7 @@ function drawPlayerHud() {
   // that one-row scorecard across the whole map. Each additional known player
   // buys the table another 100px until the available masthead width caps it.
   // Twelve-player spectator mode consequently reaches the full masthead.
-  const requestedWidth = 820 + Math.max(0, rows - 1) * 100;
+  const requestedWidth = 854 + Math.max(0, rows - 1) * 100;
   const mapArea = document.getElementById("maparea");
   if (!HUD_LAYOUT.players) {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
@@ -24289,7 +24291,7 @@ function drawPlayerHud() {
     `<span title="Civilization age">AGE</span>` +
     `<span title="AI active strategy">PLAN</span></span>` +
     `<span class="diplomacy-stat-head">` +
-    [["cities", "CITY", "Cities controlled"], ["food", "FOOD", "Food per turn"],
+    [["cities", "CITY", "Cities controlled"], ["population", "POP", "Total population"], ["food", "FOOD", "Food per turn"],
       ["production", "PROD", "Production per turn"], ["science", "SCI", "Science per turn"],
       ["culture", "CUL", "Culture per turn"], ["faith", "FPT", "Faith per turn"],
       ["gold", "GPT", "Net Gold per turn"], ["military", "MIL", "Military strength"],
