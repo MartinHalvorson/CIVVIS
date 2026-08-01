@@ -2571,7 +2571,18 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	local DEVELOP = { "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
 	                  "DISTRICT_HOLY_SITE", "DISTRICT_COMMERCIAL_HUB",
 	                  "BUILDING_WATER_MILL", "DISTRICT_THEATER",
-	                  "BUILDING_ANCIENT_WALLS" };
+	                  -- ⚠ `BUILDING_WALLS`, not `BUILDING_ANCIENT_WALLS`. Civilization
+	                  -- VI has no such type: grepping every shipped Asset for
+	                  -- `BUILDING_ANCIENT_WALLS` returns exactly ONE file, this mod,
+	                  -- while `BUILDING_WALLS` appears in Firaxis's own DLC data. So
+	                  -- the development rung's only defensive entry could never be
+	                  -- built, on any turn of any run, and nothing said so — the
+	                  -- ladder simply moved to the next line.
+	                  --
+	                  -- Same class as the floor's obsolete units in #748: a list
+	                  -- entry that cannot fire is invisible unless something asks
+	                  -- whether the engine has ever accepted it.
+	                  "BUILDING_WALLS" };
 	local function pushDevelop()
 		for _, name in ipairs(DEVELOP) do
 			ladder[#ladder + 1] = { name, "develop" };
