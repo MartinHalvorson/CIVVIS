@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 79] = [
+pub const EVAL_ONLY_AIS: [&str; 80] = [
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -73,6 +73,7 @@ pub const EVAL_ONLY_AIS: [&str; 79] = [
     "advanced_evolved_blind",
     "advanced_settler_commit",
     "advanced_wide_opening",
+    "advanced_plan_city_target",
     "advanced_expansion_payback",
     "advanced_late_expansion",
     "advanced_expansion_dispatch",
@@ -186,6 +187,7 @@ define_arm_kinds! {
     AdvancedLeagueTop => "advanced_league_top",
     AdvancedMeasuredDedication => "advanced_measured_dedication",
     AdvancedParallelSettlers => "advanced_parallel_settlers",
+    AdvancedPlanCityTarget => "advanced_plan_city_target",
     AdvancedPolicyLiveControl => "advanced_policy_live_control",
     AdvancedPolicyEnvoyPriority => "advanced_policy_envoy_priority",
     AdvancedProphetFirst => "advanced_prophet_first",
@@ -1799,6 +1801,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.city_target_floor = 6;
             Box::new(ai)
         }
+        // Treatment for the city-target axis: identical to `advanced` except
+        // that the baseline production governor is handed the empire's own
+        // `plan.desired_cities` instead of the flat `city_target` gene. See
+        // `AdvancedAi::plan_city_target` and `docs/OPENINGS.md` §19.
+        "advanced_plan_city_target" => {
+            let mut ai = AdvancedAi::new();
+            ai.plan_city_target = true;
+            Box::new(ai)
+        }
         "advanced_lane_reachable" => {
             let mut ai = AdvancedAi::new();
             ai.refuse_unreachable_lanes = true;
@@ -2627,6 +2638,7 @@ impl ArmKind {
             Self::AdvancedExpansionDispatch => &["expansion-dispatch"],
             Self::AdvancedExpansionComplete => &["late-expansion", "expansion-dispatch"],
             Self::AdvancedWideOpening => &["city-target-floor"],
+            Self::AdvancedPlanCityTarget => &["plan-city-target"],
             Self::AdvancedLaneReachable => &["lane-reachability"],
             Self::AdvancedSettlerFirst => &["settler-oracle"],
             Self::AdvancedProphetFirst => &["prophet-priority"],
@@ -3097,6 +3109,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
         "advanced_wide_opening" => (Vec::new(), "advanced_wide_opening"),
+        "advanced_plan_city_target" => (Vec::new(), "advanced_plan_city_target"),
         "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
         "advanced_late_expansion" => (Vec::new(), "advanced_late_expansion"),
         "advanced_expansion_dispatch" => (Vec::new(), "advanced_expansion_dispatch"),
@@ -4165,7 +4178,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 46] = [
+            const SCRIPTED: [&str; 47] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4187,6 +4200,7 @@ mod tests {
                 "advanced_early_score_build",
                 "advanced_settler_commit",
                 "advanced_wide_opening",
+                "advanced_plan_city_target",
                 "advanced_expansion_payback",
                 "advanced_late_expansion",
                 "advanced_expansion_dispatch",

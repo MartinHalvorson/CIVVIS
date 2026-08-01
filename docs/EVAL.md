@@ -6685,6 +6685,403 @@ resolved by 38 evaluator arms, the league seeding and that fallback. **Every
 strength number measured against `advanced_evolved` before this change is
 measured against a different agent after it.**
 
+## 2026-07-31 — why the shipped genome's sign flips between the promotion profiles
+
+⚠⚠ **HISTORICAL: "the shipped genome" below means the gen-14 champion as it
+stood before the entry above replaced it.** These sections are the measurement
+and the attribution that *led* to that replacement; every number in them was
+taken against the pre-swap artifact. For what ships now, read the deployment-
+capable champion entry above.
+
+⚠ **The result being explained here is already recorded and this section does
+not claim it.** The matrix table above has `advanced_evolved` at 120 maps per
+profile — compact **57.3%, +51** (direction 44–16, p=0.0004) and deployment
+**45.6%, −30** (direction 24–40) — verdict **retain stock**. `docs/AI_GAPS.md`
+§5 records the same shape as +58/−9 on an older comparison. What no entry
+records is *why* the same forty genes are worth +51 on one profile and −30 on
+the other, and that is what this section adds. The forty-map runs below are an
+independent replication on a disjoint seed, not a discovery.
+
+The replication asks the question on the matrix's **own two profiles**, at one
+disjoint seed prefix, with the victory set held fixed:
+
+```sh
+# deployment
+ai_eval advanced_evolved advanced --pairs 40 --jobs 4 --seed 61000000 \
+  --players 6 --width 74 --height 46 --city-states 9 --turns 250 --speed online \
+  --map continents --shape planet --poles poles --randomize-civs \
+  --victories science,culture,domination
+# compact: --players 4 --width 24 --height 16 --city-states 4 --turns 500 --speed standard
+```
+
+`advanced_evolved` resolves the shipped champion — run from the checkout,
+`load_champion` finds `data/evolved/best.json`, which is byte-for-byte the file
+`src/evolve.rs` `include_str!`s as the embedded fallback, so this is the same
+genome either way. `advanced` is stock `AdvancedAi::new()`, and `ai_eval`
+reports the arms differing on `weights` alone.
+
+| profile | paired score | Elo-equivalent | games | map directions | sign p |
+|---|---:|---:|---:|---:|---:|
+| compact 4p 24×16 Standard/500 | **56.9%** (95% Wilson 41.6–70.9) | **+48** | 28–17 | 15 for / 19 neutral / 6 against | 0.0784 |
+| deployment 6p 74×46 Online/250 | **42.5%** (95% Wilson 28.5–57.8) | **−53** | 13–25 | 8 for / 14 neutral / 18 against | 0.0755 |
+
+Both verdicts are `INCONCLUSIVE` at forty maps and neither establishes
+anything on its own. Taken together they reproduce the recorded 120-map matrix
+(+51 compact, −30 deployment) on a disjoint seed with a fresh instrument — a
+**101-point swing and a sign reversal on one artifact**. Nothing about the
+victory list explains it: both runs used `science,culture,domination`, so the
+gate's exclusion of religion is not the cause.
+
+### The victory mix says why, and it is reachability
+
+| | compact | deployment |
+|---|---|---|
+| champion wins | domination **21**, culture 5, science 2 | science 12, culture 1 |
+| stock wins | domination 7, culture 5, science 5 | science 18, culture 7 |
+
+At 96 tiles per player with four seats, neighbours are adjacent, domination is
+reachable, and the champion's combat and doctrine genes cash out — it takes
+three times stock's domination wins. At 567 tiles per player with six seats
+nobody is reachable in 250 Online turns, the game is a science and culture
+race, and the champion trails on **every** column that race is run on: cities
+5.82 v 6.08, population 70.7 v 77.4, techs 56.8 v 59.3, production 298 v 344,
+science 174 v 191, culture 126 v 145. It leads on exactly one, **faith, 3131 v
+2924**, in a profile with religious victory switched off.
+
+### The planner shows the mechanism: an expansion trap that never reaches Science
+
+The adaptive grand-strategy census on the same deployment run, midgame share of
+observed player-turns:
+
+| | champion | stock |
+|---|---:|---:|
+| science | **16.1%** | **31.4%** |
+| expansion | **34.8%** | 19.5% |
+| recovery | 13.0% | 11.2% |
+| conquest | 23.7% | 27.8% |
+| strategy boundaries accompanied by a **city deficit** | **100** | 52 |
+
+Stock spends nearly twice the midgame on Science, and takes 18 science
+victories to the champion's 12. The champion spends it on Expansion instead,
+with twice as many strategy boundaries carrying a city deficit — it is
+chronically short of the city target it shares with stock (`city_target_floor`
+is not a gene, so both empires want the same number), because
+`settler_min_pop` 4.457 makes a city grow to five before it may build a
+Settler and `builder_per_city` 0.200 leaves the tiles that feed that growth
+unimproved. It stays in the expansion loop and never routes to the lane that
+wins on this map.
+
+That is the same shape as the compact result read the other way round: on a
+map where the neighbour is adjacent, the loop resolves into Conquest and the
+combat genes pay; on a map where nobody is reachable, it resolves into nothing.
+
+That is consistent with its genome. Against `Weights::default()` it carries
+`faith_builder` 350.4 v 120.0, `wonder_min_bld` 1.164 v 3.0,
+`builder_per_city` 0.200 v 0.5 — the lower bound of that gene — `city_target`
+2.408 v 4.0 and `settler_min_pop` 4.457 v 2.0. A tall faith-and-wonder build
+bred on a map where the neighbour is next door.
+
+**The defensible statement is that the shipped genome is bred for a
+reachability regime, not that it is weak.** It is +48 where it was bred and
+does not carry to the profile the deployment gate judges on. Nothing here
+licenses removing it; it does mean a claim that the embedded champion is "the
+strong agent" must name the profile, and that a genome intended for deployment
+should be selected there.
+
+### A deck-only calibration rung
+
+Every genome staged as a JSON artifact deserializes to `PolicyDeck::Live`,
+while `Weights::default()` is `Legacy`, so an artifact arm bundles the deck
+with the genome. To difference it out, a rung carrying `"weights": {}` — every
+gene falling back to the stock default, deck Live — was run against `advanced`
+on the same deployment maps at seed 66,000,000: **53.1%, +22** (95% Wilson
+38.1–67.6). That is the same comparison `advanced_policy_live_control` records
+at 300 pairs (54.3%, +30 at deployment), so the rig reproduces a known
+quantity, and the champion's 42.5% sits about eleven points below its own
+deck-matched baseline.
+
+### The live league's leader
+
+Live league round 3217 ranks `g28-28` first at the six-player table on the
+statistic the league selects on — 199 outright wins in 1011 six-player games
+against stock `advanced`'s 142 in 866. Staged and run on the deployment profile
+at seed 63,000,000 (10 pairs, `INSUFFICIENT` by the gate's own 20-map floor):
+40.0%, −70, 4 games to 8, while building cities 7.97 v 5.17, population 104.5 v
+67.6, production 406.6 v 280.8 and science 177.3 v 151.2 — a uniformly larger
+empire on every yield column and fewer wins.
+
+⚠ Ten maps establish nothing, and this does **not** generalise to "league
+genomes do not carry": `docs/LIVE_GENOME_TRANSFER.md` ran that question at
+proper power on an 8p 84×54 profile and `g44-41` scored **51.9%** (+13,
+`INCONCLUSIVE`, 11 directions for and 8 against), failing only its own
+pre-declared 52.5% screen term. One league genome reads slightly positive at
+forty maps and another reads negative at ten.
+
+### The expansion gate the adaptive path actually uses
+
+Recorded separately in `docs/PLAN_CITY_TARGET.md`: `city_target` is **not**
+confined to the `unwrap_or_else` fallback `docs/GENOME.md` describes. After the
+opening book an untargeted adaptive empire ends in `BasicAi::cities`, whose
+Settler gate reads the flat gene, and `ai_eval` reports stock `advanced` at
+100% adaptive plans. The default-off `advanced_plan_city_target` arm, which
+hands that governor the empire's own land-aware `plan.desired_cities`, was
+**refuted by its own fires-check before any outcome seed was read** — cities
+fall 2.17→1.50 at compact and 4.83→4.33 at deployment, because the ramp opens
+at three while the stock gene is four. The census it produced is the durable
+part: at deployment the empire reaches 4.83 cities against its own target of
+5.00 and is **target**-limited, while at the compact eval profile it reaches
+2.17 against 3.83 and is **execution**-limited. The expansion axis has two
+regimes and one profile cannot judge it.
+
+### Which genes carry it: a pre-registered partition on shared maps
+
+The split above says the same forty genes are worth +51 on one profile and −30
+on the other. This partitions them. The **yield half** is `docs/GENOME.md`'s
+`economy` (7) plus `expansion` (4) — `city_target`, `settler_min_pop`,
+`settler_stop_turn`, `min_city_dist`, `builder_per_city`, `wonder_min_bld`,
+`faith_builder`, `d_campus`, `d_commercial`, `d_holy`, `d_theater` — and the
+rest is the other twenty-nine.
+
+Four artifact arms were staged as `evolved/best.json` and run against stock
+`advanced` on the **same forty deployment maps**, seed prefix 66,000,000, so
+the arms are compared to each other on identical terrain. Every artifact
+deserializes to `PolicyDeck::Live` while `Weights::default()` is `Legacy`, so
+`r0` — an artifact carrying **no gene overrides at all** — is the rig's
+calibration rung and every other arm is read against it rather than against the
+control.
+
+| arm | champion genes | paired score | Elo-equivalent | games |
+|---|---:|---:|---:|---:|
+| `r0` stock artifact, deck only | 0 | **53.1%** (95% Wilson 38.1–67.6) | +22 | — |
+| `r2` yield half only | 11 | **44.4%** (95% Wilson 30.2–59.6) | −39 | 14–23 |
+| `r3` the other twenty-nine | 29 | **57.5%** (95% Wilson 42.2–71.5) | +53 | 27–15 |
+| the shipped champion, all forty (seed 61,000,000) | 40 | 42.5% (95% Wilson 28.5–57.8) | −53 | 13–25 |
+
+**The two halves point in opposite directions and the whole tracks the worse
+one.** Against the `r0` baseline the eleven yield genes cost about nine points
+and the other twenty-nine buy about four.
+
+`r0` at 53.1% reproduces `advanced_policy_live_control`'s recorded 54.3% at
+300 maps from a different construction path on a disjoint seed, so the rig
+measures a known quantity correctly.
+
+The screen's own validity was checked rather than argued. `target/ci/ai_eval`
+was relinked between `r0` finishing and `r2` starting, because an unrelated
+one-line arm-identity tag landed in `src/elo.rs`. Rather than reason about
+whether that could reach a game, `r0` was re-run on the final binary at the
+same seed: its output is **byte-identical** to the original, line for line,
+including the paired score, every interval and every diagnostic column. The
+cross-arm comparison stands.
+
+`Weights` carries a second non-gene field that a JSON artifact could silently
+move, and it was checked rather than assumed: `dedication_choice` has
+`#[serde(default)]`, but `DedicationChoice::default()` is `Banking`, which is
+also `Weights::default()`'s value, so an artifact that omits the field lands on
+the same dedication as the control. The rung is deck-only.
+
+**`r2` reproduces the whole champion using eleven genes.** Its midgame Science
+share is 15.9% against stock's 33.5% (the full champion: 16.1% against 31.4%);
+its midgame Expansion share is 35.6% against 18.5% (the full champion: 34.8%
+against 19.5%); it takes 9 science victories to stock's 16, holds 5.47 cities
+to 5.98, and 55.5 techs to 59.1. Its paired score, 44.4%, sits beside the full
+champion's 42.5% on a disjoint seed.
+
+`r3` is the mirror image of `r2` on the diagnostic that matters. Its midgame
+Science share is **33.9%** against `r2`'s 15.9%, its midgame Expansion share
+**18.7%** against `r2`'s 35.6%, and it takes **21 science victories to stock's
+13** while holding 6.58 cities to 5.45, 84.0 population to 70.4 and 61.1 techs
+to 56.5. Removing eleven genes does not merely stop the bleeding; the empire
+that remains is larger *and* converts.
+
+Within those eleven, one column stands out far enough to name: `r2` holds
+**1.48 builders against stock's 2.51**, a 41% cut, which is exactly what
+`builder_per_city = 0.200` — the gene's own lower bound, against a stock 0.5 —
+predicts. Builders improve tiles, tiles feed growth, growth pays for the next
+Settler and the Campus that follows it, so a builder cut is the cheapest
+available explanation for an empire that stays short of its city target and
+never routes to Science. Its faith is 3265 against 2929 and its tourists 33.8
+against 40.7, consistent with `faith_builder` 350.4 against 120.0 spending the
+difference on a lane the profile has switched off.
+
+⚠ **That is a reading of one column, not an attribution within the block**, and
+the column is partly an *effect*. `BasicAi::cities` gates builders on
+`builder_per_city * n_cities`, so a smaller empire builds fewer of them at any
+gene value — `r3` holds **2.62 builders against stock's 2.15 while carrying
+stock's own `builder_per_city`**, purely by holding more cities. The loop runs
+both ways: fewer builders, slower growth, fewer cities, fewer builders. That is
+a coherent mechanism and it is not one-directional causation, so the column
+supports the block-level attribution and does not isolate a gene inside it.
+Separating `economy` from `expansion` needs its own two arms and its own
+pre-registration; nothing here licenses moving a single gene.
+
+### The yield block is not more perturbed, it is more consequential
+
+An obvious deflation of the attribution would be that the eleven genes simply
+moved further from stock than the other twenty-nine. Measured as
+`|champion − stock| / (gene's own range)`, they did not:
+
+| block | mean normalised displacement | genes |
+|---|---:|---:|
+| yield (economy + expansion) | **0.194** | 11 |
+| the other twenty-nine | **0.185** | 29 |
+
+The two halves are displaced by the same amount and only one of them costs
+anything at deployment. The single largest displacement in the whole genome is
+`war_ratio` at 0.65 of its range (4.530 against a stock 1.800) — a member of
+the war-declaration block that `docs/GENOME.md` measured as **reached only by
+`BasicAi`**, so `AdvancedAi`'s own declaration path never consults it. A gene
+under no selection pressure drifting to the far end of its range is what that
+looks like from the outside, and it is a useful reminder that a large
+displacement is evidence about the *search*, not about the gene's importance.
+
+⚠ Forty maps resolve about ±14 points and both arms are individually
+`INCONCLUSIVE`; this is an ordering of arms on shared maps, not a promotion.
+
+### The experiment this points at, which has never been run
+
+The shipped genome was bred with `--players 4 --width 24 --height 16 --turns
+500` at Standard speed with all six victory conditions — 96 tiles per player.
+Nothing in this repository has ever bred one at the profile the deployment gate
+judges.
+
+**This is not a new idea and this entry does not claim it.** The 2026-07-28
+entry above already names it — *"the experiment this result demands is now one
+command … the first breeding run in this repository aimed at the game that
+ships"* — and records that it was **not launched**, because the box was at load
+36 with another agent's evaluation running. `EvoCfg::speed` was added that same
+day specifically to make it possible, is wired through `main.rs`, and three
+days later still has not been used. What this section adds is a second,
+independent reason to run it: the deficit is now attributed to eleven genes,
+so a deployment-profile breeder has a named target rather than forty:
+
+```sh
+civvis evolve --pop 24 --generations 25 --games 96 \
+  --players 6 --width 74 --height 46 --turns 250 --speed online --seed <fresh>
+```
+
+Two mismatches remain even then, and both are worth stating before anyone runs
+it: `eval_game_observation` derives city-states from map size and takes the
+default victory set, so it would breed with religious victory enabled while the
+gate excludes it, and it plays every third game at twice `max_turns`. Neither
+touches the density and seat count, which the measurements above identify as
+the dominant difference, but a run should be read knowing them.
+
+### The nomination, and the fixed condition it had to clear first
+
+`r3` scoring above the `r0` baseline nominates it under the partition's
+pre-registered rule. The rule carried one extra condition, fixed while only
+`r0` and `r2` were known: the matrix's compact profile asks only for *no
+established regression against stock*, which is the right bar for a new
+evaluator arm and the wrong one for replacing an artifact recorded at +51
+there. So `r3` was also run against `advanced` on the compact profile at seed
+61,000,000 — the same forty maps the champion scored 56.9% on — and had to land
+at or above 50%.
+
+| arm on compact 4p 24×16 Standard/500, seed 61,000,000 | paired score | Elo-equivalent | games |
+|---|---:|---:|---:|
+| the shipped champion | 56.9% (95% Wilson 41.6–70.9) | +48 | 28–17 |
+| `r3` | **55.6%** (95% Wilson 40.4–69.8) | +39 | 24–15 |
+
+**`r3` keeps essentially all of the champion's compact strength** — the two
+intervals overlap almost entirely — while scoring +53 at deployment where the
+champion scores −53. Its compact victory mix moves from the champion's
+`{domination 21, culture 5, science 2}` to `{domination 12, culture 12}`, so
+it is trading some of the champion's conquest conversion for culture rather
+than losing the compact edge outright.
+
+Both readings are `INCONCLUSIVE` at forty maps. The nomination therefore goes
+to the unmodified `ai_eval --matrix --pairs 120` at seed 67,000,000, and only
+that decides. **Nothing here proposes replacing `data/evolved/best.json`.**
+
+### The gate the nomination went to, and what it returned
+
+```sh
+ai_eval advanced_evolved advanced --matrix --pairs 120 --jobs 5 --seed 67000000
+```
+
+fixed before the screen above was read, run from a directory staging `r3`.
+
+| profile | paired score | Elo-equivalent | directions | sign p | anytime-valid | verdict |
+|---|---|---:|---:|---:|---|---|
+| compact standard | 55.2% (95% Wilson 46.3–63.8) | +36 | 42–18 | **0.0027** | e=6.62, not crossed | INCONCLUSIVE → ACCEPT |
+| deployment online | 56.9% (95% Wilson 47.9–65.4) | +48 | 44–17 | **0.0007** | **e=485.8, p≤0.0021, crossed at map 27** | INCONCLUSIVE → REJECT |
+
+`multi-profile promotion gate: RETAIN advanced — advanced_evolved cleared 1/2
+required profiles.` **`r3` is not promoted, and the shipped genome is
+unchanged.**
+
+The failure is narrow and worth naming precisely: `r3` is positive on **both**
+profiles at 120 maps each with a **significant direction on both**, and misses
+on one quantity — the fixed-*n* Wilson lower bound at deployment, 47.9%, three
+points short of parity. For contrast the shipped champion's own 120-map matrix
+in the table above reads +51 compact and **−30** deployment.
+
+That is the situation `docs/SUPERHUMAN.md` records for warm branches — *"Gate
+INCONCLUSIVE **only** on the fixed-n Wilson bound (48.3%); 54.6% needs ~450 maps
+to clear it arithmetically"* — which passed once the maps were bought. An
+extension of the same prefix to 300 maps is pre-registered at
+`/Users/martin/civvis-r3-extension-preregistration.md` under the **unmodified**
+rule, with the limits stated there: no third extension, no new seed, no pooling,
+and a PASS there would be a **discovery estimate biased upward** by having been
+commissioned after an inconclusive read — the verdict would travel, the number
+would not.
+
+### `g44-41` does not carry either, and it is a clean null
+
+The one league genome with a well-powered positive deployment reading
+(`docs/LIVE_GENOME_TRANSFER.md`, 51.9% at 8p 84×54) was measured on this
+profile at seed 68,000,000, pre-registered to be nominated only if it beat the
+deck-matched baseline:
+
+| | paired score | Elo-equivalent | games | directions | sign p |
+|---|---|---:|---:|---:|---:|
+| `r0` baseline (stock genes, deck only) | 53.1% | +22 | — | — | — |
+| `g44-41` | **53.1%** | **+22** | 25–20 | 12–10 | 0.8318 |
+
+It lands on the baseline to the digit and its directions are noise. **Not
+nominated.** Read with the partition, that is coherent rather than surprising:
+`g44-41`'s yield block already sits at or near stock, so it does not carry the
+champion's deficit — and its other genes buy nothing over a stock genome
+holding the same policy deck. Whatever `r3`'s twenty-nine are doing, this
+genome's are not doing it.
+
+⚠ Its deployment maps are the `r3` gate's first forty deployment maps — the
+matrix stride puts that gate's deployment child on seed 68,000,000 — so the two
+are **paired on shared terrain**, not independent, and neither replicates the
+other.
+
+### The extension and its disjoint confirmation both PASS
+
+The pre-registered extension of the same prefix to 300 maps, and then a
+confirmation on a seed untouched by this line, both under the **unmodified**
+matrix rule:
+
+| run | profile | paired score | Elo-equivalent | directions | sign p | anytime-valid | verdict |
+|---|---|---|---:|---:|---:|---|---|
+| seed 67,000,000, 300 maps | compact | 55.6% (95% Wilson 49.9–61.1) | +39 | 96–39 | 0.0000 | e=7.8e3 at map 159 | ACCEPT |
+| | deployment | 57.8% (95% Wilson 52.1–63.2) | +54 | 120–44 | 0.0000 | e=1.9e6 at map 27 | **PASS** |
+| seed 70,000,000, 300 maps | compact | 57.7% (95% Wilson 52.0–63.1) | +54 | 107–32 | 0.0000 | e=2.8e9 at map 73 | **PASS** |
+| | deployment | 56.2% (95% Wilson 50.6–61.7) | +44 | 117–63 | 0.0001 | e=3.2e3 at map 149 | **PASS** |
+
+Both return `multi-profile promotion gate: PASS — cleared every required
+profile`. That is **1,200 maps and 2,400 games across two independent
+matrices**, every direction test significant, every anytime-valid e-process
+crossed, and on the second seed the compact profile clears its own bound rather
+than merely failing to regress.
+
+The confirmation was pre-registered *before it ran* and for a stated reason:
+the 300-map extension was commissioned after an inconclusive 120-map read on
+the same prefix, so its **+54 alone is a discovery estimate and biased upward**
+— this file records a +207 that later re-measured to +86. The defensible
+quantity is the pooled reading of the two independent matrices: roughly **+47
+on compact and +49 at deployment**, against a shipped champion measured on its
+own 120-map matrix at +51 compact and **−30** at deployment.
+
+The artifact swap is proposed on that basis in a separate PR, because replacing
+`data/evolved/best.json` is resolved by 38 evaluator arms, the league seeding
+and the embedded fallback: every strength number measured against
+`advanced_evolved` before it is measured against a different agent after it.
+
 ## 2026-08-01 — post-policy/envoy champion confirmation retained the incumbent
 
 The three #708 matrices established that the revised embedded champion beat the
