@@ -1381,6 +1381,44 @@ mod tests {
         );
     }
 
+    /// ★★★★★ The game speed Civilization VI is running must reach the board.
+    ///
+    /// The ladder plays `GAMESPEED_ONLINE`, whose costs are HALF of Standard, and a
+    /// mirrored game kept `GameSpeed::Standard` because nothing read the field —
+    /// so every tech, civic, district and unit cost CIVVIS reasoned about was
+    /// double what the game would charge, on every turn of every run.
+    #[test]
+    fn the_game_speed_civ6_is_running_reaches_the_board() {
+        assert_eq!(
+            civvis_game_speed("GAMESPEED_ONLINE"),
+            Some(crate::setup::GameSpeed::Online),
+            "the export's GameSpeedType must map onto CIVVIS's own speed"
+        );
+        // ⚠ The two must actually DIFFER in cost, or this fix is decoration.
+        assert_ne!(
+            crate::setup::GameSpeed::Online.scale(100.0),
+            crate::setup::GameSpeed::Standard.scale(100.0),
+            "Online and Standard must price differently for this to matter"
+        );
+        assert_eq!(
+            civvis_game_speed("GAMESPEED_NOT_A_SPEED"), None,
+            "an unknown speed must leave the default alone, not guess"
+        );
+
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30, width: 8, height: 8, chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot { turn: 30, ..StateSnapshot::default() };
+        state.seat.speed = "GAMESPEED_ONLINE".to_string();
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(
+            recon.game.game_speed,
+            crate::setup::GameSpeed::Online,
+            "a reconstruction must run at the speed Civilization VI reported"
+        );
+    }
+
     /// ★★★★★ A city Civilization VI says is AT its district cap must stop offering
     /// district sites on the board.
     ///
@@ -2858,7 +2896,44 @@ pub fn civvis_civ_name(civ6: &str) -> Option<&'static str> {
 /// ⚠ MUST RUN BEFORE ANY CITY IS PLACED. `found_city_for` reads `players[pid].civ`
 /// to name a city, so setting identity afterwards leaves the old roster's names on
 /// the board — the visible half of the very bug this fixes.
+/// Civilization VI's `GAMESPEED_ONLINE` as CIVVIS's own `GameSpeed`.
+///
+/// The ids in `CIV6_GAME_SPEEDS` are bare and lowercase (`"online"`), while the
+/// export sends the database's `GameSpeedType`, so the prefix comes off first.
+/// Unknown speeds return None and leave the default alone rather than guessing.
+pub fn civvis_game_speed(civ6: &str) -> Option<crate::setup::GameSpeed> {
+    let id = civ6
+        .strip_prefix("GAMESPEED_")
+        .unwrap_or(civ6)
+        .to_ascii_lowercase();
+    crate::setup::GameSpeed::from_id(&id)
+}
+
 fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<String> {
+    // ★★★★★ THE GAME SPEED CROSSED THE BRIDGE AND WAS THROWN AWAY, so every cost
+    // CIVVIS reasoned about was DOUBLE the real one.
+    //
+    // The ladder plays `GAMESPEED_ONLINE`, the `seat` event carries it, and `Seat`
+    // even deserializes it — and `grep -n game_speed src/mirror.rs` answered ZERO,
+    // so a mirrored game kept `GameSpeed::Standard`, the `#[default]`. Online is
+    // `cost_percent: 50`.
+    //
+    // What that scales is not a corner: `Game::game_speed` multiplies tech cost,
+    // civic cost, the growth threshold, item/production cost and turn durations —
+    // `src/lib.rs` has a test called `game_speed_scales_every_cost`. So CIVVIS
+    // planned against a world where a settler, a tech and a district each took
+    // twice as long as the game would actually charge, on every turn of every run.
+    //
+    // Same shape as the districts that were carried on `StateCity` and never
+    // written onto a city: the field crossed, and nothing read it.
+    //
+    // ⚠ DIFFICULTY IS DELIBERATELY NOT SET HERE. `Seat` carries it too, but a
+    // mirrored rival's strength ALREADY includes its handicap — that is what the
+    // export measured — so applying the difficulty on top would count the bonus
+    // twice. Speed has no such double-count: it is a cost curve, not a bonus.
+    if let Some(speed) = civvis_game_speed(&state.seat.speed) {
+        game.game_speed = speed;
+    }
     let mut unmapped = Vec::new();
     let mut known: std::collections::BTreeMap<usize, &'static str> = Default::default();
     let mut note = |seat: usize, civ6: &str, unmapped: &mut Vec<String>| {
