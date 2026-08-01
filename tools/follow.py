@@ -185,6 +185,60 @@ def flip_north_up(event, top, dropped):
     return event
 
 
+def offset_to_axial(col, row):
+    return col - (row - (row & 1)) // 2, row
+
+
+def axial_to_offset(q, r):
+    return q + (r - (r & 1)) // 2, r
+
+
+def transform_river_masks(source_edges, events, top):
+    """Reflect Civ VI's three-edge river encoding with the tile coordinates.
+
+    A vertical reflection maps SE/SW edges to NE/NW edges. Civ VI stores only
+    E/SE/SW on each plot, so those reflected edges usually belong to the other
+    endpoint. Leaving `rv` on the reflected source plot moved whole rivers to
+    the wrong side of their hexes while every coordinate-overlap check passed.
+    """
+    plots = {}
+    for event in events:
+        if event.get("kind") != "tiles":
+            continue
+        turn = int(event.get("turn") or 0)
+        for plot in event.get("plots") or []:
+            plot["rv"] = 0
+            plots[(turn, plot.get("x"), plot.get("y"))] = plot
+
+    directions = ((1, 0), (1, -1), (0, -1),
+                  (-1, 0), (-1, 1), (0, 1))
+    encoded = (1, 2, 4, 8, 16, 32)
+    for turn, x, y, mask in source_edges:
+        if y > top:
+            continue
+        start = offset_to_axial(x, y)
+        for bit, direction in ((1, 0), (2, 1), (4, 2)):
+            if not mask & bit:
+                continue
+            delta = directions[direction]
+            end = start[0] + delta[0], start[1] + delta[1]
+            end_x, end_y = axial_to_offset(*end)
+            if end_y > top:
+                continue
+
+            reflected = ((x, top - y), (end_x, top - end_y))
+            axial = tuple(offset_to_axial(*point) for point in reflected)
+            delta = axial[1][0] - axial[0][0], axial[1][1] - axial[0][1]
+            try:
+                reflected_direction = directions.index(delta)
+            except ValueError:
+                continue
+            reflected_bit = encoded[reflected_direction]
+            holder = plots.get((turn, *reflected[0]))
+            if holder is not None:
+                holder["rv"] |= reflected_bit
+
+
 def stage_events(lines, height):
     """`--mirror` wants a directory holding events.jsonl; give it a clean copy.
 
@@ -193,15 +247,23 @@ def stage_events(lines, height):
     """
     os.makedirs(STAGE, exist_ok=True)
     top, dropped = mirror_axis(height), []
-    out = []
+    events, source_edges = [], []
     for chunk in lines:
         try:
             event = json.loads(chunk)
         except Exception:
             continue
+        if event.get("kind") == "tiles":
+            turn = int(event.get("turn") or 0)
+            for plot in event.get("plots") or []:
+                mask = int(plot.get("rv") or 0)
+                if mask:
+                    source_edges.append((turn, plot.get("x"), plot.get("y"), mask))
         flipped = flip_north_up(event, top, dropped)
         if flipped is not None:
-            out.append(json.dumps(flipped).encode())
+            events.append(flipped)
+    transform_river_masks(source_edges, events, top)
+    out = [json.dumps(event).encode() for event in events]
     if dropped:
         log(f"{len(dropped)} board object(s) on row {top + 1} dropped by the north-up "
             f"reflection (that row has no same-parity partner)")

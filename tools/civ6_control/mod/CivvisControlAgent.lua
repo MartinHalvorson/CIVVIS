@@ -4000,6 +4000,71 @@ local function exportState(player, pid, turn)
 		end
 	end
 
+	-- Met city-states are first-class public actors. Treating their territory as
+	-- merely "cannot settle here" hid Kabul's city, army, Envoys and Suzerain from
+	-- both the mirror and the planner even while its banner was on screen.
+	local minors = {};
+	for _, minor in ipairs(try(function() return PlayerManager.GetAliveMinors(); end, {})) do
+		pcall(function()
+			local mid = minor:GetID();
+			if diplomacy == nil or not diplomacy:HasMet(mid) then return; end
+			local theirCities, theirUnits = {}, {};
+			pcall(function()
+				for _, city in minor:GetCities():Members() do
+					local cx, cy = city:GetX(), city:GetY();
+					if plotRevealed(pid, cx, cy) then
+						local strength, damage = cityDefence(cx, cy);
+						theirCities[#theirCities + 1] = {
+							id = try(function() return city:GetID(); end, -1),
+							x = cx, y = cy,
+							name = try(function() return Locale.Lookup(city:GetName()); end, ""),
+							pop = try(function() return city:GetPopulation(); end, -1),
+							capital = try(function() return city:IsCapital(); end, false),
+							defense = strength, damage = damage,
+						};
+					end
+				end
+			end);
+			pcall(function()
+				for _, unit in minor:GetUnits():Members() do
+					pcall(function()
+						local ux, uy = unit:GetX(), unit:GetY();
+						if PlayersVisibility[pid]:IsVisible(ux, uy) then
+							local name = unitTypeName(unit);
+							local row = GameInfo.Units[name];
+							theirUnits[#theirUnits + 1] = {
+								x = ux, y = uy, kind = name,
+								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
+								combat = row ~= nil and (row.Combat or 0) or 0,
+								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
+							};
+						end
+					end);
+				end
+			end);
+			local influence = try(function() return minor:GetInfluence(); end);
+			minors[#minors + 1] = {
+				player = mid,
+				civ = try(function()
+					return PlayerConfigurations[mid]:GetCivilizationTypeName();
+				end, ""),
+				at_war = try(function() return diplomacy:IsAtWarWith(mid); end, false),
+				score = try(function() return minor:GetScore(); end, -1),
+				military = try(function() return minor:GetStats():GetMilitaryStrength(); end, -1),
+				envoys = influence ~= nil and try(function()
+					return influence:GetTokensReceived(pid);
+				end, 0) or 0,
+				most_envoys = influence ~= nil and try(function()
+					return influence:GetMostTokensReceived();
+				end, 0) or 0,
+				suzerain = influence ~= nil and try(function()
+					return influence:GetSuzerain();
+				end, -1) or -1,
+				cities = theirCities, units = theirUnits,
+			};
+		end);
+	end
+
 	-- ★★★ WITHOUT THESE, CIVVIS DECIDES IN THE ANCIENT ERA FOREVER. The
 	-- reconstruction had no research at all, so `civvis-orders` on the turn-190
 	-- board of run 101628Z ordered SLINGERS and `TECH_ASTROLOGY` — reasonable
@@ -4074,7 +4139,7 @@ local function exportState(player, pid, turn)
 				pcall(function()
 					for _, unit in barb:GetUnits():Members() do
 						local ux, uy = unit:GetX(), unit:GetY();
-						if plotRevealed(pid, ux, uy) then
+						if PlayersVisibility[pid]:IsVisible(ux, uy) then
 							hostiles[#hostiles + 1] = {
 								x = ux, y = uy, player = bid,
 								type = try(function()
@@ -4164,6 +4229,7 @@ local function exportState(player, pid, turn)
 		units = units,
 		trade_routes = tradeRoutes,
 		rivals = rivals,
+		minors = minors,
 	});
 end
 
@@ -4228,6 +4294,24 @@ local function riverMask(plot)
 	return mask;
 end
 
+-- Return a resource only when this seat has unlocked its reveal technology.
+-- `plot:GetResourceType()` exposes the map's underlying resource even when the
+-- normal UI still shows bare ground. Exporting that value let the planner use
+-- Niter, Coal, Oil and Antiquity Sites before the player could know they exist.
+local function visibleResourceName(player, plot)
+	local index = try(function() return plot:GetResourceType(); end, -1);
+	if index == nil or index < 0 then return nil; end
+	return try(function()
+		local row = GameInfo.Resources[index];
+		local resources = player:GetResources();
+		if row == nil or resources == nil
+			or not resources:IsResourceVisible(row.Hash) then
+			return nil;
+		end
+		return row.ResourceType;
+	end);
+end
+
 local function exportTiles(player, pid, turn)
 	if cfg.ExportState ~= true then return; end
 	local every = cfg.TileExportEvery or 25;
@@ -4279,8 +4363,7 @@ local function exportTiles(player, pid, turn)
 						             try(function() return plot:GetTerrainType(); end, -1)),
 						f = typeName("Features", "FeatureType",
 						             try(function() return plot:GetFeatureType(); end, -1)),
-						r = typeName("Resources", "ResourceType",
-						             try(function() return plot:GetResourceType(); end, -1)),
+						r = visibleResourceName(player, plot),
 						o = try(function() return plot:GetOwner(); end, -1),
 						w = try(function() return plot:IsWater(); end, false),
 						i = try(function() return plot:IsImpassable(); end, false),

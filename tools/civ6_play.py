@@ -33,6 +33,7 @@ from civ6_control import gamelock, launcher, macos_input, vision, watch  # noqa:
 from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # The ladder, weakest first. These are the game's own handicap type names; the
 # ladder is climbed in this order and each rung is only claimed by a win.
@@ -938,9 +939,56 @@ def _play(args: argparse.Namespace) -> int:
     print(f"  difficulty {config['Difficulty']}  map {config['MapSize']}"
           f"  speed {config['GameSpeed']}  max turns {config['MaxTurns']}")
 
+    brain = None
+    brain_log = None
+    if args.civvis_decides:
+        binary = Path(args.civvis_bin).expanduser() if args.civvis_bin else (
+            REPO_ROOT / "target" / "release" / "civvis_orders"
+        )
+        if not binary.is_file():
+            print(f"CIVVIS decision binary does not exist: {binary}", file=sys.stderr)
+            return 4
+        brain_log = (run_dir / "brain.log").open("a", buffering=1)
+        command = [
+            sys.executable,
+            str(REPO_ROOT / "tools" / "civ6_brain.py"),
+            "--run-dir", str(run_dir),
+            "--orders-db", str(orders_db),
+            "--mode", "civvis",
+            "--bin", str(binary),
+            "--victory", args.civvis_victory,
+            "--strategy", args.civvis_strategy,
+            "--seconds", str(max(21600.0, args.timeout + 3600.0)),
+        ]
+        if args.civvis_war_from_plan:
+            command.append("--war-from-plan")
+        brain = subprocess.Popen(
+            command,
+            cwd=REPO_ROOT,
+            stdout=brain_log,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        print(f"CIVVIS decision worker pid={brain.pid} strategy={args.civvis_strategy} "
+              f"victory={args.civvis_victory}")
+
+    def stop_brain() -> None:
+        nonlocal brain, brain_log
+        if brain is not None and brain.poll() is None:
+            brain.terminate()
+            try:
+                brain.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                brain.kill()
+                brain.wait(timeout=5)
+        if brain_log is not None:
+            brain_log.close()
+            brain_log = None
+
     launcher.clear_run_logs()
     launcher.launch(stdout=run_dir / "stdout.log")
     if not launcher.wait_for_main_menu(args.startup_timeout):
+        stop_brain()
         print("the game did not reach the main menu", file=sys.stderr)
         return 3
     print("main menu reached; the setup context should host the game now")
@@ -1101,6 +1149,7 @@ def _play(args: argparse.Namespace) -> int:
         return False
 
     if not bootstrap_game(tail, record, run_dir, args):
+        stop_brain()
         print("could not start a game from the main menu", file=sys.stderr)
         return 5
     print("in a configured game; the agent holds the seat from here")
@@ -1185,6 +1234,16 @@ def _play(args: argparse.Namespace) -> int:
             consecutive = 0
     events.close()
 
+    # A terminal run must not leave a live game advancing beside a frozen event
+    # stream. That produced a turn-259 Firaxis window next to a turn-191 CIVVIS
+    # board, while the old agreement checker compared only the two stale files
+    # and reported success. Stop the process before publishing the summary so a
+    # completed run has one unambiguous last frame.
+    game_stopped = launcher.stop()
+    stop_brain()
+    if not game_stopped:
+        print("could not stop Civilization VI after the run", file=sys.stderr)
+
     outcome = state["outcome"] or {}
     summary = {
         "tag": args.tag,
@@ -1213,6 +1272,7 @@ def _play(args: argparse.Namespace) -> int:
         "last_score": state["score"],
         "seat": state["seat"],
         "outcome": outcome or None,
+        "game_stopped": game_stopped,
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
     print(json.dumps(summary, indent=2, sort_keys=True))
@@ -1324,6 +1384,15 @@ def main(argv: list[str] | None = None) -> int:
                     help="give up on a run that has emitted nothing for this long")
     ap.add_argument("--civvis-decides", action="store_true", default=False,
                     help="CIVVIS makes every decision; the mod only actuates")
+    ap.add_argument("--civvis-bin", default=None,
+                    help="civvis_orders binary; defaults to target/release/civvis_orders")
+    ap.add_argument("--civvis-victory", default="civvis",
+                    choices=["domination", "science", "score", "civvis"],
+                    help="victory objective passed to the supervised CIVVIS worker")
+    ap.add_argument("--civvis-strategy", default="auto",
+                    help="rated CIVVIS strategy name; auto selects the strongest bound")
+    ap.add_argument("--civvis-war-from-plan", action="store_true", default=False,
+                    help="bridge-only fallback for a plan target blocked by host diplomacy")
     ap.add_argument("--governor-appoint", action="store_true", default=False,
                     help="spend governor titles (KNOWN to segfault the Game Core)")
     ap.add_argument("--governor-assign", action="store_true", default=False,

@@ -46,10 +46,13 @@ rather than assumed, because comparing two coordinate frames without first
 proving they overlap has already produced one confident, wrong finding.
 """
 
+import argparse
 import glob
 import json
 import os
+import subprocess
 import sys
+import time
 import urllib.request
 from collections import Counter
 from pathlib import Path
@@ -58,12 +61,49 @@ from pathlib import Path
 # hardcoded so this works on any machine that runs the ladder.
 RUNS = str(Path.home() / "civvis-civ6-runs" / "control")
 PORT = int(os.environ.get("CIVVIS_MIRROR_PORT", "8610"))
+VOCABULARY = json.loads(
+    (Path(__file__).resolve().parent / "civ6_control" / "vocab.json").read_text()
+)
+MIRRORED_IMPROVEMENTS = set(json.loads(
+    (Path(__file__).resolve().parent.parent / "data" / "improvements.json").read_text()
+))
+RESOURCE_RULES = json.loads(
+    (Path(__file__).resolve().parent.parent / "data" / "resources.json").read_text()
+)
 
 
 def newest_run():
     dirs = [d for d in glob.glob(os.path.join(RUNS, "*")) if os.path.isdir(d)]
     live = [d for d in dirs if os.path.exists(os.path.join(d, "events.jsonl"))]
     return max(live, key=lambda d: os.path.getmtime(os.path.join(d, "events.jsonl")))
+
+
+def live_runtime_problems(run, process_text=None, now=None, max_age=120.0):
+    """Find a live Firaxis process that no longer has a state/control producer."""
+    if process_text is None:
+        process_text = subprocess.run(
+            ["ps", "-axo", "command="], capture_output=True, text=True, check=False
+        ).stdout
+    now = time.time() if now is None else now
+    lines = process_text.splitlines()
+    game_running = any("Civ6_Exe_Child" in line for line in lines)
+    tag = os.path.basename(os.path.abspath(run))
+    controllers = [line for line in lines if "civ6_play.py" in line and tag in line]
+    brains = [line for line in lines if "civ6_brain.py" in line and tag in line]
+    events = os.path.join(run, "events.jsonl")
+    try:
+        age = max(0.0, now - os.path.getmtime(events))
+    except OSError:
+        age = float("inf")
+
+    problems = []
+    if game_running and not controllers:
+        problems.append("Firaxis is running but this run's controller is absent")
+    if controllers and any("--civvis-decides" in line for line in controllers) and not brains:
+        problems.append("the CIVVIS decision worker is absent")
+    if game_running and age > max_age:
+        problems.append(f"the Firaxis export is {age:.0f}s stale")
+    return problems
 
 
 def axial(x, y):
@@ -97,7 +137,159 @@ def leader_id_matches(civ6, civvis):
     """CIVVIS stores the shared leader identity for Firaxis alternate personas."""
     civ6 = str(civ6 or "").lower()
     civvis = str(civvis or "").lower()
-    return civ6 == civvis or civ6.removesuffix("_alt") == civvis
+    aliases = {
+        "harald_alt": "harald_hardrada",
+        "suleiman_alt": "suleiman",
+    }
+    return civ6 == civvis or civ6.removesuffix("_alt") == civvis or aliases.get(civ6) == civvis
+
+
+def rival_identity_mismatches(state, board):
+    """Compare each exported rival with the compact CIVVIS seat that owns it."""
+    players = {player.get("id"): player for player in board.get("players") or []}
+    mismatches = []
+    for seat, rival in enumerate(state.get("rivals") or [], start=1):
+        player = players.get(seat, {})
+        expected_civ = civ6_id(rival.get("civ"), "CIVILIZATION_")
+        expected_leader = civ6_id(rival.get("leader"), "LEADER_")
+        actual_civ = str(player.get("civ") or "").replace(" ", "_").lower()
+        actual_leader = str(player.get("leader") or "").replace(" ", "_").lower()
+        wrong_civ = expected_civ and not civ_id_matches(expected_civ, actual_civ)
+        wrong_leader = expected_leader and not leader_id_matches(expected_leader, actual_leader)
+        if wrong_civ or wrong_leader:
+            mismatches.append(
+                f"seat {seat} Civ6={expected_civ or '?'} / {expected_leader or '?'} "
+                f"CIVVIS={actual_civ or '?'} / {actual_leader or '?'}"
+            )
+    return mismatches
+
+
+def public_fact_mismatches(state, board):
+    """Compare diplomacy-ribbon facts and the viewed empire's live economy."""
+    players = {player.get("id"): player for player in board.get("players") or []}
+    expected = [(0, state)] + list(enumerate(state.get("rivals") or [], start=1))
+    mismatches = []
+    for seat, source in expected:
+        player = players.get(seat, {})
+        for key, board_key in (("score", "score"), ("military", "military")):
+            want = source.get(key)
+            got = player.get(board_key)
+            if isinstance(want, (int, float)) and want >= 0 \
+                    and (not isinstance(got, (int, float)) or abs(got - want) > 0.51):
+                mismatches.append(f"seat {seat} {key} Civ6={want:g} CIVVIS={got!r}")
+
+    ours = players.get(0, {})
+    yields = ours.get("yields") or {}
+    for key in ("science", "culture"):
+        want = state.get(key)
+        got = yields.get(key)
+        if isinstance(want, (int, float)) and want > 0 \
+                and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+            mismatches.append(f"seat 0 {key}/turn Civ6={want:g} CIVVIS={got!r}")
+    for key in ("gold", "faith"):
+        want = state.get(key)
+        got = ours.get(key)
+        if isinstance(want, (int, float)) and want >= 0 \
+                and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
+            mismatches.append(f"seat 0 {key} Civ6={want:g} CIVVIS={got!r}")
+    return mismatches
+
+
+def minor_fact_mismatches(state, board, top):
+    """Compare met city-state identities, cities and public diplomacy facts."""
+    actual = [player for player in board.get("players") or []
+              if player.get("is_minor") and not player.get("is_barbarian")]
+    cities = {tuple(city.get("pos") or []): city for city in board.get("cities") or []}
+    host_to_board = {0: 0}
+    host_to_board.update({rival.get("player"): seat
+                          for seat, rival in enumerate(state.get("rivals") or [], start=1)})
+    for source in state.get("minors") or []:
+        want = civ6_id(source.get("civ"), "CIVILIZATION_").replace("_", " ")
+        matched = next((candidate for candidate in actual
+                        if str(candidate.get("civ") or "").lower() == want), None)
+        if matched is not None:
+            host_to_board[source.get("player")] = matched.get("id")
+    mismatches = []
+    for source in state.get("minors") or []:
+        want = civ6_id(source.get("civ"), "CIVILIZATION_").replace("_", " ")
+        player = next(
+            (candidate for candidate in actual
+             if str(candidate.get("civ") or "").lower() == want),
+            None,
+        )
+        if player is None:
+            mismatches.append(f"missing city-state {want or source.get('player')}")
+            continue
+        for key in ("score", "military"):
+            expected, got = source.get(key), player.get(key)
+            if isinstance(expected, (int, float)) and expected >= 0 \
+                    and (not isinstance(got, (int, float)) or abs(got - expected) > 0.51):
+                mismatches.append(f"{want} {key} Civ6={expected:g} CIVVIS={got!r}")
+        expected_envoys = source.get("envoys")
+        if isinstance(expected_envoys, (int, float)) \
+                and player.get("my_envoys") != expected_envoys:
+            mismatches.append(
+                f"{want} envoys Civ6={expected_envoys:g} CIVVIS={player.get('my_envoys')!r}"
+            )
+        suzerain = source.get("suzerain")
+        expected_suzerain = None if suzerain in (None, -1) else host_to_board.get(suzerain)
+        if (suzerain in (None, -1) or expected_suzerain is not None) \
+                and player.get("suzerain") != expected_suzerain:
+            mismatches.append(
+                f"{want} suzerain Civ6={suzerain!r} "
+                f"CIVVIS={player.get('suzerain')!r}"
+            )
+        for city in source.get("cities") or []:
+            pos = axial(city.get("x", 0), top - city.get("y", 0))
+            mirrored = cities.get(pos)
+            if mirrored is None or mirrored.get("owner") != player.get("id"):
+                mismatches.append(f"{want} city {city.get('name') or pos} missing at {pos}")
+    return mismatches
+
+
+def city_fact_mismatches(state, board, top):
+    """Compare every host city field that has a CIVVIS representation."""
+    by_pos = {tuple(city.get("pos") or []): city for city in board.get("cities") or []}
+    mismatches = []
+    for source in state.get("cities") or []:
+        pos = axial(source.get("x", 0), top - source.get("y", 0))
+        city = by_pos.get(pos)
+        if city is None:
+            continue
+        name = source.get("name")
+        if name and city.get("name") != name:
+            mismatches.append(f"{name}@{pos} name={city.get('name')!r}")
+        for key, tolerance in (("pop", 0), ("food", 0.11), ("loyalty", 0.11),
+                               ("loyalty_per_turn", 0.11), ("defense", 0.11)):
+            want, got = source.get(key), city.get(key)
+            if isinstance(want, (int, float)) and want >= 0 \
+                    and (not isinstance(got, (int, float)) or abs(got - want) > tolerance):
+                mismatches.append(f"{name or pos} {key} Civ6={want:g} CIVVIS={got!r}")
+        want_religion = civ6_id(source.get("religion"), "RELIGION_").replace("_", " ")
+        got_religion = str(city.get("religion") or "").lower()
+        if want_religion and want_religion != got_religion:
+            mismatches.append(
+                f"{name or pos} religion Civ6={want_religion!r} CIVVIS={got_religion!r}"
+            )
+        want_buildings = {civ6_id(value, "BUILDING_") for value in source.get("buildings") or []}
+        got_buildings = {str(value).lower() for value in city.get("buildings") or []}
+        if want_buildings != got_buildings:
+            mismatches.append(
+                f"{name or pos} buildings missing={sorted(want_buildings - got_buildings)} "
+                f"extra={sorted(got_buildings - want_buildings)}"
+            )
+        want_districts = {
+            civ6_id(district.get("type"), "DISTRICT_")
+            for district in source.get("districts") or []
+            if civ6_id(district.get("type"), "DISTRICT_") != "city_center"
+        }
+        got_districts = {str(value).lower() for value in (city.get("districts") or {})}
+        if want_districts != got_districts:
+            mismatches.append(
+                f"{name or pos} districts missing={sorted(want_districts - got_districts)} "
+                f"extra={sorted(got_districts - want_districts)}"
+            )
+    return mismatches
 
 
 def production_item_name(value):
@@ -160,6 +352,73 @@ def board_route_pairs(board):
     return pairs
 
 
+def resource_visible_in_state(resource, state):
+    if not resource or state is None:
+        return True
+    spec = RESOURCE_RULES.get(resource) or {}
+    techs = {civ6_id(value, "TECH_") for value in state.get("techs") or []}
+    civics = {civ6_id(value, "CIVIC_") for value in state.get("civics") or []}
+    return (not spec.get("tech") or spec["tech"] in techs) and (
+        not spec.get("civic") or spec["civic"] in civics
+    )
+
+
+def expected_tile_fields(plot, state=None):
+    """Translate one exported plot through the same committed vocabulary as Rust."""
+    terrain = VOCABULARY["terrains"].get(plot.get("t"))
+    feature_name = plot.get("f")
+    resource_name = plot.get("r")
+    resource = VOCABULARY["resources"].get(resource_name) if resource_name else None
+    if not resource_visible_in_state(resource, state):
+        resource = None
+    improvement_name = plot.get("im")
+    improvement = None
+    if isinstance(improvement_name, str):
+        improvement = civ6_id(improvement_name, "IMPROVEMENT_")
+        if improvement not in MIRRORED_IMPROVEMENTS:
+            improvement = f"<unmapped:{improvement_name}>"
+    return {
+        "terrain": terrain.get("terrain") if terrain else f"<unmapped:{plot.get('t')}>",
+        "hills": bool(terrain.get("hills")) if terrain else None,
+        "feature": (
+            VOCABULARY["features"].get(feature_name)
+            if feature_name else None
+        ),
+        "resource": resource,
+        "improvement": improvement,
+        "river": bool(plot.get("ri")),
+        "coastal_lowland": max(0, min(3, int(plot.get("cl") or 0))),
+    }
+
+
+def exact_tile_mismatches(pairs, state=None, limit=12):
+    """Count field-level disagreements and retain bounded coordinate examples."""
+    counts, examples = Counter(), []
+    for board_tile, plot in pairs:
+        expected = expected_tile_fields(plot, state)
+        for field, wanted in expected.items():
+            actual = board_tile.get(field)
+            if actual == wanted:
+                continue
+            counts[field] += 1
+            if len(examples) < limit:
+                examples.append(
+                    f"{field}@{plot.get('x')},{plot.get('y')} "
+                    f"Civ6={wanted!r} CIVVIS={actual!r}"
+                )
+    return counts, examples
+
+
+def leaked_hidden_resources(pairs, state):
+    leaks = []
+    for _, plot in pairs:
+        raw = plot.get("r")
+        resource = VOCABULARY["resources"].get(raw) if raw else None
+        if resource and not resource_visible_in_state(resource, state):
+            leaks.append(f"{resource}@{plot.get('x')},{plot.get('y')}")
+    return leaks
+
+
 def latest_seat(run):
     """The latest startup seat event, which carries setup outside state patches."""
     latest = None
@@ -204,9 +463,25 @@ def load_export(run, upto=None):
     return plots, turn
 
 
-def main():
-    run = sys.argv[1] if len(sys.argv) > 1 else newest_run()
+def main(argv=None):
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("run", nargs="?", help="run directory (newest by default)")
+    parser.add_argument(
+        "--archive", action="store_true",
+        help="compare a completed archive without requiring a live controller",
+    )
+    args = parser.parse_args(argv)
+    run = args.run or newest_run()
+    problems: list[str] = []
+    if not args.archive:
+        runtime = live_runtime_problems(run)
+        if runtime:
+            problems.append("control")
+            print("CONTROL  ⚠ " + "; ".join(runtime))
+        else:
+            print("CONTROL  live game, export and CIVVIS worker are current   OK")
     board = json.load(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/state", timeout=30))
+    state = latest_state(run, upto=board["turn"])
     # ⚠ Board first, then bound the export to the board's turn. The other order
     # measures the game's progress against a stale snapshot and calls it a defect.
     _, game_turn = load_export(run)
@@ -214,7 +489,6 @@ def main():
     tiles = {tuple(t["pos"]): t for t in board["map"]["tiles"]}
     visible = {tuple(v) for v in board["visible"]}
 
-    problems: list[str] = []
     print(f"run   {os.path.basename(run)}")
     print(f"turn  game {game_turn}   board {board['turn']}"
           f"   {'OK' if abs(game_turn - board['turn']) <= 1 else '⚠ DRIFT'}")
@@ -281,6 +555,20 @@ def main():
              for (x, y), p in plots.items() if axial(x, best - y) in tiles]
 
     print()
+    tile_counts, tile_examples = exact_tile_mismatches(pairs, state)
+    mismatched_tiles = sum(tile_counts.values())
+    print(f"TILES    {len(pairs)} paired; {mismatched_tiles} field disagreement(s)"
+          + (f"   ⚠ {dict(tile_counts)}" if mismatched_tiles else "   OK"))
+    if tile_examples:
+        problems.append("tiles")
+        print("         " + "; ".join(tile_examples))
+    leaks = leaked_hidden_resources(pairs, state)
+    if leaks:
+        print(f"KNOWLEDGE {len(leaks)} raw resource leak(s) hidden by CIVVIS: "
+              + "; ".join(leaks[:8]))
+        if not args.archive:
+            problems.append("knowledge")
+
     # --- fog memory (#713) -------------------------------------------------
     # ⚠ The invariant is "the board carries every plot the mod exported", NOT
     # "some ground is fogged". Early on, a seat with two units and no cities can
@@ -364,10 +652,34 @@ def main():
     # Keep entities on the same temporal boundary as terrain. A game can export
     # the next state's units between the `/state` fetch and this read; comparing
     # them to an older board reports ordinary movement as a dropped mirror unit.
-    state = latest_state(run, upto=board["turn"])
     if state is None:
         print("ENTITIES (no state event yet)")
         return 0
+
+    rival_mismatches = rival_identity_mismatches(state, board)
+    if rival_mismatches:
+        problems.append("rivals")
+        print(f"RIVALS   {len(state.get('rivals') or [])} met   ⚠ "
+              + "; ".join(rival_mismatches))
+    else:
+        print(f"RIVALS   {len(state.get('rivals') or [])} met identities   OK")
+
+    minor_mismatches = minor_fact_mismatches(state, board, best)
+    if minor_mismatches:
+        problems.append("city-states")
+        print(f"MINORS   {len(state.get('minors') or [])} met   ⚠ "
+              + "; ".join(minor_mismatches))
+    elif "minors" not in state:
+        print("MINORS   export has no city-state records (old control mod)")
+    else:
+        print(f"MINORS   {len(state.get('minors') or [])} met city-state(s)   OK")
+
+    public_mismatches = public_fact_mismatches(state, board)
+    if public_mismatches:
+        problems.append("public facts")
+        print("PUBLIC   ⚠ " + "; ".join(public_mismatches))
+    else:
+        print("PUBLIC   score, military, treasury, faith, science and culture   OK")
 
     civ6_cities = {(c["x"], c["y"]) for c in state.get("cities") or []}
     board_cities = {tuple(c["pos"]) for c in board.get("cities", [])
@@ -378,6 +690,12 @@ def main():
         problems.append("cities")
     print(f"CITIES   export {len(civ6_cities)}  board {len(board_cities)}"
           + (f"   ⚠ MISSING {sorted(missing_cities)}" if missing_cities else "   OK"))
+    city_mismatches = city_fact_mismatches(state, board, best)
+    if city_mismatches:
+        problems.append("city facts")
+        print("CITYDATA ⚠ " + "; ".join(city_mismatches))
+    else:
+        print("CITYDATA population, food, loyalty, defense, religion and development   OK")
 
     # --- production: an in-progress city must not read as idle -------------
     # A completed item used to stay in the mirror queue, then a new real item

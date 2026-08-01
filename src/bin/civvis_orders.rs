@@ -19,12 +19,11 @@
 //! # What it is honest about
 //!
 //! ⚠ THE RECONSTRUCTION IS PARTIAL, and the partiality has a direction. Terrain,
-//! both empires' cities, our units and every VISIBLE rival unit cross over. Techs,
-//! civics, buildings, districts, promotions and treasuries do not. So CIVVIS is
-//! deciding with a correct map and a correct order of battle, and an empty research
-//! tree. Orders about ground and force are worth trusting; a `Produce` for a unit
-//! this seat cannot yet build will simply be refused by Civilization VI and counted
-//! as refused, which is the right failure.
+//! both empires' remembered cities, own units, visible hostile units, research,
+//! government, development, treasury and public aggregate strength cross over.
+//! Promotions and on-map Great People remain explicit modeling gaps. An untranslatable
+//! order or entity is refused or counted rather than guessed, so partiality stays
+//! visible in the run ledger.
 //!
 //! ⚠ `unmapped` is reported, not swallowed. A Civ 6 unit type with no CIVVIS
 //! counterpart is a unit CIVVIS cannot see, and a half-visible army produces
@@ -48,6 +47,25 @@ fn arg_text(args: &[String], flag: &str) -> Option<String> {
         .position(|value| value == flag)
         .and_then(|index| args.get(index + 1))
         .cloned()
+}
+
+fn mirror_setup(
+    state: &civvis::mirror::StateSnapshot,
+    fallback_players: usize,
+    fallback_turns: u32,
+) -> (usize, u32) {
+    (
+        if state.seat.players > 0 {
+            state.seat.players
+        } else {
+            fallback_players
+        },
+        if state.seat.max_turns > 0 {
+            state.seat.max_turns as u32
+        } else {
+            fallback_turns
+        },
+    )
 }
 
 /// JSON-escape the little that needs it. Order verbs are type names from the two
@@ -900,7 +918,7 @@ fn main() {
 
     // Read the board fresh each time: the mod appends to this file every turn.
     let load = |want: Option<u32>| -> Option<(civvis::mirror::Snapshot, civvis::mirror::StateSnapshot)> {
-        let snapshot = mirror::snapshot_from_events(&events).ok()?;
+        let snapshot = mirror::snapshot_from_events_at(&events, want).ok()?;
         let state = mirror::state_from_events(&events, want)?;
         if snapshot.revealed_count() == 0 {
             return None;
@@ -942,8 +960,9 @@ fn main() {
             println!("{{\"plots\":[],\"note\":\"no revealed terrain or no state yet\"}}");
             return;
         };
+        let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
         let live = civvis::mirror::LiveMirror::new(
-            &snapshot, &state, players, 1, max_turns, frontier,
+            &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
         );
         let game = &live.game;
         let vocab = civvis::mirror::Vocabulary::embedded();
@@ -1029,8 +1048,9 @@ fn main() {
             println!("{{\"turn\":0,\"orders\":[],\"note\":\"no revealed terrain or no state yet\"}}");
             return;
         };
+        let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
         let mut live = civvis::mirror::LiveMirror::new(
-            &snapshot, &state, players, 1, max_turns, frontier,
+            &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
         );
         let reply = decide(&mut live, &mut ai, &snapshot, &state, war_from_plan);
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
@@ -1068,6 +1088,7 @@ fn main() {
                 want.unwrap_or(0)
             ),
             Some((snapshot, state)) => {
+                let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
                 // ★★★★★ FRESH BOARD, PERSISTENT AGENT — the one combination that works.
                 //
                 // Three of the four quadrants were measured: fresh board + fresh agent
@@ -1108,7 +1129,7 @@ fn main() {
                     let previous: Option<std::collections::BTreeMap<u32, i64>> =
                         live.as_ref().map(|board| board.civ6_of.clone());
                     let mut board = civvis::mirror::LiveMirror::new(
-                        &snapshot, &state, players, 1, max_turns, frontier,
+                        &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
                     );
                     match previous {
                         Some(old) => {
@@ -1129,7 +1150,7 @@ fn main() {
                 match live.as_mut() {
                     None => {
                         let mut fresh = civvis::mirror::LiveMirror::new(
-                            &snapshot, &state, players, 1, max_turns, frontier,
+                            &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
                         );
                         let reply = decide(&mut fresh, &mut ai, &snapshot, &state, war_from_plan);
                         live = Some(fresh);
@@ -1261,6 +1282,20 @@ mod tests {
     use civvis::mirror::{
         Plot, Snapshot, StateCity, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
     };
+
+    #[test]
+    fn exported_lobby_size_and_horizon_override_cli_fallbacks() {
+        let state = StateSnapshot {
+            seat: civvis::mirror::Seat {
+                players: 6,
+                max_turns: 250,
+                ..civvis::mirror::Seat::default()
+            },
+            ..StateSnapshot::default()
+        };
+        assert_eq!(mirror_setup(&state, 4, 500), (6, 250));
+        assert_eq!(mirror_setup(&StateSnapshot::default(), 4, 500), (4, 500));
+    }
 
     fn grass(x: i32, y: i32) -> Plot {
         Plot {

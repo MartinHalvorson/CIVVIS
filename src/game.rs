@@ -15019,6 +15019,29 @@ pub struct Game {
     pub spies: BTreeMap<u32, Spy>,
     pub cities: BTreeMap<u32, City>,
     pub at_war: BTreeSet<(usize, usize)>,
+    /// Military scores reported by an authoritative host, keyed by CIVVIS seat.
+    ///
+    /// Ordinary games leave this empty and derive strength from their units. A
+    /// live mirror cannot do that for a met rival whose army is currently under
+    /// fog, even though Civilization VI exposes that rival's aggregate military
+    /// score to the player. Keeping the host score here lets the ordinary AI use
+    /// the public information without inventing hidden unit positions.
+    #[serde(default)]
+    pub observed_military_power: BTreeMap<usize, f64>,
+    /// Public host score for mirrored seats. Empty in native CIVVIS games.
+    #[serde(default)]
+    pub observed_score: BTreeMap<usize, i64>,
+    /// Host-to-model yield corrections for mirrored empires. Native games leave
+    /// this empty. A correction, rather than an absolute replacement, preserves
+    /// counterfactual deltas when the AI evaluates a policy or build on a clone.
+    #[serde(default)]
+    pub observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
+    /// Host loyalty rates and banner defense strengths for reconstructed cities.
+    /// Keys are CIVVIS city ids, populated only by the live mirror.
+    #[serde(default)]
+    pub observed_city_loyalty_per_turn: BTreeMap<u32, f64>,
+    #[serde(default)]
+    pub observed_city_strength: BTreeMap<u32, f64>,
     /// Sites a HOST ruleset forbids for a reason CIVVIS's own rules cannot see.
     ///
     /// ★★★★ Empty in an ordinary game, and load-bearing when CIVVIS is driving a
@@ -15277,6 +15300,16 @@ struct GameSer {
     rng: Rng,
     at_war: Vec<(usize, usize)>,
     #[serde(default)]
+    observed_military_power: BTreeMap<usize, f64>,
+    #[serde(default)]
+    observed_score: BTreeMap<usize, i64>,
+    #[serde(default)]
+    observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
+    #[serde(default)]
+    observed_city_loyalty_per_turn: BTreeMap<u32, f64>,
+    #[serde(default)]
+    observed_city_strength: BTreeMap<u32, f64>,
+    #[serde(default)]
     peace_treaties: Vec<((usize, usize), u32)>,
     #[serde(default)]
     wars: Vec<((usize, usize), WarRecord)>,
@@ -15392,6 +15425,11 @@ impl From<GameSer> for Game {
             spies: s.spies.into_iter().map(|spy| (spy.id, spy)).collect(),
             cities: s.cities.into_iter().map(|c| (c.id, c)).collect(),
             at_war: s.at_war.into_iter().collect(),
+            observed_military_power: s.observed_military_power,
+            observed_score: s.observed_score,
+            observed_yield_adjustments: s.observed_yield_adjustments,
+            observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
+            observed_city_strength: s.observed_city_strength,
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: BTreeSet::new(),
@@ -15550,6 +15588,11 @@ impl From<Game> for GameSer {
             next_id: g.next_id,
             rng: g.rng,
             at_war: g.at_war.into_iter().collect(),
+            observed_military_power: g.observed_military_power,
+            observed_score: g.observed_score,
+            observed_yield_adjustments: g.observed_yield_adjustments,
+            observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
+            observed_city_strength: g.observed_city_strength,
             peace_treaties: g.peace_treaties.into_iter().collect(),
             wars: g.wars.into_iter().collect(),
             concluded_wars: g.concluded_wars,
@@ -15590,6 +15633,24 @@ impl From<Game> for GameSer {
 }
 
 impl Game {
+    /// Remove the generated settlements before a foreign authoritative board is
+    /// planted. Map generation seats city-states immediately; a mirror needs their
+    /// player slots but must not retain their invented cities or borders.
+    pub(crate) fn clear_mirror_cities(&mut self) {
+        self.cities.clear();
+        self.city_by_pos.clear();
+        self.routes.clear();
+        self.observed_city_loyalty_per_turn.clear();
+        self.observed_city_strength.clear();
+        for tile in self.map.tiles.values_mut() {
+            tile.owner_city = None;
+        }
+        for player in self.players.iter_mut() {
+            player.remembered_cities.clear();
+            player.city_directives.clear();
+        }
+    }
+
     pub fn new(
         num_players: usize,
         width: i32,
@@ -15735,6 +15796,11 @@ impl Game {
             spies: BTreeMap::new(),
             cities: BTreeMap::new(),
             at_war: BTreeSet::new(),
+            observed_military_power: BTreeMap::new(),
+            observed_score: BTreeMap::new(),
+            observed_yield_adjustments: BTreeMap::new(),
+            observed_city_loyalty_per_turn: BTreeMap::new(),
+            observed_city_strength: BTreeMap::new(),
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
@@ -26530,6 +26596,9 @@ impl Game {
     /// population multipliers are deliberately absent — they score nothing
     /// in the shipped game.
     pub fn score(&self, pid: usize) -> i64 {
+        if let Some(score) = self.observed_score.get(&pid) {
+            return (*score).max(0);
+        }
         self.score_parts(pid).iter().sum()
     }
 
@@ -26582,7 +26651,7 @@ impl Game {
     /// technologies, wonders). Higher is better on every key.
     pub fn score_rank_key(&self, pid: usize) -> (i64, [i64; 9]) {
         let parts = self.score_parts(pid);
-        (parts.iter().sum(), parts)
+        (self.score(pid), parts)
     }
 
     /// The stock team score is the sum of every member civilization's score;
@@ -26590,17 +26659,19 @@ impl Game {
     /// remains deterministic between tied teams.
     pub fn team_score_rank_key(&self, pid: usize) -> (i64, [i64; 9]) {
         let mut parts = [0_i64; 9];
+        let mut score = 0_i64;
         for member in self.team_members(pid) {
+            score += self.score(member);
             let member_parts = self.score_parts(member);
             for (total, value) in parts.iter_mut().zip(member_parts) {
                 *total += value;
             }
         }
-        (parts.iter().sum(), parts)
+        (score, parts)
     }
 
     pub fn military_power(&self, pid: usize) -> f64 {
-        self.units
+        let represented = self.units
             .values()
             .filter(|u| u.owner == pid)
             .map(|u| {
@@ -26608,7 +26679,13 @@ impl Game {
                     * u.hp as f64
                     / 100.0
             })
-            .sum()
+            .sum::<f64>();
+        self.observed_military_power
+            .get(&pid)
+            .copied()
+            .unwrap_or(0.0)
+            .max(0.0)
+            .max(represented)
     }
 
     fn unlocked(&self, pid: usize, tech: &Option<Name>, civic: &Option<Name>) -> bool {
@@ -30428,6 +30505,9 @@ impl Game {
     }
 
     pub fn city_strength(&self, cid: u32) -> f64 {
+        if let Some(strength) = self.observed_city_strength.get(&cid) {
+            return strength.max(0.0);
+        }
         let city = &self.cities[&cid];
         let city_state_bonus = self.city_state_envoy_strength(city.owner);
         let current_best = self
@@ -44581,6 +44661,9 @@ impl Game {
     }
 
     pub fn city_loyalty_per_turn(&self, city: &City) -> f64 {
+        if let Some(delta) = self.observed_city_loyalty_per_turn.get(&city.id) {
+            return *delta;
+        }
         self.loyalty_change_for_city(city.owner, city.id).delta
     }
 

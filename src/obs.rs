@@ -312,6 +312,14 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         empire[4] += yields.culture;
         empire[5] += yields.faith;
     }
+    if let Some(adjustment) = g.observed_yield_adjustments.get(&pid) {
+        empire[0] += adjustment.food;
+        empire[1] += adjustment.production;
+        empire[2] += adjustment.gold;
+        empire[3] += adjustment.science;
+        empire[4] += adjustment.culture;
+        empire[5] += adjustment.faith;
+    }
 
     enum KnownCity<'a> {
         Live(&'a City),
@@ -637,6 +645,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             let mut output = crate::rules::Yields::default();
             for cid in g.player_city_ids(o.id) {
                 output.add(g.city_yields(cid));
+            }
+            if let Some(adjustment) = g.observed_yield_adjustments.get(&o.id) {
+                output.add(*adjustment);
             }
             let military = g.military_power(o.id).round() as i64;
             // Founding is permanent history, but the standings marker is
@@ -1446,6 +1457,7 @@ fn live_city_json(g: &Game, pid: usize, city: &City, omniscient: bool) -> Value 
         "can_strike": g.city_can_strike(city),
         "loyalty": round1(city.loyalty),
         "loyalty_per_turn": round1(g.city_loyalty_per_turn(city)),
+        "defense": round1(g.city_strength(city.id)),
         "loyalty_state": Game::loyalty_state(city.loyalty),
         "free_city": g.players[city.owner].is_free_city,
         "governor": g.players[city.owner].governors.contains(&city.id),
