@@ -2431,6 +2431,63 @@ mod city_name_tests {
     }
 
     #[test]
+    fn terrain_route_does_not_build_through_an_incompatible_feature() {
+        let mut game = Game::new(2, 24, 16, 2, 200, 0);
+        let centre = game
+            .map
+            .tiles
+            .iter()
+            .find(|(_, tile)| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .map(|(pos, _)| *pos)
+            .unwrap();
+        let city = game.place_city(0, centre, None);
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|pos| *pos != centre)
+            .unwrap();
+        let tile = game.map.tiles.get_mut(&site).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.hills = true;
+        tile.feature = Some(crate::name!("forest"));
+        tile.resource = None;
+        tile.improvement = None;
+        game.players[0].techs.insert(crate::name!("mining"));
+
+        assert!(
+            !game.valid_improvements(0, site).contains(&crate::name!("mine")),
+            "Firaxis does not offer the Hills terrain route through Woods"
+        );
+        game.map.tiles.get_mut(&site).unwrap().feature = None;
+        assert!(game.valid_improvements(0, site).contains(&crate::name!("mine")));
+    }
+
+    #[test]
+    fn a_host_refused_trade_route_is_not_offered_again() {
+        let mut game = Game::new(2, 24, 16, 3, 200, 0);
+        let sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        let origin = sites[0];
+        let destination = sites
+            .iter()
+            .copied()
+            .find(|pos| game.wdist(origin, *pos) >= 4 && game.wdist(origin, *pos) <= 15)
+            .unwrap();
+        let origin_city = game.place_city(0, origin, None);
+        let destination_city = game.place_city(1, destination, None);
+        assert!(game.can_establish_trade_route(0, origin_city, destination_city));
+
+        game.blocked_trade_routes.insert((origin, destination));
+        assert!(!game.can_establish_trade_route(0, origin_city, destination_city));
+    }
+
+    #[test]
     fn every_civilization_has_a_deep_unique_city_name_pool() {
         for civilization in CIV_NAMES {
             let names = city_names(civilization);
@@ -15073,6 +15130,11 @@ pub struct Game {
     /// with seven builders alive against an army of one.
     #[serde(default)]
     pub blocked_improvement_sites: BTreeSet<Pos>,
+    /// Origin/destination pairs a host engine rejected for a trade route.
+    /// Native games leave this empty; a live mirror learns it from Firaxis so an
+    /// unreachable city is not offered again every turn on geometric range alone.
+    #[serde(default)]
+    pub blocked_trade_routes: BTreeSet<(Pos, Pos)>,
     /// Policy cards a HOST ruleset has retired, for the same reasons and with the
     /// same emptiness in an ordinary game as [`Game::blocked_city_sites`].
     ///
@@ -15441,6 +15503,7 @@ impl From<GameSer> for Game {
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
+            blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
@@ -15841,6 +15904,7 @@ impl Game {
             observed_city_max_wall_hp: BTreeMap::new(),
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
+            blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             peace_treaties: BTreeMap::new(),
@@ -19996,6 +20060,12 @@ impl Game {
         }
         if self.is_at_war(pid, dc.owner) {
             return Err("cannot trade with an enemy".into());
+        }
+        if self
+            .blocked_trade_routes
+            .contains(&(origin_city.pos, dc.pos))
+        {
+            return Err("host rejected that trade route".into());
         }
         if origin_city.owner != dc.owner
             && (self.congress_effect_active("trade_policy", "B", &pid.to_string())
@@ -33677,6 +33747,12 @@ impl Game {
                 || spec.terrain.iter().any(|want| t.terrain == *want)
                 || feature_route
                 || resource_route;
+            // Firaxis evaluates a featured plot through Improvement_ValidFeatures
+            // (or a compatible resource), not through the terrain hidden below it.
+            // Treating the underlying Hills as sufficient offered Mines on Woods;
+            // the live engine refused both attempts in the turn-150 Poland trace.
+            let incompatible_feature =
+                t.feature.is_some() && !feature_route && !resource_route;
             if spec.unbuildable
                 || !self.unlocked(pid, &spec.tech, &spec.civic)
                 || spec.unique_to.as_deref().is_some_and(|owner| owner != civ)
@@ -33693,6 +33769,7 @@ impl Game {
                     && t.feature
                         .as_deref()
                         .is_some_and(|feature| !self.feature_removal_unlocked(pid, feature)))
+                || incompatible_feature
                 || (!sited && !seaside_volcanic)
                 || seaside_invalid
                 || adjacent_ski_resort

@@ -768,6 +768,36 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    #[test]
+    fn trade_route_refusals_are_merged_through_the_requested_host_turn() {
+        let dir = std::env::temp_dir().join(format!("civvis-route-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("events.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"kind":"state","turn":41}"#,
+                "\n",
+                r#"{"kind":"trade_route_refused","turn":40,"unit":9,"from_x":6,"from_y":6,"x":9,"y":9}"#,
+                "\n",
+                r#"{"kind":"trade_route_refused","turn":42,"unit":9,"from_x":6,"from_y":6,"x":10,"y":10}"#,
+                "\n",
+            ),
+        )
+        .expect("write events");
+
+        let state = state_from_events(&path, Some(41)).expect("turn 41 state");
+        assert_eq!(
+            state.refused_trade_routes,
+            std::collections::BTreeSet::from([(
+                crate::hex::offset_to_axial(6, 6),
+                crate::hex::offset_to_axial(9, 9),
+            )]),
+            "future refusals must not leak into an earlier reconstructed frame"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// ★★★★ Landmass identity comes from the export, and invented cliffs come off.
     ///
     /// Same defect as the rivers above, two fields over. On the live board 200 of 776
@@ -2495,6 +2525,10 @@ mod tests {
         }]);
         let mut state = StateSnapshot {
             turn: 20,
+            seat: Seat {
+                city_states: 1,
+                ..Seat::default()
+            },
             civics: vec!["CIVIC_FOREIGN_TRADE".to_string()],
             cities: vec![
                 StateCity {
@@ -2533,6 +2567,21 @@ mod tests {
                 destination_y: 5,
                 ..StateTradeRoute::default()
             }],
+            // Firaxis allocates city ids per player. This city-state's first city
+            // deliberately has the same id as our Antium.
+            minors: vec![StateMinor {
+                player: 6,
+                civ: "CIVILIZATION_ZANZIBAR".to_string(),
+                cities: vec![StateCity {
+                    id: 8,
+                    name: "Zanzibar".to_string(),
+                    x: 9,
+                    y: 9,
+                    pop: 3,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
             ..StateSnapshot::default()
         };
 
@@ -2543,6 +2592,10 @@ mod tests {
         assert!(mirror.active_trade_route_traders.contains(&42));
         assert_eq!(mirror.game.routes[0].origin, mirror.cid_of[&8]);
         assert_eq!(mirror.game.routes[0].dest, mirror.cid_of[&7]);
+        assert_eq!(
+            mirror.game.cities[&mirror.game.routes[0].origin].owner, 0,
+            "a colliding city-state id must not steal the route origin"
+        );
 
         // The next authoritative state is the only thing allowed to complete a
         // route.  A persistent mirror must stop counting it immediately once the
@@ -3952,6 +4005,9 @@ pub struct StateSnapshot {
     /// Tiles Civilization VI refused to improve, AXIAL, from `improve_refused`.
     #[serde(default)]
     pub refused_improves: std::collections::BTreeSet<crate::Pos>,
+    /// Origin/destination pairs Firaxis rejected for trade-route pathing.
+    #[serde(default)]
+    pub refused_trade_routes: std::collections::BTreeSet<(crate::Pos, crate::Pos)>,
     /// Policy cards Civilization VI has retired, as its OWN names, harvested from the
     /// `obsolete_<POLICY>` refusal reasons already in the stream. Translated where the
     /// ruleset is in hand; see [`refused_policies`].
@@ -4011,20 +4067,28 @@ fn restore_active_trade_routes(
     let mut unresolved = Vec::new();
 
     for route in routes {
-        let Some(&origin) = city_of_civ6.get(&route.origin) else {
+        // City ids are only unique within a Firaxis player. Every first city is
+        // commonly 65536, so an id-only map can resolve Krakow's route endpoint as
+        // Zanzibar. The export carries coordinates precisely to disambiguate them.
+        let origin = if route.origin_x >= 0 && route.origin_y >= 0 {
+            game.city_at(crate::hex::offset_to_axial(route.origin_x, route.origin_y))
+        } else {
+            None
+        }
+        .or_else(|| city_of_civ6.get(&route.origin).copied());
+        let Some(origin) = origin else {
             unresolved.push(format!("trade_route:{}:origin", route.trader));
             continue;
         };
-        let destination = city_of_civ6.get(&route.destination).copied().or_else(|| {
-            if route.destination_x >= 0 && route.destination_y >= 0 {
-                game.city_at(crate::hex::offset_to_axial(
-                    route.destination_x,
-                    route.destination_y,
-                ))
-            } else {
-                None
-            }
-        });
+        let destination = if route.destination_x >= 0 && route.destination_y >= 0 {
+            game.city_at(crate::hex::offset_to_axial(
+                route.destination_x,
+                route.destination_y,
+            ))
+        } else {
+            None
+        }
+        .or_else(|| city_of_civ6.get(&route.destination).copied());
         let Some(destination) = destination else {
             unresolved.push(format!("trade_route:{}:destination", route.trader));
             continue;
@@ -4381,6 +4445,7 @@ pub fn state_from_events(
     if let Some(state) = best.as_mut() {
         state.refused_sites = refused_sites_of_kind_through(path, "found_refused", turn);
         state.refused_improves = refused_sites_of_kind_through(path, "improve_refused", turn);
+        state.refused_trade_routes = refused_trade_routes_through(path, turn);
         state.refused_policy_names = refused_policies_through(path, turn);
         state.refused_districts = refused_districts_through(path, turn);
     }
@@ -4785,6 +4850,38 @@ fn refused_sites_of_kind_through(
             continue;
         };
         refused.insert(crate::hex::offset_to_axial(x as i32, y as i32));
+    }
+    refused
+}
+
+fn refused_trade_routes_through(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> std::collections::BTreeSet<(crate::Pos, crate::Pos)> {
+    let mut refused = std::collections::BTreeSet::new();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return refused;
+    };
+    for line in raw.lines().filter(|line| line.contains("trade_route_refused")) {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|value| value.as_str()) != Some("trade_route_refused")
+            || turn.is_some_and(|limit| {
+                event.get("turn").and_then(|value| value.as_u64()).unwrap_or(0)
+                    > limit as u64
+            })
+        {
+            continue;
+        }
+        let values = ["from_x", "from_y", "x", "y"]
+            .map(|key| event.get(key).and_then(|value| value.as_i64()).map(|v| v as i32));
+        if let [Some(from_x), Some(from_y), Some(x), Some(y)] = values {
+            refused.insert((
+                crate::hex::offset_to_axial(from_x, from_y),
+                crate::hex::offset_to_axial(x, y),
+            ));
+        }
     }
     refused
 }
@@ -5298,6 +5395,7 @@ pub fn rebuild_from_state(
     // them. See `refused_city_sites`.
     game.blocked_city_sites = state.refused_sites.clone();
     game.blocked_improvement_sites = state.refused_improves.clone();
+    game.blocked_trade_routes = state.refused_trade_routes.clone();
     game.blocked_policies = blocked_policies_from(&state.refused_policy_names, &game.rules);
     // ⚠ Wired after `city_ids` below would be too late for the rebuild, so this is
     // filled in at the end of the function where both are in hand.
@@ -6291,6 +6389,9 @@ impl LiveMirror {
         self.game
             .blocked_improvement_sites
             .extend(state.refused_improves.iter().copied());
+        self.game
+            .blocked_trade_routes
+            .extend(state.refused_trade_routes.iter().copied());
         // Union for the same reason as the two above: a card the host retired stays
         // retired, and the set is rebuilt from the whole event log each time.
         let retired = blocked_policies_from(&state.refused_policy_names, &self.game.rules);

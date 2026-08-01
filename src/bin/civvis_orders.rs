@@ -127,6 +127,57 @@ struct Order {
     pos: Option<(i32, i32)>,
 }
 
+/// Keep only commands whose preconditions belong to the observed Firaxis frame.
+///
+/// CIVVIS applies a unit's whole turn synchronously to its planning clone, so a
+/// builder can log MOVE_TO followed by IMPROVE and a military unit can log several
+/// path steps. Firaxis operations are asynchronous: when Lua submits that list in
+/// one callback, every later command still sees the unit at its original position.
+/// The next exported frame is the first point where another command for that unit
+/// can be evaluated honestly. Different units and non-unit orders remain independent.
+fn defer_unit_followups(orders: Vec<Order>) -> (Vec<Order>, usize) {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut deferred = 0;
+    let orders = orders
+        .into_iter()
+        .filter(|order| {
+            if order.kind != "unit" {
+                return true;
+            }
+            let Some(subject) = order.subject else {
+                return true;
+            };
+            if seen.insert(subject) {
+                true
+            } else {
+                deferred += 1;
+                false
+            }
+        })
+        .collect();
+    (orders, deferred)
+}
+
+/// Send the complete post-plan policy set as one host transaction.
+///
+/// A replacement is two CIVVIS actions (`UnslotPolicy`, then `SlotPolicy`), but
+/// Firaxis accepts the government screen's clear/add lists atomically. Sending
+/// only the second action asks it to add a card to a deck that is still full.
+fn policy_deck_order(game: &civvis::game::Game, pid: usize) -> Order {
+    let policies = game.players[pid]
+        .policies
+        .iter()
+        .map(|policy| format!("POLICY_{}", policy.as_str().to_ascii_uppercase()))
+        .collect::<Vec<_>>()
+        .join(",");
+    Order {
+        kind: "policy_deck",
+        subject: None,
+        verb: Some(policies),
+        pos: None,
+    }
+}
+
 impl Order {
     fn to_json(&self) -> String {
         let mut parts = vec![format!("\"kind\":{}", quote(self.kind))];
@@ -254,6 +305,7 @@ fn decide(
     let mut skipped: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     let mut note_bits: Vec<String> = Vec::new();
+    let mut policy_changed = false;
     if !pre_traders.is_empty() {
         note_bits.push(format!(
             "traders capacity={} active={} [{}]",
@@ -265,6 +317,13 @@ fn decide(
 
     for (seat, action) in planned_game.log.since(before) {
         if *seat != 0 {
+            continue;
+        }
+        if matches!(
+            action,
+            Action::SlotPolicy { .. } | Action::UnslotPolicy { .. }
+        ) {
+            policy_changed = true;
             continue;
         }
         let order = translate(action, mirror_state, state, &mut skipped);
@@ -300,6 +359,9 @@ fn decide(
                 *skipped.entry(why).or_insert(0) += 1;
             }
         }
+    }
+    if policy_changed {
+        orders.push(policy_deck_order(&planned_game, 0));
     }
 
     let plan = ai.plan_report();
@@ -345,6 +407,12 @@ fn decide(
         }
     } else {
         note_bits.push("plan=none".to_string());
+    }
+
+    let (causally_safe, deferred_unit_followups) = defer_unit_followups(orders);
+    orders = causally_safe;
+    if deferred_unit_followups > 0 {
+        note_bits.push(format!("deferred_unit_followups={deferred_unit_followups}"));
     }
 
     if !mirror_state.unmapped.is_empty() {
@@ -647,23 +715,6 @@ fn translate(
             kind: "civic",
             subject: None,
             verb: Some(civ6_civic_name(civic.as_str())),
-            pos: None,
-        }),
-        // ★★★★★ POLICY CARDS, WHICH WERE BEING DROPPED WHOLESALE.
-        //
-        // CIVVIS issued `SlotPolicy` on every turn from t80 to t233 of run 233331Z --
-        // six a turn by the end -- and translate() had no arm, so every one was
-        // counted as `skipped` and thrown away. Meanwhile the mod filled the slots
-        // with its own crude "first unlocked card that fits" heuristic, which is
-        // precisely the arrangement this project was told to remove: the harness
-        // deciding while CIVVIS's decision is discarded.
-        //
-        // Policy cards are not a marginal lever here -- this project has already
-        // measured them as mattering (p=0.0023).
-        Action::SlotPolicy { policy } => Some(Order {
-            kind: "policy",
-            subject: None,
-            verb: Some(format!("POLICY_{}", policy.as_str().to_ascii_uppercase())),
             pos: None,
         }),
         Action::Government { government } => Some(Order {
@@ -1282,6 +1333,57 @@ mod tests {
     use civvis::mirror::{
         Plot, Snapshot, StateCity, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
     };
+
+    #[test]
+    fn unit_followups_wait_for_the_next_observed_firaxis_frame() {
+        let (orders, deferred) = defer_unit_followups(vec![
+            Order {
+                kind: "unit",
+                subject: Some(42),
+                verb: Some("MOVE_TO".to_string()),
+                pos: Some((4, 5)),
+            },
+            Order {
+                kind: "unit",
+                subject: Some(42),
+                verb: Some("IMPROVE:IMPROVEMENT_FARM".to_string()),
+                pos: None,
+            },
+            Order {
+                kind: "unit",
+                subject: Some(99),
+                verb: Some("FORTIFY".to_string()),
+                pos: None,
+            },
+            Order {
+                kind: "research",
+                subject: None,
+                verb: Some("TECH_WRITING".to_string()),
+                pos: None,
+            },
+        ]);
+
+        assert_eq!(deferred, 1);
+        assert_eq!(orders.len(), 3);
+        assert_eq!(orders[0].subject, Some(42));
+        assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
+        assert_eq!(orders[1].subject, Some(99));
+        assert_eq!(orders[2].kind, "research");
+    }
+
+    #[test]
+    fn policy_replacements_are_one_complete_host_deck() {
+        let mut game = civvis::game::Game::new(2, 12, 12, 1, 50, 0);
+        game.players[0].policies.insert(civvis::name!("urban_planning"));
+        game.players[0].policies.insert(civvis::name!("agoge"));
+
+        let order = policy_deck_order(&game, 0);
+        assert_eq!(order.kind, "policy_deck");
+        assert_eq!(
+            order.verb.as_deref(),
+            Some("POLICY_AGOGE,POLICY_URBAN_PLANNING")
+        );
+    }
 
     #[test]
     fn exported_lobby_size_and_horizon_override_cli_fallbacks() {

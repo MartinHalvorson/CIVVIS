@@ -10594,6 +10594,48 @@ impl AdvancedAi {
         BasicAi::first_reachable_settle_site(g, uid, &candidates)
     }
 
+    fn settler_step_is_safe(&self, g: &Game, pid: usize, next: Pos) -> bool {
+        let visible = self.battlefront_visibility(g, pid);
+        !g.units.values().any(|enemy| {
+            if enemy.owner == pid
+                || !g.is_at_war(pid, enemy.owner)
+                || !g.sees(&visible, enemy.pos)
+                || !self.battlefront_unit_visible(g, pid, enemy.id)
+            {
+                return false;
+            }
+            let spec = &g.rules.units[enemy.kind];
+            if spec.class != "military" || spec.domain.as_deref() == Some("air") {
+                return false;
+            }
+            let reach = spec.moves.ceil().max(1.0) as i32;
+            let distance = g.wdist(enemy.pos, next);
+            distance <= reach
+                && (distance <= 1 || g.route_step(enemy.id, next, 0).is_some())
+        })
+    }
+
+    fn advanced_settler_step_toward(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> bool {
+        if let Some(next) = g
+            .route_step(uid, target, 0)
+            .filter(|next| g.can_move(uid, *next))
+        {
+            // A civilian is captured by hostile movement, not ordinary combat.
+            // Nine settlers in the live Poland trace marched beside a visible
+            // hostile and appeared as that hostile's Settler one frame later.
+            if !self.settler_step_is_safe(g, pid, next) {
+                return false;
+            }
+        }
+        self.base.settler_step_toward(g, pid, uid, target)
+    }
+
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
         // Search only the immediate neighborhood for the capital. The target
@@ -10657,7 +10699,7 @@ impl AdvancedAi {
                        "worth {:.1} against {:.1} where it stands",
                        self.settle_value(g, pid, target),
                        self.settle_value(g, pid, current); target);
-                let moved = self.base.settler_step_toward(g, pid, uid, target);
+                let moved = self.advanced_settler_step_toward(g, pid, uid, target);
                 if !moved {
                     self.settler_targets.remove(&uid);
                 }
@@ -10725,7 +10767,7 @@ impl AdvancedAi {
         think!(self.journal(), Expansion, Detail, "Settler marching to {target:?}";
                "{} tiles away, the site is worth {:.1}",
                g.wdist(current, target), self.settle_value(g, pid, target); target);
-        let moved = self.base.settler_step_toward(g, pid, uid, target);
+        let moved = self.advanced_settler_step_toward(g, pid, uid, target);
         if moved {
             self.settler_stalls.remove(&uid);
         } else if self.settler_commit {
@@ -14729,6 +14771,33 @@ mod tests {
     fn legacy_controller_keeps_battlefront_observation_off() {
         assert!(AdvancedAi::new().battlefront_observation);
         assert!(!AdvancedAi::legacy().battlefront_observation);
+    }
+
+    #[test]
+    fn advanced_settlers_wait_out_a_visible_hostile_capture_envelope() {
+        let mut game = Game::new(2, 20, 14, 91_480, 80, 0);
+        let (hostile_pos, civilian_step) = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            .find_map(|(pos, _)| {
+                game.nbrs(*pos).into_iter().find(|next| {
+                    game.map.get(*next).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                })
+                .map(|next| (*pos, next))
+            })
+            .expect("map has adjacent land");
+        game.spawn_test_unit("settler", 0, civilian_step);
+        game.spawn_test_unit("warrior", 1, hostile_pos);
+        game.at_war.insert((0, 1));
+        let ai = AdvancedAi::new();
+
+        assert!(!ai.settler_step_is_safe(&game, 0, civilian_step));
+        game.at_war.clear();
+        assert!(ai.settler_step_is_safe(&game, 0, civilian_step));
     }
 
     #[test]

@@ -5065,6 +5065,76 @@ local function applyOrder(player, pid, row, turn)
 	--
 	-- Policy cards are not marginal here -- already measured as mattering
 	-- (p=0.0023).
+	if kind == "policy_deck" then
+		local culture = try(function() return player:GetCulture(); end);
+		if culture == nil then return false, "no_culture"; end
+		local desired, seen = {}, {};
+		for requested in string.gmatch(verb, "[^,]+") do
+			local card, resolved = resolveType(GameInfo.Policies, requested);
+			if card == nil then return false, "unknown_" .. requested; end
+			if try(function() return culture:IsPolicyObsolete(card.Hash); end, false) then
+				return false, "obsolete_" .. resolved;
+			end
+			if not try(function() return culture:IsPolicyUnlocked(card.Hash); end, false) then
+				return false, "locked_" .. resolved;
+			end
+			if not seen[card.Index] then
+				desired[#desired + 1] = card;
+				seen[card.Index] = true;
+			end
+		end
+
+		local slots = try(function() return culture:GetNumPolicySlots(); end, 0) or 0;
+		if #desired > slots then return false, "policy_deck_too_large"; end
+		local slotNames = {};
+		for i = 0, slots - 1 do
+			slotNames[i] = try(function()
+				local slotId = culture:GetSlotType(i);
+				return GameInfo.GovernmentSlots[slotId].GovernmentSlotType;
+			end);
+		end
+
+		-- Seat constrained cards first. A typed card may fall back to a Wildcard
+		-- slot, while a Wildcard-only card cannot fall back to a typed slot.
+		local addList, used, pending = {}, {}, {};
+		local function seat(card, slotType)
+			for i = 0, slots - 1 do
+				if not used[i] and slotNames[i] == slotType then
+					addList[i] = card.Hash;
+					used[i] = true;
+					return true;
+				end
+			end
+			return false;
+		end
+		for _, card in ipairs(desired) do
+			if card.GovernmentSlotType == "SLOT_WILDCARD" then
+				if not seat(card, "SLOT_WILDCARD") then
+					return false, "policy_deck_does_not_fit";
+				end
+			else
+				pending[#pending + 1] = card;
+			end
+		end
+		local wildcard = {};
+		for _, card in ipairs(pending) do
+			if not seat(card, card.GovernmentSlotType) then
+				wildcard[#wildcard + 1] = card;
+			end
+		end
+		for _, card in ipairs(wildcard) do
+			if not seat(card, "SLOT_WILDCARD") then
+				return false, "policy_deck_does_not_fit";
+			end
+		end
+
+		local clearList = {};
+		for i = 0, slots - 1 do clearList[#clearList + 1] = i; end
+		local ok = pcall(function()
+			culture:RequestPolicyChanges(clearList, addList);
+		end);
+		return ok, ok and "policy_deck" or "throw";
+	end
 	if kind == "policy" then
 		local culture = try(function() return player:GetCulture(); end);
 		if culture == nil then return false, "no_culture"; end
@@ -5310,12 +5380,31 @@ local function applyOrder(player, pid, row, turn)
 		-- `decline_settlers = counts.settlers > 0` and refuses to BUILD one. Every turn.
 		-- That is the phantom-settler failure returning through a different door, and it
 		-- is why that run held ONE city to turn 238.
-		local canBuy = false;
-		local okCan = pcall(function()
-			canBuy = CityManager.CanStartCommand(city, CityCommandTypes.PURCHASE,
-			                                    params, true) == true;
+		local canBuy, results = false, nil;
+		local okCan, hostCan, hostResults = pcall(function()
+			-- Exact signature from Firaxis's shipped ProductionPanel.lua. The third
+			-- and fifth arguments are booleans; passing `params` as argument three
+			-- made every otherwise valid purchase answer false without throwing.
+			return CityManager.CanStartCommand(city, CityCommandTypes.PURCHASE,
+			                                   false, params, true);
 		end);
-		if not (okCan and canBuy) then return false, "cannot_buy_" .. resolved; end
+		if okCan then canBuy, results = hostCan == true, hostResults; end
+		if not canBuy then
+			local cost = try(function()
+				if row2.Kind == "KIND_UNIT" then
+					return city:GetGold():GetPurchaseCost(
+						gold, row2.Hash,
+						MilitaryFormationTypes.STANDARD_MILITARY_FORMATION);
+				end
+				return city:GetGold():GetPurchaseCost(gold, row2.Hash);
+			end, -1);
+			emit("purchase_refused", {
+				turn = turn, city = subject, item = resolved,
+				gold = try(function() return player:GetTreasury():GetGoldBalance(); end, -1),
+				cost = cost, checked = okCan, has_results = results ~= nil,
+			});
+			return false, "cannot_buy_" .. resolved;
+		end
 		local ok = pcall(function()
 			CityManager.RequestCommand(city, CityCommandTypes.PURCHASE, params);
 		end);
@@ -5626,9 +5715,21 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X0] = x;
 			params[UnitOperationTypes.PARAM_Y0] = y;
-			params[UnitOperationTypes.PARAM_X1] = try(function() return unit:GetX(); end, -1);
-			params[UnitOperationTypes.PARAM_Y1] = try(function() return unit:GetY(); end, -1);
-			return operate(unit, op, params), verb;
+			local fromX = try(function() return unit:GetX(); end, -1);
+			local fromY = try(function() return unit:GetY(); end, -1);
+			params[UnitOperationTypes.PARAM_X1] = fromX;
+			params[UnitOperationTypes.PARAM_Y1] = fromY;
+			local routed = operate(unit, op, params);
+			if not routed then
+				-- Geometric range is not a route. Carry both endpoints back so the
+				-- mirror can stop offering this exact unreachable pairing instead of
+				-- re-sending it forever (83 consecutive turns in the Poland trace).
+				emit("trade_route_refused", {
+					turn = turn, unit = subject,
+					from_x = fromX, from_y = fromY, x = x, y = y,
+				});
+			end
+			return routed, verb;
 		end
 		if verb == "UPGRADE" then
 			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"], {}), verb;
