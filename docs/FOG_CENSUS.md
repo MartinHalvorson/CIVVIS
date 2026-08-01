@@ -183,6 +183,62 @@ Three alternating one-at-a-time release benchmarks (100 two-player 20×14,
 with the frame. The individual readings (715/724/711 and 714/705/712) do not
 show a material single-simulation throughput regression.
 
+## Residual action localization
+
+The turn-start frame leaves a small but concrete residual set. Before choosing
+another broad controller repair, the census now aggregates the **first
+different action pair** for every action witness: its stable public action
+kind, the acting-seat relation, and the action's directly encoded
+destination/target relative to the treated fact. The kind is the shared,
+exhaustive `action_space::kind_name` taxonomy rather than a local hand-written
+bucket, so a new `Action` variant cannot silently become `other`.
+
+For the geometry count, a source action's `to`, `target`, or explicit `pos` is
+measured against the source fact and a treated action's equivalent field
+against the treated fact; the smaller hex distance is reported. Actions that
+name only an entity ID are intentionally not reverse-resolved after replay.
+That makes this a conservative description of where the logged command points,
+not a claim that a nearby command necessarily read the hidden fact or that a
+remote command did not.
+
+At current-main `f56b118`, this release command (the classifier itself changes
+only the diagnostic binary and this document) produced the following exact
+evidence:
+
+```sh
+cargo run --release --locked --bin fog_census -- \
+  --maps 64 --probes 12 --players 4 --width 44 --height 28 \
+  --turns 200 --seed 862000 --jobs 8
+```
+
+| check | result |
+|---|---:|
+| valid controls (all tensor/save-load/null checks) | 713 / 713 |
+| decision / action witnesses | 11 / 713 (1.5%) |
+| plan-report witnesses | 0 / 713 |
+| treatment witnesses | 9 unit positions, 2 unit HP, 0 city HP |
+| first-difference action kind | 11 `move → move` |
+| first-difference actor | 11 same acting seat |
+| first-difference movement unit | 11 same unit |
+| difference at action index zero | 0 / 713 |
+| direct destination/target 2–3 hexes from fact | 6 |
+| direct destination/target 4+ hexes from fact | 5 |
+| direct destination/target at or adjacent to fact | 0 |
+
+A 16-map prefix of the same profile (`862000..862015`) produced byte-identical
+reports after normalizing only the printed worker count between `--jobs 1` and
+`--jobs 8` (180 valid controls and four `move → move` witnesses each). That
+checks that the new parallel aggregation is deterministic as well as that its
+release result is internally valid.
+
+Thus, on this fixed sample, the residual witnesses are not plan changes, seat
+ordering changes, or direct attacks/moves onto the counterfactual tile. They
+are later reroutes of the same unit. That narrows the next repair investigation
+to downstream unit-order/objective consumers, but does **not** identify the
+internal reader or establish a causal path. Any controller change must still
+add a targeted counterfactual regression and pass its own strength/safety
+screen; this reporting change alters no production behavior.
+
 ## Scope and limitations
 
 The census uses `obs_tensor` as the implementation's fog-honest input
