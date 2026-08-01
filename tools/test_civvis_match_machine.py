@@ -82,6 +82,17 @@ class MatchMachineTests(unittest.TestCase):
 
         subject.launch.assert_called_once_with(visible=True)
 
+    def test_fill_slots_resumes_paused_work_before_admitting_a_new_game(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        subject.games = [SimpleNamespace(visible=True, paused=True)]
+        subject.launch = mock.Mock()
+
+        subject.fill_slots(machine.Resources(20, 20, 12, 0, False))
+
+        subject.launch.assert_not_called()
+
     def test_cpu_parser_uses_the_last_top_sample(self):
         report = "CPU usage: 10.0% user, 5.0% sys, 85.0% idle\nCPU usage: 20.0% user, 9.5% sys, 70.5% idle"
         self.assertEqual(machine.parse_top_cpu(report), 29.5)

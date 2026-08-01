@@ -737,6 +737,11 @@ class MatchMachine:
             self.args.limit, margin=RESUME_MARGIN
         ):
             return
+        # Recovery comes before growth. A process paused by the governor is
+        # already consuming a fleet slot and must be resumed before a fresh
+        # game can compete with it for the recovered headroom.
+        if any(game.paused for game in self.games):
+            return
         # "One visible game" is a concurrency invariant, not a lifetime
         # allowance. Replace the spectator match after either completion or a
         # failed process, while still admitting at most one process per sample.
