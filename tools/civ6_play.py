@@ -451,8 +451,10 @@ def place_game(side: str = "left", fraction: float = 0.5,
     script = (
         'tell application "System Events" to tell '
         '(first process whose name contains "Civ6") to tell window 1\n'
-        f'  set position to {{{x}, {menu}}}\n'
         f'  set size to {{{width}, {height}}}\n'
+        # Aspyr constrains the existing origin while applying the smaller size.
+        # Position last or a requested upper quadrant lands at the bottom.
+        f'  set position to {{{x}, {menu}}}\n'
         'end tell')
     subprocess.run(["osascript", "-e", script], capture_output=True)
 
@@ -636,6 +638,17 @@ def _normalized_label(value: str) -> str:
     return "".join(character for character in ascii_value.casefold() if character.isalnum())
 
 
+def _menu_label_matches(observed: str, wanted: str) -> bool:
+    """Tolerate one OCR glyph error in a long, otherwise exact menu label."""
+    observed = _normalized_label(observed)
+    wanted = _normalized_label(wanted)
+    if observed == wanted:
+        return True
+    if len(observed) != len(wanted) or len(wanted) < 8:
+        return False
+    return sum(left != right for left, right in zip(observed, wanted)) == 1
+
+
 def leader_display_name(leader: str) -> str:
     """Resolve a Firaxis leader type to the label CIVVIS expects on the picker."""
     requested = _normalized_label(leader.removeprefix("LEADER_"))
@@ -801,7 +814,7 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
 def _main_menu_visible(path: Path) -> bool:
     """Return whether a screenshot visibly contains Firaxis's Single Player row."""
     return any(
-        _normalized_label(str(observation.get("text", ""))) == "singleplayer"
+        _menu_label_matches(str(observation.get("text", "")), "Single Player")
         for observation in macos_ocr.recognize(path)
     )
 
@@ -814,9 +827,8 @@ def _observed_label_point(path: Path, label: str,
         return None
     screen_w, screen_h = screen
     x, y, w, h = bounds
-    wanted = _normalized_label(label)
     for observation in macos_ocr.recognize(path):
-        if _normalized_label(str(observation.get("text", ""))) != wanted:
+        if not _menu_label_matches(str(observation.get("text", "")), label):
             continue
         point = _observation_point(observation)
         if point is None:

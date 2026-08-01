@@ -29,6 +29,16 @@ def args(**changes):
 
 
 class Civ6PlayTest(unittest.TestCase):
+    def test_place_game_sizes_before_positioning_the_upper_quadrant(self) -> None:
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.subprocess, "run") as run:
+            civ6_play.place_game("right", 0.5, 0.5)
+
+        script = run.call_args.args[0][-1]
+        self.assertLess(script.index("set size"), script.index("set position"))
+        self.assertIn("set size to {756, 480}", script)
+        self.assertIn("set position to {756, 33}", script)
+
     def test_screen_locked_reads_console_session_state(self) -> None:
         with patch.object(
             civ6_play.subprocess,
@@ -199,6 +209,19 @@ class Civ6PlayTest(unittest.TestCase):
     def test_main_menu_click_uses_observed_row_center(self) -> None:
         observation = {
             "text": "Single Player", "x": 0.72, "y": 0.255,
+            "width": 0.03, "height": 0.01,
+        }
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=[observation]):
+            point = civ6_play._main_menu_point(
+                Path("menu.png"), (756, 33, 756, 480)
+            )
+
+        self.assertEqual(point, (1111, 255))
+
+    def test_main_menu_click_tolerates_one_vision_glyph_error(self) -> None:
+        observation = {
+            "text": "Single Plaver", "x": 0.72, "y": 0.255,
             "width": 0.03, "height": 0.01,
         }
         with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
