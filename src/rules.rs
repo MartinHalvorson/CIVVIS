@@ -2611,12 +2611,12 @@ mod tests {
 
     #[test]
     fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
-        // The fingerprint is the Elo ledger's binding. Adding Ziggurats, Keshigs,
-        // and Winged Hussars is a real simulation change, so protocol v4 owns the
-        // new value while v1-v3 retain their original fingerprint in their ledgers.
+        // The fingerprint is the Elo ledger's binding. Firaxis-exact unique units,
+        // including the Shield Bearer and Oromo Cavalry found by live replay, are
+        // real simulation changes; older ledgers retain their original fingerprint.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:0923f8f3bc30eca0"
+            "fnv1a64:2e52dc28bd988b41"
         );
     }
 
@@ -3036,6 +3036,7 @@ mod tests {
             ("at_crew", "modern_at"),
             ("horseman", "courser"),
             ("courser", "cavalry"),
+            ("oromo_cavalry", "cavalry"),
             ("cavalry", "helicopter"),
             ("heavy_chariot", "knight"),
             ("knight", "cuirassier"),
@@ -3063,6 +3064,7 @@ mod tests {
             ("fighter", "jet_fighter"),
             ("bomber", "jet_bomber"),
             ("legion", "man_at_arms"),
+            ("kongo_shield_bearer", "man_at_arms"),
             ("hoplite", "pikeman"),
             ("eagle_warrior", "swordsman"),
             ("war_cart", "knight"),
@@ -3108,7 +3110,7 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 86);
+        assert_eq!(rules.units.len(), 87);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);

@@ -28418,7 +28418,7 @@ impl Game {
         {
             cost = 1.0;
         }
-        if self.promotion_effect(unit, "hills_move_cost") > 0.0 && tile.hills {
+        if self.unit_effect(unit, "hills_move_cost") > 0.0 && tile.hills {
             cost = 1.0;
         }
         if self.promotion_effect(unit, "amphibious") > 0.0 && self.crosses_river(from, to) {
@@ -52441,6 +52441,7 @@ mod visibility_tests {
             "helicopter",
             "giant_death_robot",
             "naturalist",
+            "oromo_cavalry",
         ]
         .into_iter()
         .collect();
@@ -52478,6 +52479,24 @@ mod visibility_tests {
         assert_eq!(game.unit_step_cost(unit, origin, woods), 1.0);
         assert!(game.unit_visible_tiles(unit).contains(&beyond));
         assert_eq!(game.ranged_defense_bonus(&game.units[&unit], false), 10.0);
+    }
+
+    #[test]
+    fn oromo_cavalry_matches_firaxis_identity_sight_and_hill_movement() {
+        let (mut game, origin) = controlled_game(91_012);
+        let hill = along(&game, origin, 1);
+        game.map.tiles.get_mut(&hill).unwrap().hills = true;
+        game.players[0].civ = "Ethiopia".to_string();
+        let unit = game.spawn_unit("oromo_cavalry", 0, origin);
+        let spec = &game.rules.units["oromo_cavalry"];
+
+        assert_eq!((spec.cost, spec.maintenance, spec.strength), (200.0, 3.0, 48.0));
+        assert_eq!((spec.moves, spec.sight), (5.0, 3));
+        assert_eq!(spec.resource_cost, 10.0);
+        assert_eq!(spec.requires_resource.as_deref(), Some("horses"));
+        assert_eq!(spec.replaces.as_deref(), Some("courser"));
+        assert_eq!(spec.upgrade_to.as_deref(), Some("cavalry"));
+        assert_eq!(game.unit_step_cost(unit, origin, hill), 1.0);
     }
 
     #[test]

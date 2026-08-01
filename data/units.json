@@ -635,6 +635,27 @@
     "upgrade_to": "cavalry",
     "obsolete_tech": "synthetic_materials"
   },
+  "oromo_cavalry": {
+    "class": "military",
+    "cost": 200,
+    "maintenance": 3,
+    "moves": 5,
+    "strength": 48,
+    "sight": 3,
+    "tech": "castles",
+    "requires_resource": "horses",
+    "resource_cost": 10,
+    "unique_to": "Ethiopia",
+    "replaces": "courser",
+    "cavalry": true,
+    "promotion_class": "light_cavalry",
+    "zone_of_control": true,
+    "upgrade_to": "cavalry",
+    "obsolete_tech": "synthetic_materials",
+    "effects": {
+      "hills_move_cost": 1
+    }
+  },
   "skirmisher": {
     "class": "military", "cost": 150, "maintenance": 2, "moves": 3, "strength": 20,
     "ranged_strength": 30, "range": 1, "tech": "machinery", "promotion_class": "recon",

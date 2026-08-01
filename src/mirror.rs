@@ -386,6 +386,15 @@ mod tests {
             Some("winged_hussar")
         );
         assert_eq!(
+            resolved_civvis_unit_name(
+                &crate::rules::Rules::embedded(),
+                "UNIT_ETHIOPIAN_OROMO_CAVALRY"
+            )
+            .as_deref(),
+            Some("oromo_cavalry"),
+            "the rival unit observed on fixed22 must reach the mirror board"
+        );
+        assert_eq!(
             civvis_unit_name_unqualified("UNIT_GREAT_GENERAL"),
             None,
             "`great` is not a civilization, so there is no qualifier to remove"

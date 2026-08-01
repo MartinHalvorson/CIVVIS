@@ -113,6 +113,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
         "saka_horse_archer" => "SCYTHIAN_HORSE_ARCHER",
         "keshig" => "MONGOLIAN_KESHIG",
         "winged_hussar" => "POLISH_HUSSAR",
+        "oromo_cavalry" => "ETHIOPIAN_OROMO_CAVALRY",
         "crouching_tiger" => "CHINESE_CROUCHING_TIGER",
         "anti_air_gun" => "ANTIAIR_GUN",
         other => return format!("UNIT_{}", other.to_ascii_uppercase()),
@@ -1778,6 +1779,9 @@ mod tests {
         let keshig = civvis::game::Item::Unit {
             unit: civvis::name!("keshig"),
         };
+        let oromo = civvis::game::Item::Unit {
+            unit: civvis::name!("oromo_cavalry"),
+        };
         assert_eq!(
             civ6_build_name(&winged_hussar).as_deref(),
             Some("UNIT_POLISH_HUSSAR")
@@ -1785,6 +1789,10 @@ mod tests {
         assert_eq!(
             civ6_build_name(&keshig).as_deref(),
             Some("UNIT_MONGOLIAN_KESHIG")
+        );
+        assert_eq!(
+            civ6_build_name(&oromo).as_deref(),
+            Some("UNIT_ETHIOPIAN_OROMO_CAVALRY")
         );
         assert_eq!(
             civ6_improvement_type(&civvis::name!("seaside_resort")),
