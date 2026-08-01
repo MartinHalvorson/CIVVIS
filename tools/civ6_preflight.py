@@ -256,11 +256,74 @@ def check_run(report: Report, tag: str) -> None:
         report.ok("refusals", "none")
 
 
+def check_decider(report: Report, orders_bin: str | None) -> None:
+    """The decider's --serve protocol: one line in, one ORDERS line out.
+
+    ⚠ THIS CHECK EXISTS BECAUSE A `println` COST A WHOLE RUN. `--serve` speaks a
+    strict one-line-per-request protocol and `civ6_brain.py` does exactly one
+    `readline()` per turn, reading `payload["orders"]`. A diagnostic line printed to
+    STDOUT at startup sits in front of the first response; it is valid JSON with no
+    `orders` key, so it parses cleanly, yields an empty list, and shifts every later
+    turn by one.
+
+    Nothing raised. A live run that had been 236 turns of `orders_source: civvis`
+    flipped to `fallback` the moment a binary carrying that line was swapped in --
+    the hand-written ladder playing while CIVVIS decided correctly into a pipe
+    nobody read. `why.log` showed it founding its capital on the very turn the brain
+    recorded zero orders.
+
+    So: probe the real binary against the newest finished run and require that the
+    FIRST line of stdout is an orders response. A second of preflight against a day
+    of ladder.
+    """
+    print("decider protocol")
+    if orders_bin is None:
+        report.warn("decider", "no --orders-bin given; protocol not probed")
+        return
+    binary = Path(orders_bin)
+    if not binary.is_file():
+        report.fail("decider", f"{binary} does not exist")
+        return
+    runs = sorted((Path.home() / "civvis-civ6-runs" / "control").glob("*/events.jsonl"),
+                  key=lambda p: p.stat().st_mtime, reverse=True)
+    probe = next((p.parent for p in runs if p.stat().st_size > 0), None)
+    if probe is None:
+        report.warn("decider", "no finished run to probe against; protocol not checked")
+        return
+    try:
+        proc = subprocess.run(
+            [str(binary), "--mirror", str(probe), "--turn", "1"],
+            capture_output=True, text=True, timeout=180)
+    except (subprocess.SubprocessError, OSError) as exc:
+        report.fail("decider", f"could not run: {exc}")
+        return
+    first = next((ln for ln in proc.stdout.splitlines() if ln.startswith("{")), None)
+    if first is None:
+        report.fail("decider", "printed no JSON line at all")
+        return
+    try:
+        payload = json.loads(first)
+    except ValueError:
+        report.fail("decider", f"first stdout line is not JSON: {first[:90]}")
+        return
+    if "orders" not in payload:
+        # The exact regression. Name the intruder so the fix is obvious.
+        report.fail("decider",
+                    f"first stdout line is NOT an orders response — the brain will read "
+                    f"it as 'CIVVIS chose nothing'. Got keys {sorted(payload)}; move "
+                    f"that output to stderr")
+        return
+    report.ok("--serve first line is an orders response",
+              f"{len(payload.get('orders') or [])} orders from {probe.name}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--run", default=None, help="also audit this finished run tag")
     parser.add_argument("--skip-engine", action="store_true",
                         help="skip cargo test (the slow check)")
+    parser.add_argument("--orders-bin", default=None,
+                        help="probe this decider's --serve protocol")
     args = parser.parse_args()
 
     report = Report()
@@ -271,6 +334,7 @@ def main() -> int:
     check_host(report)
     if not args.skip_engine:
         check_engine(report)
+    check_decider(report, args.orders_bin)
     if args.run:
         check_run(report, args.run)
 
