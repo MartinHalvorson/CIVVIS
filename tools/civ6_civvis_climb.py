@@ -392,6 +392,26 @@ def main() -> int:
         print("something already holds the game; tearing it down first", flush=True)
     teardown()
 
+    # ★★★★ GATE THE BATCH ON PREFLIGHT. `civ6_preflight.py` says in its own docstring
+    # that "exit status is 0 only when every check passes, so this can gate a ladder"
+    # -- and nothing called it. A gate nothing invokes is a gate that does not exist.
+    #
+    # Every check it runs corresponds to a defect that actually shipped, and the
+    # newest one is the reason this wiring is worth the second it costs: a diagnostic
+    # `println` on the decider's stdout shifts the whole --serve protocol by one line,
+    # so CIVVIS decides correctly into a pipe nobody reads and the run silently falls
+    # back to the hand-written ladder. That cost a live run 236 turns in.
+    #
+    # ⚠ `--skip-engine`: the ladder is being launched, not the test suite, and cargo
+    # test here would add minutes to every batch. The engine is gated at merge.
+    preflight = run([sys.executable, str(HERE / "civ6_preflight.py"), "--skip-engine",
+                     "--orders-bin", str(orders_bin)], timeout=300.0)
+    print(preflight.rstrip(), flush=True)
+    if "PREFLIGHT FAILED" in preflight:
+        print("refusing to start a batch on a broken bridge; fix the failures above",
+              flush=True)
+        return 4
+
     # A batch is a COMPARISON, so it is pinned to one program by default. Opting out
     # is a deliberate act with a name, not the silent default it used to be.
     pinned = None if args.no_pin else code_state()
