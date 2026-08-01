@@ -156,7 +156,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// reports from the same 20-game deployment comparison (SHA-256
 /// `932cfabf125e729a5264ce43d2fd8b05d013d3fe84939b1dcd366ff122ddc84a`).
 /// This is a compatibility re-pin, not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa32e_4994_b2e9_c253;
+///
+/// The grounded Firaxis campaign audit then changed force grouping from a
+/// transitive chain to a bounded group diameter and kept active major wars
+/// ahead of their suzerained city-states. Those paths are shared by the legacy
+/// anchor, so this is a real protocol change: protocol v3 is preserved at
+/// `data/elo_ratings_v3.json`, protocol v4 was regenerated from these exact
+/// sources, and this pin identifies that new contract.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4525_adce_487a_8519;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

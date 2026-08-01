@@ -179,6 +179,24 @@ def flip_north_up(event, top, dropped):
             dropped.append(y)
             return None
         event["y"] = top - y
+    # Route endpoints and refusal origins are coordinate pairs too, but their
+    # field names are qualified because the same record carries two positions.
+    # Leaving these south-up while every city is flipped north-up makes an active
+    # route impossible to resolve, so it vanishes from CIVVIS's economy even
+    # though its Trader is still correctly marked busy.
+    for prefix in ("origin", "destination", "from"):
+        x_key, y_key = f"{prefix}_x", f"{prefix}_y"
+        special_y = event.get(y_key)
+        if (isinstance(special_y, int) and not isinstance(special_y, bool)
+                and isinstance(event.get(x_key), int)):
+            if special_y > top:
+                dropped.append(special_y)
+                # The id fields can still resolve a route whose endpoint lies on
+                # the unpaired polar row. Negative coordinates select that path.
+                event[x_key] = -1
+                event[y_key] = -1
+            elif special_y >= 0:
+                event[y_key] = top - special_y
     for key, value in list(event.items()):
         if isinstance(value, (dict, list)):
             event[key] = flip_north_up(value, top, dropped)
@@ -376,6 +394,12 @@ def start_visible_server(run_dir, players):
     )
     for _ in range(60):
         if server_alive(PORT):
+            hold_the_frame()
+            # Chrome reconnects after the server answers and may restore its
+            # default all-players spectator view after this first pin. Reassert
+            # once the page has completed that handoff; otherwise a fresh server
+            # can expose the generated world instead of the Firaxis seat's fog.
+            time.sleep(2.0)
             hold_the_frame()
             return True
         time.sleep(1)

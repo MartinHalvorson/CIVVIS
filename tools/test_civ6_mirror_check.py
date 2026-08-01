@@ -84,10 +84,10 @@ class MirrorCheckTest(unittest.TestCase):
     def test_public_scores_military_and_empire_yields_are_exact(self) -> None:
         state = {
             "score": 177, "military": 2, "science": 6.75, "culture": 6.03125,
-            "gold": 25, "faith": 100,
+            "gold": 25, "faith": 100, "trade_capacity": 3,
             "rivals": [{"score": 926, "military": 995}],
         }
-        board = {"players": [
+        board = {"me": {"trade_capacity": 3}, "players": [
             {"id": 0, "score": 177, "military": 2, "gold": 25.0, "faith": 100.0,
              "yields": {"science": 6.8, "culture": 6.0}},
             {"id": 1, "score": 926, "military": 995},
@@ -95,6 +95,11 @@ class MirrorCheckTest(unittest.TestCase):
         self.assertEqual(civ6_mirror_check.public_fact_mismatches(state, board), [])
         board["players"][1]["military"] = 64
         self.assertIn("seat 1 military", civ6_mirror_check.public_fact_mismatches(state, board)[0])
+        board["players"][1]["military"] = 995
+        board["me"]["trade_capacity"] = 4
+        self.assertIn(
+            "trade_capacity", civ6_mirror_check.public_fact_mismatches(state, board)[0]
+        )
 
     def test_city_data_check_covers_non_positional_state(self) -> None:
         state = {"cities": [{
@@ -159,6 +164,34 @@ class MirrorCheckTest(unittest.TestCase):
         self.assertTrue(any(" fortified " in mismatch for mismatch in mismatches), mismatches)
         self.assertTrue(any("fortify_turns" in mismatch for mismatch in mismatches), mismatches)
 
+    def test_visible_rival_unique_unit_cannot_disappear(self) -> None:
+        state = {"rivals": [{"units": [{
+            "kind": "UNIT_MONGOLIAN_KESHIG", "x": 3, "y": 5,
+            "hp": 72, "fortified": False, "fortify_turns": 0,
+        }]}]}
+        board = {"view_player": 0, "units": []}
+        mismatches = civ6_mirror_check.unit_fact_mismatches(state, board, 10)
+        self.assertEqual(len(mismatches), 1)
+        self.assertIn("Civ6=1 CIVVIS=0", mismatches[0])
+
+        board["units"].append({
+            "owner": 1, "type": "keshig", "pos": [1, 5],
+            "hp": 72, "fortified": False, "fortify_turns": 0,
+        })
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
+    def test_stacked_same_type_units_match_as_a_multiset(self) -> None:
+        source = {
+            "kind": "UNIT_BUILDER", "x": 3, "y": 5,
+            "hp": 100, "fortified": False, "fortify_turns": 0,
+        }
+        state = {"units": [dict(source) for _ in range(3)]}
+        board = {"view_player": 0, "units": [{
+            "owner": 0, "type": "builder", "pos": [1, 5],
+            "hp": 100, "fortified": False, "fortify_turns": 0,
+        } for _ in range(3)]}
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
     def test_met_city_state_check_includes_envoys_suzerain_and_city(self) -> None:
         state = {"rivals": [], "minors": [{
             "player": 6, "civ": "CIVILIZATION_KABUL", "score": 91,
@@ -178,6 +211,28 @@ class MirrorCheckTest(unittest.TestCase):
             "suzerain",
             civ6_mirror_check.minor_fact_mismatches(state, board, 44)[0],
         )
+
+    def test_renamed_city_state_matches_capital_not_legacy_type(self) -> None:
+        state = {"rivals": [], "minors": [{
+            "player": 8, "civ": "CIVILIZATION_JAKARTA", "score": 33,
+            "military": 59, "envoys": 1, "suzerain": -1,
+            "cities": [{
+                "name": "Bandar Brunei", "capital": True, "x": 23, "y": 8,
+            }],
+        }]}
+        board = {
+            "players": [{
+                "id": 6, "civ": "Bandar Brunei", "is_minor": True,
+                "is_barbarian": False, "score": 33, "military": 59,
+                "my_envoys": 1, "suzerain": None,
+            }],
+            "cities": [{
+                "owner": 6, "name": "Bandar Brunei",
+                "pos": list(civ6_mirror_check.axial(23, 44 - 8)),
+            }],
+        }
+
+        self.assertEqual(civ6_mirror_check.minor_fact_mismatches(state, board, 44), [])
 
     def test_dormant_free_cities_is_not_a_city_state(self) -> None:
         state = {"minors": [{

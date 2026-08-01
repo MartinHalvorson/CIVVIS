@@ -99,15 +99,57 @@ fn quote(text: &str) -> String {
 /// The mod resolves the final name against `GameInfo.Units`/`Buildings`/`Districts`/
 /// `Projects` and refuses what it cannot find, so a wrong guess here is reported as
 /// a refusal rather than acted on.
+fn civ6_unit_type(name: &civvis::name::Name) -> String {
+    let id = match name.as_str() {
+        "tagma" => "BYZANTINE_TAGMA",
+        "legion" => "ROMAN_LEGION",
+        "hoplite" => "GREEK_HOPLITE",
+        "eagle_warrior" => "AZTEC_EAGLE_WARRIOR",
+        "war_cart" => "SUMERIAN_WAR_CART",
+        "pitati_archer" => "NUBIAN_PITATI",
+        "maryannu_chariot_archer" => "EGYPTIAN_CHARIOT_ARCHER",
+        "saka_horse_archer" => "SCYTHIAN_HORSE_ARCHER",
+        "keshig" => "MONGOLIAN_KESHIG",
+        "winged_hussar" => "POLISH_HUSSAR",
+        "crouching_tiger" => "CHINESE_CROUCHING_TIGER",
+        "anti_air_gun" => "ANTIAIR_GUN",
+        other => return format!("UNIT_{}", other.to_ascii_uppercase()),
+    };
+    format!("UNIT_{id}")
+}
+
+fn civ6_improvement_type(name: &civvis::name::Name) -> String {
+    let id = match name.as_str() {
+        "seaside_resort" => "BEACH_RESORT",
+        "nubian_pyramid" => "PYRAMID",
+        other => return format!("IMPROVEMENT_{}", other.to_ascii_uppercase()),
+    };
+    format!("IMPROVEMENT_{id}")
+}
+
 fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
     use civvis::game::Item;
     let upper = |name: &civvis::name::Name| name.as_str().to_ascii_uppercase();
     match item {
-        Item::Unit { unit } => Some(format!("UNIT_{}", upper(unit))),
+        Item::Unit { unit } => Some(civ6_unit_type(unit)),
         Item::Building { building } => Some(format!("BUILDING_{}", upper(building))),
         Item::District { district, .. } => Some(format!("DISTRICT_{}", upper(district))),
         Item::Wonder { wonder, .. } => Some(format!("BUILDING_{}", upper(wonder))),
         Item::Project { project } => Some(format!("PROJECT_{}", upper(project))),
+        _ => None,
+    }
+}
+
+/// Preserve the plot CIVVIS selected for placeable production.
+///
+/// District and wonder placement is part of the decision, not an implementation
+/// detail. Firaxis expects offset coordinates while CIVVIS stores axial ones.
+fn civ6_build_pos(item: &civvis::game::Item) -> Option<(i32, i32)> {
+    use civvis::game::Item;
+    match item {
+        Item::District { pos, .. } | Item::Wonder { pos, .. } => {
+            Some(civvis::hex::axial_to_offset(pos.0, pos.1))
+        }
         _ => None,
     }
 }
@@ -629,7 +671,7 @@ fn translate(
             .map(|(civ6, _)| Order {
                 kind: "purchase",
                 subject: Some(*civ6),
-                verb: Some(format!("UNIT_{}", unit.as_str().to_ascii_uppercase())),
+                verb: Some(civ6_unit_type(unit)),
                 pos: None,
             }),
         Action::BuyBuilding { city, building, currency } if currency.as_str() == "gold" => mirror_state
@@ -673,7 +715,7 @@ fn translate(
         .map(|mut order| {
             // The improvement name rides in `verb` alongside the operation, because the
             // order row has no spare column; the mod splits them.
-            order.verb = Some(format!("IMPROVE:IMPROVEMENT_{}", improvement.as_str().to_ascii_uppercase()));
+            order.verb = Some(format!("IMPROVE:{}", civ6_improvement_type(improvement)));
             order
         }),
         Action::Fortify { unit } => civ6_of.get(unit).map(|civ6| Order {
@@ -736,7 +778,7 @@ fn translate(
                         kind: "produce",
                         subject: Some(*civ6),
                         verb: Some(name),
-                        pos: None,
+                        pos: civ6_build_pos(item),
                     })
                 },
             )
@@ -1383,6 +1425,39 @@ mod tests {
             order.verb.as_deref(),
             Some("POLICY_AGOGE,POLICY_URBAN_PLANNING")
         );
+    }
+
+    #[test]
+    fn renamed_units_and_improvements_use_firaxis_type_ids() {
+        let winged_hussar = civvis::game::Item::Unit {
+            unit: civvis::name!("winged_hussar"),
+        };
+        let keshig = civvis::game::Item::Unit {
+            unit: civvis::name!("keshig"),
+        };
+        assert_eq!(
+            civ6_build_name(&winged_hussar).as_deref(),
+            Some("UNIT_POLISH_HUSSAR")
+        );
+        assert_eq!(
+            civ6_build_name(&keshig).as_deref(),
+            Some("UNIT_MONGOLIAN_KESHIG")
+        );
+        assert_eq!(
+            civ6_improvement_type(&civvis::name!("seaside_resort")),
+            "IMPROVEMENT_BEACH_RESORT"
+        );
+
+        let district = civvis::game::Item::District {
+            district: civvis::name!("campus"),
+            pos: (7, 4),
+        };
+        let wonder = civvis::game::Item::Wonder {
+            wonder: civvis::name!("pyramids"),
+            pos: (3, 8),
+        };
+        assert_eq!(civ6_build_pos(&district), Some((9, 4)));
+        assert_eq!(civ6_build_pos(&wonder), Some((7, 8)));
     }
 
     #[test]

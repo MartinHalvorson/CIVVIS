@@ -2598,15 +2598,13 @@ mod tests {
     }
 
     #[test]
-    fn widening_replaces_does_not_move_the_ruleset_fingerprint() {
-        // ⚠ THE FINGERPRINT IS THE ELO LEDGER'S BINDING. `from_values` hashes the raw
-        // JSON, so a schema change cannot move it while the data is untouched — which
-        // is the whole reason this PR is separable from the data rows that follow.
-        // If this ever fails, the split was not as inert as it claims.
+    fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
+        // The fingerprint is the Elo ledger's binding. Adding Ziggurats, Keshigs,
+        // and Winged Hussars is a real simulation change, so protocol v4 owns the
+        // new value while v1-v3 retain their original fingerprint in their ledgers.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:3423bd46da2b8cd7",
-            "reading `replaces` as a list must not change what the data hashes to"
+            "fnv1a64:0923f8f3bc30eca0"
         );
     }
 
@@ -3018,6 +3016,7 @@ mod tests {
             ("slinger", "archer"),
             ("archer", "crossbowman"),
             ("crossbowman", "field_cannon"),
+            ("keshig", "field_cannon"),
             ("field_cannon", "machine_gun"),
             ("spearman", "pikeman"),
             ("pikeman", "pike_and_shot"),
@@ -3058,6 +3057,7 @@ mod tests {
             ("pitati_archer", "crossbowman"),
             ("maryannu_chariot_archer", "crossbowman"),
             ("saka_horse_archer", "crossbowman"),
+            ("winged_hussar", "tank"),
             ("crouching_tiger", "field_cannon"),
         ]
         .into_iter()
@@ -3096,11 +3096,11 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 83);
+        assert_eq!(rules.units.len(), 85);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
-        assert_eq!(rules.improvements.len(), 36);
+        assert_eq!(rules.improvements.len(), 37);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
         // 118 civic-unlocked cards plus the seven Dark Age cards, which no

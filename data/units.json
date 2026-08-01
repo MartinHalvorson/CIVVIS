@@ -541,6 +541,46 @@
     "upgrade_to": "crossbowman",
     "obsolete_tech": "ballistics"
   },
+  "keshig": {
+    "class": "military",
+    "cost": 160,
+    "maintenance": 3,
+    "moves": 4,
+    "strength": 35,
+    "ranged_strength": 45,
+    "range": 2,
+    "tech": "stirrups",
+    "requires_resource": "horses",
+    "resource_cost": 10,
+    "unique_to": "Mongolia",
+    "cavalry": true,
+    "promotion_class": "ranged",
+    "upgrade_to": "field_cannon",
+    "obsolete_tech": "advanced_ballistics",
+    "effects": {
+      "escort_mobility": 1
+    }
+  },
+  "winged_hussar": {
+    "class": "military",
+    "cost": 330,
+    "maintenance": 5,
+    "moves": 4,
+    "strength": 64,
+    "civic": "mercantilism",
+    "requires_resource": "iron",
+    "resource_cost": 10,
+    "unique_to": "Poland",
+    "replaces": "cuirassier",
+    "cavalry": true,
+    "promotion_class": "heavy_cavalry",
+    "zone_of_control": true,
+    "upgrade_to": "tank",
+    "obsolete_tech": "combustion",
+    "effects": {
+      "force_retreat": 1
+    }
+  },
   "crouching_tiger": {
     "class": "military",
     "cost": 140,

@@ -15,6 +15,34 @@ import follow  # noqa: E402
 
 
 class FollowTest(unittest.TestCase):
+    def test_north_up_reflection_transforms_qualified_coordinate_pairs(self) -> None:
+        event = {
+            "kind": "state", "turn": 7,
+            "trade_routes": [{
+                "trader": 42,
+                "origin_x": 3, "origin_y": 1,
+                "destination_x": 6, "destination_y": 6,
+            }],
+            "refusal": {
+                "from_x": 2, "from_y": 3,
+                "x": 4, "y": 4,
+            },
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            previous = follow.STAGE
+            follow.STAGE = temporary
+            try:
+                follow.stage_events([json.dumps(event).encode()], 9)
+                staged = json.loads((Path(temporary) / "events.jsonl").read_text())
+            finally:
+                follow.STAGE = previous
+
+        route = staged["trade_routes"][0]
+        self.assertEqual((route["origin_x"], route["origin_y"]), (3, 7))
+        self.assertEqual((route["destination_x"], route["destination_y"]), (6, 2))
+        self.assertEqual((staged["refusal"]["from_x"], staged["refusal"]["from_y"]), (2, 5))
+        self.assertEqual((staged["refusal"]["x"], staged["refusal"]["y"]), (4, 4))
+
     def test_north_up_reflection_reencodes_river_on_the_other_endpoint(self) -> None:
         event = {
             "kind": "tiles", "turn": 7, "height": 9,

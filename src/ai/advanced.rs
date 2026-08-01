@@ -2970,6 +2970,11 @@ impl AdvancedAi {
             .filter(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id))
             .map(|p| p.id)
             .collect();
+        let wartime_majors: Vec<usize> = wartime_rivals
+            .iter()
+            .copied()
+            .filter(|rival| !g.players[*rival].is_minor)
+            .collect();
         let at_war = !wartime_rivals.is_empty();
         let strongest_rival = major_rivals
             .iter()
@@ -3250,7 +3255,16 @@ impl AdvancedAi {
             })
             })
         } else {
-            wartime_rivals
+            // A suzerained city-state joins its major's war, but it is not a
+            // reason to abandon the weaker major city the campaign was staged
+            // to capture. Only make a city-state the primary front when there
+            // is no living major war left to finish.
+            let active_fronts = if wartime_majors.is_empty() {
+                &wartime_rivals
+            } else {
+                &wartime_majors
+            };
+            active_fronts
                 .iter()
                 .copied()
                 .map(|rival| {
@@ -11783,7 +11797,13 @@ impl AdvancedAi {
                     .copied()
                     .filter(|candidate| {
                         Self::force_domain(g, *candidate) == domain
-                            && units.iter().any(|member| {
+                            // `command_radius` is the maximum separation inside
+                            // one force, not a graph edge. Using `any` made a
+                            // six-tile chain merge a front-line army with every
+                            // reinforcement back to the capital; the moving
+                            // medoid then ordered the whole column to muster
+                            // home indefinitely.
+                            && units.iter().all(|member| {
                                 g.wdist(g.units[member].pos, g.units[candidate].pos)
                                     <= command_radius
                             })
@@ -18963,6 +18983,49 @@ mod tests {
     }
 
     #[test]
+    fn command_radius_is_a_group_diameter_not_a_transitive_chain() {
+        let mut game = Game::new_full(2, 24, 16, 71_005, 120, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        game.at_war.insert((0, 1));
+        let chain = [
+            game.spawn_test_unit("warrior", 0, (2, 5)),
+            game.spawn_test_unit("warrior", 0, (8, 5)),
+            game.spawn_test_unit("warrior", 0, (14, 5)),
+        ];
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+
+        ai.rebuild_force_groups(&game, 0, &plan);
+
+        assert!(ai.force_groups.iter().all(|group| {
+            group.units.iter().all(|left| {
+                group.units.iter().all(|right| {
+                    game.wdist(game.units[left].pos, game.units[right].pos) <= 6
+                })
+            })
+        }));
+        assert!(!ai
+            .force_groups
+            .iter()
+            .any(|group| chain.iter().all(|unit| group.units.contains(unit))));
+    }
+
+    #[test]
     fn local_superiority_prices_the_objective_city_defense() {
         let mut game = Game::new_full(2, 24, 16, 71_006, 120, 0, false);
         game.current = 1;
@@ -22066,6 +22129,35 @@ mod tests {
                     .any(|unit| g.units[unit].owner == minor)
         );
         assert_eq!(orders.posture, ForcePosture::Engage);
+    }
+
+    #[test]
+    fn an_active_major_war_stays_ahead_of_its_suzerained_city_state() {
+        let mut game = Game::new_full(2, 24, 16, 97, 80, 1, false);
+        game.current = 1;
+        let settler = game
+            .player_unit_ids(1)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(1, &Action::FoundCity { unit: settler }).unwrap();
+        game.current = 0;
+        let minor = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .unwrap();
+        game.at_war.insert((0, 1));
+        game.at_war.insert((0, minor));
+        game.record_contact(0, 1);
+        game.record_contact(0, minor);
+
+        let mut ai = AdvancedAi::new();
+        let plan = ai.assess(&game, 0);
+
+        assert_eq!(plan.target_player, Some(1));
+        assert_eq!(plan.target_city, game.player_city_ids(1).first().copied());
     }
 
     #[test]

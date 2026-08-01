@@ -243,7 +243,7 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// Version of the game/rating contract, independent of the JSON shape. Bump
 /// this when rules, default setup, or scoring semantics change enough that an
 /// Elo point no longer measures the same experiment.
-pub const ELO_PROTOCOL_VERSION: u32 = 3;
+pub const ELO_PROTOCOL_VERSION: u32 = 4;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// Immutable protocol-v1 baseline retained for historical comparison after
@@ -252,6 +252,9 @@ pub const HISTORICAL_V1_RATINGS_PATH: &str = "data/elo_ratings_v1.json";
 /// Immutable protocol-v2 baseline retained after the island-settlement repair
 /// changed the shared legacy controller again.
 pub const HISTORICAL_V2_RATINGS_PATH: &str = "data/elo_ratings_v2.json";
+/// Immutable protocol-v3 baseline retained after the stock Firaxis rules audit
+/// added previously absent unique units and an improvement to the simulation.
+pub const HISTORICAL_V3_RATINGS_PATH: &str = "data/elo_ratings_v3.json";
 const LEAGUE_SNAPSHOT_DIR: &str = "data/league";
 const LEAGUE_SNAPSHOT_FILE: &str = "data/league/league.json";
 
@@ -3796,8 +3799,8 @@ mod tests {
         performance_elo, scheduled_seats, seat_schedule, strict_builtin_arm_in, wilson_interval,
         win_shares, BuiltinAiBuildError, EloPool, RatedPlayer, RatingKey, TournamentProfile,
         TourneyCfg, WeightSource, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
-        ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, HISTORICAL_V1_RATINGS_PATH, HISTORICAL_V2_RATINGS_PATH,
-        VALUENET_FILE,
+        ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, HISTORICAL_V1_RATINGS_PATH,
+        HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH, VALUENET_FILE,
     };
     use crate::game::{Action, Game};
     use crate::rng::Rng;
@@ -4917,6 +4920,7 @@ mod tests {
         assert_eq!(pool.base_rating, ELO_BASE_RATING);
         let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
         historical_profile.protocol_version = 1;
+        historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
         assert_eq!(
             pool.profile,
             Some(historical_profile)
@@ -4967,6 +4971,7 @@ mod tests {
         assert_eq!(pool.base_rating, ELO_BASE_RATING);
         let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
         historical_profile.protocol_version = 2;
+        historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
         assert_eq!(
             pool.profile,
             Some(historical_profile)
@@ -5009,8 +5014,8 @@ mod tests {
     }
 
     #[test]
-    fn shipped_protocol_v3_ledger_is_a_canonical_fresh_baseline() {
-        let pool = EloPool::load(DEFAULT_RATINGS_PATH).unwrap();
+    fn historical_protocol_v3_ledger_is_preserved() {
+        let pool = EloPool::load(HISTORICAL_V3_RATINGS_PATH).unwrap();
         let expected_cfg = TourneyCfg {
             rating_anchor: Some("advanced_v1".to_string()),
             controller_roster: ["advanced", "advanced_v1", "basic", "random"]
@@ -5020,10 +5025,10 @@ mod tests {
             ..TourneyCfg::default()
         };
         assert_eq!(pool.base_rating, ELO_BASE_RATING);
-        assert_eq!(
-            pool.profile,
-            Some(TournamentProfile::from_cfg(&expected_cfg))
-        );
+        let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
+        historical_profile.protocol_version = 3;
+        historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
+        assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
         assert!(pool.history.iter().all(|game| {
@@ -5059,6 +5064,26 @@ mod tests {
         assert!((advanced.1 - 1643.2).abs() < 0.1);
         assert!((100.0 * advanced.4 - 54.6).abs() < 0.1);
         assert!((100.0 * advanced.5 - 81.9).abs() < 0.1);
+    }
+
+    #[test]
+    fn shipped_protocol_v4_ledger_is_a_canonical_fresh_baseline() {
+        let pool = EloPool::load(DEFAULT_RATINGS_PATH).unwrap();
+        assert_eq!(
+            pool.profile.as_ref().map(|profile| profile.protocol_version),
+            Some(4)
+        );
+        assert_eq!(
+            pool.profile.as_ref().map(|profile| profile.rules_fingerprint.as_str()),
+            Some("fnv1a64:0923f8f3bc30eca0")
+        );
+        assert!(pool.history_complete);
+        assert_eq!(pool.history.len(), 40);
+        assert!(pool.history.iter().all(|game| {
+            game.id
+                .as_deref()
+                .is_some_and(|id| id.starts_with("v4:"))
+        }));
     }
 
     #[test]

@@ -158,7 +158,9 @@ def rival_identity_mismatches(state, board):
         expected_civ = civ6_id(rival.get("civ"), "CIVILIZATION_")
         expected_leader = civ6_id(rival.get("leader"), "LEADER_")
         actual_civ = str(player.get("civ") or "").replace(" ", "_").lower()
-        actual_leader = str(player.get("leader") or "").replace(" ", "_").lower()
+        actual_leader = civ6_id(player.get("leader_type"), "LEADER_") \
+            if player.get("leader_type") else \
+            str(player.get("leader") or "").replace(" ", "_").lower()
         wrong_civ = expected_civ and not civ_id_matches(expected_civ, actual_civ)
         wrong_leader = expected_leader and not leader_id_matches(expected_leader, actual_leader)
         if wrong_civ or wrong_leader:
@@ -197,6 +199,13 @@ def public_fact_mismatches(state, board):
         if isinstance(want, (int, float)) and want >= 0 \
                 and (not isinstance(got, (int, float)) or abs(got - want) > 0.11):
             mismatches.append(f"seat 0 {key} Civ6={want:g} CIVVIS={got!r}")
+    capacity = state.get("trade_capacity")
+    mirrored_capacity = (board.get("me") or {}).get("trade_capacity")
+    if isinstance(capacity, (int, float)) and capacity >= 0 \
+            and mirrored_capacity != capacity:
+        mismatches.append(
+            f"seat 0 trade_capacity Civ6={capacity:g} CIVVIS={mirrored_capacity!r}"
+        )
     return mismatches
 
 
@@ -215,6 +224,16 @@ def mirrored_minor_sources(state):
     return out
 
 
+def mirrored_minor_name(source):
+    """Return the rendered actor name, not a potentially stale Firaxis type id."""
+    cities = source.get("cities") or []
+    capital = next((city for city in cities if city.get("capital")), None)
+    city_name = (capital or (cities[0] if cities else {})).get("name")
+    if city_name:
+        return str(city_name).lower()
+    return civ6_id(source.get("civ"), "CIVILIZATION_").replace("_", " ")
+
+
 def minor_fact_mismatches(state, board, top):
     """Compare non-major identities, cities and public diplomacy facts."""
     sources = mirrored_minor_sources(state)
@@ -227,7 +246,7 @@ def minor_fact_mismatches(state, board, top):
     host_to_board.update({rival.get("player"): seat
                           for seat, rival in enumerate(state.get("rivals") or [], start=1)})
     for source in sources:
-        want = civ6_id(source.get("civ"), "CIVILIZATION_").replace("_", " ")
+        want = mirrored_minor_name(source)
         matched = free_cities if source.get("civ") == "CIVILIZATION_FREE_CITIES" else next(
             (candidate for candidate in actual
              if str(candidate.get("civ") or "").lower() == want), None
@@ -236,7 +255,7 @@ def minor_fact_mismatches(state, board, top):
             host_to_board[source.get("player")] = matched.get("id")
     mismatches = []
     for source in sources:
-        want = civ6_id(source.get("civ"), "CIVILIZATION_").replace("_", " ")
+        want = mirrored_minor_name(source)
         player = free_cities if source.get("civ") == "CIVILIZATION_FREE_CITIES" else next(
             (candidate for candidate in actual
              if str(candidate.get("civ") or "").lower() == want), None
@@ -350,7 +369,10 @@ def city_fact_mismatches(state, board, top):
                     f"{name or pos} wonders Civ6={want_wonders!r} CIVVIS={got_wonders!r}"
                 )
         want_districts = {
-            civ6_id(district.get("type"), "DISTRICT_")
+            IDENTIFIER_ALIASES.get(
+                civ6_id(district.get("type"), "DISTRICT_"),
+                civ6_id(district.get("type"), "DISTRICT_"),
+            )
             for district in source.get("districts") or []
             if civ6_id(district.get("type"), "DISTRICT_") != "city_center"
         }
@@ -363,40 +385,79 @@ def city_fact_mismatches(state, board, top):
     return mismatches
 
 
+def visible_exported_units(state, board):
+    """Yield every currently visible unit with its compact CIVVIS owner seat."""
+    yield from ((board.get("view_player", 0), unit)
+                for unit in state.get("units") or [])
+    for seat, rival in enumerate(state.get("rivals") or [], start=1):
+        yield from ((seat, unit) for unit in rival.get("units") or [])
+    for minor in mirrored_minor_sources(state):
+        yield from ((None, unit) for unit in minor.get("units") or [])
+    yield from ((None, unit) for unit in state.get("hostiles") or [])
+
+
+def unmodelled_great_person(kind):
+    """Great People are named individuals in CIVVIS rather than board units."""
+    name = civ6_id(kind, "UNIT_")
+    return name.startswith("great_") or name == "comandante_general"
+
+
 def unit_fact_mismatches(state, board, top):
-    """Compare own-unit facts where type and position identify one board unit."""
+    """Compare visible unit presence and facts across every exported actor."""
     by_pos = {}
     for unit in board.get("units") or []:
-        if unit.get("owner") == board.get("view_player", 0):
-            by_pos.setdefault(tuple(unit.get("pos") or []), []).append(unit)
-    mismatches = []
-    for source in state.get("units") or []:
+        by_pos.setdefault(tuple(unit.get("pos") or []), []).append(unit)
+    source_groups = {}
+    for owner, source in visible_exported_units(state, board):
         pos = axial(source.get("x", 0), top - source.get("y", 0))
         raw_kind = civ6_id(source.get("kind"), "UNIT_")
         kind = IDENTIFIER_ALIASES.get(raw_kind, raw_kind)
+        if kind.startswith("barbarian_"):
+            kind = kind.removeprefix("barbarian_")
+        source_groups.setdefault((owner, pos, kind), []).append(source)
+
+    mismatches = []
+    for (owner, pos, kind), sources in source_groups.items():
         candidates = [unit for unit in by_pos.get(pos, [])
-                      if str(unit.get("type") or "").lower() == kind]
-        if len(candidates) != 1:
-            continue
-        unit = candidates[0]
-        hp = source.get("hp")
-        if isinstance(hp, (int, float)) and hp > 0 and unit.get("hp") != int(hp + 0.5):
-            mismatches.append(
-                f"{source.get('kind') or '?'}@{pos} hp Civ6={hp:g} CIVVIS={unit.get('hp')!r}"
-            )
-        if "fortified" in source and unit.get("fortified") is not bool(source.get("fortified")):
-            mismatches.append(
-                f"{source.get('kind') or '?'}@{pos} fortified "
-                f"Civ6={bool(source.get('fortified'))} CIVVIS={unit.get('fortified')!r}"
-            )
-        turns = source.get("fortify_turns")
-        if isinstance(turns, (int, float)) and turns >= 0:
-            wanted = max(0, min(2, int(turns)))
-            if unit.get("fortify_turns") != wanted:
+                      if str(unit.get("type") or "").lower() == kind
+                      and (owner is None or unit.get("owner") == owner)]
+        if len(candidates) != len(sources):
+            if not all(unmodelled_great_person(source.get("kind")) for source in sources):
                 mismatches.append(
-                    f"{source.get('kind') or '?'}@{pos} fortify_turns "
-                    f"Civ6={wanted} CIVVIS={unit.get('fortify_turns')!r}"
+                    f"{sources[0].get('kind') or '?'}@{pos} count "
+                    f"Civ6={len(sources)} CIVVIS={len(candidates)}"
                 )
+            continue
+
+        def source_key(source):
+            hp = source.get("hp")
+            turns = source.get("fortify_turns")
+            return (
+                int(hp + 0.5) if isinstance(hp, (int, float)) and hp > 0 else -1,
+                bool(source.get("fortified")),
+                max(0, min(2, int(turns)))
+                if isinstance(turns, (int, float)) and turns >= 0 else -1,
+            )
+
+        def board_key(unit):
+            return (
+                int(unit.get("hp")) if isinstance(unit.get("hp"), (int, float)) else -1,
+                bool(unit.get("fortified")),
+                int(unit.get("fortify_turns"))
+                if isinstance(unit.get("fortify_turns"), (int, float)) else -1,
+            )
+
+        wanted = sorted(source_key(source) for source in sources)
+        actual = sorted(board_key(unit) for unit in candidates)
+        if wanted != actual:
+            for field, index in (("hp", 0), ("fortified", 1), ("fortify_turns", 2)):
+                wanted_values = sorted(value[index] for value in wanted)
+                actual_values = sorted(value[index] for value in actual)
+                if wanted_values != actual_values:
+                    mismatches.append(
+                        f"{sources[0].get('kind') or '?'}@{pos} {field} "
+                        f"Civ6={wanted_values!r} CIVVIS={actual_values!r}"
+                    )
     return mismatches
 
 
@@ -483,6 +544,7 @@ def expected_tile_fields(plot, state=None):
     improvement = None
     if isinstance(improvement_name, str):
         improvement = civ6_id(improvement_name, "IMPROVEMENT_")
+        improvement = IDENTIFIER_ALIASES.get(improvement, improvement)
         if improvement not in MIRRORED_IMPROVEMENTS:
             improvement = f"<unmapped:{improvement_name}>"
     return {

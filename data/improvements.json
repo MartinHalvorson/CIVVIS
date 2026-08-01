@@ -500,6 +500,30 @@
    "adjacent_appeal": 2
   }
  },
+ "ziggurat": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
+  "unique_to": "Sumeria",
+  "yields": {
+   "science": 2
+  },
+  "requires_flat": true,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "feature": [
+   "floodplains",
+   "grassland_floodplains",
+   "plains_floodplains"
+  ],
+  "effects": {
+   "river_culture": 1
+  }
+ },
  "great_wall": {
   "plunder_type": "gold",
   "plunder_amount": 50,

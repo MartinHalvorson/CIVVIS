@@ -56,6 +56,7 @@ let units = [
     UnitSource(type: "ironclad", title: "Ironclad icon (Civ6).png"),
     UnitSource(type: "jet_bomber", title: "Jet Bomber icon (Civ6).png"),
     UnitSource(type: "jet_fighter", title: "Jet Fighter icon (Civ6).png"),
+    UnitSource(type: "keshig", title: "Keshig icon (Civ6).png"),
     UnitSource(type: "knight", title: "Knight icon (Civ6).png"),
     UnitSource(type: "legion", title: "Legion icon (Civ6).png"),
     UnitSource(type: "line_infantry", title: "Line Infantry icon (Civ6).png"),
@@ -100,6 +101,7 @@ let units = [
     UnitSource(type: "trebuchet", title: "Trebuchet icon (Civ6).png"),
     UnitSource(type: "war_cart", title: "War-Cart icon (Civ6).png"),
     UnitSource(type: "warrior", title: "Warrior icon (Civ6).png"),
+    UnitSource(type: "winged_hussar", title: "Winged Hussar icon (Civ6).png"),
     UnitSource(type: "warrior_monk", title: "Warrior Monk icon (Civ6).png"),
 ]
 

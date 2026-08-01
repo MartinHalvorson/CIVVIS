@@ -6020,6 +6020,21 @@ mod governor_runtime_tests {
             game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]).culture,
             culture + 1.0
         );
+
+        // The Ziggurat starts at 2 Science, gains Culture beside a river, and
+        // gains another Culture at Natural History.
+        game.players[0].civics.remove(&crate::name!("natural_history"));
+        game.map.tiles.get_mut(&kurgan).unwrap().improvement = Some(crate::name!("ziggurat"));
+        let plain = game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]);
+        assert_eq!(plain.science, 2.0);
+        game.map.tiles.get_mut(&kurgan).unwrap().river_edges[0] = true;
+        let riverside = game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]);
+        assert_eq!(riverside.culture, plain.culture + 1.0);
+        game.players[0].civics.insert(crate::name!("natural_history"));
+        assert_eq!(
+            game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]).culture,
+            riverside.culture + 1.0
+        );
     }
 
     #[test]
@@ -15088,6 +15103,16 @@ pub struct Game {
     /// Public host score for mirrored seats. Empty in native CIVVIS games.
     #[serde(default)]
     pub observed_score: BTreeMap<usize, i64>,
+    /// Exact host trade-route capacity for mirrored seats. Native games derive
+    /// this from their own infrastructure and leave the map empty.
+    #[serde(default)]
+    pub observed_trade_capacity: BTreeMap<usize, i64>,
+    /// Exact Firaxis leader type for mirrored seats. CIVVIS models one leader
+    /// per civilization, while Civ VI can seat alternates and personas; keeping
+    /// the host type separate preserves identity without claiming their rules
+    /// have been folded into the modeled civilization.
+    #[serde(default)]
+    pub observed_leader_types: BTreeMap<usize, String>,
     /// Host-to-model yield corrections for mirrored empires. Native games leave
     /// this empty. A correction, rather than an absolute replacement, preserves
     /// counterfactual deltas when the AI evaluates a policy or build on a clone.
@@ -15370,6 +15395,10 @@ struct GameSer {
     #[serde(default)]
     observed_score: BTreeMap<usize, i64>,
     #[serde(default)]
+    observed_trade_capacity: BTreeMap<usize, i64>,
+    #[serde(default)]
+    observed_leader_types: BTreeMap<usize, String>,
+    #[serde(default)]
     observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
     #[serde(default)]
     observed_city_loyalty_per_turn: BTreeMap<u32, f64>,
@@ -15495,6 +15524,8 @@ impl From<GameSer> for Game {
             at_war: s.at_war.into_iter().collect(),
             observed_military_power: s.observed_military_power,
             observed_score: s.observed_score,
+            observed_trade_capacity: s.observed_trade_capacity,
+            observed_leader_types: s.observed_leader_types,
             observed_yield_adjustments: s.observed_yield_adjustments,
             observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
             observed_city_strength: s.observed_city_strength,
@@ -15660,6 +15691,8 @@ impl From<Game> for GameSer {
             at_war: g.at_war.into_iter().collect(),
             observed_military_power: g.observed_military_power,
             observed_score: g.observed_score,
+            observed_trade_capacity: g.observed_trade_capacity,
+            observed_leader_types: g.observed_leader_types,
             observed_yield_adjustments: g.observed_yield_adjustments,
             observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
             observed_city_strength: g.observed_city_strength,
@@ -15898,6 +15931,8 @@ impl Game {
             at_war: BTreeSet::new(),
             observed_military_power: BTreeMap::new(),
             observed_score: BTreeMap::new(),
+            observed_trade_capacity: BTreeMap::new(),
+            observed_leader_types: BTreeMap::new(),
             observed_yield_adjustments: BTreeMap::new(),
             observed_city_loyalty_per_turn: BTreeMap::new(),
             observed_city_strength: BTreeMap::new(),
@@ -19871,6 +19906,9 @@ impl Game {
     /// Trading capacity: 1 with Foreign Trade, plus capacity granted by
     /// buildings/districts and +2 under Merchant Republic.
     pub fn trade_capacity(&self, pid: usize) -> i64 {
+        if let Some(capacity) = self.observed_trade_capacity.get(&pid) {
+            return *capacity;
+        }
         let p = &self.players[pid];
         let tree_capacity = self.tree_effect(pid, "trade_route_capacity") as i64;
         if tree_capacity <= 0 {
@@ -28347,6 +28385,16 @@ impl Game {
         self.unit_base_max_moves_at(uid, self.units[&uid].pos)
     }
 
+    fn unit_shares_escort_movement(&self, unit: &Unit) -> bool {
+        self.promotion_effect(unit, "escort_mobility") > 0.0
+            || self.rules.units[unit.kind]
+                .effects
+                .get("escort_mobility")
+                .copied()
+                .unwrap_or(0.0)
+                > 0.0
+    }
+
     fn unit_max_moves_at(&self, uid: u32, pos: Pos) -> f64 {
         let base = self.unit_base_max_moves_at(uid, pos);
         let unit = &self.units[&uid];
@@ -28354,7 +28402,9 @@ impl Game {
             return base;
         };
         let spec = &self.rules.units[unit.kind];
-        if spec.class != "military" || self.promotion_effect(unit, "escort_mobility") > 0.0 {
+        if spec.class != "military" && self.unit_shares_escort_movement(linked) {
+            self.unit_base_max_moves_at(linked.id, pos)
+        } else if spec.class != "military" || self.unit_shares_escort_movement(unit) {
             base
         } else {
             base.min(self.unit_base_max_moves_at(linked.id, pos))
@@ -32289,6 +32339,16 @@ impl Game {
                                 && !self.map.tiles[neighbor].pillaged
                         })
                         .count() as f64;
+            }
+            Some("ziggurat") => {
+                yields.culture += self.tree_effect(pid, "ziggurat_culture");
+                if tile.has_river() {
+                    yields.culture += self.rules.improvements["ziggurat"]
+                        .effects
+                        .get("river_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
             }
             Some("great_wall") => {
                 let adjacent = self
@@ -37461,7 +37521,7 @@ impl Game {
         }
         if let Some(peer) = linked {
             self.relocate(peer, to);
-            let escort_speed = self.promotion_effect(&self.units[&uid], "escort_mobility") > 0.0;
+            let escort_speed = self.unit_shares_escort_movement(&self.units[&uid]);
             let peer_cost = if escort_speed {
                 cost
             } else {
@@ -53509,6 +53569,35 @@ mod combat_scenarios {
         assert!(g.units[&ram].zoc_stopped);
         assert_eq!(g.units[&ram].moves_left, 0.0);
         assert!(g.apply(0, &Action::UnlinkUnits { unit: ram }).is_err());
+    }
+
+    #[test]
+    fn keshig_shares_its_four_moves_with_an_escorted_civilian() {
+        let (mut g, center, ring) = controlled_game(3181);
+        let keshig = g.spawn_unit("keshig", 0, center);
+        let builder = g.spawn_unit("builder", 0, center);
+        g.apply(
+            0,
+            &Action::LinkUnits {
+                unit: keshig,
+                with: builder,
+            },
+        )
+        .unwrap();
+        g.begin_turn(0);
+
+        assert_eq!(g.unit_max_moves(keshig), 4.0);
+        assert_eq!(g.unit_max_moves(builder), 4.0);
+        let second = g
+            .nbrs(ring[0])
+            .into_iter()
+            .find(|pos| *pos != center && g.map.tiles.contains_key(pos))
+            .unwrap();
+        for to in [ring[0], second] {
+            g.apply(0, &Action::Move { unit: keshig, to }).unwrap();
+        }
+        assert_eq!(g.units[&keshig].moves_left, 2.0);
+        assert_eq!(g.units[&builder].moves_left, 2.0);
     }
 
     #[test]

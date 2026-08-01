@@ -2726,11 +2726,13 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		-- ⚠ `item`, not `kind`: `emit` claims `kind`, `ctx` and `run`, and a payload
 		-- field named `kind` is overwritten before the line is written. That already
 		-- cost this file one blind instrument.
-		emit("civvis_build_unplayable", {
-			turn = turn,
-			city = try(function() return city:GetID(); end, -1),
-			item = tostring(wanted),
-		});
+		if not refused[wanted] then
+			emit("civvis_build_unplayable", {
+				turn = turn,
+				city = try(function() return city:GetID(); end, -1),
+				item = tostring(wanted),
+			});
+		end
 	end
 	for _, entry in ipairs(ladder) do
 		local row = playable(entry[1]);
@@ -2761,15 +2763,16 @@ end
 -- ⚠ Returns nil rather than guessing a plot. An illegal plot is another silent
 -- no-op, and a district we cannot place should fall through to the ladder so the
 -- city builds something real this turn.
-local function districtPlot(city, hash)
+local function productionPlot(city, param, hash, requestedX, requestedY)
 	local probe = {};
-	probe[CityOperationTypes.PARAM_DISTRICT_TYPE] = hash;
+	probe[param] = hash;
 	local results = try(function()
 		return CityManager.GetOperationTargets(city, CityOperationTypes.BUILD, probe);
 	end);
 	if results == nil then return nil; end
 	local plots = results[CityOperationResults.PLOTS];
 	if plots == nil then return nil; end
+	local first = nil;
 	-- Taken by iteration, not `plots[1]`: the shipped UI counts these with
 	-- `table.count`, so the result is not promised to be a dense array.
 	for _, plotIndex in pairs(plots) do
@@ -2777,10 +2780,19 @@ local function districtPlot(city, hash)
 		if plot ~= nil then
 			local px = try(function() return plot:GetX(); end, -1);
 			local py = try(function() return plot:GetY(); end, -1);
-			if px >= 0 and py >= 0 then return { x = px, y = py }; end
+			if px >= 0 and py >= 0 then
+				if requestedX ~= nil and requestedY ~= nil
+						and px == requestedX and py == requestedY then
+					return { x = px, y = py };
+				end
+				if first == nil then first = { x = px, y = py }; end
+			end
 		end
 	end
-	return nil;
+	-- A direct CIVVIS order names a plot. Substituting another legal plot would
+	-- actuate a different decision; only the emergency ladder may take the first.
+	if requestedX ~= nil or requestedY ~= nil then return nil; end
+	return first;
 end
 
 -- The religion a city actually follows, by type name, and the one converting it.
@@ -2802,7 +2814,7 @@ local function cityNextReligion(city)
 	return row ~= nil and row.ReligionType or nil;
 end
 
-local function buildParams(row, city)
+local function buildParams(row, city, requestedX, requestedY)
 	local params = {};
 	-- ⚠ WITHOUT AN INSERT MODE THE GAME REJECTS EVERY BUILD.
 	--
@@ -2824,9 +2836,27 @@ local function buildParams(row, city)
 		params[CityOperationTypes.PARAM_UNIT_TYPE] = row.Hash;
 	elseif row.Kind == "KIND_BUILDING" then
 		params[CityOperationTypes.PARAM_BUILDING_TYPE] = row.Hash;
+		local building = GameInfo.Buildings[row.Type];
+		if building ~= nil and building.IsWonder then
+			local where = productionPlot(city,
+				CityOperationTypes.PARAM_BUILDING_TYPE, row.Hash,
+				requestedX, requestedY);
+			if where == nil then
+				emit("build_no_plot", {
+					city = try(function() return city:GetID(); end, -1),
+					building = row.Type or tostring(row.Hash),
+					x = requestedX, y = requestedY,
+				});
+				return nil;
+			end
+			params[CityOperationTypes.PARAM_X] = where.x;
+			params[CityOperationTypes.PARAM_Y] = where.y;
+		end
 	elseif row.Kind == "KIND_DISTRICT" then
 		params[CityOperationTypes.PARAM_DISTRICT_TYPE] = row.Hash;
-		local where = districtPlot(city, row.Hash);
+		local where = productionPlot(city,
+			CityOperationTypes.PARAM_DISTRICT_TYPE, row.Hash,
+			requestedX, requestedY);
 		if where == nil then
 			-- ★★★★ NAME THE DISTRICT AND THE CITY. This used to send
 			-- `row.DistrictType`, which does not exist on a `GameInfo.Types` row, so
@@ -2846,6 +2876,7 @@ local function buildParams(row, city)
 			emit("build_no_plot", {
 				city = try(function() return city:GetID(); end, -1),
 				district = row.Type or tostring(row.Hash),
+				x = requestedX, y = requestedY,
 			});
 			return nil;
 		end
@@ -2943,27 +2974,39 @@ local function driveProduction(player, turn, force)
 			-- `autoclose` events because THIS FILE never loaded. The autoclose
 			-- context lives in a separate file and kept working, which is what
 			-- made it look like a stalled game rather than a broken script.
-			local name, row, why = chooseProduction(city, counts, #cities, turn);
-			if row ~= nil then
-				local params = buildParams(row, city);
-				if params ~= nil then
-					local ok = pcall(function()
-						CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
-					end);
-					if ok then
-						issued = issued + 1;
-						lastBuild[cityId] = { turn = turn, item = name };
-						if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
-						elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
-						elseif name == "UNIT_SCOUT" then counts.scout = counts.scout + 1;
-						elseif row.Kind == "KIND_UNIT" then counts.military = counts.military + 1;
+			local rejected, searching = {}, true;
+			while searching do
+				local name, row, why = chooseProduction(
+					city, counts, #cities, turn, rejected);
+				if row == nil then
+					searching = false;
+				else
+					local params = buildParams(row, city);
+					if params == nil then
+						-- CanProduce allows a district whose placement query has no
+						-- legal plot. Reject it for this sweep and ask the ladder for
+						-- its next genuine candidate instead of blocking every turn.
+						rejected[name] = true;
+					else
+						local ok = pcall(function()
+							CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
+						end);
+						if ok then
+							issued = issued + 1;
+							lastBuild[cityId] = { turn = turn, item = name };
+							if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
+							elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
+							elseif name == "UNIT_SCOUT" then counts.scout = counts.scout + 1;
+							elseif row.Kind == "KIND_UNIT" then counts.military = counts.military + 1;
+							end
 						end
+						emit("build", {
+							turn = turn,
+							city = try(function() return Locale.Lookup(city:GetName()); end, "?"),
+							item = name, reason = why, applied = ok,
+						});
+						searching = false;
 					end
-					emit("build", {
-						turn = turn,
-						city = try(function() return Locale.Lookup(city:GetName()); end, "?"),
-						item = name, reason = why, applied = ok,
-					});
 				end
 			end
 		end
@@ -4499,6 +4542,9 @@ local function exportState(player, pid, turn)
 		score = try(function() return player:GetScore(); end, -1),
 		-- Ours, on the same scale as each rival's, so a comparison is possible at all.
 		military = try(function() return player:GetStats():GetMilitaryStrength(); end, -1),
+		trade_capacity = try(function()
+			return player:GetTrade():GetOutgoingRouteCapacity();
+		end, -1),
 		cities = cities,
 		units = units,
 		trade_routes = tradeRoutes,
@@ -5286,7 +5332,7 @@ local function applyOrder(player, pid, row, turn)
 		if row2 == nil then return false, "unknown_" .. verb; end
 		verb = resolved;
 		civvisBuild[tonumber(subject) or -1] = resolved;
-		local params = buildParams(row2, city);
+		local params = buildParams(row2, city, x, y);
 		-- ⚠ The verb goes in the reason. `refusals` is aggregated by reason string, so
 		-- a bare "no_params" collapses every distinct failure into one anonymous
 		-- number -- which is exactly how 100 of them went unexplained.

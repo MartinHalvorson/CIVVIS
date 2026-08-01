@@ -402,14 +402,21 @@ The fog-honest city-pressure repair changed that shared legacy path, so the
 complete protocol-v1 baseline is preserved, read-only, at
 `data/elo_ratings_v1.json`. The island-settlement repair also changes the
 shared path: a passable natural wonder is no longer an unbuildable settler
-target. It therefore starts protocol v3 with a new replay-verified 40-game
-ledger at `data/elo_ratings.json`; the complete protocol-v2 baseline is
-preserved, read-only, at `data/elo_ratings_v2.json`. Historical ledgers remain
-useful evidence but must not be extended or mixed with a later protocol.
+target. It therefore started protocol v3; that complete baseline is preserved,
+read-only, at `data/elo_ratings_v3.json`, alongside the protocol-v2 baseline at
+`data/elo_ratings_v2.json`. The stock Firaxis audit then added missing unique
+units and an improvement to the shared rules and controller path. It starts
+protocol v4 with a new replay-verified 40-game ledger at
+`data/elo_ratings.json`. Historical ledgers remain useful evidence but must not
+be extended or mixed with a later protocol.
+
 The protocol-v3 baseline rates `advanced-20260731-settlement` at 1615.0 online
 Elo and 1643.2 direct Elo against `advanced_v1`, from a 28/40 pair score (95%
-54.6–81.9%, or 1531.8–1762.5 direct Elo). This is a fresh measurement record
-for the corrected controller, not an effect-size claim for the settlement fix.
+54.6–81.9%, or 1531.8–1762.5 direct Elo). Protocol v4 rates
+`advanced-20260801-policy-envoy` at 1604.2 online Elo and 1623.6 direct Elo
+against the anchor, from a 27/40 pair score (95% 52.0–79.9%, or
+1514.0–1739.9 direct Elo). These are fresh measurement records for their
+complete controllers, not effect-size claims for any individual repair.
 
 Schema 3 binds a ledger to the complete rating profile: an explicit experiment
 protocol version, a deterministic fingerprint of the fully merged rules JSON,

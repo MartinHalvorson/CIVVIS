@@ -369,6 +369,23 @@ mod tests {
             "a civ-unique unit is the bare unit; this is the 162"
         );
         assert_eq!(
+            resolved_civvis_unit_name(
+                &crate::rules::Rules::embedded(),
+                "UNIT_MONGOLIAN_KESHIG"
+            )
+            .as_deref(),
+            Some("keshig"),
+            "a visible Keshig is military intelligence and must reach the board"
+        );
+        assert_eq!(
+            resolved_civvis_unit_name(
+                &crate::rules::Rules::embedded(),
+                "UNIT_POLISH_HUSSAR"
+            )
+            .as_deref(),
+            Some("winged_hussar")
+        );
+        assert_eq!(
             civvis_unit_name_unqualified("UNIT_GREAT_GENERAL"),
             None,
             "`great` is not a civilization, so there is no qualifier to remove"
@@ -1159,6 +1176,16 @@ mod tests {
             recon.game.players[1].civ, "Scythia",
             "the first exported rival owns compacted CIVVIS seat 1"
         );
+        assert_eq!(
+            recon.game.observed_leader_types.get(&1).map(String::as_str),
+            Some("LEADER_TOMYRIS")
+        );
+        let observed = crate::obs::observation_spectator(&recon.game, 0);
+        assert_eq!(observed["players"][1]["leader"], serde_json::json!("Tomyris"));
+        assert_eq!(
+            observed["players"][1]["leader_type"],
+            serde_json::json!("LEADER_TOMYRIS")
+        );
         assert_ne!(
             recon.game.players[3].civ, "Scythia",
             "Firaxis player id 3 is translation metadata, not the CIVVIS entity owner"
@@ -1290,12 +1317,14 @@ mod tests {
     fn supported_unique_improvements_and_city_religion_are_not_dropped() {
         let mut improved = plot(4, 4, "TERRAIN_PLAINS");
         improved.im = Some("IMPROVEMENT_KURGAN".to_string());
+        let mut resort = plot(6, 4, "TERRAIN_GRASS");
+        resort.im = Some("IMPROVEMENT_BEACH_RESORT".to_string());
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 50,
             width: 10,
             height: 10,
             chunk: 1,
-            plots: vec![improved, plot(5, 4, "TERRAIN_PLAINS")],
+            plots: vec![improved, plot(5, 4, "TERRAIN_PLAINS"), resort],
         }]);
         let state = StateSnapshot {
             turn: 50,
@@ -1314,6 +1343,11 @@ mod tests {
         let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
         let kurgan = crate::hex::offset_to_axial(4, 4);
         assert_eq!(recon.game.map.tiles[&kurgan].improvement.as_deref(), Some("kurgan"));
+        let resort = crate::hex::offset_to_axial(6, 4);
+        assert_eq!(
+            recon.game.map.tiles[&resort].improvement.as_deref(),
+            Some("seaside_resort")
+        );
         let city = recon.game.cities.values().find(|city| city.owner == 0).unwrap();
         assert_eq!(recon.game.city_religion(city), Some("Orthodoxy"));
     }
@@ -1331,6 +1365,7 @@ mod tests {
             turn: 50,
             science: 6.75,
             culture: 6.03125,
+            trade_capacity: Some(3),
             cities: vec![StateCity {
                 id: 10,
                 name: "Istanbul".to_string(),
@@ -1349,6 +1384,7 @@ mod tests {
         let city = recon.game.player_city_ids(0)[0];
         assert_eq!(recon.game.city_loyalty_per_turn(&recon.game.cities[&city]), 10.2656);
         assert_eq!(recon.game.city_strength(city), 40.0);
+        assert_eq!(recon.game.trade_capacity(0), 3);
         let mut yields = crate::rules::Yields::default();
         for cid in recon.game.player_city_ids(0) {
             yields.add(recon.game.city_yields(cid));
@@ -1361,6 +1397,7 @@ mod tests {
         let loaded: crate::game::Game = serde_json::from_str(&saved).expect("load mirrored game");
         assert_eq!(loaded.city_loyalty_per_turn(&loaded.cities[&city]), 10.2656);
         assert_eq!(loaded.city_strength(city), 40.0);
+        assert_eq!(loaded.trade_capacity(0), 3);
         assert_eq!(loaded.observed_yield_adjustments[&0], recon.game.observed_yield_adjustments[&0]);
     }
 
@@ -1420,6 +1457,46 @@ mod tests {
             city.owner == minor.id && city.name == "Kabul"
         }));
         assert!(recon.game.units.values().any(|unit| unit.owner == minor.id));
+    }
+
+    #[test]
+    fn renamed_city_state_uses_exported_capital_instead_of_legacy_type_id() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(6, 6, "TERRAIN_PLAINS")],
+        }]);
+        let state = StateSnapshot {
+            turn: 30,
+            minors: vec![StateMinor {
+                player: 8,
+                civ: "CIVILIZATION_JAKARTA".to_string(),
+                cities: vec![StateCity {
+                    id: 65_536,
+                    name: "Bandar Brunei".to_string(),
+                    x: 6,
+                    y: 6,
+                    pop: 2,
+                    capital: true,
+                    ..StateCity::default()
+                }],
+                ..StateMinor::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let recon = rebuild_from_state(&snapshot, &state, 6, 1, 250, 0);
+        assert!(recon
+            .game
+            .players
+            .iter()
+            .any(|player| player.is_minor && player.civ == "Bandar Brunei"));
+        assert!(!recon
+            .unmapped
+            .iter()
+            .any(|name| name == "CIVILIZATION_JAKARTA"));
     }
 
     #[test]
@@ -3052,7 +3129,7 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
             // reads unimproved, which is the honest direction for a name we cannot
             // translate.
             tile.improvement = plot.im.as_ref().and_then(|name| {
-                let short = name.strip_prefix("IMPROVEMENT_").unwrap_or(name).to_ascii_lowercase();
+                let short = civvis_improvement_name(name);
                 if modelled_improvements.contains(&short) {
                     Some(Name::new(&short))
                 } else {
@@ -3897,6 +3974,37 @@ fn minor_actor_assignments<'a>(
     out
 }
 
+/// Resolve a city-state through its exported capital name before its type id.
+///
+/// Firaxis keeps legacy type ids after renaming actors: the final-patch row for
+/// `CIVILIZATION_JAKARTA`, for example, is displayed and founded as Bandar
+/// Brunei. The city name is already in the state export and is the identity the
+/// player sees, so it is a stronger key than surgery on the implementation id.
+fn mirrored_city_state_name(game: &crate::game::Game, minor: &StateMinor) -> Option<String> {
+    let visible_name = minor
+        .cities
+        .iter()
+        .find(|city| city.capital)
+        .or_else(|| minor.cities.first())
+        .map(|city| city.name.trim())
+        .filter(|name| !name.is_empty());
+    let type_name = minor
+        .civ
+        .trim()
+        .strip_prefix("CIVILIZATION_")
+        .unwrap_or(minor.civ.trim())
+        .replace('_', " ");
+    game.rules
+        .city_states
+        .roster
+        .iter()
+        .find(|spec| {
+            visible_name.is_some_and(|name| spec.name.eq_ignore_ascii_case(name))
+                || spec.name.eq_ignore_ascii_case(&type_name)
+        })
+        .map(|spec| spec.name.clone())
+}
+
 /// The whole board as one `state` event described it.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateSnapshot {
@@ -3979,6 +4087,10 @@ pub struct StateSnapshot {
     pub score: i64,
     #[serde(default = "unknown_strength")]
     pub military: f64,
+    /// Firaxis's own outgoing-route capacity. The model can differ because a
+    /// mirrored empire does not reproduce every capacity modifier.
+    #[serde(default)]
+    pub trade_capacity: Option<i64>,
     #[serde(default)]
     pub cities: Vec<StateCity>,
     #[serde(default)]
@@ -4237,6 +4349,16 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
     if let Some(speed) = civvis_game_speed(&state.seat.speed) {
         game.game_speed = speed;
     }
+    game.observed_leader_types.clear();
+    if !state.seat.leader.is_empty() {
+        game.observed_leader_types.insert(0, state.seat.leader.clone());
+    }
+    for (index, rival) in state.rivals.iter().enumerate() {
+        if !rival.leader.is_empty() {
+            game.observed_leader_types
+                .insert(index + 1, rival.leader.clone());
+        }
+    }
     let mut unmapped = Vec::new();
     let mut known: std::collections::BTreeMap<usize, &'static str> = Default::default();
     let mut note = |seat: usize, civ6: &str, unmapped: &mut Vec<String>| {
@@ -4263,20 +4385,7 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
         .into_iter()
         .filter(|(minor, _)| minor.is_city_state())
     {
-        let bare = minor
-            .civ
-            .trim()
-            .strip_prefix("CIVILIZATION_")
-            .unwrap_or(minor.civ.trim())
-            .replace('_', " ");
-        let name = game
-            .rules
-            .city_states
-            .roster
-            .iter()
-            .find(|spec| spec.name.eq_ignore_ascii_case(&bare))
-            .map(|spec| spec.name.clone());
-        match name {
+        match mirrored_city_state_name(game, minor) {
             Some(name) => game.players[seat].civ = name,
             None if !minor.civ.is_empty() => unmapped.push(minor.civ.clone()),
             None => {}
@@ -4335,7 +4444,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "kind", "event", "run", "ctx", "turn", "techs", "civics", "research",
         "research_progress", "civic", "civic_progress", "government", "pantheon",
         "policies", "policy_slots", "gold", "faith", "science", "culture", "score",
-        "military", "cities", "units", "trade_routes", "rivals", "minors", "hostiles",
+        "military", "trade_capacity", "cities", "units", "trade_routes", "rivals", "minors",
+        "hostiles",
     ];
     const CITY: &[&str] = &[
         "id", "name", "buildings", "religion", "religion_next", "religion_turns",
@@ -4613,6 +4723,21 @@ fn civvis_unit_name(civ6: &str) -> String {
         // Firaxis's Scythian type name includes the civilization, whereas
         // CIVVIS stores the unit by its actual Saka name.
         "horse_archer" | "scythian_horse_archer" => "saka_horse_archer".to_string(),
+        // Firaxis retained Poland's implementation id after the unit's display
+        // name became Winged Hussar.
+        "polish_hussar" => "winged_hussar".to_string(),
+        _ => base,
+    }
+}
+
+fn civvis_improvement_name(civ6: &str) -> String {
+    let base = civ6
+        .strip_prefix("IMPROVEMENT_")
+        .unwrap_or(civ6)
+        .to_ascii_lowercase();
+    match base.as_str() {
+        // The shipped type id predates the final Civilopedia name.
+        "beach_resort" => "seaside_resort".to_string(),
         _ => base,
     }
 }
@@ -5306,10 +5431,14 @@ fn mirrored_envoys(player: &crate::game::Player, minor: usize) -> i64 {
 /// roster are complete. Yield differences are stored as corrections so an AI
 /// clone can still measure the effect of a candidate policy or building.
 fn apply_observed_host_metrics(game: &mut crate::game::Game, state: &StateSnapshot) {
+    game.observed_trade_capacity.clear();
     game.observed_yield_adjustments.clear();
     game.observed_city_loyalty_per_turn.clear();
     game.observed_city_strength.clear();
     game.observed_city_max_wall_hp.clear();
+    if let Some(capacity) = state.trade_capacity.filter(|capacity| *capacity >= 0) {
+        game.observed_trade_capacity.insert(0, capacity);
+    }
 
     let mut derived = crate::rules::Yields::default();
     for cid in game.player_city_ids(0) {

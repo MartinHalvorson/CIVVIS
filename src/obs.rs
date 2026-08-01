@@ -662,7 +662,21 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             json!({
                 "id": o.id, "civ": o.civ,
                 "met": true,
-                "leader": g.rules.civs.get(&o.civ).map(|c| c.leader.clone()),
+                "leader": g.observed_leader_types.get(&o.id)
+                    .map(|leader| leader
+                        .trim_start_matches("LEADER_")
+                        .replace('_', " ")
+                        .to_lowercase()
+                        .split_whitespace()
+                        .map(|word| {
+                            let mut chars = word.chars();
+                            chars.next().map(|first| first.to_uppercase().collect::<String>()
+                                + chars.as_str()).unwrap_or_default()
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" "))
+                    .or_else(|| g.rules.civs.get(&o.civ).map(|c| c.leader.clone())),
+                "leader_type": g.observed_leader_types.get(&o.id),
                 // A leader's agenda is public knowledge in Civ VI once you
                 // have met them, and so is roughly how they feel about you.
                 "agenda": g.agenda_of(o.id).map(|agenda| json!({
