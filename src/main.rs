@@ -15,7 +15,7 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// blend two players into one lifetime average and erase the very improvement
 /// the longitudinal tournament is supposed to expose.
 const DEFAULT_TOURNAMENT_ENTRANTS: &str =
-    "advanced-20260801-champion-default=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random";
+    "advanced-20260801-policy-envoy=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random";
 
 /// `advanced_v1` freezes the planning configuration, but deliberately shares
 /// the production Basic/Advanced implementation. Pin those sources so a code
@@ -123,16 +123,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `ai_eval advanced_v1 basic --pairs 10 --jobs 1 --seed 31337 --players 4
 /// --turns 200 --deployment-comparison` reports. This is a compatibility
 /// re-pin, not an Elo protocol change.
-///
-/// #749 promotes the independently confirmed embedded champion through those
-/// same public constructors. `AdvancedAi::legacy()` still constructs its own
-/// stock `BasicAi` directly, so the frozen anchor cannot inherit the champion.
-/// A clean `ad6819d` release build and a separately targeted release build of
-/// this change produced byte-identical `ai_eval advanced_v1 basic --pairs 10
-/// --jobs 1 --seed 31337 --players 4 --turns 200 --deployment-comparison`
-/// reports. This is therefore a compatibility re-pin, not an Elo protocol
-/// change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6db8_11fe_1a51_57df;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb71f_eabf_d699_cd32;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1677,10 +1668,10 @@ mod tests {
     #[test]
     fn tournament_entrants_separate_immutable_identity_from_controller() {
         let entrants = parse_tournament_entrants(
-            "advanced-20260801-champion-default=advanced, advanced_v1, basic-20260730=basic, random-20260730=random",
+            "advanced-20260801-policy-envoy=advanced, advanced_v1, basic-20260730=basic, random-20260730=random",
         )
         .unwrap();
-        assert_eq!(entrants[0].identity, "advanced-20260801-champion-default");
+        assert_eq!(entrants[0].identity, "advanced-20260801-policy-envoy");
         assert_eq!(entrants[0].controller, "advanced");
         assert_eq!(entrants[1].identity, "advanced_v1");
         assert_eq!(entrants[1].controller, "advanced_v1");
@@ -1690,7 +1681,7 @@ mod tests {
         assert!(parse_tournament_entrants("advanced,,basic").is_err());
 
         let default = parse_tournament_entrants(DEFAULT_TOURNAMENT_ENTRANTS).unwrap();
-        assert_eq!(default[0].identity, "advanced-20260801-champion-default");
+        assert_eq!(default[0].identity, "advanced-20260801-policy-envoy");
         assert_eq!(default[0].controller, "advanced");
     }
 

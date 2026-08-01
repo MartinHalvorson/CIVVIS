@@ -38,9 +38,8 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 80] = [
+pub const EVAL_ONLY_AIS: [&str; 79] = [
     "basic_evolved",
-    "advanced_stock_control",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
     "advanced_envoy_policy",
@@ -196,7 +195,6 @@ define_arm_kinds! {
     AdvancedSettlerCommit => "advanced_settler_commit",
     AdvancedSettlerFirst => "advanced_settler_first",
     AdvancedStrategicCommitment => "advanced_strategic_commitment",
-    AdvancedStockControl => "advanced_stock_control",
     AdvancedV1 => "advanced_v1",
     AdvancedWideOpening => "advanced_wide_opening",
     Basic => "basic",
@@ -1338,11 +1336,13 @@ fn artifact_effective_alias_from(
     } else {
         ArmKind::Basic
     };
+    let advanced_fallback = if champion {
+        ArmKind::AdvancedEvolved
+    } else {
+        ArmKind::Advanced
+    };
     match kind {
-        // `advanced` now owns the immutable embedded champion. Keep these
-        // historical labels as true aliases rather than letting a mutable
-        // cwd artifact create a second, ambiguously named production agent.
-        ArmKind::Evolved | ArmKind::AdvancedEvolved => ArmKind::Advanced,
+        ArmKind::Evolved | ArmKind::AdvancedEvolved => advanced_fallback,
         ArmKind::BasicEvolved => basic_fallback,
         ArmKind::Neural => {
             if net {
@@ -1355,21 +1355,21 @@ fn artifact_effective_alias_from(
             if net {
                 ArmKind::Policy
             } else {
-                ArmKind::Advanced
+                advanced_fallback
             }
         }
         ArmKind::PolicyWide => {
             if wide_net {
                 ArmKind::PolicyWide
             } else {
-                ArmKind::Advanced
+                advanced_fallback
             }
         }
         ArmKind::PolicyWideFrozen => {
             if wide_net {
                 ArmKind::PolicyWideFrozen
             } else {
-                ArmKind::Advanced
+                advanced_fallback
             }
         }
         ArmKind::Strategic | ArmKind::StrategicWarm => {
@@ -1393,14 +1393,26 @@ fn artifact_effective_alias_from(
                 ArmKind::StrategicDeep
             }
         }
-        ArmKind::AdvancedEvolvedCommitment => ArmKind::AdvancedStrategicCommitment,
-        ArmKind::AdvancedEvolvedBlind => ArmKind::AdvancedBlindToLeaders,
+        ArmKind::AdvancedEvolvedCommitment => {
+            if champion {
+                ArmKind::AdvancedEvolvedCommitment
+            } else {
+                ArmKind::AdvancedStrategicCommitment
+            }
+        }
+        ArmKind::AdvancedEvolvedBlind => {
+            if champion {
+                ArmKind::AdvancedEvolvedBlind
+            } else {
+                ArmKind::AdvancedBlindToLeaders
+            }
+        }
         // The independently confirmed composite became the production
         // controller on 2026-08-01. Retain its pre-registration name as a
         // historical evaluator alias so old commands fail closed as self-play
         // instead of rebuilding a second implementation of `advanced`.
         ArmKind::AdvancedPolicyEnvoyPriority => ArmKind::Advanced,
-        ArmKind::AdvancedBankingDedication => ArmKind::AdvancedBankingDedication,
+        ArmKind::AdvancedBankingDedication => advanced_fallback,
         _ => kind,
     }
 }
@@ -1442,10 +1454,6 @@ fn artifact_effective_alias(kind: ArmKind, dir: &str) -> ArmKind {
 fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
     match kind.name() {
         "advanced" => Box::new(AdvancedAi::new()),
-        // Frozen pre-2026-08-01-weight control. It keeps the live policy deck
-        // and both promoted envoy mechanisms, isolating only the immutable
-        // champion now carried by production `advanced`.
-        "advanced_stock_control" => Box::new(AdvancedAi::pre_champion()),
         // The first bounded use of the fog-safe belief surface. It retains
         // only last-seen military strength for the already fog-filtered
         // city-pressure/recovery path; every other Advanced policy remains
@@ -1496,6 +1504,18 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         }
         "advanced_strategic_commitment" => {
             let mut ai = AdvancedAi::new();
+            ai.strategic_commitment = true;
+            Box::new(ai)
+        }
+        // Composite of the strongest committed compact-profile genome and the
+        // independently causal strategy-stability treatment. Its artifact is
+        // definitional, so evaluators can refuse a silent stock fallback. The
+        // preregistered 20-map matrix rejected transfer: compact was +17, but
+        // deployment was -70 with terminal direction 5-15 (p=0.0414).
+        "advanced_evolved_commitment" => {
+            let mut ai = crate::evolve::load_champion("evolved")
+                .map(AdvancedAi::with_weights)
+                .unwrap_or_else(AdvancedAi::new);
             ai.strategic_commitment = true;
             Box::new(ai)
         }
@@ -1868,15 +1888,25 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.joint_tactics = true;
             Box::new(ai)
         }
-        // Historical alias kept for old experiment commands. Resolution maps
-        // this to `advanced_blind_to_leaders`; retaining a correct factory
-        // here protects the invariant if a future caller bypasses resolution.
+        // The denial ablation on the weights the deployment actually plays.
+        // Every other arm in `docs/COUNTERING_LEADERS.md` ran on
+        // `Weights::default()`, and a genome moves `war_ratio`, `city_target`
+        // and the rest -- so a layer that is worth nothing to the default
+        // agent is not automatically worth nothing to the shipped one. Paired
+        // against `advanced_evolved`, this is the same ablation on the seat
+        // the exhibition fills.
         "advanced_evolved_blind" => {
-            let mut ai = AdvancedAi::new();
+            let mut ai = crate::evolve::load_champion("evolved")
+                .map(AdvancedAi::with_weights)
+                .unwrap_or_else(AdvancedAi::new);
             ai.deny_leaders = false;
             Box::new(ai)
         }
-        "advanced_evolved" => Box::new(AdvancedAi::new()),
+        "advanced_evolved" => Box::new(
+            crate::evolve::load_champion("evolved")
+                .map(AdvancedAi::with_weights)
+                .unwrap_or_else(AdvancedAi::new),
+        ),
         // The Dedication chooser that ranks the offer by what each Dedication
         // would have paid over the era just ended. **A recorded negative
         // result**, kept as an evaluator arm: over 120 mirrored maps against
@@ -1884,7 +1914,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // directions to 31, sign p=0.0015, e-process crossing against it at
         // map 51, and terminal score 46.3% (p=0.0000). See `docs/AGES.md`.
         "advanced_measured_dedication" => {
-            let mut w = crate::evolve::embedded_champion_weights();
+            let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
             w.dedication_choice = crate::ai::DedicationChoice::Measured;
             Box::new(AdvancedAi::with_weights(w))
         }
@@ -1892,7 +1922,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // Dark Age, where Era Score is the literal objective, and leave the
         // Golden and Heroic choice exactly as the default makes it.
         "advanced_banking_dedication" => {
-            let mut w = crate::evolve::embedded_champion_weights();
+            let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
             w.dedication_choice = crate::ai::DedicationChoice::Banking;
             Box::new(AdvancedAi::with_weights(w))
         }
@@ -1906,7 +1936,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
                 .map(BasicAi::with_weights)
                 .unwrap_or_default(),
         ),
-        "evolved" => Box::new(AdvancedAi::new()),
+        "evolved" => Box::new(
+            crate::evolve::load_champion("evolved")
+                .map(AdvancedAi::with_weights)
+                .unwrap_or_default(),
+        ),
         "neural" => {
             let w = crate::evolve::load_champion("evolved").unwrap_or_default();
             match crate::valuenet::ValueNet::load_width("evolved", crate::evolve::FEATURE_WIDTH) {
@@ -1923,15 +1957,19 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // exploiting. A causal test of the ranking failure, not a proposed
         // agent.
         "policy_wide_frozen" => Box::new(
-            crate::policy::PolicyAi::with_weights(crate::evolve::embedded_champion_weights())
-                .with_frozen_contact(),
+            crate::policy::PolicyAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            )
+            .with_frozen_contact(),
         ),
         "policy_wide" => Box::new(
-            crate::policy::PolicyAi::with_weights(crate::evolve::embedded_champion_weights())
-                .with_decision_features(),
+            crate::policy::PolicyAi::with_weights(
+                crate::evolve::load_champion("evolved").unwrap_or_default(),
+            )
+            .with_decision_features(),
         ),
         "policy" => Box::new(crate::policy::PolicyAi::with_weights(
-            crate::evolve::embedded_champion_weights(),
+            crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
         "strategic" => Box::new(crate::strategic::StrategicAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -2434,35 +2472,10 @@ impl ArmKind {
     }
 
     fn weights(self, champion: bool, league: bool) -> WeightSource {
-        // These historical factorial controls intentionally construct the
-        // stock genome. Every other ordinary Advanced arm goes through
-        // `AdvancedAi::new()` and therefore inherits the immutable production
-        // champion below.
-        if matches!(
-            self,
-            Self::AdvancedStockControl
-                | Self::AdvancedPolicyLiveControl
-                | Self::AdvancedEnvoyPolicy
-                | Self::AdvancedEnvoyInfrastructure
-                | Self::AdvancedEnvoyPriority
-                | Self::AdvancedEnvoyEconomy
-        ) {
-            return WeightSource::Stock;
-        }
-        if self == Self::AdvancedLeagueTop {
-            return if league {
-                WeightSource::League
-            } else {
-                WeightSource::Stock
-            };
-        }
-        if self.architecture() == Architecture::Advanced {
-            return WeightSource::Champion;
-        }
         match self {
             Self::StrategicDeepDefault => WeightSource::FrozenStock,
-            Self::StrategicDeepLeague if league => WeightSource::League,
-            Self::StrategicDeepLeague => WeightSource::Stock,
+            Self::StrategicDeepLeague | Self::AdvancedLeagueTop if league => WeightSource::League,
+            Self::StrategicDeepLeague | Self::AdvancedLeagueTop => WeightSource::Stock,
             Self::StrategicDeepExpand => WeightSource::Doctrine("expand"),
             Self::StrategicDeepConsolidate => WeightSource::Doctrine("consolidate"),
             Self::StrategicDeepMilitarize => WeightSource::Doctrine("militarize"),
@@ -2620,7 +2633,6 @@ impl ArmKind {
             Self::AdvancedReliefScoped => &["scoped-relief"],
             Self::AdvancedJointTactics => &["joint-tactics"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
-            Self::AdvancedBankingDedication => &["dedication-banking"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
             Self::StrategicDeep => &["search-cadence-20", "search-horizon-80"],
@@ -2900,9 +2912,11 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
     let wide_net =
         crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
     let basic_fallback = if champion { "basic_evolved" } else { "basic" };
-    // The production Advanced controller owns its compiled champion, so a
-    // netless policy fallback is always the same immutable `advanced`.
-    let advanced_fallback = "advanced";
+    let advanced_fallback = if champion {
+        "advanced_evolved"
+    } else {
+        "advanced"
+    };
     let genome = ArtifactStatus {
         file: CHAMPION_FILE,
         found: champion,
@@ -2915,10 +2929,33 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
     };
     let league = league_generalist().is_some();
     let (artifacts, independently_declared_effective) = match name {
-        // Production has promoted the compiled champion. These labels stay
-        // selectable for historical commands, but no longer read a mutable
-        // cwd artifact and therefore collapse to `advanced`.
-        "evolved" | "advanced_evolved" => (Vec::new(), "advanced"),
+        // The genome *is* these two names; without it they are the stock
+        // scripted agent under a name that claims otherwise.
+        "evolved" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            if champion {
+                // `evolved` and `advanced_evolved` construct the same
+                // `AdvancedAi::with_weights(champion)`; retain one canonical
+                // identity so their comparison is rejected as self-play.
+                "advanced_evolved"
+            } else {
+                "advanced"
+            },
+        ),
+        "advanced_evolved" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            if champion {
+                "advanced_evolved"
+            } else {
+                "advanced"
+            },
+        ),
         "basic_evolved" => (
             vec![ArtifactStatus {
                 definitional: true,
@@ -2933,16 +2970,22 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             vec![genome, value(true)],
             if net { "neural" } else { basic_fallback },
         ),
-        "policy" => (vec![value(true)], if net { "policy" } else { advanced_fallback }),
+        "policy" => (
+            vec![genome, value(true)],
+            if net { "policy" } else { advanced_fallback },
+        ),
         // The *wide* net is definitional and is a different artifact from
         // the one `policy` wants: `load_width` refuses each to the other,
         // so without a 34-wide net in place this is the scripted agent.
         "policy_wide" | "policy_wide_frozen" => (
-            vec![ArtifactStatus {
-                file: VALUENET_FILE,
-                found: wide_net,
-                definitional: true,
-            }],
+            vec![
+                genome,
+                ArtifactStatus {
+                    file: VALUENET_FILE,
+                    found: wide_net,
+                    definitional: true,
+                },
+            ],
             if wide_net {
                 if name == "policy_wide" {
                     "policy_wide"
@@ -3033,7 +3076,6 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             if net { "production_net" } else { "production" },
         ),
         "advanced" => (Vec::new(), "advanced"),
-        "advanced_stock_control" => (Vec::new(), "advanced_stock_control"),
         "advanced_belief_pressure" => (Vec::new(), "advanced_belief_pressure"),
         "advanced_policy_live_control" => (Vec::new(), "advanced_policy_live_control"),
         "advanced_policy_envoy_priority" => (Vec::new(), "advanced"),
@@ -3042,7 +3084,17 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_envoy_priority" => (Vec::new(), "advanced_envoy_priority"),
         "advanced_envoy_economy" => (Vec::new(), "advanced_envoy_economy"),
         "advanced_strategic_commitment" => (Vec::new(), "advanced_strategic_commitment"),
-        "advanced_evolved_commitment" => (Vec::new(), "advanced_strategic_commitment"),
+        "advanced_evolved_commitment" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            if champion {
+                "advanced_evolved_commitment"
+            } else {
+                "advanced_strategic_commitment"
+            },
+        ),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
         "advanced_wide_opening" => (Vec::new(), "advanced_wide_opening"),
         "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
@@ -3058,8 +3110,14 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_city_strategy_breadbasket_only" => (Vec::new(), "advanced_city_strategy_breadbasket_only"),
         "advanced_city_strategy_comparative_only" => (Vec::new(), "advanced_city_strategy_comparative_only"),
         "advanced_city_strategy_pressure_only" => (Vec::new(), "advanced_city_strategy_pressure_only"),
-        "advanced_banking_dedication" => (Vec::new(), "advanced_banking_dedication"),
-        "advanced_measured_dedication" => (Vec::new(), "advanced_measured_dedication"),
+        "advanced_banking_dedication" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            advanced_fallback,
+        ),
+        "advanced_measured_dedication" => (vec![genome], "advanced_measured_dedication"),
         "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
         "advanced_prophet_first" => (Vec::new(), "advanced_prophet_first"),
@@ -3073,7 +3131,20 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_counter_stand_down" => (Vec::new(), "advanced_counter_stand_down"),
         "advanced_early_score_alarm" => (Vec::new(), "advanced_early_score_alarm"),
         "advanced_early_score_build" => (Vec::new(), "advanced_early_score_build"),
-        "advanced_evolved_blind" => (Vec::new(), "advanced_blind_to_leaders"),
+        // The genome is definitional here for the same reason it is for
+        // `advanced_evolved`: without it this is the stock agent with the
+        // denial layer off, which is a different measurement entirely.
+        "advanced_evolved_blind" => (
+            vec![ArtifactStatus {
+                definitional: true,
+                ..genome
+            }],
+            if champion {
+                "advanced_evolved_blind"
+            } else {
+                "advanced_blind_to_leaders"
+            },
+        ),
         "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
         "advanced_rush" => (Vec::new(), "advanced_rush"),
         "advanced_rush_connected" => (Vec::new(), "advanced_rush_connected"),
@@ -3750,15 +3821,17 @@ mod tests {
         serde_json::to_string(&game).expect("serialize deterministic game fingerprint")
     }
 
-    /// The compiled production champion must not depend on a generated
-    /// `evolved/` directory. Artifact-backed learned names still report their
-    /// scripted fallback accurately on a bare evaluator fixture.
+    /// A checkout with no trained artifacts is the default state of this
+    /// repository — `evolved/` is generated and ignored — so every learned
+    /// name must report the scripted agent it really is.
     #[test]
     fn a_bare_checkout_reports_the_agent_that_actually_plays() {
         let dir = "target/test-provenance-bare";
         let _ = fs::remove_dir_all(dir);
         fs::create_dir_all(dir).unwrap();
         for (name, effective) in [
+            ("evolved", "advanced"),
+            ("advanced_evolved", "advanced"),
             ("neural", "basic"),
             ("policy", "advanced"),
             ("strategic", "strategic_score"),
@@ -3768,13 +3841,6 @@ mod tests {
             assert!(resolved.degraded(), "{name}");
             assert!(resolved.untrained(), "{name}");
             assert!(resolved.line().contains("missing"), "{}", resolved.line());
-        }
-        for name in ["evolved", "advanced_evolved"] {
-            let resolved = builtin_provenance(name, dir);
-            assert_eq!(resolved.effective, "advanced", "{name}");
-            assert!(!resolved.degraded(), "{name}");
-            assert!(!resolved.untrained(), "{name}");
-            assert!(resolved.artifacts.is_empty(), "{name}");
         }
         fs::remove_dir_all(dir).unwrap();
     }
@@ -3815,7 +3881,7 @@ mod tests {
             .expect("a known degraded arm reports its provenance");
         assert!(provenance.degraded());
         assert_eq!(provenance.effective, "advanced");
-        assert_eq!(provenance.missing(), vec![VALUENET_FILE]);
+        assert_eq!(provenance.missing(), vec![CHAMPION_FILE, VALUENET_FILE]);
 
         let unknown = strict_builtin_arm_in("not-a-selectable-arm", dir)
             .expect_err("strict construction must reject an unknown name");
@@ -3844,9 +3910,9 @@ mod tests {
         fs::remove_dir_all(dir).unwrap();
     }
 
-    /// A missing net changes the controller. The production Advanced fallback
-    /// is the embedded champion, while Basic still records whether a local
-    /// champion weight artifact loaded.
+    /// A missing net changes the controller, not its already-loaded genome.
+    /// The effective identity must retain both or the self-comparison guard
+    /// warns on distinct agents and misses identical ones.
     #[test]
     fn champion_weighted_fallbacks_keep_the_genome_in_their_identity() {
         let dir = "target/test-provenance-champion-fallback";
@@ -3860,9 +3926,9 @@ mod tests {
 
         for (name, effective) in [
             ("neural", "basic_evolved"),
-            ("policy", "advanced"),
-            ("policy_wide", "advanced"),
-            ("policy_wide_frozen", "advanced"),
+            ("policy", "advanced_evolved"),
+            ("policy_wide", "advanced_evolved"),
+            ("policy_wide_frozen", "advanced_evolved"),
         ] {
             let resolved = builtin_provenance(name, dir);
             assert_eq!(resolved.effective, effective, "{name}");
@@ -3872,14 +3938,14 @@ mod tests {
         }
 
         let evolved_alias = builtin_provenance("evolved", dir);
-        assert_eq!(evolved_alias.effective, "advanced");
-        assert!(!evolved_alias.degraded(), "a production alias is not degraded");
+        assert_eq!(evolved_alias.effective, "advanced_evolved");
+        assert!(!evolved_alias.degraded(), "a loaded alias is not degraded");
         assert_eq!(
             collapsed_entrants(&["evolved", "advanced_evolved"], dir),
             vec![(
                 "evolved".to_string(),
                 "advanced_evolved".to_string(),
-                "advanced"
+                "advanced_evolved"
             )]
         );
 
@@ -3893,11 +3959,11 @@ mod tests {
             )]
         );
         assert_eq!(
-            collapsed_entrants(&["policy", "advanced"], dir),
+            collapsed_entrants(&["policy", "advanced_evolved"], dir),
             vec![(
                 "policy".to_string(),
-                "advanced".to_string(),
-                "advanced"
+                "advanced_evolved".to_string(),
+                "advanced_evolved"
             )]
         );
         fs::remove_dir_all(dir).unwrap();
@@ -3914,9 +3980,9 @@ mod tests {
         );
         for (name, effective) in [
             ("neural", "basic_evolved"),
-            ("policy", "advanced"),
-            ("policy_wide", "advanced"),
-            ("policy_wide_frozen", "advanced"),
+            ("policy", "advanced_evolved"),
+            ("policy_wide", "advanced_evolved"),
+            ("policy_wide_frozen", "advanced_evolved"),
         ] {
             assert_eq!(
                 builtin_provenance(name, ARTIFACT_DIR).effective,
@@ -3926,17 +3992,20 @@ mod tests {
         }
         assert!(collapsed_entrants(&["neural", "basic"], ARTIFACT_DIR).is_empty());
         assert_eq!(
-            collapsed_entrants(&["policy", "advanced"], ARTIFACT_DIR),
+            collapsed_entrants(&["policy", "advanced_evolved"], ARTIFACT_DIR),
             vec![(
                 "policy".to_string(),
-                "advanced".to_string(),
-                "advanced"
+                "advanced_evolved".to_string(),
+                "advanced_evolved"
             )]
         );
-        assert!(
-            collapsed_entrants(&["advanced_banking_dedication", "advanced"], ARTIFACT_DIR)
-                .is_empty(),
-            "the embedded-champion dedication treatment remains a real one-axis arm"
+        assert_eq!(
+            collapsed_entrants(
+                &["advanced_banking_dedication", "advanced_evolved"],
+                ARTIFACT_DIR
+            )[0]
+                .2,
+            "advanced_evolved"
         );
         assert_eq!(
             collapsed_entrants(&["strategic_warm", "strategic"], ARTIFACT_DIR)[0].2,
@@ -3947,28 +4016,26 @@ mod tests {
     #[test]
     fn typed_specs_keep_aliases_collapsed_and_components_visible() {
         let policy = builtin_arm("policy").expect("policy is selectable");
-        let production = builtin_arm("advanced").expect("production is selectable");
-        let evolved = builtin_arm("advanced_evolved").expect("historical alias is selectable");
-        assert_eq!(evolved.spec, production.spec);
-        assert_eq!(policy.spec, production.spec);
+        let evolved = builtin_arm("advanced_evolved").expect("control is selectable");
+        assert_eq!(policy.spec, evolved.spec);
 
-        let stock = builtin_arm("advanced_stock_control").expect("stock control is selectable");
+        let stock = builtin_arm("advanced").expect("stock is selectable");
         assert_eq!(
-            production.spec.differing_axes(&stock.spec),
+            evolved.spec.differing_axes(&stock.spec),
             vec!["weights"],
-            "the frozen stock control must isolate the production champion"
+            "the champion comparison is a one-axis control"
         );
 
         let economy = builtin_arm("advanced_envoy_economy").expect("arm is selectable");
         assert_eq!(
-            economy.spec.differing_axes(&production.spec),
-            vec!["weights", "envoy-influence", "envoy-priority-off"],
-            "the historical economy control must expose its stock and envoy reversions"
+            economy.spec.differing_axes(&stock.spec),
+            vec!["envoy-influence", "envoy-priority-off"],
+            "the economy control must expose its only changes from the promoted default"
         );
 
         let policy_priority = builtin_arm("advanced_policy_envoy_priority")
             .expect("composite is selectable");
-        assert_eq!(policy_priority.spec, production.spec);
+        assert_eq!(policy_priority.spec, stock.spec);
         assert_eq!(
             builtin_provenance("advanced_policy_envoy_priority", ARTIFACT_DIR).line(),
             "advanced_policy_envoy_priority: plays as advanced (scripted, no artifacts required)"
@@ -3989,17 +4056,17 @@ mod tests {
         let live_control = builtin_arm("advanced_policy_live_control")
             .expect("pre-promotion control is selectable");
         assert_eq!(
-            live_control.spec.differing_axes(&production.spec),
-            vec!["weights", "envoy-infrastructure-off", "envoy-priority-off"],
-            "the historical live-policy control must expose its stock and envoy reversions"
+            live_control.spec.differing_axes(&stock.spec),
+            vec!["envoy-infrastructure-off", "envoy-priority-off"],
+            "the live-policy control must revert only the two promoted envoy mechanisms"
         );
 
         let priority = builtin_arm("advanced_envoy_priority")
             .expect("pre-promotion priority control is selectable");
         assert_eq!(
-            priority.spec.differing_axes(&production.spec),
-            vec!["weights", "policy-deck-legacy"],
-            "the historical priority control must retain both direct production mechanisms"
+            priority.spec.differing_axes(&stock.spec),
+            vec!["policy-deck-legacy"],
+            "the priority control must retain both direct production mechanisms"
         );
 
         let league_top = builtin_arm("advanced_league_top").expect("arm is selectable");
@@ -4098,9 +4165,8 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 49] = [
+            const SCRIPTED: [&str; 46] = [
                 "advanced",
-                "advanced_stock_control",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
                 "advanced_policy_envoy_priority",
@@ -4109,8 +4175,6 @@ mod tests {
                 "advanced_envoy_priority",
                 "advanced_envoy_economy",
                 "advanced_strategic_commitment",
-                "advanced_banking_dedication",
-                "advanced_measured_dedication",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
                 "advanced_rush_connected",
@@ -4149,13 +4213,7 @@ mod tests {
                 "basic",
                 "random",
             ];
-            const SCRIPTED_ALIASES: [&str; 5] = [
-                "advanced_policy_envoy_priority",
-                "evolved",
-                "advanced_evolved",
-                "advanced_evolved_commitment",
-                "advanced_evolved_blind",
-            ];
+            const SCRIPTED_ALIASES: [&str; 1] = ["advanced_policy_envoy_priority"];
             assert!(
                 !resolved.artifacts.is_empty()
                     || SCRIPTED.contains(name)

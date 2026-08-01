@@ -1293,13 +1293,12 @@ impl Default for AdvancedAi {
 }
 
 impl AdvancedAi {
-    /// Production Advanced: the confirmed embedded champion plus the
-    /// live-policy and envoy-production composite. Keep the production layers
-    /// together here so every ordinary constructor has one auditable
-    /// definition. The champion is compiled into the binary rather than read
-    /// from a cwd-relative evolution artifact.
+    /// Production Advanced: the confirmed live-policy and envoy-production
+    /// composite. Keep the three changes together here so every ordinary
+    /// construction path (including weighted and explicitly targeted agents)
+    /// has one auditable definition.
     pub fn new() -> AdvancedAi {
-        Self::promoted_policy_envoy(crate::evolve::embedded_champion_weights(), None)
+        Self::promoted_policy_envoy(Weights::default(), None)
     }
 
     /// Exact pre-2026-08-01 Advanced configuration used only by evaluator
@@ -1314,14 +1313,6 @@ impl AdvancedAi {
     /// today's production defaults through [`Self::with_weights`].
     pub(crate) fn pre_policy_envoy_with_weights(weights: Weights) -> AdvancedAi {
         Self::configured(BasicAi::with_weights(weights), true, None)
-    }
-
-    /// Exact pre-champion production controller used only as a frozen
-    /// evaluator control. It retains the promoted policy and envoy behavior,
-    /// while replacing only the 40 numerical champion genes with stock
-    /// weights. Do not route ordinary callers through this constructor.
-    pub(crate) fn pre_champion() -> AdvancedAi {
-        Self::promoted_policy_envoy(Weights::default(), None)
     }
 
     fn production_weights(mut weights: Weights) -> Weights {
@@ -1402,7 +1393,7 @@ impl AdvancedAi {
     }
 
     pub fn targeting(target: VictoryTarget) -> AdvancedAi {
-        Self::promoted_policy_envoy(crate::evolve::embedded_champion_weights(), Some(target))
+        Self::promoted_policy_envoy(Weights::default(), Some(target))
     }
 
     /// Frozen control for measuring future strategic changes against the
@@ -14664,29 +14655,11 @@ mod tests {
     }
 
     #[test]
-    fn production_champion_policy_envoy_default_is_distinct_from_evaluator_and_legacy_controls() {
+    fn production_policy_envoy_default_is_distinct_from_evaluator_and_legacy_controls() {
         let production = AdvancedAi::new();
-        assert_eq!(
-            production.weights().to_vec(),
-            crate::evolve::embedded_champion_weights().to_vec(),
-            "ordinary production Advanced must receive the compiled champion"
-        );
         assert_eq!(production.weights().policy_deck, PolicyDeck::Live);
         assert!(production.envoy_infrastructure);
         assert!(production.envoy_priority);
-
-        let targeted = AdvancedAi::targeting(VictoryTarget::Science);
-        assert_eq!(
-            targeted.weights().to_vec(),
-            crate::evolve::embedded_champion_weights().to_vec(),
-            "an explicit production victory target must not silently drop the champion"
-        );
-
-        let stock_control = AdvancedAi::pre_champion();
-        assert_eq!(stock_control.weights().to_vec(), Weights::default().to_vec());
-        assert_eq!(stock_control.weights().policy_deck, PolicyDeck::Live);
-        assert!(stock_control.envoy_infrastructure);
-        assert!(stock_control.envoy_priority);
 
         let pre_promotion = AdvancedAi::pre_policy_envoy();
         assert_eq!(pre_promotion.weights().policy_deck, PolicyDeck::Legacy);
