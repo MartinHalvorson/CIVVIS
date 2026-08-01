@@ -254,22 +254,24 @@ fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, us
     (orders, waiting_without_target)
 }
 
-/// Do not invalidate an accepted Great Person action later in the same Lua batch.
+/// Keep every physical Great Person hex clear for the current Lua batch.
 ///
 /// Firaxis queues unit operations. `CanStartCommand` can therefore approve a Great
 /// Person retirement and a later move onto that person's hex even though the move
 /// will make the retirement illegal by the time the engine resolves it. Hanno the
 /// Navigator hit this exact race three times while a Galley oscillated through his
-/// Harbor. Reserve the observed activation hex for this frame and let those moves
-/// be reconsidered from the next exported state.
+/// Harbor. An inactive Great Person also blocks another civilian from entering its
+/// plot: Hildegard spent forty turns trying to enter a Holy Site occupied by an
+/// unspent Prophet. Reserve every observed Great Person hex and reconsider those
+/// moves after the next authoritative export.
 fn defer_great_person_plot_conflicts(
     orders: Vec<Order>,
     state: &civvis::mirror::StateSnapshot,
 ) -> (Vec<Order>, usize) {
-    let active_people = state
+    let people = state
         .units
         .iter()
-        .filter(|unit| unit.great_person.as_ref().is_some_and(|person| person.can_activate))
+        .filter(|unit| unit.great_person.is_some())
         .map(|unit| (unit.id, (unit.x, unit.y)))
         .collect::<Vec<_>>();
     let mut deferred = 0;
@@ -277,7 +279,7 @@ fn defer_great_person_plot_conflicts(
         .into_iter()
         .filter(|order| {
             let conflicts = order.kind == "unit"
-                && active_people.iter().any(|(person, pos)| {
+                && people.iter().any(|(person, pos)| {
                     order.subject != Some(*person) && order.pos == Some(*pos)
                 });
             if conflicts {
@@ -878,6 +880,16 @@ fn translate(
             kind: "pantheon",
             subject: None,
             verb: Some(format!("BELIEF_{}", belief.as_str().to_ascii_uppercase())),
+            pos: None,
+        }),
+        Action::FoundReligion { follower, founder } => Some(Order {
+            kind: "religion",
+            subject: None,
+            verb: Some(format!(
+                "BELIEF_{},BELIEF_{}",
+                follower.as_str().to_ascii_uppercase(),
+                founder.as_str().to_ascii_uppercase()
+            )),
             pos: None,
         }),
         Action::Produce { city, item } => {
@@ -1482,8 +1494,8 @@ fn action_label(action: &Action) -> &'static str {
 mod tests {
     use super::*;
     use civvis::mirror::{
-        Plot, Snapshot, StateActivationPlot, StateCity, StateGreatPerson, StateSnapshot,
-        StateTradeRoute, StateUnit, TilesChunk,
+        Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGreatPerson,
+        StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
     };
 
     #[test]
@@ -1571,20 +1583,33 @@ mod tests {
     }
 
     #[test]
-    fn great_person_activation_reserves_its_hex_for_the_firaxis_batch() {
+    fn every_great_person_reserves_its_hex_for_the_firaxis_batch() {
         let state = StateSnapshot {
-            units: vec![StateUnit {
-                id: 72,
-                kind: "UNIT_GREAT_ADMIRAL".to_string(),
-                x: 68,
-                y: 27,
-                great_person: Some(StateGreatPerson {
-                    charges: 1,
-                    can_activate: true,
-                    ..StateGreatPerson::default()
-                }),
-                ..StateUnit::default()
-            }],
+            units: vec![
+                StateUnit {
+                    id: 72,
+                    kind: "UNIT_GREAT_ADMIRAL".to_string(),
+                    x: 68,
+                    y: 27,
+                    great_person: Some(StateGreatPerson {
+                        charges: 1,
+                        can_activate: true,
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 73,
+                    kind: "UNIT_GREAT_PROPHET".to_string(),
+                    x: 68,
+                    y: 17,
+                    great_person: Some(StateGreatPerson {
+                        can_activate: false,
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+            ],
             ..StateSnapshot::default()
         };
         let (orders, deferred) = defer_great_person_plot_conflicts(
@@ -1605,16 +1630,86 @@ mod tests {
                     kind: "unit",
                     subject: Some(11),
                     verb: Some("MOVE_TO".to_string()),
+                    pos: Some((68, 17)),
+                },
+                Order {
+                    kind: "unit",
+                    subject: Some(12),
+                    verb: Some("MOVE_TO".to_string()),
                     pos: Some((69, 27)),
                 },
             ],
             &state,
         );
 
-        assert_eq!(deferred, 1);
+        assert_eq!(deferred, 2);
         assert_eq!(orders.len(), 2);
         assert_eq!(orders[0].subject, Some(72));
-        assert_eq!(orders[1].subject, Some(11));
+        assert_eq!(orders[1].subject, Some(12));
+    }
+
+    #[test]
+    fn firaxis_religion_state_reaches_a_found_religion_order() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 89,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 89,
+            pantheon: Some("BELIEF_DIVINE_SPARK".to_string()),
+            prophet_pending: true,
+            taken_religion_beliefs: vec![
+                "BELIEF_WORK_ETHIC".to_string(),
+                "BELIEF_TITHE".to_string(),
+            ],
+            cities: vec![StateCity {
+                id: 7,
+                name: "Krakow".to_string(),
+                x: 6,
+                y: 6,
+                pop: 3,
+                capital: true,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_HOLY_SITE".to_string(),
+                    x: 7,
+                    y: 6,
+                    pillaged: false,
+                }],
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+
+        assert!(mirror.game.players[0].prophet_pending);
+        assert!(mirror.game.players[1]
+            .religion_beliefs
+            .contains(&"work_ethic".to_string()));
+        assert!(mirror.game.players[1]
+            .religion_beliefs
+            .contains(&"tithe".to_string()));
+        let action = mirror
+            .game
+            .legal_actions(0)
+            .into_iter()
+            .find(|action| matches!(action, Action::FoundReligion { .. }))
+            .expect("a pending Firaxis Prophet must expose a religion choice");
+        let mut skipped = std::collections::BTreeMap::new();
+        let order = translate(&action, &mirror, &state, &mut skipped)
+            .expect("a CIVVIS religion choice must reach Firaxis");
+
+        assert_eq!(order.kind, "religion");
+        assert_eq!(order.subject, None);
+        assert!(order
+            .verb
+            .as_deref()
+            .is_some_and(|verb| verb.starts_with("BELIEF_") && verb.contains(",BELIEF_")));
+        assert!(skipped.is_empty());
     }
 
     #[test]

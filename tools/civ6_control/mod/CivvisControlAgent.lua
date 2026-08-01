@@ -156,7 +156,8 @@ local CMD = {};
 
 local function resolveActions()
 	for _, name in ipairs({
-		"UNITOPERATION_FOUND_CITY", "UNITOPERATION_MOVE_TO",
+		"UNITOPERATION_FOUND_CITY", "UNITOPERATION_FOUND_RELIGION",
+		"UNITOPERATION_MOVE_TO",
 		"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL", "UNITOPERATION_AUTOMATE_EXPLORE",
@@ -4548,6 +4549,39 @@ local function exportState(player, pid, turn)
 		local row = GameInfo.Beliefs[index];
 		return row ~= nil and row.BeliefType or nil;
 	end);
+	-- A Great Prophet is not a generic Great Person activation. Founding a
+	-- religion is a player operation whose belief choices CIVVIS must make, so
+	-- export both the decision gate and the worldwide availability facts.
+	local playerReligion = try(function() return player:GetReligion(); end);
+	local religionCreated = playerReligion ~= nil and
+		try(function() return playerReligion:GetReligionTypeCreated(); end, -1) or -1;
+	local prophet_pending = religionCreated < 0 and playerReligion ~= nil and
+		try(function() return playerReligion:HasReligiousFoundingUnit(); end, false) or false;
+	local founded_religion = nil;
+	local religion_beliefs = {};
+	local taken_religion_beliefs = {};
+	local allReligions = try(function() return Game.GetReligion():GetReligions(); end, {}) or {};
+	for _, religion in ipairs(allReligions) do
+		local religionRow = GameInfo.Religions[religion.Religion];
+		local isPantheon = religionRow ~= nil and
+			(religionRow.Pantheon == true or religionRow.Pantheon == 1);
+		if religionRow ~= nil and not isPantheon then
+			if religion.Founder == pid then
+				founded_religion = religionRow.ReligionType;
+			end
+			for _, beliefIndex in ipairs(religion.Beliefs or {}) do
+				local beliefRow = GameInfo.Beliefs[beliefIndex];
+				if beliefRow ~= nil then
+					taken_religion_beliefs[#taken_religion_beliefs + 1] = beliefRow.BeliefType;
+					if religion.Founder == pid then
+						religion_beliefs[#religion_beliefs + 1] = beliefRow.BeliefType;
+					end
+				end
+			end
+		end
+	end
+	table.sort(religion_beliefs);
+	table.sort(taken_religion_beliefs);
 	-- ★★★★ THE POLICY CARDS ALREADY SLOTTED, and how many slots exist at all.
 	--
 	-- The third instance of one shape tonight, after the government and the pantheon:
@@ -4583,6 +4617,10 @@ local function exportState(player, pid, turn)
 		civic_progress = civic_progress,
 		government = government,
 		pantheon = pantheon,
+		founded_religion = founded_religion,
+		religion_beliefs = religion_beliefs,
+		taken_religion_beliefs = taken_religion_beliefs,
+		prophet_pending = prophet_pending,
 		policies = policies,
 		policy_slots = policy_slots,
 		hostiles = hostiles,
@@ -5327,6 +5365,96 @@ local function applyOrder(player, pid, row, turn)
 			UI.RequestPlayerOperation(pid, PlayerOperations.FOUND_PANTHEON, params);
 		end);
 		return ok, ok and resolved or "throw";
+	end
+
+	if kind == "religion" then
+		local requested = {};
+		for beliefType in string.gmatch(verb, "[^,]+") do
+			requested[#requested + 1] = beliefType;
+		end
+		if #requested ~= 2 then return false, "religion_needs_two_beliefs"; end
+		local follower, followerName = resolveType(GameInfo.Beliefs, requested[1]);
+		local founder, founderName = resolveType(GameInfo.Beliefs, requested[2]);
+		if follower == nil then return false, "unknown_" .. requested[1]; end
+		if founder == nil then return false, "unknown_" .. requested[2]; end
+
+		local playerReligion = try(function() return player:GetReligion(); end);
+		if playerReligion == nil then return false, "no_religion_api"; end
+		if try(function() return playerReligion:GetReligionTypeCreated(); end, -1) >= 0 then
+			return false, "religion_already_founded";
+		end
+		if not try(function() return playerReligion:HasReligiousFoundingUnit(); end, false) then
+			return false, "no_great_prophet";
+		end
+		local gameReligion = try(function() return Game.GetReligion(); end);
+		if gameReligion == nil then return false, "no_game_religion"; end
+		if try(function() return gameReligion:IsInSomeReligion(follower.Index); end, true) then
+			return false, "taken_" .. followerName;
+		end
+		if try(function() return gameReligion:IsInSomeReligion(founder.Index); end, true) then
+			return false, "taken_" .. founderName;
+		end
+
+		local used = {};
+		for _, existing in ipairs(try(function() return gameReligion:GetReligions(); end, {}) or {}) do
+			used[existing.Religion] = true;
+		end
+		local religion = nil;
+		for row in GameInfo.Religions() do
+			local isPantheon = row.Pantheon == true or row.Pantheon == 1;
+			local needsName = row.RequiresCustomName == true or row.RequiresCustomName == 1;
+			if not isPantheon and not needsName and not used[row.Index] then
+				religion = row;
+				break;
+			end
+		end
+		if religion == nil then return false, "no_religion_type"; end
+
+		local prophet = nil;
+		for _, unit in player:GetUnits():Members() do
+			local unitRow = GameInfo.Units[try(function() return unit:GetType(); end, -1)];
+			if unitRow ~= nil and unitRow.UnitType == "UNIT_GREAT_PROPHET" then
+				prophet = unit;
+				break;
+			end
+		end
+		if prophet == nil then return false, "no_great_prophet_unit"; end
+		local foundOperation = GameInfo.UnitOperations["UNITOPERATION_FOUND_RELIGION"];
+		if foundOperation == nil then return false, "no_found_religion_operation"; end
+		local okCanOperate, canOperate = pcall(function()
+			return UnitManager.CanStartOperation(prophet, foundOperation.Hash, nil, false,
+				OperationResultsTypes.NO_TARGETS);
+		end);
+		if not (okCanOperate and canOperate == true) then
+			return false, "cannot_found_religion_here";
+		end
+
+		-- Reproduce the full human path. UnitPanel first starts the Prophet-specific
+		-- operation that opens religion selection; ReligionScreen then founds the
+		-- named religion and attaches the two selected beliefs. Omitting the first
+		-- request creates the religion but leaves its Prophet occupying the Holy Site.
+		local okOperation = pcall(function()
+			UnitManager.RequestOperation(prophet, foundOperation.Hash);
+		end);
+		local found = {};
+		found[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
+		found[PlayerOperations.PARAM_RELIGION_TYPE] = religion.Hash;
+		local okFound = pcall(function()
+			UI.RequestPlayerOperation(pid, PlayerOperations.FOUND_RELIGION, found);
+		end);
+		local function addBelief(row)
+			local params = {};
+			params[PlayerOperations.PARAM_BELIEF_TYPE] = row.Hash;
+			params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
+			return pcall(function()
+				UI.RequestPlayerOperation(pid, PlayerOperations.ADD_BELIEF, params);
+			end);
+		end
+		local okFollower = addBelief(follower);
+		local okFounder = addBelief(founder);
+		local ok = okOperation and okFound and okFollower and okFounder;
+		return ok, ok and (religion.ReligionType .. ":" .. followerName .. ":" .. founderName)
+			or "throw";
 	end
 
 	if kind == "research" or kind == "civic" then

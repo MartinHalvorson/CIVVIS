@@ -4090,6 +4090,16 @@ pub struct StateSnapshot {
     /// from every calculation it makes.
     #[serde(default)]
     pub pantheon: Option<String>,
+    /// Player-level religion facts, distinct from each city's majority religion.
+    #[serde(default)]
+    pub founded_religion: Option<String>,
+    #[serde(default)]
+    pub religion_beliefs: Vec<String>,
+    /// Every belief already claimed worldwide, including religions outside vision.
+    #[serde(default)]
+    pub taken_religion_beliefs: Vec<String>,
+    #[serde(default)]
+    pub prophet_pending: bool,
     /// Civ 6 policy types currently slotted, e.g. `POLICY_DISCIPLINE`.
     ///
     /// ⚠ Same shape as `government` and `pantheon`: a fact the game holds that CIVVIS
@@ -4489,6 +4499,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     const STATE: &[&str] = &[
         "kind", "event", "run", "ctx", "turn", "techs", "civics", "research",
         "research_progress", "civic", "civic_progress", "government", "pantheon",
+        "founded_religion", "religion_beliefs", "taken_religion_beliefs",
+        "prophet_pending",
         "policies", "policy_slots", "gold", "faith", "science", "culture", "score",
         "military", "trade_capacity", "cities", "units", "trade_routes", "rivals", "minors",
         "hostiles",
@@ -4503,7 +4515,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     const WONDER: &[&str] = &["type", "x", "y"];
     const UNIT: &[&str] = &[
         "id", "kind", "type", "x", "y", "hp", "combat", "ranged", "player", "moves",
-        "fortified", "fortify_turns",
+        "fortified", "fortify_turns", "great_person",
     ];
     const ROUTE: &[&str] = &[
         "trader", "origin", "destination", "destination_player", "origin_x", "origin_y",
@@ -5406,6 +5418,65 @@ fn civvis_religion_name(civ6: &str) -> Option<String> {
     )
 }
 
+fn civvis_belief_name(rules: &crate::rules::Rules, civ6: &str) -> Option<String> {
+    let name = civ6
+        .trim()
+        .strip_prefix("BELIEF_")
+        .unwrap_or(civ6.trim())
+        .to_ascii_lowercase();
+    [
+        &rules.beliefs.pantheon,
+        &rules.beliefs.founder,
+        &rules.beliefs.follower,
+        &rules.beliefs.enhancer,
+        &rules.beliefs.worship,
+    ]
+    .iter()
+    .any(|family| family.contains_key(name.as_str()))
+    .then_some(name)
+}
+
+fn apply_player_religion(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    unmapped: &mut Vec<String>,
+) {
+    game.players[0].prophet_pending = state.prophet_pending;
+    game.players[0].religion = state
+        .founded_religion
+        .as_deref()
+        .and_then(civvis_religion_name);
+
+    let mut local = Vec::new();
+    for civ6 in &state.religion_beliefs {
+        match civvis_belief_name(&game.rules, civ6) {
+            Some(name) if !local.contains(&name) => local.push(name),
+            Some(_) => {}
+            None => {
+                let gap = format!("{civ6}:belief");
+                if !unmapped.contains(&gap) {
+                    unmapped.push(gap);
+                }
+            }
+        }
+    }
+    game.players[0].religion_beliefs = local.clone();
+
+    // Firaxis belief availability is global. One non-local seat can retain the
+    // union without pretending we know which unseen founder owns which belief.
+    if game.players.len() > 1 {
+        let mut claimed_elsewhere = Vec::new();
+        for civ6 in &state.taken_religion_beliefs {
+            if let Some(name) = civvis_belief_name(&game.rules, civ6) {
+                if !local.contains(&name) && !claimed_elsewhere.contains(&name) {
+                    claimed_elsewhere.push(name);
+                }
+            }
+        }
+        game.players[1].religion_beliefs = claimed_elsewhere;
+    }
+}
+
 fn apply_city_religion(live: &mut crate::game::City, state: &StateCity) {
     live.pressure.clear();
     match state.religion.as_deref().and_then(civvis_religion_name) {
@@ -5696,6 +5767,7 @@ pub fn rebuild_from_state(
     if state.faith >= 0 {
         game.players[0].faith = state.faith as f64;
     }
+    apply_player_religion(&mut game, state, &mut unmapped);
     // Cheap: `rules` is an Arc. Cloned so the city loop below can consult it while
     // holding a mutable borrow of `game`.
     let game_rules = std::sync::Arc::clone(&game.rules);
@@ -6605,6 +6677,7 @@ impl LiveMirror {
         if state.faith >= 0 {
             self.game.players[0].faith = state.faith as f64;
         }
+        apply_player_religion(&mut self.game, state, &mut self.unmapped);
         if let Some(civ6) = &state.government {
             if let Some(name) = civvis_node_name(&self.game.rules.governments, civ6, "GOVERNMENT_") {
                 self.game.players[0].government = Some(name);

@@ -32,6 +32,31 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("RequestCommand(unit, hash);", helper)
         self.assertNotIn("params", helper)
 
+    def test_religion_bridge_uses_firaxis_player_operations_and_exports_its_gate(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        handler = source.split('if kind == "religion" then', 1)[1].split(
+            'if kind == "research" or kind == "civic" then', 1
+        )[0]
+
+        self.assertIn("HasReligiousFoundingUnit()", source)
+        self.assertIn("founded_religion = founded_religion", source)
+        self.assertIn("religion_beliefs = religion_beliefs", source)
+        self.assertIn("taken_religion_beliefs = taken_religion_beliefs", source)
+        self.assertIn("prophet_pending = prophet_pending", source)
+        self.assertIn("PlayerOperations.FOUND_RELIGION", handler)
+        self.assertIn("PlayerOperations.ADD_BELIEF", handler)
+        self.assertIn("PlayerOperations.PARAM_RELIGION_TYPE", handler)
+        self.assertIn("PlayerOperations.PARAM_BELIEF_TYPE", handler)
+        self.assertIn("gameReligion:IsInSomeReligion(follower.Index)", handler)
+        self.assertNotIn("IsBeliefInSomeReligion", handler)
+        self.assertIn('GameInfo.UnitOperations["UNITOPERATION_FOUND_RELIGION"]', handler)
+        self.assertIn('"UNITOPERATION_FOUND_RELIGION",', source)
+        self.assertIn(
+            "CanStartOperation(prophet, foundOperation.Hash, nil, false,", handler
+        )
+        self.assertIn("OperationResultsTypes.NO_TARGETS", handler)
+        self.assertIn("RequestOperation(prophet, foundOperation.Hash);", handler)
+
     def test_civvis_soft_blockers_do_not_invoke_legacy_unit_ai(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         handler = source.split("local blocker = currentBlocker(pid);", 1)[1].split(
