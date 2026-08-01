@@ -327,6 +327,10 @@ pub struct ImprovementSpec {
     pub hills_or_feature: bool,
     #[serde(default)]
     pub requires_flat: bool,
+    /// Resource classes at least one adjacent plot must carry. Firaxis's
+    /// `RequiresAdjacentBonusOrLuxury` uses both classes for the Mekewap.
+    #[serde(default)]
+    pub requires_adjacent_resource_classes: Vec<String>,
     /// Firaxis `SameAdjacentValid`; false for improvements such as Sphinxes,
     /// Ski Resorts, City Parks, and Rock-Hewn Churches.
     #[serde(default = "default_true")]
@@ -3108,7 +3112,7 @@ mod tests {
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
-        assert_eq!(rules.improvements.len(), 39);
+        assert_eq!(rules.improvements.len(), 40);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
         // 118 civic-unlocked cards plus the seven Dark Age cards, which no

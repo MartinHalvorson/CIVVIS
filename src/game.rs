@@ -6232,6 +6232,92 @@ mod governor_runtime_tests {
     }
 
     #[test]
+    fn cree_mekewap_matches_firaxis_placement_yields_and_housing_progression() {
+        let mut game = Game::new_full(1, 24, 16, 91_977, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let mekewap = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(mekewap).into_iter().collect();
+        for position in std::iter::once(mekewap).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&city].owned_tiles.contains(&position) {
+                game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
+            }
+        }
+        let resource_sites: Vec<Pos> = neighbors
+            .iter()
+            .copied()
+            .filter(|position| *position != centre)
+            .take(3)
+            .collect();
+
+        game.players[0].techs.insert(crate::name!("pottery"));
+        assert!(!game
+            .valid_improvements(0, mekewap)
+            .contains(&crate::name!("mekewap")));
+        game.players[0].civ = "Cree".to_string();
+        assert!(!game
+            .valid_improvements(0, mekewap)
+            .contains(&crate::name!("mekewap")));
+        game.map.tiles.get_mut(&resource_sites[0]).unwrap().resource =
+            Some(crate::name!("wheat"));
+        game.map.tiles.get_mut(&resource_sites[1]).unwrap().resource =
+            Some(crate::name!("rice"));
+        game.map.tiles.get_mut(&resource_sites[2]).unwrap().resource =
+            Some(crate::name!("silk"));
+        assert!(game
+            .valid_improvements(0, mekewap)
+            .contains(&crate::name!("mekewap")));
+
+        let housing_before = game.city_housing(&game.cities[&city]);
+        let bare = game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
+        game.map.tiles.get_mut(&mekewap).unwrap().improvement =
+            Some(crate::name!("mekewap"));
+        let initial = game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
+        assert_eq!(initial.production - bare.production, 1.0);
+        assert_eq!(initial.food - bare.food, 1.0);
+        assert_eq!(initial.gold - bare.gold, 1.0);
+        assert_eq!(game.city_housing(&game.cities[&city]), housing_before + 1.0);
+
+        game.players[0].civics.insert(crate::name!("civil_service"));
+        let civil_service =
+            game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
+        assert_eq!(civil_service.production, initial.production + 1.0);
+        assert_eq!(game.city_housing(&game.cities[&city]), housing_before + 2.0);
+        game.players[0].civics.insert(crate::name!("conservation"));
+        let conservation =
+            game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
+        assert_eq!(conservation.food, initial.food + 1.0);
+        game.players[0].techs.insert(crate::name!("cartography"));
+        let cartography = game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
+        assert_eq!(cartography.gold, initial.gold + 2.0);
+
+        let adjacent_site = neighbors
+            .iter()
+            .copied()
+            .find(|position| {
+                *position != centre
+                    && game
+                        .nbrs(*position)
+                        .iter()
+                        .any(|candidate| resource_sites.contains(candidate))
+            })
+            .unwrap();
+        assert!(!game
+            .valid_improvements(0, adjacent_site)
+            .contains(&crate::name!("mekewap")));
+    }
+
+    #[test]
     fn the_cliffs_of_dover_are_worth_twice_an_ordinary_natural_wonder() {
         // Features.Appeal is +2 for most natural wonders but +4 for the Cliffs
         // of Dover and Uluru, which CIVVIS flattened to a single +2 for every
@@ -24537,6 +24623,17 @@ impl Game {
                         .copied()
                         .unwrap_or(0.0);
                 }
+                if improvement == "mekewap"
+                    && self.players[city.owner]
+                        .civics
+                        .contains(&crate::name!("civil_service"))
+                {
+                    h += spec
+                        .effects
+                        .get("housing_after_civil_service")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
             }
         }
         for b in city.buildings.iter().filter(|building| {
@@ -32596,6 +32693,65 @@ impl Game {
                             .unwrap_or(0.0);
                 }
             }
+            Some("mekewap") => {
+                let effects = &self.rules.improvements["mekewap"].effects;
+                let adjacent_resource_count = |class: &str| {
+                    self.nbrs(pos)
+                        .iter()
+                        .filter(|neighbor| {
+                            self.map.tiles[neighbor].resource.as_ref().is_some_and(|resource| {
+                                self.rules
+                                    .resources
+                                    .get(resource.as_str())
+                                    .is_some_and(|spec| spec.class == class)
+                            })
+                        })
+                        .count() as f64
+                };
+                let bonus = adjacent_resource_count("bonus");
+                let luxury = adjacent_resource_count("luxury");
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("conservation"))
+                {
+                    yields.food += bonus
+                        * effects
+                            .get("adjacent_bonus_food_after_conservation")
+                            .copied()
+                            .unwrap_or(0.0);
+                } else {
+                    yields.food += (bonus / 2.0).floor()
+                        * effects
+                            .get("adjacent_bonus_pair_food")
+                            .copied()
+                            .unwrap_or(0.0);
+                }
+                if luxury > 0.0 {
+                    yields.gold += effects
+                        .get("adjacent_luxury_gold")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("cartography"))
+                {
+                    yields.gold += luxury
+                        * effects
+                            .get("adjacent_luxury_gold_after_cartography")
+                            .copied()
+                            .unwrap_or(0.0);
+                }
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("civil_service"))
+                {
+                    yields.production += effects
+                        .get("production_after_civil_service")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
             Some("rock_hewn_church") => {
                 let effects = &self.rules.improvements["rock_hewn_church"].effects;
                 yields.faith += self
@@ -34061,6 +34217,21 @@ impl Game {
                 && self.nbrs(pos).iter().any(|neighbor| {
                     self.map.tiles[neighbor].improvement.as_deref() == Some(name.as_str())
                 });
+            let adjacent_resource_class_invalid = !spec
+                .requires_adjacent_resource_classes
+                .is_empty()
+                && !self.nbrs(pos).iter().any(|neighbor| {
+                    self.map.tiles[neighbor]
+                        .resource
+                        .as_ref()
+                        .filter(|resource| self.resource_visible_to(pid, resource))
+                        .and_then(|resource| self.rules.resources.get(resource.as_str()))
+                        .is_some_and(|resource| {
+                            spec.requires_adjacent_resource_classes
+                                .iter()
+                                .any(|class| class == &resource.class)
+                        })
+                });
             // Civ 6 sites an improvement through any one of three routes —
             // a valid terrain, a valid feature, or a valid resource. Farms
             // stand on grassland OR on desert floodplains OR on wheat;
@@ -34113,6 +34284,7 @@ impl Game {
                 || (!sited && !seaside_volcanic)
                 || seaside_invalid
                 || same_adjacent_invalid
+                || adjacent_resource_class_invalid
             {
                 continue;
             }

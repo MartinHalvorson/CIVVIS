@@ -93,6 +93,36 @@
    "housing_after_cultural_heritage": 1
   }
  },
+ "mekewap": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
+  "tech": "pottery",
+  "unique_to": "Cree",
+  "same_adjacent_valid": false,
+  "yields": {
+   "production": 1
+  },
+  "housing": 1,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "requires_adjacent_resource_classes": [
+   "bonus",
+   "luxury"
+  ],
+  "effects": {
+   "adjacent_luxury_gold": 1,
+   "adjacent_bonus_pair_food": 1,
+   "production_after_civil_service": 1,
+   "housing_after_civil_service": 1,
+   "adjacent_bonus_food_after_conservation": 1,
+   "adjacent_luxury_gold_after_cartography": 2
+  }
+ },
  "mine": {
   "plunder_type": "gold",
   "plunder_amount": 50,
