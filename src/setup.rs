@@ -4,7 +4,6 @@
 //! city-state defaults, religion limits, and observation metadata all consume
 //! the same profile instead of maintaining subtly different tables.
 
-use crate::name::Name;
 use serde::ser::{SerializeStruct, Serializer};
 use serde::{Deserialize, Serialize};
 
