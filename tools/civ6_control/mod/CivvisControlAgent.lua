@@ -499,6 +499,17 @@ local function unitBaseType(name)
 	return try(function() return replaces.ReplacesUnitType; end);
 end
 
+-- A STANDALONE unique has no UnitReplaces row at all — Malón Raider, Varu,
+-- Nihang — so `base` comes back nil and the mirror used to drop the unit
+-- entirely. Its PromotionClass is still in the shipped database, and class is
+-- enough for the mirror to land it as something true rather than nothing.
+local function unitClass(name)
+	if name == nil or name == "" then return nil; end
+	local row = try(function() return GameInfo.Units[name]; end);
+	if row == nil then return nil; end
+	return try(function() return row.PromotionClass; end);
+end
+
 
 -- ⚠⚠ THE pcall GOES INSIDE THE LOOP.
 --
@@ -4064,6 +4075,8 @@ local function exportState(player, pid, turn)
 			kind = name,
 			-- See `unitBaseType`: what this replaces, when it is a civ unique.
 			base = unitBaseType(name),
+			-- See `unitClass`: the fallback for a unique that replaces nothing.
+			class = unitClass(name),
 			x = try(function() return unit:GetX(); end, -1),
 			y = try(function() return unit:GetY(); end, -1),
 			hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
@@ -4167,6 +4180,7 @@ local function exportState(player, pid, turn)
 							theirUnits[#theirUnits + 1] = {
 								x = ux, y = uy, kind = name,
 								base = unitBaseType(name),
+								class = unitClass(name),
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								combat = row ~= nil and (row.Combat or 0) or 0,
 								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
