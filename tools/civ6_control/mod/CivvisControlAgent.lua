@@ -2598,10 +2598,44 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	if not devFirst then pushDevelop(); end
 	-- Always-available floor. A city with an empty queue and nothing it can
 	-- build is a permanent end-turn blocker; a project never is.
-	for _, name in ipairs({ "PROJECT_CAMPUS_RESEARCH_GRANT", "UNIT_WARRIOR",
-	                        "UNIT_BUILDER", "UNIT_SLINGER" }) do
+	--
+	-- ★★★★★ AND IT DEGENERATED INTO A BUILDER FACTORY. Measured on run
+	-- `civvis-20260801T065721Z`, which lost all six cities and the game:
+	--
+	--     floor:   UNIT_BUILDER 33      <-- and NOTHING else, all game
+	--     improve: UNIT_BUILDER 9
+	--
+	-- Forty-four builders for a six-city empire that wanted five
+	-- (`BuilderPerCity` 0.8). The floor reached its FIRST TWO entries zero times:
+	-- `PROJECT_CAMPUS_RESEARCH_GRANT` needs a Campus in THAT city and most cities
+	-- had none, and `UNIT_WARRIOR` and `UNIT_SLINGER` go OBSOLETE mid-game and stop
+	-- being buildable at all. `UNIT_BUILDER` never obsoletes, so as the eras pass
+	-- every fallback above it evaporates and the floor becomes "build a builder,
+	-- forever" -- including on the turns a war was being lost.
+	--
+	-- ⚠ Same class as the army cap one screen up: correct in the Ancient era and
+	-- silently wrong later. When a list is a fallback, check what remains PLAYABLE
+	-- at turn 150, not what is playable at turn 1.
+	--
+	-- The melee ladder goes in above the builder so the floor stays non-degenerate:
+	-- these are the units the army block already prefers, and `playable` drops the
+	-- obsolete ones, so the first still-buildable tier wins.
+	for _, name in ipairs({ "PROJECT_CAMPUS_RESEARCH_GRANT",
+	                        "UNIT_SWORDSMAN", "UNIT_SPEARMAN", "UNIT_WARRIOR",
+	                        "UNIT_ARCHER", "UNIT_SLINGER" }) do
 		ladder[#ladder + 1] = { name, "floor" };
 	end
+	-- Gated exactly like the `improve` rung, which was the only thing holding the
+	-- builder count down and which the floor bypassed entirely.
+	if counts.builder < math.max(1, nCities * (cfg.BuilderPerCity or 0.8)) then
+		ladder[#ladder + 1] = { "UNIT_BUILDER", "floor" };
+	end
+	-- ⚠ LAST RESORT, deliberately ungated. Everything above can be unplayable --
+	-- no Campus, every military tier obsolete or missing its strategic resource --
+	-- and a city with nothing queued blocks the turn permanently, which is worse
+	-- than a surplus builder. This is the guarantee the original list existed for;
+	-- what changed is that it is now the last line rather than the fourth.
+	ladder[#ladder + 1] = { "UNIT_BUILDER", "floor" };
 
 	-- CIVVIS FIRST. Its choice for this city, this turn, gated by the same `playable`
 	-- the ladder uses — so an item the engine will not start still falls through to
