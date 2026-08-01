@@ -213,9 +213,11 @@ fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, us
         let Some(person) = &unit.great_person else {
             continue;
         };
-        if person.charges <= 0 {
-            continue;
-        }
+        // Firaxis's GetActionCharges is not the activation authority for every
+        // class. Great Writers report zero while CanStartCommand is true and
+        // still have works to create. Trust the host's command verdict first;
+        // the old charge gate left Qu Yuan in the capital for 76 turns and let
+        // a second Writer stack on top of him.
         if person.can_activate {
             orders.push(Order {
                 kind: "unit",
@@ -228,6 +230,10 @@ fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, us
         let target = person
             .activation_plots
             .iter()
+            // Already standing on an activation plot but unable to activate
+            // means another prerequisite (usually a free Great Work slot) is
+            // missing. MOVE_TO the same tile cannot change that state.
+            .filter(|plot| plot.distance > 0)
             .min_by_key(|plot| (plot.distance, plot.y, plot.x));
         if let Some(target) = target {
             orders.push(Order {
@@ -241,6 +247,41 @@ fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, us
         }
     }
     (orders, waiting_without_target)
+}
+
+/// Do not invalidate an accepted Great Person action later in the same Lua batch.
+///
+/// Firaxis queues unit operations. `CanStartCommand` can therefore approve a Great
+/// Person retirement and a later move onto that person's hex even though the move
+/// will make the retirement illegal by the time the engine resolves it. Hanno the
+/// Navigator hit this exact race three times while a Galley oscillated through his
+/// Harbor. Reserve the observed activation hex for this frame and let those moves
+/// be reconsidered from the next exported state.
+fn defer_great_person_plot_conflicts(
+    orders: Vec<Order>,
+    state: &civvis::mirror::StateSnapshot,
+) -> (Vec<Order>, usize) {
+    let active_people = state
+        .units
+        .iter()
+        .filter(|unit| unit.great_person.as_ref().is_some_and(|person| person.can_activate))
+        .map(|unit| (unit.id, (unit.x, unit.y)))
+        .collect::<Vec<_>>();
+    let mut deferred = 0;
+    let orders = orders
+        .into_iter()
+        .filter(|order| {
+            let conflicts = order.kind == "unit"
+                && active_people.iter().any(|(person, pos)| {
+                    order.subject != Some(*person) && order.pos == Some(*pos)
+                });
+            if conflicts {
+                deferred += 1;
+            }
+            !conflicts
+        })
+        .collect();
+    (orders, deferred)
 }
 
 /// Send the complete post-plan policy set as one host transaction.
@@ -503,6 +544,15 @@ fn decide(
         }
     } else {
         note_bits.push("plan=none".to_string());
+    }
+
+    let (activation_safe, deferred_activation_plot_conflicts) =
+        defer_great_person_plot_conflicts(orders, state);
+    orders = activation_safe;
+    if deferred_activation_plot_conflicts > 0 {
+        note_bits.push(format!(
+            "deferred_activation_plot_conflicts={deferred_activation_plot_conflicts}"
+        ));
     }
 
     let (causally_safe, deferred_unit_followups) = defer_unit_followups(orders);
@@ -1439,7 +1489,7 @@ mod tests {
                     id: 70,
                     kind: "UNIT_GREAT_SCIENTIST".to_string(),
                     great_person: Some(StateGreatPerson {
-                        charges: 1,
+                        charges: 0,
                         can_activate: true,
                         ..StateGreatPerson::default()
                     }),
@@ -1479,6 +1529,80 @@ mod tests {
         assert_eq!(orders[1].subject, Some(71));
         assert_eq!(orders[1].verb.as_deref(), Some("MOVE_TO"));
         assert_eq!(orders[1].pos, Some((11, 12)));
+    }
+
+    #[test]
+    fn great_person_already_on_an_unusable_activation_plot_waits() {
+        let state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 72,
+                kind: "UNIT_GREAT_WRITER".to_string(),
+                great_person: Some(StateGreatPerson {
+                    charges: 0,
+                    can_activate: false,
+                    activation_plots: vec![StateActivationPlot {
+                        x: 11,
+                        y: 12,
+                        distance: 0,
+                    }],
+                    ..StateGreatPerson::default()
+                }),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let (orders, waiting) = great_person_orders(&state);
+
+        assert!(orders.is_empty());
+        assert_eq!(waiting, 1);
+    }
+
+    #[test]
+    fn great_person_activation_reserves_its_hex_for_the_firaxis_batch() {
+        let state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 72,
+                kind: "UNIT_GREAT_ADMIRAL".to_string(),
+                x: 68,
+                y: 27,
+                great_person: Some(StateGreatPerson {
+                    charges: 1,
+                    can_activate: true,
+                    ..StateGreatPerson::default()
+                }),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let (orders, deferred) = defer_great_person_plot_conflicts(
+            vec![
+                Order {
+                    kind: "unit",
+                    subject: Some(10),
+                    verb: Some("MOVE_TO".to_string()),
+                    pos: Some((68, 27)),
+                },
+                Order {
+                    kind: "unit",
+                    subject: Some(72),
+                    verb: Some("ACTIVATE_GREAT_PERSON".to_string()),
+                    pos: None,
+                },
+                Order {
+                    kind: "unit",
+                    subject: Some(11),
+                    verb: Some("MOVE_TO".to_string()),
+                    pos: Some((69, 27)),
+                },
+            ],
+            &state,
+        );
+
+        assert_eq!(deferred, 1);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].subject, Some(72));
+        assert_eq!(orders[1].subject, Some(11));
     }
 
     #[test]
