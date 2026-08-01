@@ -25,7 +25,6 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-use crate::name::Name;
 use crate::ai::{run_game, AdvancedAi, Ai, VictoryTarget, Weights};
 use crate::game::{default_speed, Game, GameOptions};
 use crate::rng::Rng;
