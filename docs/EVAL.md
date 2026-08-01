@@ -14,7 +14,7 @@ and seed set.
 
 ```bash
 civvis soak --games 12 --players 4 --turns 350 --start-seed 100
-civvis tournament --ais advanced-20260731-settlement=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random \
+civvis tournament --ais advanced-20260801-diplomacy=advanced,advanced_v1,basic-20260801-diplomacy=basic,random-20260730=random \
   --games 40 --players 4 --quiet
 victory_eval --games 2 --players 2       # all six targets, stock turn limits
 ai_eval advanced basic --pairs 100 --seed 4000   # paired, low-variance
@@ -7162,3 +7162,22 @@ This is evaluation integrity, not a gameplay-strength result. It changes no
 production controller or committed snapshot. Any candidate that clears it still
 requires a separately pre-registered `ai_eval` promotion matrix on the
 controller that would ship.
+
+## 2026-08-01 — protocol-v4 intergovernment-diplomacy baseline
+
+Delegations, Resident Embassies, Defensive Pacts, Joint Wars, promises, and
+demands now make live decisions in the shared `BasicAi`/`AdvancedAi` diplomacy
+paths. `advanced_v1` shares that path, so the complete protocol-v3 ledger is
+preserved read-only at `data/elo_ratings_v3.json` and a fresh protocol-v4
+ledger replaces the default; the two experiments must not be mixed.
+
+```sh
+cargo run --profile ci --locked --bin civvis -- tournament --games 40 --players 4 --quiet --jobs 8
+```
+
+The fresh, replay-verified 40-game Standard/Pangaea baseline rates
+`advanced-20260801-diplomacy` at 1609.8 online Elo and 1663.6 direct Elo
+against `advanced_v1`, from a 29/40 pair score (72.5%, 95% Wilson 57.2–83.9%).
+`basic-20260801-diplomacy` is a new identity because the same diplomacy path
+changes Basic behavior. This records a new controller definition, not an
+effect-size claim for the mechanic.
