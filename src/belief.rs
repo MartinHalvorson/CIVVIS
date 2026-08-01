@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 
 use crate::game::Game;
 use crate::obs::visibility;
+use crate::world::TileBits;
 use crate::Pos;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -156,11 +157,27 @@ impl BeliefState {
         radius: i32,
         horizon: u32,
     ) -> f64 {
-        let (vis, _) = visibility(g, pid);
+        let visible = g.player_vision_now(pid);
+        self.remembered_hidden_military_threat_in_view(g, pid, &visible, at, radius, horizon)
+    }
+
+    /// As [`Self::remembered_hidden_military_threat`], but using an already
+    /// captured visibility frame.  A turn-level planner can retain this frame
+    /// so a movement action does not retroactively alter which sightings were
+    /// hidden when the plan was formed.
+    pub fn remembered_hidden_military_threat_in_view(
+        &self,
+        g: &Game,
+        pid: usize,
+        visible: &TileBits,
+        at: Pos,
+        radius: i32,
+        horizon: u32,
+    ) -> f64 {
         self.units
             .values()
             .filter(|sighting| sighting.owner != pid && g.is_at_war(pid, sighting.owner))
-            .filter(|sighting| !vis.contains(&sighting.pos))
+            .filter(|sighting| !g.sees(visible, sighting.pos))
             .filter(|sighting| {
                 g.rules
                     .units
