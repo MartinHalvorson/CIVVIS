@@ -274,6 +274,13 @@ fn decide(
     if !mirror_state.unmapped.is_empty() {
         note_bits.push(format!("unmapped: {}", mirror_state.unmapped.join(",")));
     }
+    // ★★★★ HOW FAR OFF THE RECONSTRUCTED ECONOMY IS. The board is openly partial and
+    // nothing has ever said by how much; research valuations are spent in these units,
+    // so a rate half again too fast makes an unaffordable plan look affordable.
+    // Reported, never injected — see `mirror::economy_drift`.
+    if let Some(drift) = civvis::mirror::economy_drift(&mirror_state.game, state) {
+        note_bits.push(drift);
+    }
     // ★★★★★ UNITS THE EXPORT NAMED THAT NEVER REACHED THE BOARD. A unit CIVVIS cannot
     // see gets no order and stands where it was built for the rest of the game — the
     // "units stacking up in the capital" the operator reported, arriving by a route
