@@ -423,3 +423,26 @@ largest remaining decision risk rather than by how local the next code edit is:
 This supersedes the ordering immediately above: evaluator trust comes first,
 and the now-resolved policy/envoy prefixes justify one bounded composite before
 broader search.
+
+## 2026-08-01 settlement-site intelligence
+
+The shared production `AdvancedAi` path now prices the city a settler is trying
+to reach rather than treating every legal plot as an interchangeable founding
+opportunity. The default scorer gives early ring-one food extra weight,
+explicitly rewards freshwater, keeps production and resource value, and looks
+ahead to the strongest Campus, Industrial Zone, Commercial Hub, Harbor, Holy
+Site, and Theater Square adjacency opportunities around the prospective center.
+
+It also subtracts known operational risk: visible military attack envelopes,
+nearby visible enemy cities and barbarian camps, isolation from the existing
+empire, and the movement cost and visible threat exposure of the actual route.
+Settlers refuse a visible direct attack tile, try a lower-risk progress step,
+and re-plan rather than founding on a newly exposed tile. The behavior is on
+for `advanced`, weighted/targeted Advanced variants, and the StrategicAi
+controllers through their shared constructor; the historical `legacy` control
+keeps the old score.
+
+This closes the local site-selection and transit-safety gap. The larger
+**full expansion investment** gap remains: production, population cost, escort
+availability, travel, founding, and city payback still need a coupled
+long-horizon search before expansion can claim a complete economic solution.
