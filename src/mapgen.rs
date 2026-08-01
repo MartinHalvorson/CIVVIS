@@ -2420,6 +2420,10 @@ pub fn generate_with_script(
         );
     }
     classify_lakes(&mut wm);
+    // Every later pass reads river adjacency from the finished river network.
+    // In particular, floodplains are placed only after any edge that became a
+    // water boundary has been removed, so they cannot outlive their river.
+    remove_water_boundary_rivers(&mut wm);
     let land_list: Vec<Pos> = land.iter().cloned().collect();
 
     // --- tribal villages (goody huts), roughly 1 per 40 land tiles
@@ -3235,7 +3239,6 @@ pub fn generate_with_script(
     // draws from the stream, so a world that needed no top-up is unmoved.
     place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &occupied, rng);
     place_artifact_quotas(rules, &mut wm, num_major_spawns, &occupied, rng);
-    remove_water_boundary_rivers(&mut wm);
     (wm, spawns)
 }
 
@@ -3712,7 +3715,8 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
                 continue;
             }
 
-            // Every desert tile on a river floods, as in the stock generator.
+            // Every desert tile bordering a river floods, as in the stock
+            // generator.
             // 🟡 The Grassland and Plains variants stand in for river size,
             // which this generator does not model.
             if river {
@@ -7809,6 +7813,33 @@ mod river_tests {
         }
     }
 
+    #[test]
+    fn generated_floodplains_always_border_a_river() {
+        let rules = Rules::embedded();
+        for (index, script) in ROLLED_TYPES
+            .into_iter()
+            .chain(std::iter::once(MapScript::TrueStartEarth))
+            .enumerate()
+        {
+            let mut rng = Rng::new(73_200 + index as u64);
+            let (world, _) = generate_with_script(
+                &rules, 42, 28, 4, 5, 2, 3, script, FLAT, POLED, &mut rng,
+            );
+            for (position, tile) in &world.tiles {
+                if matches!(
+                    tile.feature.as_deref(),
+                    Some("floodplains" | "grassland_floodplains" | "plains_floodplains")
+                ) {
+                    assert!(
+                        tile.has_river(),
+                        "{script:?} placed {} at {position:?} without a bordering river",
+                        tile.feature.as_deref().unwrap(),
+                    );
+                }
+            }
+        }
+    }
+
     /// A hex corner, named by the three tiles that meet there. Reading a
     /// finished river back as a graph on corners is what makes its shape
     /// checkable: a segment is an edge of that graph, a headwater or a mouth is
@@ -9253,6 +9284,4 @@ mod start_bias_tests {
             .is_empty());
     }
 }
-
-
 
