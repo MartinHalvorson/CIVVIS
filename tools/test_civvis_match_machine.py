@@ -6,7 +6,9 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 
 MODULE_PATH = Path(__file__).with_name("civvis_match_machine.py")
@@ -71,6 +73,37 @@ class MatchMachineTests(unittest.TestCase):
             machine.atomic_json(target, {"active": 8})
             self.assertEqual(json.loads(target.read_text()), {"active": 8})
             self.assertFalse(target.with_suffix(".json.tmp").exists())
+
+    def test_game_lifecycle_events_do_not_collide_with_event_kind(self):
+        with tempfile.TemporaryDirectory() as directory:
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.args = SimpleNamespace(port=8870)
+            subject.binary = Path("/tmp/civvis")
+            subject.league = Path(directory) / "league"
+            subject.logs = Path(directory) / "logs"
+            subject.logs.mkdir()
+            subject.current_revision = "abc123"
+            subject.next_seed = 100
+            subject.games = []
+            subject.visible_started = False
+            subject.visible_completed = False
+            subject.completed = 0
+            subject.failed = 0
+            events = []
+            subject.event = lambda kind, **values: events.append((kind, values))
+            process = mock.Mock(pid=1234)
+
+            with mock.patch.object(machine.subprocess, "Popen", return_value=process):
+                subject.launch(visible=True)
+            with mock.patch.object(machine, "stop_process"), mock.patch.object(
+                machine, "match_row", return_value={"seed": "100"}
+            ):
+                subject.finish(subject.games[0], failed=False, reason="winner recorded")
+
+            self.assertEqual(events[0][0], "game_started")
+            self.assertEqual(events[0][1]["game_kind"], "visible")
+            self.assertEqual(events[1][0], "game_completed")
+            self.assertEqual(events[1][1]["game_kind"], "visible")
 
 
 if __name__ == "__main__":
