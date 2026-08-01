@@ -123,7 +123,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `ai_eval advanced_v1 basic --pairs 10 --jobs 1 --seed 31337 --players 4
 /// --turns 200 --deployment-comparison` reports. This is a compatibility
 /// re-pin, not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb71f_eabf_d699_cd32;
+///
+/// #757 filters only the production controller's coordinated tactical threat
+/// score behind `battlefront_observation`; `AdvancedAi::legacy()` keeps that
+/// gate off. Clean `1c93908` and candidate release reports from the same
+/// 10-map deployment comparison were byte-identical after Cargo's build
+/// prelude (SHA-256
+/// `e37ae6f3014c6f13c75ef964027e7b57f5e57e9289f0fdb36cae80f5bb863341`).
+/// This is a compatibility re-pin, not an Elo protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x53cb_33c0_1174_715c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
