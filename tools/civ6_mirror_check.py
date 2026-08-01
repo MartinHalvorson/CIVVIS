@@ -85,6 +85,34 @@ def civ6_map_script(value):
     return {"smallcontinents": "small_continents"}.get(value, value)
 
 
+def production_item_name(value):
+    """Normalize a live Civ VI production type to CIVVIS's queue vocabulary."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    for prefix, kind in (
+        ("UNIT_", "unit"),
+        ("BUILDING_", "building"),
+        ("DISTRICT_", "district"),
+        ("WONDER_", "wonder"),
+        ("PROJECT_", "project"),
+        ("PRODUCT_", "product"),
+    ):
+        if value.upper().startswith(prefix):
+            return kind, civ6_id(value, prefix)
+    return None
+
+
+def queue_item_name(item):
+    """Return the meaningful queue kind/name while ignoring placement metadata."""
+    if not isinstance(item, dict):
+        return None
+    for kind in ("unit", "building", "district", "wonder", "project", "product"):
+        value = item.get(kind)
+        if isinstance(value, str) and value:
+            return kind, value.lower()
+    return None
+
+
 def latest_seat(run):
     """The latest startup seat event, which carries setup outside state patches."""
     latest = None
@@ -297,6 +325,45 @@ def main():
         problems.append("cities")
     print(f"CITIES   export {len(civ6_cities)}  board {len(board_cities)}"
           + (f"   ⚠ MISSING {sorted(missing_cities)}" if missing_cities else "   OK"))
+
+    # --- production: an in-progress city must not read as idle -------------
+    # A completed item used to stay in the mirror queue, then a new real item
+    # appeared as the old one. Compare production on the same state boundary as
+    # cities and units so normal turn advancement cannot look like a phantom.
+    board_city_by_pos = {
+        tuple(city["pos"]): city for city in board.get("cities", [])
+        if city.get("owner") == board.get("view_player", 0)
+    }
+    production_mismatches, unmapped_production, checked_production = [], [], 0
+    for city in state.get("cities") or []:
+        pos = axial(city.get("x", 0), best - city.get("y", 0))
+        board_city = board_city_by_pos.get(pos)
+        if board_city is None:
+            # The city assertion above names this loss more clearly.
+            continue
+        raw = city.get("producing")
+        expected = production_item_name(raw)
+        if raw is not None and expected is None:
+            unmapped_production.append(f"{city.get('name', '?')}={raw!r}")
+            continue
+        checked_production += 1
+        queue = list(board_city.get("queue") or [])
+        actual = queue_item_name(queue[0]) if queue else None
+        valid = actual == expected and (not queue if expected is None else len(queue) == 1)
+        if not valid:
+            production_mismatches.append(
+                f"{city.get('name', '?')} Civ6={expected or 'idle'} "
+                f"CIVVIS={actual or 'idle'}"
+            )
+    if production_mismatches or unmapped_production:
+        problems.append("production")
+    detail = []
+    if production_mismatches:
+        detail.append("MISMATCH " + "; ".join(production_mismatches))
+    if unmapped_production:
+        detail.append("UNMAPPED " + "; ".join(unmapped_production))
+    print(f"PRODUCTION export {checked_production} city queues"
+          + (f"   ⚠ {'; '.join(detail)}" if detail else "   OK"))
 
     # ⚠ Name what is missing, do not just count it. A bare "1 dropped" sends the
     # reader to the wrong place; the position and type say immediately whether it is

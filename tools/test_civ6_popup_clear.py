@@ -35,6 +35,23 @@ class PopupClearTest(unittest.TestCase):
         self.assertLess(targets[0][0], targets[1][0])
         self.assertEqual(popup_clear.click_target(kind, targets, image.width), targets[0])
 
+    def test_dark_world_congress_advisor_beats_generic_leader_detection(self) -> None:
+        # The World Congress introduction leaves a broadly dark panel behind a
+        # standard advisor card. Its actual Continue control is safe to press,
+        # but checking darkness first used to misclassify it as a leader scene
+        # and leave the live game blocked.
+        image = Image.new("RGB", (1000, 600), (12, 12, 12))
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((330, 40, 670, 245), fill=(225, 221, 202))
+        draw.rectangle((405, 181, 505, 206), fill=(32, 86, 148))
+
+        kind, targets, dark = popup_clear.classify(image)
+
+        self.assertGreater(dark, popup_clear.LEADER_DARK_FRACTION)
+        self.assertEqual(kind, "advisor")
+        self.assertEqual(len(targets), 1)
+        self.assertEqual(popup_clear.click_target(kind, targets, image.width), targets[0])
+
     def test_advisor_right_side_only_action_is_never_clicked(self) -> None:
         image = Image.new("RGB", (1000, 600), (99, 95, 62))
         draw = ImageDraw.Draw(image)

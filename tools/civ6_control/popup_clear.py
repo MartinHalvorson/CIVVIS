@@ -404,19 +404,24 @@ def classify(window):
     if congress:
         return "congress", [congress], dark
 
-    if dark > LEADER_DARK_FRACTION:
-        return "leader", dialogue_buttons(grey, box), dark
-
     governor = governor_close(window)
     if governor:
         return "governor", [governor], dark
 
     # A confirmed advisor panel is more specific than a red cluster on the map.
+    # Do this before the broad dark leader-scene fallback as well. The World
+    # Congress introduction keeps the panel behind its advisor card dark enough
+    # to resemble a leader scene, but its centered blue Continue control and
+    # bright paper panel are the stronger, safely actionable signal.
+    #
     # Do this before looking for a completion-card close button: barbarians and
     # danger pins can otherwise make an advisor appear to be an unsafe card.
     advisor = advisor_buttons(window, grey)
     if advisor:
         return "advisor", advisor, dark
+
+    if dark > LEADER_DARK_FRACTION:
+        return "leader", dialogue_buttons(grey, box), dark
 
     # A card popup leaves the map showing, so it is found by its close button.
     #

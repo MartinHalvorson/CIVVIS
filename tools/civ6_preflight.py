@@ -128,6 +128,16 @@ def check_python(report: Report) -> None:
         report.ok("all civ6_*.py parse")
 
 
+def installed_source_matches(live: bytes, source: bytes) -> bool:
+    """Accept an installer-generated settings prelude before the source Lua.
+
+    ``install.py`` bakes one run's settings into each installed script, then
+    appends the worktree file byte-for-byte. Comparing whole files therefore
+    reported a stale installed module even immediately after a correct sync.
+    """
+    return live == source or live.endswith(source)
+
+
 def check_installed(report: Report) -> None:
     """The installed mod is a COPY. Compare it against the worktree."""
     print("installed mod")
@@ -138,13 +148,13 @@ def check_installed(report: Report) -> None:
         live = INSTALLED / path.name
         if not live.exists():
             report.fail(path.name, "not installed")
-        elif live.read_bytes() != path.read_bytes():
+        elif not installed_source_matches(live.read_bytes(), path.read_bytes()):
             # Not a failure: the harness re-syncs at attempt start, so a difference
             # before a run is normal. It is only fatal if someone is reading the
             # installed copy expecting it to be current.
-            report.warn(path.name, "installed copy differs; harness syncs at attempt start")
+            report.warn(path.name, "installed source differs; harness syncs at attempt start")
         else:
-            report.ok(path.name, "matches worktree")
+            report.ok(path.name, "matches worktree source")
 
 
 def check_host(report: Report) -> None:

@@ -22,6 +22,17 @@ class MirrorCheckTest(unittest.TestCase):
         self.assertEqual(civ6_mirror_check.civ6_map_script("SmallContinents.lua"),
                          "small_continents")
 
+    def test_production_identifiers_match_civvis_queue_items(self) -> None:
+        self.assertEqual(civ6_mirror_check.production_item_name("UNIT_BUILDER"),
+                         ("unit", "builder"))
+        self.assertEqual(civ6_mirror_check.production_item_name("BUILDING_MONUMENT"),
+                         ("building", "monument"))
+        self.assertEqual(civ6_mirror_check.production_item_name("DISTRICT_CAMPUS"),
+                         ("district", "campus"))
+        self.assertEqual(civ6_mirror_check.production_item_name(None), None)
+        self.assertEqual(civ6_mirror_check.queue_item_name({"district": "campus", "pos": [2, 3]}),
+                         ("district", "campus"))
+
     def test_state_selection_does_not_compare_a_future_turn_to_the_board(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             events = Path(temporary) / "events.jsonl"
