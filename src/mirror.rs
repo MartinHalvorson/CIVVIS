@@ -641,6 +641,89 @@ mod tests {
     /// tiles carried a continent and 576 carried none — the generated world's regions
     /// showing through on a map where every land plot really has one.
     #[test]
+    /// ★★★★ A card the host has retired must stop being offered.
+    ///
+    /// `POLICY_ILKUM` was chosen and refused **105 times** on live run
+    /// `civvis-20260801T012454Z` — Civilization VI answered `IsPolicyObsolete` every
+    /// time and said so in the refusal reason, and nothing read it.
+    ///
+    /// ⚠ Asserted through `available_policies`, not against `blocked_policies`. That
+    /// is the single chokepoint the AI, the observation and `legal_actions` all pass
+    /// through, and a test that only checked the field would pass on a set nothing
+    /// consults — which is exactly how a populated-but-inert value survives here.
+    #[test]
+    fn a_card_the_host_retired_stops_being_offered() {
+        let mut game = crate::game::Game::new(4, 20, 20, 7, 500, 0);
+        // A fresh seat has no civics, so nothing is unlocked yet. Craftsmanship is
+        // what the ruleset's own policy test uses to put cards in hand.
+        game.players[0].civics.insert(Name::new("craftsmanship"));
+        let offered = game.available_policies(0);
+        let victim = offered
+            .first()
+            .cloned()
+            .expect("craftsmanship must put at least one card on offer");
+        assert!(
+            game.available_policies(0).contains(&victim),
+            "precondition: the card is on offer before the host retires it"
+        );
+
+        game.blocked_policies.insert(victim.clone());
+        assert!(
+            !game.available_policies(0).contains(&victim),
+            "a card the host ruleset retired must not be offered again — this is the \
+             105 ILKUM refusals"
+        );
+        assert_eq!(
+            game.available_policies(0).len(),
+            offered.len() - 1,
+            "and only that card is withdrawn; blocking one must not empty the hand"
+        );
+    }
+
+    /// The retired cards are already in the stream — no new mod event was needed.
+    #[test]
+    fn the_hosts_retired_cards_are_read_from_the_refusals_it_already_writes() {
+        let dir = std::env::temp_dir().join(format!("civvis-policy-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("events.jsonl");
+        // Shaped exactly like the live stream: reasons keyed in `refusals`, repeated
+        // across turns, mixed with reasons that are not policies at all.
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"kind":"orders","turn":40,"refusals":{"obsolete_POLICY_ILKUM":1,"MOVE_TO":4}}"#,
+                "\n",
+                r#"{"kind":"orders","turn":41,"refusals":{"obsolete_POLICY_ILKUM":1,"no_params":2}}"#,
+                "\n",
+                r#"{"kind":"orders","turn":42,"refusals":{"obsolete_POLICY_NOT_A_REAL_CARD":1}}"#,
+                "\n",
+            ),
+        )
+        .expect("write events");
+
+        let names = refused_policies(&path);
+        assert!(
+            names.contains("POLICY_ILKUM"),
+            "the reason the agent already writes is the whole source"
+        );
+        assert_eq!(names.len(), 2, "each distinct card once, however many turns it spans");
+
+        let rules = crate::rules::Rules::embedded();
+        let blocked = blocked_policies_from(&names, &rules);
+        assert!(
+            blocked.contains(&Name::new("ilkum")),
+            "and it translates through the shipped policy table"
+        );
+        assert_eq!(
+            blocked.len(),
+            1,
+            "a card CIVVIS does not model is DROPPED, not inserted under a name that \
+             matches nothing — a blocked set full of unmatched names looks populated \
+             and filters nothing"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     fn the_landmass_is_civ6s_and_the_generated_cliffs_are_gone() {
         let mut home = plot(5, 5, "TERRAIN_GRASS");
         home.ct = Some("CONTINENT_AFRICA".to_string());
@@ -1911,6 +1994,11 @@ pub struct StateSnapshot {
     /// Tiles Civilization VI refused to improve, AXIAL, from `improve_refused`.
     #[serde(default)]
     pub refused_improves: std::collections::BTreeSet<crate::Pos>,
+    /// Policy cards Civilization VI has retired, as its OWN names, harvested from the
+    /// `obsolete_<POLICY>` refusal reasons already in the stream. Translated where the
+    /// ruleset is in hand; see [`refused_policies`].
+    #[serde(default)]
+    pub refused_policy_names: std::collections::BTreeSet<String>,
     /// Barbarian units this seat can SEE.
     ///
     /// ★★★★ The rival export is built from `GetAliveMajorIDs`, so barbarians could
@@ -2069,10 +2157,27 @@ pub fn state_from_events(
     if let Some(state) = best.as_mut() {
         state.refused_sites = refused_city_sites(path);
         state.refused_improves = refused_improve_sites(path);
+        state.refused_policy_names = refused_policies(path);
     }
     best
 }
 
+
+/// The host's retired cards as CIVVIS spells them, dropping any it does not model.
+///
+/// Split out because both the rebuild and every `sync` need it and neither may guess
+/// at a name: an unmatched entry in `blocked_policies` filters nothing while making
+/// the set look populated.
+fn blocked_policies_from(
+    names: &std::collections::BTreeSet<String>,
+    rules: &crate::rules::Rules,
+) -> std::collections::BTreeSet<Name> {
+    names
+        .iter()
+        .filter_map(|civ6| civvis_node_name(&rules.policies, civ6, "POLICY_"))
+        .map(|name| Name::new(&name))
+        .collect()
+}
 
 /// Civilization VI's node name as CIVVIS spells it, or None if CIVVIS has no such node.
 ///
@@ -2359,6 +2464,49 @@ pub fn refused_sites_of_kind(
     refused
 }
 
+/// Policy cards the host ruleset has retired, learned from its own refusals.
+///
+/// ★★★★ **NO NEW MOD EVENT WAS NEEDED — THE ANSWER WAS ALREADY IN THE STREAM.**
+/// Every `orders` event carries a `refusals` map keyed by reason, and the agent
+/// already writes `obsolete_<POLICY>` there after asking
+/// `culture:IsPolicyObsolete`. Measured on live run `civvis-20260801T012454Z`:
+/// `obsolete_POLICY_ILKUM` **105**, `DISCIPLINE` 6, `AGOGE` 1 — 112 of 813
+/// refusals, third behind movement and `no_params`. The game said so every time and
+/// nothing read it, so CIVVIS re-derived the same card on almost every turn.
+///
+/// ⚠ Keyed by reason, so the count is per turn and the same card appears in event
+/// after event; a set is the right shape and re-reading the whole file is idempotent.
+///
+/// ⚠ Returns the RAW Civilization VI names. Translation happens where the ruleset is
+/// in hand, through the shipped policy table rather than by string surgery, and a card
+/// CIVVIS does not model is dropped rather than inserted under a name that matches
+/// nothing — a blocked set full of names no filter can match would look populated and
+/// do nothing, which is the failure mode this bridge specialises in.
+pub fn refused_policies(path: &std::path::Path) -> std::collections::BTreeSet<String> {
+    let mut refused: std::collections::BTreeSet<String> = Default::default();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return refused;
+    };
+    for line in raw.lines() {
+        if !line.contains("obsolete_") {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        let Some(reasons) = event.get("refusals").and_then(|r| r.as_object()) else {
+            continue;
+        };
+        for reason in reasons.keys() {
+            let Some(civ6) = reason.strip_prefix("obsolete_") else {
+                continue;
+            };
+            refused.insert(civ6.to_string());
+        }
+    }
+    refused
+}
+
 /// Sites Civilization VI refused to found a city on.
 pub fn refused_city_sites(path: &std::path::Path) -> std::collections::BTreeSet<crate::Pos> {
     refused_sites_of_kind(path, "found_refused")
@@ -2515,6 +2663,7 @@ pub fn rebuild_from_state(
     // them. See `refused_city_sites`.
     game.blocked_city_sites = state.refused_sites.clone();
     game.blocked_improvement_sites = state.refused_improves.clone();
+    game.blocked_policies = blocked_policies_from(&state.refused_policy_names, &game.rules);
 
     // Identity first: city naming reads it, so this cannot wait until after the
     // cities are placed. See `apply_identity`.
@@ -3200,6 +3349,10 @@ impl LiveMirror {
         self.game
             .blocked_improvement_sites
             .extend(state.refused_improves.iter().copied());
+        // Union for the same reason as the two above: a card the host retired stays
+        // retired, and the set is rebuilt from the whole event log each time.
+        let retired = blocked_policies_from(&state.refused_policy_names, &self.game.rules);
+        self.game.blocked_policies.extend(retired);
         // Rivals are met as the game goes on, so identity is not a one-time job at
         // reconstruction: a civilization first seen on turn 90 arrives here.
         apply_identity(&mut self.game, state);
