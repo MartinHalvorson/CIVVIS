@@ -17,7 +17,7 @@ use crate::Pos;
 
 /// Every `Action` discriminant, in a stable order. Appending is safe;
 /// reordering invalidates trained policies.
-pub const KINDS: [&str; 77] = [
+pub const KINDS: [&str; 83] = [
     "move", "move_to", "attack", "ranged", "found_city", "improve",
     "found_corporation", "move_product", "contribute_project",
     "contribute_district", "perform_concert", "pillage", "repair_improvement",
@@ -36,7 +36,8 @@ pub const KINDS: [&str; 77] = [
     "launch_inquisition", "evangelize_belief", "convert_barbarians",
     "city_strike", "wmd_strike", "encampment_strike", "keep_city", "raze_city",
     "liberate_city", "end_turn", "air_pillage", "priority_target", "upgrade",
-    "build_railroad", "buy_plot",
+    "build_railroad", "buy_plot", "send_delegation", "send_embassy",
+    "propose_defensive_pact", "propose_joint_war", "request_promise", "demand_gold",
 ];
 
 /// The original scalar action block. It is kept as an append-only prefix so
@@ -185,6 +186,12 @@ pub fn kind_name(action: &Action) -> &'static str {
         Action::DeclareWarWithCasusBelli { .. } => "declare_war_with_casus_belli",
         Action::MakePeace { .. } => "make_peace",
         Action::Denounce { .. } => "denounce",
+        Action::SendDelegation { .. } => "send_delegation",
+        Action::SendEmbassy { .. } => "send_embassy",
+        Action::ProposeDefensivePact { .. } => "propose_defensive_pact",
+        Action::ProposeJointWar { .. } => "propose_joint_war",
+        Action::RequestPromise { .. } => "request_promise",
+        Action::DemandGold { .. } => "demand_gold",
         Action::ProposeDeal { .. } => "propose_deal",
         Action::AcceptDeal { .. } => "accept_deal",
         Action::RejectDeal { .. } => "reject_deal",

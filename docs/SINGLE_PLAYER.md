@@ -114,7 +114,7 @@ the action from the UI without a debugger.
 | City-states | `send_envoy`, `levy_military` | yes — Empire ▸ City-States |
 | Trade | `trade_route`, `found_corporation`, `move_product` | partial — routes and corporations; `move_product` is still a unit order |
 | Espionage | `assign_spy`, `spy_mission`, `promote_spy` | yes — Empire ▸ Espionage |
-| Diplomacy | `declare_war`, `declare_war_with_casus_belli`, `make_peace`, `denounce`, `propose_deal`, `trade` | yes — Diplomacy screen (`L`), plus Quick Deals |
+| Diplomacy | `declare_war`, `declare_war_with_casus_belli`, `make_peace`, `denounce`, `send_delegation`, `send_embassy`, `propose_defensive_pact`, `propose_joint_war`, `request_promise`, `demand_gold`, `propose_deal`, `trade` | yes — Diplomacy screen (`L`), plus Quick Deals |
 | World Congress | `congress_vote` | yes — Government panel |
 | Ages | `choose_dedication`, `choose_secret_society` | yes — Government panel |
 | Conquest | `keep_city`, `raze_city`, `liberate_city` | yes — modal |
@@ -301,11 +301,16 @@ Two boundaries worth knowing:
 
 Quick Deals compares every trade the rivals would accept at once. The
 Diplomacy screen (`L`) is the other half: one card per leader with their
-agenda, their opinion, the grievances in both directions, and the four things
-you can do that are not a trade — declare war (plain or with a casus belli),
-sue for peace, denounce, and offer a pact. Proposals a rival has put to you
-sit at the top, because they are the only part of the screen with a clock on
-it.
+agenda, directional relationship state, grievances in both directions,
+missions, visibility, and defensive-pact expiry. It exposes Delegations,
+Resident Embassies, promises, Gold demands, Defensive Pacts, Joint Wars,
+denouncements, peace, ordinary deals, and every available casus belli.
+Gold demands appear only when the relationship is unfriendly or either leader
+has denounced the other. A promise appears only after the counterpart has
+settled nearby, converted one of your cities, spied on you, or attacked a
+city-state you suzerain.
+Proposals a rival has put to you sit at the top, because they are the only
+part of the screen with a clock on them.
 
 City-states are listed below the majors with the meters that actually apply to
 them — envoys, suzerain — and their own war and peace. Leaving them out made a
