@@ -365,12 +365,20 @@ def production_health(events: list[dict], builder_per_city: float = 0.8) -> dict
     at_war: set[int] = set()
     last_cities = 0
     peak_cities = 0
+    # ⚠ ALIVE, not built. Civilization VI builders are CONSUMED — three charges and
+    # they vanish — so a cumulative build count is not a stock and must not be judged
+    # against a stock target. Measured: a healthy run built 7 builders over 90 turns
+    # and never had more than TWO alive, which the old check called a 2.9x surplus.
+    peak_builders = 0
     for event in events:
         if event.get("kind") != "state":
             continue
         turn = event.get("turn") or 0
         last_cities = len(event.get("cities") or [])
         peak_cities = max(peak_cities, last_cities)
+        peak_builders = max(peak_builders, sum(
+            1 for unit in (event.get("units") or [])
+            if unit.get("kind") == "UNIT_BUILDER"))
         if any(r.get("at_war") for r in (event.get("rivals") or [])):
             at_war.add(turn)
 
@@ -424,9 +432,11 @@ def production_health(events: list[dict], builder_per_city: float = 0.8) -> dict
         "floor_builds": floor_builds,
         "floor_builder_builds": floor_builders,
         "floor_builder_fraction": (floor_builders / floor_builds) if floor_builds else None,
+        # Kept for context — it is what production SPENT — but never the verdict.
         "builders_built": builders,
         "builder_target": round(target, 1),
-        "builder_overshoot": round(builders / target, 1) if target else None,
+        "peak_builders_alive": peak_builders,
+        "builder_overshoot": round(peak_builders / target, 1) if target else None,
         "peak_cities": peak_cities,
         "war_turns": len(at_war),
         "war_midpoint": war_midpoint,
@@ -617,10 +627,11 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
     over = prod.get("builder_overshoot")
     if over is not None and over >= 2.0:
         out.append(
-            f"BUILDER SURPLUS: {prod['builders_built']} built against a target of "
-            f"{prod['builder_target']} for {prod['peak_cities']} cities ({over}x). "
-            f"Builders are what production falls back to when nothing else is "
-            f"playable, so this counts turns nothing better was chosen.")
+            f"BUILDER SURPLUS: {prod['peak_builders_alive']} builders ALIVE AT ONCE "
+            f"against a target of {prod['builder_target']} for {prod['peak_cities']} "
+            f"cities ({over}x); {prod['builders_built']} built in total. Builders are "
+            f"what production falls back to when nothing else is playable, so a "
+            f"standing surplus counts turns nothing better was chosen.")
     late = prod.get("prod_blocks_after_t100") or 0
     unans = prod.get("prod_blocks_after_t100_unanswered") or 0
     # ⚠ A MINIMUM DENOMINATOR, like every other check here has. Without it a single
