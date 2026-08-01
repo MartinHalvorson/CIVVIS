@@ -91,6 +91,60 @@ class MatchMachineTests(unittest.TestCase):
 
         subject.launch.assert_called_once_with(visible=True)
 
+    def test_fill_slots_replaces_visible_game_while_head_build_is_pending(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = "new-head"
+        subject.build_future = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        subject.games = []
+        subject.launch = mock.Mock()
+
+        subject.fill_slots(machine.Resources(20, 20, 12, 0, False))
+
+        subject.launch.assert_called_once_with(visible=True)
+
+    def test_fill_slots_drains_headless_games_while_head_build_is_pending(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = "new-head"
+        subject.build_future = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        subject.games = [SimpleNamespace(visible=True, paused=False)]
+        subject.launch = mock.Mock()
+
+        subject.fill_slots(machine.Resources(20, 20, 12, 0, False))
+
+        subject.launch.assert_not_called()
+
+    def test_capacity_reserves_cpu_for_background_build(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(limit=70)
+
+        self.assertTrue(
+            subject.capacity_available(
+                machine.Resources(20, 20, 12, 0, False), cpu_reservation=25
+            )
+        )
+        self.assertFalse(
+            subject.capacity_available(
+                machine.Resources(41, 20, 12, 0, False), cpu_reservation=25
+            )
+        )
+
+    def test_completed_background_build_is_activated_on_operator_thread(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        future = machine.Future()
+        promoted = Path("/tmp/civvis-new")
+        future.set_result(promoted)
+        subject.build_future = future
+        subject.build_revision = "new-head"
+        subject.activate_build = mock.Mock()
+
+        subject.poll_head_build(100.0)
+
+        subject.activate_build.assert_called_once_with("new-head", promoted)
+        self.assertIsNone(subject.build_future)
+        self.assertIsNone(subject.build_revision)
+
     def test_fill_slots_resumes_paused_work_before_admitting_a_new_game(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
         subject.pending_revision = None
