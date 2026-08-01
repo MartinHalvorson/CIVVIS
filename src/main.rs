@@ -177,7 +177,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// demand decisions to the shared Basic and Advanced diplomacy paths. The
 /// frozen `advanced_v1` controller invokes that shared path, so the combined
 /// source contract intentionally moves to protocol v4 with a fresh ledger.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfb5d_c726_9658_e590;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdcd4_605a_14f4_be7e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -779,6 +779,12 @@ pub struct AdvancedAi {
     /// 35-37.** Shipped off with the measurement recorded, so the retention
     /// result can be re-derived rather than re-discovered.
     pub defensible_sites: bool,
+    /// Price a settle site's district adjacency potential — what a Campus,
+    /// Commercial Hub or Harbor would earn at its best plot within two rings
+    /// — via `Game::settlement_adjacency_summary`.  Gated so the frozen
+    /// `advanced_v1` rating anchor keeps scoring sites exactly as it always
+    /// has; `promoted_policy_envoy` turns it on for the live controller.
+    pub adjacency_site_planning: bool,
     /// Tell this empire's governors to want food while it is still short of
     /// its city target.
     ///
@@ -1372,6 +1378,7 @@ impl AdvancedAi {
         );
         ai.envoy_infrastructure = true;
         ai.envoy_priority = true;
+        ai.adjacency_site_planning = true;
         ai
     }
 
@@ -1474,6 +1481,7 @@ impl AdvancedAi {
             preempt_margin: 1.0,
             assigned_religion_may_expand: false,
             defensible_sites: false,
+            adjacency_site_planning: false,
             food_first: 0.0,
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
@@ -10486,15 +10494,17 @@ impl AdvancedAi {
         // are built. The cap keeps a freak double-ridge from outbidding
         // food. Everything inside is neighbour-local (radius ≤ 2), so the
         // sphere's ring cache answers without a distance search.
-        let potential = g.settlement_adjacency_summary(pid, pos, 2);
-        value += ((potential.food * 2.0
-            + potential.production * 2.2
-            + potential.gold * 0.7
-            + potential.science * 1.2
-            + potential.culture * 1.2
-            + potential.faith * 0.4)
-            * 0.5)
-            .min(24.0);
+        if self.adjacency_site_planning {
+            let potential = g.settlement_adjacency_summary(pid, pos, 2);
+            value += ((potential.food * 2.0
+                + potential.production * 2.2
+                + potential.gold * 0.7
+                + potential.science * 1.2
+                + potential.culture * 1.2
+                + potential.faith * 0.4)
+                * 0.5)
+                .min(24.0);
+        }
         let enemy_distance = g
             .cities
             .values()
