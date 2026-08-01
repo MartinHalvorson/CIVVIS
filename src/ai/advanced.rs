@@ -3,7 +3,9 @@
 //! `BasicAi` deliberately remains the small deterministic baseline.  This
 //! agent adds a shared strategic model so research, production, diplomacy,
 //! civilian work, and military movement pursue the same medium-term goal.
-use super::{Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, UnitDoctrine, Weights};
+use super::{
+    Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine, Weights,
+};
 use crate::belief::{BeliefState, CitySighting};
 use crate::name::Name;
 use crate::parallel::WorkPool;
@@ -1291,8 +1293,48 @@ impl Default for AdvancedAi {
 }
 
 impl AdvancedAi {
+    /// Production Advanced: the confirmed live-policy and envoy-production
+    /// composite. Keep the three changes together here so every ordinary
+    /// construction path (including weighted and explicitly targeted agents)
+    /// has one auditable definition.
     pub fn new() -> AdvancedAi {
+        Self::promoted_policy_envoy(Weights::default(), None)
+    }
+
+    /// Exact pre-2026-08-01 Advanced configuration used only by evaluator
+    /// controls. It intentionally retains the Legacy deck and leaves both
+    /// envoy-production flags off; it is not the frozen `advanced_v1` anchor.
+    pub(crate) fn pre_policy_envoy() -> AdvancedAi {
         Self::configured(BasicAi::new(), true, None)
+    }
+
+    /// Weighted counterpart to [`Self::pre_policy_envoy`]. Keeping this
+    /// separate prevents an evaluator control from accidentally inheriting
+    /// today's production defaults through [`Self::with_weights`].
+    pub(crate) fn pre_policy_envoy_with_weights(weights: Weights) -> AdvancedAi {
+        Self::configured(BasicAi::with_weights(weights), true, None)
+    }
+
+    fn production_weights(mut weights: Weights) -> Weights {
+        // `policy_deck` is deliberately not a gene, so a generated or legacy
+        // weight vector cannot silently withdraw the confirmed production
+        // policy layer when it enters an Advanced controller.
+        weights.policy_deck = PolicyDeck::Live;
+        weights
+    }
+
+    fn promoted_policy_envoy(
+        weights: Weights,
+        victory_target: Option<VictoryTarget>,
+    ) -> AdvancedAi {
+        let mut ai = Self::configured(
+            BasicAi::with_weights(Self::production_weights(weights)),
+            true,
+            victory_target,
+        );
+        ai.envoy_infrastructure = true;
+        ai.envoy_priority = true;
+        ai
     }
 
     /// Where this agent tells an observer what it is doing.
@@ -1351,7 +1393,7 @@ impl AdvancedAi {
     }
 
     pub fn targeting(target: VictoryTarget) -> AdvancedAi {
-        Self::configured(BasicAi::new(), true, Some(target))
+        Self::promoted_policy_envoy(Weights::default(), Some(target))
     }
 
     /// Frozen control for measuring future strategic changes against the
@@ -1435,11 +1477,11 @@ impl AdvancedAi {
     }
 
     pub fn with_weights(weights: Weights) -> AdvancedAi {
-        Self::configured(BasicAi::with_weights(weights), true, None)
+        Self::promoted_policy_envoy(weights, None)
     }
 
     pub fn with_weights_and_target(weights: Weights, target: VictoryTarget) -> AdvancedAi {
-        Self::configured(BasicAi::with_weights(weights), true, Some(target))
+        Self::promoted_policy_envoy(weights, Some(target))
     }
 
     /// Redirect an existing agent at a new explicit victory target without
@@ -1468,7 +1510,14 @@ impl AdvancedAi {
     /// variable a rollout planner can search over. The strategic plan is
     /// dropped so the next turn re-assesses under the new genome.
     pub fn reweight(&mut self, weights: Weights) {
-        self.base.w = weights;
+        // `advanced_v1` is allowed to retain the historical non-gene deck.
+        // Every production Advanced instance keeps the promoted live deck when
+        // a searcher swaps its numerical genome underneath it.
+        self.base.w = if self.victory_planning {
+            Self::production_weights(weights)
+        } else {
+            weights
+        };
         self.plan = None;
     }
 
@@ -14606,6 +14655,32 @@ mod tests {
     }
 
     #[test]
+    fn production_policy_envoy_default_is_distinct_from_evaluator_and_legacy_controls() {
+        let production = AdvancedAi::new();
+        assert_eq!(production.weights().policy_deck, PolicyDeck::Live);
+        assert!(production.envoy_infrastructure);
+        assert!(production.envoy_priority);
+
+        let pre_promotion = AdvancedAi::pre_policy_envoy();
+        assert_eq!(pre_promotion.weights().policy_deck, PolicyDeck::Legacy);
+        assert!(!pre_promotion.envoy_infrastructure);
+        assert!(!pre_promotion.envoy_priority);
+        assert!(pre_promotion.victory_planning);
+
+        let legacy = AdvancedAi::legacy();
+        assert_eq!(legacy.weights().policy_deck, PolicyDeck::Legacy);
+        assert!(!legacy.envoy_infrastructure);
+        assert!(!legacy.envoy_priority);
+        assert!(!legacy.victory_planning);
+
+        let mut weighted = Weights::default();
+        weighted.pol_influence = 4.0;
+        let weighted_production = AdvancedAi::with_weights(weighted);
+        assert_eq!(weighted_production.weights().policy_deck, PolicyDeck::Live);
+        assert_eq!(weighted_production.weights().pol_influence, 4.0);
+    }
+
+    #[test]
     fn battlefront_frame_keeps_later_reveals_out_of_turn_start_planning() {
         let mut game = Game::new_full(2, 30, 18, 411_009, 120, 0, false);
         let mut ai = AdvancedAi::new();
@@ -18211,8 +18286,8 @@ mod tests {
             assessed_turn: game.turn,
             rush: false,
         };
-        let stock = AdvancedAi::new();
-        let mut treatment = AdvancedAi::new();
+        let stock = AdvancedAi::pre_policy_envoy();
+        let mut treatment = AdvancedAi::pre_policy_envoy();
         treatment.envoy_infrastructure = true;
         let counts = stock.counts(&game, 0);
         let unseen = treatment.production_value(&game, 0, city, &consulate, &plan, &counts);
@@ -18284,9 +18359,9 @@ mod tests {
             assessed_turn: game.turn,
             rush: false,
         };
-        let mut treatment = AdvancedAi::new();
-        treatment.envoy_infrastructure = true;
-        treatment.envoy_priority = true;
+        // The confirmed production default carries the direct infrastructure
+        // route; this test pins its safety gates rather than a separate arm.
+        let treatment = AdvancedAi::new();
 
         let mut unmet = game.clone();
         assert!(!treatment.prioritize_envoy_infrastructure(&mut unmet, 0, &plan));
@@ -24864,18 +24939,13 @@ mod tests {
 
     /// The agent a census must measure: the one that ships.
     ///
-    /// ⚠ `AdvancedAi::new()` carries `Weights::default()`, whose `policy_deck`
-    /// is `PolicyDeck::Legacy` — and `revise_policy_deck` returns before the
-    /// counterfactual scoring on that branch. The evolved champion, embedded in
-    /// the binary since #471 and played by the exhibition, deserializes to
-    /// `PolicyDeck::Live` and behaves differently: it slots
-    /// `charismatic_leader` on 39.4% of turns where the default slots it on
-    /// 0.0%.
-    ///
-    /// #612 measured the default and reported the 0.0% as a property of "the
-    /// agent". Every census here uses this instead, so that cannot recur.
+    /// Since the 2026-08-01 policy/envoy promotion, `AdvancedAi::new()` is the
+    /// exact production controller: it forces the non-gene policy deck to
+    /// `Live` and enables the two confirmed envoy-production mechanisms. A
+    /// census must not substitute a champion merely because a historical
+    /// champion happened to share the live deck.
     fn deployed_agent() -> AdvancedAi {
-        AdvancedAi::with_weights(crate::evolve::load_champion("evolved").unwrap_or_default())
+        AdvancedAi::new()
     }
 
     /// Census, not an assertion: is the envoy gap a resource shortfall or an
