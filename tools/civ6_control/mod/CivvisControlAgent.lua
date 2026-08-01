@@ -411,6 +411,14 @@ local function applyConfiguration()
 	if cfg.MapScript then MapConfiguration.SetScript(cfg.MapScript); updatePlayerCounts(); end
 	if cfg.MapSize then MapConfiguration.SetMapSize(cfg.MapSize); updatePlayerCounts(); end
 	local seated = seatHuman(cfg.HumanPlayers or 1);
+	-- The FrontEnd setup context has the same assignment, but this in-game rehost
+	-- is the path that actually runs on this build. Omitting it made every other
+	-- requested setting exact while silently leaving the civilization random.
+	if cfg.Leader then
+		for _, id in ipairs(GameConfiguration.GetHumanPlayerIDs()) do
+			PlayerConfigurations[id]:SetLeaderTypeName(cfg.Leader);
+		end
+	end
 	if cfg.Difficulty then GameConfiguration.SetHandicapType(cfg.Difficulty); end
 	if cfg.GameSpeed then GameConfiguration.SetGameSpeedType(cfg.GameSpeed); end
 	if cfg.StartEra then GameConfiguration.SetStartEra(cfg.StartEra); end
@@ -448,6 +456,10 @@ local function rehost()
 			try(function() return MapConfiguration.GetMapSize(); end)) or "?",
 		speed = typeName(GameInfo.GameSpeeds,
 			try(function() return GameConfiguration.GetGameSpeedType(); end)) or "?",
+		leader = try(function()
+			local ids = GameConfiguration.GetHumanPlayerIDs();
+			return ids[1] and PlayerConfigurations[ids[1]]:GetLeaderTypeName() or nil;
+		end),
 		max_turns = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
 		humans = try(function() return GameConfiguration.GetHumanPlayerCount(); end, -1),
 	});

@@ -15,6 +15,14 @@ from civ6_control import install  # noqa: E402
 
 
 class ProtectedInstallTest(unittest.TestCase):
+    def test_live_rehost_assigns_and_reads_back_the_requested_leader(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        rehost = source.split("local function applyConfiguration()", 1)[1].split(
+            "local function rehost()", 1
+        )[0]
+        self.assertIn("PlayerConfigurations[id]:SetLeaderTypeName(cfg.Leader)", rehost)
+        self.assertIn("GetLeaderTypeName()", source.split("local function rehost()", 1)[1])
+
     def test_permission_denied_deploys_a_staged_copy_through_finder(self) -> None:
         target = Path("/protected/DLC/CivvisControl")
         staging = Path(tempfile.mkdtemp(prefix="civvis-install-test-"))
