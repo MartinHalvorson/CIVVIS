@@ -151,7 +151,15 @@ fn decide(
     state: &civvis::mirror::StateSnapshot,
     war_from_plan: bool,
 ) -> String {
-    let before = mirror_state.game.log.len();
+    // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
+    // resources, ends the turn, and can complete a queued unit.  None of those
+    // mutations happened in Firaxis merely because we asked for a recommendation.
+    // Keep the authoritative mirror as the last exported Civ VI state and plan on a
+    // throwaway clone instead.  Apart from preventing phantom units, this means the
+    // board shown to the next decision is never a mixture of one real game and one
+    // speculative CIVVIS turn.
+    let mut planned_game = mirror_state.game.clone();
+    let before = planned_game.log.len();
     // ⚠ MEASURE LEGALITY BEFORE THE TURN IS TAKEN. Asking afterwards reported
     // `all_legal = 0` — the enumeration short-circuits once the seat has acted — which
     // would have been read as "CIVVIS cannot declare war" when it only meant "I asked
@@ -180,14 +188,14 @@ fn decide(
         .values()
         .filter(|u| u.owner == 0 && u.moves_left > 0.0)
         .count();
-    ai.take_turn(&mut mirror_state.game, 0);
+    ai.take_turn(&mut planned_game, 0);
 
     let mut orders: Vec<Order> = Vec::new();
     let mut skipped: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     let mut note_bits: Vec<String> = Vec::new();
 
-    for (seat, action) in mirror_state.game.log.since(before) {
+    for (seat, action) in planned_game.log.since(before) {
         if *seat != 0 {
             continue;
         }
@@ -1194,5 +1202,77 @@ fn action_label(action: &Action) -> &'static str {
         Action::Trade { .. } => "trade",
         Action::CongressVote { .. } => "congress",
         _ => "other",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use civvis::mirror::{Plot, Snapshot, StateCity, StateSnapshot, StateUnit, TilesChunk};
+
+    fn grass(x: i32, y: i32) -> Plot {
+        Plot {
+            x,
+            y,
+            t: Some("TERRAIN_GRASS".to_string()),
+            f: None,
+            r: None,
+            o: -1,
+            w: false,
+            i: false,
+            fw: false,
+            im: None,
+            rv: 0,
+            ri: false,
+            ct: None,
+            cl: -1,
+        }
+    }
+
+    #[test]
+    fn deciding_does_not_mutate_the_authoritative_live_mirror() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 4,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 7,
+            name: "Roma".to_string(),
+            x: 6,
+            y: 6,
+            pop: 3,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 42,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 6,
+            y: 7,
+            ..StateUnit::default()
+        });
+
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let before = serde_json::to_value(&mirror.game).expect("mirror game serializes");
+        let mut ai = civvis::ai::AdvancedAi::new();
+
+        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false);
+
+        assert!(reply.contains("\"turn\":4"));
+        assert_eq!(
+            serde_json::to_value(&mirror.game).expect("mirror game serializes"),
+            before,
+            "planning must not leave an imagined end turn, queue, or produced unit on the live mirror"
+        );
+        assert_eq!(mirror.civ6_of.len(), 1);
+        assert_eq!(mirror.uid_of.len(), 1);
     }
 }

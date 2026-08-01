@@ -116,7 +116,9 @@ def check_modinfo(report: Report) -> None:
 def check_python(report: Report) -> None:
     print("harness Python")
     bad = 0
-    for path in sorted((ROOT / "tools").glob("civ6_*.py")):
+    paths = list((ROOT / "tools").glob("civ6_*.py"))
+    paths.append(ROOT / "tools" / "civ6_control" / "macos_input.py")
+    for path in sorted(paths):
         try:
             ast.parse(path.read_text(errors="replace"))
         except SyntaxError as exc:
@@ -160,12 +162,24 @@ def check_host(report: Report) -> None:
     """
     print("host")
     sys.path.insert(0, str(ROOT / "tools"))
-    from civ6_control import launcher
+    from civ6_control import launcher, macos_input, vision
 
     if launcher.steam_running():
         report.ok("Steam", "running")
     else:
         report.warn("Steam", "not running; a ladder started now plays no games")
+    try:
+        report.ok("input", macos_input.probe())
+    except macos_input.InputUnavailable as error:
+        report.fail("input", str(error))
+    if vision.available():
+        report.ok("setup vision", "Pillow")
+    else:
+        report.fail(
+            "setup vision",
+            "Pillow is required for verified lobby navigation; run "
+            "python3 -m pip install --user Pillow",
+        )
     # Asked of the launcher rather than rebuilt from INSTALLED: the real binary is
     # `Civ6_Exe_Child`, four directories up and under a different name, and writing
     # that path out a second time is how two checks come to disagree.

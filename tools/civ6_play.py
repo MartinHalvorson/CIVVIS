@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
-from civ6_control import gamelock, launcher, vision, watch  # noqa: E402
+from civ6_control import gamelock, launcher, macos_input, vision, watch  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 
@@ -99,8 +99,17 @@ def load_settle_plan(path: str | None) -> list[dict] | None:
     return sites or None
 
 
+def state_export_enabled(args: argparse.Namespace) -> bool:
+    """Whether this run must publish an authoritative board each turn."""
+    # A CIVVIS decision worker cannot make an informed decision without a state
+    # event.  Keeping this derived here, where the baked mod config is made,
+    # makes `--civvis-decides` self-contained instead of relying on callers to
+    # remember a second, otherwise optional diagnostic flag.
+    return bool(args.export_state or args.civvis_decides)
+
+
 def build_config(args: argparse.Namespace) -> dict:
-    return {
+    config = {
         "RunTag": args.tag,
         "AutoStart": True,
         "Play": True,
@@ -194,7 +203,7 @@ def build_config(args: argparse.Namespace) -> dict:
         "GarrisonPerCity": args.garrison_per_city,
         # Mirror the board into the log once a turn so CIVVIS can be the engine
         # that decides. Off by default: it is the largest emit in the mod.
-        "ExportState": args.export_state,
+        "ExportState": state_export_enabled(args),
         # Ask every candidate inbound API what it holds, once a turn, and emit the
         # answer. Paired with `probe_channel.py`, which writes a changing nonce into
         # each sink from outside: the channel is whichever field reports the nonce
@@ -244,10 +253,16 @@ def build_config(args: argparse.Namespace) -> dict:
         "SettlePlan": load_settle_plan(args.settle_plan),
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
-        "Leader": args.leader,
         "StartDelayFrames": args.start_delay_frames,
         "TickFrames": args.tick_frames,
     }
+    # The Create Game automation deliberately does not guess at the leader
+    # picker.  A requested leader remains an explicit assertion for callers
+    # that can set one; otherwise the authoritative `seat` event supplies the
+    # actual civilization to the CIVVIS decision worker.
+    if args.leader:
+        config["Leader"] = args.leader
+    return config
 
 
 # Main-menu items as fractions of the *game window*, not the screen. The menu
@@ -281,16 +296,16 @@ BOOTSTRAP_ATTEMPTS = 16
 # GameConfiguration.SetToDefaults() on entry, and reconfiguring from inside a
 # running game and hosting again either loses the mod, loses the turn limit, or
 # takes the application down.
-START_GAME = (0.500, 0.982)
+START_GAME = (0.500, 0.978)
 BACK = (0.730, 0.144)
 SETUP_X = 0.500
 
 # Each dropdown's closed box, as a fraction of window height.
 DROPDOWN = {
-    "difficulty": 0.3203,
-    "speed": 0.3753,
-    "map_type": 0.4304,
-    "map_size": 0.4841,
+    "difficulty": 0.3330,
+    "speed": 0.3880,
+    "map_type": 0.4450,
+    "map_size": 0.5040,
 }
 # An open dropdown lists its options directly below the box: the first option
 # sits a fixed distance under it and the rest step evenly. Measured on the
@@ -452,11 +467,9 @@ def click_at(px: int, py: int) -> None:
     # ⚠ n = 1, and the harness's own stall watchdog had not fired yet when the held
     # press landed, so nothing else can account for the recovery. Worth re-checking on
     # the next stuck screen before treating it as settled.
-    subprocess.run(["cliclick", f"m:{px},{py}"], capture_output=True)
+    macos_input.move(px, py)
     time.sleep(0.5)
-    subprocess.run(["cliclick", f"dd:{px},{py}"], capture_output=True)
-    time.sleep(0.12)
-    subprocess.run(["cliclick", f"du:{px},{py}"], capture_output=True)
+    macos_input.click(px, py, hold_s=0.12)
 
 
 def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
@@ -587,7 +600,7 @@ def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
 
 
 def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namespace,
-                        run_dir: Path) -> None:
+                        run_dir: Path) -> bool:
     """Set this run's game up on the Create Game screen and start it.
 
     The agent's first report from inside the game remains the check on the VALUES
@@ -605,8 +618,9 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
                         ("map_size", args.map_size),
                         ("speed", args.speed)):
         if not set_dropdown(bounds, name, value, run_dir):
-            print(f"[setup] {name} was NOT set; the seat event will report what the "
-                  f"game actually has", flush=True)
+            print(f"[setup] {name} was NOT set; refusing to start an unverified game",
+                  flush=True)
+            return False
     # The map has to be chosen HERE. `MapScript` in the baked config is ignored,
     # because the FrontEnd context that would read it never loads, so every game so
     # far has been Continents whatever was asked for. On Continents a seat can start
@@ -626,12 +640,14 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     # Continents, and on Continents a seat can start ALONE — one run reached turn 118
     # with `met = 0`. Fixing it properly needs OCR on the dropdown rows, or reading
     # the selected value back off the screen before committing to Start Game.
-    if args.map in OPTIONS["map_type"]:
-        print(f"map selection is disabled pending verification; the game will "
-              f"generate its default rather than {args.map}", file=sys.stderr)
+    if args.map != "Continents.lua":
+        print(f"map selection is disabled pending verification; refusing to claim "
+              f"the default Continents map is {args.map}", file=sys.stderr)
+        return False
     screenshot(run_dir / "setup.png")
     x, y, w, h = bounds
     click_at(int(x + w * START_GAME[0]), int(y + h * START_GAME[1]))
+    return True
 
 
 def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
@@ -693,7 +709,7 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         # "Create Game" lands moves between runs.
         submenu = run_dir / f"submenu-attempt{attempt}.png"
         screenshot(submenu)
-        rows = vision.submenu_rows(submenu, bounds) if vision.available() else []
+        rows = vision.submenu_rows(submenu, bounds)
         if len(rows) < 3:
             print(f"attempt {attempt}: no submenu ({len(rows)} rows) -- "
                   "the menu is not ready yet", file=sys.stderr)
@@ -707,7 +723,12 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         click_at(int(x + w * SUBMENU_X), int(y + h * target))
         time.sleep(2.5)
         screenshot(run_dir / f"create-attempt{attempt}.png")
-        configure_and_start(bounds, args, run_dir)
+        if not configure_and_start(bounds, args, run_dir):
+            print(f"attempt {attempt}: setup could not be verified; backing out",
+                  file=sys.stderr)
+            click_at(int(x + w * BACK[0]), int(y + h * BACK[1]))
+            time.sleep(1.5)
+            continue
         if started(verify_s):
             return True
         if not env.game_pids():
@@ -850,7 +871,7 @@ def press_escape(times: int = 2) -> bool:
     time.sleep(1.0)
     ok = True
     for _ in range(times):
-        result = subprocess.run(["cliclick", "kp:esc"], capture_output=True)
+        result = macos_input.press_key("escape")
         ok = ok and result.returncode == 0
         time.sleep(0.8)
     return ok
@@ -860,6 +881,13 @@ def play(args: argparse.Namespace) -> int:
     # One run at a time against this installation. Two harnesses share one mod
     # directory, one log and one process; the second one's install lands in the
     # middle of the first one's game and neither notices.
+    if not vision.available():
+        print(
+            "Pillow is required for verified Civ VI menu navigation; install it with "
+            "python3 -m pip install --user Pillow",
+            file=sys.stderr,
+        )
+        return 2
     if not gamelock.acquire(args.tag, wait_s=args.lock_wait):
         foreign = gamelock.foreign_run(args.tag)
         print(f"another run holds the game: {foreign or gamelock.describe()}",
@@ -871,6 +899,21 @@ def play(args: argparse.Namespace) -> int:
         gamelock.release()
 
 
+def seat_matches_requested(event: dict, args: argparse.Namespace) -> tuple[bool, bool]:
+    """Return (full_config_match, modes_match) from the game's own seat report."""
+    modes = event.get("modes")
+    modes_match = modes is not None and sorted(modes) == sorted(args.game_mode)
+    return (
+        event.get("difficulty") == args.difficulty
+        and event.get("size") == args.map_size
+        and event.get("speed") == args.speed
+        and event.get("map") == args.map
+        and (args.leader is None or event.get("leader") == args.leader)
+        and modes_match,
+        modes_match,
+    )
+
+
 def _play(args: argparse.Namespace) -> int:
     config = build_config(args)
     run_dir = RUN_ROOT / args.tag
@@ -878,12 +921,14 @@ def _play(args: argparse.Namespace) -> int:
     events_path = run_dir / "events.jsonl"
     events = events_path.open("a")
 
+    if not launcher.stop():
+        print("could not stop the previous Civilization VI process", file=sys.stderr)
+        return 3
     target = modinstall.install(config)
     print(f"installed {target}")
     print(f"  difficulty {config['Difficulty']}  map {config['MapSize']}"
           f"  speed {config['GameSpeed']}  max turns {config['MaxTurns']}")
 
-    launcher.stop()
     launcher.clear_run_logs()
     launcher.launch(stdout=run_dir / "stdout.log")
     if not launcher.wait_for_main_menu(args.startup_timeout):
@@ -930,15 +975,11 @@ def _play(args: argparse.Namespace) -> int:
             # field is not the same answer as an empty list: it means nobody
             # looked. Treat it as unknown rather than as clean, or this gate
             # passes for exactly the runs it was added to catch.
+            configured, modes_match = seat_matches_requested(event, args)
             modes = event.get("modes")
             state["modes"] = modes
-            modes_match = modes is not None and sorted(modes) == sorted(args.game_mode)
             state["mode_mismatch"] = not modes_match
-            state["configured"] = (
-                event.get("difficulty") == args.difficulty
-                and event.get("size") == args.map_size
-                and event.get("speed") == args.speed
-                and modes_match)
+            state["configured"] = configured
             if not state["configured"]:
                 print("[agent] the game does not match what was asked for",
                       file=sys.stderr)
@@ -1046,7 +1087,7 @@ def _play(args: argparse.Namespace) -> int:
         # absent on all twenty recent runs -- so the modes are whatever the
         # Create Game screen carries, and nothing drives its Advanced Setup
         # tab. Detection is the guarantee here; setting is best effort.
-        if kind == "seat" and state["mode_mismatch"]:
+        if kind == "seat" and not state["configured"]:
             return True
         return False
 
@@ -1147,7 +1188,9 @@ def _play(args: argparse.Namespace) -> int:
         # A run stopped because the game had the wrong modes never played; it
         # is a refusal, not a result. Recording it as `stopped` would file it
         # beside games that were played and lost.
-        "reason": "wrong_game_modes" if state["mode_mismatch"] else reason,
+        "reason": ("wrong_game_modes" if state["mode_mismatch"]
+                   else "wrong_game_configuration" if state["seat"] and not state["configured"]
+                   else reason),
         # Whether the game actually played was the one this run asked for.
         # A summary that reports the requested difficulty without this is a
         # claim about the command line, not about the game.
@@ -1213,12 +1256,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--seed", type=int, default=424242)
     ap.add_argument("--max-turns", type=int, default=150)
     ap.add_argument("--city-target", type=int, default=6)
-    # Standardise the civilization so two attempts are comparable. Rome's free
-    # monument and road on every founding is a different game from a random
-    # leader's, and a ladder climbed by a different civ each rung measures
-    # nothing. Takes effect only when the setup context hosts the game; the
-    # `seat` event reports the leader actually granted.
-    ap.add_argument("--leader", default="LEADER_TRAJAN")
+    # The current Create Game automation verifies the actual leader in the
+    # `seat` event but does not operate the leader picker.  Leave this unset
+    # to accept Firaxis's assigned leader and bind CIVVIS strategy selection to
+    # its reported civilization; pass a leader only when an external setup has
+    # selected it and needs an exact assertion.
+    ap.add_argument("--leader")
     # The game must stay frontmost to get frames, which makes it unwatchable if
     # it also owns the whole screen. Half is enough for the agent and leaves the
     # other half for a terminal.

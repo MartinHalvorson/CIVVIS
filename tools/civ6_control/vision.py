@@ -35,6 +35,12 @@ except ImportError:  # pragma: no cover - reported by the caller
 # any submenu entry and would be read as a row.
 COLUMN = (0.50, 0.49, 0.60, 0.665)
 
+# A menu row is 58 physical pixels apart in the 949-point live window, or about
+# 0.0306 of its height. The range deliberately leaves room for UI scale and
+# rounding, while rejecting the title-card glyph bands seen during transitions.
+MENU_ROW_STEP = 0.0306
+MENU_ROW_TOLERANCE = 0.006
+
 
 def available() -> bool:
     return Image is not None
@@ -78,16 +84,21 @@ def rows_in(shot: Path, bounds: tuple[int, int, int, int], column,
     if hi - background < 8:  # a flat crop: no submenu is showing
         return []
     threshold = background + (hi - background) * 0.30
+    # The submenu frame can add a two-pixel horizontal rule to this brightness
+    # profile. It is not text and treating it as a row shifts Create Game down to
+    # Scenarios. Menu glyphs occupy at least three physical pixels even at 1x,
+    # while this keeps real low-resolution text eligible.
+    min_band = 3
     rows: list[tuple[int, int]] = []
     start = None
     for index, value in enumerate(profile):
         if value >= threshold and start is None:
             start = index
         elif value < threshold and start is not None:
-            if index - start >= 2:
+            if index - start >= min_band:
                 rows.append((start, index))
             start = None
-    if start is not None and height - start >= 2:
+    if start is not None and height - start >= min_band:
         rows.append((start, height))
     if not rows:
         return []
@@ -111,7 +122,30 @@ def rows_in(shot: Path, bounds: tuple[int, int, int, int], column,
 
 def submenu_rows(shot: Path, bounds: tuple[int, int, int, int],
                  scale: float = 2.0) -> list[float]:
-    return rows_in(shot, bounds, COLUMN, scale)
+    return _regular_menu_rows(rows_in(shot, bounds, COLUMN, scale))
+
+
+def _regular_menu_rows(rows: list[float]) -> list[float]:
+    """Keep the longest sequence that has Civ VI submenu row spacing.
+
+    A dark loading card has bright letter strokes in this crop. They once
+    produced seven arbitrary bands, which made the caller click a non-menu
+    coordinate. A real submenu has at least Create Game, Scenarios and Play Now
+    on a fixed vertical grid; without that evidence, return no rows.
+    """
+    best: list[float] = []
+    for start, row in enumerate(rows):
+        sequence = [row]
+        previous = row
+        for candidate in rows[start + 1:]:
+            gap = candidate - previous
+            if not MENU_ROW_STEP - MENU_ROW_TOLERANCE <= gap <= MENU_ROW_STEP + MENU_ROW_TOLERANCE:
+                break
+            sequence.append(candidate)
+            previous = candidate
+        if len(sequence) > len(best):
+            best = sequence
+    return best if len(best) >= 3 else []
 
 
 def create_game_row(shot: Path, bounds: tuple[int, int, int, int],

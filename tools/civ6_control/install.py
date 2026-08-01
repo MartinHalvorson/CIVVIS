@@ -25,6 +25,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -95,8 +96,8 @@ def check_syntax(path: Path) -> str | None:
     return (result.stderr or result.stdout).strip()
 
 
-def install(config: dict) -> Path:
-    target = install_dir()
+def _write_mod(target: Path, config: dict) -> None:
+    """Materialize a fully configured control mod into a writable directory."""
     target.mkdir(parents=True, exist_ok=True)
     text = prelude(config)
     for src in sorted(MOD_SOURCE.iterdir()):
@@ -137,9 +138,69 @@ def install(config: dict) -> Path:
         config = dict(config, RunTag=None)
     (target / "config.json").write_text(json.dumps(config, indent=2, sort_keys=True))
 
+
+def _finder_replace(source: Path, target: Path) -> None:
+    """Replace the protected DLC copy through Finder when TCC blocks shell I/O."""
+    script = f'''tell application "Finder"
+    set sourceFolder to POSIX file {json.dumps(str(source))} as alias
+    set dlcFolder to POSIX file {json.dumps(str(target.parent))} as alias
+    if exists folder {json.dumps(target.name)} of dlcFolder then
+        delete folder {json.dumps(target.name)} of dlcFolder
+    end if
+    set targetFolder to make new folder at dlcFolder with properties {{name:{json.dumps(target.name)}}}
+    repeat with sourceItem in (get every item of sourceFolder)
+        duplicate sourceItem to targetFolder
+    end repeat
+end tell'''
+    result = subprocess.run(
+        ["osascript", "-e", script], capture_output=True, text=True, timeout=60,
+    )
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise PermissionError(f"Finder could not install {target}: {detail}")
+
+
+def _finder_delete(path: Path) -> None:
+    script = f'''tell application "Finder"
+    set targetItem to POSIX file {json.dumps(str(path))} as alias
+    delete targetItem
+end tell'''
+    result = subprocess.run(
+        ["osascript", "-e", script], capture_output=True, text=True, timeout=30,
+    )
+    if result.returncode:
+        detail = (result.stderr or result.stdout).strip()
+        raise PermissionError(f"Finder could not remove {path}: {detail}")
+
+
+def _drop_mod_index() -> None:
     mod_db = env.user_dir() / "Mods.sqlite"
-    if mod_db.exists():
-        mod_db.unlink()
+    try:
+        if mod_db.exists():
+            mod_db.unlink()
+    except PermissionError:
+        _finder_delete(mod_db)
+
+
+def install(config: dict) -> Path:
+    target = install_dir()
+    try:
+        _write_mod(target, config)
+    except PermissionError as direct_error:
+        # The Steam application tree can be under a macOS privacy rule that
+        # grants Finder access while denying a child of Terminal. Build first in
+        # /tmp, then have Finder replace only this mod's directory.
+        staging = Path(tempfile.mkdtemp(prefix="civvis-control-"))
+        try:
+            _write_mod(staging, config)
+            _finder_replace(staging, target)
+        except Exception as fallback_error:
+            raise PermissionError(
+                f"cannot install {target} directly or through Finder: {fallback_error}"
+            ) from direct_error
+        finally:
+            shutil.rmtree(staging, ignore_errors=True)
+    _drop_mod_index()
     return target
 
 
@@ -147,10 +208,11 @@ def uninstall() -> bool:
     target = install_dir()
     if not target.is_dir():
         return False
-    shutil.rmtree(target)
-    mod_db = env.user_dir() / "Mods.sqlite"
-    if mod_db.exists():
-        mod_db.unlink()
+    try:
+        shutil.rmtree(target)
+    except PermissionError:
+        _finder_delete(target)
+    _drop_mod_index()
     return True
 
 

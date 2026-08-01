@@ -3976,8 +3976,10 @@ local function exportState(player, pid, turn)
 	-- advice for turn 5, worthless at turn 190 against Pikemen. What a seat knows
 	-- is half of what it can decide.
 	--
-	-- ⚠ Completed only. `CanResearch` would describe what is reachable, which is a
-	-- different question and would let CIVVIS build from a tree it does not have.
+	-- ⚠ The completed lists are deliberately different from what is merely
+	-- reachable: `CanResearch` would let CIVVIS build from a tree it does not
+	-- have.  The active node and its progress are separate facts, needed so a
+	-- persistent reconstruction does not forget an in-flight choice each turn.
 	local techs, civics = {}, {};
 	local ptechs = try(function() return player:GetTechs(); end);
 	if ptechs ~= nil then
@@ -3987,11 +3989,37 @@ local function exportState(player, pid, turn)
 			end
 		end
 	end
+	local research, research_progress;
+	if ptechs ~= nil then
+		local index = try(function() return ptechs:GetResearchingTech(); end, -1);
+		if index ~= nil and index >= 0 then
+			local row = GameInfo.Technologies[index];
+			if row ~= nil then
+				research = row.TechnologyType;
+				research_progress = try(function()
+					return ptechs:GetResearchProgress(index);
+				end, 0) or 0;
+			end
+		end
+	end
 	local pculture = try(function() return player:GetCulture(); end);
 	if pculture ~= nil then
 		for row in GameInfo.Civics() do
 			if try(function() return pculture:HasCivic(row.Index); end, false) then
 				civics[#civics + 1] = row.CivicType;
+			end
+		end
+	end
+	local civic, civic_progress;
+	if pculture ~= nil then
+		local index = try(function() return pculture:GetProgressingCivic(); end, -1);
+		if index ~= nil and index >= 0 then
+			local row = GameInfo.Civics[index];
+			if row ~= nil then
+				civic = row.CivicType;
+				civic_progress = try(function()
+					return pculture:GetCulturalProgress(index);
+				end, 0) or 0;
 			end
 		end
 	end
@@ -4086,6 +4114,10 @@ local function exportState(player, pid, turn)
 		turn = turn,
 		techs = techs,
 		civics = civics,
+		research = research,
+		research_progress = research_progress,
+		civic = civic,
+		civic_progress = civic_progress,
 		government = government,
 		pantheon = pantheon,
 		policies = policies,

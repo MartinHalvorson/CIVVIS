@@ -30,6 +30,9 @@ Both detectors were measured against the live game rather than guessed:
     lands in empty space because city banners and combat warnings are red too.
     macOS's own red window button is 22x22 at the window's top-left corner and
     is excluded by position, or this would close Civilization VI.
+  * tutorial-advisor cards use one or two long blue buttons in the upper-centre
+    paper card. They are distinct from the HUD only when both their dimensions
+    and the enclosing bright card agree; plain blue map UI is never enough.
 """
 
 import argparse
@@ -39,6 +42,10 @@ import subprocess
 import sys
 import time
 from collections import deque
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from civ6_control import macos_input  # noqa: E402
 
 try:
     from PIL import Image
@@ -67,23 +74,24 @@ def game_in_progress(runs_dir, fresh_seconds=180.0):
     to act until the harness has recorded one.
     """
     try:
-        newest, newest_at = None, 0.0
+        candidates = []
         for name in os.listdir(runs_dir):
             events = os.path.join(runs_dir, name, "events.jsonl")
             try:
-                at = os.path.getmtime(events)
+                candidates.append((os.path.getmtime(events), events))
             except OSError:
                 continue
-            if at > newest_at:
-                newest, newest_at = events, at
-        if not newest or time.time() - newest_at > fresh_seconds:
-            return False
-        with open(newest, "rb") as handle:
-            blob = handle.read()
-        # ⚠ Both spellings. The mod writes compact JSON from Lua and the harness
-        # writes `json.dumps` with a space after the colon; checking only the
-        # compact form matched nothing and the guard blocked a live game.
-        return b'"kind": "turn"' in blob or b'"kind":"turn"' in blob
+        for modified, events in sorted(candidates, reverse=True):
+            if time.time() - modified > fresh_seconds:
+                break
+            with open(events, "rb") as handle:
+                blob = handle.read()
+            # ⚠ Both spellings. The mod writes compact JSON from Lua and the harness
+            # writes `json.dumps` with a space after the colon; checking only the
+            # compact form matched nothing and the guard blocked a live game.
+            if b'"kind": "turn"' in blob or b'"kind":"turn"' in blob:
+                return True
+        return False
     except OSError:
         return False
 
@@ -149,6 +157,209 @@ def red_clusters(rgb, step=2):
     return sorted(found, key=lambda c: -c["n"])
 
 
+def blue_clusters(rgb, step=2):
+    """Compact saturated-blue blobs, largest first, in image pixels."""
+    px, (W, H) = rgb.load(), rgb.size
+    hits = set()
+    for y in range(0, H, step):
+        for x in range(0, W, step):
+            r, g, b = px[x, y]
+            # Advisor buttons are the same blue in every first-run card seen
+            # live. The green channel is deliberately required to exceed red:
+            # purple borders and map pins otherwise look blue enough.
+            if b > 60 and b > 1.25 * g and g > 1.10 * r:
+                hits.add((x, y))
+    found, seen = [], set()
+    for start in hits:
+        if start in seen:
+            continue
+        queue, comp = deque([start]), []
+        seen.add(start)
+        while queue:
+            cx, cy = queue.popleft()
+            comp.append((cx, cy))
+            for dx in (-step, 0, step):
+                for dy in (-step, 0, step):
+                    nxt = (cx + dx, cy + dy)
+                    if nxt in hits and nxt not in seen:
+                        seen.add(nxt)
+                        queue.append(nxt)
+        xs = [c[0] for c in comp]
+        ys = [c[1] for c in comp]
+        found.append({"n": len(comp), "w": max(xs) - min(xs), "h": max(ys) - min(ys),
+                      "cx": sum(xs) / len(xs), "cy": sum(ys) / len(ys)})
+    return sorted(found, key=lambda c: -c["n"])
+
+
+def green_clusters(rgb, step=2):
+    """Compact teal/green controls, largest first, in image pixels."""
+    px, (W, H) = rgb.load(), rgb.size
+    hits = set()
+    for y in range(0, H, step):
+        for x in range(0, W, step):
+            r, g, b = px[x, y]
+            # World Congress's Return to Game button is teal, not pure green.
+            if g > 50 and g > 1.25 * r and g > 1.05 * b:
+                hits.add((x, y))
+    found, seen = [], set()
+    for start in hits:
+        if start in seen:
+            continue
+        queue, comp = deque([start]), []
+        seen.add(start)
+        while queue:
+            cx, cy = queue.popleft()
+            comp.append((cx, cy))
+            for dx in (-step, 0, step):
+                for dy in (-step, 0, step):
+                    nxt = (cx + dx, cy + dy)
+                    if nxt in hits and nxt not in seen:
+                        seen.add(nxt)
+                        queue.append(nxt)
+        xs = [c[0] for c in comp]
+        ys = [c[1] for c in comp]
+        found.append({"n": len(comp), "w": max(xs) - min(xs), "h": max(ys) - min(ys),
+                      "cx": sum(xs) / len(xs), "cy": sum(ys) / len(ys)})
+    return sorted(found, key=lambda c: -c["n"])
+
+
+def congress_return_button(rgb, grey):
+    """Return to Game on Civilization VI's full-screen World Congress review."""
+    w, h = rgb.size
+    # This screen is a broad charcoal panel, unlike an ordinary map with a
+    # tooltip or a normal HUD button. It always ends in one teal button at the
+    # bottom; require both before touching it.
+    panel = grey.crop((int(w * 0.12), int(h * 0.12), int(w * 0.95), int(h * 0.90)))
+    panel_dark = sum(value < DARK_LEVEL for value in panel.getdata())
+    if panel_dark < 0.25 * (panel.size[0] * panel.size[1]):
+        return None
+    for cluster in green_clusters(rgb):
+        if (
+            cluster["n"] >= 100
+            and w * 0.07 < cluster["w"] < w * 0.16
+            and h * 0.01 < cluster["h"] < h * 0.05
+            and w * 0.50 < cluster["cx"] < w * 0.68
+            and h * 0.92 < cluster["cy"] < h * 0.99
+        ):
+            return (cluster["cx"], cluster["cy"])
+    return None
+
+
+def advisor_buttons(rgb, grey):
+    """Blue tutorial-card buttons, only when a bright card encloses them."""
+    w, h = rgb.size
+    targets, candidates = [], []
+    for cluster in blue_clusters(rgb):
+        if not (
+            cluster["n"] >= 80
+            and w * 0.33 < cluster["cx"] < w * 0.67
+            # Advisor cards have more than one vertical layout.  The new-city
+            # loyalty card observed live puts its action row at 43% of the
+            # window height; treating 40% as a universal boundary left that
+            # real blocker classified as ordinary map.  The paper probes below
+            # remain the safety boundary, so this widens only the legitimate
+            # card band rather than accepting arbitrary lower HUD controls.
+            and h * 0.10 < cluster["cy"] < h * 0.46
+            and w * 0.05 < cluster["w"] < w * 0.22
+            and h * 0.01 < cluster["h"] < h * 0.08
+        ):
+            continue
+        candidates.append((cluster["cx"], cluster["cy"]))
+        # The panel directly above the button is light paper. A long blue
+        # control over desert, sea, or a city banner is not a tutorial card.
+        left = max(0, int(cluster["cx"] - w * 0.10))
+        right = min(w, int(cluster["cx"] + w * 0.10))
+        top = max(0, int(cluster["cy"] - h * 0.18))
+        bottom = max(top + 1, int(cluster["cy"] - h * 0.02))
+        paper = grey.crop((left, top, right, bottom))
+        bright = sum(1 for value in paper.getdata() if value > 180)
+        # A nearby bright panel can leak into a wide crop, as the World Tracker
+        # did beside the live World Congress advisor card. Sample immediately
+        # around the control and require enough paper that it is inside the card.
+        # The live Tribal Village card measured 34.85% in this deliberately
+        # tight probe: parchment decoration and the advisor portrait occupy the
+        # rest.  Keep a small margin below that observed card rather than
+        # treating a valid acknowledgement as a map control.
+        if bright < 0.34 * (paper.size[0] * paper.size[1]):
+            continue
+        # A wide probe can overlap a nearby card even when this control is a
+        # map/HUD button just outside it. The card must also be bright directly
+        # above the button itself; this keeps the measured Tribal Village card
+        # while rejecting that adjacent-control false positive.
+        core_left = max(0, int(cluster["cx"] - w * 0.025))
+        core_right = min(w, int(cluster["cx"] + w * 0.025))
+        core = grey.crop((core_left, top, core_right, bottom))
+        core_bright = sum(1 for value in core.getdata() if value > 180)
+        if core_bright < 0.30 * (core.size[0] * core.size[1]):
+            continue
+        targets.append((cluster["cx"], cluster["cy"]))
+    # An advisor portrait or decoration can cover the paper immediately above
+    # the left Continue/OK action while its right Tell me more neighbour still
+    # passes the paper check.  A same-row, same-sized-looking blue control to
+    # the LEFT of a confirmed card action at the standard paired-button spacing
+    # is the one safe exception: recover it so the watchdog can acknowledge
+    # the card without ever treating the right help route as a fallback.
+    for point in candidates:
+        if point in targets:
+            continue
+        if any(
+            point[0] < confirmed[0]
+            and w * 0.05 < confirmed[0] - point[0] < w * 0.15
+            and abs(point[1] - confirmed[1]) < h * 0.03
+            for confirmed in targets
+        ):
+            targets.append(point)
+    # Advisor actions share a row. Centroid anti-aliasing can make the right
+    # button a fraction of a pixel higher than the left one, so y-first sorting
+    # selected "Tell me more" during a live run. The left action is the benign
+    # acknowledge/continue choice on every measured advisor card.
+    return sorted(targets, key=lambda point: (point[0], point[1]))
+
+
+def click_target(kind, targets, width):
+    """Return the only target the external watchdog may actuate.
+
+    Advisor cards often pair Continue on the left with Tell me more on the
+    right.  The latter opens Civilopedia and leaves the turn blocked, so a
+    right-side action is never an acceptable fallback.  A card layout we do
+    not recognize well enough to find a left acknowledgement is left for the
+    in-game closer or an operator rather than guessed at.
+    """
+    if not targets:
+        return None
+    if kind == "advisor":
+        return next((point for point in targets if point[0] < width * 0.50), None)
+    if kind in ("governor", "congress"):
+        return targets[0]
+    return targets[-1]
+
+
+def governor_close(rgb):
+    """The close control on the full-width Governors title panel, if present."""
+    w, h = rgb.size
+    px = rgb.load()
+    for cluster in red_clusters(rgb):
+        if not (
+            cluster["n"] >= 10
+            and cluster["cx"] > w * 0.96
+            and h * 0.18 < cluster["cy"] < h * 0.32
+            and cluster["w"] <= 36
+            and cluster["h"] <= 36
+        ):
+            continue
+        # Governors has a distinctive blue title bar almost the full width of
+        # the window. A red pin near the right map edge must not become a close
+        # target merely because it shares the rough location.
+        y = min(h - 1, max(0, int(cluster["cy"])))
+        blue = sum(
+            1 for x in range(0, w, 2)
+            if (lambda r, g, b: b > g > r and b > 45)(*px[x, y])
+        )
+        if blue >= 0.70 * (w // 2):
+            return (cluster["cx"], cluster["cy"])
+    return None
+
+
 def dialogue_buttons(gray, box):
     """Dialogue buttons in a leader scene, top to bottom, in image pixels.
 
@@ -178,7 +389,7 @@ def dialogue_buttons(gray, box):
 
 
 def classify(window):
-    """What is on screen: ('leader', targets) | ('card', targets) | ('map', []).
+    """What is on screen: leader, card, advisor, or map plus safe targets.
 
     `window` is the game window alone, so every coordinate returned is relative
     to it, in image pixels.
@@ -189,8 +400,23 @@ def classify(window):
     histogram = grey.histogram()
     dark = sum(histogram[:DARK_LEVEL]) / max(1, w * h)
 
+    congress = congress_return_button(window, grey)
+    if congress:
+        return "congress", [congress], dark
+
     if dark > LEADER_DARK_FRACTION:
         return "leader", dialogue_buttons(grey, box), dark
+
+    governor = governor_close(window)
+    if governor:
+        return "governor", [governor], dark
+
+    # A confirmed advisor panel is more specific than a red cluster on the map.
+    # Do this before looking for a completion-card close button: barbarians and
+    # danger pins can otherwise make an advisor appear to be an unsafe card.
+    advisor = advisor_buttons(window, grey)
+    if advisor:
+        return "advisor", advisor, dark
 
     # A card popup leaves the map showing, so it is found by its close button.
     #
@@ -221,8 +447,9 @@ def held_click(point_px, box_points, scale):
     """A click must be HELD; a zero-length `cliclick c:` does nothing here."""
     px = int(box_points[0] + point_px[0] / scale)
     py = int(box_points[1] + point_px[1] / scale)
-    subprocess.run(["cliclick", f"m:{px},{py}", "w:200",
-                    f"dd:{px},{py}", "w:150", f"du:{px},{py}"], check=True, timeout=20)
+    macos_input.move(px, py, check=True)
+    time.sleep(0.2)
+    macos_input.click(px, py, hold_s=0.15, check=True)
     return px, py
 
 
@@ -272,7 +499,12 @@ def main():
                 window, scale = capture(box)
                 kind, targets, dark = classify(window)
                 front = frontmost()
-                playing = game_in_progress(args.runs)
+                # An advisor card can be the reason the log stopped advancing.
+                # Give that one strongly classified surface a longer grace period;
+                # all broader dark/card recognition remains tied to a fresh turn so
+                # setup controls can never be clicked because of an old run.
+                freshness = 3600.0 if kind in ("advisor", "congress") else 180.0
+                playing = game_in_progress(args.runs, fresh_seconds=freshness)
                 if kind == "map":
                     pass
                 elif kind == "card" and not args.cards:
@@ -295,11 +527,13 @@ def main():
                             "this is setup, not a popup -- not clicking")
                 elif not targets:
                     log(f"{kind} on screen (dark={dark:.2f}) but no target found; leaving it alone")
+                elif (choice := click_target(kind, targets, window.size[0])) is None:
+                    log("advisor has no safe left-side acknowledgement; leaving it alone")
                 elif not front.startswith("Civ6"):
                     log(f"{kind} on screen but {front!r} is frontmost; not clicking")
                 elif args.dry_run:
-                    log(f"DRY RUN: would click {kind} at {targets[-1]} (dark={dark:.2f})")
-                elif (kind, tuple(int(v) for v in targets[-1])) == last_target and misses >= 2:
+                    log(f"DRY RUN: would click {kind} at {choice} (dark={dark:.2f})")
+                elif (kind, tuple(int(v) for v in choice)) == last_target and misses >= 2:
                     # ⚠ Never keep clicking something that demonstrably does
                     # nothing. A repeated no-op is either a target we have
                     # misread or a screen we cannot drive, and both are safer
@@ -311,8 +545,8 @@ def main():
                     # Bottom-most button: 'Goodbye' on a farewell, and on a
                     # question the answer list ends with the exit -- clicking it
                     # repeatedly walks the conversation to its end.
-                    target = (kind, tuple(int(v) for v in targets[-1]))
-                    where = held_click(targets[-1], box, scale)
+                    target = (kind, tuple(int(v) for v in choice))
+                    where = held_click(choice, box, scale)
                     time.sleep(1.5)
                     after, _ = capture(box)
                     kind_after, targets_after, _ = classify(after)
@@ -321,8 +555,9 @@ def main():
                     # a card popup replaced by another card popup was logged as
                     # a success. That is the same lie as the mod's `ended`, in
                     # the tool written to expose it.
-                    identical = (kind_after == kind and targets_after
-                                 and tuple(int(v) for v in targets_after[-1]) == target[1])
+                    next_choice = click_target(kind_after, targets_after, after.size[0])
+                    identical = (kind_after == kind and next_choice is not None
+                                 and tuple(int(v) for v in next_choice) == target[1])
                     misses = misses + 1 if (identical and target == last_target) else 0
                     last_target = target
                     if kind_after == "map":

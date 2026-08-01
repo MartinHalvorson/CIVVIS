@@ -37,7 +37,10 @@ use std::collections::BTreeMap;
 
 use serde::Deserialize;
 
-use crate::name::Name;
+use crate::{
+    name::Name,
+    setup::{GameSpeed, MapScript},
+};
 
 /// Built by `python3 tools/civ6_control/vocab.py --json` from two authorities:
 /// Civilization VI's own `DebugGameplay.sqlite` and CIVVIS's `data/*.json`.
@@ -986,6 +989,127 @@ mod tests {
     }
 
     #[test]
+    fn a_civ6_seat_rebuilds_with_its_setup_rules_and_ui_settings() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 4,
+            height: 4,
+            chunk: 1,
+            plots: vec![plot(1, 1, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 8,
+            ..StateSnapshot::default()
+        };
+        state.seat.speed = "GAMESPEED_ONLINE".to_string();
+        state.seat.difficulty = "DIFFICULTY_SETTLER".to_string();
+        state.seat.map = "Continents.lua".to_string();
+
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+
+        assert_eq!(civvis_game_speed("GAMESPEED_ONLINE"), Some(GameSpeed::Online));
+        assert_eq!(
+            civvis_difficulty("DIFFICULTY_SETTLER"),
+            Some("settler".to_string())
+        );
+        assert_eq!(
+            civvis_map_script("Continents.lua"),
+            Some(MapScript::Continents)
+        );
+        assert_eq!(recon.game.game_speed, GameSpeed::Online);
+        assert_eq!(recon.game.speed, "online");
+        assert_eq!(recon.game.difficulty, "settler");
+        assert_eq!(recon.game.map_script, MapScript::Continents);
+    }
+
+    #[test]
+    fn active_research_and_civic_progress_follow_the_live_export() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![plot(3, 3, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 8,
+            research: Some("TECH_MINING".to_string()),
+            research_progress: 7.5,
+            civic: Some("CIVIC_CODE_OF_LAWS".to_string()),
+            civic_progress: 3.0,
+            ..StateSnapshot::default()
+        };
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        assert_eq!(mirror.game.players[0].research.as_deref(), Some("mining"));
+        assert_eq!(mirror.game.players[0].research_progress, 7.5);
+        assert_eq!(mirror.game.players[0].civic.as_deref(), Some("code_of_laws"));
+        assert_eq!(mirror.game.players[0].civic_progress, 3.0);
+
+        state.turn = 9;
+        state.research = Some("TECH_ANIMAL_HUSBANDRY".to_string());
+        state.research_progress = 11.0;
+        state.civic = Some("CIVIC_FOREIGN_TRADE".to_string());
+        state.civic_progress = 5.0;
+        mirror.sync(&snapshot, &state, 0);
+
+        assert_eq!(
+            mirror.game.players[0].research.as_deref(),
+            Some("animal_husbandry")
+        );
+        assert_eq!(mirror.game.players[0].research_progress, 11.0);
+        assert_eq!(mirror.game.players[0].civic.as_deref(), Some("foreign_trade"));
+        assert_eq!(mirror.game.players[0].civic_progress, 5.0);
+    }
+
+    #[test]
+    fn current_city_production_follows_every_live_state() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 8,
+            cities: vec![StateCity {
+                id: 1,
+                name: "Delhi".to_string(),
+                x: 5,
+                y: 5,
+                pop: 2,
+                producing: Some("UNIT_SCOUT".to_string()),
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let city = mirror.cid_of[&1];
+        assert!(matches!(
+            mirror.game.cities[&city].queue.first(),
+            Some(crate::game::Item::Unit { unit }) if unit == "scout"
+        ));
+
+        state.turn = 9;
+        state.cities[0].producing = Some("UNIT_SETTLER".to_string());
+        mirror.sync(&snapshot, &state, 0);
+        assert!(matches!(
+            mirror.game.cities[&city].queue.first(),
+            Some(crate::game::Item::Unit { unit }) if unit == "settler"
+        ));
+
+        state.turn = 10;
+        state.cities[0].producing = None;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.cities[&city].queue.is_empty(),
+            "the completed item must not remain as a phantom queue entry"
+        );
+    }
+
+    #[test]
     /// ★★★★★ A building CIVVIS does not model must not take the decider down.
     ///
     /// `BUILDING_CASTLE` **panicked the whole decider** on live run
@@ -1562,6 +1686,52 @@ mod tests {
             !mirror.game.valid_improvements(0, grown).is_empty(),
             "owned ground must offer improvements; an unowned tile offers none, which \
              is how a stale border silently stops an empire developing"
+        );
+    }
+
+    #[test]
+    fn sync_discards_units_that_only_civvis_simulated_from_production() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 4,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        state.units.push(StateUnit {
+            id: 42,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 5,
+            ..StateUnit::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let phantom = mirror.game.spawn_test_unit(
+            "archer",
+            0,
+            crate::hex::offset_to_axial(5, 6),
+        );
+        assert!(
+            !mirror.civ6_of.contains_key(&phantom),
+            "CIVVIS can simulate a queued production result before Firaxis creates it"
+        );
+
+        state.turn = 5;
+        mirror.sync(&snapshot, &state, 0);
+
+        assert!(
+            !mirror.game.units.contains_key(&phantom),
+            "the next live state must remove a locally simulated unit with no Civ VI id"
+        );
+        assert_eq!(
+            mirror.game.units.values().filter(|unit| unit.owner == 0).count(),
+            1,
+            "only the exported warrior remains; otherwise CIVVIS plans with a phantom army"
         );
     }
 
@@ -2472,6 +2642,18 @@ pub struct StateSnapshot {
     pub techs: Vec<String>,
     #[serde(default)]
     pub civics: Vec<String>,
+    /// The active Civilization VI technology and the accumulated beakers on it.
+    /// Completed technologies alone do not tell the planner whether changing
+    /// course discards a nearly finished choice.
+    #[serde(default)]
+    pub research: Option<String>,
+    #[serde(default)]
+    pub research_progress: f64,
+    /// The active Civilization VI civic and its accumulated culture.
+    #[serde(default)]
+    pub civic: Option<String>,
+    #[serde(default)]
+    pub civic_progress: f64,
     /// Civ 6 type name of the government in force, e.g. `GOVERNMENT_OLIGARCHY`.
     ///
     /// ⚠ Nothing carried this and the consequence was not silent, only unread: 62
@@ -2599,6 +2781,38 @@ pub struct Seat {
     pub map: String,
     #[serde(default)]
     pub size: String,
+}
+
+/// Civilization VI emits `GAMESPEED_ONLINE`; CIVVIS's setup names it `online`.
+///
+/// Keep the trim/prefix boundary here instead of letting callers carry a string
+/// normalisation convention: both `game.speed` and the typed `game.game_speed`
+/// drive rules, and leaving either at the generated Standard default makes a live
+/// Online game look plausible while costing twice as much to research and build.
+fn civvis_game_speed(civ6: &str) -> Option<GameSpeed> {
+    let id = civ6
+        .trim()
+        .strip_prefix("GAMESPEED_")
+        .unwrap_or(civ6.trim())
+        .to_ascii_lowercase();
+    GameSpeed::from_id(&id)
+}
+
+/// Civilization VI emits `DIFFICULTY_SETTLER`; CIVVIS uses the rules key `settler`.
+fn civvis_difficulty(civ6: &str) -> Option<String> {
+    let id = civ6
+        .trim()
+        .strip_prefix("DIFFICULTY_")
+        .unwrap_or(civ6.trim())
+        .to_ascii_lowercase();
+    (!id.is_empty()).then_some(id)
+}
+
+/// Civilization VI exports its selected map file, for example `Continents.lua`.
+fn civvis_map_script(civ6: &str) -> Option<MapScript> {
+    let id = civ6.trim().to_ascii_lowercase();
+    let id = id.strip_suffix(".lua").unwrap_or(&id);
+    MapScript::from_id(id)
 }
 
 /// `CIVILIZATION_ROME` -> `Rome`, using CIVVIS's own roster as the authority.
@@ -3386,6 +3600,25 @@ pub fn rebuild_from_state(
 ) -> Reconstruction {
     let mut game = rebuild_game(snapshot, players.max(2), seed);
 
+    if let Some(speed) = civvis_game_speed(&state.seat.speed) {
+        // These are deliberately redundant in `Game` for save compatibility.
+        // The viewer renders `game_speed`; a number of rules still use `speed`
+        // to find the speed spec. A half-update is therefore a visual lie or a
+        // mathematical one depending on which path reads it first.
+        game.speed = speed.id().to_string();
+        game.game_speed = speed;
+    }
+
+    if let Some(difficulty) = civvis_difficulty(&state.seat.difficulty)
+        .filter(|difficulty| game.rules.difficulties.contains_key(difficulty))
+    {
+        game.difficulty = difficulty;
+    }
+
+    if let Some(map_script) = civvis_map_script(&state.seat.map) {
+        game.map_script = map_script;
+    }
+
     // Sites the host engine has already rejected, so the planner stops re-deriving
     // them. See `refused_city_sites`.
     game.blocked_city_sites = state.refused_sites.clone();
@@ -3569,6 +3802,36 @@ pub fn rebuild_from_state(
         match civvis_node_name(&game.rules.civics, civ6, "CIVIC_") {
             Some(name) => {
                 game.players[0].civics.insert(crate::name::Name::new(&name));
+            }
+            None => {
+                if !unmapped.contains(civ6) {
+                    unmapped.push(civ6.clone());
+                }
+            }
+        }
+    }
+    if let Some(civ6) = &state.research {
+        match civvis_node_name(&game.rules.techs, civ6, "TECH_") {
+            Some(name) => {
+                game.players[0].research = Some(name);
+                if state.research_progress.is_finite() && state.research_progress >= 0.0 {
+                    game.players[0].research_progress = state.research_progress;
+                }
+            }
+            None => {
+                if !unmapped.contains(civ6) {
+                    unmapped.push(civ6.clone());
+                }
+            }
+        }
+    }
+    if let Some(civ6) = &state.civic {
+        match civvis_node_name(&game.rules.civics, civ6, "CIVIC_") {
+            Some(name) => {
+                game.players[0].civic = Some(name);
+                if state.civic_progress.is_finite() && state.civic_progress >= 0.0 {
+                    game.players[0].civic_progress = state.civic_progress;
+                }
             }
             None => {
                 if !unmapped.contains(civ6) {
@@ -4133,6 +4396,25 @@ impl LiveMirror {
         let skip_rivals = std::env::var("CIVVIS_SYNC_NO_RIVALS").is_ok();
         let skip_units = std::env::var("CIVVIS_SYNC_NO_UNITS").is_ok();
         self.turns_synced += 1;
+
+        // `take_turn` simulates production so its own economy can evaluate the
+        // resulting army. In a live mirror that unit is only QUEUED in Civilization
+        // VI, not present in the next state export, and therefore has no Civ VI id.
+        // Keeping it lets the persistent AI issue orders to an archer that does not
+        // exist and count it as a real defender. Delete every such locally-created
+        // seat-0 unit before reality is applied; when Firaxis actually finishes it,
+        // the export below gives it a new mapped unit instead.
+        let simulated: Vec<u32> = self
+            .game
+            .units
+            .values()
+            .filter(|unit| unit.owner == 0 && !self.civ6_of.contains_key(&unit.id))
+            .map(|unit| unit.id)
+            .collect();
+        for uid in simulated {
+            self.game.remove_unit(uid);
+        }
+
         // ⚠ UNION, NEVER REPLACE. Refusals accumulate over a game and the set is
         // rebuilt from the whole event log each time, but a sync that assigned
         // instead of merging would silently drop anything the caller had added
@@ -4162,6 +4444,35 @@ impl LiveMirror {
         if state.gold >= 0 {
             self.game.players[0].gold = state.gold as f64;
         }
+        if state.faith >= 0 {
+            self.game.players[0].faith = state.faith as f64;
+        }
+        if let Some(civ6) = &state.government {
+            if let Some(name) = civvis_node_name(&self.game.rules.governments, civ6, "GOVERNMENT_") {
+                self.game.players[0].government = Some(name);
+            } else if !self.unmapped.contains(civ6) {
+                self.unmapped.push(civ6.clone());
+            }
+        }
+        if let Some(civ6) = &state.pantheon {
+            let name = civ6
+                .strip_prefix("BELIEF_")
+                .unwrap_or(civ6)
+                .to_ascii_lowercase();
+            self.game.players[0].pantheon = Some(name.clone());
+            if !self.game.players[0].religion_beliefs.contains(&name) {
+                self.game.players[0].religion_beliefs.push(name);
+            }
+        }
+        let mut policies = std::collections::BTreeSet::new();
+        for civ6 in &state.policies {
+            if let Some(name) = civvis_node_name(&self.game.rules.policies, civ6, "POLICY_") {
+                policies.insert(crate::name::Name::new(&name));
+            } else if !self.unmapped.contains(civ6) {
+                self.unmapped.push(civ6.clone());
+            }
+        }
+        self.game.players[0].policies = policies;
         for civ6 in &state.techs {
             if let Some(name) = civvis_node_name(&self.game.rules.techs, civ6, "TECH_") {
                 self.game.players[0].techs.insert(crate::name::Name::new(&name));
@@ -4172,6 +4483,48 @@ impl LiveMirror {
                 self.game.players[0].civics.insert(crate::name::Name::new(&name));
             }
         }
+        self.game.players[0].research = match &state.research {
+            Some(civ6) => match civvis_node_name(&self.game.rules.techs, civ6, "TECH_") {
+                Some(name) => Some(name),
+                None => {
+                    if !self.unmapped.contains(civ6) {
+                        self.unmapped.push(civ6.clone());
+                    }
+                    None
+                }
+            },
+            None => None,
+        };
+        self.game.players[0].research_progress = if self.game.players[0].research.is_some()
+            && state.research_progress.is_finite()
+            && state.research_progress >= 0.0
+        {
+            state.research_progress
+        } else {
+            0.0
+        };
+        self.game.players[0].research_overflow = 0.0;
+        self.game.players[0].civic = match &state.civic {
+            Some(civ6) => match civvis_node_name(&self.game.rules.civics, civ6, "CIVIC_") {
+                Some(name) => Some(name),
+                None => {
+                    if !self.unmapped.contains(civ6) {
+                        self.unmapped.push(civ6.clone());
+                    }
+                    None
+                }
+            },
+            None => None,
+        };
+        self.game.players[0].civic_progress = if self.game.players[0].civic.is_some()
+            && state.civic_progress.is_finite()
+            && state.civic_progress >= 0.0
+        {
+            state.civic_progress
+        } else {
+            0.0
+        };
+        self.game.players[0].civic_overflow = 0.0;
 
         // Newly revealed ground, and the frontier redrawn beyond it. Terrain that was
         // already known does not change, so only the freshly seen needs writing —
@@ -4332,12 +4685,33 @@ impl LiveMirror {
         }
         for city in &state.cities {
             if let Some(cid) = self.cid_of.get(&city.id) {
+                // The authoritative mirror never simulates a queue itself: the
+                // decider runs on a clone.  Replacing this with the live item is
+                // therefore both safe and necessary.  Leaving the startup item in
+                // place made a completed Scout look like an in-progress Scout
+                // forever, and a new Settler looked like an idle city.
+                let queued = civvis_production_item(
+                    &self.game.rules,
+                    city.producing.as_deref(),
+                    &city.districts,
+                );
                 if let Some(live) = self.game.cities.get_mut(cid) {
                     if city.pop > 0 {
                         live.pop = city.pop;
                     }
                     if city.loyalty >= 0.0 {
                         live.loyalty = city.loyalty;
+                    }
+                    if city.food >= 0.0 {
+                        live.food = city.food;
+                    }
+                    // Firaxis exports the current item, not a speculative
+                    // multi-item queue.  Clear even when the item is absent: a
+                    // finished build is an empty queue in the real game, not the
+                    // last thing CIVVIS happened to see.
+                    live.queue.clear();
+                    if let Some(item) = queued {
+                        live.queue.push(item);
                     }
                     // Same translation as the rebuild path, and for the same reason:
                     // an untranslated name here panics `rules.buildings[..]` later.

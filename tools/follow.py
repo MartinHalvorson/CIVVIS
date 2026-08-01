@@ -43,13 +43,33 @@ import time
 import urllib.error
 import urllib.request
 
-RIG = "/Users/martin/civvis-civ6-mirror"
-BIN = os.path.join(RIG, "civvis")
-RUNS = "/Users/martin/civvis-civ6-runs/control"
+RIG = os.environ.get(
+    "CIVVIS_RIG", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def default_binary() -> str:
+    """Find a local CIVVIS executable without assuming one operator's home."""
+    configured = os.environ.get("CIVVIS_BIN")
+    if configured:
+        return configured
+    for candidate in (
+        os.path.join(RIG, "target", "release", "civvis"),
+        os.path.join(RIG, "target", "debug", "civvis"),
+        os.path.join(RIG, "civvis"),
+    ):
+        if os.path.isfile(candidate):
+            return candidate
+    # Keep a useful path in the diagnostic when the build has not happened yet.
+    return os.path.join(RIG, "target", "release", "civvis")
+
+
+BIN = default_binary()
+RUNS = os.environ.get(
+    "CIVVIS_RUNS", os.path.join(os.path.expanduser("~"), "civvis-civ6-runs", "control"))
 PORT = int(os.environ.get("CIVVIS_MIRROR_PORT", "8610"))
-LOG = os.path.join(RIG, "follow.log")
-STATUS = os.path.join(RIG, "status.json")
-STAGE = os.path.join(RIG, "stage")
+LOG = os.environ.get("CIVVIS_FOLLOW_LOG", os.path.join(RIG, "follow.log"))
+STATUS = os.environ.get("CIVVIS_FOLLOW_STATUS", os.path.join(RIG, "status.json"))
+STAGE = os.environ.get("CIVVIS_FOLLOW_STAGE", os.path.join(RIG, "stage"))
 
 POLL_SECONDS = 8.0
 # A rebuild costs a process launch, so don't do it for every appended line; a
@@ -321,7 +341,7 @@ def hold_the_frame():
 MIRROR_URL = f"http://127.0.0.1:{PORT}/"
 # Left half of the display, beside the Civilization VI window the controller
 # parks on the right (`civ6_play --window-side right`).
-MIRROR_BOUNDS = "{0, 33, 864, 1117}"
+MIRROR_BOUNDS = os.environ.get("CIVVIS_MIRROR_BOUNDS", "{0, 33, 864, 1117}")
 
 
 def chrome(script):

@@ -13,6 +13,8 @@ Requires the mirror server on :8610 (see civvis-civ6-mirror/follow.py).
 
 - FOG     every exported plot must be ON the board. Remembered ground used to be
           dropped outright rather than dimmed: 2 of 6 charted plots survived.
+- SETUP   Civ VI's seat settings must be the board's settings. A mirror that says
+          Prince/Pangaea beside a Settler/Continents game is wrong before its first move.
 - RIVERS  a Civilization VI river plot is fresh water BY DEFINITION, so CIVVIS's
           river tiles must be `fw` in the export far above the base rate. Read
           36.4% against a 25.7% base -- chance -- while the board showed the
@@ -67,6 +69,38 @@ def axial(x, y):
     return (x - ((y - (y & 1)) // 2), y)
 
 
+def civ6_id(value, prefix):
+    """Normalize a Civ VI type identifier to a lower-case CIVVIS-style id."""
+    value = str(value or "").strip()
+    if value.upper().startswith(prefix):
+        value = value[len(prefix):]
+    return value.lower()
+
+
+def civ6_map_script(value):
+    """Normalize the Civ VI map-file spelling CIVVIS mirrors."""
+    value = civ6_id(value, "")
+    if value.endswith(".lua"):
+        value = value[:-4]
+    return {"smallcontinents": "small_continents"}.get(value, value)
+
+
+def latest_seat(run):
+    """The latest startup seat event, which carries setup outside state patches."""
+    latest = None
+    with open(os.path.join(run, "events.jsonl")) as handle:
+        for line in handle:
+            if '"seat"' not in line:
+                continue
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            if (event.get("kind") or event.get("event")) == "seat":
+                latest = event
+    return latest
+
+
 def load_export(run, upto=None):
     """Latest value per plot, exactly like Snapshot::from_chunks (later wins).
 
@@ -109,6 +143,47 @@ def main():
     print(f"run   {os.path.basename(run)}")
     print(f"turn  game {game_turn}   board {board['turn']}"
           f"   {'OK' if abs(game_turn - board['turn']) <= 1 else '⚠ DRIFT'}")
+
+    # --- lobby setup -------------------------------------------------------
+    # The seat event is emitted once rather than copied into each state patch.
+    # Compare its actual Civ VI identifiers to the reconstructed board instead
+    # of assuming the command-line defaults used to launch the viewer survived.
+    seat = latest_seat(run)
+    if seat is None:
+        print("SETUP    no seat event yet")
+    else:
+        player = next((p for p in board.get("players", [])
+                       if p.get("id") == board.get("view_player", 0)), {})
+        expected = {
+            "speed": civ6_id(seat.get("speed"), "GAMESPEED_"),
+            "difficulty": civ6_id(seat.get("difficulty"), "DIFFICULTY_"),
+            "map": civ6_map_script(seat.get("map")),
+            "size": civ6_id(seat.get("size"), "MAPSIZE_"),
+            "civ": civ6_id(seat.get("civ"), "CIVILIZATION_"),
+            "leader": civ6_id(seat.get("leader"), "LEADER_"),
+        }
+        actual = {
+            "speed": str(board.get("game_speed") or "").lower(),
+            "difficulty": str(board.get("difficulty") or "").lower(),
+            "map": str(board.get("map", {}).get("script") or "").lower(),
+            "size": str(board.get("map", {}).get("size") or "").lower(),
+            "civ": str(player.get("civ") or "").replace(" ", "_").lower(),
+            "leader": str(player.get("leader") or "").replace(" ", "_").lower(),
+        }
+        mismatches = [key for key, want in expected.items()
+                      if want and actual.get(key) != want]
+        print("SETUP    "
+              f"speed {actual['speed'] or '?'}; "
+              f"difficulty {actual['difficulty'] or '?'}; "
+              f"map {actual['map'] or '?'}/{actual['size'] or '?'}; "
+              f"{player.get('civ') or '?'} / {player.get('leader') or '?'}")
+        if mismatches:
+            problems.append("setup")
+            detail = ", ".join(f"{key} Civ6={expected[key] or '?'} "
+                               f"CIVVIS={actual[key] or '?'}" for key in mismatches)
+            print(f"         ⚠ {detail}")
+        else:
+            print("         OK")
 
     # --- the flip constant, discovered not assumed -------------------------
     best, best_hits = None, -1
@@ -205,7 +280,10 @@ def main():
     # ⚠ Counts alone are the weak check this project keeps getting burned by --
     # 21 units exported and 15 reconstructed once read as healthy because nothing
     # compared them. So compare the SETS, and name what is missing.
-    state = latest_state(run)
+    # Keep entities on the same temporal boundary as terrain. A game can export
+    # the next state's units between the `/state` fetch and this read; comparing
+    # them to an older board reports ordinary movement as a dropped mirror unit.
+    state = latest_state(run, upto=board["turn"])
     if state is None:
         print("ENTITIES (no state event yet)")
         return 0
@@ -258,8 +336,8 @@ def main():
     return 0
 
 
-def latest_state(run):
-    """The most recent `state` event, or None."""
+def latest_state(run, upto=None):
+    """The newest state event no later than ``upto``, or None."""
     latest = None
     with open(os.path.join(run, "events.jsonl")) as handle:
         for line in handle:
@@ -269,8 +347,11 @@ def latest_state(run):
                 event = json.loads(line)
             except ValueError:
                 continue
-            if (event.get("kind") or event.get("event")) == "state":
-                latest = event
+            if (event.get("kind") or event.get("event")) != "state":
+                continue
+            if upto is not None and int(event.get("turn") or 0) > upto:
+                continue
+            latest = event
     return latest
 
 

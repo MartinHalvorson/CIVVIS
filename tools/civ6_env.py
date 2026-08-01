@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import re
+import signal
 import subprocess
 from pathlib import Path
 
@@ -136,15 +137,37 @@ def set_options(path: Path, changes: dict[str, object]) -> dict[str, tuple]:
     return applied
 
 
+def _game_pids_from_ps(text: str) -> list[int]:
+    """Extract real Civ VI executables from ``ps`` output, not argument text."""
+    pids = []
+    for line in text.splitlines():
+        fields = line.strip().split(None, 1)
+        if len(fields) != 2 or not fields[0].isdigit():
+            continue
+        # The application bundle lives below `Application Support`, so command
+        # lines cannot be tokenized on whitespace.  Match the executable path
+        # component instead; `osascript ... process "Civ6_Exe_Child"` has no
+        # slash before the name and is deliberately excluded.
+        if re.search(r"/Civ6_Exe(?:_Child)?(?:\s|$)", fields[1]):
+            pids.append(int(fields[0]))
+    return pids
+
+
 def game_pids() -> list[int]:
-    """PIDs of the running game (never the Steam client or the launcher shim)."""
+    """PIDs of the running game (never Steam, a launcher shim, or a query helper).
+
+    `pgrep -f Civ6_Exe` is unsafe here: the popup watchdog periodically asks
+    System Events about process ``Civ6_Exe_Child``, and `pgrep` therefore saw its
+    own short-lived `osascript` child as a game.  That made a clean restart look
+    like a competing live run.  Inspect the executable token instead.
+    """
     try:
         out = subprocess.run(
-            ["pgrep", "-f", "Civ6_Exe"], capture_output=True, text=True
+            ["ps", "-axo", "pid=,command="], capture_output=True, text=True
         ).stdout
     except OSError:
         return []
-    return [int(tok) for tok in out.split() if tok.isdigit()]
+    return _game_pids_from_ps(out)
 
 
 def quit_game(timeout_s: float = 20.0) -> bool:
@@ -157,13 +180,21 @@ def quit_game(timeout_s: float = 20.0) -> bool:
 
     if not game_pids():
         return True
-    subprocess.run(["pkill", "-f", "Civ6_Exe"], check=False)
+    for pid in game_pids():
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            pass
     deadline = time.time() + timeout_s
     while time.time() < deadline:
         if not game_pids():
             return True
         time.sleep(0.5)
-    subprocess.run(["pkill", "-9", "-f", "Civ6_Exe"], check=False)
+    for pid in game_pids():
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
     time.sleep(2.0)
     return not game_pids()
 

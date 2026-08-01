@@ -38,6 +38,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import civ6_env as env  # noqa: E402
+from civ6_control import macos_input  # noqa: E402
 
 # The LaunchPad's PLAY button, as a fraction of the launcher window. The button
 # sits in the upper right of the artwork; these are measured from the shipped
@@ -95,9 +96,9 @@ def launcher_window() -> tuple[int, int, int, int] | None:
 
 
 def click(x: int, y: int) -> None:
-    run(["cliclick", f"m:{x},{y}"])
+    macos_input.move(x, y)
     time.sleep(0.35)
-    run(["cliclick", f"c:{x},{y}"])
+    macos_input.click(x, y)
 
 
 def press_play(timeout_s: float = 90.0) -> bool:

@@ -187,6 +187,24 @@ was not:
   nothing wrong in any log. `civ6_play.py` raises the game window every few
   seconds for the whole run.
 
+### Local input has no package-manager dependency
+
+The few controls that cannot be sent through the game's own bridge use
+`tools/civ6_control/macos_input.py`. It uses `cliclick` when an operator has it,
+but a normal macOS Command Line Tools installation is enough: on first use it
+builds a tiny cached CoreGraphics helper in the temporary directory. The helper
+uses Quartz points, matching the window bounds read by System Events, rather
+than Retina screenshot pixels.
+
+`python3 tools/civ6_preflight.py` compiles that helper without clicking and
+reports the selected backend. A host without either `cliclick` or `swiftc` fails
+there, before a lobby-setting click can leave a run in an unknown configuration.
+
+Verified lobby navigation also needs Pillow (`python3 -m pip install --user
+Pillow`): the setup driver detects the variable-height Single Player menu from a
+screenshot and will not substitute a guessed Create Game row when image support
+is absent.
+
 ### The controller shares the game's frame budget
 
 Every pass this makes runs *instead of* the game advancing, and
