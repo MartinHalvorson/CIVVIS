@@ -6684,3 +6684,38 @@ file updates both the on-disk artifact and the embedded fallback, and it is
 resolved by 38 evaluator arms, the league seeding and that fallback. **Every
 strength number measured against `advanced_evolved` before this change is
 measured against a different agent after it.**
+
+## 2026-08-01 — post-policy/envoy champion confirmation retained the incumbent
+
+The three #708 matrices established that the revised embedded champion beat the
+then-current stock controller, but #746 later promoted the live policy deck,
+envoy infrastructure, and envoy priority. That composition is a different
+production controller, so the earlier result was not treated as sufficient to
+change its numerical weights.
+
+Before reading this outcome, a candidate binary held those three promoted
+mechanisms constant for both sides and compared only the 40 numerical weights:
+
+```sh
+target/release/ai_eval advanced advanced_stock_control \
+  --matrix --pairs 300 --jobs 10 --seed 74000000
+```
+
+Within that candidate binary, `advanced` meant the immutable revised champion
+plus the live policy/envoy composite, and `advanced_stock_control` meant the
+same composite with the incumbent stock weights. The compact profile used
+seeds `74000000..=74000299`; deployment used the disjoint
+`75000000..=75000299` prefix. No sample size, profile, seed, or treatment knob
+was changed after this command was fixed.
+
+| profile | paired score for champion candidate | directions | anytime-valid evidence | matrix result |
+|---|---:|---:|---:|---|
+| compact Standard | 52.9% (95% Wilson 47.3%..58.5%), +20 Elo-equivalent | 91 champion / 60 stock, p=0.0144 | peak e=4.418e2; crossed map 212 | accept: no established regression |
+| deployment Online | 50.6% (95% Wilson 45.0%..56.2%), +4 Elo-equivalent | 83 champion / 82 stock, p=1.0000 | no crossing; peak e=1.000 | reject: strength is inconclusive |
+
+The matrix therefore returned `RETAIN advanced_stock_control — advanced cleared
+1/2 required profiles`. The temporary production-default change was reverted:
+current production `advanced` remains the stock-weight, live-policy,
+envoy-production composite. The revised genome remains evaluator-only. The
+compact reading is useful evidence about a profile-qualified effect, but cannot
+support a general or deployment-strength promotion claim.
