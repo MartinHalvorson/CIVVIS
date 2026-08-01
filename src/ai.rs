@@ -3036,7 +3036,37 @@ impl BasicAi {
                         .get(&deal.from)
                         .copied()
                         .unwrap_or(0.0);
+                    let special_accept = if deal.defensive_pact {
+                        grievance < 75.0
+                            && partner_power < g.military_power(pid) * 1.8 + 20.0
+                    } else if let Some(target) = deal.joint_war_target {
+                        let joint_power = g.military_power(pid) + partner_power;
+                        let target_power = g.military_power(target);
+                        g.players[pid]
+                            .grievances
+                            .get(&target)
+                            .copied()
+                            .unwrap_or(0.0)
+                            >= 20.0
+                            && joint_power > target_power * 1.2 + 20.0
+                    } else if let Some(promise) = deal.promise.as_deref() {
+                        match promise {
+                            // An early Basic AI still needs nearby expansion
+                            // room; later on it can safely give this promise.
+                            "no_settling" => g.player_city_ids(pid).len() >= 3,
+                            "no_city_state_attack" => !g.players.iter().any(|city_state| {
+                                city_state.is_minor
+                                    && !city_state.is_barbarian
+                                    && g.is_at_war(pid, city_state.id)
+                            }),
+                            "no_conversion" | "no_spying" => true,
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    };
                     deal.peace
+                        || special_accept
                         || deal.give_gold >= deal.request_gold
                         || ((deal.friendship || deal.alliance.is_some() || deal.open_borders)
                             && grievance < 75.0
@@ -3184,6 +3214,56 @@ impl BasicAi {
         if self.minor {
             return;
         }
+        // Delegations and Resident Embassies are a small, recurring
+        // investment rather than an AI-only stat. Establish one with the
+        // least aggrieved major on a staggered cadence, preferring the later
+        // Embassy replacement once Diplomatic Service is known.
+        if g.turn % 9 == pid as u32 % 9 {
+            let partner = others
+                .iter()
+                .copied()
+                .filter(|other| {
+                    !g.players[*other].is_minor
+                        && !g.is_at_war(pid, *other)
+                        && g.players[pid].grievances.get(other).copied().unwrap_or(0.0) < 50.0
+                })
+                .min_by(|first, second| {
+                    g.players[pid]
+                        .grievances
+                        .get(first)
+                        .copied()
+                        .unwrap_or(0.0)
+                        .total_cmp(
+                            &g.players[pid]
+                                .grievances
+                                .get(second)
+                                .copied()
+                                .unwrap_or(0.0),
+                        )
+                        .then(first.cmp(second))
+                });
+            if let Some(partner) = partner {
+                let embassy_ready = g.players[pid]
+                    .civics
+                    .contains(&crate::name!("diplomatic_service"))
+                    && g.players[pid].gold >= 25.0
+                    && !g
+                        .diplomatic_mission_to(pid, partner)
+                        .is_some_and(|mission| mission.kind == "embassy");
+                let action = if embassy_ready {
+                    Some(Action::SendEmbassy { player: partner })
+                } else if g.players[pid].gold >= 10.0
+                    && g.diplomatic_mission_to(pid, partner).is_none()
+                {
+                    Some(Action::SendDelegation { player: partner })
+                } else {
+                    None
+                };
+                if let Some(action) = action {
+                    let _ = g.apply(pid, &action);
+                }
+            }
+        }
         if g.turn % 20 == pid as u32 % 20 {
             if let Some(partner) = others.iter().copied().find(|other| {
                 !g.players[*other].is_minor
@@ -3228,6 +3308,23 @@ impl BasicAi {
                         alliance,
                     },
                 );
+            }
+        }
+        // A Defensive Pact is deliberately separate from an Alliance. Once
+        // an allied partner is in place, offer the explicit 30-turn treaty
+        // instead of treating every Alliance as an automatic call to war.
+        if g.turn % 15 == pid as u32 % 15 {
+            if let Some(partner) = others.iter().copied().find(|other| {
+                !g.players[*other].is_minor
+                    && g.are_allied(pid, *other)
+                    && g.defensive_pact_until(pid, *other).is_none()
+                    && !g.pending_deals.iter().any(|deal| {
+                        deal.defensive_pact
+                            && ((deal.from == pid && deal.to == *other)
+                                || (deal.from == *other && deal.to == pid))
+                    })
+            }) {
+                let _ = g.apply(pid, &Action::ProposeDefensivePact { player: partner });
             }
         }
         let at_war = others.iter().any(|o| g.is_at_war(pid, *o));
@@ -10146,7 +10243,14 @@ mod tests {
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         let city = g.player_city_ids(0)[0];
-        g.cities.get_mut(&city).unwrap().captured_from = Some(1);
+        {
+            let captured = g.cities.get_mut(&city).unwrap();
+            // This is an unresolved capture of player 1's original city;
+            // resolving a genuine recapture of player 0's own original city
+            // correctly produces no grievance.
+            captured.original_owner = 1;
+            captured.captured_from = Some(1);
+        }
         assert!(matches!(
             g.legal_actions(0).as_slice(),
             [Action::KeepCity { city: pending }] if *pending == city

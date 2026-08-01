@@ -25471,10 +25471,10 @@ function drawEmpire() {
 // -------------------------------------------------------- diplomacy screen
 // Quick Deals compares every trade the rivals would accept. This is the other
 // half of Civ 6's diplomacy: the standing relationship with each leader, what
-// their agenda wants, and the four things you can do about it that are not a
-// trade — declare war, sue for peace, denounce, and offer a pact.
+// their agenda wants, and the relationship choices that are not a trade —
+// missions, promises, pacts, joint wars, demands, war, peace and denouncing.
 //
-// Until now none of those four reached the player at all. `declare_war`,
+// The original four did not reach the player at all. `declare_war`,
 // `make_peace` and `denounce` have been in `legal_actions(0)` since v0.6 with
 // nothing anywhere on the page that would send one, which closed the
 // domination path to a person while leaving it open to every agent.
@@ -25512,6 +25512,13 @@ function dealWords(action) {
   if (action.peace) parts.push("peace");
   if (action.friendship) parts.push("a declaration of friendship");
   if (action.alliance) parts.push(`a ${titleCase(action.alliance)} alliance`);
+  if (action.defensive_pact) parts.push("a Defensive Pact");
+  if (action.joint_war_target !== undefined && action.joint_war_target !== null) {
+    const target = state.players[action.joint_war_target] || {};
+    parts.push(`a Joint War against ${target.civ || "a rival"}`);
+  }
+  if (action.promise) parts.push(`a promise of ${titleCase(action.promise)}`);
+  if (action.demand) parts.push("a Gold demand");
   if (action.open_borders) parts.push("open borders");
   if (action.give_gold > 0) parts.push(`${Math.round(action.give_gold)} Gold from you`);
   if (action.request_gold > 0) parts.push(`${Math.round(action.request_gold)} Gold from them`);
@@ -25533,6 +25540,12 @@ function drawDiplomacy() {
   const peace = byPlayer("make_peace");
   const denounce = byPlayer("denounce");
   const proposals = byPlayer("propose_deal");
+  const delegations = byPlayer("send_delegation");
+  const embassies = byPlayer("send_embassy");
+  const defensivePacts = byPlayer("propose_defensive_pact");
+  const jointWars = byPlayer("propose_joint_war");
+  const promises = byPlayer("request_promise");
+  const demands = byPlayer("demand_gold");
   const replies = state.legal_actions.filter(a =>
     a.type === "accept_deal" || a.type === "reject_deal");
 
@@ -25572,15 +25585,40 @@ function drawDiplomacy() {
     .sort((first, second) => Number(first.is_minor) - Number(second.is_minor))
     .map(player => {
       const atWar = player.at_war_with_me;
-      const opinion = Math.round(player.opinion_of_me);
-      const stance = atWar ? "war" : player.allied || player.friend ? "friend" : "";
+      const opinion = Math.round(player.relationship_opinion_of_me ?? player.opinion_of_me ?? 0);
+      const relationship = player.their_relationship || player.relationship || "neutral";
+      const stance = atWar ? "war" : player.allied || player.friend ? "friend" : relationship;
       const stanceWord = atWar ? "At war"
         : player.teammate ? "Teammate"
         : player.allied ? `${titleCase(player.alliance || "")} ally`
         : player.friend ? "Friend"
         : player.is_minor ? (player.suzerain === 0 ? "Your suzerainty" : "Independent")
+        : relationship === "denounced" ? "Denounced"
+        : relationship === "declared_friend" ? "Friend"
+        : relationship === "friendly" ? "Friendly"
+        : relationship === "unfriendly" ? "Unfriendly"
         : opinionWord(opinion);
       const actions = []
+        .concat((delegations.get(player.id) || []).map(action =>
+          diploButton(action, "✉ Send Delegation", "",
+            "Pay 10 Gold to establish a delegation and gain one visibility level")))
+        .concat((embassies.get(player.id) || []).map(action =>
+          diploButton(action, "🏛 Establish Embassy", "",
+            "Pay 25 Gold to replace your delegation with a Resident Embassy")))
+        .concat((defensivePacts.get(player.id) || []).map(action =>
+          diploButton(action, "🛡 Propose Defensive Pact", "",
+            "An ally may accept a 30-turn pact that brings them into a defensive war")))
+        .concat((jointWars.get(player.id) || []).map(action => {
+          const target = state.players[action.target] || {};
+          return diploButton(action, `⚔ Joint War vs ${target.civ || "rival"}`, "danger",
+            "If accepted, both signatories declare on the named target for 30 turns");
+        }))
+        .concat((promises.get(player.id) || []).map(action =>
+          diploButton(action, `⌁ Request ${titleCase(action.promise)} promise`, "",
+            "A refusal or breach creates grievances and can support a Retribution War")))
+        .concat((demands.get(player.id) || []).map(action =>
+          diploButton(action, `💰 Demand ${Math.round(action.gold)} Gold`, "",
+            "They may reject the demand; refusing creates grievances")))
         .concat((peace.get(player.id) || []).map(action =>
           diploButton(action, "🕊 Make peace", "primary", "End the war on the current terms")))
         .concat((proposals.get(player.id) || []).map(action =>
@@ -25597,6 +25635,7 @@ function drawDiplomacy() {
             "Say publicly what you think of them. A war declared after this is not a surprise war")));
       const meter = (label, value, tone = "") =>
         `<div class="leader-meter"><span>${label}</span><b class="${tone}">${value}</b></div>`;
+      const missionName = mission => mission ? titleCase(mission.kind || "delegation") : "none";
       // A city-state has no leader, no agenda and no opinion of anyone. Its
       // relationship is envoys and suzerainty, so say that instead of six
       // meters that all read zero.
@@ -25612,6 +25651,11 @@ function drawDiplomacy() {
             player.grievances_against_me > 0 ? "bad" : "") +
           meter("Your grievances", Math.round(player.my_grievances),
             player.my_grievances > 0 ? "good" : "") +
+          meter("Their stance", titleCase(relationship)) +
+          meter("Your mission", missionName(player.mission_to_them || player.delegation_to_them)) +
+          meter("Their mission", missionName(player.mission_to_me || player.delegation_to_me)) +
+          meter("Defensive Pact", player.defensive_pact ? `until ${player.defensive_pact}` : "none") +
+          meter("Visibility", Math.round(player.diplomatic_visibility || 0)) +
           meter("Borders", (player.open_borders_to_me ? "open to you" : "closed to you") +
             (player.my_open_borders_to_them ? " · open to them" : "")) +
           meter("Cities", player.cities) +

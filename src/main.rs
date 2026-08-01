@@ -15,7 +15,7 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// blend two players into one lifetime average and erase the very improvement
 /// the longitudinal tournament is supposed to expose.
 const DEFAULT_TOURNAMENT_ENTRANTS: &str =
-    "advanced-20260801-policy-envoy=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random";
+    "advanced-20260801-diplomacy=advanced,advanced_v1,basic-20260801-diplomacy=basic,random-20260730=random";
 
 /// `advanced_v1` freezes the planning configuration, but deliberately shares
 /// the production Basic/Advanced implementation. Pin those sources so a code
@@ -157,7 +157,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// deployment comparison (SHA-256
 /// `932cfabf125e729a5264ce43d2fd8b05d013d3fe84939b1dcd366ff122ddc84a`).
 /// This is a compatibility re-pin, not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa387_09a5_e525_962f;
+///
+/// #786 adds live Delegation/Embassy, Defensive Pact, Joint War, promise, and
+/// demand decisions to the shared Basic and Advanced diplomacy paths. The
+/// frozen `advanced_v1` controller invokes that same path, so the behavior is
+/// intentionally a protocol-v4 change with a fresh ledger rather than a
+/// compatibility re-pin.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xcce4_b55c_d22a_ed03;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1730,7 +1736,7 @@ mod tests {
         assert!(parse_tournament_entrants("advanced,,basic").is_err());
 
         let default = parse_tournament_entrants(DEFAULT_TOURNAMENT_ENTRANTS).unwrap();
-        assert_eq!(default[0].identity, "advanced-20260801-policy-envoy");
+        assert_eq!(default[0].identity, "advanced-20260801-diplomacy");
         assert_eq!(default[0].controller, "advanced");
     }
 

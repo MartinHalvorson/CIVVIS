@@ -4913,6 +4913,33 @@ impl AdvancedAi {
                 _ => 55.0,
             };
         }
+        if deal.defensive_pact {
+            // The engine only offers a pact to an existing Ally. Its value is
+            // protection against a surprise declaration, but it is never
+            // worth protecting the campaign target (handled above).
+            value += if partner_power > my_power * 0.8 { 95.0 } else { 55.0 };
+        }
+        if let Some(target) = deal.joint_war_target {
+            let strategic_target = plan.target_player == Some(target)
+                || self.rival_victory_pressure(g, target).progress >= 78;
+            value += if strategic_target {
+                300.0
+            } else {
+                // A Joint War is a 30-turn commitment, not a free diplomatic
+                // favour. Do not accept a human/AI proposal that pulls this
+                // plan off its own objective.
+                -300.0
+            };
+        }
+        if let Some(promise) = deal.promise.as_deref() {
+            let conflicts_with_plan = matches!(
+                (plan.strategy, promise),
+                (GrandStrategy::Expansion, "no_settling")
+                    | (GrandStrategy::Religion, "no_conversion")
+                    | (GrandStrategy::Conquest | GrandStrategy::Recovery, "no_city_state_attack")
+            );
+            value += if conflicts_with_plan { -130.0 } else { 20.0 };
+        }
         value - grievance * 0.8
     }
 
@@ -5699,7 +5726,16 @@ impl AdvancedAi {
                     player,
                     casus_belli,
                 } if *player == target => {
-                    let grievance_cost = if casus_belli == "formal_war" { 100 } else { 50 };
+                    let grievance_cost = match casus_belli.as_str() {
+                        "reconquest_war" | "protectorate_war" | "liberation_war" => 0,
+                        "golden_age_war" => 25,
+                        "holy_war" | "colonial_war" | "retribution_war" | "ideological_war" => 50,
+                        "territorial_war" => 75,
+                        // Formal War is the baseline. This branch is also a
+                        // conservative fallback if another legal profile is
+                        // added without teaching the planner its cost.
+                        _ => 100,
+                    };
                     Some((grievance_cost, casus_belli, action))
                 }
                 _ => None,
@@ -6353,6 +6389,56 @@ impl AdvancedAi {
         });
         self.strategic_bilateral_trade(g, pid, denied_partner, plan.strategy);
         self.propose_strategic_alliance(g, pid, plan, denied_partner);
+        // Relationship mechanics must be part of a strategic AI turn too.
+        // Send one mission to the best non-hostile major, preferring the
+        // Embassy that supersedes a prior Delegation. This mirrors the basic
+        // controller's cadence but uses the plan-aware relationship score.
+        if g.turn % 8 == pid as u32 % 8 {
+            let mission = g
+                .players
+                .iter()
+                .filter(|other| {
+                    other.id != pid
+                        && other.alive
+                        && !other.is_minor
+                        && !other.is_barbarian
+                        && g.has_met(pid, other.id)
+                        && !g.is_at_war(pid, other.id)
+                        && Some(other.id) != denied_partner
+                        && g.players[pid]
+                            .grievances
+                            .get(&other.id)
+                            .copied()
+                            .unwrap_or(0.0)
+                            < 50.0
+                })
+                .max_by(|left, right| {
+                    g.relationship_opinion(pid, left.id)
+                        .total_cmp(&g.relationship_opinion(pid, right.id))
+                        .then(right.id.cmp(&left.id))
+                })
+                .and_then(|partner| {
+                    let embassy_ready = g.players[pid]
+                        .civics
+                        .contains(&crate::name!("diplomatic_service"))
+                        && g.players[pid].gold >= 25.0
+                        && !g
+                            .diplomatic_mission_to(pid, partner.id)
+                            .is_some_and(|mission| mission.kind == "embassy");
+                    if embassy_ready {
+                        Some(Action::SendEmbassy { player: partner.id })
+                    } else if g.players[pid].gold >= 10.0
+                        && g.diplomatic_mission_to(pid, partner.id).is_none()
+                    {
+                        Some(Action::SendDelegation { player: partner.id })
+                    } else {
+                        None
+                    }
+                });
+            if let Some(action) = mission {
+                let _ = g.apply(pid, &action);
+            }
+        }
         let my_power = g.military_power(pid);
         let rivals: Vec<usize> = g
             .players
@@ -15585,6 +15671,10 @@ mod tests {
             friendship,
             peace,
             alliance: None,
+            defensive_pact: false,
+            joint_war_target: None,
+            promise: None,
+            demand: false,
             expires,
         };
 

@@ -9500,12 +9500,10 @@ mod tests {
         assert!(refused["started"].is_null());
     }
 
-    /// War, peace and denouncement have been in `legal_actions(0)` since v0.6
-    /// with nothing on the page that would send one, which closed the
-    /// domination path to a person while leaving it open to every agent. The
-    /// diplomacy screen is where those live now, and it must keep covering
-    /// them — including for city-states, or a war with one can be started and
-    /// never ended.
+    /// Diplomacy needs a complete player-facing action surface. The screen
+    /// must retain both war/peace (including city-states) and every major-to-
+    /// major relationship action, or a mechanic the engine and AI can use is
+    /// still unavailable to a human player.
     #[test]
     fn browser_lets_the_player_conduct_diplomacy() {
         for piece in [
@@ -9526,6 +9524,12 @@ mod tests {
             "make_peace",
             "denounce",
             "propose_deal",
+            "send_delegation",
+            "send_embassy",
+            "propose_defensive_pact",
+            "propose_joint_war",
+            "request_promise",
+            "demand_gold",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("byPlayer(\"{action}\")")),

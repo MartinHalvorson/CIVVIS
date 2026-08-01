@@ -243,7 +243,7 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// Version of the game/rating contract, independent of the JSON shape. Bump
 /// this when rules, default setup, or scoring semantics change enough that an
 /// Elo point no longer measures the same experiment.
-pub const ELO_PROTOCOL_VERSION: u32 = 3;
+pub const ELO_PROTOCOL_VERSION: u32 = 4;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// Immutable protocol-v1 baseline retained for historical comparison after
@@ -252,6 +252,9 @@ pub const HISTORICAL_V1_RATINGS_PATH: &str = "data/elo_ratings_v1.json";
 /// Immutable protocol-v2 baseline retained after the island-settlement repair
 /// changed the shared legacy controller again.
 pub const HISTORICAL_V2_RATINGS_PATH: &str = "data/elo_ratings_v2.json";
+/// Immutable protocol-v3 baseline retained after the intergovernment
+/// diplomacy pass changed both shared scripted-controller paths.
+pub const HISTORICAL_V3_RATINGS_PATH: &str = "data/elo_ratings_v3.json";
 const LEAGUE_SNAPSHOT_DIR: &str = "data/league";
 const LEAGUE_SNAPSHOT_FILE: &str = "data/league/league.json";
 
@@ -3796,7 +3799,8 @@ mod tests {
         performance_elo, scheduled_seats, seat_schedule, strict_builtin_arm_in, wilson_interval,
         win_shares, BuiltinAiBuildError, EloPool, RatedPlayer, RatingKey, TournamentProfile,
         TourneyCfg, WeightSource, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
-        ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, HISTORICAL_V1_RATINGS_PATH, HISTORICAL_V2_RATINGS_PATH,
+        ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, HISTORICAL_V1_RATINGS_PATH,
+        HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH,
         VALUENET_FILE,
     };
     use crate::game::{Action, Game};
@@ -5009,8 +5013,8 @@ mod tests {
     }
 
     #[test]
-    fn shipped_protocol_v3_ledger_is_a_canonical_fresh_baseline() {
-        let pool = EloPool::load(DEFAULT_RATINGS_PATH).unwrap();
+    fn historical_protocol_v3_ledger_is_preserved() {
+        let pool = EloPool::load(HISTORICAL_V3_RATINGS_PATH).unwrap();
         let expected_cfg = TourneyCfg {
             rating_anchor: Some("advanced_v1".to_string()),
             controller_roster: ["advanced", "advanced_v1", "basic", "random"]
@@ -5020,9 +5024,11 @@ mod tests {
             ..TourneyCfg::default()
         };
         assert_eq!(pool.base_rating, ELO_BASE_RATING);
+        let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
+        historical_profile.protocol_version = 3;
         assert_eq!(
             pool.profile,
-            Some(TournamentProfile::from_cfg(&expected_cfg))
+            Some(historical_profile)
         );
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
@@ -5059,6 +5065,56 @@ mod tests {
         assert!((advanced.1 - 1643.2).abs() < 0.1);
         assert!((100.0 * advanced.4 - 54.6).abs() < 0.1);
         assert!((100.0 * advanced.5 - 81.9).abs() < 0.1);
+    }
+
+    #[test]
+    fn shipped_protocol_v4_ledger_is_a_canonical_fresh_baseline() {
+        let pool = EloPool::load(DEFAULT_RATINGS_PATH).unwrap();
+        let expected_cfg = TourneyCfg {
+            rating_anchor: Some("advanced_v1".to_string()),
+            controller_roster: ["advanced", "advanced_v1", "basic", "random"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            ..TourneyCfg::default()
+        };
+        assert_eq!(pool.base_rating, ELO_BASE_RATING);
+        assert_eq!(pool.profile, Some(TournamentProfile::from_cfg(&expected_cfg)));
+        assert!(pool.history_complete);
+        assert_eq!(pool.history.len(), 40);
+        assert!(pool.history.iter().all(|game| {
+            game.id
+                .as_deref()
+                .is_some_and(|id| id.starts_with("v4:"))
+        }));
+        assert_eq!(
+            pool.history.len(),
+            pool.overall
+                .values()
+                .map(|rating| rating.games)
+                .max()
+                .unwrap_or(0) as usize
+        );
+        assert_eq!(
+            pool.overall.keys().map(String::as_str).collect::<Vec<_>>(),
+            vec![
+                "advanced-20260801-diplomacy",
+                "advanced_v1",
+                "basic-20260801-diplomacy",
+                "random-20260730",
+            ]
+        );
+        assert_eq!(pool.ratings.len(), 16);
+
+        let direct = direct_anchor_performance(&pool, "advanced_v1");
+        let advanced = direct
+            .iter()
+            .find(|(player, _, _, _, _, _)| player == "advanced-20260801-diplomacy")
+            .unwrap();
+        assert_eq!((advanced.2, advanced.3), (33.0, 40));
+        assert!((advanced.1 - 1760.0).abs() < 0.1);
+        assert!((100.0 * advanced.4 - 68.0).abs() < 0.1);
+        assert!((100.0 * advanced.5 - 91.3).abs() < 0.1);
     }
 
     #[test]
