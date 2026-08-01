@@ -2307,6 +2307,11 @@ end
 
 local function chooseProduction(city, counts, nCities, turn, refused)
 	refused = refused or {};
+	-- Hoisted, because BOTH the expansion gate and the army cap need it and the
+	-- expansion gate is ~190 lines earlier in the ladder — which is exactly how
+	-- settlers came to outrank soldiers in a war that was being lost.
+	local atWar, ourStrength, enemyStrength = warPressure();
+	local losingWar = atWar and enemyStrength > ourStrength;
 	-- ★★★★★ ANSWER WITH CIVVIS'S CHOICE WHEN IT HAS ONE.
 	--
 	-- The end-turn production prompt must be answered or the turn never ends, so this
@@ -2394,9 +2399,28 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- not free to the first raider. Above the floor the settler competes normally.
 	local defenders = counts.military or 0;
 	local floorNeeded = math.max(1, nCities);
+	-- ★★★★★ AND NOT WHILE A WAR IS BEING LOST. FOURTH instance of this file's
+	-- recurring class, after `ArmyCap`, the production floor and
+	-- `MaxProductionPasses`: a gate that is right in peacetime and wrong in the one
+	-- state that ends runs.
+	--
+	-- The "one defender per city" floor above does not catch it. Measured on live run
+	-- `civvis-20260801T141601Z`: at turn 78-112, ONE city left, ten units, and
+	-- `floorNeeded` was 1 — so the gate passed and the ladder built **five settlers
+	-- and two builders** against ONE archer, while player 2 went from 146 to 203
+	-- military and took Aquileia at t97 and Ostia at t101.
+	--
+	-- Settlers built in a losing war are worse than idle: they spend the production
+	-- that would have defended, and then they are captured. The comment above already
+	-- says "expansion that cannot be held is not expansion" — this is the condition
+	-- that sentence was missing.
+	--
+	-- ⚠ Gated on being OUTMATCHED, not merely at war. A war we are winning is exactly
+	-- when taking more ground is right, and `warPressure` already draws that line.
 	if (nCities + counts.settler) < (cfg.CityTarget or 6)
 			and counts.settler < (cfg.SettlersInFlight or 1)
 			and defenders >= floorNeeded
+			and not losingWar
 			and turn < (cfg.SettlerStopTurn or 9999) then
 		ladder[#ladder + 1] = { "UNIT_SETTLER", "expand" };
 	end
@@ -2447,8 +2471,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	--
 	-- ⚠ Deliberately gated on STRENGTH, not on being at war. A war we are winning does
 	-- not need this, and the whole defect was a gate that could not tell those apart.
-	local atWar, ourStrength, enemyStrength = warPressure();
-	if atWar and enemyStrength > ourStrength then
+	if losingWar then
 		wantArmy = math.max(wantArmy, (counts.military or 0) + 2);
 	end
 	-- ★★★ A BATTERING RAM, AND IT MUST COME BEFORE THE ARMY.
