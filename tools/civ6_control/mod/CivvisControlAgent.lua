@@ -2665,7 +2665,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	--
 	-- Forty-four builders for a six-city empire that wanted five
 	-- (`BuilderPerCity` 0.8). The floor reached its FIRST TWO entries zero times:
-	-- `PROJECT_CAMPUS_RESEARCH_GRANT` needs a Campus in THAT city and most cities
+	-- the campus project needs a Campus in THAT city and most cities
 	-- had none, and `UNIT_WARRIOR` and `UNIT_SLINGER` go OBSOLETE mid-game and stop
 	-- being buildable at all. `UNIT_BUILDER` never obsoletes, so as the eras pass
 	-- every fallback above it evaporates and the floor becomes "build a builder,
@@ -2678,7 +2678,20 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- The melee ladder goes in above the builder so the floor stays non-degenerate:
 	-- these are the units the army block already prefers, and `playable` drops the
 	-- obsolete ones, so the first still-buildable tier wins.
-	for _, name in ipairs({ "PROJECT_CAMPUS_RESEARCH_GRANT",
+	-- ⚠ `PROJECT_ENHANCE_DISTRICT_CAMPUS`, not `PROJECT_CAMPUS_RESEARCH_GRANT`.
+	-- Civilization VI HAS NO SUCH PROJECT. Grepping every shipped Asset for
+	-- `PROJECT_CAMPUS_RESEARCH_GRANT` returns exactly one file — this mod — while
+	-- Firaxis's own district projects are `PROJECT_ENHANCE_DISTRICT_<DISTRICT>`.
+	--
+	-- So the floor's FIRST entry, the one that exists to guarantee a city always has
+	-- something to build, has never been buildable on any turn of any run. That is
+	-- the real reason the floor fell through to `UNIT_BUILDER` every time — #748
+	-- attributed it to "needs a Campus", which was a guess about a name that does
+	-- not resolve at all.
+	--
+	-- ⚠ It still requires a Campus, so it is not a universal fallback either; the
+	-- ungated builder below remains the true last resort.
+	for _, name in ipairs({ "PROJECT_ENHANCE_DISTRICT_CAMPUS",
 	                        "UNIT_SWORDSMAN", "UNIT_SPEARMAN", "UNIT_WARRIOR",
 	                        "UNIT_ARCHER", "UNIT_SLINGER" }) do
 		ladder[#ladder + 1] = { name, "floor" };
