@@ -239,6 +239,32 @@ internal reader or establish a causal path. Any controller change must still
 add a targeted counterfactual regression and pass its own strength/safety
 screen; this reporting change alters no production behavior.
 
+### Coordinated-mover follow-up
+
+The first bounded follow-up applies the same `BattlefrontFrame` to
+`coordinated_tactical_step`'s one-ply threat score. A force's target, posture,
+and local-strength estimate already used the turn-start frame, but its mover
+could still price every hostile's current range, position, and HP from the full
+`Game`. The production mover now admits an opposing tactical threat only when
+the hostile tile and unit identity both belonged to that frame. It deliberately
+does not turn the generic `BasicAi` sparring controller into a fog controller.
+
+The focused regression starts from an open tactical fork where the legacy
+mover reroutes around a Giant Death Robot. It captures the production frame
+before placing that hostile, verifies the contact is absent from the frame, and
+then requires the production mover to retain its original route. This guards
+the information boundary without pretending that a generated unit arrangement
+proves the whole controller safe.
+
+On the same 16-map `862000..862015` prefix used above, the pre-change build
+had 4/180 controlled action witnesses and this build had 3/179. Every source,
+treatment, save/load, and null-control tensor comparison matched in both
+runs; neither build had a plan-report divergence. The different valid-probe
+count means this is a reproducible directional check, not a paired effect-size
+estimate. It shows that the local guard removes one observed witness while
+three later `move → move` witnesses remain, so it is neither a claim of full
+fog honesty nor a gameplay-strength claim.
+
 ## Scope and limitations
 
 The census uses `obs_tensor` as the implementation's fog-honest input

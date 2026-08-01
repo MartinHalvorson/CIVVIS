@@ -11890,6 +11890,16 @@ impl AdvancedAi {
         enemies: &[usize],
         decline_settlers: bool,
     ) -> bool {
+        // The force order is committed against the turn-start frame.  Its
+        // one-ply mover must use that same evidence: otherwise a hidden
+        // hostile's current strength or position can still reroute a unit
+        // after the force planner correctly declined to see it.
+        // Avoid building a visibility frame for the frozen legacy control;
+        // its deliberate full-state behavior remains bit-for-bit on its
+        // original path.
+        let visible = self
+            .battlefront_observation
+            .then(|| self.battlefront_visibility(g, pid));
         let unit = &g.units[&uid];
         let upos = unit.pos;
         let role = Self::force_role(g, uid);
@@ -11946,7 +11956,13 @@ impl AdvancedAi {
             for enemy in g
                 .units
                 .values()
-                .filter(|other| enemies.contains(&other.owner))
+                .filter(|other| {
+                    enemies.contains(&other.owner)
+                        && visible.as_ref().is_none_or(|visible| {
+                            g.sees(visible, other.pos)
+                                && self.battlefront_unit_visible(g, pid, other.id)
+                        })
+                })
             {
                 let enemy_spec = &g.rules.units[enemy.kind];
                 if enemy_spec.class != "military"
@@ -21975,6 +21991,93 @@ mod tests {
             moved * 2 > army.len(),
             "expected most coordinated troops to advance; moved {moved}/{}",
             army.len()
+        );
+    }
+
+    #[test]
+    fn coordinated_mover_ignores_a_hostile_missing_from_its_turn_start_frame() {
+        let choose = |ai: &AdvancedAi, game: &mut Game, unit: u32, orders: &ForceGroup| {
+            ai.coordinated_tactical_step(game, 0, unit, orders, &[1], false).then(|| ())?;
+            match game.log.last() {
+                Some((actor, Action::Move { unit: moved, to }))
+                    if *actor == 0 && *moved == unit =>
+                {
+                    Some(*to)
+                }
+                _ => None,
+            }
+        };
+
+        // Find a real open tactical fork, then prove that a threat beside the
+        // ordinary move is material to the legacy mover.  The production
+        // mover captures its frame before that hostile exists, which is the
+        // same information boundary as a hidden enemy changing position or
+        // HP in the counterfactual census.
+        let mut game = Game::new_full(2, 24, 16, 82_000, 80, 0, false);
+        let existing: Vec<u32> = game.units.keys().copied().collect();
+        for unit in existing {
+            game.remove_unit(unit);
+        }
+        // A level plain makes this a fixed local fork rather than a search
+        // over map generation. Only the tactical score varies below.
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        game.at_war.insert((0, 1));
+        let positions = game.map.tiles.keys().copied().collect::<Vec<_>>();
+        let origin = positions
+            .iter()
+            .copied()
+            .find(|origin| game.nbrs(*origin).len() == 6)
+            .expect("the fixed map needs an interior tactical origin");
+        let (game, unit, orders, expected, hidden) = game
+            .wdisk(origin, 4)
+            .into_iter()
+            .filter(|target| game.wdist(origin, *target) == 4)
+            .find_map(|target| {
+                let mut base = game.clone();
+                let unit = base.spawn_test_unit("warrior", 0, origin);
+                let orders = ForceGroup {
+                    id: unit,
+                    domain: ForceDomain::Land,
+                    units: vec![unit],
+                    anchor: origin,
+                    objective: target,
+                    focus_target: None,
+                    posture: ForcePosture::Advance,
+                    readiness: 1.0,
+                    local_strength_ratio: 2.0,
+                };
+                let mut unthreatened = base.clone();
+                let expected = choose(&AdvancedAi::legacy(), &mut unthreatened, unit, &orders)?;
+                game.wdisk(expected, 3)
+                    .into_iter()
+                    .filter(|position| game.wdist(*position, expected) == 3)
+                    .filter(|hidden| *hidden != origin && *hidden != target)
+                    .find_map(|hidden| {
+                        let mut legacy = base.clone();
+                        legacy.spawn_test_unit("giant_death_robot", 1, hidden);
+                        let detour = choose(&AdvancedAi::legacy(), &mut legacy, unit, &orders)?;
+                        (detour != expected)
+                            .then_some((base.clone(), unit, orders.clone(), expected, hidden))
+                    })
+            })
+            .expect("the fixed open map needs a tactical fork affected by a hostile threat");
+
+        let mut observed = game;
+        let mut ai = AdvancedAi::new();
+        ai.capture_battlefront_frame(&observed, 0);
+        let enemy = observed.spawn_test_unit("giant_death_robot", 1, hidden);
+        assert!(
+            !ai.battlefront_unit_visible(&observed, 0, enemy),
+            "the threat was added after the turn-start frame"
+        );
+        assert_eq!(
+            choose(&ai, &mut observed, unit, &orders),
+            Some(expected),
+            "a hostile absent from the turn-start frame must not reroute the force"
         );
     }
 
