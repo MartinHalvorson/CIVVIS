@@ -572,20 +572,42 @@ mod tests {
         let snapshot = Snapshot::from_chunks(&chunks);
         let game = rebuild_game(&snapshot, 4, 7);
 
+        // ⚠⚠ THE ASSERTION THAT MATTERS IS ABOUT THE NEIGHBOUR, NOT THIS PLOT.
+        //
+        // `IsWOfRiver` means the plot lies WEST OF the river, so the river is on its
+        // EAST edge; `IsNEOfRiver` means it lies NORTH-EAST of the river, so the river
+        // is on its SOUTH-WEST edge. The first version of this read the flags as
+        // "river on the west/north-east edge" and put every segment on the opposite
+        // side of the hex.
+        //
+        // It passed anyway, because `set_river_edge` marks both tiles sharing a
+        // segment: the plot that reported the flag came out riverside under either
+        // reading, and only the neighbour differed. So this now names the neighbour
+        // explicitly, and asserts the OPPOSITE edges carry nothing.
         let pos = crate::hex::offset_to_axial(5, 6);
-        let west = (pos.0 + crate::hex::DIRS[3].0, pos.1 + crate::hex::DIRS[3].1);
-        let north_east = (pos.0 + crate::hex::DIRS[5].0, pos.1 + crate::hex::DIRS[5].1);
+        let edge = |d: usize| (pos.0 + crate::hex::DIRS[d].0, pos.1 + crate::hex::DIRS[d].1);
+        let (east, south_west) = (edge(0), edge(2));
+        let (west, north_east) = (edge(3), edge(5));
         assert!(
-            game.map.has_river_edge(pos, west),
-            "the W flag must put a river on the western edge"
+            game.map.has_river_edge(pos, east),
+            "W of the river means the river is on this plot's EAST edge"
         );
         assert!(
-            game.map.has_river_edge(pos, north_east),
-            "the NE flag must put a river on the north-eastern edge"
+            game.map.has_river_edge(pos, south_west),
+            "NE of the river means the river is on this plot's SOUTH-WEST edge"
+        );
+        assert!(
+            !game.map.has_river_edge(pos, west),
+            "and NOT on the western edge — that is the reading this test exists to \
+             rule out, and it is invisible to any check of this plot alone"
+        );
+        assert!(
+            !game.map.has_river_edge(pos, north_east),
+            "nor on the north-eastern edge"
         );
         // Written from both sides, so the two tiles cannot disagree about one segment.
         assert!(
-            game.map.has_river_edge(west, pos),
+            game.map.has_river_edge(east, pos),
             "and the neighbour must carry the same segment"
         );
 
@@ -1302,10 +1324,41 @@ pub(crate) fn apply_explored(game: &mut crate::game::Game, snapshot: &Snapshot) 
 /// side is not revealed is simply not written — that is the part of the network the
 /// seat has not seen, and inventing it is what this function exists to stop.
 pub(crate) fn apply_rivers(game: &mut crate::game::Game, snapshot: &Snapshot) {
-    // Civ 6 flag -> index into `hex::DIRS`, in this reconstruction's frame.
-    const W: usize = 3;
-    const NW: usize = 4;
-    const NE: usize = 5;
+    // ⚠⚠ `IsWOfRiver` MEANS "THIS PLOT IS WEST **OF** THE RIVER" — the river is on the
+    // plot's EAST edge. Not "there is a river on the west edge", which is how this was
+    // first written, and the two put the segment on opposite sides of the hex.
+    //
+    // Caught on live run civvis-20260801T011451Z at turn 1, by the one check that can
+    // see it: a Civilization VI river plot is fresh water by definition, so every tile
+    // CIVVIS calls riverside must be `fw` in the export. Four were not — (18,21)
+    // through (18,24), a contiguous column, all reporting `rv = 0`, `ri = false`,
+    // `fw = false`. Civilization VI had no river there at all.
+    //
+    // The export said where it really was. The river runs down the x=19/20 boundary:
+    //
+    //     (19,22) rv = 1 (W)      and Civ 6 marks (20,22) riverside — its EAST neighbour
+    //     (19,25) rv = 4 (NE)     and Civ 6 marks (19,24) riverside — its SOUTH-WEST one
+    //     (20,22) rv = 4 (NE)     and Civ 6 marks (19,21) riverside — likewise
+    //
+    // So each flag names the plot's own position relative to the river, and the edge
+    // carrying it is the OPPOSITE one:
+    //
+    //     IsWOfRiver  -> river on the EAST edge        DIRS[0]
+    //     IsNWOfRiver -> river on the SOUTH-EAST edge  DIRS[1]
+    //     IsNEOfRiver -> river on the SOUTH-WEST edge  DIRS[2]
+    //
+    // ⚠ Why the original passed its unit test anyway: `set_river_edge` marks BOTH
+    // tiles sharing the segment, so the plot that reported the flag came out riverside
+    // either way. Only the NEIGHBOUR differed — the segment sat on the wrong side of
+    // the hex, which is invisible to "is this tile riverside" and decides every river
+    // crossing and every district's river adjacency. A fixture that exports one plot
+    // and checks that plot cannot see it; the test below now pins the neighbour.
+    //
+    // Directions in this reconstruction's frame, where `r` IS Civilization VI's `y`
+    // and Civ 6's `y` grows north: DIRS[0] E, [1] SE, [2] SW, [3] W, [4] NW, [5] NE.
+    const EAST: usize = 0;
+    const SOUTH_EAST: usize = 1;
+    const SOUTH_WEST: usize = 2;
     game.map.clear_rivers();
     for (x, y) in snapshot.revealed_positions() {
         let Some(plot) = snapshot.plot((x, y)) else {
@@ -1315,7 +1368,7 @@ pub(crate) fn apply_rivers(game: &mut crate::game::Game, snapshot: &Snapshot) {
             continue;
         }
         let pos = crate::hex::offset_to_axial(x, y);
-        for (bit, direction) in [(1u8, W), (2, NW), (4, NE)] {
+        for (bit, direction) in [(1u8, EAST), (2, SOUTH_EAST), (4, SOUTH_WEST)] {
             if plot.rv & bit == 0 {
                 continue;
             }
