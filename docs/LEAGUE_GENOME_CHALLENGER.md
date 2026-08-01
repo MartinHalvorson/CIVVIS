@@ -12,12 +12,12 @@ selection statistic is the same lower 95% Wilson win bound used by league
 breeding, with `rating - 1.96 * rd` as its tie-break; fixed-lane specialists
 are excluded so the test changes the general policy, not the victory target.
 
-In the current committed snapshot the selected genome is `g20-21`:
+In the current committed snapshot the selected genome is `g4-10`:
 
 | strategy | rating | RD | games | wins | lower win bound | lower placement rating |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `g20-21` | 1790.8 | 31.0 | 216 | 82 | 31.8% | 1730.1 |
-| `advanced` anchor | 1702.7 | 30.5 | 331 | 91 | 23.0% | 1642.8 |
+| `g4-10` | 1712.5 | 30.5 | 235 | 84 | 29.9% | 1652.7 |
+| `advanced` anchor | 1807.9 | 60.3 | 1266 | 214 | 14.9% | 1689.6 |
 
 The league snapshot is definitional provenance. If it is absent or contains
 no eligible generalist, the entrant explicitly degrades to `strategic_deep`
@@ -27,9 +27,10 @@ evidence rather than silently changing the treatment.
 
 ## Fresh mirrored screen
 
-The historical screen below preselected the same `g20-21` row under the older
-placement-first criterion, then evaluated it once on a fresh seed. Changing the
-selector therefore changes future transfer wiring, not the recorded treatment:
+The historical screen below preselected `g20-21` under the older
+placement-first criterion, then evaluated it once on a fresh seed. The current
+win-selected `g4-10` treatment has not received that screen; these results remain
+historical transfer evidence rather than evidence about the newly selected row:
 
 ```sh
 cargo run --profile ci --bin ai_eval -- \
