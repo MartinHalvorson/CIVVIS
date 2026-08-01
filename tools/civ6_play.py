@@ -400,11 +400,19 @@ def place_game(side: str = "left", fraction: float = 0.5,
     menu = 33  # the menu bar; a window placed at y=0 hides behind it
     width = max(640, int(screen_w * fraction))
     height = max(480, int((screen_h - menu) * max(0.1, min(1.0, vfraction))))
-    x = 0 if side == "left" else screen_w - width
+    # "bottomright" anchors the window to the screen's bottom-right corner —
+    # the operator's 2026-08-01 layout: CIVVIS holds the upper left at 2/3 of
+    # the diagonal, the real game the LOWER right at the same, overlapping in
+    # the middle with the game in front where they cross. The top-anchored
+    # sides keep their old meaning exactly.
+    if side == "bottomright":
+        x, y = screen_w - width, screen_h - height
+    else:
+        x, y = (0 if side == "left" else screen_w - width), menu
     script = (
         'tell application "System Events" to tell '
         '(first process whose name contains "Civ6") to tell window 1\n'
-        f'  set position to {{{x}, {menu}}}\n'
+        f'  set position to {{{x}, {y}}}\n'
         f'  set size to {{{width}, {height}}}\n'
         'end tell')
     subprocess.run(["osascript", "-e", script], capture_output=True)
@@ -1272,7 +1280,7 @@ def main(argv: list[str] | None = None) -> int:
     # The game must stay frontmost to get frames, which makes it unwatchable if
     # it also owns the whole screen. Half is enough for the agent and leaves the
     # other half for a terminal.
-    ap.add_argument("--window-side", choices=["left", "right", "none"],
+    ap.add_argument("--window-side", choices=["left", "right", "bottomright", "none"],
                     default="left")
     ap.add_argument("--window-frac", type=float, default=0.5)
     # Taking a walled capital needs a real army, not a garrison. Four units is
