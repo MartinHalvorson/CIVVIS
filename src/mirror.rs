@@ -1196,6 +1196,274 @@ mod tests {
             "and the gap is expressed as a percentage: {drift}"        );
     }
 
+    /// ★★★★★ A barbarian that appears AFTER the mirror is built must reach the board.
+    ///
+    /// `LiveMirror::sync` had **no reference to `state.hostiles` or `barb_pid` at
+    /// all**, so barbarians were whatever the construction rebuild found and nothing
+    /// after. At turn 1 that is normally none — so the decider played entire games
+    /// against an empty barbarian seat while the export named them every turn.
+    ///
+    /// Measured on live run `civvis-20260801T040700Z`: Montréal founded turn 26, gone
+    /// by turn 42, loyalty 100 throughout and at war with nobody it had met — so
+    /// neither revolt nor a rival took it, and `hostiles` was non-empty in the export.
+    /// A seat that cannot see barbarians cannot garrison against them.
+    #[test]
+    fn a_barbarian_that_appears_after_construction_reaches_the_board() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 4,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![
+                plot(5, 5, "TERRAIN_GRASS"),
+                plot(5, 6, "TERRAIN_GRASS"),
+                plot(6, 6, "TERRAIN_GRASS"),
+            ],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Ottawa".to_string(),
+            x: 5,
+            y: 5,
+            pop: 3,
+            ..StateCity::default()
+        });
+
+        // Turn 4: no barbarian in sight, which is the ordinary opening.
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let barb = mirror.game.barb_pid.expect("a mirrored roster has a barbarian seat");
+        assert_eq!(
+            mirror.game.units.values().filter(|u| u.owner == barb).count(),
+            0,
+            "precondition: the board starts with no barbarians"
+        );
+
+        // Turn 8: one walks into view. Before the fix nothing here looked at it.
+        state.turn = 8;
+        state.hostiles.push(StateUnit {
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 6,
+            ..StateUnit::default()
+        });
+        mirror.sync(&snapshot, &state, 0);
+
+        assert_eq!(
+            mirror.game.units.values().filter(|u| u.owner == barb).count(),
+            1,
+            "a barbarian the export named must be on the board — this is the whole \
+             defect, and before the fix it stayed invisible for the rest of the game"
+        );
+
+        // And it must leave again when it dies or moves out of sight, or the board
+        // accumulates ghosts that never attack anything.
+        state.hostiles.clear();
+        state.turn = 12;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(
+            mirror.game.units.values().filter(|u| u.owner == barb).count(),
+            0,
+            "and one the export no longer names must go, or the threat list only grows"
+        );
+    }
+
+    /// ★★★★★ `DISTRICT_GOVERNMENT` is CIVVIS's `government_plaza`, and missing that
+    /// cost two separate bugs.
+    ///
+    /// Prefix-stripping gives `government`, which is in no table, so `civvis_node_name`
+    /// returned None and both callers did the honest thing with a wrong answer:
+    /// `civvis_production_item` read a city building one as IDLE (60 repeat orders in
+    /// one measured run), and #729's blocked-districts reader dropped the name, so the
+    /// block never engaged for the one district it was built for —
+    /// `no_params_DISTRICT_GOVERNMENT` still read **9** after it shipped.
+    #[test]
+    fn a_civ6_name_that_truncates_a_civvis_one_resolves_only_when_unambiguous() {
+        let rules = crate::rules::Rules::embedded();
+        assert_eq!(
+            civvis_node_name(&rules.districts, "DISTRICT_GOVERNMENT", "DISTRICT_").as_deref(),
+            Some("government_plaza"),
+            "the truncated Civilization VI name must reach CIVVIS's fuller one"
+        );
+        // The ordinary case must not regress: an exact name still wins outright.
+        assert_eq!(
+            civvis_node_name(&rules.districts, "DISTRICT_CAMPUS", "DISTRICT_").as_deref(),
+            Some("campus")
+        );
+        // ⚠ And a stem that is not a whole word must NOT match. `dam` is a real
+        // district; without the boundary check it would swallow anything starting
+        // "dam...".
+        assert!(
+            civvis_node_name(&rules.districts, "DISTRICT_DAM", "DISTRICT_").as_deref()
+                == Some("dam"),
+            "an exact short name resolves to itself, not to a longer neighbour"
+        );
+        // A name CIVVIS genuinely does not have still answers None rather than
+        // guessing at the nearest thing.
+        assert!(
+            civvis_node_name(&rules.districts, "DISTRICT_NOT_A_REAL_ONE", "DISTRICT_").is_none(),
+            "an unknown district must not resolve to something plausible"
+        );
+    }
+
+    /// ★★★★★ A district Civilization VI has built must be ON the reconstructed city.
+    ///
+    /// `StateDistrict` was defined, carried on `StateCity`, handed to
+    /// `civvis_production_item` to locate a production plot, and used in tests —
+    /// and never written onto a city. `grep '\.districts\.insert' src/mirror.rs`
+    /// found nothing. So every Campus, Holy Site and Commercial Hub the real game had
+    /// built was invisible, and the city read as bare ground: the same shape as the
+    /// improvements gap, where a mirror showing an undeveloped empire made CIVVIS
+    /// re-order what it already had.
+    #[test]
+    fn the_districts_a_city_has_built_reach_the_board() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![
+                plot(5, 5, "TERRAIN_GRASS"),
+                plot(5, 6, "TERRAIN_GRASS"),
+                plot(6, 6, "TERRAIN_GRASS"),
+            ],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 30,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Canberra".to_string(),
+            x: 5,
+            y: 5,
+            pop: 8,
+            districts: vec![
+                // The centre is implicit in CIVVIS and must NOT be inserted.
+                StateDistrict {
+                    kind: "DISTRICT_CITY_CENTER".to_string(),
+                    x: 5,
+                    y: 5,
+                    pillaged: false,
+                },
+                StateDistrict {
+                    kind: "DISTRICT_CAMPUS".to_string(),
+                    x: 5,
+                    y: 6,
+                    pillaged: false,
+                },
+            ],
+            ..StateCity::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        let city = recon
+            .game
+            .cities
+            .values()
+            .find(|c| c.owner == 0)
+            .expect("the seat's city must be on the board");
+
+        assert_eq!(
+            city.districts.get(&Name::new("campus")).copied(),
+            Some(crate::hex::offset_to_axial(5, 6)),
+            "a built district must reach the board, on the plot the export named"
+        );
+        // ⚠ `found_city_for` gives a native CIVVIS city `Districts::default()`, so the
+        // centre is implicit. Inserting it would put a district on the board that
+        // CIVVIS's own games never have — checked in the source, not assumed.
+        assert!(
+            !city.districts.contains_key(&Name::new("city_center")),
+            "the city centre stays implicit, as it is in an ordinary CIVVIS game"
+        );
+    }
+
+    /// ★★★★★ An enemy city under fog must stay on the board — the SAME defect as the
+    /// tile memory, one field over, and I only fixed the tiles.
+    ///
+    /// Measured on live run `civvis-20260801T045406Z` at turn 198, at war and losing:
+    /// 7 enemy cities in the export, all revealed, on land and unoccupied; **7 placed
+    /// on the reconstruction** (`follow.log`: "7 rival cities"); and **1** visible in
+    /// the seated observation. `grep -c remembered_cities src/mirror.rs` answered 0.
+    ///
+    /// ⚠ `findWarTarget` needs a revealed rival city, and "no enemy city is ever
+    /// revealed … domination is arithmetically impossible" is a standing note in this
+    /// project. The cities were on the board the whole time; the seat could not
+    /// remember them.
+    ///
+    /// ⚠ Asserted through `observation_player_view`, never against
+    /// `remembered_cities`: a test that counted the memory map would pass on a memory
+    /// the viewer never consults — exactly the trap the tile-memory test had to avoid.
+    #[test]
+    fn an_enemy_city_under_fog_stays_on_the_board() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: (4..9)
+                .flat_map(|x| (4..9).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+                .collect(),
+        }]);
+        let mut state = StateSnapshot {
+            turn: 30,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Canberra".to_string(),
+            x: 4,
+            y: 4,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: true,
+            cities: vec![StateCity {
+                id: 2,
+                name: "Berlin".to_string(),
+                x: 8,
+                y: 8,
+                pop: 6,
+                ..StateCity::default()
+            }],
+            ..StateRival::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        let enemy = recon
+            .game
+            .cities
+            .values()
+            .find(|c| c.owner != 0)
+            .expect("the rival city must be planted on the board");
+        let enemy_pos = enemy.pos;
+
+        // The seat has no unit near Berlin, so it is fogged — precisely the case that
+        // used to erase it.
+        let visible = recon.game.player_visibility(0);
+        assert!(
+            !visible.contains(&enemy_pos),
+            "the enemy city must genuinely be under fog for this to mean anything"
+        );
+
+        let view = crate::obs::observation_player_view(&recon.game, 0);
+        let cities = view["cities"].as_array().expect("a city list");
+        let names: Vec<&str> = cities
+            .iter()
+            .filter_map(|c| c["name"].as_str())
+            .collect();
+        assert!(
+            names.contains(&"Berlin"),
+            "a fogged enemy city the seat has seen must still be on the board — this \
+             is what made domination unreachable: {names:?}"
+        );
+    }
+
     fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
         // ⚠ THIS FIELD EXISTED AND WAS NEVER FILLED. `religion` was null on all
         // 26,954 city records ever exported — the schema had it, the mod never sent
@@ -1754,6 +2022,65 @@ pub(crate) fn apply_landmass(game: &mut crate::game::Game, snapshot: &Snapshot) 
     // Nothing can mirror these, so nothing may keep them. See above.
     for tile in game.map.tiles.values_mut() {
         tile.cliff_edges = [false; 6];
+    }
+}
+
+/// Tell the seat which cities it has seen, so fog does not erase them.
+///
+/// ★★★★★ **THE SAME DEFECT AS `apply_tile_memory`, ONE FIELD OVER, AND I ONLY FIXED
+/// THE TILES.** The operator's report was *"civvis sometimes only shows current
+/// visibility"*; that was true of ground and it is equally true of cities.
+///
+/// `obs.rs` includes a city in a seated observation when it is currently visible, or
+/// when the seat REMEMBERS it:
+///
+/// ```ignore
+/// for memory in g.players[*viewer].remembered_cities.values() {
+///     if explored.contains(&memory.pos) && !vis.contains(&memory.pos) { … }
+/// ```
+///
+/// `grep -c remembered_cities src/mirror.rs` answered **0**, so every enemy city
+/// outside the seat's current sight vanished from the board it is shown and reasons
+/// over.
+///
+/// Measured on live run `civvis-20260801T045406Z` at turn 198, at war and losing:
+///
+/// | | |
+/// |---|---|
+/// | enemy cities in the export | **7** |
+/// | …revealed, on land, unoccupied | **7** |
+/// | placed on the reconstruction | **7** (`follow.log`: "7 rival cities") |
+/// | **visible in the seated observation** | **1** |
+///
+/// ⚠ That last row is the one that matters strategically: `findWarTarget` needs a
+/// revealed rival city, and this project has already recorded "no enemy city is ever
+/// revealed … domination is arithmetically impossible" as a standing blocker. The
+/// cities were on the board the whole time; the seat could not remember them.
+///
+/// Built through `Game::remember_city` rather than assembled here, so the bridge's
+/// memory has exactly the shape the engine's own fog bookkeeping produces and the two
+/// cannot drift.
+///
+/// ⚠ Replaces rather than extends, for the same reason [`apply_explored`] does:
+/// `Game::new` generates a world with cities of its own, and a memory of THOSE is a
+/// memory of somewhere the real seat has never been.
+pub(crate) fn apply_city_memory(game: &mut crate::game::Game) {
+    let turn = game.turn.max(1);
+    let seen: Vec<(u32, crate::game::RememberedCity)> = game
+        .cities
+        .values()
+        .map(|city| {
+            let mut memory = game.remember_city(city);
+            memory.seen_turn = turn;
+            (city.id, memory)
+        })
+        .collect();
+    let Some(seat) = game.players.get_mut(0) else {
+        return;
+    };
+    seat.remembered_cities.clear();
+    for (id, memory) in seen {
+        seat.remembered_cities.insert(id, memory);
     }
 }
 
@@ -2440,11 +2767,48 @@ fn civvis_node_name<T>(
     if table.contains_key(&base) {
         return Some(base);
     }
-    let without_article = base.strip_prefix("the_")?;
-    if table.contains_key(without_article) {
-        return Some(without_article.to_string());
+    if let Some(without_article) = base.strip_prefix("the_") {
+        if table.contains_key(without_article) {
+            return Some(without_article.to_string());
+        }
     }
-    None
+    // ★★★★★ CIVILIZATION VI TRUNCATES WHERE CIVVIS SPELLS IT OUT, AND THAT COST TWO
+    // SEPARATE BUGS.
+    //
+    // `DISTRICT_GOVERNMENT` is CIVVIS's `government_plaza`. Prefix-stripping gives
+    // `government`, which is in no table, so this returned None — and both callers
+    // then did the honest thing with a wrong answer:
+    //
+    // - `civvis_production_item` returned None, so a city BUILDING a Government Plaza
+    //   read as idle and CIVVIS re-ordered it. Its own comment records the cost: **60
+    //   `DISTRICT_GOVERNMENT` orders between t46 and t128**, sixty of that run's ~91
+    //   build orders.
+    // - the blocked-districts reader (#729) dropped the name, so the block it exists
+    //   to apply never engaged for the one district that needed it. Measured after
+    //   #729 shipped: `no_params_DISTRICT_GOVERNMENT` still **9**, when the whole
+    //   claim was that it would be zero.
+    //
+    // So a Civilization VI name that is a proper prefix of exactly one CIVVIS name
+    // resolves to it.
+    //
+    // ⚠ EXACTLY ONE, and only at a word boundary. `government` matches
+    // `government_plaza` and nothing else; if two entries shared the stem this refuses
+    // rather than picking one, because a confident wrong translation is what this
+    // whole file exists to prevent. The boundary check stops `dam` matching `damascus`.
+    let mut matches = table
+        .keys()
+        .filter(|known| {
+            known
+                .as_str()
+                .strip_prefix(base.as_str())
+                .is_some_and(|rest| rest.starts_with('_'))
+        })
+        .map(|known| known.as_str().to_string());
+    let only = matches.next()?;
+    if matches.next().is_some() {
+        return None;
+    }
+    Some(only)
 }
 
 /// What a reconstruction produced, including what it could NOT translate.
@@ -3280,6 +3644,39 @@ pub fn rebuild_from_state(
                         None => unmapped.push(format!("{civ6}:building")),
                     }
                 }
+                // ★★★★★ THE DISTRICTS A CITY HAS ALREADY BUILT. Exported since the
+                // districts fix, and NEVER APPLIED — `StateDistrict` was defined,
+                // carried on `StateCity`, handed to `civvis_production_item` to locate
+                // a production plot, and used in tests. Nothing ever wrote it onto a
+                // city, so `grep '\.districts\.insert' src/mirror.rs` found nothing.
+                //
+                // So every Campus, Holy Site and Commercial Hub Civilization VI had
+                // built was invisible: the city read as bare ground. That is the same
+                // shape as the improvements gap — a mirror showing an undeveloped
+                // empire, so CIVVIS re-orders the development it already has — and it
+                // is why a run could log 60 `DISTRICT_GOVERNMENT` orders against a
+                // capital that was building one the whole time.
+                //
+                // ⚠ `city_center` is deliberately skipped: `found_city_for` gives a
+                // native CIVVIS city `Districts::default()`, so the centre is implicit
+                // and inserting it would put a district there that CIVVIS's own games
+                // never have. Checked before writing this, not assumed.
+                for district in &city.districts {
+                    if district.kind.eq_ignore_ascii_case("DISTRICT_CITY_CENTER") {
+                        continue;
+                    }
+                    match civvis_node_name(&game.rules.districts, &district.kind, "DISTRICT_") {
+                        Some(name) => {
+                            let pos = crate::hex::offset_to_axial(district.x, district.y);
+                            built
+                                .districts
+                                .insert(crate::name::Name::new(&name), pos);
+                        }
+                        // Counted, never guessed at — a district the ruleset cannot
+                        // name is one CIVVIS cannot reason about.
+                        None => unmapped.push(format!("{}:district", district.kind)),
+                    }
+                }
             }
         }
     }
@@ -3481,6 +3878,9 @@ pub fn rebuild_from_state(
     // exactly those tiles. Re-recording is idempotent and costs one pass over the
     // revealed set.
     apply_tile_memory(&mut game, snapshot);
+    // ⚠ AFTER every city is planted, ours and the rivals', or the seat remembers only
+    // the ones that happened to exist earlier in the rebuild.
+    apply_city_memory(&mut game);
 
     // Districts the host has refused to place, mapped onto CIVVIS's cities. Done here
     // because it needs `city_ids`, which is only complete once every city is planted.
@@ -3659,6 +4059,10 @@ pub struct LiveMirror {
     /// Rival stand-ins, rebuilt each sync: they need no continuity of their own and
     /// what we can see of them changes with the fog.
     rival_units: Vec<u32>,
+    /// Barbarians planted on the board this sync, so the next one can clear them.
+    /// See the barbarian block in [`LiveMirror::sync`] for why they are rebuilt
+    /// wholesale rather than tracked.
+    hostile_units: Vec<u32>,
     rival_cities: std::collections::BTreeSet<(i32, i32)>,
     pub unmapped: Vec<String>,
     /// See [`Reconstruction::dropped_units`]. Carried onto the live mirror so the
@@ -3706,6 +4110,7 @@ impl LiveMirror {
             uid_of,
             cid_of,
             rival_units: Vec::new(),
+            hostile_units: Vec::new(),
             rival_cities: std::collections::BTreeSet::new(),
             unmapped: rebuilt.unmapped,
             dropped_units: rebuilt.dropped_units,
@@ -3798,6 +4203,10 @@ impl LiveMirror {
         //
         // It is cheap: one pass over the revealed set, the same work the rebuild does.
         apply_territory(&mut self.game, snapshot, state);
+        // ⚠ Every sync, not just the rebuild. Rival cities are placed as they are
+        // revealed, so a memory taken once at construction would hold only whatever
+        // existed on turn 1 — the same staleness `apply_territory` above was fixed for.
+        apply_city_memory(&mut self.game);
 
         // --- our units -------------------------------------------------------
         let mut seen: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
@@ -3942,6 +4351,39 @@ impl LiveMirror {
                             }
                         }
                     }
+                    // ★★★★★ THE DISTRICTS A CITY HAS ALREADY BUILT. Exported since the
+                    // districts fix, and NEVER APPLIED — `StateDistrict` was defined,
+                    // carried on `StateCity`, handed to `civvis_production_item` to locate
+                    // a production plot, and used in tests. Nothing ever wrote it onto a
+                    // city, so `grep '\.districts\.insert' src/mirror.rs` found nothing.
+                    //
+                    // So every Campus, Holy Site and Commercial Hub Civilization VI had
+                    // built was invisible: the city read as bare ground. That is the same
+                    // shape as the improvements gap — a mirror showing an undeveloped
+                    // empire, so CIVVIS re-orders the development it already has — and it
+                    // is why a run could log 60 `DISTRICT_GOVERNMENT` orders against a
+                    // capital that was building one the whole time.
+                    //
+                    // ⚠ `city_center` is deliberately skipped: `found_city_for` gives a
+                    // native CIVVIS city `Districts::default()`, so the centre is implicit
+                    // and inserting it would put a district there that CIVVIS's own games
+                    // never have. Checked before writing this, not assumed.
+                    for district in &city.districts {
+                        if district.kind.eq_ignore_ascii_case("DISTRICT_CITY_CENTER") {
+                            continue;
+                        }
+                        match civvis_node_name(&self.game.rules.districts, &district.kind, "DISTRICT_") {
+                            Some(name) => {
+                                let pos = crate::hex::offset_to_axial(district.x, district.y);
+                                live
+                                        .districts
+                                        .insert(crate::name::Name::new(&name), pos);
+                            }
+                            // Counted, never guessed at — a district the ruleset cannot
+                            // name is one CIVVIS cannot reason about.
+                            None => self.unmapped.push(format!("{}:district", district.kind)),
+                        }
+                    }
                 }
             }
         }
@@ -3957,6 +4399,61 @@ impl LiveMirror {
                 self.game.remove_unit(uid);
             }
         }
+
+        // ★★★★★ BARBARIANS WERE PLANTED ONCE AND NEVER LOOKED AT AGAIN.
+        //
+        // `sync` had **no reference to `state.hostiles` or `barb_pid` at all**, so on
+        // the persistent mirror the decider runs, barbarians were whatever the
+        // construction rebuild found and nothing after. At turn 1 that is normally
+        // NONE — so CIVVIS played entire games with an empty barbarian seat while the
+        // export named them every turn.
+        //
+        // Measured on live run civvis-20260801T040700Z: Montréal founded turn 26, GONE
+        // by turn 42, loyalty 100 the whole time and at war with nobody it had met —
+        // so neither revolt nor a rival took it. `hostiles` was non-empty in the
+        // export throughout. A seat that cannot see barbarians cannot garrison against
+        // them, and "expansion that cannot be held is not expansion".
+        //
+        // Rebuilt wholesale each sync for the same reason as the rivals above: what we
+        // can see of them is fog-dependent and they carry no plan of ours.
+        for uid in std::mem::take(&mut self.hostile_units) {
+            if self.game.units.contains_key(&uid) {
+                self.game.remove_unit(uid);
+            }
+        }
+        if let Some(barb) = self.game.barb_pid {
+            for unit in &state.hostiles {
+                if !snapshot.is_revealed((unit.x, unit.y)) {
+                    continue;
+                }
+                let name = civvis_unit_name(&unit.kind);
+                if !self.game.rules.units.contains_key(&name) {
+                    // ⚠ Counted, not swallowed. A barbarian type CIVVIS cannot name is
+                    // a threat it cannot see, and that is the whole of this defect.
+                    if !self.unmapped.contains(&unit.kind) {
+                        self.unmapped.push(unit.kind.clone());
+                    }
+                    continue;
+                }
+                let pos = crate::hex::offset_to_axial(unit.x, unit.y);
+                let water = self
+                    .game
+                    .map
+                    .get(pos)
+                    .map(|tile| self.game.rules.is_water(tile))
+                    .unwrap_or(true);
+                // ⚠ A naval barbarian on water is dropped rather than planted on land.
+                // The same rule the rivals follow; recorded so the count is visible.
+                if water || self.game.units.values().any(|u| u.pos == pos) {
+                    self.dropped_units
+                        .push(format!("{}@{},{}:hostile_tile", unit.kind, unit.x, unit.y));
+                    continue;
+                }
+                let uid = self.game.spawn_unit(&name, barb, pos);
+                self.hostile_units.push(uid);
+            }
+        }
+
         for (index, rival) in state.rivals.iter().enumerate() {
             let owner = index + 1;
             if owner >= self.game.players.len() {
