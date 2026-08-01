@@ -173,6 +173,7 @@ local function resolveActions()
 	for _, name in ipairs({
 		"UNITCOMMAND_AUTOMATE", "UNITCOMMAND_PROMOTE", "UNITCOMMAND_WAKE",
 		"UNITCOMMAND_UPGRADE", "UNITCOMMAND_DELETE",
+		"UNITCOMMAND_ACTIVATE_GREAT_PERSON",
 	}) do
 		CMD[name] = cmdHash(name);
 	end
@@ -5717,6 +5718,138 @@ local function applyOrder(player, pid, row, turn)
 	return false, "unknown_kind_" .. kind;
 end
 
+-- ★★★★ GREAT PEOPLE MUST BE SPENT, NOT PARKED.
+--
+-- Measured on run civvis-20260801T224944Z: five Great People — three Writers and
+-- an Artist stacked on the capital's own centre, a Merchant one district over —
+-- each standing on ONE plot from the turn it was earned to the turn limit
+-- (t70→t251, full movement every sighting). Nothing in either half of the loop
+-- could act: CIVVIS's mirror drops `UNIT_GREAT_*` by design (its model banks a
+-- Great Person's effect at recruit — `Action::RecruitGreatPerson` applies
+-- `named_great_person_effect` with no walking unit), and this agent had zero
+-- great-person code, so the units fell through every ladder to a skip.
+--
+-- ⚠ BE HONEST ABOUT WHAT THIS IS: walking to a legal plot and pressing Activate
+-- is an actuation formality of Civilization VI — the same class as
+-- FOUND_CITY-before-MOVE_TO — because the decision (acquire this Great Person)
+-- was already taken upstream. The legal plots are the ENGINE's own answer
+-- (`GetActivationHighlightPlots`, the call the shipped SelectedUnit.lua shades
+-- the map with), so this cannot invent a target the game would refuse, and the
+-- engine is asked (`CanStartCommand`) before Activate is claimed. Counted apart
+-- from `applied` (`gp_activated` / `gp_moving` / `gp_idle`), so telemetry never
+-- presents it as CIVVIS's work.
+local gpPending = {};      -- unit id -> {x, y} last reported walk target
+local gpIdleReported = {}; -- unit id -> turn the last `idle` event was emitted
+local gpApiMissing = false;
+
+local function greatPersonOf(unit)
+	return try(function()
+		local gp = unit:GetGreatPerson();
+		if gp ~= nil and gp:IsGreatPerson() then return gp; end
+		return nil;
+	end, nil);
+end
+
+local function gpName(gp)
+	local individual = try(function()
+		local row = GameInfo.GreatPersonIndividuals[gp:GetIndividual()];
+		return row and row.GreatPersonIndividualType or nil;
+	end, nil);
+	local class = try(function()
+		local row = GameInfo.GreatPersonClasses[gp:GetClass()];
+		return row and row.GreatPersonClassType or nil;
+	end, nil);
+	return individual or "GP_INDIVIDUAL_UNKNOWN", class or "GP_CLASS_UNKNOWN";
+end
+
+-- Drive one Great Person toward being used. Returns "activated" | "moving" |
+-- "idle", or nil when the unit is not a Great Person this code should touch.
+local function orderGreatPerson(unit, id, turn)
+	local gp = greatPersonOf(unit);
+	if gp == nil then
+		-- ⚠ Distinguish "not a Great Person" from "the accessor is missing in
+		-- this context" — the `revealed_api` lesson. Emitted once per run.
+		if not gpApiMissing then
+			local name = unitTypeName(unit) or "";
+			if name:find("^UNIT_GREAT_") ~= nil then
+				gpApiMissing = true;
+				emit("gp", { turn = turn, unit = id, action = "api_missing",
+					kind_name = name });
+			end
+		end
+		return nil;
+	end
+	local individual, class = gpName(gp);
+	-- ⚠ A Prophet's activation opens the religion chooser, a modal this harness
+	-- does not answer yet — a stalled run loses more than an unspent Prophet.
+	-- Deferred, visibly, until that screen has a handler.
+	if class == "GREAT_PERSON_CLASS_PROPHET" then
+		if gpIdleReported[id] == nil then
+			gpIdleReported[id] = turn;
+			emit("gp", { turn = turn, unit = id, individual = individual,
+				class = class, action = "deferred_prophet" });
+		end
+		return "idle";
+	end
+	-- 1. If the engine will take Activate here and now, press it.
+	if commandUnit(unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]) then
+		gpPending[id] = nil;
+		emit("gp", { turn = turn, unit = id, individual = individual,
+			class = class, action = "activated",
+			x = try(function() return unit:GetX(); end, -1),
+			y = try(function() return unit:GetY(); end, -1) });
+		return "activated";
+	end
+	-- 2. Otherwise walk toward the nearest plot where activation is legal.
+	local plots = try(function() return gp:GetActivationHighlightPlots(); end, nil);
+	if type(plots) == "table" and #plots > 0 then
+		local ux = try(function() return unit:GetX(); end, nil);
+		local uy = try(function() return unit:GetY(); end, nil);
+		local bestX, bestY, bestD = nil, nil, nil;
+		for _, idx in ipairs(plots) do
+			local plot = try(function() return Map.GetPlotByIndex(idx); end, nil);
+			if plot ~= nil and ux ~= nil then
+				local px, py = plot:GetX(), plot:GetY();
+				local d = try(function()
+					return Map.GetPlotDistance(ux, uy, px, py);
+				end, 9999);
+				if bestD == nil or d < bestD then bestX, bestY, bestD = px, py, d; end
+			end
+		end
+		if bestX ~= nil then
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = bestX;
+			params[UnitOperationTypes.PARAM_Y] = bestY;
+			if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+				-- Report a walk target once, not every step of the walk. A
+				-- refused MOVE_TO (e.g. a sibling Great Person holds the plot)
+				-- falls through to `idle` and retries next turn.
+				local pend = gpPending[id];
+				if pend == nil or pend.x ~= bestX or pend.y ~= bestY then
+					emit("gp", { turn = turn, unit = id, individual = individual,
+						class = class, action = "moving", x = bestX, y = bestY,
+						dist = bestD });
+				end
+				gpPending[id] = { x = bestX, y = bestY };
+				return "moving";
+			end
+		end
+	end
+	-- 3. Nowhere legal to activate — no empty Great Work slot, no qualifying
+	-- district built yet, or the one legal plot is occupied. A real constraint,
+	-- reported sparsely; the unit stays put and is retried every turn.
+	gpPending[id] = nil;
+	local before = gpIdleReported[id];
+	if before == nil or (turn - before) >= 25 then
+		gpIdleReported[id] = turn;
+		emit("gp", { turn = turn, unit = id, individual = individual,
+			class = class, action = "idle",
+			x = try(function() return unit:GetX(); end, -1),
+			y = try(function() return unit:GetY(); end, -1) });
+	end
+	return "idle";
+end
+
 -- ⚠ EMIT THE NUMERATOR AND THE DENOMINATOR. Four of this project's defects were
 -- caught by a count and would have passed a boolean "is it wired up" check. An
 -- `orders` event that says only "CIVVIS decided" reads identical whether every
@@ -5833,6 +5966,24 @@ local function applyOrders(player, pid, turn, rows)
 		if not ordered[index] then runOrder(index, row); end
 	end
 
+	-- Great People go first, before the explore handoff: they cannot explore,
+	-- and CIVVIS cannot mention them — the mirror drops `UNIT_GREAT_*` by
+	-- design. See `orderGreatPerson` for what this is and is not.
+	local gpActivated, gpMoving, gpIdle = 0, 0, 0;
+	local gpHandled = {};
+	if cfg.GreatPeopleUse ~= false then
+		eachUnit(player, function(unit)
+			local id = try(function() return unit:GetID(); end, -1);
+			if id == -1 then return; end
+			local acted = orderGreatPerson(unit, id, turn);
+			if acted == nil then return; end
+			gpHandled[id] = true;
+			if acted == "activated" then gpActivated = gpActivated + 1;
+			elseif acted == "moving" then gpMoving = gpMoving + 1;
+			else gpIdle = gpIdle + 1; end
+		end);
+	end
+
 	-- ★★★★ UNITS CIVVIS DID NOT MENTION GO TO THE GAME'S OWN EXPLORE AUTOMATION.
 	--
 	-- ⚠ BE HONEST ABOUT WHAT THIS IS: it is a policy, and therefore a decision. It is
@@ -5857,7 +6008,7 @@ local function applyOrders(player, pid, turn, rows)
 		end
 		eachUnit(player, function(unit)
 			local id = try(function() return unit:GetID(); end, -1);
-			if id == -1 or mentioned[id] then return; end
+			if id == -1 or mentioned[id] or gpHandled[id] then return; end
 			local name = unitTypeName(unit);
 			-- Civilians cannot explore, and a settler that wanders is a settler that
 			-- never founds — this project has already paid for both.
@@ -5876,6 +6027,11 @@ local function applyOrders(player, pid, turn, rows)
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
 		-- Not part of `applied`: these are units CIVVIS said nothing about.
 		explored = explored,
+		-- Also not part of `applied`: Great People driven to their own use —
+		-- an actuation formality, not a CIVVIS decision. See `orderGreatPerson`.
+		gp_activated = gpActivated,
+		gp_moving = gpMoving,
+		gp_idle = gpIdle,
 		-- Orders the engine ACCEPTED that left the unit farther from where it was
 		-- sent. Counted apart from `refused` on purpose: a refusal is the bridge
 		-- working and being told no; this is the bridge reporting success for

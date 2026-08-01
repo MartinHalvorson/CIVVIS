@@ -218,6 +218,10 @@ def build_config(args: argparse.Namespace) -> dict:
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,
+        # Walk earned Great People to a legal activation plot and press Activate.
+        # An actuation formality (CIVVIS banks the effect at recruit and its
+        # mirror drops the walking unit); counted separately as gp_* fields.
+        "GreatPeopleUse": args.great_people,
         # ⚠ Polling, not spinning. A `DB.Query` per tick pinned the game at 139% CPU
         # and starved the log flush that carries the board out, deadlocking the loop
         # on turn 2 of run civvis-20260730T110209Z. These are all counted in POLLS.
@@ -1313,6 +1317,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-explore-unassigned", dest="explore_unassigned",
                     action="store_false", default=True,
                     help="leave units CIVVIS did not order standing still")
+    ap.add_argument("--no-great-people", dest="great_people",
+                    action="store_false", default=True,
+                    help="leave earned Great People standing instead of "
+                         "walking them to a legal plot and activating them")
     ap.add_argument("--no-automate-stuck-builders", dest="automate_stuck_builders",
                     action="store_false", default=True,
                     help="leave a builder idle when CIVVIS's improvement is refused")
