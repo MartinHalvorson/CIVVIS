@@ -77,9 +77,6 @@ struct Review {
     /// `value[lane][doctrine]`, with the lane list alongside.
     lanes: Vec<Option<VictoryTarget>>,
     value: Vec<Vec<f64>>,
-    /// The doctrine the probe was in. Retained for the self-check only; the
-    /// analysis sweeps every incumbent instead of trusting this one.
-    incumbent: usize,
     /// Largest absolute disagreement between `lane_values` and the matrix row
     /// it should reproduce.
     self_check: f64,
@@ -223,7 +220,6 @@ fn project(probe: &StrategicAi, game: &Game, pid: usize) -> Option<Review> {
     Some(Review {
         lanes,
         value,
-        incumbent,
         self_check,
     })
 }
