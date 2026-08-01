@@ -476,6 +476,30 @@ local function unitTypeName(unit)
 	end, "?");
 end
 
+-- What a unique unit REPLACES, so the board keeps it instead of dropping it.
+--
+-- ★★★★ A rival's unique unit is untranslatable and is therefore DISCARDED. Live run
+-- `civvis-20260801T145302Z` dropped `UNIT_NORWEGIAN_LONGSHIP` every turn it was
+-- visible: CIVVIS models no Norwegian uniques at all (`unique_to == Norway` is
+-- empty in `data/units.json`), so an enemy WARSHIP simply was not on the board.
+-- That is not one unit — it is every civilization's uniques, for every civilization
+-- we meet.
+--
+-- A Longship is a Galley replacement, and a Galley CIVVIS does model. Sending the
+-- base type lets the mirror fall back to something true rather than nothing, which
+-- is the standing rule: a dropped entity is worse than an approximate one.
+--
+-- ⚠ Copied from `ToolTipHelper_Babylon_Heroes.lua`, not guessed:
+--     local replaces = GameInfo.UnitReplaces[unitType];
+--     if replaces then ... GameInfo.Units[replaces.ReplacesUnitType] end
+local function unitBaseType(name)
+	if name == nil or name == "" then return nil; end
+	local replaces = try(function() return GameInfo.UnitReplaces[name]; end);
+	if replaces == nil then return nil; end
+	return try(function() return replaces.ReplacesUnitType; end);
+end
+
+
 -- ⚠⚠ THE pcall GOES INSIDE THE LOOP.
 --
 -- This is the bug that hid every other unit bug in this file. With one pcall
@@ -4004,6 +4028,8 @@ local function exportState(player, pid, turn)
 		units[#units + 1] = {
 			id = try(function() return unit:GetID(); end, -1),
 			kind = name,
+			-- See `unitBaseType`: what this replaces, when it is a civ unique.
+			base = unitBaseType(name),
 			x = try(function() return unit:GetX(); end, -1),
 			y = try(function() return unit:GetY(); end, -1),
 			hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
@@ -4106,6 +4132,7 @@ local function exportState(player, pid, turn)
 							local row = GameInfo.Units[name];
 							theirUnits[#theirUnits + 1] = {
 								x = ux, y = uy, kind = name,
+								base = unitBaseType(name),
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								combat = row ~= nil and (row.Combat or 0) or 0,
 								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
