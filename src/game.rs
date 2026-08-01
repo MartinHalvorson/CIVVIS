@@ -28468,7 +28468,12 @@ impl Game {
         visible
     }
 
-    fn remember_city(&self, city: &City) -> RememberedCity {
+    /// Build the memory a seat keeps of a city it has seen.
+    ///
+    /// `pub(crate)` for the Civilization VI bridge: `mirror::apply_city_memory` needs
+    /// the same shape the engine's own fog bookkeeping produces, and duplicating it
+    /// there would let the two drift.
+    pub(crate) fn remember_city(&self, city: &City) -> RememberedCity {
         RememberedCity {
             id: city.id,
             name: city.name.clone(),

@@ -1381,6 +1381,89 @@ mod tests {
         );
     }
 
+    /// ★★★★★ An enemy city under fog must stay on the board — the SAME defect as the
+    /// tile memory, one field over, and I only fixed the tiles.
+    ///
+    /// Measured on live run `civvis-20260801T045406Z` at turn 198, at war and losing:
+    /// 7 enemy cities in the export, all revealed, on land and unoccupied; **7 placed
+    /// on the reconstruction** (`follow.log`: "7 rival cities"); and **1** visible in
+    /// the seated observation. `grep -c remembered_cities src/mirror.rs` answered 0.
+    ///
+    /// ⚠ `findWarTarget` needs a revealed rival city, and "no enemy city is ever
+    /// revealed … domination is arithmetically impossible" is a standing note in this
+    /// project. The cities were on the board the whole time; the seat could not
+    /// remember them.
+    ///
+    /// ⚠ Asserted through `observation_player_view`, never against
+    /// `remembered_cities`: a test that counted the memory map would pass on a memory
+    /// the viewer never consults — exactly the trap the tile-memory test had to avoid.
+    #[test]
+    fn an_enemy_city_under_fog_stays_on_the_board() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: (4..9)
+                .flat_map(|x| (4..9).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+                .collect(),
+        }]);
+        let mut state = StateSnapshot {
+            turn: 30,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Canberra".to_string(),
+            x: 4,
+            y: 4,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: true,
+            cities: vec![StateCity {
+                id: 2,
+                name: "Berlin".to_string(),
+                x: 8,
+                y: 8,
+                pop: 6,
+                ..StateCity::default()
+            }],
+            ..StateRival::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        let enemy = recon
+            .game
+            .cities
+            .values()
+            .find(|c| c.owner != 0)
+            .expect("the rival city must be planted on the board");
+        let enemy_pos = enemy.pos;
+
+        // The seat has no unit near Berlin, so it is fogged — precisely the case that
+        // used to erase it.
+        let visible = recon.game.player_visibility(0);
+        assert!(
+            !visible.contains(&enemy_pos),
+            "the enemy city must genuinely be under fog for this to mean anything"
+        );
+
+        let view = crate::obs::observation_player_view(&recon.game, 0);
+        let cities = view["cities"].as_array().expect("a city list");
+        let names: Vec<&str> = cities
+            .iter()
+            .filter_map(|c| c["name"].as_str())
+            .collect();
+        assert!(
+            names.contains(&"Berlin"),
+            "a fogged enemy city the seat has seen must still be on the board — this \
+             is what made domination unreachable: {names:?}"
+        );
+    }
+
     fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
         // ⚠ THIS FIELD EXISTED AND WAS NEVER FILLED. `religion` was null on all
         // 26,954 city records ever exported — the schema had it, the mod never sent
@@ -1939,6 +2022,65 @@ pub(crate) fn apply_landmass(game: &mut crate::game::Game, snapshot: &Snapshot) 
     // Nothing can mirror these, so nothing may keep them. See above.
     for tile in game.map.tiles.values_mut() {
         tile.cliff_edges = [false; 6];
+    }
+}
+
+/// Tell the seat which cities it has seen, so fog does not erase them.
+///
+/// ★★★★★ **THE SAME DEFECT AS `apply_tile_memory`, ONE FIELD OVER, AND I ONLY FIXED
+/// THE TILES.** The operator's report was *"civvis sometimes only shows current
+/// visibility"*; that was true of ground and it is equally true of cities.
+///
+/// `obs.rs` includes a city in a seated observation when it is currently visible, or
+/// when the seat REMEMBERS it:
+///
+/// ```ignore
+/// for memory in g.players[*viewer].remembered_cities.values() {
+///     if explored.contains(&memory.pos) && !vis.contains(&memory.pos) { … }
+/// ```
+///
+/// `grep -c remembered_cities src/mirror.rs` answered **0**, so every enemy city
+/// outside the seat's current sight vanished from the board it is shown and reasons
+/// over.
+///
+/// Measured on live run `civvis-20260801T045406Z` at turn 198, at war and losing:
+///
+/// | | |
+/// |---|---|
+/// | enemy cities in the export | **7** |
+/// | …revealed, on land, unoccupied | **7** |
+/// | placed on the reconstruction | **7** (`follow.log`: "7 rival cities") |
+/// | **visible in the seated observation** | **1** |
+///
+/// ⚠ That last row is the one that matters strategically: `findWarTarget` needs a
+/// revealed rival city, and this project has already recorded "no enemy city is ever
+/// revealed … domination is arithmetically impossible" as a standing blocker. The
+/// cities were on the board the whole time; the seat could not remember them.
+///
+/// Built through `Game::remember_city` rather than assembled here, so the bridge's
+/// memory has exactly the shape the engine's own fog bookkeeping produces and the two
+/// cannot drift.
+///
+/// ⚠ Replaces rather than extends, for the same reason [`apply_explored`] does:
+/// `Game::new` generates a world with cities of its own, and a memory of THOSE is a
+/// memory of somewhere the real seat has never been.
+pub(crate) fn apply_city_memory(game: &mut crate::game::Game) {
+    let turn = game.turn.max(1);
+    let seen: Vec<(u32, crate::game::RememberedCity)> = game
+        .cities
+        .values()
+        .map(|city| {
+            let mut memory = game.remember_city(city);
+            memory.seen_turn = turn;
+            (city.id, memory)
+        })
+        .collect();
+    let Some(seat) = game.players.get_mut(0) else {
+        return;
+    };
+    seat.remembered_cities.clear();
+    for (id, memory) in seen {
+        seat.remembered_cities.insert(id, memory);
     }
 }
 
@@ -3736,6 +3878,9 @@ pub fn rebuild_from_state(
     // exactly those tiles. Re-recording is idempotent and costs one pass over the
     // revealed set.
     apply_tile_memory(&mut game, snapshot);
+    // ⚠ AFTER every city is planted, ours and the rivals', or the seat remembers only
+    // the ones that happened to exist earlier in the rebuild.
+    apply_city_memory(&mut game);
 
     // Districts the host has refused to place, mapped onto CIVVIS's cities. Done here
     // because it needs `city_ids`, which is only complete once every city is planted.
@@ -4058,6 +4203,10 @@ impl LiveMirror {
         //
         // It is cheap: one pass over the revealed set, the same work the rebuild does.
         apply_territory(&mut self.game, snapshot, state);
+        // ⚠ Every sync, not just the rebuild. Rival cities are placed as they are
+        // revealed, so a memory taken once at construction would hold only whatever
+        // existed on turn 1 — the same staleness `apply_territory` above was fixed for.
+        apply_city_memory(&mut self.game);
 
         // --- our units -------------------------------------------------------
         let mut seen: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
