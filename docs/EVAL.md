@@ -7166,3 +7166,127 @@ After either result, rebuild release binaries, run the full locked CI suite,
 and complete a fresh 12-game production deployment soak. No parameter, seed,
 or policy adjustment is authorized between the fixed discovery result and its
 promotion decision.
+
+### Discovery resolution: fidelity passed; deployment strength retained the incumbent
+
+The first exact census exposed one plan-report witness: a unit move earlier in
+the same turn revealed one of the treated positions before a force-group
+rebuild, changing the final report despite an identical turn-start tensor. The
+candidate now captures one turn-start player-vision frame and uses it across
+all of its battlefront consumers. This does not suppress new information on a
+later turn; it prevents a later action from retroactively changing the
+information set that formed this turn's plan.
+
+The repaired preregistered release census passed every integrity and fidelity
+condition without changing its command:
+
+| check | result |
+|---|---:|
+| treatment tensor matches | 722 / 722 |
+| save/load tensor matches | 722 / 722 |
+| null-control decision matches | 722 / 722 |
+| decision witnesses | 9 / 722 (1.2%) |
+| unit-position / unit-HP / city-HP witnesses | 6 / 3 / 0 |
+| plan-report witnesses | 0 / 722 |
+
+Thus it was below the archived 28/717 witness count, had no hidden-city-HP
+witness, and had no plan-report witness. Focused city-memory, visible-refresh,
+hidden-objective, and one/four-worker replay tests passed. A pre-change release
+`advanced_v1`-versus-`basic` 10-pair output hash was exactly identical to the
+candidate build (`978b87f4c385f89378d679d47ac6fa6d0d9e8b4a50512ac262411acc16471892`),
+then the shared-source contract was deliberately re-pinned.
+
+The fixed 60-map strength discovery completed unchanged:
+
+| profile | paired score | Elo-equivalent | game wins | gate result |
+|---|---:|---:|---:|---|
+| compact Standard | 48.8% (36.6%..61.1%) | -9 (-96..+78) | 31–34 | ACCEPT no-regression; inconclusive |
+| deployment Online | 46.7% (34.6%..59.1%) | -23 (-110..+64) | 32–40 | REJECT strength; inconclusive |
+
+Neither direction crossed an anytime-valid superiority boundary. Deployment
+therefore failed the required strength PASS, so the 300-map confirmation at
+seed 44,071,000 remains sealed. `advanced_fog_battlefront` remains an
+evaluator-only fidelity repair and `AdvancedAi::new()` continues to construct
+the promoted `advanced` controller unchanged. No policy or parameter tuning
+occurred between the frozen discovery result and this retention decision.
+
+## 2026-07-31 — PRE-REGISTRATION: adaptive science closeout continuity
+
+The next ranked opportunity is narrow victory routing, not another broad
+economy heuristic. The completed expansion experiment raised deployment
+development but not wins, while the current production controller is adaptive
+in every evaluated seat. Its `science_production` already knows the exact
+Space Race sequence, but an adaptive Science plan may only choose it in an
+empty Spaceport queue; an explicit Science target may replace a queued item.
+That asymmetry can leave a live Space Race plan waiting behind unrelated work
+at the one city that can execute its next milestone.
+
+`advanced_science_closeout` starts from the current production `advanced`.
+After the Moon Landing is completed, and only while an adaptive plan is
+currently Science, it may replace one non-Space-Race queue at an eligible
+Spaceport with the next legal Mars, Exoplanet, or laser project. Replaced work
+keeps the engine's existing per-item production-progress credit. It may not
+preempt an existing Space Race project, alter Spaceport construction, change
+the Earth/Moon opening, change an explicit Science-target controller, or alter
+research, diplomacy, combat, legality, city strategy, or other production
+ranking. `AdvancedAi::new()` remains unchanged until all gates pass.
+
+Before strength, focused tests must prove: the production control leaves a
+nonempty adaptive queue untouched; the candidate preempts exactly one eligible
+queue after Moon; it does nothing before Moon, outside a Science plan, or over
+an existing Space Race project; retained production progress is preserved; and
+one-worker/four-worker complete replays are identical. `advanced_v1` output
+and the full locked suite remain frozen.
+
+The fixed discovery command is:
+
+```sh
+target/release/ai_eval advanced_science_closeout advanced \
+  --matrix --pairs 60 --jobs 8 --seed 45072000
+```
+
+Compact Standard consumes 45,072,000–45,072,059 and deployment Online consumes
+46,072,000–46,072,059. Discovery advances only if deployment earns the existing
+superiority PASS and compact does not retain the incumbent. If it advances, the
+only authorized confirmation is a disjoint 300-map matrix at seed 47,072,000;
+the same two-profile rule applies. Any retained or inconclusive discovery seals
+confirmation and leaves production unchanged. After either result, rebuild
+release binaries, run the full locked CI suite, and complete a fresh 12-game
+production deployment soak. No tuning, seed changes, or production edits are
+authorized between discovery and the decision.
+
+### Discovery resolution: a real queue intervention, no win-level leverage
+
+The focused closeout, construction-boundary, one/four-worker replay, and
+shared-source-contract tests passed. The isolated release also reproduced the
+pre-change `advanced_v1`-versus-`basic` output hash exactly:
+`978b87f4c385f89378d679d47ac6fa6d0d9e8b4a50512ac262411acc16471892`.
+The source-only contract was deliberately re-pinned only after that result.
+
+The frozen 60-map discovery matrix produced the following result:
+
+| profile | paired score | Elo-equivalent | game wins | gate result |
+|---|---:|---:|---:|---|
+| compact Standard | 50.0% (37.7%..62.3%) | +0 (-87..+87) | 37–37 | ACCEPT no-regression; inconclusive |
+| deployment Online | 50.0% (37.7%..62.3%) | +0 (-87..+87) | 42–42 | REJECT strength; inconclusive |
+
+Every paired map split or drew at win level in both profiles. The treatment did
+move deployment terminal scores on 12 maps (11 favorable, 1 unfavorable), but
+none of those changes flipped a paired winner; terminal score is diagnostic,
+not a promotion input. Deployment therefore did not earn the required
+superiority PASS, the 300-map confirmation at seed 47,072,000 is sealed, and
+`advanced_science_closeout` remains evaluator-only. `AdvancedAi::new()` still
+constructs the same promoted `advanced` controller; no tuning or production
+edit followed this retained result.
+
+### Post-resolution verification
+
+`cargo test --locked --all-targets` passed (1,318 library tests, all binary
+and integration targets; 20 explicitly ignored censuses/benchmarks), and
+`cargo test --locked --doc` passed with its one explicitly ignored example.
+A fresh locked release build reproduced the same `advanced_v1` hash above.
+Finally, the rebuilt production binary completed all 12 fresh deployment-soak
+games on Online/Continents planet maps (6 majors, 9 city states, 74x46,
+250-turn cap, seeds 48,073,000–48,073,011, eight jobs). `git diff --check`
+also passed. The repository's pre-existing compiler warnings and whole-file
+rustfmt drift remain outside this scoped change.

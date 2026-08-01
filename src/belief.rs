@@ -14,6 +14,7 @@ use std::collections::BTreeMap;
 
 use crate::game::Game;
 use crate::obs::visibility;
+use crate::world::TileBits;
 use crate::Pos;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -28,14 +29,32 @@ pub struct Sighting {
     pub strength: f64,
 }
 
+/// Last combat-relevant state confirmed at a foreign City Center.
+///
+/// A city keeps its map position, but its owner, defenses, and durability can
+/// all change behind fog. Retaining the values seen at the City Center gives
+/// campaign planning useful memory without letting a hidden heal, bombardment,
+/// or garrison rewrite the plan.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct CitySighting {
+    pub pos: Pos,
+    pub turn: u32,
+    pub owner: usize,
+    pub hp: i32,
+    pub wall_hp: i32,
+    /// City combat strength at the last observation, including its then-live
+    /// garrison and defense modifiers.
+    pub strength: f64,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct BeliefState {
     /// Last confirmed sighting per enemy unit id.
     pub units: BTreeMap<u32, Sighting>,
-    /// Last confirmed owner per foreign city id (cities do not move, but
-    /// they change hands, and a stale owner is exactly the kind of mistake
-    /// a fog-honest agent should be able to make).
-    pub cities: BTreeMap<u32, (Pos, usize, u32)>,
+    /// Last confirmed combat state per foreign city id. Cities do not move,
+    /// but they change hands and heal under fog, and a stale report is exactly
+    /// the kind of mistake a fog-honest agent should be able to make.
+    pub cities: BTreeMap<u32, CitySighting>,
     pub updated_turn: u32,
 }
 
@@ -91,7 +110,17 @@ impl BeliefState {
             if city.owner == pid || !vis.contains(&city.pos) {
                 continue;
             }
-            self.cities.insert(city.id, (city.pos, city.owner, g.turn));
+            self.cities.insert(
+                city.id,
+                CitySighting {
+                    pos: city.pos,
+                    turn: g.turn,
+                    owner: city.owner,
+                    hp: city.hp,
+                    wall_hp: city.wall_hp,
+                    strength: g.city_strength(city.id),
+                },
+            );
         }
     }
 
@@ -112,6 +141,56 @@ impl BeliefState {
                 let age = self.staleness(s).min(horizon) as f64;
                 let decay = 1.0 - age / horizon.max(1) as f64;
                 s.strength * decay
+            })
+            .sum()
+    }
+
+    /// Last-seen, now-hidden hostile military strength near a tile. This is
+    /// intentionally narrower than [`Self::remembered_threat`]: callers that
+    /// already account for live contacts must not count a refreshed sighting a
+    /// second time. The calculation reads only a sighting's observed owner,
+    /// kind, position, and strength; it never looks up that unit's current
+    /// position, health, or existence.
+    pub fn remembered_hidden_military_threat(
+        &self,
+        g: &Game,
+        pid: usize,
+        at: Pos,
+        radius: i32,
+        horizon: u32,
+    ) -> f64 {
+        let visible = g.player_vision_now(pid);
+        self.remembered_hidden_military_threat_in_view(g, pid, &visible, at, radius, horizon)
+    }
+
+    /// As [`Self::remembered_hidden_military_threat`], but against an
+    /// already-captured current-vision snapshot. A controller can retain this
+    /// snapshot for one planning turn so an earlier unit move cannot make a
+    /// counterfactual hidden fact appear to have been known at turn start.
+    pub fn remembered_hidden_military_threat_in_view(
+        &self,
+        g: &Game,
+        pid: usize,
+        visible: &TileBits,
+        at: Pos,
+        radius: i32,
+        horizon: u32,
+    ) -> f64 {
+        self.units
+            .values()
+            .filter(|sighting| sighting.owner != pid && g.is_at_war(pid, sighting.owner))
+            .filter(|sighting| !g.sees(visible, sighting.pos))
+            .filter(|sighting| {
+                g.rules
+                    .units
+                    .get(sighting.kind.as_str())
+                    .is_some_and(|spec| spec.class == "military")
+            })
+            .filter(|sighting| g.wdist(sighting.pos, at) <= radius)
+            .map(|sighting| {
+                let age = self.staleness(sighting).min(horizon) as f64;
+                let decay = 1.0 - age / horizon.max(1) as f64;
+                sighting.strength * decay
             })
             .sum()
     }

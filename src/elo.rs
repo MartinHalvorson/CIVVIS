@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 79] = [
+pub const EVAL_ONLY_AIS: [&str; 81] = [
     "basic_evolved",
     "advanced_pre_envoy_composite",
     "advanced_pre_fog_pressure",
@@ -48,6 +48,8 @@ pub const EVAL_ONLY_AIS: [&str; 79] = [
     "advanced_envoy_priority",
     "advanced_envoy_composite",
     "advanced_fog_pressure",
+    "advanced_fog_battlefront",
+    "advanced_science_closeout",
     "advanced_q_override",
     "advanced_expansion_sequence",
     "advanced_envoy_economy",
@@ -1300,6 +1302,14 @@ fn build_effective_ai(name: &str, seed: u64, dir: &str) -> Option<Box<dyn Ai>> {
         // First treatment created against the promoted composite. It changes
         // only the information source for Recovery/Bastion pressure.
         "advanced_fog_pressure" => Box::new(AdvancedAi::fog_pressure()),
+        // Second fog treatment starts from the current promoted controller
+        // and changes only campaign/battlefront information sources. It stays
+        // evaluator-only until its fixed integrity and strength gates pass.
+        "advanced_fog_battlefront" => Box::new(AdvancedAi::fog_battlefront()),
+        // Adaptive Science plans normally leave nonempty Spaceport queues
+        // alone. This evaluator-only arm may continue the post-Moon sequence
+        // through one such queue while preserving its paused build credit.
+        "advanced_science_closeout" => Box::new(AdvancedAi::science_closeout()),
         "advanced_q_override" => {
             Box::new(AdvancedAi::with_qualified_q_override_dir(dir).ok()?)
         }
@@ -3423,6 +3433,18 @@ mod tests {
             advanced
         );
         assert_eq!(
+            builtin_spec("advanced_fog_battlefront", dir)
+                .unwrap()
+                .differing_axes(&advanced),
+            vec!["treatment"]
+        );
+        assert_eq!(
+            builtin_spec("advanced_science_closeout", dir)
+                .unwrap()
+                .differing_axes(&advanced),
+            vec!["treatment"]
+        );
+        assert_eq!(
             builtin_spec("advanced_envoy_priority", dir)
                 .unwrap()
                 .differing_axes(&advanced),
@@ -3754,7 +3776,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 45] = [
+            const SCRIPTED: [&str; 47] = [
                 "advanced",
                 "advanced_pre_envoy_composite",
                 "advanced_pre_fog_pressure",
@@ -3764,6 +3786,8 @@ mod tests {
                 "advanced_envoy_priority",
                 "advanced_envoy_composite",
                 "advanced_fog_pressure",
+                "advanced_fog_battlefront",
+                "advanced_science_closeout",
                 "advanced_expansion_sequence",
                 "advanced_envoy_economy",
                 "advanced_strategic_commitment",

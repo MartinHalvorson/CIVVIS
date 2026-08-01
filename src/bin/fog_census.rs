@@ -19,7 +19,8 @@
 //!
 //! ```text
 //! fog_census --maps 12 --probes 12 --players 4 --width 44 --height 28 \
-//!   --turns 200 --seed 860000 --jobs 6 --fog-honest-pressure
+//!   --turns 200 --seed 860000 --jobs 6 --fog-honest-pressure \
+//!   --battlefront-observation
 //! ```
 //!
 //! This is deliberately a diagnostic, not a new controller. It makes the
@@ -394,7 +395,14 @@ struct Divergence {
     player: usize,
     fact: HiddenFact,
     plan_changed: bool,
+    /// Both strategic reports when a hidden fact changed one. Keeping this
+    /// beside the replay witness makes the remaining planning boundary
+    /// diagnosable without weakening the information-set test.
+    plan_pair: Option<(Option<PlanReport>, Option<PlanReport>)>,
     action_index: Option<usize>,
+    /// The action pair at the first differing index. Either side can be
+    /// absent when one trace simply ends first.
+    action_pair: Option<(Option<Action>, Option<Action>)>,
 }
 
 #[derive(Default)]
@@ -413,6 +421,9 @@ struct Reading {
     city_samples: u64,
     wartime_samples: u64,
     divergences: u64,
+    position_divergences: u64,
+    unit_hp_divergences: u64,
+    city_hp_divergences: u64,
     plan_divergences: u64,
     action_divergences: u64,
     first_action_divergences: u64,
@@ -432,6 +443,7 @@ fn read_map(
     turns: u32,
     probes: usize,
     fog_honest_pressure: bool,
+    fog_honest_battlefront: bool,
 ) -> Reading {
     let mut game = Game::new(players, width, height, seed, turns, 0);
     // Match ordinary headless simulation: remembered presentation state is not
@@ -440,6 +452,7 @@ fn read_map(
     let mut fleet = AdvancedAi::fleet(&game);
     for ai in &mut fleet {
         ai.fog_honest_pressure = fog_honest_pressure;
+        ai.fog_honest_battlefront = fog_honest_battlefront;
     }
     let mut reading = Reading::default();
     // A cap alone front-loads every probe into the first few player turns.
@@ -512,12 +525,35 @@ fn read_map(
         let altered_actions = play_turn(&mut altered_ai, &mut altered_game, pid);
         if actual_actions != altered_actions {
             reading.divergences += 1;
+            match fact {
+                HiddenFact::UnitPosition { .. } => reading.position_divergences += 1,
+                HiddenFact::UnitHp { .. } => reading.unit_hp_divergences += 1,
+                HiddenFact::CityHp { .. } => reading.city_hp_divergences += 1,
+            }
             let plan_changed = actual_actions.plan != altered_actions.plan;
             let actions_changed = actual_actions.actions != altered_actions.actions;
+            let plan_pair = plan_changed.then(|| {
+                (
+                    actual_actions.plan.clone(),
+                    altered_actions.plan.clone(),
+                )
+            });
             reading.plan_divergences += u64::from(plan_changed);
             reading.action_divergences += u64::from(actions_changed);
             let action_index = actions_changed
                 .then(|| first_difference(&actual_actions.actions, &altered_actions.actions));
+            let action_pair = action_index.map(|index| {
+                (
+                    actual_actions
+                        .actions
+                        .get(index)
+                        .map(|(_, action)| action.clone()),
+                    altered_actions
+                        .actions
+                        .get(index)
+                        .map(|(_, action)| action.clone()),
+                )
+            });
             reading.first_action_divergences +=
                 u64::from(action_index.is_some_and(|index| index == 0));
             if reading.examples.len() < 3 {
@@ -527,7 +563,9 @@ fn read_map(
                     player: pid,
                     fact,
                     plan_changed,
+                    plan_pair,
                     action_index,
+                    action_pair,
                 });
             }
         }
@@ -546,6 +584,7 @@ fn main() {
     let seed0 = number(&args, "--seed", 860_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
     let fog_honest_pressure = args.iter().any(|arg| arg == "--fog-honest-pressure");
+    let fog_honest_battlefront = args.iter().any(|arg| arg == "--battlefront-observation");
     if maps == 0 || probes == 0 || players < 2 || width < 8 || height < 8 || turns == 0 {
         eprintln!(
             "fog_census: maps and probes must be positive; players >= 2; map dimensions >= 8; turns > 0"
@@ -555,7 +594,9 @@ fn main() {
 
     println!(
         "fog_census: {maps} maps, {players}p {width}x{height}, cap {turns} turns, \
-         {probes} hidden-fact probes/map, seed {seed0}, jobs {jobs}, fog-honest-pressure={fog_honest_pressure}"
+         {probes} hidden-fact probes/map, seed {seed0}, jobs {jobs}, \
+         fog-honest-pressure={fog_honest_pressure}, \
+         battlefront-observation={fog_honest_battlefront}"
     );
     let readings = parallel::map(maps, jobs, move |index| {
         read_map(
@@ -566,6 +607,7 @@ fn main() {
             turns,
             probes,
             fog_honest_pressure,
+            fog_honest_battlefront,
         )
     });
 
@@ -585,6 +627,9 @@ fn main() {
         total.city_samples += reading.city_samples;
         total.wartime_samples += reading.wartime_samples;
         total.divergences += reading.divergences;
+        total.position_divergences += reading.position_divergences;
+        total.unit_hp_divergences += reading.unit_hp_divergences;
+        total.city_hp_divergences += reading.city_hp_divergences;
         total.plan_divergences += reading.plan_divergences;
         total.action_divergences += reading.action_divergences;
         total.first_action_divergences += reading.first_action_divergences;
@@ -640,6 +685,10 @@ fn main() {
         total.divergences, total.selected
     );
     println!(
+        "  divergence treatments                {} unit positions, {} unit HP, {} city HP",
+        total.position_divergences, total.unit_hp_divergences, total.city_hp_divergences
+    );
+    println!(
         "  plan-report divergences              {}/{}",
         total.plan_divergences, total.selected
     );
@@ -670,6 +719,32 @@ fn main() {
             example.fact.change(),
             evidence,
         );
+        if let Some((left, right)) = &example.action_pair {
+            println!("      source action:  {left:?}");
+            println!("      treated action: {right:?}");
+        }
+    }
+    for example in total
+        .examples
+        .iter()
+        .filter(|example| example.plan_changed)
+        .take(8)
+    {
+        println!(
+            "    plan witness: seed {} turn {} seat {}: {} {} (owner {}, war={}, {})",
+            example.seed,
+            example.turn,
+            example.player,
+            example.fact.kind(),
+            example.fact.id(),
+            example.fact.owner(),
+            example.fact.at_war(),
+            example.fact.change(),
+        );
+        if let Some((left, right)) = &example.plan_pair {
+            println!("      source plan:  {left:?}");
+            println!("      treated plan: {right:?}");
+        }
     }
     if total.divergences == 0 {
         println!(

@@ -96,3 +96,19 @@ read the fact, nor does it prove that every branch with an unchanged report is
 fog safe. It establishes a reproducible lower bound on observable
 information-set violations and supplies compact seed/turn/seat witnesses for a
 subsequent fog-controller refactor.
+
+## Battlefront-observation evaluator result
+
+`--fog-honest-pressure --battlefront-observation` enables the retained
+`advanced_fog_battlefront` evaluator arm. Its fixed 64-map release run at seed
+862000 completed 722 valid probes with 722/722 treatment-tensor, save/load,
+and null-control matches. It found nine action-trace divergences (six hidden
+unit-position, three hidden unit-HP) and zero hidden-city-HP or plan-report
+divergences. This is an integrity improvement over the archived 28/717
+baseline, but not a claim of whole-controller fog honesty: the arm did not
+pass its independent deployment-strength gate and is not the production AI.
+
+The census also prints divergence treatment-family totals and first differing
+source/treated actions. When a plan report differs, it prints both reports;
+that made an earlier same-turn vision-frame leak reproducible and repairable
+without weakening the tensor or null controls.

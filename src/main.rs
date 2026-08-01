@@ -30,7 +30,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 // Re-pinned after adding the default-empty qualified action-override hook.
 // Re-pinned again after adding the default-off expansion sequence search.
 // Legacy construction installs neither treatment, so this path is inert.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9530_ce24_32d2_b6e5;
+// Re-pinned after adding the evaluator-only battlefront-observation arm.
+// A fresh release `advanced_v1` versus `basic` 10-pair output hash matched
+// the pre-change binary exactly; `configured` keeps this arm disabled.
+// Re-pinned again after freezing that arm's per-turn vision frame and adding
+// the default-off Science closeout evaluator. The same legacy output hash
+// still matched exactly; both changes are candidate-only.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x604f_955a_7796_f110;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

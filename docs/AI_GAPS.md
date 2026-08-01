@@ -601,3 +601,42 @@ General live macro search is deliberately demoted: this experiment showed that
 deterministic parallelism can reduce branch latency, but neither more economic
 development nor acceptable early-turn cost guarantees victory strength or
 practical full-game evaluation cost.
+
+## Battlefront fidelity and science-closeout resolution
+
+The tactical/campaign fog treatment met its explicit information-fidelity
+boundary (722/722 matching treatment, save/load, and null-control tensors;
+zero hidden-city-HP and plan-report witnesses), but deployment strength was
+inconclusive at 46.7% paired score. It remains evaluator-only rather than
+turning a correctness repair into an unearned policy change.
+
+The next narrow victory-routing hypothesis, adaptive post-Moon Science
+closeout, also remained evaluator-only. Its 60-map compact and deployment
+profiles were both exactly 50.0% paired win share (37–37 and 42–42 game wins);
+compact met no-regression but deployment did not pass strength. It changed
+some deployment terminal scores without changing a single paired winner, so
+forcing this queue continuity is not the late-game win bottleneck.
+
+The next ranked set is:
+
+1. **Localize the remaining fog leak at the action-selection boundary.** The
+   battlefront slice repaired fidelity but did not earn strength, so do not
+   retry it with tuning. Identify the next controlled hidden-fact channel in
+   tactical action choice, prove equal information produces equal actions, and
+   evaluate it separately. This is still the highest correctness and
+   generalization lever with no rollout-cost increase.
+2. **Instrument cross-victory closing transitions before changing policy.**
+   Expansion and queue continuity can improve development or terminal score
+   without changing wins. Measure the exact science, culture, and conquest
+   commitments that occur before a result becomes fixed; then preregister one
+   bounded intervention against paired winners, not score share.
+3. **Distill full-sequence expansion decisions into a cheap, victory-aware
+   policy.** The completed search supplied 2,278 real reviews and 7,630 exact
+   branches at a 1.8x single-seat cost. Use those labels to extract an
+   auditable rule rather than carrying live rollouts into production.
+4. **Finish evidence semantics and external calibration.** Bind every
+   evaluator-only name to its gate/status, then test against retained external
+   opponents before making a broader AI-strength claim.
+5. **Revisit action advantage only with a new identification signal.** The
+   existing absolute-context and causal-delta confidence models both failed
+   calibration; another threshold or seed sweep would not be new evidence.
