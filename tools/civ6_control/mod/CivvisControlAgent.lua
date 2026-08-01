@@ -2629,7 +2629,21 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- The gate asked only whether a war TARGET exists, never whether WE are the ones
 	-- under siege. Rams belong in an offensive, and an offensive is not what a seat
 	-- losing its cities is conducting.
+	--
+	-- ⚠ AND `losingWar` CANNOT SEE PEACETIME HOPELESSNESS. `warPressure` reads
+	-- strength only from players we are AT WAR with, so before any declaration it
+	-- returns 0 and the guard above is inert. Run `civvis-20260801T211015Z`
+	-- (Indonesia): 25 rams built t69–t210, 20 of them BEFORE the t186 war, at
+	-- military strength 4 against a target above 1000 — 42% of the game's whole
+	-- production spent refilling a siege train that died faster than it could
+	-- march. A siege train serves an offensive, and an offensive needs an army
+	-- near the target's class — so ask the TARGET's strength, which exists in
+	-- peace and war alike, and require half of it before spending on rams.
+	local targetStrength = warTarget ~= nil and (try(function()
+		return Players[warTarget.player]:GetStats():GetMilitaryStrength();
+	end, 0) or 0) or 0;
 	if warTarget ~= nil and not losingWar
+			and ourStrength * 2 >= targetStrength
 			and (counts.siege or 0) < (cfg.SiegeUnits or 4) then
 		ladder[#ladder + 1] = { "UNIT_BATTERING_RAM", "siege" };
 	end
