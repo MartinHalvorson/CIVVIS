@@ -1373,7 +1373,7 @@ fn team_contact_final_capitals_and_invalid_casus_belli_do_not_misaward() {
     let foreign = found_capital(&mut conquest, 1);
     conquest.players[0].era_score = 0;
     conquest.transfer_city(foreign, 0, true);
-    conquest.capture_rewards(0, 1, 0.0);
+    conquest.capture_rewards(0, 1, foreign, false);
     assert_eq!(
         conquest.players[0].era_score, 5,
         "the final original capital pays Final Foreign City only, not another +4"

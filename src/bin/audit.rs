@@ -1026,6 +1026,8 @@ mod tests {
             conflict: 1,
             declarer: 0,
             target: 1,
+            casus_belli: None,
+            joint_war_until: None,
             aggressor: 0,
             defender: 1,
             started: 20,

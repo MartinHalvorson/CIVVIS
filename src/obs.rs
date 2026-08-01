@@ -537,9 +537,15 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "dvp": p.dvp,
             "grievances": p.grievances,
             "denounced_until": p.denounced_until,
+            "denounced_since": p.denounced_since,
             "friends_until": p.friends_until,
             "open_borders_until": p.open_borders_until,
             "alliances": p.alliances,
+            "diplomatic_missions": p.diplomatic_missions,
+            "defensive_pacts": p.defensive_pacts,
+            "promises": p.promises,
+            "diplomatic_incidents": p.diplomatic_incidents,
+            "broken_promises_until": p.broken_promises_until,
             "age": p.age,
             "tourism": round1(p.tourism_lifetime),
             "religious_tourism": round1(p.religious_tourism_lifetime),
@@ -659,6 +665,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                     "description": agenda.description,
                 })),
                 "opinion_of_me": round1(g.agenda_opinion(o.id, pid)),
+                "relationship_opinion_of_me": round1(g.relationship_opinion(o.id, pid)),
                 "alive": o.alive,
                 "is_minor": o.is_minor,
                 "is_barbarian": o.is_barbarian,
@@ -711,6 +718,17 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "friend": g.are_friends(pid, o.id),
                 "allied": g.are_allied(pid, o.id),
                 "alliance": g.alliance_with(pid, o.id),
+                "relationship": g.relationship_state(pid, o.id),
+                "their_relationship": g.relationship_state(o.id, pid),
+                "defensive_pact": g.defensive_pact_until(pid, o.id),
+                // Keep the old delegation-named fields for API consumers,
+                // but publish neutral names too: an Embassy replaces a
+                // Delegation and is not a second kind of delegation.
+                "mission_to_them": g.diplomatic_mission_to(pid, o.id),
+                "mission_to_me": g.diplomatic_mission_to(o.id, pid),
+                "delegation_to_them": g.diplomatic_mission_to(pid, o.id),
+                "delegation_to_me": g.diplomatic_mission_to(o.id, pid),
+                "diplomatic_visibility": round1(g.diplomatic_visibility(pid, o.id)),
                 "open_borders_to_me": g.has_open_borders(pid, o.id),
                 "my_open_borders_to_them": g.has_open_borders(o.id, pid),
             })
@@ -813,6 +831,10 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
             let ended = (!ongoing)
                 .then(|| records.iter().filter_map(|war| war.ended).max())
                 .flatten();
+            let casus_belli = records
+                .iter()
+                .find_map(|war| war.casus_belli.as_deref());
+            let joint_war_until = records.iter().filter_map(|war| war.joint_war_until).max();
 
             let mut losses: BTreeMap<usize, crate::game::WarLosses> = BTreeMap::new();
             for war in &records {
@@ -1010,6 +1032,8 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
                 "conflict": anchor.conflict,
                 "aggressor": anchor.declarer,
                 "defender": anchor.target,
+                "casus_belli": casus_belli,
+                "joint_war_until": joint_war_until,
                 "started": started,
                 "ended": ended,
                 "turns": ended.unwrap_or(g.turn).saturating_sub(started),
