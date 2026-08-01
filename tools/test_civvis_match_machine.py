@@ -49,6 +49,41 @@ class MatchMachineTests(unittest.TestCase):
         self.assertEqual(value("--speed"), "standard")
         self.assertEqual(value("--turns"), "600")
 
+    def test_headless_contract_carries_a_strategy_coverage_target(self):
+        command = machine.game_command(
+            Path("civvis"), Path("league"), 1, 2, visible=False, focus_strategy="g4-10"
+        )
+        self.assertEqual(command[command.index("--force-strategy") + 1], "g4-10")
+
+    def test_strategy_schedule_covers_every_unretired_entry_and_repeats_top_eight(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            league = root / "league"
+            league.mkdir()
+            (league / "league.json").write_text(
+                json.dumps(
+                    {
+                        "strategies": [
+                            {"name": "low", "rating": 1200},
+                            {"name": "top", "rating": 1800},
+                            {"name": "retired", "rating": 2000, "retired": True},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.league = league
+            subject.strategy_cursor = 0
+            subject.strategy_schedule = []
+            subject.event = mock.Mock()
+            subject.refresh_strategy_schedule()
+            self.assertEqual(subject.strategy_schedule, ["top", "low", "top", "low"])
+            self.assertEqual(
+                [subject.next_focus_strategy() for _ in range(4)],
+                ["top", "low", "top", "low"],
+            )
+
     def test_cli_derives_the_stock_turn_limit_for_the_selected_speed(self):
         online = machine.parse_args(["--watch-pid", "1"])
         standard = machine.parse_args(["--watch-pid", "1", "--speed", "standard"])

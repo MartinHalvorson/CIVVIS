@@ -91,6 +91,7 @@ fn opening_params() -> Params {
         supervised: false,
         league_dir: None,
         league_record: false,
+        force_strategy: None,
     }
 }
 

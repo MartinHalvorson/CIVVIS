@@ -275,6 +275,7 @@ def game_command(
     open_browser: bool | None = None,
     speed: str = DEFAULT_SPEED,
     turns: int | None = None,
+    focus_strategy: str | None = None,
 ) -> list[str]:
     if open_browser is None:
         open_browser = visible
@@ -299,6 +300,8 @@ def game_command(
         "--league", str(league),
         "--league-record",
     ]
+    if focus_strategy:
+        args.extend(("--force-strategy", focus_strategy))
     if not open_browser:
         args.append("--no-open")
     return args
@@ -369,6 +372,7 @@ class GameProcess:
     started_monotonic: float
     started_utc: str
     log: str
+    focus_strategy: str | None = None
     paused: bool = False
     ready: bool = False
     winner_seen: float | None = None
@@ -412,6 +416,8 @@ class MatchMachine:
         self.caffeinate: subprocess.Popen[str] | None = None
         self.maxima = {"cpu": 0.0, "memory": 0.0, "disk": 0.0, "gpu": 0.0}
         self.resume_not_before = 0.0
+        self.strategy_schedule: list[str] = []
+        self.strategy_cursor = 0
 
     def event(self, kind: str, **values: Any) -> None:
         event = {"at": utc_now(), "kind": kind, **values}
@@ -452,9 +458,16 @@ class MatchMachine:
                     "paused": game.paused,
                     "revision": game.revision,
                     "turn": game.last_status.get("turn"),
+                    "focus_strategy": game.focus_strategy,
                 }
                 for game in self.games
             ],
+            "strategy_coverage": {
+                "roster_strategies": len(set(self.strategy_schedule)),
+                "scheduled_entries": len(self.strategy_schedule),
+                "cursor": self.strategy_cursor,
+                "all_unretired": True,
+            },
             "resource_maxima_percent": self.maxima,
             "rules": {
                 "players": PLAYERS,
@@ -533,14 +546,64 @@ class MatchMachine:
     def initialize_league(self) -> None:
         self.league.mkdir(parents=True, exist_ok=True)
         destination = self.league / "league.json"
-        if destination.exists():
+        if not destination.exists():
+            source = self.source / "data" / "league" / "league.json"
+            shutil.copy2(source, destination)
+            # Opt into safe admission of new builtin controller families without
+            # ever resetting the evidence accumulated here.
+            (self.league / ".civvis-managed-roster").write_text(
+                "match-machine\n", encoding="utf-8"
+            )
+            self.event("league_initialized", source=str(source))
+        self.refresh_strategy_schedule()
+
+    def refresh_strategy_schedule(self) -> None:
+        """Build a deterministic all-roster coverage cycle.
+
+        The normal live selector intentionally samples only the strongest few
+        strategies for each civilization. The match machine has a different
+        obligation: every unretired strategy must receive repeated evidence,
+        while the strongest Elo entries still get extra focus. One pass covers
+        every active non-human roster entry; the top eight are appended once
+        more as the exploitation half of the cycle.
+        """
+        try:
+            roster = json.loads((self.league / "league.json").read_text(encoding="utf-8"))
+            strategies = roster.get("strategies", [])
+        except (OSError, ValueError):
+            self.strategy_schedule = []
             return
-        source = self.source / "data" / "league" / "league.json"
-        shutil.copy2(source, destination)
-        # Opt into safe admission of new builtin controller families without
-        # ever resetting the evidence accumulated here.
-        (self.league / ".civvis-managed-roster").write_text("match-machine\n", encoding="utf-8")
-        self.event("league_initialized", source=str(source))
+        candidates = [
+            strategy
+            for strategy in strategies
+            if isinstance(strategy, dict)
+            and strategy.get("retired") is not True
+            and strategy.get("human") is not True
+            and isinstance(strategy.get("name"), str)
+            and strategy["name"].strip()
+        ]
+        candidates.sort(
+            key=lambda strategy: (
+                -float(strategy.get("rating", 1500.0)),
+                strategy["name"].casefold(),
+            )
+        )
+        names = [strategy["name"] for strategy in candidates]
+        self.strategy_schedule = names + names[: min(8, len(names))]
+        self.strategy_cursor %= max(1, len(self.strategy_schedule))
+        self.event(
+            "strategy_schedule_ready",
+            roster_strategies=len(names),
+            scheduled_entries=len(self.strategy_schedule),
+            top_strategies=names[:8],
+        )
+
+    def next_focus_strategy(self) -> str | None:
+        if not self.strategy_schedule:
+            return None
+        strategy = self.strategy_schedule[self.strategy_cursor % len(self.strategy_schedule)]
+        self.strategy_cursor += 1
+        return strategy
 
     def compile_build(self, revision: str) -> Path:
         self.event("build_started", revision=revision, jobs=self.args.build_jobs)
@@ -633,6 +696,7 @@ class MatchMachine:
         if seed == self.next_seed:
             self.next_seed += 1
         kind = "visible" if visible else "headless"
+        focus_strategy = None if visible else self.next_focus_strategy()
         log = self.logs / f"{kind}-{seed}-{self.current_revision[:12]}.log"
         handle = log.open("w", encoding="utf-8")
         speed = getattr(self.args, "speed", DEFAULT_SPEED)
@@ -647,6 +711,7 @@ class MatchMachine:
                 open_browser=visible and not self.visible_browser_opened,
                 speed=speed,
                 turns=turns,
+                focus_strategy=focus_strategy,
             ),
             cwd=self.binary.parent,
             stdout=handle,
@@ -664,6 +729,7 @@ class MatchMachine:
             started_monotonic=time.monotonic(),
             started_utc=utc_now(),
             log=str(log),
+            focus_strategy=focus_strategy,
         )
         self.games.append(game)
         if visible:
@@ -676,6 +742,7 @@ class MatchMachine:
             pid=process.pid,
             port=port,
             revision=self.current_revision,
+            focus_strategy=focus_strategy,
         )
         return True
 
