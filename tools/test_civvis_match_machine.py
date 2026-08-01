@@ -70,6 +70,15 @@ class MatchMachineTests(unittest.TestCase):
         self.assertIn("--no-open", replacement)
         self.assertIn("--no-open", headless)
 
+    def test_port_selection_reserves_the_base_port_for_visible_successors(self):
+        with mock.patch.object(machine, "port_available", return_value=True):
+            self.assertEqual(machine.game_port(8870, set(), visible=True), 8870)
+        with mock.patch.object(machine, "port_available", return_value=False):
+            self.assertIsNone(machine.game_port(8870, set(), visible=True))
+        with mock.patch.object(machine, "free_port", return_value=8871) as choose:
+            self.assertEqual(machine.game_port(8870, set(), visible=False), 8871)
+            choose.assert_called_once_with(8871, set())
+
     def test_fill_slots_replaces_a_completed_visible_game(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
         subject.pending_revision = None
@@ -81,6 +90,17 @@ class MatchMachineTests(unittest.TestCase):
         subject.fill_slots(machine.Resources(20, 20, 12, 0, False))
 
         subject.launch.assert_called_once_with(visible=True)
+
+    def test_fill_slots_resumes_paused_work_before_admitting_a_new_game(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        subject.games = [SimpleNamespace(visible=True, paused=True)]
+        subject.launch = mock.Mock()
+
+        subject.fill_slots(machine.Resources(20, 20, 12, 0, False))
+
+        subject.launch.assert_not_called()
 
     def test_cpu_parser_uses_the_last_top_sample(self):
         report = "CPU usage: 10.0% user, 5.0% sys, 85.0% idle\nCPU usage: 20.0% user, 9.5% sys, 70.5% idle"
@@ -151,7 +171,9 @@ class MatchMachineTests(unittest.TestCase):
             subject.event = lambda kind, **values: events.append((kind, values))
             process = mock.Mock(pid=1234)
 
-            with mock.patch.object(machine.subprocess, "Popen", return_value=process):
+            with mock.patch.object(machine, "game_port", return_value=8870), mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ):
                 subject.launch(visible=True)
             subject.games[0].last_status = {
                 "turn": 435,

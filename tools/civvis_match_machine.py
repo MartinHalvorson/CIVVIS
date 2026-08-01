@@ -227,17 +227,30 @@ def http_json(port: int, path: str, *, data: dict[str, Any] | None = None) -> di
         return None
 
 
+def port_available(port: int) -> bool:
+    with socket.socket() as candidate:
+        try:
+            candidate.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
 def free_port(start: int, used: set[int]) -> int:
     for port in range(start, start + 1000):
         if port in used:
             continue
-        with socket.socket() as candidate:
-            try:
-                candidate.bind(("127.0.0.1", port))
-            except OSError:
-                continue
-        return port
+        if port_available(port):
+            return port
     raise RuntimeError("no free match-machine port")
+
+
+def game_port(base: int, used: set[int], *, visible: bool) -> int | None:
+    if visible:
+        return base if base not in used and port_available(base) else None
+    # The browser follows supervised successors at one stable origin. Never
+    # let a headless server occupy that dedicated visible-game port.
+    return free_port(base + 1, used)
 
 
 def game_command(
@@ -562,13 +575,15 @@ class MatchMachine:
         if result.returncode != 0:
             self.event("ranking_refresh_failed", output=result.stdout[-2000:])
 
-    def launch(self, *, visible: bool, seed: int | None = None) -> None:
+    def launch(self, *, visible: bool, seed: int | None = None) -> bool:
         assert self.binary is not None and self.current_revision is not None
+        used = {game.port for game in self.games}
+        port = game_port(self.args.port, used, visible=visible)
+        if port is None:
+            return False
         seed = self.next_seed if seed is None else seed
         if seed == self.next_seed:
             self.next_seed += 1
-        used = {game.port for game in self.games}
-        port = free_port(self.args.port, used)
         kind = "visible" if visible else "headless"
         log = self.logs / f"{kind}-{seed}-{self.current_revision[:12]}.log"
         handle = log.open("w", encoding="utf-8")
@@ -614,6 +629,7 @@ class MatchMachine:
             port=port,
             revision=self.current_revision,
         )
+        return True
 
     def finish(self, game: GameProcess, *, failed: bool, reason: str) -> None:
         status = game.last_status
@@ -736,6 +752,11 @@ class MatchMachine:
         if self.pending_revision or not sample.comfortably_below(
             self.args.limit, margin=RESUME_MARGIN
         ):
+            return
+        # Recovery comes before growth. A process paused by the governor is
+        # already consuming a fleet slot and must be resumed before a fresh
+        # game can compete with it for the recovered headroom.
+        if any(game.paused for game in self.games):
             return
         # "One visible game" is a concurrency invariant, not a lifetime
         # allowance. Replace the spectator match after either completion or a
