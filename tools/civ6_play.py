@@ -300,7 +300,10 @@ BOOTSTRAP_ATTEMPTS = 16
 # running game and hosting again either loses the mod, loses the turn limit, or
 # takes the application down.
 START_GAME = (0.500, 0.978)
-BACK = (0.730, 0.144)
+# Measured in the required half-height window. 0.144 lands above the rendered
+# button there, so a failed setup stayed open and the next main-menu click hit
+# Choose Map Type instead.
+BACK = (0.730, 0.174)
 SETUP_X = 0.500
 
 # The civilization control is one fixed Firaxis setup row above difficulty.
@@ -308,13 +311,19 @@ SETUP_X = 0.500
 # changes the normalized coordinate (measured at 0.277 on 1474x949 and 0.294 on
 # the taller full-screen setup).
 LEADER_PICKER_OFFSET = 0.056
+LEADER_SCROLL_STEPS = 100
+LEADER_SCROLL_RESET = 10_000
+LEADER_SCROLL_AMOUNT = -30
 
 # Each dropdown's closed box, as a fraction of window height.
 DROPDOWN = {
-    "difficulty": 0.3330,
-    "speed": 0.3880,
-    "map_type": 0.4450,
-    "map_size": 0.5040,
+    # The Create Game panel reflows in the required 756x480 quadrant. These
+    # are the observed value-row centers in that window; the old tall-window
+    # ratios landed 5-10 pixels above each closed control.
+    "difficulty": 0.3520,
+    "speed": 0.4040,
+    "map_type": 0.4600,
+    "map_size": 0.5150,
 }
 # An open dropdown lists its options directly below the box: the first option
 # sits a fixed distance under it and the rest step evenly. Measured on the
@@ -675,6 +684,55 @@ def _leader_observation(observations: list[dict], label: str,
     return None
 
 
+def _leader_ocr(path: Path, bounds: tuple[int, int, int, int],
+                *, top: float = 0.30, bottom: float = 0.76) -> list[dict]:
+    """Recognize the narrow leader column at readable scale.
+
+    Vision skipped Jadwiga in the full 3024x1964 desktop capture even though
+    it read the adjacent Hojo and Jayavarman rows. A 4x crop of the same pixels
+    reads it consistently. Map the normalized crop observations back into full
+    desktop coordinates so the existing click validation remains unchanged.
+    """
+    try:
+        from PIL import Image
+
+        screen = desktop_size()
+        if screen is None:
+            raise ValueError("desktop size unavailable")
+        image = Image.open(path)
+        screen_w, screen_h = screen
+        x, y, w, h = bounds
+        scale_x, scale_y = image.width / screen_w, image.height / screen_h
+        rect = (
+            int((x + w * 0.40) * scale_x),
+            int((y + h * top) * scale_y),
+            int((x + w * 0.62) * scale_x),
+            int((y + h * bottom) * scale_y),
+        )
+        crop = image.crop(rect)
+        crop = crop.resize((crop.width * 4, crop.height * 4))
+        crop_path = path.with_name(path.stem + "-leader-crop.png")
+        crop.save(crop_path)
+        observations = macos_ocr.recognize(crop_path)
+    except (OSError, ValueError):
+        return macos_ocr.recognize(path)
+
+    left, crop_top, right, crop_bottom = rect
+    crop_w, crop_h = right - left, crop_bottom - crop_top
+    mapped = []
+    for observation in observations:
+        item = dict(observation)
+        try:
+            item["x"] = (left + float(observation["x"]) * crop_w) / image.width
+            item["y"] = (crop_top + float(observation["y"]) * crop_h) / image.height
+            item["width"] = float(observation["width"]) * crop_w / image.width
+            item["height"] = float(observation["height"]) * crop_h / image.height
+        except (KeyError, TypeError, ValueError):
+            continue
+        mapped.append(item)
+    return mapped
+
+
 def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | None,
                             run_dir: Path) -> bool:
     """Select and visually verify a leader from Firaxis's DLC-dependent list."""
@@ -703,10 +761,17 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
     else:
         return False
 
-    for scroll_step in range(13):
+    # Firaxis retains the list's scroll position between openings. Reset to A
+    # first; otherwise a retry can begin at Victoria and never encounter
+    # Jadwiga. Thirteen -30 wheel ticks only reached Harald on this install, so
+    # retain that overlapping step but cover the entire installed roster.
+    macos_input.move(int(x + w * SETUP_X), int(y + h * 0.55))
+    macos_input.scroll(LEADER_SCROLL_RESET)
+    time.sleep(1.0)
+    for scroll_step in range(LEADER_SCROLL_STEPS):
         shot = run_dir / f"leader-picker-{scroll_step:02d}.png"
         screenshot(shot)
-        observations = macos_ocr.recognize(shot)
+        observations = _leader_ocr(shot, bounds)
         match = _leader_observation(observations, label, bounds)
         if match is not None:
             point = _observation_point(match)
@@ -718,19 +783,75 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
             time.sleep(1.2)
             selected_shot = run_dir / "leader-selected.png"
             screenshot(selected_shot)
-            selected = macos_ocr.recognize(selected_shot)
+            selected = _leader_ocr(selected_shot, bounds, top=0.20, bottom=0.36)
             if _leader_observation(selected, label, bounds, selected=True) is not None:
                 print(f"[setup] leader: selected and verified {label} ({leader})", flush=True)
                 return True
             print(f"[setup] leader click did not select {label}", flush=True)
             return False
         macos_input.move(int(x + w * SETUP_X), int(y + h * 0.55))
-        macos_input.scroll(-30)
+        macos_input.scroll(LEADER_SCROLL_AMOUNT)
         time.sleep(0.8)
 
     press_escape(1)
     print(f"[setup] requested leader {label} ({leader}) was not in the picker", flush=True)
     return False
+
+
+def _main_menu_visible(path: Path) -> bool:
+    """Return whether a screenshot visibly contains Firaxis's Single Player row."""
+    return any(
+        _normalized_label(str(observation.get("text", ""))) == "singleplayer"
+        for observation in macos_ocr.recognize(path)
+    )
+
+
+def _observed_label_point(path: Path, label: str,
+                          bounds: tuple[int, int, int, int]) -> tuple[int, int] | None:
+    """Read a visible menu label center inside the game window."""
+    screen = desktop_size()
+    if screen is None:
+        return None
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    wanted = _normalized_label(label)
+    for observation in macos_ocr.recognize(path):
+        if _normalized_label(str(observation.get("text", ""))) != wanted:
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+        if x <= px <= x + w and y <= py <= y + h:
+            return px, py
+    return None
+
+
+def _main_menu_point(path: Path, bounds: tuple[int, int, int, int]) -> tuple[int, int] | None:
+    """Read the Single Player row center instead of assuming a window-height ratio."""
+    return _observed_label_point(path, "Single Player", bounds)
+
+
+def return_to_main_menu(bounds: tuple[int, int, int, int], run_dir: Path,
+                        attempt: int) -> bool:
+    """Back out of setup dialogs and prove the main menu is visible.
+
+    A setup failure may leave the leader list, map picker, or Create Game page
+    open. Retrying the main-menu coordinates from any of those screens changes
+    an unrelated setting. Only a screenshot containing Single Player licenses
+    another bootstrap attempt.
+    """
+    x, y, w, h = bounds
+    for depth in range(4):
+        shot = run_dir / f"recover-attempt{attempt}-{depth}.png"
+        screenshot(shot)
+        if _main_menu_visible(shot):
+            return True
+        click_at(int(x + w * BACK[0]), int(y + h * BACK[1]))
+        time.sleep(1.5)
+    shot = run_dir / f"recover-attempt{attempt}-final.png"
+    screenshot(shot)
+    return _main_menu_visible(shot)
 
 
 def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namespace,
@@ -839,32 +960,48 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         click_at(int(x + w * 0.15), int(y + h * 0.85))
         time.sleep(1.5)
 
-        click_menu("single_player", bounds)
-        time.sleep(2.5)
-        # Read the submenu rather than assume its shape. Which entries it has
-        # depends on whether there is a save and a game to resume, so where
-        # "Create Game" lands moves between runs.
-        submenu = run_dir / f"submenu-attempt{attempt}.png"
-        screenshot(submenu)
-        rows = vision.submenu_rows(submenu, bounds)
-        if len(rows) < 3:
-            print(f"attempt {attempt}: no submenu ({len(rows)} rows) -- "
-                  "the menu is not ready yet", file=sys.stderr)
+        # The menu shifts vertically with the render height. At 480 points the
+        # old 0.455 ratio landed just above Single Player (its observed center
+        # is 0.471), so click the row CIVVIS can actually read.
+        menu = run_dir / f"menu-attempt{attempt}.png"
+        screenshot(menu)
+        target = _observed_label_point(menu, "Create Game", bounds)
+        menu_point = _main_menu_point(menu, bounds)
+        if target is None and menu_point is None:
+            print(f"attempt {attempt}: main menu is not ready yet", file=sys.stderr)
             if not env.game_pids():
                 print("the game exited while starting", file=sys.stderr)
                 return False
             time.sleep(20.0)
             continue
-        target = rows[-3]
-        print(f"create game row: {target:.4f} (read from {len(rows)} submenu rows)")
-        click_at(int(x + w * SUBMENU_X), int(y + h * target))
+        if target is None:
+            click_at(*menu_point)
+            time.sleep(2.5)
+            # Read Create Game itself. The old band detector reports zero rows
+            # in the required half-height window even while this label is
+            # plainly visible, and the entry moves when Resume Game is present.
+            submenu = run_dir / f"submenu-attempt{attempt}.png"
+            screenshot(submenu)
+            target = _observed_label_point(submenu, "Create Game", bounds)
+        if target is None:
+            print(f"attempt {attempt}: Create Game is not visible yet",
+                  file=sys.stderr)
+            if not env.game_pids():
+                print("the game exited while starting", file=sys.stderr)
+                return False
+            time.sleep(20.0)
+            continue
+        print(f"create game point: {target} (read from the visible label)")
+        click_at(*target)
         time.sleep(2.5)
         screenshot(run_dir / f"create-attempt{attempt}.png")
         if not configure_and_start(bounds, args, run_dir):
             print(f"attempt {attempt}: setup could not be verified; backing out",
                   file=sys.stderr)
-            click_at(int(x + w * BACK[0]), int(y + h * BACK[1]))
-            time.sleep(1.5)
+            if not return_to_main_menu(bounds, run_dir, attempt):
+                print("setup recovery could not verify the main menu; refusing "
+                      "unsafe coordinate retries", file=sys.stderr)
+                return False
             continue
         if started(verify_s):
             return True
@@ -872,11 +1009,11 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             print("the game exited while starting", file=sys.stderr)
             return False
         # Back out of whatever that opened and try again.
-        click_at(int(x + w * BACK[0]), int(y + h * BACK[1]))
-        time.sleep(1.0)
-        press_escape(1)
-        time.sleep(1.5)
-        print(f"attempt {attempt}: no game started from row {target:.4f}",
+        if not return_to_main_menu(bounds, run_dir, attempt):
+            print("start recovery could not verify the main menu; refusing "
+                  "unsafe coordinate retries", file=sys.stderr)
+            return False
+        print(f"attempt {attempt}: no game started after Create Game",
               file=sys.stderr)
     return False
 
@@ -1140,6 +1277,9 @@ def _play(args: argparse.Namespace) -> int:
         stop_brain()
         print("the game did not reach the main menu", file=sys.stderr)
         return 3
+    # Establish the requested operator layout before taking any measurements.
+    # Menu rows and setup controls are now read from this final geometry.
+    place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
     print("main menu reached; the setup context should host the game now")
 
     tail = watch.LogTail()

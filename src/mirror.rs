@@ -1712,6 +1712,9 @@ mod tests {
             pop: 6,
             buildings: vec![
                 "BUILDING_MONUMENT".to_string(),
+                // This exact building name is also a unique prefix of
+                // UNIVERSITY_OF_SANKORE in the wonder table.
+                "BUILDING_UNIVERSITY".to_string(),
                 "BUILDING_CASTLE".to_string(),
                 "BUILDING_STAR_FORT".to_string(),
                 // Deliberately absent from both rule sets.
@@ -1733,6 +1736,7 @@ mod tests {
             city.buildings.contains(&Name::new("monument")),
             "a building CIVVIS does model still crosses"
         );
+        assert!(city.buildings.contains(&Name::new("university")));
         assert!(
             city.buildings.contains(&Name::new("medieval_walls")),
             "Firaxis's BUILDING_CASTLE is CIVVIS's medieval walls"
@@ -1751,9 +1755,21 @@ mod tests {
         );
         assert!(
             !recon.unmapped.iter().any(|entry| entry.contains("BUILDING_CASTLE")
-                || entry.contains("BUILDING_STAR_FORT")),
-            "known aliases must not be reported as fidelity gaps: {:?}",
+                || entry.contains("BUILDING_STAR_FORT")
+                || entry.contains("BUILDING_UNIVERSITY")),
+            "known buildings and aliases must not be reported as fidelity gaps: {:?}",
             recon.unmapped
+        );
+
+        // Incremental state sync has its own city update path and must make the
+        // same cross-table decision.
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        state.turn += 1;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            !mirror.unmapped.iter().any(|entry| entry.contains("BUILDING_UNIVERSITY")),
+            "sync must not reclassify an ordinary University as a wonder: {:?}",
+            mirror.unmapped
         );
     }
 
@@ -5843,9 +5859,17 @@ pub fn rebuild_from_state(
                     }
                 }
                 for civ6 in &city.buildings {
-                    if let Some(name) = civvis_node_name(&game.rules.wonders, civ6, "BUILDING_") {
-                        if !built.wonders.contains_key(&crate::name::Name::new(&name)) {
-                            unmapped.push(format!("{civ6}:wonder_missing_plot"));
+                    // An ordinary building may also be an unambiguous prefix of a
+                    // wonder (`university` -> `university_of_sankore`). Classification
+                    // already succeeded against the building table above, so only
+                    // consult wonders when it did not.
+                    if civvis_node_name(&game.rules.buildings, civ6, "BUILDING_").is_none() {
+                        if let Some(name) =
+                            civvis_node_name(&game.rules.wonders, civ6, "BUILDING_")
+                        {
+                            if !built.wonders.contains_key(&crate::name::Name::new(&name)) {
+                                unmapped.push(format!("{civ6}:wonder_missing_plot"));
+                            }
                         }
                     }
                 }
@@ -6896,13 +6920,17 @@ impl LiveMirror {
                         }
                     }
                     for civ6 in &city.buildings {
-                        if let Some(name) = civvis_node_name(
-                            &self.game.rules.wonders, civ6, "BUILDING_"
-                        ) {
-                            if !live.wonders.contains_key(&crate::name::Name::new(&name)) {
-                                let issue = format!("{civ6}:wonder_missing_plot");
-                                if !self.unmapped.contains(&issue) {
-                                    self.unmapped.push(issue);
+                        if civvis_node_name(
+                            &self.game.rules.buildings, civ6, "BUILDING_"
+                        ).is_none() {
+                            if let Some(name) = civvis_node_name(
+                                &self.game.rules.wonders, civ6, "BUILDING_"
+                            ) {
+                                if !live.wonders.contains_key(&crate::name::Name::new(&name)) {
+                                    let issue = format!("{civ6}:wonder_missing_plot");
+                                    if !self.unmapped.contains(&issue) {
+                                        self.unmapped.push(issue);
+                                    }
                                 }
                             }
                         }

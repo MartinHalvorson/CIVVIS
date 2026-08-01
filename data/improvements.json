@@ -54,6 +54,7 @@
    "liang_total_culture": 3
   },
   "civic": "games_recreation",
+  "same_adjacent_valid": false,
   "terrain": [
    "desert",
    "grassland",
@@ -61,6 +62,36 @@
    "snow",
    "tundra"
   ]
+ },
+ "mound": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
+  "unique_to": "Cahokia",
+  "same_adjacent_valid": false,
+  "yields": {
+   "gold": 3
+  },
+  "housing": 1,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "tundra"
+  ],
+  "feature": [
+   "floodplains",
+   "grassland_floodplains",
+   "plains_floodplains"
+  ],
+  "requires_flat": true,
+  "effects": {
+   "adjacent_district_pair_food_after_feudalism": 1,
+   "adjacent_district_food_after_replaceable_parts": 1,
+   "city_amenity": 1,
+   "city_amenity_limit": 1,
+   "city_amenity_limit_after_natural_history": 2,
+   "housing_after_cultural_heritage": 1
+  }
  },
  "mine": {
   "plunder_type": "gold",
@@ -344,6 +375,7 @@
  },
  "ski_resort": {
   "civic": "professional_sports",
+  "same_adjacent_valid": false,
   "yields": {},
   "terrain": [
    "mountain"
@@ -479,6 +511,7 @@
   "plunder_amount": 25,
   "civic": "craftsmanship",
   "unique_to": "Egypt",
+  "same_adjacent_valid": false,
   "yields": {
    "culture": 1,
    "faith": 1
@@ -498,6 +531,33 @@
    "floodplains_culture": 1,
    "adjacent_wonder_faith": 2,
    "adjacent_appeal": 2
+  }
+ },
+ "rock_hewn_church": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "civic": "drama_poetry",
+  "unique_to": "Ethiopia",
+  "same_adjacent_valid": false,
+  "yields": {
+   "faith": 1
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "feature": [
+   "volcanic_soil"
+  ],
+  "hills_or_feature": true,
+  "effects": {
+   "appeal_faith": 1,
+   "adjacent_hill_mountain_faith": 1,
+   "faith_tourism_after_flight": 1,
+   "adjacent_appeal": 1
   }
  },
  "ziggurat": {

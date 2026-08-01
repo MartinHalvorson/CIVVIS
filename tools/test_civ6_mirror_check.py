@@ -180,6 +180,17 @@ class MirrorCheckTest(unittest.TestCase):
         })
         self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
 
+    def test_hostile_type_field_is_checked_as_a_real_unit_kind(self) -> None:
+        state = {"hostiles": [{
+            "type": "UNIT_WARRIOR", "player": 63, "x": 3, "y": 5,
+            "hp": 79, "fortified": False, "fortify_turns": 0,
+        }]}
+        board = {"view_player": 0, "units": [{
+            "owner": 4, "type": "warrior", "pos": [1, 5],
+            "hp": 79, "fortified": False, "fortify_turns": 0,
+        }]}
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
     def test_stacked_same_type_units_match_as_a_multiset(self) -> None:
         source = {
             "kind": "UNIT_BUILDER", "x": 3, "y": 5,

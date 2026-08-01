@@ -6038,6 +6038,200 @@ mod governor_runtime_tests {
     }
 
     #[test]
+    fn rock_hewn_church_matches_firaxis_placement_yields_appeal_and_tourism() {
+        let mut game = Game::new_full(1, 24, 16, 91_976, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let church = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(church).into_iter().collect();
+        let mountain = neighbors.iter().copied().find(|at| *at != centre).unwrap();
+        let hill = neighbors
+            .iter()
+            .copied()
+            .find(|at| *at != centre && *at != mountain)
+            .unwrap();
+        let volcanic = neighbors
+            .iter()
+            .copied()
+            .find(|at| *at != centre && *at != mountain && *at != hill)
+            .unwrap();
+        let flat = neighbors
+            .iter()
+            .copied()
+            .find(|at| *at != centre && *at != mountain && *at != hill && *at != volcanic)
+            .unwrap();
+
+        for position in std::iter::once(church).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&city].owned_tiles.contains(&position) {
+                game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
+            }
+        }
+        game.map.tiles.get_mut(&church).unwrap().hills = true;
+        game.map.tiles.get_mut(&mountain).unwrap().terrain = crate::name!("mountain");
+        game.map.tiles.get_mut(&hill).unwrap().hills = true;
+        game.map.tiles.get_mut(&volcanic).unwrap().feature = Some(crate::name!("volcanic_soil"));
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+
+        assert!(!game
+            .valid_improvements(0, church)
+            .contains(&crate::name!("rock_hewn_church")));
+        game.players[0].civ = "Ethiopia".to_string();
+        assert!(game
+            .valid_improvements(0, church)
+            .contains(&crate::name!("rock_hewn_church")));
+        assert!(game
+            .valid_improvements(0, volcanic)
+            .contains(&crate::name!("rock_hewn_church")));
+        assert!(!game
+            .valid_improvements(0, flat)
+            .contains(&crate::name!("rock_hewn_church")));
+
+        let adjacent_appeal = game.tile_appeal(flat);
+        let site_appeal = game.tile_appeal(church).max(0) as f64;
+        let bare_faith = game.player_tile_yields(0, church, &game.map.tiles[&church]).faith;
+        game.map.tiles.get_mut(&church).unwrap().improvement =
+            Some(crate::name!("rock_hewn_church"));
+        let church_faith = game.player_tile_yields(0, church, &game.map.tiles[&church]).faith;
+        assert_eq!(church_faith - bare_faith, 1.0 + site_appeal + 2.0);
+        assert_eq!(game.tile_appeal(flat), adjacent_appeal + 1);
+
+        for adjacent in [hill, volcanic] {
+            assert!(!game
+                .valid_improvements(0, adjacent)
+                .contains(&crate::name!("rock_hewn_church")));
+        }
+
+        let before_flight = game
+            .tourism_by_tile(0)
+            .get(&church)
+            .copied()
+            .unwrap_or(0.0);
+        game.players[0].techs.insert(crate::name!("flight"));
+        let after_flight = game
+            .tourism_by_tile(0)
+            .get(&church)
+            .copied()
+            .unwrap_or(0.0);
+        assert_eq!(after_flight - before_flight, church_faith - bare_faith);
+    }
+
+    #[test]
+    fn cahokia_mound_matches_firaxis_suzerain_placement_and_progression() {
+        let mut game = Game::new_full(2, 24, 16, 91_975, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let mound = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(mound).into_iter().collect();
+        for position in std::iter::once(mound).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&city].owned_tiles.contains(&position) {
+                game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
+            }
+        }
+        let district_sites: Vec<Pos> = neighbors
+            .iter()
+            .copied()
+            .filter(|position| *position != centre)
+            .take(2)
+            .collect();
+        game.map.tiles.get_mut(&district_sites[0]).unwrap().district =
+            Some(crate::name!("campus"));
+        game.map.tiles.get_mut(&district_sites[1]).unwrap().district =
+            Some(crate::name!("theater_square"));
+        let adjacent_site = neighbors
+            .iter()
+            .copied()
+            .find(|position| *position != centre && !district_sites.contains(position))
+            .unwrap();
+
+        game.players[1].is_minor = true;
+        game.players[1].civ = "Cahokia".to_string();
+        assert!(!game
+            .valid_improvements(0, mound)
+            .contains(&crate::name!("mound")));
+        game.players[0].envoys.push((1, 3));
+        assert!(game
+            .valid_improvements(0, mound)
+            .contains(&crate::name!("mound")));
+        game.map.tiles.get_mut(&mound).unwrap().hills = true;
+        assert!(!game
+            .valid_improvements(0, mound)
+            .contains(&crate::name!("mound")));
+        game.map.tiles.get_mut(&mound).unwrap().hills = false;
+
+        let housing_before = game.city_housing(&game.cities[&city]);
+        let amenities_before = game.city_local_amenities(&game.cities[&city]);
+        let bare = game.player_tile_yields(0, mound, &game.map.tiles[&mound]);
+        game.map.tiles.get_mut(&mound).unwrap().improvement = Some(crate::name!("mound"));
+        let initial = game.player_tile_yields(0, mound, &game.map.tiles[&mound]);
+        assert_eq!(initial.gold - bare.gold, 3.0);
+        assert_eq!(initial.food, bare.food);
+        assert_eq!(game.city_housing(&game.cities[&city]), housing_before + 1.0);
+        assert_eq!(game.city_local_amenities(&game.cities[&city]), amenities_before + 1);
+        assert!(!game
+            .valid_improvements(0, adjacent_site)
+            .contains(&crate::name!("mound")));
+
+        game.players[0].civics.insert(crate::name!("feudalism"));
+        let medieval = game.player_tile_yields(0, mound, &game.map.tiles[&mound]);
+        assert_eq!(medieval.food, initial.food + 1.0);
+        game.players[0].techs.insert(crate::name!("replaceable_parts"));
+        let mechanized = game.player_tile_yields(0, mound, &game.map.tiles[&mound]);
+        assert_eq!(mechanized.food, initial.food + 2.0);
+        game.players[0]
+            .civics
+            .insert(crate::name!("cultural_heritage"));
+        assert_eq!(game.city_housing(&game.cities[&city]), housing_before + 2.0);
+
+        let second = game
+            .wdisk(centre, 3)
+            .into_iter()
+            .find(|position| {
+                game.map.tiles.contains_key(position)
+                    && game.city_at(*position).is_none()
+                    && game.wdist(*position, mound) > 1
+            })
+            .unwrap();
+        {
+            let tile = game.map.tiles.get_mut(&second).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = Some(crate::name!("mound"));
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+        }
+        if !game.cities[&city].owned_tiles.contains(&second) {
+            game.cities.get_mut(&city).unwrap().owned_tiles.push(second);
+        }
+        assert_eq!(game.city_local_amenities(&game.cities[&city]), amenities_before + 1);
+        game.players[0].civics.insert(crate::name!("natural_history"));
+        assert_eq!(game.city_local_amenities(&game.cities[&city]), amenities_before + 2);
+    }
+
+    #[test]
     fn the_cliffs_of_dover_are_worth_twice_an_ordinary_natural_wonder() {
         // Features.Appeal is +2 for most natural wonders but +4 for the Cliffs
         // of Dover and Uluru, which CIVVIS flattened to a single +2 for every
@@ -24326,12 +24520,23 @@ impl Game {
             .filter(|p| self.wdist(city.pos, **p) <= 3)
         {
             if let Some(improvement) = self.map.tiles[pos].improvement.as_deref() {
-                h += self
+                let spec = self
                     .rules
                     .improvements
                     .get(improvement)
-                    .map(|spec| spec.housing)
-                    .unwrap_or(0.0);
+                    .expect("a placed improvement is in the ruleset");
+                h += spec.housing;
+                if improvement == "mound"
+                    && self.players[city.owner]
+                        .civics
+                        .contains(&crate::name!("cultural_heritage"))
+                {
+                    h += spec
+                        .effects
+                        .get("housing_after_cultural_heritage")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
             }
         }
         for b in city.buildings.iter().filter(|building| {
@@ -26339,6 +26544,33 @@ impl Game {
                 }
             }
         }
+        let mound = &self.rules.improvements["mound"];
+        let mound_count = city
+            .owned_tiles
+            .iter()
+            .filter(|position| {
+                let tile = &self.map.tiles[position];
+                !tile.pillaged && tile.improvement.as_deref() == Some("mound")
+            })
+            .count() as f64;
+        let mound_limit = if self.players[city.owner]
+            .civics
+            .contains(&crate::name!("natural_history"))
+        {
+            mound
+                .effects
+                .get("city_amenity_limit_after_natural_history")
+                .copied()
+                .unwrap_or(0.0)
+        } else {
+            mound
+                .effects
+                .get("city_amenity_limit")
+                .copied()
+                .unwrap_or(0.0)
+        };
+        supply += mound_count.min(mound_limit)
+            * mound.effects.get("city_amenity").copied().unwrap_or(0.0);
         let active_specialty_districts = city
             .districts
             .iter()
@@ -32340,6 +32572,45 @@ impl Game {
                         })
                         .count() as f64;
             }
+            Some("mound") => {
+                let effects = &self.rules.improvements["mound"].effects;
+                let adjacent_districts = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| self.map.tiles[neighbor].district.is_some())
+                    .count() as f64;
+                if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("replaceable_parts"))
+                {
+                    yields.food += adjacent_districts
+                        * effects
+                            .get("adjacent_district_food_after_replaceable_parts")
+                            .copied()
+                            .unwrap_or(0.0);
+                } else if self.players[pid].civics.contains(&crate::name!("feudalism")) {
+                    yields.food += (adjacent_districts / 2.0).floor()
+                        * effects
+                            .get("adjacent_district_pair_food_after_feudalism")
+                            .copied()
+                            .unwrap_or(0.0);
+                }
+            }
+            Some("rock_hewn_church") => {
+                let effects = &self.rules.improvements["rock_hewn_church"].effects;
+                yields.faith += self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        let adjacent = &self.map.tiles[neighbor];
+                        adjacent.hills || adjacent.terrain == "mountain"
+                    })
+                    .count() as f64
+                    * effects
+                        .get("adjacent_hill_mountain_faith")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
             Some("ziggurat") => {
                 yields.culture += self.tree_effect(pid, "ziggurat_culture");
                 if tile.has_river() {
@@ -32374,6 +32645,12 @@ impl Game {
                 yields.gold += self.rules.improvements[improvement]
                     .effects
                     .get("appeal_gold")
+                    .copied()
+                    .unwrap_or(0.0)
+                    * self.tile_appeal(pos).max(0) as f64;
+                yields.faith += self.rules.improvements[improvement]
+                    .effects
+                    .get("appeal_faith")
                     .copied()
                     .unwrap_or(0.0)
                     * self.tile_appeal(pos).max(0) as f64;
@@ -33780,9 +34057,9 @@ impl Game {
                             .get(*neighbor)
                             .is_some_and(|tile| self.rules.is_water(tile))
                     }));
-            let adjacent_ski_resort = name == "ski_resort"
+            let same_adjacent_invalid = !spec.same_adjacent_valid
                 && self.nbrs(pos).iter().any(|neighbor| {
-                    self.map.tiles[neighbor].improvement.as_deref() == Some("ski_resort")
+                    self.map.tiles[neighbor].improvement.as_deref() == Some(name.as_str())
                 });
             // Civ 6 sites an improvement through any one of three routes —
             // a valid terrain, a valid feature, or a valid resource. Farms
@@ -33815,11 +34092,14 @@ impl Game {
                 t.feature.is_some() && !feature_route && !resource_route;
             if spec.unbuildable
                 || !self.unlocked(pid, &spec.tech, &spec.civic)
-                || spec.unique_to.as_deref().is_some_and(|owner| owner != civ)
+                || spec.unique_to.as_deref().is_some_and(|owner| {
+                    owner != civ && !self.grants_city_state_unique_bonus(pid, owner)
+                })
                 || water != spec.water
                 || t.improvement.as_deref() == Some(name)
                 || (spec.requires_hills && !t.hills)
                 || (spec.hills_or_resource && !t.hills && visible_resource.is_none())
+                || (spec.hills_or_feature && !t.hills && !feature_route)
                 || (spec.requires_flat
                     && t.hills
                     && !seaside_volcanic
@@ -33832,7 +34112,7 @@ impl Game {
                 || incompatible_feature
                 || (!sited && !seaside_volcanic)
                 || seaside_invalid
-                || adjacent_ski_resort
+                || same_adjacent_invalid
             {
                 continue;
             }
@@ -47331,6 +47611,20 @@ impl Game {
                 };
                 let mut improvement_tourism = effects.get("tourism").copied().unwrap_or(0.0)
                     + effects.get("appeal_tourism").copied().unwrap_or(0.0) * tourism_appeal as f64;
+                if self.players[pid].techs.contains(&crate::name!("flight")) {
+                    let faith_factor = effects
+                        .get("faith_tourism_after_flight")
+                        .copied()
+                        .unwrap_or(0.0);
+                    if faith_factor != 0.0 {
+                        let improved = self.player_tile_yields(pid, *pos, tile);
+                        let mut bare = tile.clone();
+                        bare.improvement = None;
+                        let unimproved = self.player_tile_yields(pid, *pos, &bare);
+                        improvement_tourism +=
+                            (improved.faith - unimproved.faith).max(0.0) * faith_factor;
+                    }
+                }
                 if improvement == "seastead" {
                     improvement_tourism += self
                         .nbrs(*pos)

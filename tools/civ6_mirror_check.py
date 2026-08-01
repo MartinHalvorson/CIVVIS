@@ -402,6 +402,11 @@ def unmodelled_great_person(kind):
     return name.startswith("great_") or name == "comandante_general"
 
 
+def exported_unit_kind(unit):
+    """Return the unit type across Firaxis's two export field names."""
+    return unit.get("kind") or unit.get("type")
+
+
 def unit_fact_mismatches(state, board, top):
     """Compare visible unit presence and facts across every exported actor."""
     by_pos = {}
@@ -410,7 +415,7 @@ def unit_fact_mismatches(state, board, top):
     source_groups = {}
     for owner, source in visible_exported_units(state, board):
         pos = axial(source.get("x", 0), top - source.get("y", 0))
-        raw_kind = civ6_id(source.get("kind"), "UNIT_")
+        raw_kind = civ6_id(exported_unit_kind(source), "UNIT_")
         kind = IDENTIFIER_ALIASES.get(raw_kind, raw_kind)
         if kind.startswith("barbarian_"):
             kind = kind.removeprefix("barbarian_")
@@ -422,9 +427,9 @@ def unit_fact_mismatches(state, board, top):
                       if str(unit.get("type") or "").lower() == kind
                       and (owner is None or unit.get("owner") == owner)]
         if len(candidates) != len(sources):
-            if not all(unmodelled_great_person(source.get("kind")) for source in sources):
+            if not all(unmodelled_great_person(exported_unit_kind(source)) for source in sources):
                 mismatches.append(
-                    f"{sources[0].get('kind') or '?'}@{pos} count "
+                    f"{exported_unit_kind(sources[0]) or '?'}@{pos} count "
                     f"Civ6={len(sources)} CIVVIS={len(candidates)}"
                 )
             continue
@@ -455,7 +460,7 @@ def unit_fact_mismatches(state, board, top):
                 actual_values = sorted(value[index] for value in actual)
                 if wanted_values != actual_values:
                     mismatches.append(
-                        f"{sources[0].get('kind') or '?'}@{pos} {field} "
+                        f"{exported_unit_kind(sources[0]) or '?'}@{pos} {field} "
                         f"Civ6={wanted_values!r} CIVVIS={actual_values!r}"
                     )
     return mismatches
@@ -933,7 +938,7 @@ def main(argv=None):
     ours = [u for u in board.get("units", []) if u.get("owner") == board.get("view_player", 0)]
     on_board = {tuple(u["pos"]) for u in ours if u.get("pos")}
     missing_units = [
-        f'{u.get("kind", "?")}@{u.get("x")},{u.get("y")}'
+        f'{exported_unit_kind(u) or "?"}@{u.get("x")},{u.get("y")}'
         for u in civ6_units
         if axial(u.get("x", 0), best - u.get("y", 0)) not in on_board
     ]

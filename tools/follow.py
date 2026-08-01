@@ -71,10 +71,11 @@ LOG = os.environ.get("CIVVIS_FOLLOW_LOG", os.path.join(RIG, "follow.log"))
 STATUS = os.environ.get("CIVVIS_FOLLOW_STATUS", os.path.join(RIG, "status.json"))
 STAGE = os.environ.get("CIVVIS_FOLLOW_STAGE", os.path.join(RIG, "stage"))
 
-POLL_SECONDS = 8.0
+POLL_SECONDS = 1.0
 # A rebuild costs a process launch, so don't do it for every appended line; a
-# turn here takes minutes, and this still tracks units moving within a turn.
-MIN_REPUBLISH_SECONDS = 30.0
+# live Online-speed turn can take only a few seconds, and every completed state
+# export must reach the board before the next decision makes it stale.
+MIN_REPUBLISH_SECONDS = 1.0
 # Older than this and the run is finished or dead, not "the ongoing game".
 RUN_FRESH_SECONDS = 900.0
 
@@ -144,10 +145,12 @@ def mirror_axis(height):
     """The row to reflect about, as a row index doubled — see `flip_north_up`.
 
     Must be an EVEN offset from 0 so that row and reflected row keep the same
-    parity; the largest one that fits is `height - 1` rounded down to even.
+    parity. An even-height odd-r map has no in-bounds even axis: using
+    `height - 2` drops its last row. Give the display reconstruction one empty
+    staging row instead, so all real rows map bijectively onto `1..=height`.
+    This changes only the north-up spectator canvas; orders consume the raw run.
     """
-    top = height - 1
-    return top if top % 2 == 0 else top - 1
+    return height if height % 2 == 0 else height - 1
 
 
 def flip_north_up(event, top, dropped):
@@ -166,8 +169,9 @@ def flip_north_up(event, top, dropped):
     shoves odd rows half a hex right, so a row may only be mapped onto a row of
     the SAME parity; the obvious `(height - 1) - y` flips parity on an even
     height and shears the whole map half a hex, which looks plausible and is
-    wrong. Reflecting about row `top / 2` keeps parity, leaves the column
-    untouched, and costs only the single polar row that falls off the end.
+    wrong. Reflecting about row `top / 2` keeps parity and leaves the column
+    untouched. Even-height maps use one empty staging row so neither pole is
+    discarded.
     """
     if not isinstance(event, dict):
         if isinstance(event, list):
@@ -279,6 +283,8 @@ def stage_events(lines, height):
                     source_edges.append((turn, plot.get("x"), plot.get("y"), mask))
         flipped = flip_north_up(event, top, dropped)
         if flipped is not None:
+            if flipped.get("kind") == "tiles":
+                flipped["height"] = top + 1
             events.append(flipped)
     transform_river_masks(source_edges, events, top)
     out = [json.dumps(event).encode() for event in events]
@@ -384,7 +390,7 @@ def start_visible_server(run_dir, players):
     # turned north-up too, or the window is upside down until the first /load.
     lines, _, _, height = read_events(run_dir)
     staged = stage_events(lines or [], height)
-    subprocess.Popen(
+    process = subprocess.Popen(
         ["nice", "-n", "5", BIN, "play", "--mirror", staged,
          "--players", str(players), "--port", str(PORT), "--paused", "--no-open",
          "--spectate", "--speed", "online", "--turns", "250",
@@ -402,6 +408,9 @@ def start_visible_server(run_dir, players):
             time.sleep(2.0)
             hold_the_frame()
             return True
+        if process.poll() is not None:
+            log(f"mirror server exited during startup with status {process.returncode}")
+            return False
         time.sleep(1)
     return False
 

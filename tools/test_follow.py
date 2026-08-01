@@ -8,6 +8,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -15,6 +16,56 @@ import follow  # noqa: E402
 
 
 class FollowTest(unittest.TestCase):
+    def test_visible_server_start_fails_fast_when_child_exits(self) -> None:
+        class DeadProcess:
+            returncode = 17
+
+            @staticmethod
+            def poll() -> int:
+                return 17
+
+        messages = []
+        with tempfile.TemporaryDirectory() as temporary:
+            previous_rig = follow.RIG
+            follow.RIG = temporary
+            try:
+                with mock.patch.object(follow, "read_events", return_value=([], 1, 4, 9)), \
+                     mock.patch.object(follow, "stage_events", return_value=temporary), \
+                     mock.patch.object(follow, "server_alive", return_value=False), \
+                     mock.patch.object(follow, "log", side_effect=messages.append), \
+                     mock.patch.object(follow.subprocess, "Popen", return_value=DeadProcess()) as popen, \
+                     mock.patch.object(follow.time, "sleep") as sleep:
+                    self.assertFalse(follow.start_visible_server(temporary, 4))
+            finally:
+                follow.RIG = previous_rig
+
+        popen.assert_called_once()
+        sleep.assert_not_called()
+        self.assertTrue(any("status 17" in message for message in messages))
+
+    def test_even_height_map_keeps_both_polar_rows_on_an_extra_staging_row(self) -> None:
+        event = {
+            "kind": "tiles", "turn": 7, "height": 46,
+            "plots": [
+                {"x": 3, "y": 0, "rv": 0},
+                {"x": 4, "y": 45, "rv": 0},
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            previous = follow.STAGE
+            follow.STAGE = temporary
+            try:
+                follow.stage_events([json.dumps(event).encode()], 46)
+                staged = json.loads((Path(temporary) / "events.jsonl").read_text())
+            finally:
+                follow.STAGE = previous
+
+        self.assertEqual(staged["height"], 47)
+        self.assertEqual(
+            {(plot["x"], plot["y"]) for plot in staged["plots"]},
+            {(3, 46), (4, 1)},
+        )
+
     def test_north_up_reflection_transforms_qualified_coordinate_pairs(self) -> None:
         event = {
             "kind": "state", "turn": 7,

@@ -321,8 +321,16 @@ pub struct ImprovementSpec {
     pub requires_hills: bool,
     #[serde(default)]
     pub hills_or_resource: bool,
+    /// The plot must be Hills unless it qualifies through a valid feature.
+    /// Ethiopia's Rock-Hewn Church uses this for its Volcanic Soil route.
+    #[serde(default)]
+    pub hills_or_feature: bool,
     #[serde(default)]
     pub requires_flat: bool,
+    /// Firaxis `SameAdjacentValid`; false for improvements such as Sphinxes,
+    /// Ski Resorts, City Parks, and Rock-Hewn Churches.
+    #[serde(default = "default_true")]
+    pub same_adjacent_valid: bool,
     #[serde(default)]
     pub unique_to: Option<String>,
     #[serde(default)]
@@ -3100,7 +3108,7 @@ mod tests {
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
-        assert_eq!(rules.improvements.len(), 37);
+        assert_eq!(rules.improvements.len(), 39);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
         // 118 civic-unlocked cards plus the seven Dark Age cards, which no

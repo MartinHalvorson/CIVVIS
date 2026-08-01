@@ -127,6 +127,103 @@ class Civ6PlayTest(unittest.TestCase):
     def test_roster_resolves_requested_leader_to_rendered_name(self) -> None:
         self.assertEqual(civ6_play.leader_display_name("LEADER_JADWIGA"), "Jadwiga")
 
+    def test_leader_picker_scans_past_the_old_harald_cutoff(self) -> None:
+        bounds = (756, 33, 756, 480)
+        row = {"text": "Jadwiga", "x": 0.73, "y": 0.29,
+               "width": 0.04, "height": 0.02}
+        selected = {"text": "Jadwiga", "x": 0.73, "y": 0.155,
+                    "width": 0.04, "height": 0.02}
+        observations = [[] for _ in range(15)] + [[row], [selected]]
+
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot"), \
+             patch.object(civ6_play, "list_opened", return_value=True), \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.macos_ocr, "recognize", side_effect=observations), \
+             patch.object(civ6_play.macos_input, "move"), \
+             patch.object(civ6_play.macos_input, "scroll") as scroll, \
+             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.time, "sleep"):
+            found = civ6_play.select_requested_leader(
+                bounds, "LEADER_JADWIGA", Path(temporary)
+            )
+
+        self.assertTrue(found)
+        self.assertEqual(scroll.call_count, 16)
+        self.assertEqual(scroll.call_args_list[0], call(civ6_play.LEADER_SCROLL_RESET))
+        self.assertTrue(all(
+            invocation == call(civ6_play.LEADER_SCROLL_AMOUNT)
+            for invocation in scroll.call_args_list[1:]
+        ))
+        self.assertEqual(click.call_count, 2)
+
+    def test_leader_ocr_maps_the_upscaled_crop_back_to_the_desktop(self) -> None:
+        from PIL import Image
+
+        observation = {
+            "text": "Jadwiga", "x": 0.30, "y": 0.50,
+            "width": 0.10, "height": 0.05,
+        }
+        with tempfile.TemporaryDirectory() as temporary:
+            shot = Path(temporary) / "leader.png"
+            Image.new("RGB", (3024, 1964), "white").save(shot)
+            with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+                 patch.object(civ6_play.macos_ocr, "recognize", return_value=[observation]):
+                mapped = civ6_play._leader_ocr(
+                    shot, (756, 33, 756, 480)
+                )
+
+        self.assertEqual(mapped[0]["text"], "Jadwiga")
+        self.assertAlmostEqual(mapped[0]["x"], 0.733, places=3)
+        self.assertAlmostEqual(mapped[0]["y"], 0.293, places=3)
+        self.assertAlmostEqual(mapped[0]["width"], 0.011, places=3)
+
+    def test_setup_recovery_backs_out_until_main_menu_is_verified(self) -> None:
+        bounds = (756, 33, 756, 480)
+        observations = [[], [], [{"text": "Single Player"}]]
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "screenshot"), \
+             patch.object(civ6_play.macos_ocr, "recognize", side_effect=observations), \
+             patch.object(civ6_play, "click_at") as click, \
+             patch.object(civ6_play.time, "sleep"):
+            recovered = civ6_play.return_to_main_menu(
+                bounds, Path(temporary), attempt=3
+            )
+
+        self.assertTrue(recovered)
+        self.assertEqual(
+            click.call_args_list,
+            [call(1307, 116), call(1307, 116)],
+        )
+
+    def test_main_menu_click_uses_observed_row_center(self) -> None:
+        observation = {
+            "text": "Single Player", "x": 0.72, "y": 0.255,
+            "width": 0.03, "height": 0.01,
+        }
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=[observation]):
+            point = civ6_play._main_menu_point(
+                Path("menu.png"), (756, 33, 756, 480)
+            )
+
+        self.assertEqual(point, (1111, 255))
+
+    def test_create_game_click_uses_its_visible_label(self) -> None:
+        observations = [
+            {"text": "Resume Game", "x": 0.75, "y": 0.28,
+             "width": 0.03, "height": 0.01},
+            {"text": "Create Game", "x": 0.75, "y": 0.31,
+             "width": 0.03, "height": 0.01},
+        ]
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=observations):
+            point = civ6_play._observed_label_point(
+                Path("submenu.png"), "Create Game", (756, 33, 756, 480)
+            )
+
+        self.assertEqual(point, (1156, 309))
+
     def test_seat_match_requires_map_and_leader(self) -> None:
         event = {
             "difficulty": "DIFFICULTY_SETTLER",
