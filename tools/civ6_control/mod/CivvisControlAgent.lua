@@ -3733,7 +3733,30 @@ local function answerBlocker(player, pid, blocker, turn)
 		if not spend("civic", cfg.MaxCivicPasses or 2) then return nil; end
 		return chooseCivic(player, pid);
 	elseif name == "ENDTURN_BLOCKING_PRODUCTION" then
-		if not spend("production", cfg.MaxProductionPasses or 4) then return nil; end
+		-- ★★★★★ THE BUDGET WAS SMALLER THAN THE EMPIRE, so past four cities the
+		-- turn simply stopped answering. `ENDTURN_BLOCKING_PRODUCTION` fires once
+		-- per city that needs something queued, so a fixed 4 is spent before six
+		-- cities have been served and every later blocker returns nil WITHOUT
+		-- TRYING. Measured on run `civvis-20260801T065721Z`:
+		--
+		--     turns    unanswered   answered
+		--     <50               0         15
+		--     50-100            0         23
+		--     100-150          20         24
+		--     150+             18         14
+		--
+		-- Zero failures until turn 102 -- four turns after the sixth city -- then
+		-- 38 of them, until it was failing more often than it succeeded. It reads
+		-- as "the city had nothing it could build", which is a different and much
+		-- more interesting bug, and it is not that at all.
+		--
+		-- ⚠ Third instance of one shape in this file: `ArmyCap` at 10 units, the
+		-- production floor's Ancient-only fallbacks, and this. A constant that is
+		-- right for a small early empire and silently wrong for a real one. The
+		-- budget exists to stop a turn taking ten minutes, and the work it bounds
+		-- is PER CITY -- so the bound has to be per city too.
+		local passes = math.max(cfg.MaxProductionPasses or 4, cityCount(player) + 2);
+		if not spend("production", passes) then return nil; end
 		return driveProduction(player, turn, true) > 0 and "production" or nil;
 	elseif name == "ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT" then
 		if not spend("governor", cfg.MaxGovernorPasses or 2) then return nil; end
