@@ -774,7 +774,24 @@ fn main() {
     // learned evaluator that never once loaded while its documentation called it
     // good and inert. A run that does not name its genome cannot be told apart from
     // a run whose league file failed to resolve.
-    println!("{}", serde_json::json!({
+    //
+    // ⚠⚠ STDERR, NOT STDOUT — AND THAT IS PROTOCOL, NOT STYLE.
+    //
+    // `--serve` speaks a strict one-line-per-request protocol: `civ6_brain.py` writes
+    // a turn number and does exactly ONE `readline()`, then reads `payload["orders"]`.
+    // Printing this to stdout put a line in front of the first response, and it is
+    // valid JSON with no `orders` key — so it parsed cleanly, yielded an empty list,
+    // and shifted every later turn by one. No error was raised anywhere.
+    //
+    // Measured after this line shipped: `turn 1: 0 orders in 0.33s` on a fresh run,
+    // and a live run that had been 236 turns of `orders_source: civvis` flipped to
+    // `fallback` the moment a binary carrying it was swapped in — the hand-written
+    // ladder playing while CIVVIS decided correctly into a pipe nobody read. The
+    // decider was never wrong; `why.log` showed it founding the capital on the very
+    // turn the brain recorded zero orders.
+    //
+    // Anything this binary emits that is not a response belongs on stderr.
+    eprintln!("{}", serde_json::json!({
         "kind": "genome",
         "strategy": rated.as_ref().map(|c| c.name.clone()).unwrap_or_else(|| "stock".into()),
         "source": rated.as_ref().map(|c| c.source.clone()).unwrap_or_else(|| "AdvancedAi::new".into()),

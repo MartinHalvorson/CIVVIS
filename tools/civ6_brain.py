@@ -209,6 +209,26 @@ class Decider:
             payload = json.loads(line)
         except ValueError:
             return [], f"unparseable: {line.strip()[:120]}"
+        # ★★★★★ A LINE THAT IS NOT A RESPONSE MUST NOT BE READ AS AN EMPTY ONE.
+        #
+        # `--serve` is one line in, one line out, and this used to trust that
+        # absolutely: any JSON object was accepted and `payload.get("orders", [])`
+        # turned one without that key into "CIVVIS chose nothing". A single stray
+        # println in the decider therefore shifted every turn by one and read as a
+        # silent, total abdication -- the run kept going, reported
+        # `orders_source: "fallback"`, and the hand-written ladder played the game.
+        # That happened: the genome report went to stdout, and a run that had been
+        # 236 turns of CIVVIS flipped the moment the new binary was swapped in.
+        #
+        # So a line without `orders` is skipped and LOGGED, and the real response is
+        # read behind it. Recursion depth is bounded by the fact that the decider
+        # emits one response per request; a decider that only ever emitted noise would
+        # block on `readline` instead, which is a visible hang rather than a quiet
+        # wrong answer.
+        if "orders" not in payload:
+            print(f"[brain] IGNORING non-response line on the decider's stdout: "
+                  f"{line.strip()[:160]}", flush=True)
+            return self.ask(turn)
         rows = [
             (str(o.get("kind", "")), o.get("subject"), o.get("verb"),
              o.get("x"), o.get("y"))
