@@ -107,7 +107,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// matched across 40 Advanced-v1 seat-games and 4,300 observed Advanced-v1
 /// turns. The source contract is deliberately re-pinned after that direct
 /// compatibility check rather than changing the Elo protocol.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4d9f_c30a_4e56_d7d7;
+///
+/// #719 freezes that live battlefront observation at the start of a major
+/// turn, including camouflage detection. `advanced_v1` still disables the
+/// observation path. Clean before/after release builds produced byte-identical
+/// output from the same 10-map deployment comparison as #682: 16/20
+/// `advanced_v1` game wins, 80.0% paired-map score, six sweeps, and 4,264
+/// observed Advanced-v1 player-turns. The contract is re-pinned because the
+/// gated legacy path did not move; the Elo protocol does not change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0dcd_aad7_7f23_8a31;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

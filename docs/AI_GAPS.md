@@ -395,6 +395,31 @@ that boundary rather than re-running the old stringly comparisons.
    with a genome-matched sequential control and keep it out of the live league
    unless its measured gain justifies its roughly 6.4× turn cost.
 
+## Ranked next work after the turn-frame repair
+
+The current-main battlefront follow-up freezes the already-promoted observation
+boundary for one major turn. It removes a same-turn inconsistency, but it does
+not make the production controller fog honest, prove a strength gain, or change
+the incumbent/champion distinction. The next work remains ordered by the
+largest remaining decision risk rather than by how local the next code edit is:
+
+1. **Separate discovery from confirmation effect sizes.** Keep promotion as a
+   decision and quote effect sizes only from a disjoint, pre-registered
+   confirmation prefix.
+2. **Test one rational composite.** Evaluate the live policy deck plus direct
+   envoy production on new stable deployment and compact prefixes, preserving
+   the matrix gate and recording build opportunity costs.
+3. **Build a fog-honest major controller.** Extend the existing observation and
+   belief surfaces end-to-end. The turn-start battlefront frame is only a
+   coherence prerequisite inside this larger item.
+4. **Learn action-conditioned advantage with abstention.** Expand the action
+   corpus, hold deployment out for calibration, and fall back to scripted play
+   outside the supported distribution.
+5. **Search full expansion investment, then price strategic search.** Model
+   production, population, travel, settlement, and payback together; retain
+   expensive macro search unless a genome-matched deployment comparison pays
+   for its measured turn cost.
+
 This supersedes the ordering immediately above: evaluator trust comes first,
 and the now-resolved policy/envoy prefixes justify one bounded composite before
 broader search.

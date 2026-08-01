@@ -111,11 +111,11 @@ heal, breach, or garrison-derived strength; a never-seen city gets a
 conservative generic defense estimate instead of its private live state.
 
 The battlefront layer now also filters current hostile units and City Centers
-through the acting seat's live vision when it chooses a domain objective,
-focus target, local force ratio, and force posture. Last-seen military
-contacts remain available only through the existing bounded belief memory.
-That is an information-set repair for these decision boundaries, not a claim
-that the full controller is fog honest.
+through the acting seat's turn-start observation frame when it chooses a domain
+objective, focus target, local force ratio, and force posture. Last-seen
+military contacts remain available only through the existing bounded belief
+memory. That is an information-set repair for these decision boundaries, not a
+claim that the full controller is fog honest.
 
 The same `872000` spot-check shape now has 178 valid controls and 3/178
 divergences (1.7%): no plan-report divergence remains, and all three remaining
@@ -141,6 +141,47 @@ build had 16 `advanced` wins and the repaired build had 14; terminal-score
 share was effectively unchanged (57.2% and 57.3%). This is not a
 promotion-strength comparison, and the small deployment difference is recorded
 as a regression screen rather than interpreted as an effect.
+
+### Turn-start frame follow-up
+
+The initial battlefront repair recomputed `player_vision_now` at each planning
+consumer. That was an internally inconsistent frame: an earlier movement could
+reveal a tile, or move a detector next to a camouflaged unit, before a later
+consumer rebuilt force groups. `AdvancedAi` now captures both visible tiles and
+the observed unit IDs before a major takes its first action, then clears that
+frame after the turn. Campaign scoring, domain objectives, focus targets,
+local strength, posture, and the remembered-hidden-contact term use the same
+frame. A focused regression test creates exactly that sequence — a scout
+reveals a previously hidden hostile after capture — and verifies the frame
+retains the pre-move tile and unit observations used by those consumers.
+
+The current-main release baseline at `63d2cc8` and the frame build were run on
+the identical fixed `862000..862063` census profile. Both had zero
+plan-report witnesses and 16 controlled action witnesses: **16/725 (2.2%)**
+before and **16/724 (2.2%)** after. Every treatment tensor, save/load tensor,
+and null-control decision matched in both runs. The different valid-probe count
+and individual witness list show that the controller's trajectories changed;
+the equal finite-sample rate does **not** establish an integrity improvement or
+fog honesty. It establishes that the newly covered same-turn frame has no
+observed regression on this release profile while the remaining tactical leaks
+are still measurable.
+
+The behavior change also received matched, fixed-seed safety screens against
+`basic`, not a direct promotion comparison between the two builds. On 60
+four-player compact Standard pairs (`865000..865059`), current-main recorded
+105/120 `advanced` game wins and 57.5% terminal-score share; the frame build
+recorded 104/120 and the same 57.5% share. On 24 six-player 74×46 Online
+deployment pairs (`865100..865123`), those figures were 33/48 and 55.7%
+before, 32/48 and 56.0% after. A one-game movement in either screen is not an
+effect-size estimate, but neither screen exposes a material regression. The
+frozen `advanced_v1` anchor is stronger evidence for the ledger boundary: the
+two clean release `ai_eval advanced_v1 basic --pairs 10 --jobs 1 --seed 31337
+--players 4 --turns 200 --deployment-comparison` reports are byte-identical,
+with SHA-256 `e37ae6f3014c6f13c75ef964027e7b57f5e57e9289f0fdb36cae80f5bb863341`.
+Three alternating one-at-a-time release benchmarks (100 two-player 20×14,
+100-turn games each) had medians of 715 turns/sec before and 712 turns/sec
+with the frame. The individual readings (715/724/711 and 714/705/712) do not
+show a material single-simulation throughput regression.
 
 ## Scope and limitations
 
