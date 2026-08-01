@@ -188,7 +188,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// --turns 200 --deployment-comparison` (SHA-256
 /// `f6d9e17ee19fe298e14a573f97a896280a75a767306dca6ef0d80d2020384b2c`).
 /// This is a compatibility re-pin, not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0d57_917a_b495_a091;
+///
+/// #802 adds a settle-scoring adjacency term gated behind
+/// `AdvancedAi::adjacency_site_planning` — on in `promoted_policy_envoy`,
+/// off in `configured()`, so `AdvancedAi::legacy()` never evaluates it.
+/// Checked the same way: baseline and branch builds produced byte-identical
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
+/// 31337` reports. Another compatibility re-pin over the merged sources,
+/// not an Elo protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xee02_9679_23c4_64c1;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
