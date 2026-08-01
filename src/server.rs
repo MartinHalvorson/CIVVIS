@@ -128,6 +128,12 @@ pub struct Params {
     /// snapshot: a run that seats from it must not rewrite it. Point this at
     /// a runtime copy and the table moves with every game played.
     pub league_record: bool,
+    /// Optional match-machine coverage target. When set, this unretired
+    /// strategy owns seat zero for the game; the other seats keep the normal
+    /// rank-weighted exhibition selection. It is deliberately separate from
+    /// world settings so rotating targets cannot trigger a spectator restart
+    /// or alter tournament rules.
+    pub force_strategy: Option<String>,
 }
 
 pub struct Session {
@@ -1503,6 +1509,7 @@ impl Session {
         game: &Game,
         league: Option<&crate::league::League>,
         seat_from_roster: bool,
+        force_strategy: Option<&str>,
     ) -> (Vec<Box<dyn Ai + Send>>, Vec<Option<usize>>) {
         let mut seat_strategy: Vec<Option<usize>> = vec![None; game.players.len()];
         if let Some(l) = league {
@@ -1532,8 +1539,30 @@ impl Session {
             } else if let Some(default_entrant) =
                 l.strategies.iter().position(|s| s.name == "advanced")
             {
-                for id in majors {
-                    seat_strategy[id] = Some(default_entrant);
+                for id in &majors {
+                    seat_strategy[*id] = Some(default_entrant);
+                }
+            }
+            // The match machine rotates every unretired strategy through a
+            // dedicated seat. This includes an entrant marked `league_only`:
+            // it is still a valid rated strategy, and an explicit coverage
+            // request is the operator's admission decision for this game.
+            // Keep all other seats on the ordinary sampler and swap rather
+            // than duplicate the target when it was already selected.
+            if let Some(name) = force_strategy {
+                if let Some(target) = l.strategies.iter().position(|strategy| {
+                    strategy.name == name && !strategy.retired && !strategy.human
+                }) {
+                    if let Some(seat) = majors.first().copied() {
+                        if let Some(existing) = seat_strategy
+                            .iter()
+                            .position(|strategy| *strategy == Some(target))
+                        {
+                            seat_strategy.swap(seat, existing);
+                        } else {
+                            seat_strategy[seat] = Some(target);
+                        }
+                    }
                 }
             }
         }
@@ -1689,7 +1718,12 @@ impl Session {
         // no league strategy is seated. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
         let (mut league, seat_from_roster) = Self::load_params_league(&params);
-        let (mut ais, mut seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        let (mut ais, mut seat_strategy) = Self::ai_fleet(
+            &game,
+            league.as_ref(),
+            seat_from_roster,
+            params.force_strategy.as_deref(),
+        );
         // Only a watched table records its reasoning. Everywhere else the
         // journal is off and every `think!` is one `Option` test.
         let journal = if params.spectate {
@@ -1769,8 +1803,12 @@ impl Session {
             != simulation_settings(&params))
         .then_some(requested_next);
         let (mut league, seat_from_roster) = Self::load_params_league(&params);
-        let (mut ais, mut seat_strategy) =
-            Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        let (mut ais, mut seat_strategy) = Self::ai_fleet(
+            &game,
+            league.as_ref(),
+            seat_from_roster,
+            params.force_strategy.as_deref(),
+        );
         // A save carries the world, not what anyone was thinking while they
         // played it. The restored table starts a fresh record from the turn it
         // resumes.
@@ -5997,6 +6035,7 @@ mod tests {
             supervised: false,
             league_dir: None,
             league_record: false,
+            force_strategy: None,
         }
     }
 
@@ -9856,6 +9895,54 @@ mod tests {
         let before = session.game.turn;
         assert_eq!(session.autoplay(3), 3);
         assert_eq!(session.game.turn, before + 3);
+    }
+
+    #[test]
+    fn an_explicit_coverage_target_can_include_a_live_excluded_strategy() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-server-coverage-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let dir = dir.to_str().unwrap().to_string();
+        let _ = std::fs::remove_dir_all(&dir);
+        let entrant = |name: &str| {
+            crate::league::Strategy::new(
+                name,
+                crate::league::StrategyKind::Builtin {
+                    ai: name.to_string(),
+                },
+                0,
+            )
+        };
+        let mut excluded = entrant("strategic");
+        assert!(excluded.exclude_from_live("coverage test", "the test ends"));
+        crate::league::save_league(
+            &dir,
+            &crate::league::League {
+                round: 2,
+                strategies: vec![entrant("advanced"), entrant("basic"), excluded],
+                calibration: Default::default(),
+            },
+        );
+
+        let mut params = current();
+        params.num_players = 4;
+        params.spectate = true;
+        params.league_dir = Some(dir.clone());
+        params.force_strategy = Some("strategic".to_string());
+        let session = Session::new(params);
+        let target = session
+            .league
+            .as_ref()
+            .unwrap()
+            .strategies
+            .iter()
+            .position(|strategy| strategy.name == "strategic")
+            .unwrap();
+        assert_eq!(session.seat_strategy[0], Some(target));
+        assert_eq!(session.seat_entry(0).unwrap().name, "strategic");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Sitting down to play registers a *new* player.
