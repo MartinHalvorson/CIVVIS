@@ -73,6 +73,34 @@ the deterministic lightweight agent used by city-states and barbarians. All
 three read full state (cheat on fog); fair-play agents should restrict
 themselves to `civvis::obs::observation(&game, pid)`.
 
+### Policy and envoy production default (2026-08-01)
+
+`advanced` now includes the independently confirmed three-part policy/envoy
+composite: `policy-deck-live`, `envoy-infrastructure`, and `envoy-priority`.
+The live deck re-evaluates available policy cards; the production route can
+reserve an idle adaptive city for the first legal, useful Diplomatic Quarter,
+Consulate, or Chancery stage. It still yields to an existing queue, Recovery,
+local danger, an active rush, and major war. The promotion does **not** include
+the separate `pol_influence` numerical weight.
+
+This was not inferred from favorable component results. The pre-registered
+`advanced_policy_envoy_priority` composite passed its independent matrix
+confirmation: on 300 compact Standard maps it scored 52.2% (+15 Elo-equivalent,
+95% interval −24 to +54), satisfying the no-regression safety condition; on
+300 six-player Online deployment maps it scored 57.2% (+51, +11 to +90), with
+115 favorable versus 52 unfavorable map directions and its anytime-valid
+e-process crossing the promotion threshold at map 42. See
+[`POLICY_ENVOY_COMPOSITE.md`](POLICY_ENVOY_COMPOSITE.md) for the pre-registration,
+discovery, and confirmation records, and
+[`POLICY_ENVOY_PROMOTION.md`](POLICY_ENVOY_PROMOTION.md) for the production
+boundary and compatibility checks.
+
+The historical composite name remains selectable only as an exact alias of
+`advanced`, so an evaluator reports it as self-play instead of quietly testing
+a duplicate factory. The other named policy/envoy arms remain evaluator-only
+pre-promotion controls; they explicitly turn off one or more promoted
+mechanisms. `advanced_v1` remains the frozen long-run anchor.
+
 Default strategic planning also reads the public victory-race information for
 every rival. An imminent science or score win becomes a military-denial target,
 a culture lead triggers defensive Culture and Tourism investment, a religious
@@ -333,7 +361,7 @@ its separate promotion gate remains the point where wins decide shipment.
 
 ```bash
 civvis tournament \
-  --ais advanced-20260731-settlement=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random \
+  --ais advanced-20260801-policy-envoy=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random \
   --games 40 --players 4
 civvis tournament --standings          # verify and print without playing
 ```
@@ -624,26 +652,26 @@ roster keeps `strategic` as an offline-only anchor.
 - Keep `random` in the pool as a sanity floor.
 - `soak` flags anomalies (no tech progress, minor winners) across seeds.
 
-### 2026-07-31 full-prefix status
+### 2026-08-01 full-prefix status
 
-Production remains `advanced`, with every new behavior below default-off. This
-is a failed-replacement conclusion, not a profile-independent strength claim.
+The confirmed policy/envoy composite is production `advanced`; no other
+unconfirmed evaluator behavior is promoted by this change.
 
 | comparison | matrix sample | compact | deployment | production consequence |
 |---|---:|---:|---:|---|
-| live policy deck vs `advanced` | 300 maps/profile | 52.3%, +16 | 54.3%, +30 | Wilson gate inconclusive; no promotion |
-| direct envoy production vs `advanced` | 120 maps/profile | 48.3%, −12 | 54.4%, +30 | gate inconclusive; no promotion |
-| commitment vs `advanced` | 120 maps/profile | 51.0%, +7 | 46.5%, −25 | reject treatment |
-| `advanced_evolved` vs `advanced` | 120 maps/profile | 57.3%, +51 | 45.6%, −30 | reject transfer |
-| live policy deck vs `advanced_v1` | 300 maps/profile | 50.5%, +3 | 53.7%, +26 | gate inconclusive; anchor retained |
+| policy/envoy composite vs pre-promotion `advanced` | 300 independent maps/profile | 52.2%, +15 | 57.2%, +51 | promoted after deployment PASS |
+| commitment vs pre-promotion `advanced` | 120 maps/profile | 51.0%, +7 | 46.5%, −25 | reject treatment |
+| `advanced_evolved` vs pre-promotion `advanced` | 120 maps/profile | 57.3%, +51 | 45.6%, −30 | reject transfer |
+| live policy deck vs `advanced_v1` | 300 maps/profile | 50.5%, +3 | 53.7%, +26 | anchor retained |
 
-`advanced_envoy_priority` is the direct mechanism arm. After the opening book,
-it can place the first incomplete empire-unique Diplomatic Quarter, Consulate,
-or Chancery stage into an idle adaptive-production queue. It requires a met and
-contestable city-state plus useful remaining envoy stream, preserves existing
-queues, and yields to Recovery, local danger, active rushes, and major war.
-`advanced_envoy_infrastructure` remains the valuation-only control. Do not infer
-direct production behavior from that older arm.
+The historical controls now mean the following relative to the promoted
+default: `advanced_policy_live_control` turns off both envoy-production
+mechanisms; `advanced_envoy_policy` also adds the previously excluded influence
+weight; `advanced_envoy_infrastructure` restores the Legacy deck and turns off
+priority; `advanced_envoy_priority` restores only the Legacy deck; and
+`advanced_envoy_economy` adds influence while turning off priority. This makes
+future mechanism checks explicit rather than allowing ordinary constructors to
+silently inherit the promoted behavior.
 
 Evaluator-only fallbacks now report what they actually build: champion-backed
 netless policy arms are `advanced_evolved`, and champion-backed netless neural
@@ -652,7 +680,7 @@ is `basic_evolved`. Direct evaluation refuses degraded artifacts by default;
 The matrix also uses sample-size-independent profile seeds, so extending a
 prefix preserves both profiles' earlier maps.
 
-The next strength experiment should be a single pre-registered composite of the
-live policy deck and direct envoy production on fresh stable prefixes. Treat it
-as a new hypothesis: the two favorable directions may overlap, and higher envoy
-income may simply move production cost elsewhere.
+The next strength experiment should target a distinct bottleneck, not retest
+this promoted bundle under a new name. Preserve the evaluator controls above
+for regression diagnosis and measure any candidate on fresh, independently
+confirmed matrix prefixes.

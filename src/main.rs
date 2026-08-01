@@ -15,7 +15,7 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// blend two players into one lifetime average and erase the very improvement
 /// the longitudinal tournament is supposed to expose.
 const DEFAULT_TOURNAMENT_ENTRANTS: &str =
-    "advanced-20260731-settlement=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random";
+    "advanced-20260801-policy-envoy=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random";
 
 /// `advanced_v1` freezes the planning configuration, but deliberately shares
 /// the production Basic/Advanced implementation. Pin those sources so a code
@@ -115,7 +115,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `advanced_v1` game wins, 80.0% paired-map score, six sweeps, and 4,264
 /// observed Advanced-v1 player-turns. The contract is re-pinned because the
 /// gated legacy path did not move; the Elo protocol does not change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0dcd_aad7_7f23_8a31;
+///
+/// #746 promotes the confirmed policy/envoy composite only through the public
+/// production constructors. `AdvancedAi::legacy()` still calls `configured`
+/// directly and cannot reach that wrapper. A release build of `e46d1b7` and a
+/// separately targeted release build of this change produced byte-identical
+/// `ai_eval advanced_v1 basic --pairs 10 --jobs 1 --seed 31337 --players 4
+/// --turns 200 --deployment-comparison` reports. This is a compatibility
+/// re-pin, not an Elo protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb71f_eabf_d699_cd32;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1653,17 +1661,17 @@ fn main() {
 mod tests {
     use super::{
         parse_tournament_entrants, strict_f64_arg, strict_i64_arg,
-        ADVANCED_V1_SOURCE_CONTRACT_FNV,
+        ADVANCED_V1_SOURCE_CONTRACT_FNV, DEFAULT_TOURNAMENT_ENTRANTS,
     };
     use civvis::game::{Action, Game};
 
     #[test]
     fn tournament_entrants_separate_immutable_identity_from_controller() {
         let entrants = parse_tournament_entrants(
-            "advanced-20260731=advanced, advanced_v1, basic-20260730=basic, random-20260730=random",
+            "advanced-20260801-policy-envoy=advanced, advanced_v1, basic-20260730=basic, random-20260730=random",
         )
         .unwrap();
-        assert_eq!(entrants[0].identity, "advanced-20260731");
+        assert_eq!(entrants[0].identity, "advanced-20260801-policy-envoy");
         assert_eq!(entrants[0].controller, "advanced");
         assert_eq!(entrants[1].identity, "advanced_v1");
         assert_eq!(entrants[1].controller, "advanced_v1");
@@ -1671,6 +1679,10 @@ mod tests {
         assert_eq!(entrants[2].controller, "basic");
         assert!(parse_tournament_entrants("candidate=").is_err());
         assert!(parse_tournament_entrants("advanced,,basic").is_err());
+
+        let default = parse_tournament_entrants(DEFAULT_TOURNAMENT_ENTRANTS).unwrap();
+        assert_eq!(default[0].identity, "advanced-20260801-policy-envoy");
+        assert_eq!(default[0].controller, "advanced");
     }
 
     #[test]
