@@ -547,7 +547,14 @@ class MatchMachine:
         self.games.append(game)
         if visible:
             self.visible_started = True
-        self.event("game_started", kind=kind, seed=seed, pid=process.pid, port=port, revision=self.current_revision)
+        self.event(
+            "game_started",
+            game_kind=kind,
+            seed=seed,
+            pid=process.pid,
+            port=port,
+            revision=self.current_revision,
+        )
 
     def finish(self, game: GameProcess, *, failed: bool, reason: str) -> None:
         status = game.last_status
@@ -563,7 +570,7 @@ class MatchMachine:
                 self.visible_completed = True
         self.event(
             "game_failed" if failed else "game_completed",
-            kind="visible" if game.visible else "headless",
+            game_kind="visible" if game.visible else "headless",
             seed=game.seed,
             revision=game.revision,
             reason=reason,
