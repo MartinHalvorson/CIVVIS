@@ -15,6 +15,13 @@ from civ6_control import install  # noqa: E402
 
 
 class ProtectedInstallTest(unittest.TestCase):
+    def test_controller_uses_real_project_and_great_person_command_ids(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertNotIn('"PROJECT_CAMPUS_RESEARCH_GRANT"', source)
+        self.assertIn('"PROJECT_ENHANCE_DISTRICT_CAMPUS"', source)
+        self.assertIn('"UNITCOMMAND_ACTIVATE_GREAT_PERSON"', source)
+        self.assertIn("GetActivationHighlightPlots()", source)
+
     def test_live_rehost_assigns_and_reads_back_the_requested_leader(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         rehost = source.split("local function applyConfiguration()", 1)[1].split(

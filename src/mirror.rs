@@ -3840,6 +3840,36 @@ pub struct StateUnit {
     pub fortified: bool,
     #[serde(default)]
     pub fortify_turns: i32,
+    /// Firaxis represents a Great Person as a physical unit and exposes the exact
+    /// plots on which that named individual can activate. CIVVIS applies Great
+    /// Person effects immediately, so the live bridge uses these host-validated
+    /// targets to enact the same semantic without inventing placement rules.
+    #[serde(default)]
+    pub great_person: Option<StateGreatPerson>,
+}
+
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateGreatPerson {
+    #[serde(default)]
+    pub individual: Option<String>,
+    #[serde(default)]
+    pub class: Option<String>,
+    #[serde(default)]
+    pub charges: i32,
+    #[serde(default)]
+    pub can_activate: bool,
+    #[serde(default)]
+    pub activation_plots: Vec<StateActivationPlot>,
+}
+
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateActivationPlot {
+    #[serde(default)]
+    pub x: i32,
+    #[serde(default)]
+    pub y: i32,
+    #[serde(default)]
+    pub distance: i32,
 }
 
 /// One active outgoing trade route as Civilization VI reports it.

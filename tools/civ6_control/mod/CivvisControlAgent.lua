@@ -169,6 +169,7 @@ local function resolveActions()
 	for _, name in ipairs({
 		"UNITCOMMAND_AUTOMATE", "UNITCOMMAND_PROMOTE", "UNITCOMMAND_WAKE",
 		"UNITCOMMAND_UPGRADE", "UNITCOMMAND_DELETE",
+		"UNITCOMMAND_ACTIVATE_GREAT_PERSON",
 	}) do
 		CMD[name] = cmdHash(name);
 	end
@@ -2686,7 +2687,18 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- The melee ladder goes in above the builder so the floor stays non-degenerate:
 	-- these are the units the army block already prefers, and `playable` drops the
 	-- obsolete ones, so the first still-buildable tier wins.
-	for _, name in ipairs({ "PROJECT_CAMPUS_RESEARCH_GRANT",
+	-- Firaxis names district grants `PROJECT_ENHANCE_DISTRICT_*`.  The old
+	-- `PROJECT_CAMPUS_RESEARCH_GRANT` name does not exist in the shipped ruleset,
+	-- so the supposedly safe repeatable floor was dead and every mature city fell
+	-- through to another Builder.  Offer every ordinary district project before
+	-- any unit floor; `playable` keeps only projects this city can actually run.
+	for _, name in ipairs({ "PROJECT_ENHANCE_DISTRICT_CAMPUS",
+	                        "PROJECT_ENHANCE_DISTRICT_COMMERCIAL_HUB",
+	                        "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE",
+	                        "PROJECT_ENHANCE_DISTRICT_HOLY_SITE",
+	                        "PROJECT_ENHANCE_DISTRICT_THEATER",
+	                        "PROJECT_ENHANCE_DISTRICT_HARBOR",
+	                        "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT",
 	                        "UNIT_SWORDSMAN", "UNIT_SPEARMAN", "UNIT_WARRIOR",
 	                        "UNIT_ARCHER", "UNIT_SLINGER" }) do
 		ladder[#ladder + 1] = { name, "floor" };
@@ -4126,6 +4138,46 @@ local function exportState(player, pid, turn)
 	eachUnit(player, function(unit)
 		local name = unitTypeName(unit);
 		local row = GameInfo.Units[name];
+		-- Great People are immediate effects in CIVVIS, but physical units in
+		-- Firaxis.  Export the engine's exact activation targets so the bridge can
+		-- perform that same effect without guessing which district or plot is legal.
+		local greatPerson = nil;
+		local gp = try(function() return unit:GetGreatPerson(); end);
+		if gp ~= nil and try(function() return gp:IsGreatPerson(); end, false) then
+			local activationPlots = {};
+			for _, plotIndex in ipairs(try(function()
+				return gp:GetActivationHighlightPlots();
+			end, {}) or {}) do
+				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+				if plot ~= nil then
+					local px = try(function() return plot:GetX(); end, -1);
+					local py = try(function() return plot:GetY(); end, -1);
+					if px >= 0 and py >= 0 then
+						activationPlots[#activationPlots + 1] = {
+							x = px, y = py,
+							distance = try(function()
+								return Map.GetPlotDistance(unit:GetX(), unit:GetY(), px, py);
+							end, 9999),
+						};
+					end
+				end
+			end
+			local individual = try(function() return gp:GetIndividual(); end, -1);
+			local class = try(function() return gp:GetClass(); end, -1);
+			local individualRow = GameInfo.GreatPersonIndividuals[individual];
+			local classRow = GameInfo.GreatPersonClasses[class];
+			greatPerson = {
+				individual = individualRow ~= nil
+					and individualRow.GreatPersonIndividualType or nil,
+				class = classRow ~= nil and classRow.GreatPersonClassType or nil,
+				charges = try(function() return gp:GetActionCharges(); end, 0),
+				can_activate = try(function()
+					return UnitManager.CanStartCommand(
+						unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"], nil, {});
+				end, false),
+				activation_plots = activationPlots,
+			};
+		end
 		units[#units + 1] = {
 			id = try(function() return unit:GetID(); end, -1),
 			kind = name,
@@ -4150,6 +4202,7 @@ local function exportState(player, pid, turn)
 				return (unit:GetFortifyTurns() or 0) > 0;
 			end, false),
 			fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+			great_person = greatPerson,
 		};
 	end);
 
@@ -5474,6 +5527,19 @@ local function applyOrder(player, pid, row, turn)
 		-- killed or consumed it.
 		local unit = liveUnit(pid, subject);
 		if unit == nil then return false, "unit_gone"; end
+		if verb == "ACTIVATE_GREAT_PERSON" then
+			local activated = commandUnit(
+				unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"], {});
+			if not activated then
+				emit("great_person_refused", {
+					turn = turn, unit = subject,
+					unit_kind = unitTypeName(unit),
+					x = try(function() return unit:GetX(); end, -1),
+					y = try(function() return unit:GetY(); end, -1),
+				});
+			end
+			return activated, verb;
+		end
 		-- FOUND_CITY, MOVE_TO and RANGE_ATTACK are the three that decide a game.
 		-- ⚠ There is NO attack operation on this build — the resolved list is only
 		-- MOVE_TO and RANGE_ATTACK — so a melee strike IS a MOVE_TO onto the
@@ -5946,8 +6012,10 @@ local function applyOrders(player, pid, turn, rows)
 			local name = unitTypeName(unit);
 			-- Civilians cannot explore, and a settler that wanders is a settler that
 			-- never founds — this project has already paid for both.
+			local gp = try(function() return unit:GetGreatPerson(); end);
 			if name == "UNIT_SETTLER" or name == "UNIT_BUILDER"
-					or name == "UNIT_TRADER" then
+					or name == "UNIT_TRADER"
+					or (gp ~= nil and try(function() return gp:IsGreatPerson(); end, false)) then
 				return;
 			end
 			if operate(unit, OP["UNITOPERATION_AUTOMATE_EXPLORE"], {}) then

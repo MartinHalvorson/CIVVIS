@@ -21,9 +21,11 @@
 //! ⚠ THE RECONSTRUCTION IS PARTIAL, and the partiality has a direction. Terrain,
 //! both empires' remembered cities, own units, visible hostile units, research,
 //! government, development, treasury and public aggregate strength cross over.
-//! Promotions and on-map Great People remain explicit modeling gaps. An untranslatable
-//! order or entity is refused or counted rather than guessed, so partiality stays
-//! visible in the run ledger.
+//! Promotions remain an explicit modeling gap. Firaxis's physical Great Person units
+//! are bridged through its own activation verdict and legal activation plots, matching
+//! CIVVIS's immediate-effect semantics without reproducing those rules here. An
+//! untranslatable order or entity is refused or counted rather than guessed, so
+//! partiality stays visible in the run ledger.
 //!
 //! ⚠ `unmapped` is reported, not swallowed. A Civ 6 unit type with no CIVVIS
 //! counterpart is a unit CIVVIS cannot see, and a half-visible army produces
@@ -198,6 +200,47 @@ fn defer_unit_followups(orders: Vec<Order>) -> (Vec<Order>, usize) {
         })
         .collect();
     (orders, deferred)
+}
+
+/// Translate CIVVIS's immediate Great Person semantics into Firaxis's physical
+/// unit workflow. The host supplies both the current activation verdict and every
+/// legal activation plot; choosing the nearest legal plot is path actuation, not a
+/// second strategy layer.
+fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, usize) {
+    let mut orders = Vec::new();
+    let mut waiting_without_target = 0;
+    for unit in &state.units {
+        let Some(person) = &unit.great_person else {
+            continue;
+        };
+        if person.charges <= 0 {
+            continue;
+        }
+        if person.can_activate {
+            orders.push(Order {
+                kind: "unit",
+                subject: Some(unit.id),
+                verb: Some("ACTIVATE_GREAT_PERSON".to_string()),
+                pos: None,
+            });
+            continue;
+        }
+        let target = person
+            .activation_plots
+            .iter()
+            .min_by_key(|plot| (plot.distance, plot.y, plot.x));
+        if let Some(target) = target {
+            orders.push(Order {
+                kind: "unit",
+                subject: Some(unit.id),
+                verb: Some("MOVE_TO".to_string()),
+                pos: Some((target.x, target.y)),
+            });
+        } else {
+            waiting_without_target += 1;
+        }
+    }
+    (orders, waiting_without_target)
 }
 
 /// Send the complete post-plan policy set as one host transaction.
@@ -404,6 +447,17 @@ fn decide(
     }
     if policy_changed {
         orders.push(policy_deck_order(&planned_game, 0));
+    }
+
+    let (person_orders, great_people_without_target) = great_person_orders(state);
+    if !person_orders.is_empty() {
+        note_bits.push(format!("great_people_orders={}", person_orders.len()));
+        orders.extend(person_orders);
+    }
+    if great_people_without_target > 0 {
+        note_bits.push(format!(
+            "great_people_without_activation_target={great_people_without_target}"
+        ));
     }
 
     let plan = ai.plan_report();
@@ -1373,8 +1427,59 @@ fn action_label(action: &Action) -> &'static str {
 mod tests {
     use super::*;
     use civvis::mirror::{
-        Plot, Snapshot, StateCity, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
+        Plot, Snapshot, StateActivationPlot, StateCity, StateGreatPerson, StateSnapshot,
+        StateTradeRoute, StateUnit, TilesChunk,
     };
+
+    #[test]
+    fn great_people_activate_or_move_to_the_nearest_firaxis_valid_plot() {
+        let state = StateSnapshot {
+            units: vec![
+                StateUnit {
+                    id: 70,
+                    kind: "UNIT_GREAT_SCIENTIST".to_string(),
+                    great_person: Some(StateGreatPerson {
+                        charges: 1,
+                        can_activate: true,
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 71,
+                    kind: "UNIT_GREAT_MERCHANT".to_string(),
+                    great_person: Some(StateGreatPerson {
+                        charges: 1,
+                        activation_plots: vec![
+                            StateActivationPlot {
+                                x: 30,
+                                y: 20,
+                                distance: 7,
+                            },
+                            StateActivationPlot {
+                                x: 11,
+                                y: 12,
+                                distance: 2,
+                            },
+                        ],
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+
+        let (orders, waiting) = great_person_orders(&state);
+
+        assert_eq!(waiting, 0);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].subject, Some(70));
+        assert_eq!(orders[0].verb.as_deref(), Some("ACTIVATE_GREAT_PERSON"));
+        assert_eq!(orders[1].subject, Some(71));
+        assert_eq!(orders[1].verb.as_deref(), Some("MOVE_TO"));
+        assert_eq!(orders[1].pos, Some((11, 12)));
+    }
 
     #[test]
     fn unit_followups_wait_for_the_next_observed_firaxis_frame() {
