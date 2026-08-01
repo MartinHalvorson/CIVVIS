@@ -55,11 +55,32 @@ class MatchMachineTests(unittest.TestCase):
         self.assertEqual((online.speed, online.turns), ("online", 250))
         self.assertEqual((standard.speed, standard.turns), ("standard", 500))
 
-    def test_visible_game_is_the_only_command_that_opens_a_browser(self):
+    def test_first_visible_game_opens_browser_and_replacements_reuse_tab(self):
         visible = machine.game_command(Path("civvis"), Path("league"), 1, 2, visible=True)
+        replacement = machine.game_command(
+            Path("civvis"),
+            Path("league"),
+            2,
+            2,
+            visible=True,
+            open_browser=False,
+        )
         headless = machine.game_command(Path("civvis"), Path("league"), 1, 2, visible=False)
         self.assertNotIn("--no-open", visible)
+        self.assertIn("--no-open", replacement)
         self.assertIn("--no-open", headless)
+
+    def test_fill_slots_replaces_a_completed_visible_game(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        subject.games = []
+        subject.visible_started = True
+        subject.launch = mock.Mock()
+
+        subject.fill_slots(machine.Resources(20, 20, 12, 0, False))
+
+        subject.launch.assert_called_once_with(visible=True)
 
     def test_cpu_parser_uses_the_last_top_sample(self):
         report = "CPU usage: 10.0% user, 5.0% sys, 85.0% idle\nCPU usage: 20.0% user, 9.5% sys, 70.5% idle"
@@ -122,6 +143,8 @@ class MatchMachineTests(unittest.TestCase):
             subject.games = []
             subject.visible_started = False
             subject.visible_completed = False
+            subject.visible_completed_count = 0
+            subject.visible_browser_opened = False
             subject.completed = 0
             subject.failed = 0
             events = []
