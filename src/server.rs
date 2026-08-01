@@ -7080,7 +7080,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
         assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(154, 50 + rows * 28);"));
         assert!(EMBEDDED_INDEX
-            .contains("const requestedWidth = 820 + Math.max(0, rows - 1) * 100;"));
+            .contains("const requestedWidth = 854 + Math.max(0, rows - 1) * 100;"));
         assert!(EMBEDDED_INDEX.contains(
             "mapArea.style.setProperty(\"--player-hud-width\", `${requestedWidth}px`);"
         ));
@@ -7117,7 +7117,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
         // A masthead row is one line: civilization carries the capital action,
-        // followed by the explicit watch action, identity and eleven values.
+        // followed by the explicit watch action, identity and twelve values.
         // Watch-as deliberately has no column heading; the button carries its
         // own visible label.
         assert!(EMBEDDED_INDEX.contains(
@@ -7127,11 +7127,11 @@ mod tests {
         // The values claim their width first and the identity block flexes, so a
         // narrow masthead ellipsizes a name rather than running two figures
         // together. A percentage identity column with a 300px floor never
-        // yielded, which left the eleven values 27px each at 1600px.
+        // yielded, which left the twelve values 27px each at 1600px.
         //
         // Every data column is now a share rather than a pixel count, and each
         // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 7 identity columns totalling 11.387 against 11 value
+        // inside it — 7 identity columns totalling 11.387 against 12 value
         // columns of 1. That identity is not decoration: it is what lets the
         // bar between the two blocks move width across itself, and it is the
         // ratio the table uses at every width. Changing one number here without
@@ -7146,10 +7146,10 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
-             calc(var(--hud-stat-min) * 11 + var(--hud-stat-gap) * 10), 11fr);"
+             calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);"
         ));
         assert!(EMBEDDED_INDEX
-            .contains("--hud-stat-tracks: repeat(11, minmax(var(--hud-stat-min), 1fr));"));
+            .contains("--hud-stat-tracks: repeat(12, minmax(var(--hud-stat-min), 1fr));"));
         // The floors stay in the stylesheet so the width breakpoints can lower
         // them; the shares belong to the viewer. A breakpoint that rewrote a
         // share would undo a dragged column on the next window resize, so no
@@ -7184,16 +7184,23 @@ mod tests {
         // reason a dragged column moves the figures under it as well as its
         // own head.
         assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-stat-tracks);").count(), 2,
-            "the value heads and the value cells are the same eleven tracks");
+            "the value heads and the value cells are the same twelve tracks");
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-stat-tracks: repeat(12, minmax(var(--hud-stat-min), 1fr));"
+        ), "the initial style has the same twelve stat tracks before JavaScript synchronizes them");
+        assert!(EMBEDDED_INDEX.contains(
+            "calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);"
+        ), "the static stat-track floor covers every stat and its gutters");
         assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
             "the identity heads and the identity cells are the same tracks");
         // All three render-time lists must stay in one reading order: the
         // column model lays out and drags the cells, the heading names them,
-        // and playerHudStats supplies their figures. Food comes from the
-        // existing public yield payload rather than a separate request.
+        // and playerHudStats supplies their figures. Total population comes
+        // from the player payload, while food comes from the existing public
+        // yield payload rather than a separate request.
         fn assert_hud_stat_order(source: &str, section: &str) {
             let expected = [
-                "cities", "food", "production", "science", "culture", "faith", "gold",
+                "cities", "population", "food", "production", "science", "culture", "faith", "gold",
                 "military", "wonders", "suzerain", "score",
             ];
             let mut cursor = 0;
