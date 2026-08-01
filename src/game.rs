@@ -12175,14 +12175,20 @@ const STANDARD_DEAL_TURNS: u32 = 30;
 /// The one-off token costs published for individual diplomatic missions.
 const DELEGATION_GOLD: f64 = 10.0;
 const EMBASSY_GOLD: f64 = 25.0;
-/// Civ VI's fixed, player-facing grievance values used by the existing
-/// Gathering Storm approximation.  The casus-belli profile below applies the
-/// published proportional modifiers to these common bases.
+/// Civ VI's published grievance caps and one-off values. City occupation and
+/// razing begin from a population-scaled share of the capture cap; the
+/// casus-belli profile below applies the published proportional modifiers.
 const FORMAL_WAR_GRIEVANCES: f64 = 100.0;
 const CITY_CAPTURE_GRIEVANCES: f64 = 50.0;
 const CITY_RAZE_GRIEVANCES: f64 = 150.0;
-const PROMISE_REFUSAL_GRIEVANCES: f64 = 25.0;
-const PROMISE_BROKEN_GRIEVANCES: f64 = 50.0;
+const CITY_STATE_SUZERAIN_WAR_GRIEVANCES: f64 = 100.0;
+const CITY_STATE_ENVOY_WAR_GRIEVANCES: f64 = 50.0;
+const CITY_STATE_CONQUEST_GRIEVANCES: f64 = 50.0;
+const CITY_STATE_RAZE_GRIEVANCES: f64 = 100.0;
+const REQUEST_REFUSAL_FIRST_GRIEVANCES: f64 = 25.0;
+const REQUEST_REFUSAL_REPEAT_GRIEVANCES: f64 = 25.0;
+const PROMISE_BROKEN_FIRST_GRIEVANCES: f64 = 100.0;
+const PROMISE_BROKEN_REPEAT_GRIEVANCES: f64 = 25.0;
 
 /// The grievance share a third party acquires from its relationship with the
 /// directly aggrieved civilization.  These are intentionally applied once at
@@ -13310,6 +13316,12 @@ pub struct City {
     /// eliminated or the city is ceded/returned.
     #[serde(default)]
     pub occupied_from: Option<usize>,
+    /// The population- and casus-adjusted grievance incurred when this city
+    /// was occupied. A peace settlement charges the same amount again if the
+    /// current owner keeps it, while returning it clears that first charge.
+    /// Older saves predate the split accounting and safely omit this value.
+    #[serde(default)]
+    pub occupation_grievance: Option<f64>,
     /// Turns elapsed since this city's active Nuclear Power Plant was built or
     /// last recommissioned.
     #[serde(default)]
@@ -38784,6 +38796,7 @@ impl Game {
             free_city_pressure: BTreeMap::new(),
             captured_from: None,
             occupied_from: None,
+            occupation_grievance: None,
             reactor_age: 0,
             great_person_foreign_route_gold: 0.0,
         };
@@ -42621,10 +42634,95 @@ impl Game {
         } else {
             1.0
         };
-        *self.players[aggrieved]
+        // A Civ VI grievance ledger is one balance for each pair, not two
+        // independent piles of anger.  A retaliation first spends the
+        // offender's existing balance, only becoming a new grievance in the
+        // opposite direction once it crosses neutral.  Normalizing legacy
+        // saves here also means a pre-state save that happened to contain both
+        // directional entries recovers the same single-balance invariant on
+        // its next diplomatic event.
+        let adjusted = amount * multiplier;
+        let forward = self.players[aggrieved]
             .grievances
-            .entry(offender)
-            .or_insert(0.0) += amount * multiplier;
+            .remove(&offender)
+            .unwrap_or(0.0)
+            .max(0.0);
+        let reverse = self.players[offender]
+            .grievances
+            .remove(&aggrieved)
+            .unwrap_or(0.0)
+            .max(0.0);
+        let balance = forward + adjusted - reverse;
+        if balance > 0.0 {
+            self.players[aggrieved]
+                .grievances
+                .insert(offender, balance);
+        } else if balance < 0.0 {
+            self.players[offender]
+                .grievances
+                .insert(aggrieved, -balance);
+        }
+    }
+
+    /// Apply goodwill to one ledger entry without creating an artificial
+    /// reverse grievance. Returning or liberating a city reduces the amount a
+    /// leader already holds against its benefactor; it never makes that leader
+    /// newly aggrieved by being helped.
+    fn relieve_direct_grievances(&mut self, aggrieved: usize, benefactor: usize, amount: f64) {
+        if aggrieved == benefactor
+            || aggrieved >= self.players.len()
+            || benefactor >= self.players.len()
+            || amount <= 0.0
+        {
+            return;
+        }
+        let target = |player: usize| player.to_string();
+        let touches_target = |outcome| {
+            self.congress_effect_active("public_relations", outcome, &target(aggrieved))
+                || self.congress_effect_active("public_relations", outcome, &target(benefactor))
+        };
+        let multiplier = if touches_target("A") {
+            2.0
+        } else if touches_target("B") {
+            0.5
+        } else {
+            1.0
+        };
+        let remaining = self.players[aggrieved]
+            .grievances
+            .remove(&benefactor)
+            .unwrap_or(0.0)
+            - amount * multiplier;
+        if remaining > 0.0 {
+            self.players[aggrieved]
+                .grievances
+                .insert(benefactor, remaining);
+        }
+    }
+
+    /// Requests begin at 25 grievances and grow by another 25 each time the
+    /// same counterpart repeats the conduct. Broken promises use the higher
+    /// 100-point first transgression, then the same 25-point escalation.
+    /// Counters are durable save state, which lets the escalation survive a
+    /// reload without widening the Player schema for an otherwise private
+    /// bookkeeping detail.
+    fn escalating_grievance(
+        &mut self,
+        aggrieved: usize,
+        offender: usize,
+        category: &str,
+        first: f64,
+        repeated: f64,
+    ) -> f64 {
+        let key = format!("grievance_escalation:{category}:{offender}");
+        let previous = self.players[aggrieved]
+            .counters
+            .get(&key)
+            .copied()
+            .unwrap_or(0)
+            .max(0) as f64;
+        *self.players[aggrieved].counters.entry(key).or_insert(0) += 1;
+        first + repeated * previous
     }
 
     /// Add the direct grievance and the diplomatic spillover it causes.
@@ -42667,6 +42765,46 @@ impl Game {
         self.add_direct_grievances(aggrieved, offender, amount);
         for (observer, share) in observers {
             self.add_direct_grievances(observer, offender, amount * share);
+        }
+    }
+
+    /// Declaring on a city-state has its own witnesses in Gathering Storm:
+    /// the Suzerain receives 100 grievances, while every other major with an
+    /// Envoy there receives 50. These are explicitly enumerated rather than
+    /// relationship spillover, so a third party is charged once even when it
+    /// is also friends with the Suzerain.
+    fn city_state_declaration_grievances(&mut self, city_state: usize, declarers: &[usize]) {
+        if !self.players.get(city_state).is_some_and(|player| {
+            player.alive && player.is_minor && !player.is_barbarian && !player.is_free_city
+        }) {
+            return;
+        }
+        let suzerain = self.suzerain_of(city_state);
+        let witnesses: Vec<(usize, f64)> = self
+            .players
+            .iter()
+            .filter(|player| {
+                player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && !player.is_free_city
+            })
+            .filter_map(|player| {
+                if Some(player.id) == suzerain {
+                    Some((player.id, CITY_STATE_SUZERAIN_WAR_GRIEVANCES))
+                } else if self.envoys_at(player.id, city_state) > 0 {
+                    Some((player.id, CITY_STATE_ENVOY_WAR_GRIEVANCES))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        for declarer in declarers {
+            for (witness, amount) in &witnesses {
+                if *witness != *declarer {
+                    self.add_direct_grievances(*witness, *declarer, *amount);
+                }
+            }
         }
     }
 
@@ -42988,7 +43126,14 @@ impl Game {
             self.add_grievances(other, *declarer, profile.declaration_grievances());
         }
         if self.players[other].is_minor {
-            self.break_promises_on_city_state_attack(pid, other);
+            self.city_state_declaration_grievances(other, &declared_principals);
+            // Every Joint-War signatory made the choice to attack. Each one
+            // therefore breaks its own promise to protect the city-state;
+            // charging only the proposer would make the partner evade the
+            // very diplomatic consequence the agreement was meant to share.
+            for declarer in &declared_principals {
+                self.break_promises_on_city_state_attack(*declarer, other);
+            }
         }
         // Eureka bookkeeping: Defensive Tactics wants a war declared on you,
         // Nationalism a war declared with a named justification.
@@ -43608,7 +43753,18 @@ impl Game {
             .ok_or_else(|| "no such incoming deal".to_string())?;
         let deal = self.pending_deals.remove(index);
         if deal.demand || deal.promise.is_some() {
-            self.add_grievances(deal.from, pid, PROMISE_REFUSAL_GRIEVANCES);
+            let category = deal
+                .promise
+                .as_deref()
+                .unwrap_or("demand");
+            let grievances = self.escalating_grievance(
+                deal.from,
+                pid,
+                &format!("request_refusal:{category}"),
+                REQUEST_REFUSAL_FIRST_GRIEVANCES,
+                REQUEST_REFUSAL_REPEAT_GRIEVANCES,
+            );
+            self.add_grievances(deal.from, pid, grievances);
             let subject = if deal.demand { "demand" } else { "promise request" };
             let message = format!(
                 "{} refused {}'s {}",
@@ -43653,7 +43809,14 @@ impl Game {
         self.players[promisor]
             .broken_promises_until
             .insert(requester, retribution_until);
-        self.add_grievances(requester, promisor, PROMISE_BROKEN_GRIEVANCES);
+        let grievances = self.escalating_grievance(
+            requester,
+            promisor,
+            &format!("promise_broken:{kind}"),
+            PROMISE_BROKEN_FIRST_GRIEVANCES,
+            PROMISE_BROKEN_REPEAT_GRIEVANCES,
+        );
+        self.add_grievances(requester, promisor, grievances);
         let message = format!(
             "{} broke its promise of {} to {}",
             self.civ_name(promisor),
@@ -44512,13 +44675,21 @@ impl Game {
 
     fn transfer_city_items(&mut self, owner: usize, receiver: usize, items: &DealItems) {
         for city_id in &items.cities {
-            if self
-                .cities
-                .get(city_id)
-                .is_some_and(|city| city.owner == owner)
-            {
+            let returned_grievance = self.cities.get(city_id).and_then(|city| {
+                (city.owner == owner && city.occupied_from == Some(receiver)).then(|| {
+                    city.occupation_grievance
+                        .unwrap_or_else(|| self.city_capture_base_grievances(*city_id))
+                })
+            });
+            if self.cities.get(city_id).is_some_and(|city| city.owner == owner) {
                 self.evacuate_peaceful_city_transfer(*city_id, owner);
                 self.transfer_city(*city_id, receiver, false);
+                // Returning an occupied city is distinct from liberation:
+                // it removes the capture grievance with its former owner,
+                // rather than granting the global goodwill of a liberation.
+                if let Some(grievance) = returned_grievance {
+                    self.relieve_direct_grievances(receiver, owner, grievance);
+                }
             }
         }
     }
@@ -45286,8 +45457,9 @@ impl Game {
 
     /// A peace agreement in this compact diplomacy model accepts the current
     /// borders: cities held by either signatory are ceded, ending Occupation's
-    /// ungarrisoned -5 Loyalty pressure. Explicit city return can be layered
-    /// onto negotiated deals later without duplicating this invariant.
+    /// ungarrisoned -5 Loyalty pressure. Civ VI charges the population- and
+    /// casus-adjusted capture value once when the city falls and once again
+    /// when a peace treaty recognizes that possession.
     fn conclude_peace(&mut self, first: usize, second: usize, mut terms: Vec<String>) {
         let first_side = self.team_members(first);
         let second_side = self.team_members(second);
@@ -45331,6 +45503,41 @@ impl Game {
         {
             self.note(participant, "Diplomacy", message.clone(), None);
         }
+        let cessions: Vec<(usize, usize, f64)> = self
+            .cities
+            .values()
+            .filter_map(|city| {
+                let cross_team_occupation = (first_side.contains(&city.owner)
+                    && city
+                        .occupied_from
+                        .is_some_and(|former| second_side.contains(&former)))
+                    || (second_side.contains(&city.owner)
+                        && city
+                            .occupied_from
+                            .is_some_and(|former| first_side.contains(&former)));
+                if !cross_team_occupation {
+                    return None;
+                }
+                let former = city.occupied_from?;
+                let grievance = city
+                    .occupation_grievance
+                    // Saves made before split capture/cession accounting can
+                    // still settle cleanly. Newer saves retain the exact
+                    // casus-adjusted amount recorded at capture time.
+                    .unwrap_or_else(|| self.city_capture_base_grievances(city.id));
+                Some((former, city.owner, grievance))
+            })
+            .collect();
+        for (former, holder, grievance) in cessions {
+            if self.players.get(former).is_some_and(|player| {
+                player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && !player.is_free_city
+            }) {
+                self.add_grievances(former, holder, grievance);
+            }
+        }
         for city in self.cities.values_mut() {
             let cross_team_occupation = (first_side.contains(&city.owner)
                 && city
@@ -45342,6 +45549,7 @@ impl Game {
                         .is_some_and(|former| first_side.contains(&former)));
             if cross_team_occupation {
                 city.occupied_from = None;
+                city.occupation_grievance = None;
             }
         }
         self.sync_war_log();
@@ -51001,6 +51209,10 @@ impl Game {
                 .retain(|item, _| !item.starts_with("district:"));
             city.captured_from = conquest.then_some(old);
             city.occupied_from = conquest.then_some(old);
+            // A new owner begins a new occupation ledger. This also clears
+            // any prior capture amount when a city defects or is peacefully
+            // returned, so a later peace cannot cede an already-resolved war.
+            city.occupation_grievance = None;
             if conquest {
                 // Gathering Storm removes approximately one quarter of the
                 // population, retaining the ceiling of 75%.
@@ -51184,20 +51396,41 @@ impl Game {
             return 0.0;
         }
         let profile = self.war_profile_for(conqueror, defeated);
-        let multiplier = if razed {
-            profile.raze_multiplier
+        let base = self.city_capture_base_grievances(cid);
+        if razed {
+            base * (CITY_RAZE_GRIEVANCES / CITY_CAPTURE_GRIEVANCES) * profile.raze_multiplier
         } else {
-            profile.capture_multiplier
-        };
-        let base = if razed {
-            CITY_RAZE_GRIEVANCES
-        } else {
-            CITY_CAPTURE_GRIEVANCES
-        };
-        base * multiplier
+            base * profile.capture_multiplier
+        }
     }
 
-    fn capture_rewards(&mut self, conqueror: usize, defeated: usize, cid: u32, razed: bool) {
+    /// The capture charge is capped at 50. A city below the world's average
+    /// population produces the corresponding fraction, while a city at or
+    /// above that average reaches the cap. Captures call this after the
+    /// standard conquest population loss, matching the population that
+    /// actually changes hands.
+    fn city_capture_base_grievances(&self, cid: u32) -> f64 {
+        let Some(city) = self.cities.get(&cid) else {
+            return 0.0;
+        };
+        let city_count = self.cities.len().max(1) as f64;
+        let average_population = self
+            .cities
+            .values()
+            .map(|other| other.pop.max(1) as f64)
+            .sum::<f64>()
+            / city_count;
+        CITY_CAPTURE_GRIEVANCES
+            * (city.pop.max(1) as f64 / average_population.max(1.0)).min(1.0)
+    }
+
+    fn capture_rewards(
+        &mut self,
+        conqueror: usize,
+        defeated: usize,
+        cid: u32,
+        razed: bool,
+    ) -> f64 {
         let grievances = self.city_fate_grievances(conqueror, defeated, cid, razed);
         bump(&mut self.players[conqueror], "captures");
         if !self.players[defeated].is_minor
@@ -51231,6 +51464,7 @@ impl Game {
                 self.turn as i64 + duration,
             );
         }
+        grievances
     }
 
     fn city_state_elimination_grievances(
@@ -51254,7 +51488,15 @@ impl Game {
             {
                 continue;
             }
-            self.add_direct_grievances(observer, conqueror, if razed { 100.0 } else { 50.0 });
+            self.add_direct_grievances(
+                observer,
+                conqueror,
+                if razed {
+                    CITY_STATE_RAZE_GRIEVANCES
+                } else {
+                    CITY_STATE_CONQUEST_GRIEVANCES
+                },
+            );
         }
     }
 
@@ -51284,7 +51526,8 @@ impl Game {
             return Err("city-states must raze captured cities when possible".into());
         }
         self.cities.get_mut(&cid).unwrap().captured_from = None;
-        self.capture_rewards(pid, defeated, cid, false);
+        let grievances = self.capture_rewards(pid, defeated, cid, false);
+        self.cities.get_mut(&cid).unwrap().occupation_grievance = Some(grievances);
         self.request_city_capture_emergency(pid, cid, defeated);
         self.check_elimination(defeated);
         self.city_state_elimination_grievances(defeated, pid, false);
@@ -51337,55 +51580,25 @@ impl Game {
         Ok(())
     }
 
-    /// Liberation reverses the relationship damage attributable to a captured
-    /// city.  The founder's ledger is cleared as Civ VI presents it; known
-    /// friends and allies recover the same fractional spillover that the
-    /// capture event created.  A liberated city-state instead removes the
-    /// global city-state-conquest charge from every leader that had met it.
-    fn relieve_liberation_grievances(&mut self, liberator: usize, original_owner: usize) {
-        let original_is_minor = self.players[original_owner].is_minor;
-        let observers: Vec<(usize, Option<f64>)> = self
+    /// Liberation creates a matching negative grievance with every living
+    /// major leader. The pairwise ledger is intentionally aggregate, so the
+    /// goodwill subtracts from that leader's current balance without ever
+    /// crossing zero into a fabricated grievance against the liberator.
+    fn relieve_liberation_grievances(&mut self, liberator: usize, relief: f64) {
+        let observers: Vec<usize> = self
             .players
             .iter()
             .filter(|observer| {
                 observer.alive
                     && !observer.is_minor
                     && !observer.is_barbarian
+                    && !observer.is_free_city
                     && observer.id != liberator
-                    // The founder necessarily knows its own city, even in
-                    // compact test/save states where no explicit contact row
-                    // was recorded. Every other observer needs to have met
-                    // the civilization or city-state whose city is returned.
-                    && (observer.id == original_owner
-                        || self.has_met(observer.id, original_owner))
             })
-            .filter_map(|observer| {
-                if original_is_minor {
-                    Some((observer.id, Some(CITY_CAPTURE_GRIEVANCES)))
-                } else if observer.id == original_owner {
-                    Some((observer.id, None))
-                } else if self.are_allied(observer.id, original_owner) {
-                    Some((observer.id, Some(CITY_CAPTURE_GRIEVANCES * ALLIED_GRIEVANCE_SHARE)))
-                } else if self.are_friends(observer.id, original_owner) {
-                    Some((observer.id, Some(CITY_CAPTURE_GRIEVANCES * FRIEND_GRIEVANCE_SHARE)))
-                } else {
-                    None
-                }
-            })
+            .map(|observer| observer.id)
             .collect();
-        for (observer, relief) in observers {
-            let grievances = &mut self.players[observer].grievances;
-            match relief {
-                None => {
-                    grievances.remove(&liberator);
-                }
-                Some(relief) => {
-                    if let Some(amount) = grievances.get_mut(&liberator) {
-                        *amount = (*amount - relief).max(0.0);
-                    }
-                    grievances.retain(|_, amount| *amount > 0.0);
-                }
-            }
+        for observer in observers {
+            self.relieve_direct_grievances(observer, liberator, relief);
         }
     }
 
@@ -51398,6 +51611,11 @@ impl Game {
         if original_owner == pid || original_owner == defeated {
             return Err("this city cannot be liberated".into());
         }
+        let relief = if self.players[original_owner].is_minor {
+            CITY_STATE_CONQUEST_GRIEVANCES
+        } else {
+            self.city_capture_base_grievances(cid)
+        };
         let emergency_ids: Vec<u32> = self
             .active_emergencies
             .iter_mut()
@@ -51415,6 +51633,7 @@ impl Game {
             city.owner = original_owner;
             city.captured_from = None;
             city.occupied_from = None;
+            city.occupation_grievance = None;
             city.loyalty = 100.0;
             // Capture can grant a Steel-equipped conqueror a temporary
             // minimum outer defense even after the constructed Walls were
@@ -51425,7 +51644,7 @@ impl Game {
             city.encampment_wall_hp = 0;
         }
         self.players[original_owner].alive = true;
-        self.relieve_liberation_grievances(pid, original_owner);
+        self.relieve_liberation_grievances(pid, relief);
         let favor = if self.players[original_owner].is_minor || restored_to_game {
             100.0
         } else {
@@ -51491,6 +51710,7 @@ impl Game {
         for city in self.cities.values_mut() {
             if city.occupied_from == Some(pid) {
                 city.occupied_from = None;
+                city.occupation_grievance = None;
             }
         }
         if self.players[pid].is_minor {
@@ -63907,6 +64127,152 @@ mod diplomatic_relations_tests {
     }
 
     #[test]
+    fn grievances_offset_to_one_signed_balance_before_reversing() {
+        let mut game = game_with_contacts(2, 91_102_1);
+
+        game.add_grievances(1, 0, 100.0);
+        game.add_grievances(0, 1, 40.0);
+        assert_eq!(game.players[1].grievances.get(&0), Some(&60.0));
+        assert_eq!(game.players[0].grievances.get(&1), None);
+
+        game.add_grievances(0, 1, 80.0);
+        assert_eq!(game.players[1].grievances.get(&0), None);
+        assert_eq!(game.players[0].grievances.get(&1), Some(&20.0));
+    }
+
+    #[test]
+    fn city_state_declaration_charges_its_suzerain_and_other_envoys() {
+        let mut game = game_with_contacts(3, 91_102_2);
+        let city_state = game.players.len();
+        game.players.push(Player::new(city_state, "Geneva", true));
+        game.record_contact(0, city_state);
+        game.players[1].envoys.push((city_state, 3));
+        game.players[2].envoys.push((city_state, 1));
+        assert_eq!(game.suzerain_of(city_state), Some(1));
+
+        game
+            .do_declare_war(0, city_state)
+            .expect("a met city-state can be declared on");
+
+        assert_eq!(
+            game.players[1].grievances.get(&0),
+            Some(&CITY_STATE_SUZERAIN_WAR_GRIEVANCES)
+        );
+        assert_eq!(
+            game.players[2].grievances.get(&0),
+            Some(&CITY_STATE_ENVOY_WAR_GRIEVANCES)
+        );
+    }
+
+    #[test]
+    fn city_capture_is_population_scaled_then_charged_again_when_ceded() {
+        let mut game = game_with_contacts(2, 91_102_3);
+        let target_position = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| game.city_at(*position).is_none())
+            .expect("the compact test map has room for one more city");
+        let target = game.found_city_for(1, target_position, Some("Border Town".to_string()));
+        let attacker_capital = game.player_city_ids(0)[0];
+        let defender_capital = game.player_city_ids(1)[0];
+        game.cities.get_mut(&attacker_capital).unwrap().pop = 12;
+        game.cities.get_mut(&defender_capital).unwrap().pop = 6;
+        game.cities.get_mut(&target).unwrap().pop = 4;
+
+        game.do_declare_war(0, 1).unwrap();
+        let declaration = game.players[1].grievances[&0];
+        game.capture_city(target, 0);
+        game.do_keep_city(0, target).unwrap();
+        let capture = game.cities[&target]
+            .occupation_grievance
+            .expect("a kept city remembers its exact occupation charge");
+        assert!(
+            capture > 0.0 && capture < CITY_CAPTURE_GRIEVANCES * 1.5,
+            "a below-average city stays below the Surprise-War capture cap"
+        );
+        assert!((game.players[1].grievances[&0] - declaration - capture).abs() < 1e-9);
+
+        game.turn += game.standard_duration(WAR_MIN_TURNS);
+        game.do_make_peace(0, 1).unwrap();
+
+        assert!(
+            (game.players[1].grievances[&0] - declaration - 2.0 * capture).abs() < 1e-9,
+            "peace recognition repeats the city capture grievance"
+        );
+        assert_eq!(game.cities[&target].occupied_from, None);
+        assert_eq!(game.cities[&target].occupation_grievance, None);
+    }
+
+    #[test]
+    fn returning_an_occupied_city_relieves_its_former_owner_only() {
+        let mut game = game_with_contacts(3, 91_102_31);
+        let target_position = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| game.city_at(*position).is_none())
+            .expect("the compact test map has room for one more city");
+        let target = game.found_city_for(1, target_position, Some("Returned Town".to_string()));
+
+        game.capture_city(target, 0);
+        game.do_keep_city(0, target).unwrap();
+        let charge = game.cities[&target]
+            .occupation_grievance
+            .expect("a kept city remembers its capture grievance");
+        game.players[2].grievances.insert(0, charge + 30.0);
+
+        game.transfer_city_items(
+            0,
+            1,
+            &DealItems {
+                cities: vec![target],
+                ..DealItems::default()
+            },
+        );
+
+        assert_eq!(game.cities[&target].owner, 1);
+        assert_eq!(game.players[1].grievances.get(&0), None);
+        assert!(
+            (game.players[2].grievances[&0] - charge - 30.0).abs() < 1e-9,
+            "return is bilateral; global goodwill belongs to liberation"
+        );
+        assert_eq!(game.cities[&target].occupation_grievance, None);
+    }
+
+    #[test]
+    fn liberation_relieves_a_city_value_without_erasing_unrelated_grievances() {
+        let mut game = game_with_contacts(4, 91_102_4);
+        let target_position = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| game.city_at(*position).is_none())
+            .expect("the compact test map has room for one more city");
+        let target = game.found_city_for(1, target_position, Some("Liberation".to_string()));
+        game.cities.get_mut(&target).unwrap().pop = 4;
+
+        game.capture_city(target, 2);
+        game.do_keep_city(2, target).unwrap();
+        game.capture_city(target, 0);
+        let relief = game.city_capture_base_grievances(target);
+        game.players[1].grievances.insert(0, relief + 30.0);
+        game.players[3].grievances.insert(0, relief + 30.0);
+
+        game.do_liberate_city(0, target).unwrap();
+
+        for observer in [1, 3] {
+            assert!(
+                (game.players[observer].grievances[&0] - 30.0).abs() < 1e-9,
+                "liberation removes one city value for observer {observer}"
+            );
+        }
+    }
+
+    #[test]
     fn an_alliance_never_auto_joins_but_a_defensive_pact_joins_once() {
         let mut game = game_with_contacts(4, 91_103);
         install_alliance(&mut game, 1, 2);
@@ -64028,7 +64394,30 @@ mod diplomatic_relations_tests {
         assert!(game.promise_active(1, 0, "no_spying"));
 
         assert!(game.break_promise(1, 0, "no_spying"));
-        assert_eq!(game.players[0].grievances.get(&1), Some(&50.0));
+        assert_eq!(
+            game.players[0].grievances.get(&1),
+            Some(&PROMISE_BROKEN_FIRST_GRIEVANCES)
+        );
+        game.turn += game.standard_duration(STANDARD_DEAL_TURNS);
+        game.current = 0;
+        game.apply(
+            0,
+            &Action::RequestPromise {
+                player: 1,
+                promise: "no_spying".to_string(),
+            },
+        )
+        .unwrap();
+        let repeat_promise_offer = game.pending_deals.last().unwrap().id;
+        game.current = 1;
+        game.apply(1, &Action::AcceptDeal { deal: repeat_promise_offer })
+            .unwrap();
+        assert!(game.break_promise(1, 0, "no_spying"));
+        assert_eq!(
+            game.players[0].grievances.get(&1),
+            Some(&(PROMISE_BROKEN_FIRST_GRIEVANCES + PROMISE_BROKEN_FIRST_GRIEVANCES + PROMISE_BROKEN_REPEAT_GRIEVANCES)),
+            "the second broken promise costs 125 after the initial 100"
+        );
         game.players[0].civics.insert(crate::name!("early_empire"));
         game.current = 0;
         game.apply(0, &Action::Denounce { player: 1 }).unwrap();
@@ -64071,7 +64460,31 @@ mod diplomatic_relations_tests {
         demand
             .apply(1, &Action::RejectDeal { deal: demand_offer })
             .unwrap();
-        assert_eq!(demand.players[0].grievances.get(&1), Some(&25.0));
+        assert_eq!(
+            demand.players[0].grievances.get(&1),
+            None,
+            "the first 25-point refusal offsets the denounced leader's 25-point balance"
+        );
+        demand.current = 0;
+        demand
+            .apply(
+                0,
+                &Action::DemandGold {
+                    player: 1,
+                    gold: 20.0,
+                },
+            )
+            .unwrap();
+        let repeat_demand_offer = demand.pending_deals.last().unwrap().id;
+        demand.current = 1;
+        demand
+            .apply(1, &Action::RejectDeal { deal: repeat_demand_offer })
+            .unwrap();
+        assert_eq!(
+            demand.players[0].grievances.get(&1),
+            Some(&(REQUEST_REFUSAL_FIRST_GRIEVANCES + REQUEST_REFUSAL_REPEAT_GRIEVANCES)),
+            "the second refusal is the escalating 50-point event after the first offset"
+        );
 
         let restored: Game = serde_json::from_str(&serde_json::to_string(&game).unwrap()).unwrap();
         assert_eq!(
