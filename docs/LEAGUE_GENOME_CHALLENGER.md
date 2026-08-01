@@ -17,7 +17,7 @@ In the current committed snapshot the selected genome is `g4-10`:
 | strategy | rating | RD | games | wins | lower win bound | lower placement rating |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | `g4-10` | 1712.5 | 30.5 | 235 | 84 | 29.9% | 1652.7 |
-| `advanced` anchor | 1807.9 | 60.3 | 1266 | 214 | 14.9% | 1689.6 |
+| `advanced` anchor | 1756.5 | 59.7 | 1989 | 302 | 13.7% | 1639.4 |
 
 The league snapshot is definitional provenance. If it is absent or contains
 no eligible generalist, the entrant explicitly degrades to `strategic_deep`
