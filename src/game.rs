@@ -15330,6 +15330,15 @@ pub struct Game {
     /// the block can be scoped; before this it sent only a bare hash.
     #[serde(default)]
     pub blocked_districts: BTreeMap<u32, BTreeSet<Name>>,
+    /// Production choices a HOST ruleset has refused in a particular city.
+    ///
+    /// The bridge keeps these blocks on a short cooldown: a missing prerequisite or
+    /// temporary host rule must be allowed to become legal later, while an item the
+    /// host has just rejected must not be selected from the same reconstructed board
+    /// on every turn. Keys are typed (`building:library`, `unit:warrior`, ...), so a
+    /// name shared by two production tables cannot suppress the wrong kind of item.
+    #[serde(default)]
+    pub blocked_production: BTreeMap<u32, BTreeSet<String>>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -15640,6 +15649,7 @@ impl From<GameSer> for Game {
             blocked_improvement_sites: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
+            blocked_production: BTreeMap::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
@@ -15981,6 +15991,7 @@ impl Game {
             blocked_improvement_sites: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
+            blocked_production: BTreeMap::new(),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),
@@ -35075,7 +35086,39 @@ impl Game {
         true
     }
 
+    pub(crate) fn production_block_key(item: &Item) -> String {
+        match item {
+            Item::Formation { unit, formation } => format!("formation:{unit}:{formation}"),
+            Item::Unit { unit } => format!("unit:{unit}"),
+            Item::Building { building } => format!("building:{building}"),
+            Item::District { district, .. } => format!("district:{district}"),
+            Item::Wonder { wonder, .. } => format!("wonder:{wonder}"),
+            Item::Repair { repair, .. } => format!("repair:{repair}"),
+            Item::Project { project } => format!("project:{project}"),
+            Item::Product { product } => format!("product:{product}"),
+        }
+    }
+
+    pub(crate) fn replace_blocked_production(
+        &mut self,
+        blocked: BTreeMap<u32, BTreeSet<String>>,
+    ) {
+        self.blocked_production = blocked;
+        // This field is mirror input rather than an Action, so it does not cross the
+        // ordinary successful-apply invalidation below. A menu derived before sync
+        // must not survive after the host has rejected one of its entries.
+        self.query_memo.producible.borrow_mut().clear();
+    }
+
     pub fn can_produce(&self, pid: usize, cid: u32, item: &Item) -> bool {
+        let blocked = Self::production_block_key(item);
+        if self
+            .blocked_production
+            .get(&cid)
+            .is_some_and(|items| items.contains(&blocked))
+        {
+            return false;
+        }
         let city = &self.cities[&cid];
         match item {
             Item::Formation { unit, formation } => {

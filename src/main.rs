@@ -108,6 +108,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// turns. The source contract is deliberately re-pinned after that direct
 /// compatibility check rather than changing the Elo protocol.
 ///
+/// #684 adds one default-off evaluator field, `AdvancedAi::plan_city_target`,
+/// and the delegated-call substitution it gates. With the flag false the
+/// substitution is a `bool::then` that returns `None` and touches nothing, so
+/// this is a compatibility re-pin and not a protocol change. It is earned the
+/// way the entries above are: a matched `ai_eval advanced basic --pairs 10
+/// --players 4 --turns 200 --seed 31337 --jobs 1` on a clean `origin/main`
+/// build and on this branch, compared in full.
+///
 /// #719 freezes that live battlefront observation at the start of a major
 /// turn, including camouflage detection. `advanced_v1` still disables the
 /// observation path. Clean before/after release builds produced byte-identical
@@ -158,12 +166,18 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `932cfabf125e729a5264ce43d2fd8b05d013d3fe84939b1dcd366ff122ddc84a`).
 /// This is a compatibility re-pin, not an Elo protocol change.
 ///
+/// #782 repairs runaway military production and wartime science/culture
+/// neglect only for the live controller. Every new strategic branch is gated
+/// by `victory_planning`; `AdvancedAi::legacy()` sets that flag false. The
+/// regression test checks the legacy yield weights and production choice as
+/// well as the live behavior. The source contract is deliberately re-pinned;
+/// the Elo protocol does not move.
+///
 /// #786 adds live Delegation/Embassy, Defensive Pact, Joint War, promise, and
 /// demand decisions to the shared Basic and Advanced diplomacy paths. The
-/// frozen `advanced_v1` controller invokes that same path, so the behavior is
-/// intentionally a protocol-v4 change with a fresh ledger rather than a
-/// compatibility re-pin.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xcce4_b55c_d22a_ed03;
+/// frozen `advanced_v1` controller invokes that shared path, so the combined
+/// source contract intentionally moves to protocol v4 with a fresh ledger.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfb5d_c726_9658_e590;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -9,11 +9,12 @@ civilization's top three eligible players with 3:2:1 rank weights and
 atomically appends a completed game to ``matches.csv`` and ``league.json``.
 
 The operator fetches ``origin/main`` into a private detached worktree, drains
-old games at a revision boundary, builds the new HEAD, and launches every new
-game from that immutable binary.  It never edits or updates a development
-checkout.  CPU, memory, disk and Apple-GPU use are sampled host-wide; game
-process groups are stopped and resumed before the configured ceiling.  macOS
-thermal pressure is an additional hard gate.
+old headless games at a revision boundary, and builds the new HEAD in the
+background while keeping one visible match alive.  New games then use the
+immutable promoted binary.  It never edits or updates a development checkout.
+CPU, memory, disk and Apple-GPU use are sampled host-wide; game process groups
+are stopped and resumed before the configured ceiling.  macOS thermal pressure
+is an additional hard gate.
 
 The process is intentionally foreground and watches the shell PID supplied by
 ``--watch-pid``.  Closing that terminal kills the fleet.  While it is alive,
@@ -23,6 +24,7 @@ its ``caffeinate`` child prevents idle/system sleep on AC power.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import Future, ThreadPoolExecutor
 import csv
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
@@ -227,17 +229,30 @@ def http_json(port: int, path: str, *, data: dict[str, Any] | None = None) -> di
         return None
 
 
+def port_available(port: int) -> bool:
+    with socket.socket() as candidate:
+        try:
+            candidate.bind(("127.0.0.1", port))
+        except OSError:
+            return False
+    return True
+
+
 def free_port(start: int, used: set[int]) -> int:
     for port in range(start, start + 1000):
         if port in used:
             continue
-        with socket.socket() as candidate:
-            try:
-                candidate.bind(("127.0.0.1", port))
-            except OSError:
-                continue
-        return port
+        if port_available(port):
+            return port
     raise RuntimeError("no free match-machine port")
+
+
+def game_port(base: int, used: set[int], *, visible: bool) -> int | None:
+    if visible:
+        return base if base not in used and port_available(base) else None
+    # The browser follows supervised successors at one stable origin. Never
+    # let a headless server occupy that dedicated visible-game port.
+    return free_port(base + 1, used)
 
 
 def game_command(
@@ -368,6 +383,9 @@ class MatchMachine:
         self.current_revision: str | None = None
         self.binary: Path | None = None
         self.pending_revision: str | None = None
+        self.build_revision: str | None = None
+        self.build_future: Future[Path] | None = None
+        self.build_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="civvis-build")
         self.next_sync = 0.0
         self.next_resource_log = 0.0
         self.completed = 0
@@ -407,6 +425,7 @@ class MatchMachine:
             ).isoformat(timespec="seconds"),
             "revision": self.current_revision,
             "pending_revision": self.pending_revision,
+            "build_revision": self.build_revision,
             "visible_started": self.visible_started,
             "visible_completed": self.visible_completed,
             "visible_completed_count": self.visible_completed_count,
@@ -466,17 +485,20 @@ class MatchMachine:
                 raise RuntimeError("watched terminal closed while waiting for capacity")
             sample = resources(self.runtime)
             now = time.monotonic()
-            non_cpu = [sample.disk]
-            non_cpu.extend(value for value in (sample.memory, sample.gpu) if value is not None)
-            cpu_ceiling = self.args.limit - cpu_reservation - 5.0
-            cpu_safe = sample.cpu is not None and sample.cpu < cpu_ceiling
-            other_safe = max(non_cpu) < self.args.limit - 10.0
-            if cpu_safe and other_safe and sample.thermal_pressure is not True:
+            if self.capacity_available(sample, cpu_reservation=cpu_reservation):
                 return sample
             if now >= next_notice:
                 self.event("resource_gate", purpose=purpose, resources=asdict(sample))
                 next_notice = now + self.args.resource_log_interval
             time.sleep(self.args.poll)
+
+    def capacity_available(self, sample: Resources, *, cpu_reservation: float = 0.0) -> bool:
+        non_cpu = [sample.disk]
+        non_cpu.extend(value for value in (sample.memory, sample.gpu) if value is not None)
+        cpu_ceiling = self.args.limit - cpu_reservation - 5.0
+        cpu_safe = sample.cpu is not None and sample.cpu < cpu_ceiling
+        other_safe = max(non_cpu) < self.args.limit - 10.0
+        return cpu_safe and other_safe and sample.thermal_pressure is not True
 
     def ensure_source(self) -> None:
         if not (self.repo / ".git").exists():
@@ -510,7 +532,7 @@ class MatchMachine:
         (self.league / ".civvis-managed-roster").write_text("match-machine\n", encoding="utf-8")
         self.event("league_initialized", source=str(source))
 
-    def build(self, revision: str) -> None:
+    def compile_build(self, revision: str) -> Path:
         self.event("build_started", revision=revision, jobs=self.args.build_jobs)
         reset = command("git", "reset", "--hard", revision, cwd=self.source)
         if reset.returncode != 0:
@@ -540,12 +562,41 @@ class MatchMachine:
             promoted.unlink(missing_ok=True)
             self.event("validation_failed", revision=revision, output=check.stdout[-4000:])
             raise RuntimeError(f"CIVVIS validation failed at {revision[:12]}")
+        return promoted
+
+    def activate_build(self, revision: str, promoted: Path) -> None:
         self.binary = promoted
         self.current_revision = revision
-        self.pending_revision = None
+        if self.pending_revision == revision:
+            self.pending_revision = None
         self.initialize_league()
         self.refresh_ranking()
         self.event("build_ready", revision=revision, binary=str(promoted))
+
+    def build(self, revision: str) -> None:
+        self.activate_build(revision, self.compile_build(revision))
+
+    def start_head_build(self, revision: str) -> None:
+        self.build_revision = revision
+        self.build_future = self.build_executor.submit(self.compile_build, revision)
+
+    def poll_head_build(self, now: float) -> None:
+        future = self.build_future
+        if future is None or not future.done():
+            return
+        revision = self.build_revision
+        assert revision is not None
+        try:
+            promoted = future.result()
+            self.activate_build(revision, promoted)
+        except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
+            self.event("revision_rejected", error=str(error))
+            if self.pending_revision == revision:
+                self.pending_revision = None
+            self.next_sync = now + self.args.build_retry
+        finally:
+            self.build_future = None
+            self.build_revision = None
 
     def refresh_ranking(self) -> None:
         script = self.source / "tools" / "update_ai_player_elo_rankings.py"
@@ -562,13 +613,15 @@ class MatchMachine:
         if result.returncode != 0:
             self.event("ranking_refresh_failed", output=result.stdout[-2000:])
 
-    def launch(self, *, visible: bool, seed: int | None = None) -> None:
+    def launch(self, *, visible: bool, seed: int | None = None) -> bool:
         assert self.binary is not None and self.current_revision is not None
+        used = {game.port for game in self.games}
+        port = game_port(self.args.port, used, visible=visible)
+        if port is None:
+            return False
         seed = self.next_seed if seed is None else seed
         if seed == self.next_seed:
             self.next_seed += 1
-        used = {game.port for game in self.games}
-        port = free_port(self.args.port, used)
         kind = "visible" if visible else "headless"
         log = self.logs / f"{kind}-{seed}-{self.current_revision[:12]}.log"
         handle = log.open("w", encoding="utf-8")
@@ -614,6 +667,7 @@ class MatchMachine:
             port=port,
             revision=self.current_revision,
         )
+        return True
 
     def finish(self, game: GameProcess, *, failed: bool, reason: str) -> None:
         status = game.last_status
@@ -733,15 +787,23 @@ class MatchMachine:
         # Admit only one process per fresh resource sample. Starting the whole
         # pool from one idle reading could cross the ceiling before the next
         # measurement had a chance to govern it.
-        if self.pending_revision or not sample.comfortably_below(
-            self.args.limit, margin=RESUME_MARGIN
-        ):
+        if not sample.comfortably_below(self.args.limit, margin=RESUME_MARGIN):
+            return
+        # Recovery comes before growth. A process paused by the governor is
+        # already consuming a fleet slot and must be resumed before a fresh
+        # game can compete with it for the recovered headroom.
+        if any(game.paused for game in self.games):
             return
         # "One visible game" is a concurrency invariant, not a lifetime
         # allowance. Replace the spectator match after either completion or a
         # failed process, while still admitting at most one process per sample.
         if not any(game.visible for game in self.games):
             self.launch(visible=True)
+            return
+        # A HEAD transition drains only the headless fleet.  The visible slot
+        # stays populated while compilation runs in the background, so the
+        # stable spectator origin never disappears for an entire build.
+        if self.pending_revision or self.build_future is not None:
             return
         headless = sum(not game.visible for game in self.games)
         if headless < self.args.headless and len(self.games) < self.args.max_processes:
@@ -776,11 +838,12 @@ class MatchMachine:
                     self.event("terminal_closed", watch_pid=self.args.watch_pid)
                     break
                 now = time.monotonic()
-                if now >= self.next_sync:
+                if now >= self.next_sync and self.build_future is None:
                     self.sync()
                 changed = self.poll_games()
                 last_sample = resources(self.runtime)
                 self.govern(last_sample)
+                self.poll_head_build(now)
                 if now >= self.next_resource_log:
                     append_jsonl(
                         self.resource_log,
@@ -788,20 +851,26 @@ class MatchMachine:
                     )
                     self.next_resource_log = now + self.args.resource_log_interval
                     self.persist("resource sample")
-                if self.pending_revision and not self.games:
-                    try:
-                        build_reservation = (
-                            100.0 * self.args.build_jobs / max(1, os.cpu_count() or 1)
-                        )
-                        self.wait_for_capacity("HEAD build", cpu_reservation=build_reservation)
-                        self.build(self.pending_revision)
-                    except RuntimeError as error:
-                        self.event("revision_rejected", error=str(error))
-                        self.pending_revision = None
-                        self.next_sync = now + self.args.build_retry
+                if (
+                    self.pending_revision
+                    and self.build_future is None
+                    and self.games
+                    and all(game.visible and game.ready for game in self.games)
+                ):
+                    build_reservation = (
+                        100.0 * self.args.build_jobs / max(1, os.cpu_count() or 1)
+                    )
+                    if self.capacity_available(
+                        last_sample, cpu_reservation=build_reservation
+                    ):
+                        self.start_head_build(self.pending_revision)
                 self.fill_slots(last_sample)
-                if changed:
+                # The promoted revision refreshes the ranking after the worker
+                # finishes.  Avoid executing a source-tree script while that
+                # same detached worktree is being reset and compiled.
+                if changed and self.build_future is None:
                     self.refresh_ranking()
+                if changed:
                     self.persist("game boundary")
                 time.sleep(self.args.poll)
         finally:
@@ -810,6 +879,9 @@ class MatchMachine:
                 self.finish(game, failed=True, reason="match machine stopped before result")
             if self.caffeinate is not None:
                 stop_process(self.caffeinate, timeout=2)
+            if self.build_future is not None:
+                self.build_future.cancel()
+            self.build_executor.shutdown(wait=True)
             self.refresh_ranking()
             self.persist("stopped")
             self.event("machine_stopped", completed=self.completed, failed=self.failed, resources=asdict(last_sample))

@@ -957,6 +957,38 @@ pub struct AdvancedAi {
     ///
     /// Reachable as `advanced_wide_opening`, paired against `advanced`.
     pub city_target_floor: usize,
+    /// Let the baseline production governor use the empire's own city target
+    /// instead of the flat `city_target` gene.
+    ///
+    /// `assess` computes `plan.desired_cities` from the land actually on the
+    /// map: `(city_target_floor + turn / cadence).min(map_capacity).min(6)`,
+    /// where `map_capacity = (2 + land / 55).clamp(3, 9)`. Nothing on the
+    /// adaptive path consumes it. `docs/OPENINGS.md` §19 records why: after
+    /// the four-build opening an untargeted adaptive empire reaches
+    /// `advanced_production` only for `Recovery`, and every other adaptive
+    /// plan ends in `BasicAi::cities` — whose Settler gate is
+    /// `(n_cities + settlers) as f64 < self.w.city_target`, a **flat gene
+    /// that cannot see the map**. `ai_eval` reports stock `advanced` at 100%
+    /// adaptive plans, so that is the governor deciding the evaluated games.
+    ///
+    /// The two numbers disagree by construction and the one that decides is
+    /// the one that knows least. Stock ships `city_target = 4.0` on every map
+    /// size. The historical gen-14 candidate that motivated this evaluator arm
+    /// used **2.408**, below the opening floor of three, after being bred at
+    /// 4p 24×16 = 96 tiles per player and judged at 6p 74×46 = 567. The arm
+    /// itself does not depend on that artifact value.
+    ///
+    /// This flag makes the delegation carry the plan: the base governor is
+    /// handed `plan.desired_cities` for the duration of that call and its own
+    /// gene is restored afterwards. It changes no other gate — population,
+    /// production cost, the one-settler-at-a-time rule, the site search and
+    /// `settler_stop_turn` all still apply — and it deliberately does not
+    /// touch the opening-book branch, so the proven four-build opening is
+    /// unchanged.
+    ///
+    /// Default-off evaluator treatment, reachable as
+    /// `advanced_plan_city_target` and paired against `advanced`.
+    pub plan_city_target: bool,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
     /// rather than guessed at. Each is meaningless unless `city_strategy` is
@@ -1452,6 +1484,7 @@ impl AdvancedAi {
             expansion_census: ExpansionCensus::default(),
             belief_pressure: false,
             city_target_floor: 3,
+            plan_city_target: false,
             city_strategy: false,
             city_strategy_emphasis: true,
             city_strategy_roles: true,
@@ -3530,6 +3563,18 @@ impl AdvancedAi {
             GrandStrategy::Culture => (1.4, 1.8, 1.0, 1.3, 4.2, 0.8),
             GrandStrategy::Religion => (1.4, 1.8, 0.9, 1.1, 1.5, 4.5),
             GrandStrategy::Diplomacy => (1.4, 1.7, 2.2, 1.2, 2.8, 0.7),
+            // War changes the production mix; it does not make the technology and
+            // civic trees optional. In the live controller, culture at 0.8 remained
+            // the empire's least valuable ordinary yield for eighty wartime turns,
+            // even after the army had grown to 85 units. Keep production dominant,
+            // but retain a real research/civic floor so a long campaign can unlock
+            // upgrades, governments, and economic cards.
+            GrandStrategy::Conquest if self.victory_planning => {
+                (1.2, 2.8, 1.4, 1.9, 1.2, 0.3)
+            }
+            GrandStrategy::Recovery if self.victory_planning => {
+                (1.6, 3.2, 1.5, 1.2, 1.1, 0.3)
+            }
             GrandStrategy::Conquest => (1.2, 2.8, 1.4, 1.7, 0.8, 0.3),
             GrandStrategy::Recovery => (1.6, 3.2, 1.5, 1.0, 0.8, 0.3),
         };
@@ -4405,6 +4450,25 @@ impl AdvancedAi {
             .iter()
             .filter(|unit| g.rules.units[g.units[unit].kind].class == "military")
             .count();
+        if self.victory_planning
+            && objective == GrandStrategy::Conquest
+            && military >= city_ids.len().max(1).saturating_mul(2)
+        {
+            // Military and economic cards mostly use different typed slots. Once the
+            // field army has reached the same two-per-city ceiling as production,
+            // promote the science/culture multipliers which keep that army current.
+            // This preserves the conquest plan and all of its tactical behavior; it
+            // only prevents a winning war from freezing the civic economy forever.
+            const WARTIME_ECONOMY: [&str; 5] = [
+                "rationalism",
+                "grand_opera",
+                "five_year_plan",
+                "aesthetics",
+                "natural_philosophy",
+            ];
+            desired.retain(|card| !WARTIME_ECONOMY.contains(card));
+            desired.splice(0..0, WARTIME_ECONOMY);
+        }
         let elite_active = g.players[pid].policies.contains(&crate::name!("elite_forces"));
         let elite_affordable = if elite_active {
             g.players[pid].gold_per_turn >= 5.0
@@ -9641,6 +9705,12 @@ impl AdvancedAi {
                         .military
                         .saturating_sub(counts.naval + counts.aircraft)
                 };
+                if self.victory_planning
+                    && current >= desired.saturating_add(2)
+                    && !threatened
+                {
+                    return -2_000.0;
+                }
                 let effective_power = spec.strength.max(spec.ranged_attack_strength())
                     + if *formation >= 2 { 17.0 } else { 10.0 };
                 effective_power
@@ -9680,9 +9750,29 @@ impl AdvancedAi {
                     } else {
                         land_military >= desired_military
                     };
-                    if self.victory_target.is_some()
-                        && self.victory_target != Some(VictoryTarget::Domination)
+                    // Saturation is a ceiling, not merely the point where the unit's
+                    // coefficient becomes smaller. Preserve a two-unit role buffer for
+                    // force composition, then stop: the adaptive Conquest plan used to
+                    // keep every unit weakly positive forever, so a rejected Library
+                    // could expose another Warrior on every turn. Threatened cities
+                    // bypass the ceiling, and naval/air have independent targets.
+                    let domain_ceiling = if naval {
+                        desired_naval.saturating_add(2)
+                    } else if aircraft {
+                        desired_aircraft.saturating_add(2)
+                    } else {
+                        desired_military.saturating_add(2)
+                    };
+                    let domain_count = if naval {
+                        counts.naval
+                    } else if aircraft {
+                        counts.aircraft
+                    } else {
+                        land_military
+                    };
+                    if self.victory_planning
                         && domain_saturated
+                        && domain_count >= domain_ceiling
                         && !threatened
                     {
                         return -2_000.0;
@@ -9841,6 +9931,49 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
+                    let wartime_infrastructure_debt = if self.victory_planning
+                        && matches!(
+                            plan.strategy,
+                            GrandStrategy::Conquest | GrandStrategy::Recovery
+                        )
+                    {
+                        spec.district
+                            .map(|district| g.district_family(district))
+                            .and_then(|family| {
+                                let base = match family.as_str() {
+                                    "campus" | "theater_square" => (260.0, 70.0),
+                                    "commercial_hub" | "harbor" | "industrial_zone" => {
+                                        (130.0, 45.0)
+                                    }
+                                    _ => return None,
+                                };
+                                let districts = g
+                                    .cities
+                                    .values()
+                                    .filter(|candidate| {
+                                        candidate.owner == pid
+                                            && candidate.districts.keys().any(|district| {
+                                                g.district_family(*district) == family
+                                            })
+                                    })
+                                    .count();
+                                let copies = g
+                                    .cities
+                                    .values()
+                                    .filter(|candidate| {
+                                        candidate.owner == pid
+                                            && candidate.buildings.iter().any(|built| {
+                                                g.building_is_family(*built, building)
+                                            })
+                                    })
+                                    .count();
+                                let debt = districts.saturating_sub(copies);
+                                (debt > 0).then_some(base.0 + base.1 * debt as f64)
+                            })
+                            .unwrap_or(0.0)
+                    } else {
+                        0.0
+                    };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
                         + spec.housing * (22.0 + housing_need * 18.0)
                         + spec.amenity * (30.0 + amenity_need * 22.0)
@@ -9858,6 +9991,7 @@ impl AdvancedAi {
                             }
                         + spec.effects.get("tourism").copied().unwrap_or(0.0) * 80.0
                         + influence_income
+                        + wartime_infrastructure_debt
                         + if building == "monument" && g.turn < 120 {
                             240.0
                         } else {
@@ -14728,7 +14862,19 @@ impl AdvancedAi {
             }
             if active_victory_target.is_none() {
                 self.advanced_support_production(g, pid, &plan);
+                // The adaptive empire's Settler gate lives in the baseline
+                // governor, which reads a flat gene. Hand it the target this
+                // empire actually computed for this map, then put the gene
+                // back so nothing else in the turn sees the substitution.
+                let restore = self.plan_city_target.then(|| {
+                    let gene = self.base.w.city_target;
+                    self.base.w.city_target = plan.desired_cities as f64;
+                    gene
+                });
                 self.base.cities(g, pid);
+                if let Some(gene) = restore {
+                    self.base.w.city_target = gene;
+                }
             }
         }
         if active_victory_target.is_some() {
@@ -14914,6 +15060,122 @@ mod tests {
         install_ai_test_district(game, city, "holy_site");
         game.cities.get_mut(&city).unwrap().buildings =
             vec![crate::name!("shrine"), crate::name!("temple")];
+    }
+
+    #[test]
+    fn saturated_wartime_economy_values_core_infrastructure_and_caps_units() {
+        let ai = AdvancedAi::new();
+        let legacy = AdvancedAi::legacy();
+        let one_science = Yields {
+            science: 1.0,
+            ..Yields::default()
+        };
+        let one_culture = Yields {
+            culture: 1.0,
+            ..Yields::default()
+        };
+        assert!(
+            ai.yield_value(one_science, GrandStrategy::Conquest)
+                >= ai.yield_value(one_science, GrandStrategy::Expansion)
+        );
+        assert!(
+            ai.yield_value(one_culture, GrandStrategy::Conquest)
+                >= ai.yield_value(one_culture, GrandStrategy::Expansion),
+            "an active war must not make civic progress less useful than expansion"
+        );
+        assert_eq!(
+            legacy.yield_value(one_science, GrandStrategy::Conquest),
+            1.7,
+            "the advanced_v1 evaluation anchor keeps its historical science weight"
+        );
+        assert_eq!(
+            legacy.yield_value(one_culture, GrandStrategy::Conquest),
+            0.8,
+            "the advanced_v1 evaluation anchor keeps its historical culture weight"
+        );
+
+        let mut game = Game::new(2, 24, 16, 73_101, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        let city = game.player_city_ids(0)[0];
+        install_ai_test_district(&mut game, city, "campus");
+        install_ai_test_district(&mut game, city, "theater_square");
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+        for _ in 0..4 {
+            game.spawn_test_unit("warrior", 0, game.cities[&city].pos);
+        }
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: game.player_city_ids(1).first().copied(),
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let counts = ai.counts(&game, 0);
+        let warrior = Item::Unit {
+            unit: crate::name!("warrior"),
+        };
+        let library = Item::Building {
+            building: crate::name!("library"),
+        };
+        let amphitheater = Item::Building {
+            building: crate::name!("amphitheater"),
+        };
+        let campus_project = Item::Project {
+            project: crate::name!("campus_research_grants"),
+        };
+        let theater_project = Item::Project {
+            project: crate::name!("theater_square_festival"),
+        };
+        assert!(game.can_produce(0, city, &library));
+        assert!(game.can_produce(0, city, &amphitheater));
+        assert!(
+            ai.production_value(&game, 0, city, &warrior, &plan, &counts) < -1_000.0,
+            "five land units for one safe city are beyond the conquest ceiling"
+        );
+        assert!(
+            legacy.production_value(&game, 0, city, &warrior, &plan, &counts) > -1_000.0,
+            "the new unit ceiling stays outside the advanced_v1 evaluation anchor"
+        );
+        let library_value = ai.production_value(&game, 0, city, &library, &plan, &counts);
+        let amphitheater_value =
+            ai.production_value(&game, 0, city, &amphitheater, &plan, &counts);
+        assert!(
+            library_value
+                > ai.production_value(&game, 0, city, &campus_project, &plan, &counts),
+            "the missing first Campus building must beat a quiet repeatable project"
+        );
+        assert!(
+            amphitheater_value
+                > ai.production_value(&game, 0, city, &theater_project, &plan, &counts),
+            "the missing first Theater building must beat a quiet repeatable project"
+        );
+
+        game.players[0].government = Some("theocracy".to_string());
+        game.players[0].civics.extend([
+            crate::name!("recorded_history"),
+            crate::name!("medieval_faires"),
+            crate::name!("the_enlightenment"),
+            crate::name!("opera_ballet"),
+        ]);
+        game.players[0].policies.clear();
+        ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+        assert!(
+            game.players[0].policies.contains(&crate::name!("rationalism")),
+            "a saturated army should use an economic slot to multiply Campus buildings"
+        );
+        assert!(
+            game.players[0].policies.contains(&crate::name!("grand_opera")),
+            "a saturated army should use the other economic slot for Theater buildings"
+        );
     }
 
     fn found_nearby_test_city(game: &mut Game, owner: usize, anchor: Pos) -> u32 {
@@ -25059,6 +25321,98 @@ mod tests {
                     cities / maps as f64,
                     target / maps as f64,
                     score / maps as f64
+                );
+            }
+        }
+        println!();
+    }
+
+    /// The delegation must carry the plan's target and must not leak it.
+    ///
+    /// Two properties, both deterministic: with the flag off the baseline
+    /// governor still sees the gene, and with it on the gene is restored
+    /// after the turn so no later consumer — gold purchase, the `assess`
+    /// fallback, a census — reads the substituted value.
+    #[test]
+    fn plan_city_target_substitutes_only_inside_the_delegated_call() {
+        for flag in [false, true] {
+            let mut game = Game::new_full(4, 24, 16, 4_810_001, 120, 1, false);
+            game.set_fog_memory(false);
+            let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                .map(|_| {
+                    let mut ai = AdvancedAi::new();
+                    ai.plan_city_target = flag;
+                    ai
+                })
+                .collect();
+            let gene = ais[0].base.w.city_target;
+            while game.winner.is_none() && game.turn <= 40 {
+                let pid = game.current;
+                ais[pid].take_turn(&mut game, pid);
+                assert_eq!(
+                    ais[pid].base.w.city_target, gene,
+                    "the gene must be restored before the turn returns"
+                );
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                }
+            }
+        }
+    }
+
+    /// Fires-check for `plan_city_target`, at both map scales.
+    ///
+    /// The criterion is the **outcome** — cities at end — for the same reason
+    /// `city_target_floor_fires` gives: a mechanism bucket the treatment
+    /// cannot move is not falsifiable in the helpful direction. It prints the
+    /// plan's own target beside the cities held, because the whole claim is
+    /// that those two numbers currently disagree.
+    ///
+    /// Run with
+    /// `cargo test --profile ci plan_city_target_fires -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn plan_city_target_fires() {
+        for (label, players, width, height) in [
+            ("eval 4p 24x16", 4usize, 24i32, 16i32),
+            ("deployment 6p 74x46", 6, 74, 46),
+        ] {
+            for flag in [false, true] {
+                let (mut cities, mut target, mut score) = (0.0f64, 0.0f64, 0.0f64);
+                let maps = 6u64;
+                for map in 0..maps {
+                    let mut game =
+                        Game::new_full(players, width, height, 482_000 + map, 200, 1, false);
+                    let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                        .map(|_| {
+                            let mut ai = AdvancedAi::new();
+                            ai.plan_city_target = flag;
+                            ai
+                        })
+                        .collect();
+                    game.set_fog_memory(false);
+                    while game.winner.is_none() && game.turn <= game.max_turns {
+                        let pid = game.current;
+                        ais[pid].take_turn(&mut game, pid);
+                        if game.winner.is_none() && game.current == pid {
+                            let _ = game.apply(pid, &crate::game::Action::EndTurn);
+                        }
+                    }
+                    cities += game.player_city_ids(0).len() as f64;
+                    score += game.score(0) as f64;
+                    target += ais[0]
+                        .plan
+                        .as_ref()
+                        .map(|p| p.desired_cities as f64)
+                        .unwrap_or(0.0);
+                }
+                println!(
+                    "  [{label}] plan_city_target={flag}  cities {:.2} / plan target {:.2}   \
+                     score {:.0}   gene {:.3}",
+                    cities / maps as f64,
+                    target / maps as f64,
+                    score / maps as f64,
+                    Weights::default().city_target
                 );
             }
         }

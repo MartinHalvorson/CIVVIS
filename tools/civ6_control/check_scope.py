@@ -59,7 +59,7 @@ KNOWN_GLOBALS = {
     # This mod's own install-time config global.
     "CivvisControlConfig",
     # Engine type enumerations, same family as the ones above.
-    "ActionTypes", "CivilizationLevelTypes", "EndTurnBlockingTypes",
+    "ActionTypes", "CityCommandResults", "CivilizationLevelTypes", "EndTurnBlockingTypes",
     "InterfaceModeTypes", "Modding", "Network", "PlayerOperations",
     "ServerType", "SlotStatus", "TurnLimitTypes",
 }
