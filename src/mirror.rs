@@ -1309,6 +1309,78 @@ mod tests {
         );
     }
 
+    /// ★★★★★ A district Civilization VI has built must be ON the reconstructed city.
+    ///
+    /// `StateDistrict` was defined, carried on `StateCity`, handed to
+    /// `civvis_production_item` to locate a production plot, and used in tests —
+    /// and never written onto a city. `grep '\.districts\.insert' src/mirror.rs`
+    /// found nothing. So every Campus, Holy Site and Commercial Hub the real game had
+    /// built was invisible, and the city read as bare ground: the same shape as the
+    /// improvements gap, where a mirror showing an undeveloped empire made CIVVIS
+    /// re-order what it already had.
+    #[test]
+    fn the_districts_a_city_has_built_reach_the_board() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![
+                plot(5, 5, "TERRAIN_GRASS"),
+                plot(5, 6, "TERRAIN_GRASS"),
+                plot(6, 6, "TERRAIN_GRASS"),
+            ],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 30,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Canberra".to_string(),
+            x: 5,
+            y: 5,
+            pop: 8,
+            districts: vec![
+                // The centre is implicit in CIVVIS and must NOT be inserted.
+                StateDistrict {
+                    kind: "DISTRICT_CITY_CENTER".to_string(),
+                    x: 5,
+                    y: 5,
+                    pillaged: false,
+                },
+                StateDistrict {
+                    kind: "DISTRICT_CAMPUS".to_string(),
+                    x: 5,
+                    y: 6,
+                    pillaged: false,
+                },
+            ],
+            ..StateCity::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        let city = recon
+            .game
+            .cities
+            .values()
+            .find(|c| c.owner == 0)
+            .expect("the seat's city must be on the board");
+
+        assert_eq!(
+            city.districts.get(&Name::new("campus")).copied(),
+            Some(crate::hex::offset_to_axial(5, 6)),
+            "a built district must reach the board, on the plot the export named"
+        );
+        // ⚠ `found_city_for` gives a native CIVVIS city `Districts::default()`, so the
+        // centre is implicit. Inserting it would put a district on the board that
+        // CIVVIS's own games never have — checked in the source, not assumed.
+        assert!(
+            !city.districts.contains_key(&Name::new("city_center")),
+            "the city centre stays implicit, as it is in an ordinary CIVVIS game"
+        );
+    }
+
     fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
         // ⚠ THIS FIELD EXISTED AND WAS NEVER FILLED. `religion` was null on all
         // 26,954 city records ever exported — the schema had it, the mod never sent
@@ -3430,6 +3502,39 @@ pub fn rebuild_from_state(
                         None => unmapped.push(format!("{civ6}:building")),
                     }
                 }
+                // ★★★★★ THE DISTRICTS A CITY HAS ALREADY BUILT. Exported since the
+                // districts fix, and NEVER APPLIED — `StateDistrict` was defined,
+                // carried on `StateCity`, handed to `civvis_production_item` to locate
+                // a production plot, and used in tests. Nothing ever wrote it onto a
+                // city, so `grep '\.districts\.insert' src/mirror.rs` found nothing.
+                //
+                // So every Campus, Holy Site and Commercial Hub Civilization VI had
+                // built was invisible: the city read as bare ground. That is the same
+                // shape as the improvements gap — a mirror showing an undeveloped
+                // empire, so CIVVIS re-orders the development it already has — and it
+                // is why a run could log 60 `DISTRICT_GOVERNMENT` orders against a
+                // capital that was building one the whole time.
+                //
+                // ⚠ `city_center` is deliberately skipped: `found_city_for` gives a
+                // native CIVVIS city `Districts::default()`, so the centre is implicit
+                // and inserting it would put a district there that CIVVIS's own games
+                // never have. Checked before writing this, not assumed.
+                for district in &city.districts {
+                    if district.kind.eq_ignore_ascii_case("DISTRICT_CITY_CENTER") {
+                        continue;
+                    }
+                    match civvis_node_name(&game.rules.districts, &district.kind, "DISTRICT_") {
+                        Some(name) => {
+                            let pos = crate::hex::offset_to_axial(district.x, district.y);
+                            built
+                                .districts
+                                .insert(crate::name::Name::new(&name), pos);
+                        }
+                        // Counted, never guessed at — a district the ruleset cannot
+                        // name is one CIVVIS cannot reason about.
+                        None => unmapped.push(format!("{}:district", district.kind)),
+                    }
+                }
             }
         }
     }
@@ -4095,6 +4200,39 @@ impl LiveMirror {
                             if !live.buildings.contains(&named) {
                                 live.buildings.push(named);
                             }
+                        }
+                    }
+                    // ★★★★★ THE DISTRICTS A CITY HAS ALREADY BUILT. Exported since the
+                    // districts fix, and NEVER APPLIED — `StateDistrict` was defined,
+                    // carried on `StateCity`, handed to `civvis_production_item` to locate
+                    // a production plot, and used in tests. Nothing ever wrote it onto a
+                    // city, so `grep '\.districts\.insert' src/mirror.rs` found nothing.
+                    //
+                    // So every Campus, Holy Site and Commercial Hub Civilization VI had
+                    // built was invisible: the city read as bare ground. That is the same
+                    // shape as the improvements gap — a mirror showing an undeveloped
+                    // empire, so CIVVIS re-orders the development it already has — and it
+                    // is why a run could log 60 `DISTRICT_GOVERNMENT` orders against a
+                    // capital that was building one the whole time.
+                    //
+                    // ⚠ `city_center` is deliberately skipped: `found_city_for` gives a
+                    // native CIVVIS city `Districts::default()`, so the centre is implicit
+                    // and inserting it would put a district there that CIVVIS's own games
+                    // never have. Checked before writing this, not assumed.
+                    for district in &city.districts {
+                        if district.kind.eq_ignore_ascii_case("DISTRICT_CITY_CENTER") {
+                            continue;
+                        }
+                        match civvis_node_name(&self.game.rules.districts, &district.kind, "DISTRICT_") {
+                            Some(name) => {
+                                let pos = crate::hex::offset_to_axial(district.x, district.y);
+                                live
+                                        .districts
+                                        .insert(crate::name::Name::new(&name), pos);
+                            }
+                            // Counted, never guessed at — a district the ruleset cannot
+                            // name is one CIVVIS cannot reason about.
+                            None => self.unmapped.push(format!("{}:district", district.kind)),
                         }
                     }
                 }
