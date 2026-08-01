@@ -157,10 +157,13 @@ class Decider:
     """
 
     def __init__(self, binary: Path, run_dir: Path, victory: str,
-                 war_from_plan: bool = False):
+                 war_from_plan: bool = False, strategy: str = ""):
         self.binary = binary
         self.run_dir = run_dir
         self.victory = victory
+        # See the `--strategy` note in main(). Empty means the built-in AdvancedAi,
+        # which is what every run before this used without anyone choosing it.
+        self.strategy = strategy
         # ⚠ Declares war when CIVVIS's PLAN names a target but its own diplomatic
         # bookkeeping cannot fire. That bookkeeping wants a casus belli, or a
         # denouncement matured over five turns, and NOTHING matures in a board rebuilt
@@ -182,6 +185,7 @@ class Decider:
         self.proc = subprocess.Popen(
             [str(self.binary), "--mirror", str(self.run_dir), "--serve",
              "--fresh-board", "--explain", "--victory", self.victory]
+            + (["--strategy", self.strategy] if self.strategy else [])
             + (["--war-from-plan"] if self.war_from_plan else []),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=why, text=True, bufsize=1,
@@ -313,6 +317,33 @@ def main() -> int:
                     help="which victory CIVVIS plays for; `civvis` lets it choose. "
                          "⚠ domination is unreachable while no rival city is ever "
                          "revealed -- see the note above")
+    # ★★★★ WHICH STRATEGY ACTUALLY PLAYS, which nothing ever chose.
+    #
+    # `civvis_orders` has taken `--strategy` for a while and NO harness script passed
+    # it, so every Civ 6 run has been `AdvancedAi::new` -- the decider's own banner
+    # reads `{"strategy":"stock","source":"AdvancedAi::new"}`. The operator's standing
+    # brief asks for "whatever the provably highest ELO player-strategy CIVVIS has".
+    #
+    # `auto` ranks on `league::strategy_strength`, the outright-win LOWER BOUND, not
+    # the placement rating -- and the two disagree sharply, which is why the default
+    # was wrong rather than merely unset:
+    #
+    #     strategy         rating   games  wins   winrate
+    #     adv-religious      1601     116    58     50.0%   <- what `auto` picks
+    #     advanced           1703     331    91     27.5%   <- what actually played
+    #
+    # The higher-RATED strategy wins barely half as often. Placement Glicko answers
+    # "who should be matched with whom"; it is not a strength ordering.
+    #
+    # ⚠ TRANSFER TO THIS BRIDGE IS UNMEASURED. Those games are CIVVIS-vs-CIVVIS, and
+    # this project has already watched a champion genome go +48 in compact evaluation
+    # and -53 deployed. Treat the first Civ 6 runs under this as the measurement, not
+    # as a settled improvement -- and if outcomes worsen, `--strategy ""` restores the
+    # old behaviour exactly.
+    ap.add_argument("--strategy", default="auto",
+                    help="strategy for the decider to load; `auto` takes the "
+                         "strongest by outright-win lower bound. Empty string keeps "
+                         "the built-in AdvancedAi")
     ap.add_argument("--skip-kinds", default="",
                     help="comma-separated order kinds to drop (bisect only)")
     ap.add_argument("--skip-verbs", default="",
@@ -348,7 +379,8 @@ def main() -> int:
     conn = connect(Path(args.orders_db).expanduser())
     print(f"[brain] mode={args.mode} run={run_tag} db={args.orders_db} "
           f"decider={'server' if args.server else 'per-turn'}", flush=True)
-    decider = (Decider(binary, run_dir, args.victory, args.war_from_plan)
+    decider = (Decider(binary, run_dir, args.victory, args.war_from_plan,
+                       args.strategy)
                if args.mode == "civvis" and args.server else None)
 
     deadline = time.time() + args.seconds
