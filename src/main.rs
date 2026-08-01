@@ -131,7 +131,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// prelude (SHA-256
 /// `e37ae6f3014c6f13c75ef964027e7b57f5e57e9289f0fdb36cae80f5bb863341`).
 /// This is a compatibility re-pin, not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x53cb_33c0_1174_715c;
+///
+/// #761 parallelizes only live policy-card counterfactual scoring. The pool
+/// exists only in `AdvancedAi::fleet_parallel`; `AdvancedAi::legacy()` keeps
+/// `work_pool` at `None`, so its ancillary pass selects the literal serial
+/// scorer. The new `QueryMemo` is confined to an unchanged read-only policy
+/// valuation and drops before a card is changed. Clean `cb7969d` and candidate
+/// release builds produced byte-identical SHA-256 reports from `ai_eval
+/// advanced_v1 basic --pairs 10 --jobs 1 --seed 31337 --players 4 --turns 200
+/// --deployment-comparison` (20 games and 4,264 observed Advanced-v1 turns).
+/// This is a compatibility re-pin, not an Elo protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdc56_972a_9b2a_788c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
