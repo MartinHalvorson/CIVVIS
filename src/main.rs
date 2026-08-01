@@ -141,7 +141,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// advanced_v1 basic --pairs 10 --jobs 1 --seed 31337 --players 4 --turns 200
 /// --deployment-comparison` (20 games and 4,264 observed Advanced-v1 turns).
 /// This is a compatibility re-pin, not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdc56_972a_9b2a_788c;
+///
+/// #762 bounds that same production-only card scorer to four worker-private
+/// snapshots even when its persistent fleet pool is wider. The `None` branch
+/// used by `AdvancedAi::legacy()` still chooses the literal serial scorer.
+/// Clean `0b04a59` and candidate release builds produced byte-identical
+/// reports from the same 20-game deployment comparison (SHA-256
+/// `932cfabf125e729a5264ce43d2fd8b05d013d3fe84939b1dcd366ff122ddc84a`).
+/// This is a compatibility re-pin, not an Elo protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc0ee_05e1_860b_b164;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

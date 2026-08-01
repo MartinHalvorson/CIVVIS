@@ -315,6 +315,12 @@ const POLICY_PRIORITY: [&str; 20] = [
 /// scale of a civic unlocking, not of a turn passing.
 const POLICY_REVIEW_EVERY: u32 = 8;
 
+/// A policy review has only a few dozen independent cards, while each active
+/// worker needs a full private game snapshot. Four branches are the measured
+/// knee on the deployment-shaped single-game workload; use the rest of the
+/// persistent pool for wider unit, tactical, purchase, and visibility work.
+const POLICY_SCORE_MAX_WORKERS: usize = 4;
+
 /// What `pid`'s empire is worth to `w` right now, in yield-equivalent points.
 ///
 /// Read either side of a candidate card, the difference is that card's entire
@@ -558,19 +564,32 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkP
             // `Game` has worker-local RefCell caches and cannot be shared.
             // One snapshot per active worker keeps those caches private while
             // the pool's shared cursor balances uneven candidate costs.
-            let active = pool.threads().min(candidates.len());
+            let active = pool
+                .threads()
+                .min(candidates.len())
+                .min(POLICY_SCORE_MAX_WORKERS);
             let states = (0..active).map(|_| g.clone()).collect::<Vec<_>>();
             let weights = w.clone();
-            pool.map_stateful(candidates.len(), states, move |mut branch, indices| {
-                indices
-                    .map(|index| {
-                        (
-                            index,
-                            policy_card_score(&mut branch, pid, &weights, &candidates[index]),
-                        )
-                    })
-                    .collect()
-            })
+            pool.map_stateful_limited(
+                candidates.len(),
+                POLICY_SCORE_MAX_WORKERS,
+                states,
+                move |mut branch, indices| {
+                    indices
+                        .map(|index| {
+                            (
+                                index,
+                                policy_card_score(
+                                    &mut branch,
+                                    pid,
+                                    &weights,
+                                    &candidates[index],
+                                ),
+                            )
+                        })
+                        .collect()
+                },
+            )
         }
         None => candidates
             .iter()
@@ -6886,8 +6905,8 @@ mod tests {
 
     #[test]
     fn live_policy_counterfactuals_replay_serially_on_workers() {
-        let mut serial = Game::new_full(1, 20, 14, 91_481, 120, 0, false);
-        serial.players[0].civics.extend(
+        let mut initial = Game::new_full(1, 20, 14, 91_481, 120, 0, false);
+        initial.players[0].civics.extend(
             [
                 "code_of_laws",
                 "craftsmanship",
@@ -6900,28 +6919,31 @@ mod tests {
             .into_iter()
             .map(Name::new),
         );
-        serial.players[0].government = Some("classical_republic".to_string());
-        serial.turn = POLICY_REVIEW_EVERY;
+        initial.players[0].government = Some("classical_republic".to_string());
+        initial.turn = POLICY_REVIEW_EVERY;
         assert!(
-            serial.available_policies(0).len() >= 4,
+            initial.available_policies(0).len() >= 4,
             "the fixture needs enough independent cards to use every worker"
         );
-        let mut parallel = serial.clone();
         let weights = Weights {
             policy_deck: PolicyDeck::Live,
             ..Weights::default()
         };
 
+        let mut serial = initial.clone();
         revise_policy_deck(&mut serial, 0, &weights, None);
-        let pool = WorkPool::new(4);
-        revise_policy_deck(&mut parallel, 0, &weights, Some(&pool));
+        for threads in [4, 5] {
+            let mut parallel = initial.clone();
+            let pool = WorkPool::new(threads);
+            revise_policy_deck(&mut parallel, 0, &weights, Some(&pool));
 
-        assert_eq!(serial.log, parallel.log);
-        assert_eq!(
-            serde_json::to_value(&serial).unwrap(),
-            serde_json::to_value(&parallel).unwrap(),
-            "worker completion order must not change the authoritative game"
-        );
+            assert_eq!(serial.log, parallel.log, "threads={threads}");
+            assert_eq!(
+                serde_json::to_value(&serial).unwrap(),
+                serde_json::to_value(&parallel).unwrap(),
+                "worker completion order must not change the authoritative game (threads={threads})"
+            );
+        }
     }
 
     /// A quiet one-player world with a lone Scout, so nothing else on the map

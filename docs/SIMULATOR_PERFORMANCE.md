@@ -90,6 +90,30 @@ were the best observed count for this limited workload; that is evidence for a
 separate default-worker calibration experiment, not grounds to silently cap
 all hosts or workload shapes.
 
+### Bounded policy-score fan-out (2026-08-01)
+
+The fleet pool is intentionally still sized by `--jobs`: unit, tactical,
+purchase, and visibility frontiers can use every worker. A policy-deck review
+has a much smaller independent batch, however, and each active scorer owns a
+full `Game` snapshot. The scorer therefore caps only that batch at four active
+workers and leaves the rest of the persistent pool available to later work.
+
+This compared the uncapped #761 build with the cap on four fixed six-player,
+74-by-46, nine-city-state, 150-turn online games (seeds 7,311,002 through
+7,311,005), at `--jobs 18`. Baseline/candidate order alternated by seed. These
+are shared-host elapsed times, so they show a directional single-machine win,
+not a universal hardware default.
+
+| Policy-score workers | Four-game total | Change |
+| --- | ---: | ---: |
+| Pool-wide (18) | 23.335s | baseline |
+| Capped (4) | 22.764s | -2.4% |
+
+Every normalized report had the same SHA-256 hash for its seed. A fixed
+`--jobs 4` report was also identical before and after the cap, as expected
+because the limit is already met. The evidence is specific to this clone-heavy
+frontier; it does not change the global worker default.
+
 ## Production-catalog follow-up
 
 The production catalog was the narrow first experiment from the profile. Its
