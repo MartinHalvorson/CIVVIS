@@ -1664,6 +1664,14 @@ mod tests {
         let nonsense = build("UNIT_MAPUCHE_MALON_RAIDER", Some("PROMOTION_CLASS_NOT_REAL"));
         assert!(nonsense.game.units.is_empty(), "an unknown class must not be guessed at");
 
+        // The Keshig's class — RANGED_CAVALRY — was missing from the first
+        // table and would have dropped exactly like the raider it was built to
+        // catch. Mongolia is a dealable civ; its army must reach the board.
+        let keshig = build("UNIT_MONGOLIAN_KESHIG", Some("PROMOTION_CLASS_RANGED_CAVALRY"));
+        let unit = keshig.game.units.values().next()
+            .expect("a ranged-cavalry unique must reach the board");
+        assert_eq!(unit.kind.as_str(), "saka_horse_archer");
+
         // ⚠ And a REPLACING unique keeps preferring its base: class must only be
         // the rung below `base`, or a Longship would land as a generic hull even
         // when the ruleset models what it replaces.
@@ -3584,6 +3592,10 @@ fn class_representative(class: &str, rules: &crate::rules::Rules) -> Option<&'st
         "PROMOTION_CLASS_MELEE" => &["swordsman", "warrior"],
         "PROMOTION_CLASS_ANTI_CAVALRY" => &["spearman", "pikeman"],
         "PROMOTION_CLASS_LIGHT_CAVALRY" => &["horseman", "courser", "cavalry"],
+        // Found the hard way: batch-4 attempt 1 dealt MONGOLIA, whose signature
+        // Keshig is a standalone RANGED_CAVALRY unique — a class this table did
+        // not carry, so it would have dropped exactly like the Malón Raider.
+        "PROMOTION_CLASS_RANGED_CAVALRY" => &["saka_horse_archer", "courser", "horseman"],
         "PROMOTION_CLASS_HEAVY_CAVALRY" => &["knight", "heavy_chariot", "cuirassier"],
         "PROMOTION_CLASS_RANGED" => &["archer", "crossbowman", "slinger"],
         "PROMOTION_CLASS_SIEGE" => &["catapult", "trebuchet", "bombard"],
