@@ -773,12 +773,29 @@ end
 -- That is the same shape as `no_params` x 221 and `move_refused` x 33: an anonymous
 -- count. Both times naming it made the cause fall out immediately and both times the
 -- standing hypothesis was wrong, so this names it BEFORE anything is changed.
-local upgradeTried, upgradeBlocked = 0, {};
+local upgradeTried, upgradeBlocked, upgradeBlockedWhy = 0, {}, {};
 local function upgradeUnit(unit)
 	upgradeTried = upgradeTried + 1;
 	if commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"]) then return "upgrade"; end
 	local name = unitTypeName(unit) or "?";
 	upgradeBlocked[name] = (upgradeBlocked[name] or 0) + 1;
+	-- Ask the engine WHY, the way the shipped UnitPanel does: the two-flag form
+	-- of CanStartCommand returns a results table whose FAILURE_REASONS names
+	-- gold, missing tech, missing resource. Runs plateau at army 5-7 against
+	-- rival 850+ with upgrade_blocked counting Warriors and Trebuchets every
+	-- turn — the COUNT is known, the reason is the decision-relevant part.
+	-- Blocked path only; the accepting path stays one call.
+	try(function()
+		local can, results = UnitManager.CanStartCommand(
+			unit, CMD["UNITCOMMAND_UPGRADE"], true, true);
+		if can ~= true and type(results) == "table"
+				and UnitCommandResults ~= nil then
+			local reasons = results[UnitCommandResults.FAILURE_REASONS];
+			if type(reasons) == "table" and #reasons > 0 then
+				upgradeBlockedWhy[name] = table.concat(reasons, "; ");
+			end
+		end
+	end);
 	return nil;
 end
 
@@ -2818,6 +2835,69 @@ local function districtPlot(city, hash)
 		end
 	end
 	return nil;
+end
+
+-- ★ A PROBE, NOT A MAPPING — the measurement that decides whether repair can ship.
+--
+-- Civilization VI has no PROJECT_REPAIR_<district> (the only repair project in the
+-- shipped Assets is PROJECT_REPAIR_OUTER_DEFENSES); a pillaged district is repaired
+-- by BUILDING the district again, flagged as a repair by the engine. What kept that
+-- translation unshipped is one unverified question: does GetOperationTargets for a
+-- city that ALREADY HAS the pillaged district offer the existing district's plot
+-- (a repair) or fresh sites (a NEW district — expensive and wrong)? 52 repair asks
+-- were discarded on run civvis-20260801T184324Z while an Encampment sat pillaged.
+--
+-- This emits what the engine offers, once per city+district per run, and changes
+-- no order. When live runs show the existing plot among `offered`, the mapping in
+-- the produce arm is one line; if they show only fresh sites, it never ships.
+local probedRepairs = {};
+local function probeDistrictRepair(city, districtName, asked, turn)
+	local key = tostring(try(function() return city:GetID(); end, -1)) .. districtName;
+	if probedRepairs[key] then return; end
+	probedRepairs[key] = true;
+	local row = try(function() return GameInfo.Districts[districtName]; end);
+	if row == nil then return; end
+	local have, hx, hy, pillaged = false, -1, -1, false;
+	try(function()
+		local districts = city:GetDistricts();
+		for _, d in districts:Members() do
+			if d:GetType() == row.Index then
+				have = true;
+				hx = try(function() return d:GetX(); end, -1);
+				hy = try(function() return d:GetY(); end, -1);
+				pillaged = try(function()
+					return districts:IsPillaged(row.Index);
+				end, false);
+			end
+		end
+	end);
+	local offered = {};
+	try(function()
+		local probe = {};
+		probe[CityOperationTypes.PARAM_DISTRICT_TYPE] = row.Hash;
+		local results = CityManager.GetOperationTargets(
+			city, CityOperationTypes.BUILD, probe);
+		local plots = results and results[CityOperationResults.PLOTS];
+		if plots ~= nil then
+			for _, plotIndex in pairs(plots) do
+				if #offered >= 12 then break; end
+				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+				if plot ~= nil then
+					offered[#offered + 1] = {
+						x = try(function() return plot:GetX(); end, -1),
+						y = try(function() return plot:GetY(); end, -1),
+					};
+				end
+			end
+		end
+	end);
+	emit("repair_probe", {
+		turn = turn,
+		city = try(function() return city:GetID(); end, -1),
+		district = districtName, asked = asked,
+		has_district = have, at_x = hx, at_y = hy, pillaged = pillaged,
+		offered = offered,
+	});
 end
 
 -- The religion a city actually follows, by type name, and the one converting it.
@@ -5063,7 +5143,16 @@ local function applyOrder(player, pid, row, turn)
 		-- run civvis-20260730T111537Z: 9 refusals in 10 turns, all of them this.
 		-- The built-in ladder reads `GameInfo.Types[name]` for exactly this reason.
 		local row2, resolved = resolveType(GameInfo.Types, verb);
-		if row2 == nil then return false, "unknown_" .. verb; end
+		if row2 == nil then
+			-- See `probeDistrictRepair`: a repair ask names a project the game
+			-- does not have; measure what the engine would offer, then refuse
+			-- exactly as before.
+			local wanted = string.match(tostring(verb), "^PROJECT_REPAIR_(.+)$");
+			if wanted ~= nil and wanted ~= "OUTER_DEFENSES" then
+				probeDistrictRepair(city, "DISTRICT_" .. wanted, verb, turn);
+			end
+			return false, "unknown_" .. verb;
+		end
 		verb = resolved;
 		civvisBuild[tonumber(subject) or -1] = resolved;
 		local params = buildParams(row2, city);
@@ -5675,11 +5764,13 @@ local function applyOrders(player, pid, turn, rows)
 		-- because "no gold" is the first hypothesis and the cheapest to eliminate.
 		upgrade_tried = upgradeTried,
 		upgrade_blocked = upgradeBlocked,
+		-- See `upgradeUnit`: the engine's own FAILURE_REASONS per blocked type.
+		upgrade_blocked_why = upgradeBlockedWhy,
 		upgrade_gold = try(function()
 			return math.floor(player:GetTreasury():GetGoldBalance());
 		end, -1),
 	});
-	upgradeTried, upgradeBlocked = 0, {};
+	upgradeTried, upgradeBlocked, upgradeBlockedWhy = 0, {}, {};
 
 	-- ⚠⚠ A CIVVIS TURN MUST STILL EMIT A `turn` RECORD. The full one lives at the
 	-- end of `playTurn`, which no longer runs when CIVVIS is deciding — so run
