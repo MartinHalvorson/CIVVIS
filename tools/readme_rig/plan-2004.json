@@ -1,0 +1,112 @@
+{
+  "seed": 2004,
+  "players": 6,
+  "maxTurns": 500,
+  "maxMinutes": 75,
+  "pace": 0,
+  "beats": [
+    {
+      "at": 1,
+      "label": "opening",
+      "steps": [
+        "hold:2500"
+      ]
+    },
+    {
+      "at": 2,
+      "label": "spin the globe",
+      "steps": [
+        "spin:200:14000",
+        "hold:1200"
+      ]
+    },
+    {
+      "at": 26,
+      "label": "into the canals",
+      "steps": [
+        "zoom:5:3000",
+        "hold:3200",
+        "zoom:-5:2600",
+        "hold:1000"
+      ]
+    },
+    {
+      "at": 120,
+      "label": "a settled world",
+      "steps": [
+        "zoom:4:2600",
+        "hold:2800",
+        "zoom:-4:2400",
+        "hold:800"
+      ]
+    },
+    {
+      "at": 184,
+      "label": "first satellite",
+      "pause": false,
+      "pace": 2000,
+      "steps": [
+        "earth:90:3500",
+        "hold:14000",
+        "fly:world:earth"
+      ]
+    },
+    {
+      "at": 195,
+      "label": "the Moon",
+      "pause": false,
+      "pace": 2000,
+      "steps": [
+        "earth:90:3000",
+        "fly:world:moon",
+        "hold:9000"
+      ]
+    },
+    {
+      "at": 209,
+      "label": "Mars",
+      "pause": false,
+      "pace": 2000,
+      "steps": [
+        "fly:world:mars",
+        "hold:9000",
+        "fly:world:earth"
+      ]
+    },
+    {
+      "at": 237,
+      "label": "the voyage begins",
+      "pause": false,
+      "pace": 2500,
+      "steps": [
+        "earth:90:3000",
+        "fly:scale:voyage",
+        "hold:16000",
+        "fly:world:earth"
+      ],
+      "thenPace": 900
+    },
+    {
+      "at": 268,
+      "label": "the last light-years",
+      "pause": false,
+      "pace": 1400,
+      "steps": [
+        "earth:90:3000",
+        "fly:scale:voyage",
+        "hold:9000",
+        "fly:world:exo",
+        "hold:12000"
+      ]
+    },
+    {
+      "onVictory": true,
+      "at": 282,
+      "label": "the finish",
+      "pause": false,
+      "steps": [
+        "hold:9000"
+      ]
+    }
+  ]
+}
