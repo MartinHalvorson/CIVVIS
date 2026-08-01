@@ -370,6 +370,11 @@ def main() -> int:
     # declarations in every unforced run. A ladder left on this default measures a
     # plan that cannot complete. See the note on `--victory` in civ6_brain.py.
     ap.add_argument("--victory", default="domination")
+    # Passed straight through to the brain; see its `--strategy` note for why the
+    # default changed from the built-in AdvancedAi and what would undo it.
+    ap.add_argument("--strategy", default="auto",
+                    help="strategy the decider loads; `auto` is the strongest by "
+                         "outright-win lower bound, empty keeps the built-in")
     ap.add_argument("--war-from-plan", action="store_true", default=False,
                     help="pass through to the brain; see its note for why")
     ap.add_argument("--tile-export-every", type=int, default=4,
@@ -507,7 +512,8 @@ def main() -> int:
              "--run-dir", str(RUN_ROOT / tag),
              "--mode", "civvis",
              "--bin", str(orders_bin),
-             "--victory", args.victory]
+             "--victory", args.victory,
+             "--strategy", args.strategy]
             + (["--war-from-plan"] if args.war_from_plan else [])
             + [
              "--seconds", str(args.timeout + 300)],
