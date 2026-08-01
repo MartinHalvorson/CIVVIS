@@ -1196,6 +1196,81 @@ mod tests {
             "and the gap is expressed as a percentage: {drift}"        );
     }
 
+    /// ★★★★★ A barbarian that appears AFTER the mirror is built must reach the board.
+    ///
+    /// `LiveMirror::sync` had **no reference to `state.hostiles` or `barb_pid` at
+    /// all**, so barbarians were whatever the construction rebuild found and nothing
+    /// after. At turn 1 that is normally none — so the decider played entire games
+    /// against an empty barbarian seat while the export named them every turn.
+    ///
+    /// Measured on live run `civvis-20260801T040700Z`: Montréal founded turn 26, gone
+    /// by turn 42, loyalty 100 throughout and at war with nobody it had met — so
+    /// neither revolt nor a rival took it, and `hostiles` was non-empty in the export.
+    /// A seat that cannot see barbarians cannot garrison against them.
+    #[test]
+    fn a_barbarian_that_appears_after_construction_reaches_the_board() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 4,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![
+                plot(5, 5, "TERRAIN_GRASS"),
+                plot(5, 6, "TERRAIN_GRASS"),
+                plot(6, 6, "TERRAIN_GRASS"),
+            ],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Ottawa".to_string(),
+            x: 5,
+            y: 5,
+            pop: 3,
+            ..StateCity::default()
+        });
+
+        // Turn 4: no barbarian in sight, which is the ordinary opening.
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let barb = mirror.game.barb_pid.expect("a mirrored roster has a barbarian seat");
+        assert_eq!(
+            mirror.game.units.values().filter(|u| u.owner == barb).count(),
+            0,
+            "precondition: the board starts with no barbarians"
+        );
+
+        // Turn 8: one walks into view. Before the fix nothing here looked at it.
+        state.turn = 8;
+        state.hostiles.push(StateUnit {
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 6,
+            ..StateUnit::default()
+        });
+        mirror.sync(&snapshot, &state, 0);
+
+        assert_eq!(
+            mirror.game.units.values().filter(|u| u.owner == barb).count(),
+            1,
+            "a barbarian the export named must be on the board — this is the whole \
+             defect, and before the fix it stayed invisible for the rest of the game"
+        );
+
+        // And it must leave again when it dies or moves out of sight, or the board
+        // accumulates ghosts that never attack anything.
+        state.hostiles.clear();
+        state.turn = 12;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(
+            mirror.game.units.values().filter(|u| u.owner == barb).count(),
+            0,
+            "and one the export no longer names must go, or the threat list only grows"
+        );
+    }
+
     fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
         // ⚠ THIS FIELD EXISTED AND WAS NEVER FILLED. `religion` was null on all
         // 26,954 city records ever exported — the schema had it, the mod never sent
@@ -3659,6 +3734,10 @@ pub struct LiveMirror {
     /// Rival stand-ins, rebuilt each sync: they need no continuity of their own and
     /// what we can see of them changes with the fog.
     rival_units: Vec<u32>,
+    /// Barbarians planted on the board this sync, so the next one can clear them.
+    /// See the barbarian block in [`LiveMirror::sync`] for why they are rebuilt
+    /// wholesale rather than tracked.
+    hostile_units: Vec<u32>,
     rival_cities: std::collections::BTreeSet<(i32, i32)>,
     pub unmapped: Vec<String>,
     /// See [`Reconstruction::dropped_units`]. Carried onto the live mirror so the
@@ -3706,6 +3785,7 @@ impl LiveMirror {
             uid_of,
             cid_of,
             rival_units: Vec::new(),
+            hostile_units: Vec::new(),
             rival_cities: std::collections::BTreeSet::new(),
             unmapped: rebuilt.unmapped,
             dropped_units: rebuilt.dropped_units,
@@ -3957,6 +4037,61 @@ impl LiveMirror {
                 self.game.remove_unit(uid);
             }
         }
+
+        // ★★★★★ BARBARIANS WERE PLANTED ONCE AND NEVER LOOKED AT AGAIN.
+        //
+        // `sync` had **no reference to `state.hostiles` or `barb_pid` at all**, so on
+        // the persistent mirror the decider runs, barbarians were whatever the
+        // construction rebuild found and nothing after. At turn 1 that is normally
+        // NONE — so CIVVIS played entire games with an empty barbarian seat while the
+        // export named them every turn.
+        //
+        // Measured on live run civvis-20260801T040700Z: Montréal founded turn 26, GONE
+        // by turn 42, loyalty 100 the whole time and at war with nobody it had met —
+        // so neither revolt nor a rival took it. `hostiles` was non-empty in the
+        // export throughout. A seat that cannot see barbarians cannot garrison against
+        // them, and "expansion that cannot be held is not expansion".
+        //
+        // Rebuilt wholesale each sync for the same reason as the rivals above: what we
+        // can see of them is fog-dependent and they carry no plan of ours.
+        for uid in std::mem::take(&mut self.hostile_units) {
+            if self.game.units.contains_key(&uid) {
+                self.game.remove_unit(uid);
+            }
+        }
+        if let Some(barb) = self.game.barb_pid {
+            for unit in &state.hostiles {
+                if !snapshot.is_revealed((unit.x, unit.y)) {
+                    continue;
+                }
+                let name = civvis_unit_name(&unit.kind);
+                if !self.game.rules.units.contains_key(&name) {
+                    // ⚠ Counted, not swallowed. A barbarian type CIVVIS cannot name is
+                    // a threat it cannot see, and that is the whole of this defect.
+                    if !self.unmapped.contains(&unit.kind) {
+                        self.unmapped.push(unit.kind.clone());
+                    }
+                    continue;
+                }
+                let pos = crate::hex::offset_to_axial(unit.x, unit.y);
+                let water = self
+                    .game
+                    .map
+                    .get(pos)
+                    .map(|tile| self.game.rules.is_water(tile))
+                    .unwrap_or(true);
+                // ⚠ A naval barbarian on water is dropped rather than planted on land.
+                // The same rule the rivals follow; recorded so the count is visible.
+                if water || self.game.units.values().any(|u| u.pos == pos) {
+                    self.dropped_units
+                        .push(format!("{}@{},{}:hostile_tile", unit.kind, unit.x, unit.y));
+                    continue;
+                }
+                let uid = self.game.spawn_unit(&name, barb, pos);
+                self.hostile_units.push(uid);
+            }
+        }
+
         for (index, rival) in state.rivals.iter().enumerate() {
             let owner = index + 1;
             if owner >= self.game.players.len() {
