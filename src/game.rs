@@ -15046,6 +15046,29 @@ pub struct Game {
     /// with seven builders alive against an army of one.
     #[serde(default)]
     pub blocked_improvement_sites: BTreeSet<Pos>,
+    /// Policy cards a HOST ruleset has retired, for the same reasons and with the
+    /// same emptiness in an ordinary game as [`Game::blocked_city_sites`].
+    ///
+    /// ★★★★ Measured on live run `civvis-20260801T012454Z`: `POLICY_ILKUM` was chosen
+    /// and refused **105 times**, `DISCIPLINE` 6 and `AGOGE` 1 — **112 of 813
+    /// refusals**, third behind movement and `no_params`. Civilization VI knew every
+    /// time (`culture:IsPolicyObsolete`) and said so in the refusal reason; nothing
+    /// carried it back, so CIVVIS re-derived the same card from the same board on
+    /// almost every turn of the game.
+    ///
+    /// [`Game::available_policies`] already computes an obsolete set from each card's
+    /// `replaces` list. That is the right mechanism and it is under-populated — 22 of
+    /// 41 shipped rows carry no successor — but **filling it in is what PR #703 is
+    /// blocked on**: the rows are ruleset data, so changing them moves
+    /// `Rules::source_fingerprint` and the Elo ledger rejects new games at bind time.
+    ///
+    /// ⚠ This set deliberately does NOT go near that. It is per-game reconstruction
+    /// state carried beside the board, exactly like the two above, so the fingerprint
+    /// does not move and no rated game is invalidated. It fixes the mirrored game
+    /// without pretending to fix the ruleset — and an ordinary CIVVIS game leaves it
+    /// empty, so nothing about simulated play changes.
+    #[serde(default)]
+    pub blocked_policies: BTreeSet<Name>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -15354,6 +15377,7 @@ impl From<GameSer> for Game {
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
+            blocked_policies: BTreeSet::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
@@ -15693,6 +15717,7 @@ impl Game {
             at_war: BTreeSet::new(),
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
+            blocked_policies: BTreeSet::new(),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),
@@ -23626,6 +23651,9 @@ impl Game {
             .filter(|(name, s)| {
                 !p.policies.contains(*name)
                     && !obsolete.contains(*name)
+                    // A card the HOST ruleset has retired, learned from its own
+                    // refusals. Empty in an ordinary game; see `blocked_policies`.
+                    && !self.blocked_policies.contains(*name)
                     && s.offered(&p.age, self.world_era)
                     && s.civic
                         .as_ref()
