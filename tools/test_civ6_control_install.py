@@ -22,6 +22,16 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('"UNITCOMMAND_ACTIVATE_GREAT_PERSON"', source)
         self.assertIn("GetActivationHighlightPlots()", source)
 
+    def test_parameterless_unit_commands_match_firaxis_unit_panel_signature(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        helper = source.split("local function commandUnit", 1)[1].split(
+            "-- Spend gold", 1
+        )[0]
+
+        self.assertIn("CanStartCommand(unit, hash, false, true)", helper)
+        self.assertIn("RequestCommand(unit, hash);", helper)
+        self.assertNotIn("params", helper)
+
     def test_civvis_soft_blockers_do_not_invoke_legacy_unit_ai(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         handler = source.split("local blocker = currentBlocker(pid);", 1)[1].split(

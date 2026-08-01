@@ -740,15 +740,19 @@ end
 
 -- Same discipline as `operate`: ask whether the command can start before
 -- claiming it was given. `pcall` only reports that the call did not raise.
-local function commandUnit(unit, hash, params)
+--
+-- These commands are parameterless. Firaxis's shipped UnitPanel.lua checks
+-- them with `(unit, hash, false, true)` and requests them with exactly two
+-- arguments. Supplying `{}` as a third RequestCommand argument made the call
+-- return without throwing but left Great Writers alive and upgrades undone.
+local function commandUnit(unit, hash)
 	if hash == nil then return false; end
-	params = params or {};
 	local ok, can = pcall(function()
-		return UnitManager.CanStartCommand(unit, hash, nil, params);
+		return UnitManager.CanStartCommand(unit, hash, false, true);
 	end);
 	if not (ok and can == true) then return false; end
 	return pcall(function()
-		UnitManager.RequestCommand(unit, hash, params);
+		UnitManager.RequestCommand(unit, hash);
 	end);
 end
 
@@ -5523,7 +5527,7 @@ local function applyOrder(player, pid, row, turn)
 		if unit == nil then return false, "unit_gone"; end
 		if verb == "ACTIVATE_GREAT_PERSON" then
 			local activated = commandUnit(
-				unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"], {});
+				unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]);
 			if not activated then
 				emit("great_person_refused", {
 					turn = turn, unit = subject,
@@ -5781,7 +5785,7 @@ local function applyOrder(player, pid, row, turn)
 			-- automation does — and it only ever runs where CIVVIS's own choice was
 			-- refused. Reported as `IMPROVE_AUTOMATED` so it is never counted as CIVVIS's.
 			if cfg.AutomateStuckBuilders ~= false
-					and commandUnit(unit, CMD["UNITCOMMAND_AUTOMATE"], {}) then
+					and commandUnit(unit, CMD["UNITCOMMAND_AUTOMATE"]) then
 				return true, "IMPROVE_AUTOMATED";
 			end
 			-- ★★★★ TELL CIVVIS THE TILE IS DEAD, or it will order another builder.
@@ -5850,7 +5854,7 @@ local function applyOrder(player, pid, row, turn)
 			return routed, verb;
 		end
 		if verb == "UPGRADE" then
-			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"], {}), verb;
+			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"]), verb;
 		end
 		-- Anything else is a named operation from the resolved table: FORTIFY,
 		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT.

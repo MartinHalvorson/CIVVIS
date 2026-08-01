@@ -227,13 +227,18 @@ fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, us
             });
             continue;
         }
+        // A command that just resolved can remain unavailable for the rest of
+        // this Firaxis frame. If the person already occupies any activation
+        // plot, wait for the next export instead of sending them toward a
+        // different city. Qu Yuan otherwise bounced Theater -> capital on the
+        // cooldown frame after creating his first work.
+        if person.activation_plots.iter().any(|plot| plot.distance == 0) {
+            waiting_without_target += 1;
+            continue;
+        }
         let target = person
             .activation_plots
             .iter()
-            // Already standing on an activation plot but unable to activate
-            // means another prerequisite (usually a free Great Work slot) is
-            // missing. MOVE_TO the same tile cannot change that state.
-            .filter(|plot| plot.distance > 0)
             .min_by_key(|plot| (plot.distance, plot.y, plot.x));
         if let Some(target) = target {
             orders.push(Order {
@@ -1540,11 +1545,18 @@ mod tests {
                 great_person: Some(StateGreatPerson {
                     charges: 0,
                     can_activate: false,
-                    activation_plots: vec![StateActivationPlot {
-                        x: 11,
-                        y: 12,
-                        distance: 0,
-                    }],
+                    activation_plots: vec![
+                        StateActivationPlot {
+                            x: 11,
+                            y: 12,
+                            distance: 0,
+                        },
+                        StateActivationPlot {
+                            x: 20,
+                            y: 18,
+                            distance: 7,
+                        },
+                    ],
                     ..StateGreatPerson::default()
                 }),
                 ..StateUnit::default()
