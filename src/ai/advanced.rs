@@ -973,9 +973,10 @@ pub struct AdvancedAi {
     ///
     /// The two numbers disagree by construction and the one that decides is
     /// the one that knows least. Stock ships `city_target = 4.0` on every map
-    /// size; the shipped gen-14 champion ships **2.408**, below the opening
-    /// floor of three, having been bred at 4p 24×16 = 96 tiles per player and
-    /// deployed at 6p 74×46 = 567.
+    /// size. The historical gen-14 candidate that motivated this evaluator arm
+    /// used **2.408**, below the opening floor of three, after being bred at
+    /// 4p 24×16 = 96 tiles per player and judged at 6p 74×46 = 567. The arm
+    /// itself does not depend on that artifact value.
     ///
     /// This flag makes the delegation carry the plan: the base governor is
     /// handed `plan.desired_cities` for the duration of that call and its own

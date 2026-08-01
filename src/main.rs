@@ -165,7 +165,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// deployment comparison (SHA-256
 /// `932cfabf125e729a5264ce43d2fd8b05d013d3fe84939b1dcd366ff122ddc84a`).
 /// This is a compatibility re-pin, not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbd8f_a998_04b8_07bd;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe2e4_6d5b_d8bb_82b7;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

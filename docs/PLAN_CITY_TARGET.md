@@ -1,13 +1,12 @@
 # The empire's city target and the governor that decides
 
-**Verdict: the treatment is a recorded null, refuted by its own fires-check
-before any outcome seed was read. The mechanism it documents is real and
-corrects `docs/GENOME.md`.** Read the fires-check section for why the obvious
-repair makes the empire smaller, and for the measurement that matters more
-than the treatment did: at deployment the empire is *target*-limited (4.83
-cities against its own target of 5.00) and at the compact eval profile it is
-*execution*-limited (2.17 against 3.83), so the expansion axis has two regimes
-and one profile cannot judge it.
+**Verdict: the original 2026-07-31 treatment is a recorded null, refuted by
+its own fires-check before any outcome seed was read. The mechanism it
+documents is real and corrects `docs/GENOME.md`; the refreshed current-main
+check below keeps the arm default-off.** The original two-regime measurement is
+historical: it was taken before the current embedded champion and later
+production-controller changes, so it is not a claim about `data/evolved/best.json`
+today.
 
 ## The disagreement
 
@@ -50,19 +49,20 @@ number that decides is the one that knows least about the map.
 | agent | `city_target` | what the baseline governor stops at |
 |---|---:|---:|
 | stock `advanced` (`Weights::default`) | 4.0 | 4 cities, every map size, every speed |
-| shipped gen-14 champion (`data/evolved/best.json`) | **2.408** | 3 |
+| current embedded champion (`data/evolved/best.json`) | **4.0** | 4 |
+| historical gen-14 candidate (2026-07-31 screen) | **2.408** | 3 |
 | live-league leader `g28-28` (round 3217) | **9.681** | its own site supply |
 | `assess`, deployment profile, turn 135+ | — | **6** |
 
-The champion's value sits *below the opening floor of three*. It was bred at
-4p 24×16 = 96 tiles per player; the promotion gate's deployment profile is
-6p 74×46 = 567 tiles per player. `docs/EVAL.md`'s matrix table records that
-champion at 120 maps per profile as **+51 on compact and −30 at deployment,
-verdict retain stock** (`docs/AI_GAPS.md` §5 has the same shape as +58/−9 on an
-older comparison).
+The historical candidate's value sat *below the opening floor of three*. It was
+bred at 4p 24×16 = 96 tiles per player; the promotion gate's deployment profile
+is 6p 74×46 = 567 tiles per player. `docs/EVAL.md`'s historical matrix records
+that candidate at 120 maps per profile as **+51 on compact and −30 at
+deployment, verdict retain stock** (`docs/AI_GAPS.md` §5 has the same shape as
++58/−9 on an older comparison).
 
-Meanwhile the league — which plays six-player games continuously — has its
-current leader at `city_target = 9.681` after 1011 six-player games (19.7%
+Meanwhile the league — which plays six-player games continuously — had its
+round-3217 leader at `city_target = 9.681` after 1011 six-player games (19.7%
 outright wins against stock `advanced`'s 16.4%). ⚠ That is one entrant, not a
 trend: the next-best-evidenced league genome, `g44-41`, sits at exactly the
 stock 4.0. The defensible reading is only that six-player selection has not
@@ -103,16 +103,17 @@ This is deliberately *not* a new number. Every value it introduces is one the
 agent already computed and already acts on elsewhere, which is the property
 the retuning attempts recorded in `docs/GENOME.md` lacked.
 
-## ⚠ REFUTED BY ITS OWN FIRES-CHECK — no outcome seed was read
+## ⚠ Historical fires-check — no outcome seed was read
 
 ```sh
 cargo test --profile ci plan_city_target_fires -- --ignored --nocapture
 ```
 
-Six maps at each of 4p 24×16 and 6p 74×46, flag off and on, reporting **cities
-at end** beside the plan's own target. The criterion was fixed as the outcome,
-not a mechanism bucket, for the reason `city_target_floor_fires` gives: a
-bucket the treatment cannot move is not falsifiable in the helpful direction.
+The original 2026-07-31 screen used six maps at each of 4p 24×16 and 6p 74×46,
+flag off and on, reporting **cities at end** beside the plan's own target. The
+criterion was fixed as the outcome, not a mechanism bucket, for the reason
+`city_target_floor_fires` gives: a bucket the treatment cannot move is not
+falsifiable in the helpful direction.
 
 ```text
 [eval 4p 24x16]       plan_city_target=false  cities 2.17 / plan target 3.83   score 147
@@ -126,7 +127,25 @@ fires the wrong way, so the pre-registered `ai_eval --matrix` at seed
 65,000,000 was never run and the arm stays default-off with the null recorded,
 on the `advanced_parallel_settlers` precedent.
 
-### Why, and it is the useful part
+### Current-main recheck — the arm remains default-off
+
+The current integration revision re-ran the same ignored census after merging
+current `main` and its newer embedded champion/controller changes:
+
+```text
+[eval 4p 24x16]       plan_city_target=false  cities 3.17 / plan target 3.83   score 212
+[eval 4p 24x16]       plan_city_target=true   cities 3.50 / plan target 3.83   score 208
+[deployment 6p 74x46] plan_city_target=false  cities 5.50 / plan target 4.83   score 403
+[deployment 6p 74x46] plan_city_target=true   cities 4.67 / plan target 5.00   score 388
+```
+
+The compact city count now moves upward but score still falls; deployment loses
+both cities and score. This is a refreshed fires check, not a pre-registered
+outcome evaluation, so it supplies no promotion evidence and does not change
+the arm's default-off status. It also means the old numerical two-regime reading
+is historical rather than a claim about the current controller.
+
+### Why the historical result occurred, and why it remains useful
 
 The ramp *starts below the gene*. `desired_cities` opens at
 `city_target_floor = 3`; stock's `city_target` gene is **4.0**. So for the
@@ -135,7 +154,8 @@ governor *more* restrictive, not less, and the late rungs of the ramp arrive
 after the settler window has largely closed. The two numbers do disagree, and
 the plan is not uniformly the larger one.
 
-The census also prices the axis, which is worth more than the treatment was:
+The original census also priced the axis, which was worth more than the
+treatment was at the time:
 
 - **At deployment the empire reaches 4.83 cities against its own target of
   5.00.** It is target-limited, not execution-limited, which independently
@@ -158,7 +178,8 @@ adaptive path's Settler gate is the flat gene in `BasicAi::cities`, and
 `docs/GENOME.md`'s "`city_target` is only reached through `unwrap_or_else`" is
 true of `advanced_production` and false of the path an adaptive empire takes.
 Any future sweep of that gene must move it on this path or it is sweeping the
-fallback again.
+fallback again. Its numerical result must be measured against the controller
+and embedded artifact it will actually judge.
 
 ⚠ **And it does not generalise.** The obvious next question is whether the four
 settle-site genes are live for the same reason. They are not: there are two
