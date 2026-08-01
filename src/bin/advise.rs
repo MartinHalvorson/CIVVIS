@@ -33,7 +33,6 @@
 use std::collections::BTreeSet;
 use std::path::Path;
 
-use civvis::ai::Ai;
 use civvis::mirror;
 
 /// ⚠ Civilization VI exports OFFSET coordinates; CIVVIS ranks in AXIAL. Every
