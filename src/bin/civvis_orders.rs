@@ -89,7 +89,30 @@ fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
         Item::Building { building } => Some(format!("BUILDING_{}", upper(building))),
         Item::District { district, .. } => Some(format!("DISTRICT_{}", upper(district))),
         Item::Wonder { wonder, .. } => Some(format!("BUILDING_{}", upper(wonder))),
-        Item::Project { project } => Some(format!("PROJECT_{}", upper(project))),
+        // ⚠ CIVVIS'S DISTRICT PROJECTS ARE NOT NAMED LIKE CIVILIZATION VI'S, and the
+        // mechanical uppercase below produced names the game has never heard of.
+        //
+        // `campus_research_grants` became `PROJECT_CAMPUS_RESEARCH_GRANTS`, which
+        // appears in ZERO shipped Assets — live run `civvis-20260801T145302Z`
+        // refused it as `unknown_PROJECT_CAMPUS_RESEARCH_GRANTS` ten times. Firaxis
+        // names every district project `PROJECT_ENHANCE_DISTRICT_<DISTRICT>`; CIVVIS
+        // names each one after what it DOES. All seven were silently unbuildable.
+        Item::Project { project } => Some(match project.as_str() {
+            "campus_research_grants" => "PROJECT_ENHANCE_DISTRICT_CAMPUS".to_string(),
+            "commercial_hub_investment" => {
+                "PROJECT_ENHANCE_DISTRICT_COMMERCIAL_HUB".to_string()
+            }
+            "encampment_training" => "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT".to_string(),
+            "harbor_shipping" => "PROJECT_ENHANCE_DISTRICT_HARBOR".to_string(),
+            "holy_site_prayers" => "PROJECT_ENHANCE_DISTRICT_HOLY_SITE".to_string(),
+            "industrial_zone_logistics" => {
+                "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE".to_string()
+            }
+            "theater_square_festival" => "PROJECT_ENHANCE_DISTRICT_THEATER".to_string(),
+            // The rest ARE mechanical: `build_nuclear_device` really is
+            // `PROJECT_BUILD_NUCLEAR_DEVICE`. Only the district projects diverge.
+            _ => format!("PROJECT_{}", upper(project)),
+        }),
         _ => None,
     }
 }
