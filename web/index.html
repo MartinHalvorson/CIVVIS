@@ -663,7 +663,12 @@
   .diplomacy-card:hover { transform: none; border-color: #718b81; background: linear-gradient(100deg, #0e1b17f7, #1a302af2); }
   .diplomacy-card.allied { border-color: #4f9488; box-shadow: inset 3px 0 #6bc0ae, inset 0 1px #fff1; }
   .diplomacy-card.friend { border-color: #708d62; box-shadow: inset 3px 0 #9dbb7d, inset 0 1px #fff1; }
-  .diplomacy-card.at-war { border-color: #a65450; box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1; }
+  .diplomacy-card.at-war {
+    /* Keep the row geometry stable, but move the red border 30% toward the
+       danger color so wars stand out sooner in the standings scan. */
+    border-color: color-mix(in srgb, #a65450 70%, var(--danger));
+    box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1;
+  }
   .diplomacy-card.dead { opacity: .42; filter: grayscale(.75); }
   /* The civilization name itself is the empire/capital map link. Watching
      through that civilization's fog remains a separate action beside the
