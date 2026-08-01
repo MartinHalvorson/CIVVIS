@@ -139,6 +139,35 @@ full observed curve also rose from 4 to 6, 8, 12, and 18 workers on the first
 two seeds, while explicit user choices remain available for hosts or workloads
 with a different knee.
 
+### Bounded purchase-menu fan-out (2026-08-01)
+
+`AdvancedAi::legal_purchase_actions` distributes independent city menus, but
+every active worker owns a complete `Game` snapshot. A developed empire often
+has only a few cities, so using every persistent-pool worker creates more
+snapshots than the menu work can repay. The frontier now has its own cap of
+three workers; results are still collected by city index and flattened in the
+stock purchase-then-empire order before the authoritative AI chooses an
+action.
+
+The three-way calibration used four fixed six-player, 74-by-46,
+nine-city-state, 150-turn online games at `--jobs 4` (seeds 7,311,055 through
+7,311,058), rotating the run order. It selected three workers rather than a
+generic low cap:
+
+| Purchase-menu workers | Four-game total | Change |
+| --- | ---: | ---: |
+| Pool-wide (4) | 21.404s | baseline |
+| Capped (2) | 21.232s | -0.8% |
+| Capped (3) | 21.057s | -1.6% |
+
+A separate four-seed default-path confirmation (seeds 7,311,063 through
+7,311,066) improved from 19.997s to 19.477s. Together, the eight `--jobs 4`
+games improved from 41.401s to 40.534s (**-2.1%**). Four additional explicit
+`--jobs 18` games (seeds 7,311,067 through 7,311,070) improved from 23.643s
+to 23.138s (**-2.1%**). Every normalized baseline/candidate report had the
+same SHA-256 hash. The cap is local to this clone-heavy, bounded frontier; it
+does not resize the fleet pool or alter the single-simulation worker default.
+
 ## Production-catalog follow-up
 
 The production catalog was the narrow first experiment from the profile. Its
