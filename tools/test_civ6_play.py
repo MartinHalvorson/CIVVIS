@@ -247,6 +247,50 @@ class Civ6PlayTest(unittest.TestCase):
 
         self.assertEqual(point, (1156, 309))
 
+    def test_saved_game_bootstrap_uses_named_row_and_lower_action_button(self) -> None:
+        bounds = (756, 33, 756, 480)
+        observations = [
+            [{"text": "Single Player", "x": 0.72, "y": 0.255,
+              "width": 0.03, "height": 0.01}],
+            [{"text": "Single Player", "x": 0.72, "y": 0.255,
+              "width": 0.03, "height": 0.01}],
+            [{"text": "Load Game", "x": 0.75, "y": 0.30,
+              "width": 0.03, "height": 0.01}],
+            [{"text": "CivvisWriterRepro", "x": 0.68, "y": 0.18,
+              "width": 0.04, "height": 0.01}],
+            [
+                {"text": "LOAD GAME", "x": 0.73, "y": 0.11,
+                 "width": 0.04, "height": 0.01},
+                {"text": "Load Game", "x": 0.69, "y": 0.49,
+                 "width": 0.04, "height": 0.02},
+            ],
+        ]
+
+        class Tail:
+            def poll(self):
+                return [{"kind": "state", "turn": 89}]
+
+        with tempfile.TemporaryDirectory() as temporary, \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play, "game_window", return_value=bounds), \
+             patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play, "screenshot"), \
+             patch.object(civ6_play.macos_ocr, "recognize", side_effect=observations), \
+             patch.object(civ6_play.env, "game_pids", return_value=[123]), \
+             patch.object(civ6_play.time, "sleep"), \
+             patch.object(civ6_play, "click_at") as click:
+            loaded = civ6_play.bootstrap_saved_game(
+                Tail(), lambda _event: None, Path(temporary),
+                args(load_save="/saves/CivvisWriterRepro.Civ6Save"),
+            )
+
+        self.assertTrue(loaded)
+        self.assertEqual(
+            click.call_args_list,
+            [call(869, 441), call(1111, 255), call(1156, 299),
+             call(1058, 181), call(1073, 491)],
+        )
+
     def test_seat_match_requires_map_and_leader(self) -> None:
         event = {
             "difficulty": "DIFFICULTY_SETTLER",

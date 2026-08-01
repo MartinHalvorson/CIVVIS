@@ -822,11 +822,19 @@ def _main_menu_visible(path: Path) -> bool:
 def _observed_label_point(path: Path, label: str,
                           bounds: tuple[int, int, int, int]) -> tuple[int, int] | None:
     """Read a visible menu label center inside the game window."""
+    points = _observed_label_points(path, label, bounds)
+    return points[0] if points else None
+
+
+def _observed_label_points(path: Path, label: str,
+                           bounds: tuple[int, int, int, int]) -> list[tuple[int, int]]:
+    """Read every matching visible label center inside the game window."""
     screen = desktop_size()
     if screen is None:
-        return None
+        return []
     screen_w, screen_h = screen
     x, y, w, h = bounds
+    points = []
     for observation in macos_ocr.recognize(path):
         if not _menu_label_matches(str(observation.get("text", "")), label):
             continue
@@ -835,8 +843,8 @@ def _observed_label_point(path: Path, label: str,
             continue
         px, py = int(point[0] * screen_w), int(point[1] * screen_h)
         if x <= px <= x + w and y <= py <= y + h:
-            return px, py
-    return None
+            points.append((px, py))
+    return points
 
 
 def _main_menu_point(path: Path, bounds: tuple[int, int, int, int]) -> tuple[int, int] | None:
@@ -1030,6 +1038,105 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     return False
 
 
+def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
+                         args: argparse.Namespace, verify_s: float = 120.0) -> bool:
+    """Load a named save after proving each rendered menu target.
+
+    A save replay is the shortest reliable regression test for behavior that
+    appeared late in a real game. The file must already be in Firaxis's Single
+    Player save directory; the path supplies the exact rendered filename to
+    select, so this never guesses which row happens to be first.
+    """
+    def started(seconds: float) -> bool:
+        deadline = time.time() + seconds
+        while time.time() < deadline:
+            saw = False
+            for event in tail.poll():
+                on_event(event)
+                saw = True
+            if saw:
+                return True
+            if not env.game_pids():
+                return False
+            time.sleep(2.0)
+        return False
+
+    save_label = Path(args.load_save).stem
+    for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
+        focus_game(GAME_SIDE, GAME_FRACTION)
+        time.sleep(2.0)
+        bounds = game_window()
+        if bounds is None:
+            time.sleep(20.0)
+            continue
+        x, y, w, h = bounds
+        click_at(int(x + w * 0.15), int(y + h * 0.85))
+        time.sleep(1.5)
+
+        menu = run_dir / f"load-menu-attempt{attempt}.png"
+        screenshot(menu)
+        target = _observed_label_point(menu, "Load Game", bounds)
+        menu_point = _main_menu_point(menu, bounds)
+        if target is None and menu_point is not None:
+            click_at(*menu_point)
+            time.sleep(2.5)
+            submenu = run_dir / f"load-submenu-attempt{attempt}.png"
+            screenshot(submenu)
+            target = _observed_label_point(submenu, "Load Game", bounds)
+        if target is None:
+            print(f"attempt {attempt}: Load Game is not visible yet", file=sys.stderr)
+            if not env.game_pids():
+                return False
+            time.sleep(20.0)
+            continue
+
+        click_at(*target)
+        time.sleep(3.0)
+        panel = run_dir / f"load-panel-attempt{attempt}.png"
+        screenshot(panel)
+        save_target = _observed_label_point(panel, save_label, bounds)
+        if save_target is None:
+            print(f"saved game {save_label!r} is not visible; refusing to select a row",
+                  file=sys.stderr)
+            return False
+        click_at(*save_target)
+        time.sleep(1.5)
+
+        selected = run_dir / f"load-selected-attempt{attempt}.png"
+        screenshot(selected)
+        # The screen contains a LOAD GAME heading and a lower action button.
+        # The button is the lowest matching label; selecting the first match
+        # would click the inert heading and wait forever.
+        action_points = _observed_label_points(selected, "Load Game", bounds)
+        if not action_points:
+            print("the saved-game action button is not visible", file=sys.stderr)
+            return False
+        action = max(action_points, key=lambda point: point[1])
+        if action[1] < y + int(h * 0.75):
+            print("only the Load Game heading is visible; refusing to click it",
+                  file=sys.stderr)
+            return False
+        print(f"loading saved game {save_label} from observed row {save_target}")
+        click_at(*action)
+
+        # A save made with an older revision of the same mod can produce a
+        # compatibility confirmation. Give a normal load a head start, then
+        # acknowledge only a visibly read YES button.
+        if started(min(10.0, verify_s)):
+            return True
+        confirmation = run_dir / f"load-confirmation-attempt{attempt}.png"
+        screenshot(confirmation)
+        yes = _observed_label_point(confirmation, "Yes", bounds)
+        if yes is not None:
+            click_at(*yes)
+        if started(verify_s):
+            return True
+        if not env.game_pids():
+            return False
+        print(f"attempt {attempt}: saved game emitted no agent state", file=sys.stderr)
+    return False
+
+
 def dismiss_leader_dialogue(clicks: int = 6) -> bool:
     """Click through a leader conversation's dialogue options until it closes.
 
@@ -1213,6 +1320,9 @@ def seat_matches_requested(event: dict, args: argparse.Namespace) -> tuple[bool,
 def _play(args: argparse.Namespace) -> int:
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
+    if args.load_save and not Path(args.load_save).is_file():
+        print(f"saved game does not exist: {args.load_save}", file=sys.stderr)
+        return 8
     using_default_orders_db = not args.orders_db
     orders_db = orders_db_path(run_dir, args.orders_db)
     args.orders_db = str(orders_db)
@@ -1449,9 +1559,15 @@ def _play(args: argparse.Namespace) -> int:
             return True
         return False
 
-    if not bootstrap_game(tail, record, run_dir, args):
+    if args.load_save:
+        bootstrapped = bootstrap_saved_game(tail, record, run_dir, args,
+                                            verify_s=args.load_wait)
+    else:
+        bootstrapped = bootstrap_game(tail, record, run_dir, args)
+    if not bootstrapped:
         stop_brain()
-        print("could not start a game from the main menu", file=sys.stderr)
+        print("could not load the saved game" if args.load_save else
+              "could not start a game from the main menu", file=sys.stderr)
         return 5
     print("in a configured game; the agent holds the seat from here")
 
@@ -1718,6 +1834,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--startup-timeout", type=float, default=420.0)
     ap.add_argument("--host-timeout", type=float, default=300.0)
     ap.add_argument("--load-wait", type=float, default=90.0)
+    ap.add_argument("--load-save", default=None,
+                    help="load this visible single-player save instead of creating a game")
     ap.add_argument("--timeout", type=float, default=7200.0)
     ap.add_argument("--report-every", type=int, default=5)
     ap.add_argument("--lock-wait", type=float, default=0.0,
