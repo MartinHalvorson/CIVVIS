@@ -407,8 +407,8 @@ a replay-verified 40-game ledger at `data/elo_ratings.json`; the complete
 protocol-v3 baseline is preserved read-only at `data/elo_ratings_v3.json`.
 Historical ledgers remain useful evidence but must not be extended or mixed
 with a later protocol. The protocol-v4 baseline rates
-`advanced-20260801-diplomacy` at 1631.1 online Elo and 1760.0 direct Elo
-against `advanced_v1`, from a 33/40 pair score (82.5%, 95% 68.0–91.3%). This is
+`advanced-20260801-diplomacy` at 1609.8 online Elo and 1663.6 direct Elo
+against `advanced_v1`, from a 29/40 pair score (72.5%, 95% 57.2–83.9%). This is
 a fresh controller-definition record, not an effect-size claim for diplomacy.
 
 Schema 3 binds a ledger to the complete rating profile: an explicit experiment

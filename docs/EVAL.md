@@ -7176,8 +7176,8 @@ cargo run --profile ci --locked --bin civvis -- tournament --games 40 --players 
 ```
 
 The fresh, replay-verified 40-game Standard/Pangaea baseline rates
-`advanced-20260801-diplomacy` at 1631.1 online Elo and 1760.0 direct Elo
-against `advanced_v1`, from a 33/40 pair score (82.5%, 95% Wilson 68.0–91.3%).
+`advanced-20260801-diplomacy` at 1609.8 online Elo and 1663.6 direct Elo
+against `advanced_v1`, from a 29/40 pair score (72.5%, 95% Wilson 57.2–83.9%).
 `basic-20260801-diplomacy` is a new identity because the same diplomacy path
 changes Basic behavior. This records a new controller definition, not an
 effect-size claim for the mechanic.

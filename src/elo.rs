@@ -5125,10 +5125,10 @@ mod tests {
             .iter()
             .find(|(player, _, _, _, _, _)| player == "advanced-20260801-diplomacy")
             .unwrap();
-        assert_eq!((advanced.2, advanced.3), (33.0, 40));
-        assert!((advanced.1 - 1760.0).abs() < 0.1);
-        assert!((100.0 * advanced.4 - 68.0).abs() < 0.1);
-        assert!((100.0 * advanced.5 - 91.3).abs() < 0.1);
+        assert_eq!((advanced.2, advanced.3), (29.0, 40));
+        assert!((advanced.1 - 1663.6).abs() < 0.1);
+        assert!((100.0 * advanced.4 - 57.2).abs() < 0.1);
+        assert!((100.0 * advanced.5 - 83.9).abs() < 0.1);
     }
 
     #[test]
