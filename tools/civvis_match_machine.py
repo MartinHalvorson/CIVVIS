@@ -929,6 +929,29 @@ class MatchMachine:
         # Admit only one process per fresh resource sample. Starting the whole
         # pool from one idle reading could cross the ceiling before the next
         # measurement had a chance to govern it.
+        # The visible slot is a stronger lifecycle invariant than headless
+        # throughput. During a HEAD handoff the old spectator can finish while
+        # the promoted binary is already ready; reserve the dedicated port
+        # immediately instead of waiting for the normal 20-point recovery
+        # margin. If headless work is using that remaining headroom, pause it
+        # first. The hard ceiling still wins: an overloaded host gets no new
+        # process, and the governor will pause the visible process as needed.
+        if not any(game.visible for game in self.games):
+            if sample.overloaded(self.args.limit):
+                return
+            if not sample.comfortably_below(self.args.limit, margin=RESUME_MARGIN):
+                for game in self.games:
+                    if game.visible or game.paused:
+                        continue
+                    if set_paused(game.process, True):
+                        game.paused = True
+                        self.event(
+                            "game_paused_for_resources",
+                            seed=game.seed,
+                            resources=asdict(sample),
+                        )
+            self.launch(visible=True)
+            return
         if not sample.comfortably_below(self.args.limit, margin=RESUME_MARGIN):
             return
         # Recovery comes before growth. A process paused by the governor is
@@ -939,9 +962,6 @@ class MatchMachine:
         # "One visible game" is a concurrency invariant, not a lifetime
         # allowance. Replace the spectator match after either completion or a
         # failed process, while still admitting at most one process per sample.
-        if not any(game.visible for game in self.games):
-            self.launch(visible=True)
-            return
         # A HEAD transition drains only the headless fleet.  The visible slot
         # stays populated while compilation runs in the background, so the
         # stable spectator origin never disappears for an entire build.
