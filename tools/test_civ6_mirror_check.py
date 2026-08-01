@@ -112,7 +112,8 @@ class MirrorCheckTest(unittest.TestCase):
                           "BUILDING_PYRAMIDS"],
             "wonders": [{"type": "BUILDING_PYRAMIDS", "x": 19, "y": 35}],
             "districts": [
-                {"type": "DISTRICT_CITY_CENTER"}, {"type": "DISTRICT_CAMPUS"}
+                {"type": "DISTRICT_CITY_CENTER"}, {"type": "DISTRICT_CAMPUS"},
+                {"type": "DISTRICT_WONDER"},
             ],
         }]}
         board = {"cities": [{

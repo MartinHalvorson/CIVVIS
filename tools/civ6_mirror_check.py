@@ -374,7 +374,12 @@ def city_fact_mismatches(state, board, top):
                 civ6_id(district.get("type"), "DISTRICT_"),
             )
             for district in source.get("districts") or []
-            if civ6_id(district.get("type"), "DISTRICT_") != "city_center"
+            # Firaxis exposes every wonder hex as the pseudo-type
+            # DISTRICT_WONDER. CIVVIS stores the actual wonder and its position
+            # in `wonders`, which is compared immediately above; counting the
+            # pseudo-district too reports a duplicate representation as missing.
+            if civ6_id(district.get("type"), "DISTRICT_")
+            not in {"city_center", "wonder"}
         }
         got_districts = {str(value).lower() for value in (city.get("districts") or {})}
         if want_districts != got_districts:
