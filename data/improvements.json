@@ -84,6 +84,29 @@
    "grant_fortification": 2
   }
  },
+ "batey": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "unique_to": "Caguana",
+  "same_adjacent_valid": false,
+  "yields": {
+   "culture": 1
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "requires_flat": true,
+  "effects": {
+   "adjacent_bonus_culture": 1,
+   "adjacent_entertainment_complex_culture": 1,
+   "adjacent_bonus_culture_after_exploration": 2,
+   "adjacent_entertainment_complex_culture_after_exploration": 2
+  }
+ },
  "mound": {
   "plunder_type": "heal",
   "plunder_amount": 50,

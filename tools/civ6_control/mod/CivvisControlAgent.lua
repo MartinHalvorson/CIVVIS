@@ -3782,6 +3782,26 @@ local CIVVIS_OWNED_BLOCKERS = {
 -- diagnosable: the log says which blocker recurred, not merely that one did.
 local function answerBlocker(player, pid, blocker, turn)
 	local name = blockerName(blocker);
+	-- A CIVVIS pass is a complete decision for the mirrored state it received.
+	-- Firaxis can finish production or research later in the same turn and raise
+	-- another prompt, but answering that prompt with the hand-written ladder
+	-- gives control to a second AI. That is how a completed wall repair silently
+	-- became a Builder in every city. End the turn and let the next fresh export
+	-- ask CIVVIS what belongs in the now-empty queue.
+	if cfg.CivvisDecides and CIVVIS_OWNED_BLOCKERS[name]
+			and (awaiting.source == "civvis" or awaiting.source == "civvis_stale") then
+		return "civvis_complete";
+	end
+
+	-- While the current CIVVIS answer is still in flight, decline to answer a
+	-- decision it owns. Returning nil leaves the blocker up and the loop retries
+	-- after the orders database has had a chance to receive the reply.
+	if cfg.CivvisDecides and awaiting.source == "pending"
+			and CIVVIS_OWNED_BLOCKERS[name]
+			and spend("civvis_wait_" .. name, cfg.MaxCivvisWaitPasses or 12) then
+		return nil;
+	end
+
 	-- ⚠⚠ THE HONEST DENOMINATOR FOR "CIVVIS IS DECIDING". Even on a turn CIVVIS
 	-- answered, the game's own end-turn prompts route back into the hand-written
 	-- passes below — `chooseResearch`, `driveProduction`, `orderUnits` — because a
@@ -3816,32 +3836,6 @@ local function answerBlocker(player, pid, blocker, turn)
 		residualAnswers[name] = (residualAnswers[name] or 0) + 1;
 		residualAnswers[name .. "@" .. tostring(awaiting.source)] =
 			(residualAnswers[name .. "@" .. tostring(awaiting.source)] or 0) + 1;
-	end
-	-- ★★★★★ WAIT FOR CIVVIS BEFORE ANSWERING A DECISION IT IS ABOUT TO MAKE.
-	--
-	-- These blockers fire from the game-core event loop, which runs BEFORE
-	-- `settleTurn` has CIVVIS's reply. The heuristic therefore answered first, every
-	-- time, and CIVVIS's own choice arrived to find the decision already taken.
-	--
-	-- Measured on run 233331Z. On 37 turns the heuristic named a tech or civic, and
-	-- on every one of them CIVVIS sent its own research/civic order the same turn.
-	-- They DISAGREED: at t11, t16 and t22 the heuristic answered `TECH_POTTERY`
-	-- while CIVVIS wanted `TECH_ASTROLOGY`. Pottery completed at **t24**; Astrology
-	-- not until **t59**. The heuristic's pick is what the game actually researched,
-	-- on a run reported as 100% CIVVIS.
-	--
-	-- So: while CIVVIS's answer is still outstanding, decline to answer. Returning
-	-- nil leaves the blocker up and the loop retries, which is exactly the pause
-	-- needed for the handshake to land. The fallback below still runs once CIVVIS
-	-- has answered, failed, or gone stale -- a blocker that is never answered would
-	-- hang the turn forever, which is worse than a heuristic answer.
-	--
-	-- ⚠ Only the decisions CIVVIS actually issues orders for. Blockers it has no
-	-- opinion on must still be answered immediately or the turn cannot end.
-	if cfg.CivvisDecides and awaiting.source == "pending"
-			and CIVVIS_OWNED_BLOCKERS[name]
-			and spend("civvis_wait_" .. name, cfg.MaxCivvisWaitPasses or 12) then
-		return nil;
 	end
 	-- Every answer below walks a GameInfo table, so each is budgeted. Answering
 	-- twice in a turn is the useful case -- the first attempt can be refused
@@ -6445,14 +6439,23 @@ local function tick()
 			attempts = attempts + 1;
 			local answered;
 			if SOFT_BLOCKERS[name] then
-				-- Bounded per turn. The order pass is the expensive one, and a
-				-- soft blocker that will not clear -- a unit the engine keeps
-				-- listing as ready -- would otherwise run it on every batch of
-				-- game-core events for the rest of the turn.
-				if spend("soft", cfg.MaxSoftPasses or 3) then
-					orderUnits(player, pid, turn);
+				if cfg.CivvisDecides then
+					-- CIVVIS has already made and applied its complete unit-order
+					-- pass in settleTurn. A soft blocker is only a UI reminder; the
+					-- legacy unit AI must not invent orders here. In particular, it
+					-- previously moved a Settler out of a safe capital and into a
+					-- visible barbarian capture zone after CIVVIS chose to wait.
+					answered = "civvis_complete";
+				else
+					-- Bounded per turn. The order pass is the expensive one, and a
+					-- soft blocker that will not clear -- a unit the engine keeps
+					-- listing as ready -- would otherwise run it on every batch of
+					-- game-core events for the rest of the turn.
+					if spend("soft", cfg.MaxSoftPasses or 3) then
+						orderUnits(player, pid, turn);
+					end
+					answered = "units";
 				end
-				answered = "units";
 			else
 				answered = answerBlocker(player, pid, blocker, turn);
 			end

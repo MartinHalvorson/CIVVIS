@@ -22,6 +22,35 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('"UNITCOMMAND_ACTIVATE_GREAT_PERSON"', source)
         self.assertIn("GetActivationHighlightPlots()", source)
 
+    def test_civvis_soft_blockers_do_not_invoke_legacy_unit_ai(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        handler = source.split("local blocker = currentBlocker(pid);", 1)[1].split(
+            "-- Only if the same blocker", 1
+        )[0]
+        civvis_branch = handler.split("if cfg.CivvisDecides then", 1)[1].split(
+            "else", 1
+        )[0]
+        legacy_branch = handler.split("if cfg.CivvisDecides then", 1)[1].split(
+            "else", 1
+        )[1]
+
+        self.assertIn('answered = "civvis_complete"', civvis_branch)
+        self.assertNotIn("orderUnits(", civvis_branch)
+        self.assertIn("orderUnits(player, pid, turn);", legacy_branch)
+
+    def test_completed_civvis_pass_does_not_invoke_owned_blocker_fallbacks(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        handler = source.split("local function answerBlocker", 1)[1].split(
+            "local function dismissBlocker", 1
+        )[0]
+        completed = handler.index('return "civvis_complete";')
+        residual = handler.index("residualAnswers[name]")
+
+        self.assertLess(completed, residual)
+        self.assertIn("CIVVIS_OWNED_BLOCKERS[name]", handler[:completed])
+        self.assertIn('awaiting.source == "civvis"', handler[:completed])
+        self.assertIn("driveProduction(player, turn, true)", handler[residual:])
+
     def test_live_rehost_assigns_and_reads_back_the_requested_leader(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         rehost = source.split("local function applyConfiguration()", 1)[1].split(

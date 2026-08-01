@@ -6400,6 +6400,92 @@ mod governor_runtime_tests {
     }
 
     #[test]
+    fn caguana_batey_matches_firaxis_placement_adjacency_and_tourism() {
+        let mut game = Game::new_full(2, 24, 16, 91_979, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let batey = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(batey).into_iter().collect();
+        for position in std::iter::once(batey).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&city].owned_tiles.contains(&position) {
+                game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
+            }
+        }
+
+        game.players[1].is_minor = true;
+        game.players[1].civ = "Caguana".to_string();
+        assert!(!game
+            .valid_improvements(0, batey)
+            .contains(&crate::name!("batey")));
+        game.players[0].envoys.push((1, 3));
+        assert!(game
+            .valid_improvements(0, batey)
+            .contains(&crate::name!("batey")));
+        game.map.tiles.get_mut(&batey).unwrap().hills = true;
+        assert!(!game
+            .valid_improvements(0, batey)
+            .contains(&crate::name!("batey")));
+        game.map.tiles.get_mut(&batey).unwrap().hills = false;
+        game.map.tiles.get_mut(&batey).unwrap().feature = Some(crate::name!("forest"));
+        assert!(!game
+            .valid_improvements(0, batey)
+            .contains(&crate::name!("batey")));
+        game.map.tiles.get_mut(&batey).unwrap().feature = None;
+
+        let bonus = neighbors
+            .iter()
+            .copied()
+            .find(|position| *position != centre)
+            .unwrap();
+        let entertainment = neighbors
+            .iter()
+            .copied()
+            .find(|position| *position != centre && *position != bonus)
+            .unwrap();
+        let adjacent_batey = neighbors
+            .iter()
+            .copied()
+            .find(|position| {
+                *position != centre && *position != bonus && *position != entertainment
+            })
+            .unwrap();
+        game.map.tiles.get_mut(&bonus).unwrap().resource = Some(crate::name!("wheat"));
+        set_district(
+            &mut game,
+            city,
+            entertainment,
+            "entertainment_complex",
+        );
+
+        let bare = game.player_tile_yields(0, batey, &game.map.tiles[&batey]);
+        game.map.tiles.get_mut(&batey).unwrap().improvement = Some(crate::name!("batey"));
+        let initial = game.player_tile_yields(0, batey, &game.map.tiles[&batey]);
+        assert_eq!(initial.culture - bare.culture, 3.0);
+        assert!(!game
+            .valid_improvements(0, adjacent_batey)
+            .contains(&crate::name!("batey")));
+
+        game.players[0].civics.insert(crate::name!("exploration"));
+        let exploration = game.player_tile_yields(0, batey, &game.map.tiles[&batey]);
+        assert_eq!(exploration.culture - bare.culture, 5.0);
+
+        let before_flight = game.tourism_by_tile(0).get(&batey).copied().unwrap_or(0.0);
+        game.players[0].techs.insert(crate::name!("flight"));
+        let after_flight = game.tourism_by_tile(0).get(&batey).copied().unwrap_or(0.0);
+        assert_eq!(after_flight - before_flight, 5.0);
+    }
+
+    #[test]
     fn the_cliffs_of_dover_are_worth_twice_an_ordinary_natural_wonder() {
         // Features.Appeal is +2 for most natural wonders but +4 for the Cliffs
         // of Dover and Uluru, which CIVVIS flattened to a single +2 for every
@@ -32851,6 +32937,51 @@ impl Game {
                         .copied()
                         .unwrap_or(0.0);
                 }
+            }
+            Some("batey") => {
+                let effects = &self.rules.improvements["batey"].effects;
+                let late = self.players[pid]
+                    .civics
+                    .contains(&crate::name!("exploration"));
+                let bonus_resources = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor]
+                            .resource
+                            .as_ref()
+                            .filter(|resource| self.resource_visible_to(pid, resource))
+                            .and_then(|resource| self.rules.resources.get(resource.as_str()))
+                            .is_some_and(|resource| resource.class == "bonus")
+                    })
+                    .count() as f64;
+                let entertainment_complexes = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor]
+                            .district
+                            .is_some_and(|district| {
+                                self.district_is_family(
+                                    district,
+                                    crate::name!("entertainment_complex"),
+                                )
+                            })
+                    })
+                    .count() as f64;
+                let bonus_key = if late {
+                    "adjacent_bonus_culture_after_exploration"
+                } else {
+                    "adjacent_bonus_culture"
+                };
+                let district_key = if late {
+                    "adjacent_entertainment_complex_culture_after_exploration"
+                } else {
+                    "adjacent_entertainment_complex_culture"
+                };
+                yields.culture += bonus_resources * effects.get(bonus_key).copied().unwrap_or(0.0)
+                    + entertainment_complexes
+                        * effects.get(district_key).copied().unwrap_or(0.0);
             }
             Some("rock_hewn_church") => {
                 let effects = &self.rules.improvements["rock_hewn_church"].effects;
