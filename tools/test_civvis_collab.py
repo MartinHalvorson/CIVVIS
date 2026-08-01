@@ -120,6 +120,126 @@ class BranchTests(unittest.TestCase):
             self.assertEqual(list(targets[0].parent.glob(".pre-push.civvis-*")), [])
 
 
+class FreshnessTests(unittest.TestCase):
+    def git(self, repo, *args):
+        return subprocess.run(
+            ("git", "-C", str(repo), *args),
+            check=True,
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+
+    def committed_repo(self, root):
+        self.git(root.parent, "init", "--initial-branch=main", str(root))
+        self.git(root, "config", "user.email", "freshness@example.invalid")
+        self.git(root, "config", "user.name", "Freshness Test")
+        Path(root, "tracked.txt").write_text("one\n", encoding="utf-8")
+        self.git(root, "add", "tracked.txt")
+        self.git(root, "commit", "-m", "one")
+
+    def test_refresh_fetches_main_without_changing_a_development_worktree(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            remote = base / "remote.git"
+            seed = base / "seed"
+            clone = base / "clone"
+            self.git(base, "init", "--bare", str(remote))
+            self.committed_repo(seed)
+            self.git(seed, "remote", "add", "origin", str(remote))
+            self.git(seed, "push", "-u", "origin", "main")
+            # A bare repository created before the first push still points HEAD
+            # at master. Set it explicitly so clone checks out main.
+            self.git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+            self.git(base, "clone", str(remote), str(clone))
+            self.git(clone, "config", "user.email", "freshness@example.invalid")
+            self.git(clone, "config", "user.name", "Freshness Test")
+            self.git(clone, "switch", "-c", "local-task")
+            Path(clone, "tracked.txt").write_text("local dirty work\n", encoding="utf-8")
+            local_head = self.git(clone, "rev-parse", "HEAD")
+
+            Path(seed, "upstream.txt").write_text("two\n", encoding="utf-8")
+            self.git(seed, "add", "upstream.txt")
+            self.git(seed, "commit", "-m", "two")
+            upstream_head = self.git(seed, "rev-parse", "HEAD")
+            self.git(seed, "push", "origin", "main")
+
+            report = collab.refresh_repository(clone)
+
+            self.assertEqual(report["origin_main"], upstream_head)
+            self.assertEqual(self.git(clone, "rev-parse", "HEAD"), local_head)
+            self.assertEqual(
+                Path(clone, "tracked.txt").read_text(encoding="utf-8"),
+                "local dirty work\n",
+            )
+            self.assertFalse(Path(clone, "upstream.txt").exists())
+            [row] = report["worktrees"]
+            self.assertTrue(row["dirty"])
+            self.assertEqual(row["behind"], 1)
+
+    def test_macos_service_only_runs_the_fetch_only_refresh_command(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            self.committed_repo(root)
+            worker = root / ".git" / "managed.py"
+            payload = collab.plistlib.loads(collab.macos_freshness_plist(root, worker))
+
+        command = payload["ProgramArguments"]
+        self.assertEqual(command[2:4], ["refresh", "--scheduled"])
+        self.assertIn("--repo", command)
+        self.assertEqual(payload["StartInterval"], collab.FRESHNESS_INTERVAL_SECONDS)
+        rendered = " ".join(command)
+        for forbidden in ("commit", "merge", "pull", "push", "rebase", "reset", "stash"):
+            self.assertNotIn(forbidden, rendered)
+
+    def test_a_stale_or_wrong_revision_heartbeat_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            self.committed_repo(root)
+            old = collab.dt.datetime.now(collab.dt.timezone.utc) - collab.dt.timedelta(hours=1)
+            collab.write_freshness_state(
+                root,
+                {
+                    "schema": collab.FRESHNESS_SCHEMA,
+                    "machine": "",
+                    "fetched_at": old.isoformat(),
+                    "origin_main": "old",
+                },
+            )
+            self.assertIn("stale", collab.freshness_state_error(root, "new"))
+            collab.write_freshness_state(
+                root,
+                {
+                    "schema": collab.FRESHNESS_SCHEMA,
+                    "machine": "",
+                    "fetched_at": collab.utc_now(),
+                    "origin_main": "old",
+                },
+            )
+            self.assertIn(
+                "current GitHub main",
+                collab.freshness_state_error(root, "new"),
+            )
+
+    def test_an_unmanaged_scheduler_definition_is_preserved(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "service.plist"
+            path.write_text("owned by somebody else\n", encoding="utf-8")
+            with self.assertRaises(collab.CommandError):
+                collab.write_managed_service(path, b"replacement")
+            self.assertEqual(
+                path.read_text(encoding="utf-8"), "owned by somebody else\n"
+            )
+
+    def test_reinstalling_an_identical_scheduler_is_a_no_op(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "service"
+            content = f"# {collab.FRESHNESS_MARKER}\nmanaged\n".encode("utf-8")
+            self.assertTrue(collab.write_managed_service(path, content))
+            modified = path.stat().st_mtime_ns
+            self.assertFalse(collab.write_managed_service(path, content))
+            self.assertEqual(path.stat().st_mtime_ns, modified)
+
+
 class ClaimTests(unittest.TestCase):
     def test_claims_are_parsed_from_the_pr_contract(self):
         parsed = collab.parse_claims(body())
