@@ -532,7 +532,10 @@ def main() -> int:
              "--era-announcement-seconds", "0.05",
              "--civvis-decides",
              "--tile-export-every", str(args.tile_export_every),
-             "--window-side", "right", "--window-frac", "0.5", "--window-vfrac", "0.5"],
+             # The operator's 2026-08-01 layout: the game owns the LOWER right
+             # at 2/3 of the screen each way; CIVVIS holds the upper left.
+             "--window-side", "bottomright",
+             "--window-frac", "0.667", "--window-vfrac", "0.667"],
             stdout=play_log, stderr=subprocess.STDOUT,
         )
         time.sleep(3)
