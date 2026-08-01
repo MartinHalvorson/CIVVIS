@@ -196,7 +196,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
 /// 31337` reports. Another compatibility re-pin over the merged sources,
 /// not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xee02_9679_23c4_64c1;
+///
+/// #808 records the planner's peace-offer decisions (`peace_offers`, a
+/// BTreeSet written at the offer site) and exposes them on `PlanReport`,
+/// which is observer-only by contract — nothing in play reads the field.
+/// Checked the same way: baseline and branch builds produced byte-identical
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
+/// 31337 --jobs 1` reports. Another compatibility re-pin over the merged
+/// sources, not an Elo protocol change.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd8d2_e265_0cf1_27db;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
