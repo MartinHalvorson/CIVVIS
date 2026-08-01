@@ -113,6 +113,12 @@ const ROLE_MARGIN: f64 = 1.15;
 /// through influence later.
 const ENVOY_PRODUCTION_VALUE: f64 = 170.0;
 
+/// A purchase-menu batch is bounded by the number of cities, while each active
+/// worker owns a full game snapshot. Three workers are enough to overlap the
+/// expensive city-local menus without paying for a snapshot per pool thread;
+/// wider workers remain available to the larger unit and visibility frontiers.
+const PURCHASE_MENU_MAX_WORKERS: usize = 3;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GrandStrategy {
     Expansion,
@@ -6769,19 +6775,27 @@ impl AdvancedAi {
         }
 
         let city_ids = Arc::new(city_ids);
-        let active = pool.threads().min(city_ids.len());
+        let active = pool
+            .threads()
+            .min(city_ids.len())
+            .min(PURCHASE_MENU_MAX_WORKERS);
         let states = (0..active).map(|_| g.clone()).collect::<Vec<_>>();
-        let per_city = pool.map_stateful(city_ids.len(), states, move |game, indices| {
-            let _memo = game.query_memo();
-            indices
-                .map(|index| {
-                    (
-                        index,
-                        game.legal_purchase_actions_for_city(pid, city_ids[index]),
-                    )
-                })
-                .collect()
-        });
+        let per_city = pool.map_stateful_limited(
+            city_ids.len(),
+            PURCHASE_MENU_MAX_WORKERS,
+            states,
+            move |game, indices| {
+                let _memo = game.query_memo();
+                indices
+                    .map(|index| {
+                        (
+                            index,
+                            game.legal_purchase_actions_for_city(pid, city_ids[index]),
+                        )
+                    })
+                    .collect()
+            },
+        );
         let mut actions = Vec::new();
         actions.extend(
             per_city
@@ -20575,6 +20589,31 @@ mod tests {
             .buildings
             .contains(&crate::name!("library"))));
         assert!(game.players[0].gold >= 350.0);
+    }
+
+    #[test]
+    fn bounded_purchase_menu_workers_keep_four_city_order_exact() {
+        let mut game = Game::new_full(1, 40, 24, 7_106_002, 160, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let first = game.player_city_ids(0)[0];
+        let anchor = game.cities[&first].pos;
+        for _ in 0..3 {
+            found_nearby_test_city(&mut game, 0, anchor);
+        }
+        game.players[0].gold = 5_000.0;
+
+        let serial = AdvancedAi::targeting(VictoryTarget::Science);
+        let serial_actions = serial.legal_purchase_actions(&game, 0);
+        assert!(!serial_actions.is_empty());
+
+        let mut parallel = serial.clone();
+        parallel.work_pool = Some(Arc::new(WorkPool::new(PURCHASE_MENU_MAX_WORKERS + 1)));
+        assert_eq!(parallel.legal_purchase_actions(&game, 0), serial_actions);
     }
 
     #[test]
