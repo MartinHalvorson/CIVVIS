@@ -4250,6 +4250,41 @@ local function exportState(player, pid, turn)
 		pantheon = pantheon,
 		policies = policies,
 		policy_slots = policy_slots,
+		-- ★★★★ THE TRADE ROUTES ALREADY RUNNING, without which CIVVIS believes its
+		-- whole trade capacity is free.
+		--
+		-- `Game::active_routes` counts `game.routes`, the mirror never populated it, so
+		-- it read 0 on every turn. Base capacity from Foreign Trade is ONE, so with a
+		-- single trader already on a route CIVVIS believed one slot was free when none
+		-- was — and `playable()` uses `CanProduce(hash, false, true)`, the engine's
+		-- can-it-START test, so the refusal DISCARDS the decision and the ladder chooses
+		-- instead. `UNIT_TRADER` is 81% of everything CIVVIS asks to produce.
+		--
+		-- ⚠ COPIED FROM `TradeSupport.lua`, NOT GUESSED. `GetOutgoingRoutes` is a CITY
+		-- method (`Cache_Lua_ICityTrade`), not a player one — `player:GetTrade()` would
+		-- have returned nil through `try` and exported nothing, silently. Firaxis walks
+		-- `GetCities():Members()` and reads `route.OriginCityID` / `DestinationCityID` /
+		-- `OriginCityPlayer` / `DestinationCityPlayer`, so those are the field names.
+		trade_routes = (function()
+			local out = {};
+			local cities = try(function() return player:GetCities(); end);
+			if cities == nil then return out; end
+			for _, city in cities:Members() do
+				local routes = try(function()
+					return city:GetTrade():GetOutgoingRoutes();
+				end);
+				for _, route in ipairs(routes or {}) do
+					out[#out + 1] = {
+						origin_player = route.OriginCityPlayer,
+						origin_city = route.OriginCityID,
+						dest_player = route.DestinationCityPlayer,
+						dest_city = route.DestinationCityID,
+						trader = route.TraderUnitID,
+					};
+				end
+			end
+			return out;
+		end)(),
 		hostiles = hostiles,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
