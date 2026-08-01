@@ -1663,6 +1663,11 @@ mod tests {
             turn: 89,
             pantheon: Some("BELIEF_DIVINE_SPARK".to_string()),
             prophet_pending: true,
+            founded_religions: vec![
+                "RELIGION_ORTHODOXY".to_string(),
+                "RELIGION_CATHOLICISM".to_string(),
+                "RELIGION_ISLAM".to_string(),
+            ],
             taken_religion_beliefs: vec![
                 "BELIEF_WORK_ETHIC".to_string(),
                 "BELIEF_TITHE".to_string(),
@@ -1687,6 +1692,8 @@ mod tests {
         let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
 
         assert!(mirror.game.players[0].prophet_pending);
+        assert_eq!(mirror.game.religions_founded(), 3);
+        assert_eq!(mirror.game.max_religions(), 4);
         assert!(mirror.game.players[1]
             .religion_beliefs
             .contains(&"work_ethic".to_string()));

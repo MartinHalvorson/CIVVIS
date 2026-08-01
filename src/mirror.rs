@@ -4093,6 +4093,10 @@ pub struct StateSnapshot {
     /// Player-level religion facts, distinct from each city's majority religion.
     #[serde(default)]
     pub founded_religion: Option<String>,
+    /// Every non-pantheon religion founded worldwide. Firaxis exposes this in
+    /// the Religion screen even when its founder has not otherwise been met.
+    #[serde(default)]
+    pub founded_religions: Vec<String>,
     #[serde(default)]
     pub religion_beliefs: Vec<String>,
     /// Every belief already claimed worldwide, including religions outside vision.
@@ -4499,8 +4503,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     const STATE: &[&str] = &[
         "kind", "event", "run", "ctx", "turn", "techs", "civics", "research",
         "research_progress", "civic", "civic_progress", "government", "pantheon",
-        "founded_religion", "religion_beliefs", "taken_religion_beliefs",
-        "prophet_pending",
+        "founded_religion", "founded_religions", "religion_beliefs",
+        "taken_religion_beliefs", "prophet_pending",
         "policies", "policy_slots", "gold", "faith", "science", "culture", "score",
         "military", "trade_capacity", "cities", "units", "trade_routes", "rivals", "minors",
         "hostiles",
@@ -5442,10 +5446,40 @@ fn apply_player_religion(
     unmapped: &mut Vec<String>,
 ) {
     game.players[0].prophet_pending = state.prophet_pending;
-    game.players[0].religion = state
+    let local_religion = state
         .founded_religion
         .as_deref()
         .and_then(civvis_religion_name);
+    game.players[0].religion = local_religion.clone();
+
+    // Religion availability is capped by the number already founded worldwide.
+    // Preserve exact Firaxis names on otherwise-unidentified major seats so
+    // `religions_founded()` sees the same count without claiming knowledge of an
+    // unmet founder's civilization. Globally claimed beliefs are handled below.
+    if !state.founded_religions.is_empty() {
+        let foreign_seats = game
+            .players
+            .iter()
+            .enumerate()
+            .skip(1)
+            .filter(|(_, player)| !player.is_minor && !player.is_barbarian)
+            .map(|(seat, _)| seat)
+            .collect::<Vec<_>>();
+        for seat in &foreign_seats {
+            game.players[*seat].religion = None;
+        }
+        let mut foreign = Vec::new();
+        for civ6 in &state.founded_religions {
+            if let Some(name) = civvis_religion_name(civ6) {
+                if local_religion.as_ref() != Some(&name) && !foreign.contains(&name) {
+                    foreign.push(name);
+                }
+            }
+        }
+        for (seat, name) in foreign_seats.into_iter().zip(foreign) {
+            game.players[seat].religion = Some(name);
+        }
+    }
 
     let mut local = Vec::new();
     for civ6 in &state.religion_beliefs {

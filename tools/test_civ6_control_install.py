@@ -40,6 +40,7 @@ class ProtectedInstallTest(unittest.TestCase):
 
         self.assertIn("HasReligiousFoundingUnit()", source)
         self.assertIn("founded_religion = founded_religion", source)
+        self.assertIn("founded_religions = founded_religions", source)
         self.assertIn("religion_beliefs = religion_beliefs", source)
         self.assertIn("taken_religion_beliefs = taken_religion_beliefs", source)
         self.assertIn("prophet_pending = prophet_pending", source)

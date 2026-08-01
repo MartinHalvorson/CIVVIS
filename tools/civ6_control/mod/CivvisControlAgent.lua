@@ -4558,6 +4558,7 @@ local function exportState(player, pid, turn)
 	local prophet_pending = religionCreated < 0 and playerReligion ~= nil and
 		try(function() return playerReligion:HasReligiousFoundingUnit(); end, false) or false;
 	local founded_religion = nil;
+	local founded_religions = {};
 	local religion_beliefs = {};
 	local taken_religion_beliefs = {};
 	local allReligions = try(function() return Game.GetReligion():GetReligions(); end, {}) or {};
@@ -4566,6 +4567,7 @@ local function exportState(player, pid, turn)
 		local isPantheon = religionRow ~= nil and
 			(religionRow.Pantheon == true or religionRow.Pantheon == 1);
 		if religionRow ~= nil and not isPantheon then
+			founded_religions[#founded_religions + 1] = religionRow.ReligionType;
 			if religion.Founder == pid then
 				founded_religion = religionRow.ReligionType;
 			end
@@ -4580,6 +4582,7 @@ local function exportState(player, pid, turn)
 			end
 		end
 	end
+	table.sort(founded_religions);
 	table.sort(religion_beliefs);
 	table.sort(taken_religion_beliefs);
 	-- ★★★★ THE POLICY CARDS ALREADY SLOTTED, and how many slots exist at all.
@@ -4618,6 +4621,7 @@ local function exportState(player, pid, turn)
 		government = government,
 		pantheon = pantheon,
 		founded_religion = founded_religion,
+		founded_religions = founded_religions,
 		religion_beliefs = religion_beliefs,
 		taken_religion_beliefs = taken_religion_beliefs,
 		prophet_pending = prophet_pending,
