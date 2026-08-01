@@ -144,6 +144,13 @@ impl Order {
 /// ever went looking for the enemy, `met` stopped at 2, no rival city was ever seen,
 /// and an army of 23 had nothing to attack. The settler oscillating between two tiles
 /// for twenty turns is the same defect in miniature.
+fn remove_active_route_traders_from_plan(
+    planned_game: &mut civvis::game::Game,
+    mirror_state: &civvis::mirror::LiveMirror,
+) {
+    mirror_state.prune_active_trade_route_traders(planned_game);
+}
+
 fn decide(
     mirror_state: &mut civvis::mirror::LiveMirror,
     ai: &mut civvis::ai::AdvancedAi,
@@ -151,6 +158,10 @@ fn decide(
     state: &civvis::mirror::StateSnapshot,
     war_from_plan: bool,
 ) -> String {
+    // Only the live bridge has Firaxis's non-walking Trader representation.
+    // Enable its narrow route-start adapter before the AI simulates its turn;
+    // the ordinary tournament controller remains on its frozen path.
+    ai.enable_live_trader_route_adapter();
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.
@@ -159,12 +170,18 @@ fn decide(
     // board shown to the next decision is never a mixture of one real game and one
     // speculative CIVVIS turn.
     let mut planned_game = mirror_state.game.clone();
+    // Firaxis keeps a Trader visible while it is travelling an active route;
+    // CIVVIS's native model consumes it into `game.routes`.  The authoritative
+    // mirror carries both so the map remains faithful.  Remove only the busy
+    // trader from this throwaway planning board, otherwise a spare-capacity turn
+    // can send the same real unit a second `TRADE_ROUTE` request.
+    remove_active_route_traders_from_plan(&mut planned_game, mirror_state);
     let before = planned_game.log.len();
     // ⚠ MEASURE LEGALITY BEFORE THE TURN IS TAKEN. Asking afterwards reported
     // `all_legal = 0` — the enumeration short-circuits once the seat has acted — which
     // would have been read as "CIVVIS cannot declare war" when it only meant "I asked
     // at the wrong moment".
-    let (pre_all_legal, pre_war_legal) = {
+    let (pre_all_legal, pre_war_legal, pre_traders) = {
         let legal = mirror_state.game.legal_actions(0);
         let wars = legal
             .iter()
@@ -175,7 +192,32 @@ fn decide(
                 )
             })
             .count();
-        (legal.len(), wars)
+        let traders = mirror_state
+            .game
+            .units
+            .iter()
+            .filter(|(_, unit)| unit.owner == 0 && unit.kind == "trader")
+            .map(|(uid, unit)| {
+                let routes = legal
+                    .iter()
+                    .filter(|action| matches!(action, Action::TradeRoute { unit: route, .. } if route == uid))
+                    .count();
+                let city = mirror_state
+                    .game
+                    .city_at(unit.pos)
+                    .and_then(|cid| mirror_state.game.cities.get(&cid))
+                    .map(|city| city.name.as_str())
+                    .unwrap_or("none");
+                let civ6 = mirror_state.civ6_of.get(uid).copied().unwrap_or_default();
+                let active = mirror_state.active_trade_route_traders.contains(&civ6);
+                let routes = if active { 0 } else { routes };
+                format!(
+                    "civ6={civ6} city={city} moves={:.1} active={active} routes={routes}",
+                    unit.moves_left
+                )
+            })
+            .collect::<Vec<_>>();
+        (legal.len(), wars, traders)
     };
     // ⚠ MEASURE MOVEMENT BEFORE THE TURN IS TAKEN, for the same reason as legality
     // above. Counted afterwards, `movable` reports what is left AFTER CIVVIS has
@@ -194,6 +236,14 @@ fn decide(
     let mut skipped: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
     let mut note_bits: Vec<String> = Vec::new();
+    if !pre_traders.is_empty() {
+        note_bits.push(format!(
+            "traders capacity={} active={} [{}]",
+            mirror_state.game.trade_capacity(0),
+            mirror_state.game.active_routes(0),
+            pre_traders.join("; ")
+        ));
+    }
 
     for (seat, action) in planned_game.log.since(before) {
         if *seat != 0 {
@@ -1208,7 +1258,9 @@ fn action_label(action: &Action) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use civvis::mirror::{Plot, Snapshot, StateCity, StateSnapshot, StateUnit, TilesChunk};
+    use civvis::mirror::{
+        Plot, Snapshot, StateCity, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
+    };
 
     fn grass(x: i32, y: i32) -> Plot {
         Plot {
@@ -1274,5 +1326,137 @@ mod tests {
         );
         assert_eq!(mirror.civ6_of.len(), 1);
         assert_eq!(mirror.uid_of.len(), 1);
+    }
+
+    #[test]
+    fn fresh_mirror_translates_a_zero_movement_trader_to_a_trade_route() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 20,
+            civics: vec!["CIVIC_FOREIGN_TRADE".to_string()],
+            cities: vec![
+                StateCity {
+                    id: 7,
+                    name: "Roma".to_string(),
+                    x: 6,
+                    y: 6,
+                    pop: 3,
+                    capital: true,
+                    ..StateCity::default()
+                },
+                StateCity {
+                    id: 8,
+                    name: "Antium".to_string(),
+                    x: 7,
+                    y: 7,
+                    pop: 3,
+                    ..StateCity::default()
+                },
+            ],
+            units: vec![StateUnit {
+                id: 42,
+                kind: "UNIT_TRADER".to_string(),
+                x: 7,
+                y: 7,
+                moves: 0.0,
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let trader = mirror.uid_of[&42];
+
+        assert_eq!(mirror.game.trade_capacity(0), 1);
+        assert!(mirror.game.legal_actions(0).iter().any(|action| {
+            matches!(action, Action::TradeRoute { unit, .. } if *unit == trader)
+        }));
+
+        let mut ai = civvis::ai::AdvancedAi::new();
+        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false);
+
+        assert!(
+            reply.contains("\"verb\":\"TRADE_ROUTE\"") && reply.contains("\"subject\":42"),
+            "a live trader cannot walk, but its legal route must still reach Civ VI: {reply}"
+        );
+    }
+
+    #[test]
+    fn active_firaxis_trade_route_keeps_the_trader_visible_but_out_of_the_plan() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 20,
+            civics: vec!["CIVIC_FOREIGN_TRADE".to_string()],
+            cities: vec![
+                StateCity {
+                    id: 7,
+                    name: "Roma".to_string(),
+                    x: 6,
+                    y: 6,
+                    pop: 3,
+                    capital: true,
+                    ..StateCity::default()
+                },
+                StateCity {
+                    id: 8,
+                    name: "Antium".to_string(),
+                    x: 7,
+                    y: 7,
+                    pop: 3,
+                    ..StateCity::default()
+                },
+            ],
+            units: vec![StateUnit {
+                id: 42,
+                kind: "UNIT_TRADER".to_string(),
+                x: 7,
+                y: 7,
+                moves: 0.0,
+                ..StateUnit::default()
+            }],
+            trade_routes: vec![StateTradeRoute {
+                trader: 42,
+                origin: 8,
+                destination: 7,
+                origin_x: 7,
+                origin_y: 7,
+                destination_x: 6,
+                destination_y: 6,
+                ..StateTradeRoute::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let trader = mirror.uid_of[&42];
+
+        assert!(mirror.game.units.contains_key(&trader),
+            "the mirrored map must retain Firaxis's moving trader unit");
+        assert_eq!(mirror.game.active_routes(0), 1,
+            "the active route must occupy CIVVIS trade capacity and pay its yields");
+        assert!(mirror.active_trade_route_traders.contains(&42));
+
+        let mut planning = mirror.game.clone();
+        remove_active_route_traders_from_plan(&mut planning, &mirror);
+        assert!(
+            !planning.units.contains_key(&trader),
+            "only the planning clone may consume a trader that Firaxis reports as busy"
+        );
+        assert_eq!(planning.active_routes(0), 1,
+            "removing the visual stand-in must not erase the real route's economic state");
     }
 }

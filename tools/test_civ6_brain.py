@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
 import unittest
@@ -25,6 +26,30 @@ class Civ6BrainTest(unittest.TestCase):
             self.assertEqual(civ6_brain.completed_turns(conn, "other"), {4})
             self.assertEqual(civ6_brain.completed_turns(conn, "missing"), set())
             conn.close()
+
+    def test_completed_game_turns_recovers_only_finished_turns_for_the_run(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            events.write_text("\n".join([
+                json.dumps({"kind": "state", "run": "live", "turn": 5}),
+                json.dumps({"kind": "turn", "run": "other", "turn": 6}),
+                json.dumps({"kind": "turn", "run": "live", "turn": 7}),
+                json.dumps({"kind": "turn", "run": "live", "turn": "8"}),
+                json.dumps({"kind": "turn", "run": "live", "turn": "bad"}),
+                "not json",
+            ]) + "\n")
+
+            self.assertEqual(civ6_brain.completed_game_turns(events, "live"), {7, 8})
+            self.assertEqual(civ6_brain.completed_game_turns(events, "other"), {6})
+
+    def test_default_orders_database_is_scoped_to_its_run(self) -> None:
+        run = Path("/tmp/civvis-run")
+
+        self.assertEqual(civ6_brain.orders_db_path(run), run / "orders.sqlite")
+        self.assertEqual(
+            civ6_brain.orders_db_path(run, "/tmp/explicit-orders.sqlite"),
+            Path("/tmp/explicit-orders.sqlite"),
+        )
 
     def test_decider_passes_the_selected_strategy_and_reported_civilization(self) -> None:
         decider = civ6_brain.Decider(

@@ -3682,7 +3682,36 @@ local function exportState(player, pid, turn)
 	if cfg.ExportState ~= true then return; end
 
 	local cities = {};
+	-- Firaxis leaves a Trader unit on the map while it travels, so its position
+	-- alone cannot say whether it is available for a new route.  Export the
+	-- authoritative route records from the same API the stock Trade Overview
+	-- uses.  CIVVIS needs both endpoint ids for capacity/yields and the unit id
+	-- to keep the active Trader out of the next planning pass.
+	local tradeRoutes = {};
 	eachCity(player, function(city)
+		local outgoing = try(function()
+			return city:GetTrade():GetOutgoingRoutes();
+		end, {});
+		for _, route in ipairs(outgoing or {}) do
+			local originID = try(function() return route.OriginCityID; end,
+				try(function() return city:GetID(); end, -1));
+			local destinationPlayer = try(function() return route.DestinationCityPlayer; end, -1);
+			local destinationID = try(function() return route.DestinationCityID; end, -1);
+			local destination = try(function()
+				local destinationOwner = Players[destinationPlayer];
+				return destinationOwner and destinationOwner:GetCities():FindID(destinationID);
+			end, nil);
+			tradeRoutes[#tradeRoutes + 1] = {
+				trader = try(function() return route.TraderUnitID; end, -1),
+				origin = originID,
+				destination = destinationID,
+				destination_player = destinationPlayer,
+				origin_x = try(function() return city:GetX(); end, -1),
+				origin_y = try(function() return city:GetY(); end, -1),
+				destination_x = try(function() return destination and destination:GetX(); end, -1),
+				destination_y = try(function() return destination and destination:GetY(); end, -1),
+			};
+		end
 		local queue = try(function()
 			local q = city:GetBuildQueue();
 			return q and q:GetCurrentProductionTypeHash() or 0;
@@ -3875,6 +3904,7 @@ local function exportState(player, pid, turn)
 						-- only defence strength tells them apart.
 						local theirDef, theirDmg = cityDefence(cx, cy);
 						theirCities[#theirCities + 1] = {
+							id = try(function() return city:GetID(); end, -1),
 							x = cx, y = cy,
 							name = try(function()
 								return Locale.Lookup(city:GetName());
@@ -4132,6 +4162,7 @@ local function exportState(player, pid, turn)
 		military = try(function() return player:GetStats():GetMilitaryStrength(); end, -1),
 		cities = cities,
 		units = units,
+		trade_routes = tradeRoutes,
 		rivals = rivals,
 	});
 end

@@ -51,6 +51,7 @@ import json
 import os
 import sys
 import urllib.request
+from collections import Counter
 from pathlib import Path
 
 # The same root `civ6_civvis_climb.py` writes to, resolved from $HOME rather than
@@ -85,6 +86,20 @@ def civ6_map_script(value):
     return {"smallcontinents": "small_continents"}.get(value, value)
 
 
+def civ_id_matches(civ6, civvis):
+    """Compare roster ids after the bridge's singular/plural normalization."""
+    civ6 = str(civ6 or "").lower()
+    civvis = str(civvis or "").lower()
+    return civ6 == civvis or civ6.rstrip("s") == civvis.rstrip("s")
+
+
+def leader_id_matches(civ6, civvis):
+    """CIVVIS stores the shared leader identity for Firaxis alternate personas."""
+    civ6 = str(civ6 or "").lower()
+    civvis = str(civvis or "").lower()
+    return civ6 == civvis or civ6.removesuffix("_alt") == civvis
+
+
 def production_item_name(value):
     """Normalize a live Civ VI production type to CIVVIS's queue vocabulary."""
     if not isinstance(value, str) or not value.strip():
@@ -98,7 +113,12 @@ def production_item_name(value):
         ("PRODUCT_", "product"),
     ):
         if value.upper().startswith(prefix):
-            return kind, civ6_id(value, prefix)
+            name = civ6_id(value, prefix)
+            # Firaxis truncates this district's type identifier; the mirror
+            # correctly restores CIVVIS's full `government_plaza` name.
+            if (kind, name) == ("district", "government"):
+                name = "government_plaza"
+            return kind, name
     return None
 
 
@@ -111,6 +131,33 @@ def queue_item_name(item):
         if isinstance(value, str) and value:
             return kind, value.lower()
     return None
+
+
+def exported_route_pairs(state, top):
+    """Active Civ VI route endpoints in the board's axial coordinate frame."""
+    pairs = Counter()
+    for route in state.get("trade_routes") or []:
+        values = (route.get("origin_x"), route.get("origin_y"),
+                  route.get("destination_x"), route.get("destination_y"))
+        if not all(isinstance(value, int) and value >= 0 for value in values):
+            continue
+        origin_x, origin_y, destination_x, destination_y = values
+        pairs[(axial(origin_x, top - origin_y),
+               axial(destination_x, top - destination_y))] += 1
+    return pairs
+
+
+def board_route_pairs(board):
+    """CIVVIS active route endpoints, resolved from route city ids to positions."""
+    positions = {city.get("id"): tuple(city.get("pos") or [])
+                 for city in board.get("cities") or []}
+    pairs = Counter()
+    for route in (board.get("me") or {}).get("routes") or []:
+        origin = positions.get(route.get("origin"))
+        destination = positions.get(route.get("dest"))
+        if len(origin or ()) == 2 and len(destination or ()) == 2:
+            pairs[(origin, destination)] += 1
+    return pairs
 
 
 def latest_seat(run):
@@ -198,8 +245,14 @@ def main():
             "civ": str(player.get("civ") or "").replace(" ", "_").lower(),
             "leader": str(player.get("leader") or "").replace(" ", "_").lower(),
         }
-        mismatches = [key for key, want in expected.items()
-                      if want and actual.get(key) != want]
+        mismatches = [
+            key for key, want in expected.items()
+            if want and not (
+                civ_id_matches(want, actual.get(key)) if key == "civ"
+                else leader_id_matches(want, actual.get(key)) if key == "leader"
+                else actual.get(key) == want
+            )
+        ]
         print("SETUP    "
               f"speed {actual['speed'] or '?'}; "
               f"difficulty {actual['difficulty'] or '?'}; "
@@ -364,6 +417,25 @@ def main():
         detail.append("UNMAPPED " + "; ".join(unmapped_production))
     print(f"PRODUCTION export {checked_production} city queues"
           + (f"   ⚠ {'; '.join(detail)}" if detail else "   OK"))
+
+    # --- active trade routes ------------------------------------------------
+    # A Trader remains a physical unit while travelling in Civilization VI, so
+    # comparing units cannot tell us whether it is available for a new route.
+    # Compare the route graph itself: these routes occupy capacity and contribute
+    # yields, and a missing one made CIVVIS repeatedly order the same Trader.
+    if "trade_routes" not in state:
+        print("TRADE    export has no route records (old control mod)")
+    else:
+        exported_routes = exported_route_pairs(state, best)
+        mirrored_routes = board_route_pairs(board)
+        if exported_routes != mirrored_routes:
+            problems.append("trade")
+            print(f"TRADE    Civ6 {sum(exported_routes.values())}  "
+                  f"CIVVIS {sum(mirrored_routes.values())}   ⚠ "
+                  f"MISSING {list((exported_routes - mirrored_routes).elements())}; "
+                  f"EXTRA {list((mirrored_routes - exported_routes).elements())}")
+        else:
+            print(f"TRADE    {sum(exported_routes.values())} active route(s)   OK")
 
     # ⚠ Name what is missing, do not just count it. A bare "1 dropped" sends the
     # reader to the wrong place; the position and type say immediately whether it is

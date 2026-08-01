@@ -115,7 +115,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `advanced_v1` game wins, 80.0% paired-map score, six sweeps, and 4,264
 /// observed Advanced-v1 player-turns. The contract is re-pinned because the
 /// gated legacy path did not move; the Elo protocol does not change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0dcd_aad7_7f23_8a31;
+///
+/// The Civ VI bridge also needs to begin a route for an idle Firaxis Trader
+/// whose normal walking movement is zero. `start_zero_movement_trader_route`
+/// sits behind a default-off bridge flag enabled only by `civvis_orders` before
+/// `Ai::take_turn`; `advance_unit_serial`, which is the native tournament loop,
+/// is unchanged. The new code cannot run in an `advanced_v1` tournament game,
+/// so its historical agent and Elo protocol remain unchanged. Re-pin the source
+/// contract to make that reviewed exception explicit.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0610_8e6c_919f_253a;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

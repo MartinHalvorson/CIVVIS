@@ -29,6 +29,8 @@ import sys
 import time
 from pathlib import Path
 
+from civ6_control.orders import orders_db_path
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS orders (
     run TEXT NOT NULL, turn INTEGER NOT NULL, seq INTEGER NOT NULL,
@@ -300,6 +302,37 @@ def completed_turns(conn: sqlite3.Connection, run: str) -> set[int]:
     )}
 
 
+def completed_game_turns(events: Path, run: str) -> set[int]:
+    """Recover turns the game has already completed from its append-only journal.
+
+    ``ready`` is the normal restart checkpoint.  The game's ``turn`` record is a
+    second, narrower recovery checkpoint: it is emitted only after a turn has
+    been actuated and ended.  If an operator replaces the SQLite database while
+    the game remains open, replaying every old ``state`` would rewrite history
+    before reaching the live turn.  These records let a new brain skip only turns
+    the game itself proves are already over.
+    """
+    done: set[int] = set()
+    try:
+        with events.open("r", errors="replace") as handle:
+            for raw in handle:
+                try:
+                    event = json.loads(raw)
+                except ValueError:
+                    continue
+                if event.get("kind") != "turn" or event.get("run") != run:
+                    continue
+                try:
+                    turn = int(event.get("turn"))
+                except (TypeError, ValueError):
+                    continue
+                if turn >= 0:
+                    done.add(turn)
+    except OSError:
+        pass
+    return done
+
+
 
 def record_note(run_dir: Path, turn: int, note: str) -> None:
     """Append CIVVIS's per-turn diagnostic to a durable file beside the events.
@@ -323,7 +356,9 @@ def record_note(run_dir: Path, turn: int, note: str) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True)
-    ap.add_argument("--orders-db", default=str(Path.home() / "civvis-civ6-runs" / "orders.sqlite"))
+    ap.add_argument("--orders-db", default=None,
+                    help="SQLite path shared with the live game; defaults to "
+                         "<run-dir>/orders.sqlite")
     ap.add_argument("--mode", choices=["stub", "civvis"], default="civvis")
     ap.add_argument("--bin", default=None,
                     help="path to the civvis-orders binary (--mode civvis)")
@@ -387,8 +422,9 @@ def main() -> int:
               f"skip_verbs={sorted(skip_verbs)} one_per_unit={args.one_order_per_unit}"
               " — this run is not a clean measurement of CIVVIS", flush=True)
 
-    conn = connect(Path(args.orders_db).expanduser())
-    print(f"[brain] mode={args.mode} run={run_tag} db={args.orders_db} "
+    orders_db = orders_db_path(run_dir, args.orders_db)
+    conn = connect(orders_db)
+    print(f"[brain] mode={args.mode} run={run_tag} db={orders_db} "
           f"decider={'server' if args.server else 'per-turn'}", flush=True)
     strategy = None if args.strategy.strip().lower() in {"", "stock", "none"} else args.strategy
     decider = (Decider(binary, run_dir, args.victory, args.war_from_plan, strategy)
@@ -398,11 +434,18 @@ def main() -> int:
     offset = 0
     # A brain is intentionally time-bounded so an operator can upgrade or
     # restart it during a long game. `ready` is written only after the full batch
-    # is committed, which makes it the authoritative resume checkpoint: replaying
-    # earlier states would rewrite historical orders and rebuild a different
-    # strategic history before reaching the one current turn.
+    # is committed, which makes it the authoritative resume checkpoint.  When an
+    # operator has replaced the DB, completed game records recover old turns so
+    # replay cannot rewrite the history before reaching the live state.
     served = completed_turns(conn, run_tag)
+    journaled = completed_game_turns(events, run_tag)
+    recovered = journaled - served
+    served.update(journaled)
     seat_civ: str | None = None
+    if recovered:
+        print(f"[brain] recovered {len(recovered)} completed turn(s) from the "
+              f"game journal after the SQLite checkpoint was absent; "
+              f"latest={max(recovered)}", flush=True)
     if served:
         print(f"[brain] resuming after {len(served)} completed turn(s); "
               f"latest={max(served)}", flush=True)

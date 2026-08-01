@@ -1633,10 +1633,9 @@ mod tests {
         });
 
         let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
-        mirror.sync(&snapshot, &state, 0);
 
-        let moves_of = |want: &str| -> Option<f64> {
-            mirror
+        let moves_of = |board: &LiveMirror, want: &str| -> Option<f64> {
+            board
                 .game
                 .units
                 .values()
@@ -1644,7 +1643,7 @@ mod tests {
                 .map(|u| u.moves_left)
         };
         assert_eq!(
-            moves_of("trader"),
+            moves_of(&mirror, "trader"),
             Some(0.0),
             "a trader must be given no movement — Civilization VI reports moves: 0 for \
              it on every export, and every walk CIVVIS planned for one was refused"
@@ -1652,9 +1651,87 @@ mod tests {
         // ⚠ And nothing else is grounded by this. A warrior keeps the movement the
         // ruleset gives it; the fix is about one unit class, not about movement.
         assert!(
-            moves_of("warrior").is_some_and(|m| m > 0.0),
+            moves_of(&mirror, "warrior").is_some_and(|m| m > 0.0),
             "every other unit keeps its ruleset movement"
         );
+
+        // `civvis_orders --serve --fresh-board` follows this exact construction
+        // path and never calls `sync`, so the constructor must carry the rule.
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(moves_of(&mirror, "trader"), Some(0.0));
+    }
+
+    #[test]
+    fn active_trade_routes_follow_the_host_and_keep_the_visible_trader() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+                .collect(),
+        }]);
+        let mut state = StateSnapshot {
+            turn: 20,
+            civics: vec!["CIVIC_FOREIGN_TRADE".to_string()],
+            cities: vec![
+                StateCity {
+                    id: 7,
+                    name: "Roma".to_string(),
+                    x: 5,
+                    y: 5,
+                    pop: 3,
+                    capital: true,
+                    ..StateCity::default()
+                },
+                StateCity {
+                    id: 8,
+                    name: "Antium".to_string(),
+                    x: 6,
+                    y: 6,
+                    pop: 3,
+                    ..StateCity::default()
+                },
+            ],
+            units: vec![StateUnit {
+                id: 42,
+                kind: "UNIT_TRADER".to_string(),
+                x: 6,
+                y: 6,
+                moves: 0.0,
+                ..StateUnit::default()
+            }],
+            trade_routes: vec![StateTradeRoute {
+                trader: 42,
+                origin: 8,
+                destination: 7,
+                origin_x: 6,
+                origin_y: 6,
+                destination_x: 5,
+                destination_y: 5,
+                ..StateTradeRoute::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let trader = mirror.uid_of[&42];
+        assert!(mirror.game.units.contains_key(&trader));
+        assert_eq!(mirror.game.active_routes(0), 1);
+        assert!(mirror.active_trade_route_traders.contains(&42));
+        assert_eq!(mirror.game.routes[0].origin, mirror.cid_of[&8]);
+        assert_eq!(mirror.game.routes[0].dest, mirror.cid_of[&7]);
+
+        // The next authoritative state is the only thing allowed to complete a
+        // route.  A persistent mirror must stop counting it immediately once the
+        // host reports it gone, rather than waiting for CIVVIS's guessed duration.
+        state.turn = 21;
+        state.trade_routes.clear();
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.active_routes(0), 0);
+        assert!(mirror.active_trade_route_traders.is_empty());
+        assert!(mirror.game.units.contains_key(&trader));
     }
 
     fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
@@ -1871,6 +1948,42 @@ mod tests {
         assert!(
             !recon.game.players[owner].is_free_city,
             "Free Cities is not the barbarian seat, however its flags read"
+        );
+    }
+
+    #[test]
+    fn persistent_sync_keeps_a_scythian_horse_archer_on_the_board() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 4,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+                .collect(),
+        }]);
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+
+        state.turn = 5;
+        state.hostiles.push(StateUnit {
+            kind: "UNIT_SCYTHIAN_HORSE_ARCHER".to_string(),
+            x: 3,
+            y: 3,
+            ..StateUnit::default()
+        });
+        mirror.sync(&snapshot, &state, 0);
+
+        let barb = mirror.game.barb_pid.expect("the mirrored roster has barbarians");
+        assert!(mirror.game.units.values().any(|unit| {
+            unit.owner == barb && unit.kind == "saka_horse_archer"
+        }));
+        assert!(
+            !mirror.unmapped.contains(&"UNIT_SCYTHIAN_HORSE_ARCHER".to_string()),
+            "a real Firaxis unit must not disappear after persistent sync"
         );
     }
 
@@ -2673,6 +2786,36 @@ pub struct StateUnit {
     pub fortified: bool,
 }
 
+/// One active outgoing trade route as Civilization VI reports it.
+///
+/// Firaxis keeps a Trader on the map while it services a route.  CIVVIS instead
+/// removes that unit and stores the route, so carrying both the unit id and both
+/// city ids is necessary: the former prevents re-ordering the busy Trader and the
+/// latter preserves capacity and route yields in the reconstructed economy.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateTradeRoute {
+    /// Civilization VI's id for the Trader travelling this route.
+    #[serde(default)]
+    pub trader: i64,
+    /// Civilization VI city ids for the two endpoints.
+    #[serde(default)]
+    pub origin: i64,
+    #[serde(default)]
+    pub destination: i64,
+    #[serde(default = "minus_one")]
+    pub destination_player: i32,
+    /// Endpoint positions make an international route recoverable even when its
+    /// city id has not yet been retained by the visible-rival mirror.
+    #[serde(default = "minus_one")]
+    pub origin_x: i32,
+    #[serde(default = "minus_one")]
+    pub origin_y: i32,
+    #[serde(default = "minus_one")]
+    pub destination_x: i32,
+    #[serde(default = "minus_one")]
+    pub destination_y: i32,
+}
+
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateRival {
     #[serde(default)]
@@ -2792,6 +2935,11 @@ pub struct StateSnapshot {
     pub cities: Vec<StateCity>,
     #[serde(default)]
     pub units: Vec<StateUnit>,
+    /// Routes currently travelling for this seat.  The control mod gets these
+    /// from each of our cities' `GetOutgoingRoutes()`; routes belonging to a
+    /// rival remain hidden just as their unseen units do.
+    #[serde(default)]
+    pub trade_routes: Vec<StateTradeRoute>,
     #[serde(default)]
     pub rivals: Vec<StateRival>,
     /// Who this seat actually is, from the run's `seat` event.
@@ -2826,6 +2974,79 @@ pub struct StateSnapshot {
     /// lost was made with an instrument blind to the likeliest cause.
     #[serde(default)]
     pub hostiles: Vec<StateUnit>,
+}
+
+/// Traders that Firaxis says are already servicing a route.
+///
+/// This remains separate from `Game::routes`: an international destination can
+/// be outside the currently retained city memory, but that still never makes the
+/// Trader idle or available for a second route.
+pub fn active_trade_route_traders(
+    state: &StateSnapshot,
+) -> std::collections::BTreeSet<i64> {
+    state
+        .trade_routes
+        .iter()
+        .filter_map(|route| (route.trader >= 0).then_some(route.trader))
+        .collect()
+}
+
+/// Put the host's active routes into the CIVVIS economic model.
+///
+/// CIVVIS normally creates this state by consuming a Trader.  The host keeps the
+/// physical unit visible while it travels, so callers keep that unit on the map
+/// and use [`active_trade_route_traders`] to remove it only from a speculative
+/// planning clone.  Route expiry is deliberately held beyond this planning turn:
+/// every real state export replaces this list, and inventing an end turn would
+/// make a real active route disappear from CIVVIS early.
+fn restore_active_trade_routes(
+    game: &mut crate::game::Game,
+    routes: &[StateTradeRoute],
+    city_of_civ6: &std::collections::BTreeMap<i64, u32>,
+) -> Vec<String> {
+    game.routes.clear();
+    let ends = game.turn.saturating_add(game.max_turns.max(1));
+    let mut unresolved = Vec::new();
+
+    for route in routes {
+        let Some(&origin) = city_of_civ6.get(&route.origin) else {
+            unresolved.push(format!("trade_route:{}:origin", route.trader));
+            continue;
+        };
+        let destination = city_of_civ6.get(&route.destination).copied().or_else(|| {
+            if route.destination_x >= 0 && route.destination_y >= 0 {
+                game.city_at(crate::hex::offset_to_axial(
+                    route.destination_x,
+                    route.destination_y,
+                ))
+            } else {
+                None
+            }
+        });
+        let Some(destination) = destination else {
+            unresolved.push(format!("trade_route:{}:destination", route.trader));
+            continue;
+        };
+        if origin == destination {
+            unresolved.push(format!("trade_route:{}:same_city", route.trader));
+            continue;
+        }
+        let Some(origin_city) = game.cities.get(&origin) else {
+            unresolved.push(format!("trade_route:{}:missing_origin", route.trader));
+            continue;
+        };
+        if origin_city.owner != 0 || !game.cities.contains_key(&destination) {
+            unresolved.push(format!("trade_route:{}:unavailable_city", route.trader));
+            continue;
+        }
+        game.routes.push(crate::game::TradeRoute {
+            origin,
+            dest: destination,
+            owner: 0,
+            ends,
+        });
+    }
+    unresolved
 }
 
 /// The identity Civilization VI gave this game: who we play, and under what rules.
@@ -3105,6 +3326,10 @@ pub struct Reconstruction {
     pub unit_ids: std::collections::BTreeMap<u32, i64>,
     /// CIVVIS city id -> Civilization VI city id.
     pub city_ids: std::collections::BTreeMap<u32, i64>,
+    /// Civilization VI city id -> CIVVIS city id for every city retained in the
+    /// board memory.  Unlike `city_ids`, this includes visible rival cities so an
+    /// outgoing international route can retain its destination.
+    pub known_city_ids: std::collections::BTreeMap<i64, u32>,
     pub placed_cities: usize,
     pub placed_units: usize,
     pub placed_rival_cities: usize,
@@ -3139,7 +3364,9 @@ fn civvis_unit_name(civ6: &str) -> String {
     // has rather than inventing one.
     let base = base.strip_prefix("barbarian_").map(str::to_string).unwrap_or(base);
     match base.as_str() {
-        "horse_archer" => "saka_horse_archer".to_string(),
+        // Firaxis's Scythian type name includes the civilization, whereas
+        // CIVVIS stores the unit by its actual Saka name.
+        "horse_archer" | "scythian_horse_archer" => "saka_horse_archer".to_string(),
         _ => base,
     }
 }
@@ -3179,6 +3406,21 @@ fn civvis_unit_name_unqualified(civ6: &str) -> Option<String> {
         return None;
     }
     (!rest.is_empty()).then(|| rest.to_string())
+}
+
+/// Resolve an exported unit through both its ordinary and civilization-qualified
+/// spellings.  Construction and persistent sync must share this exact lookup;
+/// otherwise a unique unit visible at startup vanishes on the next state update.
+fn resolved_civvis_unit_name(
+    rules: &crate::rules::Rules,
+    civ6: &str,
+) -> Option<String> {
+    let direct = civvis_unit_name(civ6);
+    if rules.units.contains_key(&direct) {
+        return Some(direct);
+    }
+    civvis_unit_name_unqualified(civ6)
+        .filter(|bare| rules.units.contains_key(bare))
 }
 
 /// The one qualifier measured being mistaken for a civilization.
@@ -3734,6 +3976,10 @@ pub fn rebuild_from_state(
 
     let mut unit_ids = std::collections::BTreeMap::new();
     let mut city_ids = std::collections::BTreeMap::new();
+    // Every retained city, including visible rivals.  `city_ids` stays our-city
+    // only because order translation must never point a purchase at a rival;
+    // active international routes need the broader lookup.
+    let mut known_city_ids = std::collections::BTreeMap::new();
     let mut unmapped: Vec<String> = Vec::new();
     let mut placed_cities = 0;
     let mut placed_units = 0;
@@ -3913,6 +4159,9 @@ pub fn rebuild_from_state(
     for city in &state.cities {
         if let Some(cid) = plant_city(&mut game, 0, city) {
             city_ids.insert(cid, city.id);
+            if city.id > 0 {
+                known_city_ids.insert(city.id, cid);
+            }
             placed_cities += 1;
             if let Some(built) = game.cities.get_mut(&cid) {
                 if city.pop > 0 {
@@ -4050,17 +4299,7 @@ pub fn rebuild_from_state(
         // that, because the settler danger rule reads exactly this list. The tile is
         // still checked for EXISTENCE below; that is the honest gate.
         let _ = &snapshot;
-        let mut name = civvis_unit_name(&u.kind);
-        if !game.rules.units.contains_key(&name) {
-            // A civilization-unique unit wears its civ as a prefix; try the bare name
-            // before giving up on it. See `civvis_unit_name_unqualified`.
-            if let Some(bare) = civvis_unit_name_unqualified(&u.kind) {
-                if game.rules.units.contains_key(&bare) {
-                    name = bare;
-                }
-            }
-        }
-        if !game.rules.units.contains_key(&name) {
+        let Some(name) = resolved_civvis_unit_name(&game.rules, &u.kind) else {
             // A Great Person is not a unit CIVVIS failed to name, it is a unit CIVVIS
             // does not model — see `is_great_person`. Reported apart so the
             // translation count stays a translation count.
@@ -4073,7 +4312,7 @@ pub fn rebuild_from_state(
             }
             dropped.push(format!("{}@{},{}:untranslatable", u.kind, u.x, u.y));
             return None;
-        }
+        };
         let pos = crate::hex::offset_to_axial(u.x, u.y);
         // ★★★★★ A LAND UNIT ON A COAST TILE IS EMBARKED, NOT ABSENT.
         //
@@ -4148,7 +4387,10 @@ pub fn rebuild_from_state(
             game.players[0].denounced_until.insert(owner, game.turn + 1);
         }
         for city in &rival.cities {
-            if plant_city(&mut game, owner, city).is_some() {
+            if let Some(cid) = plant_city(&mut game, owner, city) {
+                if city.id > 0 {
+                    known_city_ids.insert(city.id, cid);
+                }
                 placed_rival_cities += 1;
             }
         }
@@ -4214,6 +4456,16 @@ pub fn rebuild_from_state(
     // the ones that happened to exist earlier in the rebuild.
     apply_city_memory(&mut game);
 
+    // Firaxis leaves an active Trader on the map, while CIVVIS normally removes
+    // it into `game.routes`.  Reconstruct the economic state here and retain the
+    // physical unit above; the planner removes only active-route traders from its
+    // temporary clone.
+    unmapped.extend(restore_active_trade_routes(
+        &mut game,
+        &state.trade_routes,
+        &known_city_ids,
+    ));
+
     // Districts the host has refused to place, mapped onto CIVVIS's cities. Done here
     // because it needs `city_ids`, which is only complete once every city is planted.
     game.blocked_districts =
@@ -4223,6 +4475,7 @@ pub fn rebuild_from_state(
         game,
         unit_ids,
         city_ids,
+        known_city_ids,
         placed_cities,
         placed_units,
         placed_rival_cities,
@@ -4388,6 +4641,14 @@ pub struct LiveMirror {
     pub civ6_of: std::collections::BTreeMap<u32, i64>,
     /// Civilization VI city id -> CIVVIS city id.
     pub cid_of: std::collections::BTreeMap<i64, u32>,
+    /// Civilization VI city id -> CIVVIS city id for every city currently
+    /// retained by the mirror, including remembered rival cities used as trade
+    /// destinations.
+    pub known_city_ids: std::collections::BTreeMap<i64, u32>,
+    /// Firaxis route records name the trader that is busy.  Keep this even when a
+    /// destination cannot yet be reconstructed, so the same trader is never sent
+    /// a second `TRADE_ROUTE` order.
+    pub active_trade_route_traders: std::collections::BTreeSet<i64>,
     /// Rival stand-ins, rebuilt each sync: they need no continuity of their own and
     /// what we can see of them changes with the fog.
     rival_units: Vec<u32>,
@@ -4456,21 +4717,51 @@ impl LiveMirror {
         for (uid, civ6) in &rebuilt.unit_ids {
             uid_of.insert(*civ6, *uid);
         }
+        let mut game = rebuilt.game;
+        // `civvis_orders --serve --fresh-board` constructs this mirror for every
+        // decision, so movement normalization cannot live only in `sync`. In
+        // particular, Civ VI traders travel only through TradeRoute, while the
+        // standalone CIVVIS ruleset grants them two walking moves.
+        for uid in rebuilt.unit_ids.keys().copied().collect::<Vec<_>>() {
+            let allowance = mirror_unit_moves(&game, uid);
+            if let Some(live) = game.units.get_mut(&uid) {
+                live.moves_left = allowance;
+            }
+        }
         let mut cid_of = std::collections::BTreeMap::new();
         for (cid, civ6) in &rebuilt.city_ids {
             cid_of.insert(*civ6, *cid);
         }
         LiveMirror {
-            game: rebuilt.game,
+            game,
             civ6_of: rebuilt.unit_ids,
             uid_of,
             cid_of,
+            known_city_ids: rebuilt.known_city_ids,
+            active_trade_route_traders: active_trade_route_traders(state),
             rival_units: Vec::new(),
             hostile_units: Vec::new(),
             rival_cities: std::collections::BTreeSet::new(),
             unmapped: rebuilt.unmapped,
             dropped_units: rebuilt.dropped_units,
             turns_synced: 1,
+        }
+    }
+
+    /// Remove only active-route visual stand-ins from a speculative planning game.
+    ///
+    /// Firaxis keeps these Traders on the map, while CIVVIS consumes them into a
+    /// `TradeRoute`.  The authoritative mirror therefore keeps both facts for a
+    /// faithful display, but a planning clone must not treat the same physical
+    /// trader as idle just because another capacity slot exists.
+    pub fn prune_active_trade_route_traders(&self, planned_game: &mut crate::game::Game) {
+        let active: Vec<u32> = self
+            .active_trade_route_traders
+            .iter()
+            .filter_map(|civ6| self.uid_of.get(civ6).copied())
+            .collect();
+        for uid in active {
+            planned_game.remove_unit(uid);
         }
     }
 
@@ -4719,13 +5010,12 @@ impl LiveMirror {
                     }
                 }
                 _ => {
-                    let name = civvis_unit_name(&unit.kind);
-                    if !self.game.rules.units.contains_key(&name) {
+                    let Some(name) = resolved_civvis_unit_name(&self.game.rules, &unit.kind) else {
                         if !self.unmapped.contains(&unit.kind) {
                             self.unmapped.push(unit.kind.clone());
                         }
                         continue;
-                    }
+                    };
                     let water = self
                         .game
                         .map
@@ -4775,6 +5065,9 @@ impl LiveMirror {
             }
             let cid = self.game.place_city(0, pos, banner(city));
             self.cid_of.insert(city.id, cid);
+            if city.id > 0 {
+                self.known_city_ids.insert(city.id, cid);
+            }
         }
         for city in &state.cities {
             if let Some(cid) = self.cid_of.get(&city.id) {
@@ -4893,15 +5186,14 @@ impl LiveMirror {
                 if !snapshot.is_revealed((unit.x, unit.y)) {
                     continue;
                 }
-                let name = civvis_unit_name(&unit.kind);
-                if !self.game.rules.units.contains_key(&name) {
+                let Some(name) = resolved_civvis_unit_name(&self.game.rules, &unit.kind) else {
                     // ⚠ Counted, not swallowed. A barbarian type CIVVIS cannot name is
                     // a threat it cannot see, and that is the whole of this defect.
                     if !self.unmapped.contains(&unit.kind) {
                         self.unmapped.push(unit.kind.clone());
                     }
                     continue;
-                }
+                };
                 let pos = crate::hex::offset_to_axial(unit.x, unit.y);
                 let water = self
                     .game
@@ -5001,17 +5293,22 @@ impl LiveMirror {
                 if water || self.game.city_at(pos).is_some() {
                     continue;
                 }
-                self.game.place_city(owner, pos, banner(city));
+                let cid = self.game.place_city(owner, pos, banner(city));
+                if city.id > 0 {
+                    self.known_city_ids.insert(city.id, cid);
+                }
                 self.rival_cities.insert((city.x, city.y));
             }
             for unit in &rival.units {
                 if !snapshot.is_revealed((unit.x, unit.y)) {
                     continue;
                 }
-                let name = civvis_unit_name(&unit.kind);
-                if !self.game.rules.units.contains_key(&name) {
+                let Some(name) = resolved_civvis_unit_name(&self.game.rules, &unit.kind) else {
+                    if !self.unmapped.contains(&unit.kind) {
+                        self.unmapped.push(unit.kind.clone());
+                    }
                     continue;
-                }
+                };
                 let pos = crate::hex::offset_to_axial(unit.x, unit.y);
                 let water = self
                     .game
@@ -5024,6 +5321,17 @@ impl LiveMirror {
                 }
                 let uid = self.game.spawn_unit(&name, owner, pos);
                 self.rival_units.push(uid);
+            }
+        }
+
+        self.active_trade_route_traders = active_trade_route_traders(state);
+        for issue in restore_active_trade_routes(
+            &mut self.game,
+            &state.trade_routes,
+            &self.known_city_ids,
+        ) {
+            if !self.unmapped.contains(&issue) {
+                self.unmapped.push(issue);
             }
         }
     }

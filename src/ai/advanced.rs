@@ -597,6 +597,10 @@ pub struct AdvancedAi {
     /// that compatibility boundary is guarded by the source contract in the
     /// CLI tests.
     battlefront_observation: bool,
+    /// Adapt a live Firaxis Trader's zero walking movement to its distinct
+    /// route-start action.  This stays off for every native game and is enabled
+    /// only by the Civ VI order bridge.
+    live_trader_route_adapter: bool,
     /// Immutable information frame captured before this major acts.  It is
     /// cleared after the turn so direct evaluators outside a turn still read
     /// the game's current observation.
@@ -1386,6 +1390,7 @@ impl AdvancedAi {
             work_pool: None,
             belief: BeliefState::new(),
             battlefront_observation: true,
+            live_trader_route_adapter: false,
             battlefront_frame: None,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
@@ -1440,6 +1445,12 @@ impl AdvancedAi {
 
     pub fn with_weights_and_target(weights: Weights, target: VictoryTarget) -> AdvancedAi {
         Self::configured(BasicAi::with_weights(weights), true, Some(target))
+    }
+
+    /// Enable the narrow Trader adaptation required by a live Civilization VI
+    /// export.  Native tournament games leave this disabled.
+    pub fn enable_live_trader_route_adapter(&mut self) {
+        self.live_trader_route_adapter = true;
     }
 
     /// Redirect an existing agent at a new explicit victory target without
@@ -10897,6 +10908,37 @@ impl AdvancedAi {
         self.base.step_toward(g, pid, uid, g.cities[&origin].pos)
     }
 
+    /// Start a route for the non-walking Trader representation used by the
+    /// Civilization VI live bridge.
+    ///
+    /// Firaxis exports an idle Trader with zero normal movement, while CIVVIS's
+    /// native simulation gives it walking movement until it reaches an origin.
+    /// Keep that adaptation out of [`Self::advance_unit_serial`]: the latter is
+    /// the tournament agent's historical path.  The bridge calls this only for
+    /// an externally-normalized, stationary Trader after its ordinary turn.
+    fn start_zero_movement_trader_route(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        strategy: GrandStrategy,
+    ) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        if unit.owner != pid || unit.kind != "trader" || unit.moves_left > 0.0 {
+            return false;
+        }
+        let current = unit.pos;
+        let Some(origin) = g.city_at(current).filter(|cid| g.cities[cid].owner == pid) else {
+            return false;
+        };
+        let Some((_, city)) = self.best_trade_route_destination(g, pid, origin, strategy) else {
+            return false;
+        };
+        g.apply(pid, &Action::TradeRoute { unit: uid, city }).is_ok()
+    }
+
     fn best_trade_route_destination(
         &self,
         g: &Game,
@@ -13849,6 +13891,24 @@ impl AdvancedAi {
 
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.base.begin_movement_turn(g, pid);
+        // In a native game a Trader has walking movement and the ordinary unit
+        // loop below handles it. Firaxis exports an idle Trader with zero
+        // walking movement but still permits TradeRoute from the city it
+        // occupies. Handle exactly that bridge-only representation before the
+        // ordinary loop, while it is still this player's turn.
+        if self.live_trader_route_adapter {
+            let stationary_traders = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .filter(|uid| {
+                    let unit = &g.units[uid];
+                    unit.kind == "trader" && unit.moves_left <= 0.0
+                })
+                .collect::<Vec<_>>();
+            for uid in stationary_traders {
+                let _ = self.start_zero_movement_trader_route(g, pid, uid, plan.strategy);
+            }
+        }
         if self.victory_planning {
             self.rebuild_force_groups(g, pid, plan);
         } else {

@@ -469,18 +469,17 @@ def main() -> int:
             return 4
         print(f"\n=== attempt {attempt}/{args.attempts}  {tag}  code={code_rev} ===",
               flush=True)
-        # A fresh orders database per attempt. Stale rows are keyed by run tag so
-        # they could not be actuated, but a growing file is a growing query.
-        for suffix in ("", "-wal", "-shm"):
-            path = Path.home() / "civvis-civ6-runs" / f"orders.sqlite{suffix}"
-            if path.exists():
-                path.unlink()
+        # The database path is as much part of a run as its event log.  SQLite
+        # keeps an ATTACH bound to an inode, so deleting a global path while a
+        # game still has it open creates a new, invisible order channel.
+        orders_db = RUN_ROOT / tag / "orders.sqlite"
 
         play_log = (logs / f"{tag}-play.log").open("w")
         brain_log = (logs / f"{tag}-brain.log").open("w")
         play = subprocess.Popen(
             [sys.executable, "-u", str(HERE / "civ6_play.py"),
              "--tag", tag,
+             "--orders-db", str(orders_db),
              "--difficulty", args.difficulty,
              "--map-size", args.map_size,
              "--speed", args.speed,
@@ -507,6 +506,7 @@ def main() -> int:
              "--run-dir", str(RUN_ROOT / tag),
              "--mode", "civvis",
              "--bin", str(orders_bin),
+             "--orders-db", str(orders_db),
              "--victory", args.victory]
             + (["--war-from-plan"] if args.war_from_plan else [])
             + [

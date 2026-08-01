@@ -30,6 +30,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
 from civ6_control import gamelock, launcher, macos_input, vision, watch  # noqa: E402
+from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 
@@ -915,15 +916,23 @@ def seat_matches_requested(event: dict, args: argparse.Namespace) -> tuple[bool,
 
 
 def _play(args: argparse.Namespace) -> int:
-    config = build_config(args)
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
+    using_default_orders_db = not args.orders_db
+    orders_db = orders_db_path(run_dir, args.orders_db)
+    args.orders_db = str(orders_db)
+    config = build_config(args)
     events_path = run_dir / "events.jsonl"
     events = events_path.open("a")
 
     if not launcher.stop():
         print("could not stop the previous Civilization VI process", file=sys.stderr)
         return 3
+    if using_default_orders_db:
+        # The game is stopped above, so this removes only a prior incarnation of
+        # this tag.  Never reset an explicitly shared path behind an operator's
+        # back: an attached SQLite handle would keep reading the old inode.
+        reset_orders_db(orders_db)
     target = modinstall.install(config)
     print(f"installed {target}")
     print(f"  difficulty {config['Difficulty']}  map {config['MapSize']}"
@@ -1291,8 +1300,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--export-state", action="store_true", default=False)
     ap.add_argument("--probe-channels", action="store_true", default=False,
                     help="ask every candidate inbound API what it holds, once a turn")
-    ap.add_argument("--orders-db", default=str(Path.home() / "civvis-civ6-runs" / "orders.sqlite"),
-                    help="SQLite file offered to the mod via ATTACH as the inbound channel")
+    ap.add_argument("--orders-db", default=None,
+                    help="SQLite file offered to the mod via ATTACH as the inbound channel; "
+                         "defaults to <run-dir>/orders.sqlite")
     ap.add_argument("--tile-export-every", type=int, default=25,
                     help="turns between map exports (turn 1 always exports)")
     ap.add_argument("--no-explore-unassigned", dest="explore_unassigned",
