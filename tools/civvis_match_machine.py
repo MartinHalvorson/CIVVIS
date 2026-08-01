@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Run a terminal-bound, resource-capped CIVVIS match fleet.
 
-The match machine keeps one visible game and a pool of fast headless games on
-the same mutable league.  Every game is an eight-player, Standard-size,
-Standard-speed Continents free-for-all under the stock rules.  CIVVIS itself
-does the rating: the spectator server samples each civilization's top three
-eligible players with 3:2:1 rank weights and atomically appends a completed
-game to ``matches.csv`` and ``league.json``.
+The match machine continuously keeps one visible game and a pool of fast
+headless games on the same mutable league.  Every game is an eight-player,
+Standard-size, Online-speed Continents free-for-all under the stock rules.
+CIVVIS itself does the rating: the spectator server samples each
+civilization's top three eligible players with 3:2:1 rank weights and
+atomically appends a completed game to ``matches.csv`` and ``league.json``.
 
 The operator fetches ``origin/main`` into a private detached worktree, drains
 old games at a revision boundary, builds the new HEAD, and launches every new
@@ -247,9 +247,12 @@ def game_command(
     port: int,
     *,
     visible: bool,
+    open_browser: bool | None = None,
     speed: str = DEFAULT_SPEED,
     turns: int | None = None,
 ) -> list[str]:
+    if open_browser is None:
+        open_browser = visible
     turns = SPEED_TURNS[speed] if turns is None else turns
     args = [
         str(binary),
@@ -271,7 +274,7 @@ def game_command(
         "--league", str(league),
         "--league-record",
     ]
-    if not visible:
+    if not open_browser:
         args.append("--no-open")
     return args
 
@@ -371,6 +374,8 @@ class MatchMachine:
         self.failed = 0
         self.visible_started = False
         self.visible_completed = False
+        self.visible_completed_count = 0
+        self.visible_browser_opened = False
         self.next_seed = args.seed
         self.started_monotonic = time.monotonic()
         self.deadline = self.started_monotonic + args.duration
@@ -404,6 +409,8 @@ class MatchMachine:
             "pending_revision": self.pending_revision,
             "visible_started": self.visible_started,
             "visible_completed": self.visible_completed,
+            "visible_completed_count": self.visible_completed_count,
+            "visible_active": any(game.visible for game in self.games),
             "completed_this_run": self.completed,
             "failed_this_run": self.failed,
             "match_log_rows": match_count,
@@ -574,6 +581,7 @@ class MatchMachine:
                 seed,
                 port,
                 visible=visible,
+                open_browser=visible and not self.visible_browser_opened,
                 speed=speed,
                 turns=turns,
             ),
@@ -597,6 +605,7 @@ class MatchMachine:
         self.games.append(game)
         if visible:
             self.visible_started = True
+            self.visible_browser_opened = True
         self.event(
             "game_started",
             game_kind=kind,
@@ -618,6 +627,7 @@ class MatchMachine:
             self.completed += 1
             if game.visible:
                 self.visible_completed = True
+                self.visible_completed_count += 1
         self.event(
             "game_failed" if failed else "game_completed",
             game_kind="visible" if game.visible else "headless",
@@ -727,7 +737,10 @@ class MatchMachine:
             self.args.limit, margin=RESUME_MARGIN
         ):
             return
-        if not self.visible_started:
+        # "One visible game" is a concurrency invariant, not a lifetime
+        # allowance. Replace the spectator match after either completion or a
+        # failed process, while still admitting at most one process per sample.
+        if not any(game.visible for game in self.games):
             self.launch(visible=True)
             return
         headless = sum(not game.visible for game in self.games)
