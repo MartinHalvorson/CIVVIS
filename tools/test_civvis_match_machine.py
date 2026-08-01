@@ -70,6 +70,15 @@ class MatchMachineTests(unittest.TestCase):
         self.assertIn("--no-open", replacement)
         self.assertIn("--no-open", headless)
 
+    def test_port_selection_reserves_the_base_port_for_visible_successors(self):
+        with mock.patch.object(machine, "port_available", return_value=True):
+            self.assertEqual(machine.game_port(8870, set(), visible=True), 8870)
+        with mock.patch.object(machine, "port_available", return_value=False):
+            self.assertIsNone(machine.game_port(8870, set(), visible=True))
+        with mock.patch.object(machine, "free_port", return_value=8871) as choose:
+            self.assertEqual(machine.game_port(8870, set(), visible=False), 8871)
+            choose.assert_called_once_with(8871, set())
+
     def test_fill_slots_replaces_a_completed_visible_game(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
         subject.pending_revision = None
@@ -162,7 +171,9 @@ class MatchMachineTests(unittest.TestCase):
             subject.event = lambda kind, **values: events.append((kind, values))
             process = mock.Mock(pid=1234)
 
-            with mock.patch.object(machine.subprocess, "Popen", return_value=process):
+            with mock.patch.object(machine, "game_port", return_value=8870), mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ):
                 subject.launch(visible=True)
             subject.games[0].last_status = {
                 "turn": 435,
