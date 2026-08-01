@@ -38,9 +38,10 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 78] = [
+pub const EVAL_ONLY_AIS: [&str; 79] = [
     "basic_evolved",
     "advanced_policy_live_control",
+    "advanced_policy_envoy_priority",
     "advanced_envoy_policy",
     "advanced_envoy_infrastructure",
     "advanced_envoy_priority",
@@ -186,6 +187,7 @@ define_arm_kinds! {
     AdvancedMeasuredDedication => "advanced_measured_dedication",
     AdvancedParallelSettlers => "advanced_parallel_settlers",
     AdvancedPolicyLiveControl => "advanced_policy_live_control",
+    AdvancedPolicyEnvoyPriority => "advanced_policy_envoy_priority",
     AdvancedProphetFirst => "advanced_prophet_first",
     AdvancedReliefScoped => "advanced_relief_scoped",
     AdvancedRush => "advanced_rush",
@@ -1488,6 +1490,20 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.envoy_priority = true;
             Box::new(ai)
         }
+        // The one pre-registered composite for the envoy line. The two
+        // components each produced a favorable but inconclusive deployment
+        // direction: live policy selection and the direct Diplomatic Quarter
+        // production path. Keep the previously flat `pol_influence` knob out
+        // of this arm, so a matrix result answers precisely whether those two
+        // mechanisms compose rather than hiding a third treatment inside it.
+        "advanced_policy_envoy_priority" => {
+            let mut weights = Weights::default();
+            weights.policy_deck = crate::ai::PolicyDeck::Live;
+            let mut ai = AdvancedAi::with_weights(weights);
+            ai.envoy_infrastructure = true;
+            ai.envoy_priority = true;
+            Box::new(ai)
+        }
         "advanced_envoy_economy" => {
             let mut weights = Weights::default();
             weights.policy_deck = crate::ai::PolicyDeck::Live;
@@ -2570,6 +2586,9 @@ impl ArmKind {
         match self {
             Self::AdvancedBeliefPressure => &["belief-pressure"],
             Self::AdvancedPolicyLiveControl => &["policy-deck-live"],
+            Self::AdvancedPolicyEnvoyPriority => {
+                &["policy-deck-live", "envoy-infrastructure", "envoy-priority"]
+            }
             Self::AdvancedEnvoyPolicy => &["policy-deck-live", "envoy-influence"],
             Self::AdvancedEnvoyInfrastructure => &["envoy-infrastructure"],
             Self::AdvancedEnvoyPriority => &["envoy-infrastructure", "envoy-priority"],
@@ -3059,6 +3078,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced" => (Vec::new(), "advanced"),
         "advanced_belief_pressure" => (Vec::new(), "advanced_belief_pressure"),
         "advanced_policy_live_control" => (Vec::new(), "advanced_policy_live_control"),
+        "advanced_policy_envoy_priority" => (Vec::new(), "advanced_policy_envoy_priority"),
         "advanced_envoy_policy" => (Vec::new(), "advanced_envoy_policy"),
         "advanced_envoy_infrastructure" => (Vec::new(), "advanced_envoy_infrastructure"),
         "advanced_envoy_priority" => (Vec::new(), "advanced_envoy_priority"),
@@ -4013,6 +4033,14 @@ mod tests {
             "a composite must expose every changed treatment component"
         );
 
+        let policy_priority = builtin_arm("advanced_policy_envoy_priority")
+            .expect("composite is selectable");
+        assert_eq!(
+            policy_priority.spec.differing_axes(&stock.spec),
+            vec!["policy-deck-live", "envoy-infrastructure", "envoy-priority"],
+            "the pre-registered composite must expose exactly its three mechanisms"
+        );
+
         let league_top = builtin_arm("advanced_league_top").expect("arm is selectable");
         assert_eq!(
             league_top.spec.weights,
@@ -4108,10 +4136,11 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 45] = [
+            const SCRIPTED: [&str; 46] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
+                "advanced_policy_envoy_priority",
                 "advanced_envoy_policy",
                 "advanced_envoy_infrastructure",
                 "advanced_envoy_priority",
