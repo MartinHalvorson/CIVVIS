@@ -128,6 +128,7 @@ local function haveScreen()
 		or type(OnHideScreen) == "function"        -- GreatWorkShowcase
 		or type(OnButton1) == "function"           -- ChooseArtifact
 		or type(ReleaseEventLock) == "function"    -- WorldCongressBetweenTurns
+		or type(OnAccept) == "function"            -- WorldCongressPopup
 		or type(CloseFocusedState) == "function"   -- DiplomacyActionView
 		or type(OnRefuseDeal) == "function"        -- DiplomacyDealView
 		or type(OnSelectConversationDiplomacyStatement) == "function"  -- leader asking
@@ -194,6 +195,25 @@ local function endScreen(attempt)
 	end
 	if NAME == "EraReviewPopup" and type(OnContinue) == "function" then
 		OnContinue();
+		return true;
+	end
+	-- ★★★★★ THE WORLD CONGRESS HOLDS THE GAME UNTIL THE SEAT SUBMITS ITS TURN.
+	--
+	-- A special session demands a thumbs vote on EVERY proposal before its Next
+	-- button unlocks ("You must vote on all submitted Proposals"), then a
+	-- confirm page — and no generic closer touches any of it: batch-4 attempt 2
+	-- (run civvis-20260801T211015Z) stalled at t221 for twenty minutes until
+	-- the watchdog killed the attempt, with a healthy empire on the board.
+	--
+	-- The screen's own OnAccept() is the whole exit. With no votes cast it
+	-- logs a DataError and then, deliberately, still submits the empty congress
+	-- turn (WORLD_CONGRESS_SUBMIT_TURN), requests ACTION_ENDTURN, stages the
+	-- between-turns banner and closes itself — the same abstain a person gets
+	-- by committing zero favor. Abstaining IS a decision; it is the congress
+	-- shape of the decline-everything policy every diplomacy closer here
+	-- already applies, and the measured alternative is a dead attempt.
+	if NAME == "WorldCongressPopup" and type(OnAccept) == "function" then
+		OnAccept();
 		return true;
 	end
 	-- ⚠ THE MEET-A-NEW-CIV SCREEN NEEDS ITS OWN EXIT.
