@@ -3614,6 +3614,33 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let save = serde_json::to_value(&session.game).unwrap();
             respond_json(stream, &save);
         }
+        // The district adjacency calculator over the live game: every
+        // buildable district for a city's civilization, every legal plot,
+        // what each would earn there and the ledger saying why — foundations
+        // counted as the districts they will become. A planning read for
+        // spectator tools and the Civ 6 bridge's site advisor; read-only.
+        // `?city=<id>` narrows to one city, the default is every city.
+        ("GET", "/adjacency") => {
+            let session = sh.session.lock().unwrap();
+            let only: Option<u32> = query_value(&request_target, "city")
+                .and_then(|city| city.parse().ok());
+            let cities: Vec<Value> = session
+                .game
+                .cities
+                .iter()
+                .filter(|(cid, _)| only.is_none_or(|wanted| wanted == **cid))
+                .map(|(cid, city)| {
+                    json!({
+                        "id": cid,
+                        "name": city.name,
+                        "owner": city.owner,
+                        "forecasts": session.game.district_adjacency_calculator(*cid),
+                    })
+                })
+                .collect();
+            drop(session);
+            respond_json(stream, &json!({"cities": cities}));
+        }
         // The saves this process can see, newest turn first.
         // Where a unit would step next on its way somewhere far. `path_to`
         // only searches this turn's movement, so a click on a distant tile is
@@ -4921,6 +4948,63 @@ mod tests {
             std::thread::sleep(Duration::from_millis(50));
         }
         port
+    }
+
+    /// The adjacency calculator rides the server so planning tools can ask a
+    /// live game where districts belong. One city on request, every city by
+    /// default, and every site carries the ledger that explains its figure.
+    #[test]
+    fn adjacency_calculator_is_served_per_city() {
+        let port = exhibition(20_260_801);
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let city = loop {
+            assert!(Instant::now() < deadline, "no capital was ever founded");
+            let state: Value =
+                serde_json::from_str(&http_get(port, "/state").expect("state")).unwrap();
+            if let Some(city) = state["cities"].as_array().and_then(|cities| cities.first()) {
+                break city["id"].as_u64().unwrap();
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        };
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause the exhibition");
+
+        let body = http_get(port, &format!("/adjacency?city={city}")).expect("adjacency");
+        let parsed: Value = serde_json::from_str(&body).expect("adjacency is JSON");
+        let cities = parsed["cities"].as_array().expect("cities array");
+        assert_eq!(cities.len(), 1, "?city narrows the document to one city");
+        assert_eq!(cities[0]["id"].as_u64(), Some(city));
+        let forecasts = cities[0]["forecasts"].as_array().expect("forecasts");
+        assert!(!forecasts.is_empty(), "a capital has districts to plan");
+        for forecast in forecasts {
+            assert!(forecast["district"].is_string());
+            assert!(forecast["family"].is_string());
+            for site in forecast["sites"].as_array().expect("sites") {
+                assert!(site["pos"].is_array());
+                assert!(site["yields"].is_object());
+                let mut ledger = 0.0;
+                for source in site["sources"].as_array().expect("ledger") {
+                    for yield_key in ["food", "production", "gold", "science", "culture", "faith"]
+                    {
+                        ledger += source["yields"][yield_key].as_f64().unwrap_or(0.0);
+                    }
+                }
+                let mut total = 0.0;
+                for yield_key in ["food", "production", "gold", "science", "culture", "faith"] {
+                    total += site["yields"][yield_key].as_f64().unwrap_or(0.0);
+                }
+                assert!(
+                    (ledger - total).abs() < 1e-9,
+                    "served ledger must add up to the served yields"
+                );
+            }
+        }
+
+        let all: Value =
+            serde_json::from_str(&http_get(port, "/adjacency").expect("all cities")).unwrap();
+        assert!(
+            !all["cities"].as_array().expect("cities").is_empty(),
+            "the default document covers the world's cities"
+        );
     }
 
     #[test]

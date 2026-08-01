@@ -39,6 +39,7 @@ impl PlanAssumption {
 }
 
 /// One candidate plot in a district's forecast.
+#[derive(Clone, serde::Serialize)]
 pub struct SiteForecast {
     pub pos: Pos,
     /// Adjacency yields alone — base district yields are site-independent.
@@ -49,6 +50,7 @@ pub struct SiteForecast {
 
 /// Everything one district could earn in one city: every legal (or, for
 /// settlement, plausible) plot, best first.
+#[derive(Clone, serde::Serialize)]
 pub struct DistrictForecast {
     /// The concrete district this civilization builds — `seowon` for Korea
     /// where everyone else forecasts `campus`.
@@ -147,11 +149,7 @@ impl Game {
             city_center: Some(center),
             foundations: true,
         };
-        let candidates: Vec<Pos> = self
-            .wdisk(center, radius)
-            .into_iter()
-            .filter(|pos| *pos != center && self.plot_could_hold_a_district(*pos))
-            .collect();
+        let candidates = self.settlement_candidates(center, radius);
         self.plannable_districts(pid, true)
             .into_iter()
             .map(|district| {
@@ -167,6 +165,47 @@ impl Game {
                     sites: rank(sites),
                 }
             })
+            .collect()
+    }
+
+    /// The settle-scoring digest: for each adjacency-bearing district family,
+    /// the adjacency its best plot within `radius` would pay, summed into one
+    /// figure.  No ledgers are allocated — this is the hot path under
+    /// `AdvancedAi::settle_value`, which may sweep every land tile on the
+    /// map.  A family whose best plot is negative (a hemmed-in Seowon)
+    /// contributes nothing rather than a penalty: the planner simply would
+    /// not build it there.
+    pub fn settlement_adjacency_summary(&self, pid: usize, center: Pos, radius: i32) -> Yields {
+        let assume = PlanAssumption {
+            city_center: Some(center),
+            foundations: true,
+        };
+        let candidates = self.settlement_candidates(center, radius);
+        let mut summary = Yields::default();
+        for district in self.plannable_districts(pid, true) {
+            let mut best = 0.0;
+            let mut best_yields = Yields::default();
+            for pos in candidates
+                .iter()
+                .copied()
+                .filter(|pos| self.plot_fits_placement(pid, district, *pos, center))
+            {
+                let yields = self.district_adjacency_assuming(district, pos, Some(&assume), None);
+                if yields.total() > best {
+                    best = yields.total();
+                    best_yields = yields;
+                }
+            }
+            summary.add(best_yields);
+        }
+        summary
+    }
+
+    /// Unclaimed, physically buildable plots within `radius` of `center`.
+    fn settlement_candidates(&self, center: Pos, radius: i32) -> Vec<Pos> {
+        self.wdisk(center, radius)
+            .into_iter()
+            .filter(|pos| *pos != center && self.plot_could_hold_a_district(*pos))
             .collect()
     }
 
