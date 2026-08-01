@@ -4206,6 +4206,24 @@ local function exportTiles(player, pid, turn)
 						-- Carried separately so a fresh-water check does not have to
 						-- wait for the neighbour to be revealed.
 						ri = try(function() return plot:IsRiver(); end, false),
+						-- ★★★★ WHICH LANDMASS. Without it CIVVIS read 200 of 776 tiles
+						-- as carrying a continent and the rest as none — the generated
+						-- world's regions showing through, the same defect as the
+						-- rivers above. "Another continent" is load-bearing in the
+						-- ruleset, so a seat that cannot tell one landmass from another
+						-- cannot reason about overseas settling or invasion at all.
+						-- ⚠ NAME, not the raw index, for the reason `typeName` exists:
+						-- the index is a row into the game's own Continents table and
+						-- mapping it on the Rust side would mean guessing that table's
+						-- ordering.
+						ct = typeName("Continents", "ContinentType",
+						              try(function() return plot:GetContinentType(); end, -1)),
+						-- Gathering Storm's coastal-lowland band (1-3 metres), which
+						-- decides what sea-level rise floods. `TerrainManager`, not a
+						-- plot method — the plot has no accessor for it.
+						cl = try(function()
+							return TerrainManager.GetCoastalLowlandType(plot);
+						end, -1),
 					};
 					if index >= (cfg.TileChunk or 250) then
 						flush(); index = 0;
