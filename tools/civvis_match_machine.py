@@ -59,6 +59,7 @@ MAP = "continents"
 SHAPE = "flat"
 POLES = "poles"
 RESULT_HOLD_SECONDS = 10.0
+VISIBLE_SUCCESSOR_GRACE_SECONDS = 8.0
 SHED_ONE_MARGIN = 15.0
 SHED_HEADLESS_MARGIN = 10.0
 RESUME_MARGIN = 20.0
@@ -81,6 +82,15 @@ def atomic_json(path: Path, value: dict[str, Any]) -> None:
     temporary = path.with_suffix(path.suffix + ".tmp")
     temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     os.replace(temporary, path)
+
+
+def visible_browser_already_opened(state_path: Path) -> bool:
+    """Carry the one-tab promise across operator process upgrades."""
+    try:
+        previous = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    return bool(previous.get("visible_started"))
 
 
 def command(
@@ -393,7 +403,7 @@ class MatchMachine:
         self.visible_started = False
         self.visible_completed = False
         self.visible_completed_count = 0
-        self.visible_browser_opened = False
+        self.visible_browser_opened = visible_browser_already_opened(self.state_path)
         self.next_seed = args.seed
         self.started_monotonic = time.monotonic()
         self.deadline = self.started_monotonic + args.duration
@@ -669,12 +679,15 @@ class MatchMachine:
         )
         return True
 
-    def finish(self, game: GameProcess, *, failed: bool, reason: str) -> None:
+    def record_outcome(
+        self,
+        game: GameProcess,
+        *,
+        failed: bool,
+        reason: str,
+        row: dict[str, str] | None,
+    ) -> None:
         status = game.last_status
-        row = match_row(self.league, game.seed)
-        stop_process(game.process)
-        if game in self.games:
-            self.games.remove(game)
         if failed:
             self.failed += 1
         else:
@@ -697,6 +710,49 @@ class MatchMachine:
             log=game.log,
         )
 
+    def finish(self, game: GameProcess, *, failed: bool, reason: str) -> None:
+        row = match_row(self.league, game.seed)
+        stop_process(game.process)
+        if game in self.games:
+            self.games.remove(game)
+        self.record_outcome(game, failed=failed, reason=reason, row=row)
+
+    def adopt_visible_successor(
+        self,
+        game: GameProcess,
+        *,
+        seed: int,
+        row: dict[str, str],
+        status: dict[str, Any] | None,
+    ) -> None:
+        """Track CIVVIS's automatic successor without stopping its server."""
+        previous_seed = game.seed
+        self.record_outcome(
+            game,
+            failed=False,
+            reason="rated result recorded; automatic successor reused",
+            row=row,
+        )
+        game.seed = seed
+        game.started_monotonic = time.monotonic()
+        game.started_utc = utc_now()
+        game.paused = False
+        game.ready = True
+        game.winner_seen = None
+        game.last_status = status or {}
+        if seed == self.next_seed:
+            self.next_seed += 1
+        self.event(
+            "game_started",
+            game_kind="visible",
+            seed=seed,
+            pid=game.process.pid,
+            port=game.port,
+            revision=game.revision,
+            predecessor_seed=previous_seed,
+            reused_process=True,
+        )
+
     def poll_games(self) -> bool:
         changed = False
         now = time.monotonic()
@@ -706,11 +762,30 @@ class MatchMachine:
                 self.finish(game, failed=True, reason=f"process exited {code}")
                 changed = True
                 continue
-            recorded = match_row(self.league, game.seed) is not None
-            if recorded:
+            row = match_row(self.league, game.seed)
+            if row is not None:
                 if game.winner_seen is None:
                     game.winner_seen = now
-                hold = RESULT_HOLD_SECONDS if game.visible else 0.5
+                if game.visible and game.revision == self.current_revision:
+                    runtime = http_json(game.port, "/runtime")
+                    successor_seed = runtime.get("seed") if runtime else None
+                    if isinstance(successor_seed, int) and successor_seed != game.seed:
+                        self.adopt_visible_successor(
+                            game,
+                            seed=successor_seed,
+                            row=row,
+                            status=http_json(game.port, "/status"),
+                        )
+                        changed = True
+                        continue
+                # At a revision boundary, release the old visible binary as
+                # soon as its result is durable.  Otherwise allow the server's
+                # built-in ten-second countdown time to start its successor.
+                hold = (
+                    RESULT_HOLD_SECONDS + VISIBLE_SUCCESSOR_GRACE_SECONDS
+                    if game.visible and game.revision == self.current_revision
+                    else 0.5
+                )
                 if now - game.winner_seen >= hold:
                     self.finish(game, failed=False, reason="rated result recorded")
                     changed = True
@@ -931,7 +1006,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="turn limit (default: the stock limit for --speed)",
     )
-    parser.add_argument("--visible-pace", type=int, default=250, help="milliseconds per visible turn")
+    parser.add_argument(
+        "--visible-pace",
+        type=int,
+        default=0,
+        help="milliseconds per visible turn (default: zero-delay simulation)",
+    )
     parser.add_argument("--port", type=int, default=8870)
     parser.add_argument("--seed", type=int, default=int(time.time()) & 0x7FFF_FFFF)
     args = parser.parse_args(argv)

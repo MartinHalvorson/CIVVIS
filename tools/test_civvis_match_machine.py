@@ -54,6 +54,7 @@ class MatchMachineTests(unittest.TestCase):
         standard = machine.parse_args(["--watch-pid", "1", "--speed", "standard"])
         self.assertEqual((online.speed, online.turns), ("online", 250))
         self.assertEqual((standard.speed, standard.turns), ("standard", 500))
+        self.assertEqual(online.visible_pace, 0)
 
     def test_first_visible_game_opens_browser_and_replacements_reuse_tab(self):
         visible = machine.game_command(Path("civvis"), Path("league"), 1, 2, visible=True)
@@ -204,6 +205,13 @@ class MatchMachineTests(unittest.TestCase):
             self.assertEqual(json.loads(target.read_text()), {"active": 8})
             self.assertFalse(target.with_suffix(".json.tmp").exists())
 
+    def test_visible_browser_open_state_survives_operator_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            self.assertFalse(machine.visible_browser_already_opened(state))
+            state.write_text('{"visible_started": true}\n', encoding="utf-8")
+            self.assertTrue(machine.visible_browser_already_opened(state))
+
     def test_game_lifecycle_events_do_not_collide_with_event_kind(self):
         with tempfile.TemporaryDirectory() as directory:
             subject = machine.MatchMachine.__new__(machine.MatchMachine)
@@ -255,6 +263,100 @@ class MatchMachineTests(unittest.TestCase):
             self.assertIsNone(events[1][1]["winner"])
             self.assertEqual(events[1][1]["winner_placement"], "a@Trajan@Rome@0")
 
+    def test_visible_successor_reuses_process_and_records_both_lifecycle_events(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        process = mock.Mock(pid=1234)
+        game = machine.GameProcess(
+            process=process,
+            seed=100,
+            port=8870,
+            revision="abc123",
+            visible=True,
+            started_monotonic=10.0,
+            started_utc="then",
+            log="visible.log",
+            winner_seen=20.0,
+            last_status={"turn": 250, "winner": 1},
+        )
+        subject.games = [game]
+        subject.completed = 0
+        subject.failed = 0
+        subject.visible_completed = False
+        subject.visible_completed_count = 0
+        subject.next_seed = 101
+        events = []
+        subject.event = lambda kind, **values: events.append((kind, values))
+        row = {
+            "seed": "100",
+            "turns": "250",
+            "victory": "score",
+            "placements": "a@Trajan@Rome@0|b@Cleopatra@Egypt@1",
+        }
+
+        with mock.patch.object(machine.time, "monotonic", return_value=30.0):
+            subject.adopt_visible_successor(
+                game, seed=200, row=row, status={"turn": 1, "winner": None}
+            )
+
+        self.assertIs(subject.games[0].process, process)
+        self.assertEqual(subject.games[0].seed, 200)
+        self.assertEqual(subject.games[0].last_status["turn"], 1)
+        self.assertIsNone(subject.games[0].winner_seen)
+        self.assertEqual(subject.completed, 1)
+        self.assertEqual(subject.visible_completed_count, 1)
+        self.assertEqual([event[0] for event in events], ["game_completed", "game_started"])
+        self.assertTrue(events[1][1]["reused_process"])
+
+    def test_poll_adopts_automatic_visible_successor_without_stopping_server(self):
+        with tempfile.TemporaryDirectory() as directory:
+            league = Path(directory)
+            (league / "matches.csv").write_text(
+                "round,seed,turns,victory,placements\n"
+                "1,100,250,score,a@Trajan@Rome@0|b@Cleopatra@Egypt@1\n",
+                encoding="utf-8",
+            )
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+            subject.league = league
+            subject.current_revision = "abc123"
+            subject.games = [
+                machine.GameProcess(
+                    process=process,
+                    seed=100,
+                    port=8870,
+                    revision="abc123",
+                    visible=True,
+                    started_monotonic=10.0,
+                    started_utc="then",
+                    log="visible.log",
+                    winner_seen=20.0,
+                    last_status={"turn": 250, "winner": 1},
+                )
+            ]
+            subject.completed = 0
+            subject.failed = 0
+            subject.visible_completed = False
+            subject.visible_completed_count = 0
+            subject.next_seed = 101
+            subject.event = mock.Mock()
+
+            def response(_port, path, **_kwargs):
+                return (
+                    {"seed": 200, "server_instance": 1234}
+                    if path == "/runtime"
+                    else {"turn": 1, "winner": None}
+                )
+
+            with mock.patch.object(machine.time, "monotonic", return_value=30.0), mock.patch.object(
+                machine, "http_json", side_effect=response
+            ), mock.patch.object(machine, "stop_process") as stop:
+                changed = subject.poll_games()
+
+            self.assertTrue(changed)
+            stop.assert_not_called()
+            self.assertEqual(subject.games[0].seed, 200)
+            self.assertEqual(subject.completed, 1)
 
 if __name__ == "__main__":
     unittest.main()
