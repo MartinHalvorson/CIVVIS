@@ -1,0 +1,62 @@
+# CIVVIS match machine
+
+`tools/civvis_match_machine.py` is the unattended evaluator for a bounded
+operator window. It runs exactly one browser-visible match and then keeps up
+to eight headless matches active. Every match is pinned to the requested stock
+Civ VI contract:
+
+- eight major civilizations, no teams;
+- Standard map size (84x54, 12 city-states), Continents, flat with poles;
+- Standard speed and its natural 500-turn budget;
+- Ancient start, stock leader pool, barbarians, disaster intensity 2, all
+  victory conditions, and no optional game modes.
+
+The server seats every civilization from the mutable league. Its normal
+selection samples the top three eligible strategies for that exact
+leader/civilization with 3:2:1 rank weights and avoids duplicates until the
+active roster is exhausted. This emphasizes proven players without collapsing
+the table to one strategy.
+
+## Start a 24-hour run
+
+Run the operator in the foreground and give it the PID of the terminal shell
+that owns the tab:
+
+```bash
+python3 tools/civvis_match_machine.py \
+  --watch-pid "$PPID" \
+  --duration 86400 \
+  --headless 8 \
+  --max-processes 8 \
+  --limit 70
+```
+
+The default of eight total game processes means the visible game temporarily
+occupies one slot; after it finishes, all eight slots are headless. Closing the
+watched terminal stops every process group. On macOS, a matching `caffeinate`
+assertion keeps the machine awake on AC power until the operator exits, which
+supports clamshell operation without leaving an orphaned always-awake service.
+
+## Durable evidence
+
+The runtime directory defaults to `target/match-machine/` and contains:
+
+- `league/matches.csv`, `ratings.csv`, `calibration.csv`, and `league.json` —
+  canonical CIVVIS match and Glicko evidence;
+- `AI_PLAYER_ELO_RANKINGS.md` — regenerated after every result boundary;
+- `events.jsonl` — revisions, builds, game seeds, outcomes, and failures;
+- `resources.jsonl` — host-wide CPU, memory, disk, GPU, and thermal samples;
+- `state.json` — an atomic, compact operator status;
+- `logs/` — one server log per game.
+
+The operator fetches `origin/main` every five minutes. A new revision closes
+the launch gate, lets active games finish, resets only its private detached
+build worktree, builds and validates HEAD, then starts new matches from the
+promoted immutable binary. It never pulls, commits, or edits a development
+worktree.
+
+CPU, memory, filesystem capacity, and Apple GPU utilization are measured
+host-wide. At 70% the operator stops game process groups, preferring headless
+games; it resumes one at a time only below 60%. Any macOS thermal or performance
+warning is also a hard stop gate. The simulator is CPU-only; the single visible
+browser is the only deliberate graphics consumer.
