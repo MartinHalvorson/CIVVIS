@@ -20,14 +20,18 @@ def pair_rating(
     games: int = 6,
     wins: int = 1,
     rd: float = 80.0,
+    last_played: str | None = None,
 ) -> dict:
-    return {
+    result = {
         "rating": rating,
         "rd": rd,
         "vol": 0.06,
         "games": games,
         "wins": wins,
     }
+    if last_played is not None:
+        result["last_played"] = last_played
+    return result
 
 
 def strategy(
@@ -63,12 +67,20 @@ class RankingTests(unittest.TestCase):
             "strategies": [
                 strategy(
                     "alpha",
-                    {"Leader A": {"Civ A": pair_rating(1700.0)}},
+                    {
+                        "Leader A": {
+                            "Civ A": pair_rating(1700.0, last_played="2026-07-23")
+                        }
+                    },
                     username="Alpha Player",
                 ),
                 strategy(
                     "retired-beta",
-                    {"Leader B": {"Civ B": pair_rating(2100.0)}},
+                    {
+                        "Leader B": {
+                            "Civ B": pair_rating(2100.0, last_played="2026-07-24")
+                        }
+                    },
                     username="Beta Player",
                     retired=True,
                 ),
@@ -101,6 +113,9 @@ class RankingTests(unittest.TestCase):
         self.assertIn(
             "Beta Player (`retired-beta`) — Civ B — Leader B", document
         )
+        self.assertIn("| Status | Last played |", document)
+        self.assertIn("| 1 | 2100.0 |", document)
+        self.assertIn("| retired | 2026-07-24 |", document)
         self.assertIn("Strategies without a civilization/leader Elo", document)
         self.assertIn("Unseated Player (`unseated`)", document)
 
@@ -118,6 +133,24 @@ class RankingTests(unittest.TestCase):
         with self.assertRaisesRegex(rankings.RankingError, "without a game"):
             rankings.extract_rankings(league)
 
+    def test_last_played_must_be_a_real_iso_calendar_date(self):
+        league = {
+            "round": 2,
+            "strategies": [
+                strategy(
+                    "invalid-date",
+                    {
+                        "Leader A": {
+                            "Civ A": pair_rating(1600.0, last_played="2026-02-29")
+                        }
+                    },
+                )
+            ],
+        }
+
+        with self.assertRaisesRegex(rankings.RankingError, "real calendar date"):
+            rankings.extract_rankings(league)
+
     def test_committed_artifact_covers_the_entire_committed_roster(self):
         league = rankings.load_object(ROOT / "data/league/league.json")
         round_number, rows, without_pair_ratings = rankings.extract_rankings(league)
@@ -131,6 +164,10 @@ class RankingTests(unittest.TestCase):
         self.assertGreaterEqual(round_number, 0)
         self.assertEqual(len(rows), source_pair_count)
         self.assertGreater(len(rows), 0)
+        self.assertTrue(
+            all(row.last_played is not None for row in rows),
+            "the committed snapshot backfills every recorded pair's last game date",
+        )
         self.assertEqual([row.elo for row in rows], sorted((row.elo for row in rows), reverse=True))
         self.assertEqual(
             len({row.strategy for row in rows} | {row.strategy for row in without_pair_ratings}),

@@ -19,9 +19,11 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import sys
 import textwrap
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +50,7 @@ class PairRating:
     games: int
     wins: int
     status: str
+    last_played: str | None
 
 
 @dataclass(frozen=True)
@@ -96,6 +99,20 @@ def nonnegative_integer(value: Any, description: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise RankingError(f"{description} is not a non-negative integer")
     return value
+
+
+def optional_iso_date(value: Any, description: str) -> str | None:
+    """Validate an optional UTC calendar date kept with exact pair evidence."""
+    if value is None:
+        return None
+    result = nonempty_text(value, description)
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", result):
+        raise RankingError(f"{description} is not YYYY-MM-DD")
+    try:
+        date.fromisoformat(result)
+    except ValueError as error:
+        raise RankingError(f"{description} is not a real calendar date") from error
+    return result
 
 
 def flag(value: Any, description: str) -> bool:
@@ -224,6 +241,10 @@ def extract_rankings(
                         games=games,
                         wins=wins,
                         status=status,
+                        last_played=optional_iso_date(
+                            raw_rating.get("last_played"),
+                            f"{strategy!r} {leader}/{civilization} last_played",
+                        ),
                     )
                 )
                 row_count += 1
@@ -306,14 +327,20 @@ def render_document(
             width=88,
         ),
         "",
+        textwrap.fill(
+            "Last played is the UTC date of the most recent game credited to that exact "
+            "player/civilization/leader rating.",
+            width=88,
+        ),
+        "",
         "Refresh this document after updating the committed league snapshot:",
         "",
         "`python3 tools/update_ai_player_elo_rankings.py`",
         "",
         "Use `--check` to verify that this generated file is current.",
         "",
-        "| Rank | Elo | Player (strategy) — civilization — leader | RD | Games | Wins | Status |",
-        "|---:|---:|---|---:|---:|---:|---|",
+        "| Rank | Elo | Player (strategy) — civilization — leader | RD | Games | Wins | Status | Last played |",
+        "|---:|---:|---|---:|---:|---:|---|---|",
     ]
     for rank, row in enumerate(rows, start=1):
         identity = (
@@ -322,7 +349,7 @@ def render_document(
         )
         lines.append(
             f"| {rank} | {row.elo:.1f} | {identity} | ±{row.rd:.1f} | "
-            f"{row.games} | {row.wins} | {row.status} |"
+            f"{row.games} | {row.wins} | {row.status} | {row.last_played or '—'} |"
         )
 
     lines.extend(
