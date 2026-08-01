@@ -32,7 +32,7 @@
 //! ```
 //!
 //! Diagnostic only: it never changes a shipped decision.
-use civvis::ai::{Ai, VictoryTarget, Weights};
+use civvis::ai::{Ai, VictoryTarget};
 use civvis::game::{Action, Game};
 use civvis::parallel;
 use civvis::strategic::StrategicAi;

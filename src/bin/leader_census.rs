@@ -37,7 +37,6 @@
 //! exhibition actually deploys.
 //!
 //! Diagnostic only: it never changes a decision, and no agent can name it.
-use civvis::name::Name;
 use civvis::ai::{AdvancedAi, Ai, GrandStrategy, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;

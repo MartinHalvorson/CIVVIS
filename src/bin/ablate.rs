@@ -172,19 +172,6 @@ fn play(
     (game.winner == Some(oracle_seat), oracle.fired())
 }
 
-/// Wilson score interval, the same statistic the promotion gate uses.
-fn wilson(wins: f64, n: f64) -> (f64, f64) {
-    if n <= 0.0 {
-        return (0.0, 1.0);
-    }
-    let z = 1.959_963_984_540_054_f64;
-    let p = wins / n;
-    let denominator = 1.0 + z * z / n;
-    let center = (p + z * z / (2.0 * n)) / denominator;
-    let spread = z * ((p * (1.0 - p) / n + z * z / (4.0 * n * n)).sqrt()) / denominator;
-    ((center - spread).max(0.0), (center + spread).min(1.0))
-}
-
 /// Exact two-sided binomial tail for `hits` of `n` at p=1/2.
 ///
 /// Used for McNemar's test over discordant pairs: under the null that the
