@@ -124,6 +124,14 @@ pub struct PlanReport {
     pub threatened_city: Option<u32>,
     pub desired_cities: usize,
     pub assessed_turn: u32,
+    /// Rivals this planner decided to offer peace this turn. The offer itself
+    /// is `ProposeDeal { peace: true }`, answered on an ordinary board by the
+    /// other seat's valuation — so a declined offer never reaches the
+    /// applied-action log. A mirrored game must still ASK the real rival, so
+    /// the made decision is reported as intent here. Unlike the retracted
+    /// war-from-plan channel this exports a decision the planner took, not a
+    /// preference upgraded into one.
+    pub peace_offers: Vec<usize>,
     pub forces: Vec<ForceReport>,
 }
 

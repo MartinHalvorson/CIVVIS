@@ -585,6 +585,10 @@ pub struct AdvancedAi {
     last_city_count: usize,
     strategy_since: u32,
     peace_until: u32,
+    /// Rivals offered peace in the current diplomacy pass, for `plan_report`.
+    /// Recorded at the offer site because the internal rival valuation that
+    /// answers `ProposeDeal` must not gate a mirrored game's diplomacy.
+    peace_offers: BTreeSet<usize>,
     victory_planning: bool,
     victory_target: Option<VictoryTarget>,
     forced_target_player: Option<usize>,
@@ -1457,6 +1461,7 @@ impl AdvancedAi {
             last_city_count: 0,
             strategy_since: 0,
             peace_until: 0,
+            peace_offers: BTreeSet::new(),
             victory_planning,
             victory_target,
             census: StrategyCensus::default(),
@@ -6510,6 +6515,7 @@ impl AdvancedAi {
             .filter(|p| p.id != pid && p.alive && !p.is_barbarian && g.has_met(pid, p.id))
             .map(|p| p.id)
             .collect();
+        self.peace_offers.clear();
         for other in &rivals {
             let fatigued = self.major_war_since.is_some_and(|started| {
                 g.turn.saturating_sub(started) >= 24
@@ -6530,6 +6536,7 @@ impl AdvancedAi {
                         && plan.target_player != Some(*other))
                     || (fatigued && g.player_city_ids(*other).len() > 1))
             {
+                self.peace_offers.insert(*other);
                 if self.journal().wants(crate::reasoning::Level::Decision) {
                     let their_power = g.military_power(*other);
                     let because = if my_power < their_power * 0.62 {
@@ -14673,6 +14680,7 @@ impl Ai for AdvancedAi {
             threatened_city: plan.threatened_city,
             desired_cities: plan.desired_cities,
             assessed_turn: plan.assessed_turn,
+            peace_offers: self.peace_offers.iter().copied().collect(),
             forces: self
                 .force_groups
                 .iter()

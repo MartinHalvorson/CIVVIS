@@ -1848,6 +1848,10 @@ local probesOut = 0;
 -- What the last probe decision actually resolved to, for the fires-check.
 local probeDest, probeKind = nil, nil;
 local warDeclared = {};
+-- Last turn a peace deal was asked of each target, so a standing MakePeace
+-- intent does not rebuild the working deal and re-open a session every turn
+-- against a rival who just declined. See the `peace` arm of `applyOrder`.
+local peaceAsked = {};
 
 -- How many units have already been aimed at the target plot this turn, and
 -- which approach tiles are taken.
@@ -5074,6 +5078,74 @@ local function applyOrder(player, pid, row, turn)
 			emit("war", { turn = turn, target = subject, source = "civvis" });
 		end
 		return ok, ok and "declared" or "throw";
+	end
+
+	-- ★★★★★ PEACE, WHICH NO CODE COULD EVER MAKE. CIVVIS emitted MakePeace on
+	-- 93 turns of run civvis-20260801T221459Z — every turn from t118 to the end
+	-- — and there was no arm for it anywhere, so the seat begged in why.log
+	-- while the harness fought a war it had already lost. A war that cannot be
+	-- exited turns every bad matchup into a death sentence.
+	--
+	-- Two shipped shapes, copied not guessed:
+	-- - a MINOR takes the plain operation — CityStates.lua:818
+	--   (`DIPLOMACY_MAKE_PEACE` with PARAM_PLAYER_ONE/TWO);
+	-- - a MAJOR takes the deal: DiplomacyActionView.lua:434 CHOICE_MAKE_PEACE —
+	--   a locked MAKE_PEACE agreement in the outgoing working deal, validated,
+	--   then a MAKE_DEAL session. The rival answers on its own turn; acceptance
+	--   shows up as `at_war` dropping in a later export, and nothing here may
+	--   claim more than "asked".
+	--
+	-- ⚠ Re-asking every turn would rebuild the working deal and re-open a
+	-- session against a rival who just said no — and the deal screen is a known
+	-- stall shape. One ask per target per PeaceRetryTurns (default 5) turns.
+	if kind == "peace" then
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if subject < 0 then
+			emit("peace_unmapped", { turn = turn, subject = subject });
+			return false, "peace_target_unmapped";
+		end
+		if not try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "peace_not_at_war";
+		end
+		local asked = peaceAsked[subject];
+		if asked ~= nil and (turn - asked) < (cfg.PeaceRetryTurns or 5) then
+			return false, "peace_cooldown";
+		end
+		local major = try(function() return Players[subject]:IsMajor(); end, true);
+		local ok;
+		if major then
+			ok = pcall(function()
+				if not DealManager.HasPendingDeal(pid, subject) then
+					DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
+					local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
+					if deal ~= nil then
+						local item = deal:AddItemOfType(DealItemTypes.AGREEMENTS, pid);
+						if item ~= nil then
+							item:SetSubType(DealAgreementTypes.MAKE_PEACE);
+							item:SetLocked(true);
+						end
+						-- "Validate the deal, this will make sure peace is on
+						-- both sides of the deal." — the shipped comment.
+						deal:Validate();
+					end
+				end
+				DiplomacyManager.RequestSession(pid, subject, "MAKE_DEAL");
+			end);
+		else
+			ok = pcall(function()
+				local params = {};
+				params[PlayerOperations.PARAM_PLAYER_ONE] = pid;
+				params[PlayerOperations.PARAM_PLAYER_TWO] = subject;
+				UI.RequestPlayerOperation(pid, PlayerOperations.DIPLOMACY_MAKE_PEACE, params);
+			end);
+		end
+		if ok then peaceAsked[subject] = turn; end
+		emit("peace_request", {
+			turn = turn, target = subject,
+			major = major and true or false, threw = not ok,
+		});
+		return ok, ok and "peace_asked" or "throw";
 	end
 
 	-- ★★★★★ CIVVIS'S OWN POLICY, GOVERNMENT AND PANTHEON CHOICES.
