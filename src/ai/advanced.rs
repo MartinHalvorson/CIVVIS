@@ -10477,6 +10477,24 @@ impl AdvancedAi {
         } else {
             -5.0
         };
+        // The ground pays a second time once districts stand beside it:
+        // mountains are a Campus, the river a Commercial Hub, the shore a
+        // Harbor. Ask the engine's own adjacency calculator what each
+        // district family would earn at its best plot in the first two
+        // rings, price it with the same weights the tile yields above use,
+        // and half-weight it — these yields only arrive once the districts
+        // are built. The cap keeps a freak double-ridge from outbidding
+        // food. Everything inside is neighbour-local (radius ≤ 2), so the
+        // sphere's ring cache answers without a distance search.
+        let potential = g.settlement_adjacency_summary(pid, pos, 2);
+        value += ((potential.food * 2.0
+            + potential.production * 2.2
+            + potential.gold * 0.7
+            + potential.science * 1.2
+            + potential.culture * 1.2
+            + potential.faith * 0.4)
+            * 0.5)
+            .min(24.0);
         let enemy_distance = g
             .cities
             .values()
@@ -24847,6 +24865,96 @@ mod tests {
             );
         }
         println!();
+    }
+
+    #[test]
+    fn settle_value_prices_district_adjacency_geometry() {
+        // Three mountains cost the same worked yields wherever they stand.
+        // Clustered around one plot they are a +3 Campus; scattered so no
+        // plot touches two, the best Campus is +1. The settle score must
+        // prefer the cluster — that difference is the adjacency calculator
+        // speaking, not the tile mix.
+        let scorer = AdvancedAi::new();
+        let mut game = Game::new_full(2, 28, 18, 91_779, 200, 0, false);
+        let mut land: Vec<Pos> = game.map.tiles.keys().copied().collect();
+        land.sort();
+        let center = land
+            .into_iter()
+            .find(|pos| {
+                game.map.get(*pos).is_some_and(|tile| {
+                    !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                }) && game
+                    .units
+                    .values()
+                    .all(|unit| game.wdist(unit.pos, *pos) > 5)
+                    && game
+                        .wdisk(*pos, 3)
+                        .iter()
+                        .all(|ring| game.map.get(*ring).is_some())
+            })
+            .expect("map has an interior patch of open ground");
+        // Flatten out to radius 3 so the mountains' own surroundings are
+        // controlled too, and silence rivers so fresh-water and Commercial
+        // Hub terms cannot differ between the two layouts.
+        for pos in game.wdisk(center, 3) {
+            let tile = game.map.tiles.get_mut(&pos).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.river_edges = [false; 6];
+        }
+        let ring2: Vec<Pos> = game
+            .wdisk(center, 2)
+            .into_iter()
+            .filter(|pos| game.wdist(*pos, center) == 2)
+            .collect();
+        assert!(ring2.len() >= 12, "interior ring two is complete");
+
+        // Scattered: ring-two plots pairwise three apart. Two mountains a
+        // plot could see together would be at most two apart, so this
+        // guarantees no plot sees more than one.
+        let mut scattered: Vec<Pos> = Vec::new();
+        for pos in &ring2 {
+            if scattered.len() < 3
+                && scattered.iter().all(|picked| game.wdist(*picked, *pos) >= 3)
+            {
+                scattered.push(*pos);
+            }
+        }
+        assert_eq!(scattered.len(), 3, "ring two admits three mutually distant peaks");
+        for pos in &scattered {
+            game.map.tiles.get_mut(pos).unwrap().terrain = crate::name!("mountain");
+        }
+        let scattered_value = scorer.settle_value(&game, 0, center);
+        for pos in &scattered {
+            game.map.tiles.get_mut(pos).unwrap().terrain = crate::name!("plains");
+        }
+
+        // Clustered: the three ring-two neighbours of one ring-one plot.
+        let anchor = game
+            .nbrs(center)
+            .into_iter()
+            .find(|pos| game.map.get(*pos).is_some())
+            .unwrap();
+        let cluster: Vec<Pos> = game
+            .nbrs(anchor)
+            .into_iter()
+            .filter(|pos| game.wdist(*pos, center) == 2)
+            .collect();
+        assert_eq!(cluster.len(), 3, "a ring-one plot touches three ring-two plots");
+        for pos in &cluster {
+            game.map.tiles.get_mut(pos).unwrap().terrain = crate::name!("mountain");
+        }
+        let clustered_value = scorer.settle_value(&game, 0, center);
+
+        assert!(
+            clustered_value > scattered_value,
+            "clustered ridge must outscore scattered peaks: {clustered_value} vs {scattered_value}"
+        );
     }
 
     /// Census, not an assertion: is `settle_siting_census` measuring the site
