@@ -1464,6 +1464,75 @@ mod tests {
         );
     }
 
+    /// ★★★★ A trader cannot be walked in Civilization VI, and CIVVIS kept trying.
+    ///
+    /// CIVVIS's ruleset gives `trader` 2 moves; Civ 6 gives it
+    /// `AiType="UNITTYPE_TRADE"` and reports `moves: 0` on every export. Granting it
+    /// full ruleset movement made CIVVIS plan steps the host refuses every time:
+    /// measured with the `move_refused` instrument on run
+    /// `civvis-20260801T065721Z`, ONE trader produced **22 of 33** move refusals by
+    /// turn 70, shuffling between four tiles for 38 turns.
+    #[test]
+    fn a_trader_is_given_no_movement_because_civ6_gives_it_none() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 20,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Canberra".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 786439,
+            kind: "UNIT_TRADER".to_string(),
+            x: 5,
+            y: 6,
+            ..StateUnit::default()
+        });
+        state.units.push(StateUnit {
+            id: 786440,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 5,
+            ..StateUnit::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        mirror.sync(&snapshot, &state, 0);
+
+        let moves_of = |want: &str| -> Option<f64> {
+            mirror
+                .game
+                .units
+                .values()
+                .find(|u| u.kind.as_str() == want)
+                .map(|u| u.moves_left)
+        };
+        assert_eq!(
+            moves_of("trader"),
+            Some(0.0),
+            "a trader must be given no movement — Civilization VI reports moves: 0 for \
+             it on every export, and every walk CIVVIS planned for one was refused"
+        );
+        // ⚠ And nothing else is grounded by this. A warrior keeps the movement the
+        // ruleset gives it; the fix is about one unit class, not about movement.
+        assert!(
+            moves_of("warrior").is_some_and(|m| m > 0.0),
+            "every other unit keeps its ruleset movement"
+        );
+    }
+
     fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
         // ⚠ THIS FIELD EXISTED AND WAS NEVER FILLED. `religion` was null on all
         // 26,954 city records ever exported — the schema had it, the mod never sent
@@ -4078,6 +4147,30 @@ fn mirror_unit_moves(game: &crate::game::Game, uid: u32) -> f64 {
         Some(unit) => unit.kind,
         None => return 2.0,
     };
+    // ★★★★ A TRADER CANNOT BE WALKED IN CIVILIZATION VI, AND CIVVIS KEPT TRYING.
+    //
+    // CIVVIS's ruleset gives `trader` **2 moves**; Civilization VI gives it
+    // `AiType="UNITTYPE_TRADE"` and reports `moves: 0` on every export — a trade unit
+    // travels its route, it does not walk. Granting it full ruleset movement here
+    // made CIVVIS plan steps the host refuses every single time.
+    //
+    // Measured on run civvis-20260801T065721Z with the `move_refused` instrument:
+    // ONE trader, unit 786439, produced **22 of 33** move refusals by turn 70 —
+    // ordered to (9,27) seven times, (6,25) seven times, and three more
+    // destinations besides, shuffling between four tiles for 38 turns with
+    // `moves: 0` in every sighting.
+    //
+    // ⚠ This does NOT touch the ruleset. Changing `trader.moves` in data/units.json
+    // would move `Rules::source_fingerprint` and the Elo ledger would reject new
+    // games at bind time — the same wall PR #703 is held behind. This is per-game
+    // reconstruction state, so an ordinary CIVVIS game is unaffected and its traders
+    // keep the 2 moves the ruleset gives them.
+    //
+    // ⚠ And it does not silence the trader: `TradeRoute` is a separate action and
+    // stays available. What stops is the walking it was never able to do.
+    if kind == "trader" {
+        return 0.0;
+    }
     game.rules
         .units
         .get(kind.as_str())
