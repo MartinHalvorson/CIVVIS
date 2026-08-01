@@ -366,6 +366,20 @@ def game_window() -> tuple[int, int, int, int] | None:
     return (x, y, w, h) if w > 400 and h > 300 else None
 
 
+def screen_locked() -> bool:
+    """Return whether the active macOS console session is locked."""
+    try:
+        result = subprocess.run(
+            ["ioreg", "-n", "Root", "-d1"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    return 'CGSSessionScreenIsLocked"=Yes' in result.stdout
+
+
 # Which half of the screen the game gets. Set from --window-side/--window-frac
 # in main; module-level so the focus helpers do not need threading through every
 # call site.
@@ -891,6 +905,12 @@ def play(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    if screen_locked():
+        print(
+            "macOS session is locked; unlock it before launching Civilization VI",
+            file=sys.stderr,
+        )
+        return 7
     if not gamelock.acquire(args.tag, wait_s=args.lock_wait):
         foreign = gamelock.foreign_run(args.tag)
         print(f"another run holds the game: {foreign or gamelock.describe()}",

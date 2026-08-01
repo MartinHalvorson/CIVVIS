@@ -29,6 +29,36 @@ def args(**changes):
 
 
 class Civ6PlayTest(unittest.TestCase):
+    def test_screen_locked_reads_console_session_state(self) -> None:
+        with patch.object(
+            civ6_play.subprocess,
+            "run",
+            return_value=SimpleNamespace(
+                stdout='"CGSSessionScreenIsLocked"=Yes', returncode=0
+            ),
+        ):
+            self.assertTrue(civ6_play.screen_locked())
+
+        with patch.object(
+            civ6_play.subprocess,
+            "run",
+            return_value=SimpleNamespace(
+                stdout='"CGSSessionScreenIsLocked"=No', returncode=0
+            ),
+        ):
+            self.assertFalse(civ6_play.screen_locked())
+
+    def test_play_refuses_to_launch_while_console_is_locked(self) -> None:
+        with patch.object(civ6_play.vision, "available", return_value=True), \
+             patch.object(civ6_play, "screen_locked", return_value=True), \
+             patch.object(civ6_play.gamelock, "acquire") as acquire, \
+             patch.object(civ6_play, "_play") as run:
+            result = civ6_play.play(args())
+
+        self.assertEqual(result, 7)
+        acquire.assert_not_called()
+        run.assert_not_called()
+
     def test_civvis_decision_mode_always_enables_state_export(self) -> None:
         self.assertTrue(civ6_play.state_export_enabled(
             SimpleNamespace(export_state=False, civvis_decides=True)
