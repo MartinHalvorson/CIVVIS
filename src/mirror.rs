@@ -170,6 +170,14 @@ pub struct Plot {
     /// lives on the neighbour's flags, so `rv` is 0 while the plot is riverside.
     #[serde(default)]
     pub ri: bool,
+    /// Continent type name, e.g. `CONTINENT_AFRICA`. Absent on water and on any
+    /// plot whose continent does not resolve.
+    #[serde(default)]
+    pub ct: Option<String>,
+    /// Gathering Storm coastal-lowland band (1–3 metres); -1 or 0 for ground that
+    /// sea-level rise cannot reach.
+    #[serde(default = "minus_one")]
+    pub cl: i32,
 }
 
 fn minus_one() -> i32 {
@@ -295,6 +303,8 @@ mod tests {
             fw: false,
             rv: 0,
             ri: false,
+            ct: None,
+            cl: -1,
         }
     }
 
@@ -603,6 +613,68 @@ mod tests {
         );
     }
 
+    /// ★★★★ Landmass identity comes from the export, and invented cliffs come off.
+    ///
+    /// Same defect as the rivers above, two fields over. On the live board 200 of 776
+    /// tiles carried a continent and 576 carried none — the generated world's regions
+    /// showing through on a map where every land plot really has one.
+    #[test]
+    fn the_landmass_is_civ6s_and_the_generated_cliffs_are_gone() {
+        let mut home = plot(5, 5, "TERRAIN_GRASS");
+        home.ct = Some("CONTINENT_AFRICA".to_string());
+        home.cl = 2;
+        let mut away = plot(9, 9, "TERRAIN_GRASS");
+        away.ct = Some("CONTINENT_ASIA".to_string());
+        let mut beside = plot(5, 6, "TERRAIN_GRASS");
+        beside.ct = Some("CONTINENT_AFRICA".to_string());
+        // Water: Civilization VI gives it no continent, so neither may CIVVIS.
+        let sea = plot(6, 5, "TERRAIN_OCEAN");
+
+        let chunks = vec![TilesChunk {
+            turn: 12,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![home, away, beside, sea],
+        }];
+        let snapshot = Snapshot::from_chunks(&chunks);
+        let game = rebuild_game(&snapshot, 4, 7);
+
+        let at = |x, y| game.map.get(crate::hex::offset_to_axial(x, y)).unwrap();
+        assert_eq!(
+            at(5, 5).continent,
+            at(5, 6).continent,
+            "two plots Civilization VI puts on one continent must agree"
+        );
+        assert_ne!(
+            at(5, 5).continent,
+            at(9, 9).continent,
+            "and two it separates must not — 'another continent' is a rule"
+        );
+        assert_eq!(
+            at(6, 5).continent,
+            None,
+            "water carries no continent, and must LOSE the generated one rather than \
+             keep it"
+        );
+        assert_eq!(at(5, 5).coastal_lowland, 2, "the flood band crosses");
+
+        // ⚠ The assertion that fails without the clear: 66 invented cliffs on the live
+        // board, each able to block embarkation at a shore the real game lets a unit
+        // leave from.
+        let cliffs = game
+            .map
+            .tiles
+            .values()
+            .filter(|tile| tile.cliff_edges.iter().any(|edge| *edge))
+            .count();
+        assert_eq!(
+            cliffs, 0,
+            "Civilization VI exposes no cliff accessor, so a cliff on this board can \
+             only have been invented by the map generator"
+        );
+    }
+
     #[test]
     fn civ6_encodes_hills_in_the_terrain_and_civvis_does_not() {
         let vocab = Vocabulary::embedded();
@@ -749,6 +821,8 @@ mod tests {
                 fw: true,
                 rv: 0,
                 ri: false,
+                ct: None,
+                cl: -1,
             }],
         }];
         let snapshot = Snapshot::from_chunks(&chunks);
@@ -861,6 +935,8 @@ mod tests {
                         fw: false,
                         rv: 0,
                         ri: false,
+                        ct: None,
+                        cl: -1,
                     })
                 })
                 .collect(),
@@ -1049,6 +1125,7 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
     // Rivers before the memory below, so what the seat remembers is the mirrored
     // network and not the generated one.
     apply_rivers(game, snapshot);
+    apply_landmass(game, snapshot);
     // Called from here, and never separately, because a map and an explored set that
     // disagree is the defect this pair repairs — see `apply_explored`.
     apply_explored(game, snapshot);
@@ -1172,6 +1249,91 @@ pub(crate) fn apply_rivers(game: &mut crate::game::Game, snapshot: &Snapshot) {
             let neighbour = (pos.0 + delta.0, pos.1 + delta.1);
             game.map.set_river_edge(pos, neighbour, true);
         }
+    }
+}
+
+/// Which landmass each plot belongs to, how low it lies — and no invented cliffs.
+///
+/// The third sweep of the same defect as [`apply_rivers`]: a field `apply_terrain` does
+/// not write keeps whatever the map `Game::new` generated put there. Measured on the
+/// live run `civvis-20260731T235836Z` at turn 207, against a board of 776 tiles:
+///
+/// | field | populated | by |
+/// |---|---|---|
+/// | `continent` | 200 | the generator |
+/// | `cliff_edges` | 66 | the generator |
+/// | `coastal_lowland` | 24 | the generator |
+///
+/// ⚠ `continent` was not merely wrong, it was **incoherent**: 200 tiles carried a
+/// region and 576 carried none, on a board where every land plot has a continent in the
+/// real game. "Another continent" is load-bearing in this ruleset, so a seat that
+/// cannot tell one landmass from another cannot reason about overseas settling or
+/// invasion at all.
+///
+/// ## Continent indices are assigned, not translated
+///
+/// `Tile::continent` is a zero-based region id whose only job is to say *same landmass
+/// or not*. Civilization VI names them (`CONTINENT_AFRICA`), so the names present in
+/// the snapshot are sorted and numbered. Sorting rather than first-seen order keeps the
+/// assignment a pure function of the snapshot, so two syncs over the same revealed set
+/// agree. ⚠ A newly revealed continent can therefore renumber the others — that is
+/// safe here because every consumer compares ids **within one reconstruction**, and the
+/// whole map is rebuilt from the snapshot on each sync anyway.
+///
+/// ## Cliffs are cleared, because they cannot be mirrored
+///
+/// ⚠ **There is no gameplay Lua accessor for cliffs.** `IsCliff` exists in this
+/// install only inside art definitions (`<m_ParamName text="IsCliff"/>`), never as a
+/// plot method, so unlike rivers there is nothing to export.
+///
+/// That leaves a choice between two fictions, and it is the same one `apply_terrain`
+/// faced over unseen ground: **the expensive fiction is the one that stops movement.**
+/// `Game::crosses_cliff` fires only on a land/water boundary and
+/// `unit_can_cross_cliff` gates movement on it, so an invented cliff **blocks
+/// embarkation** at a shoreline the real game lets a unit leave from. That is the
+/// precise shape of a failure already on the books — a seat whose world ends at the
+/// water, with `met` stuck at zero. A missing cliff, by contrast, only means CIVVIS may
+/// plan a crossing Civilization VI refuses, and the mod honours refusal, so it costs a
+/// turn rather than a permanently walled-in empire.
+///
+/// So they are cleared, and this comment is the record that it is a known gap rather
+/// than an oversight. If a cliff accessor ever appears, mirror them the way rivers are
+/// mirrored and delete this paragraph.
+pub(crate) fn apply_landmass(game: &mut crate::game::Game, snapshot: &Snapshot) {
+    // Sorted so the numbering is a function of the snapshot and nothing else.
+    let mut names: Vec<&str> = snapshot
+        .revealed_positions()
+        .filter_map(|pos| snapshot.plot(pos)?.ct.as_deref())
+        .collect();
+    names.sort_unstable();
+    names.dedup();
+    let index_of: BTreeMap<&str, usize> = names
+        .iter()
+        .enumerate()
+        .map(|(index, name)| (*name, index))
+        .collect();
+
+    for (x, y) in snapshot.revealed_positions() {
+        let Some(plot) = snapshot.plot((x, y)) else {
+            continue;
+        };
+        let pos = crate::hex::offset_to_axial(x, y);
+        let Some(tile) = game.map.tiles.get_mut(&pos) else {
+            continue;
+        };
+        // ⚠ Assigned unconditionally, including the `None` case. A plot the export says
+        // has no continent must LOSE the generated one rather than keep it, which is
+        // the whole defect.
+        tile.continent = plot
+            .ct
+            .as_deref()
+            .and_then(|name| index_of.get(name).copied());
+        tile.coastal_lowland = plot.cl.clamp(0, 3) as u8;
+    }
+
+    // Nothing can mirror these, so nothing may keep them. See above.
+    for tile in game.map.tiles.values_mut() {
+        tile.cliff_edges = [false; 6];
     }
 }
 
