@@ -503,6 +503,17 @@ local function unitBaseType(name)
 	return try(function() return replaces.ReplacesUnitType; end);
 end
 
+-- A STANDALONE unique has no UnitReplaces row at all — Malón Raider, Varu,
+-- Nihang — so `base` comes back nil and the mirror used to drop the unit
+-- entirely. Its PromotionClass is still in the shipped database, and class is
+-- enough for the mirror to land it as something true rather than nothing.
+local function unitClass(name)
+	if name == nil or name == "" then return nil; end
+	local row = try(function() return GameInfo.Units[name]; end);
+	if row == nil then return nil; end
+	return try(function() return row.PromotionClass; end);
+end
+
 
 -- ⚠⚠ THE pcall GOES INSIDE THE LOOP.
 --
@@ -2581,7 +2592,28 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- to escort them or to stop parking half the army on approach tiles (`surround`
 	-- 47 against `advance` 46 at the same turn) — neither is attempted here, because
 	-- one change at a time is the rule while pairing is unavailable.
-	if warTarget ~= nil and (counts.siege or 0) < (cfg.SiegeUnits or 4) then
+	-- ★★★★★ AND NOT WHILE BEING OVERRUN. A ram BREAKS a city; it cannot hold one.
+	--
+	-- FIFTH instance of this file's recurring class, after `ArmyCap`, the production
+	-- floor, `MaxProductionPasses` and `expand`: a gate that is right when attacking
+	-- and wrong in the one state that ends runs.
+	--
+	-- `UNIT_BATTERING_RAM` is a SUPPORT unit with no combat strength of its own — it
+	-- only boosts an adjacent melee unit attacking a wall. Measured on live run
+	-- `civvis-20260801T175955Z` (Egypt), builds from turn 60 while losing three of
+	-- four cities:
+	--
+	--     siege 23    improve 11    ranged 7    army 7    civvis 4
+	--
+	-- **43% of wartime production**, and at the end ZERO rams were alive: all 23 were
+	-- built, sent at the enemy and destroyed, while the empire went from four cities
+	-- to one. The cap works (`counts.siege < SiegeUnits`); it just refills a hole.
+	--
+	-- The gate asked only whether a war TARGET exists, never whether WE are the ones
+	-- under siege. Rams belong in an offensive, and an offensive is not what a seat
+	-- losing its cities is conducting.
+	if warTarget ~= nil and not losingWar
+			and (counts.siege or 0) < (cfg.SiegeUnits or 4) then
 		ladder[#ladder + 1] = { "UNIT_BATTERING_RAM", "siege" };
 	end
 	-- ★★ A PURE MELEE ARMY CANNOT REDUCE A CITY, only walk into one.
@@ -4109,6 +4141,8 @@ local function exportState(player, pid, turn)
 			kind = name,
 			-- See `unitBaseType`: what this replaces, when it is a civ unique.
 			base = unitBaseType(name),
+			-- See `unitClass`: the fallback for a unique that replaces nothing.
+			class = unitClass(name),
 			x = try(function() return unit:GetX(); end, -1),
 			y = try(function() return unit:GetY(); end, -1),
 			hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
@@ -4212,6 +4246,7 @@ local function exportState(player, pid, turn)
 							theirUnits[#theirUnits + 1] = {
 								x = ux, y = uy, kind = name,
 								base = unitBaseType(name),
+								class = unitClass(name),
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								combat = row ~= nil and (row.Combat or 0) or 0,
 								ranged = row ~= nil and (row.RangedCombat or 0) or 0,

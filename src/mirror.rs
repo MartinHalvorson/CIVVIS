@@ -1619,6 +1619,67 @@ mod tests {
         assert!(nonsense.game.units.is_empty(), "an unknown base must not be guessed at");
     }
 
+    /// ★★★★★ A STANDALONE unique — no `UnitReplaces` row — must land by its class.
+    ///
+    /// Run `civvis-20260801T175955Z` was lost with two `UNIT_MAPUCHE_MALON_RAIDER`
+    /// two tiles from the final city, dropped as untranslatable: the conquering
+    /// army was not on CIVVIS's board at all. `base` cannot save it (there is no
+    /// base); `class` must.
+    #[test]
+    fn a_standalone_unique_lands_by_its_promotion_class() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12, width: 8, height: 8, chunk: 1,
+            plots: vec![plot(2, 2, "TERRAIN_GRASS"), plot(4, 4, "TERRAIN_GRASS")],
+        }]);
+        let build = |kind: &str, class: Option<&str>| {
+            let mut state = StateSnapshot { turn: 12, ..StateSnapshot::default() };
+            state.units.push(StateUnit {
+                id: 9,
+                kind: kind.to_string(),
+                class: class.map(|c| c.to_string()),
+                x: 2, y: 2, hp: 100.0, ..StateUnit::default()
+            });
+            rebuild_from_state(&snapshot, &state, 4, 1, 500, 0)
+        };
+
+        // ⚠ Precondition: with neither base nor class the unit must genuinely drop,
+        // or the fallback under test is not what put it on the board.
+        let bare = build("UNIT_MAPUCHE_MALON_RAIDER", None);
+        assert!(
+            bare.game.units.is_empty(),
+            "the fixture must be a unit CIVVIS cannot name, or the fallback is untested"
+        );
+
+        let classed = build("UNIT_MAPUCHE_MALON_RAIDER", Some("PROMOTION_CLASS_LIGHT_CAVALRY"));
+        let unit = classed.game.units.values().next()
+            .expect("a standalone unique with a known class must reach the board");
+        assert_eq!(unit.kind.as_str(), "horseman", "it lands as the class representative");
+        assert!(
+            classed.dropped_units.iter()
+                .any(|d| d.contains("approximated_as_horseman_from_light_cavalry")),
+            "the approximation must be reported, not silent: {:?}", classed.dropped_units
+        );
+
+        // A class CIVVIS has no representative for must still not invent a unit.
+        let nonsense = build("UNIT_MAPUCHE_MALON_RAIDER", Some("PROMOTION_CLASS_NOT_REAL"));
+        assert!(nonsense.game.units.is_empty(), "an unknown class must not be guessed at");
+
+        // ⚠ And a REPLACING unique keeps preferring its base: class must only be
+        // the rung below `base`, or a Longship would land as a generic hull even
+        // when the ruleset models what it replaces.
+        let mut state = StateSnapshot { turn: 12, ..StateSnapshot::default() };
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_NORWEGIAN_LONGSHIP".to_string(),
+            base: Some("UNIT_GALLEY".to_string()),
+            class: Some("PROMOTION_CLASS_NAVAL_MELEE".to_string()),
+            x: 2, y: 2, hp: 100.0, ..StateUnit::default()
+        });
+        let both = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        let unit = both.game.units.values().next().expect("the base rung must still fire");
+        assert_eq!(unit.kind.as_str(), "galley", "base outranks class");
+    }
+
     /// ★★★★★ The game speed Civilization VI is running must reach the board.
     ///
     /// The ladder plays `GAMESPEED_ONLINE`, whose costs are HALF of Standard, and a
@@ -2993,6 +3054,11 @@ pub struct StateUnit {
     /// `UnitReplaces.ReplacesUnitType`. See the fallback in `plant_unit`.
     #[serde(default)]
     pub base: Option<String>,
+    /// The unit's `PromotionClass` — the last honest rung for a STANDALONE
+    /// unique that replaces nothing (Malón Raider, Varu, Nihang), whose `base`
+    /// is therefore absent. See [`class_representative`].
+    #[serde(default)]
+    pub class: Option<String>,
     pub x: i32,
     pub y: i32,
     #[serde(default)]
@@ -3498,6 +3564,42 @@ fn civvis_unit_name(civ6: &str) -> String {
         "horse_archer" => "saka_horse_archer".to_string(),
         _ => base,
     }
+}
+
+/// The CIVVIS unit that stands in for a Civilization VI promotion class, for a
+/// unique whose own name is unmodelled and that REPLACES nothing — `UnitReplaces`
+/// has no row for a Malón Raider, a Varu or a Nihang, so the `base` fallback one
+/// rung up never fires for them.
+///
+/// Run `civvis-20260801T175955Z` was LOST at turn 140 with two
+/// `UNIT_MAPUCHE_MALON_RAIDER` sitting two tiles from the final city, dropped as
+/// untranslatable — the army that took the empire was invisible on the board.
+/// An approximation understates a unique's strength and says so in
+/// `dropped_units`; absence said nothing at all.
+///
+/// Candidates are ordered and the first one the LOADED ruleset has wins, so a
+/// trimmed ruleset cannot make this invent a unit kind it does not model.
+fn class_representative(class: &str, rules: &crate::rules::Rules) -> Option<&'static str> {
+    let candidates: &[&str] = match class {
+        "PROMOTION_CLASS_MELEE" => &["swordsman", "warrior"],
+        "PROMOTION_CLASS_ANTI_CAVALRY" => &["spearman", "pikeman"],
+        "PROMOTION_CLASS_LIGHT_CAVALRY" => &["horseman", "courser", "cavalry"],
+        "PROMOTION_CLASS_HEAVY_CAVALRY" => &["knight", "heavy_chariot", "cuirassier"],
+        "PROMOTION_CLASS_RANGED" => &["archer", "crossbowman", "slinger"],
+        "PROMOTION_CLASS_SIEGE" => &["catapult", "trebuchet", "bombard"],
+        "PROMOTION_CLASS_RECON" => &["scout", "skirmisher", "ranger"],
+        "PROMOTION_CLASS_SKIRMISHER" => &["skirmisher", "ranger", "scout"],
+        "PROMOTION_CLASS_NAVAL_MELEE" => &["galley", "caravel", "ironclad"],
+        "PROMOTION_CLASS_NAVAL_RANGED" => &["quadrireme", "frigate"],
+        "PROMOTION_CLASS_NAVAL_RAIDER" => &["privateer", "submarine"],
+        "PROMOTION_CLASS_NAVAL_CARRIER" => &["aircraft_carrier"],
+        "PROMOTION_CLASS_MONK" => &["warrior_monk"],
+        "PROMOTION_CLASS_AIR_FIGHTER" => &["fighter", "biplane"],
+        "PROMOTION_CLASS_AIR_BOMBER" => &["bomber"],
+        "PROMOTION_CLASS_SUPPORT" => &["battering_ram", "siege_tower", "medic"],
+        _ => &[],
+    };
+    candidates.iter().copied().find(|c| rules.units.contains_key(*c))
 }
 
 /// A Civilization VI unit name with its owner qualifier removed, when that is what
@@ -4518,6 +4620,24 @@ pub fn rebuild_from_state(
                         "{}@{},{}:approximated_as_{from_base}", u.kind, u.x, u.y
                     ));
                     name = from_base;
+                }
+            }
+            // A STANDALONE unique replaces nothing, so `base` never fires for it.
+            // Its promotion class is the last honest rung before the board loses
+            // the unit: a Malón Raider lands as a horseman, visibly approximated,
+            // instead of leaving an invisible army at the gates.
+            if !game.rules.units.contains_key(&name) {
+                if let Some(class) = u.class.as_ref().filter(|c| !c.is_empty()) {
+                    if let Some(rep) = class_representative(class, &game.rules) {
+                        let label = class
+                            .strip_prefix("PROMOTION_CLASS_")
+                            .unwrap_or(class)
+                            .to_ascii_lowercase();
+                        dropped.push(format!(
+                            "{}@{},{}:approximated_as_{rep}_from_{label}", u.kind, u.x, u.y
+                        ));
+                        name = rep.to_string();
+                    }
                 }
             }
         }
