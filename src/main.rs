@@ -598,15 +598,29 @@ fn standings(g: &Game) {
     }
 }
 
-/// Available simulation workers. Batch commands assign whole games to them;
-/// `simulate` assigns independent tactical branches within its one game.
-/// Defaults to one per core, while `--jobs 1` is the equivalence baseline.
+/// Available batch workers default to one per core. An explicit `--jobs`
+/// always wins, while a single simulation has its own bounded default below.
 fn jobs_arg(args: &[String]) -> usize {
     let requested = arg(args, "--jobs", 0);
     if requested > 0 {
         requested as usize
     } else {
         civvis::parallel::default_jobs()
+    }
+}
+
+/// Independent frontiers inside one simulation share cloned worlds, so their
+/// useful parallelism reaches its measured knee before every host core. Keep
+/// an explicit `--jobs` authoritative and leave outer multi-game workloads on
+/// [`jobs_arg`]'s one-core-per-job default.
+const SINGLE_SIMULATION_DEFAULT_MAX_JOBS: usize = 4;
+
+fn single_simulation_jobs_arg(args: &[String]) -> usize {
+    let requested = arg(args, "--jobs", 0);
+    if requested > 0 {
+        requested as usize
+    } else {
+        civvis::parallel::default_jobs().min(SINGLE_SIMULATION_DEFAULT_MAX_JOBS)
     }
 }
 
@@ -637,7 +651,7 @@ fn main() {
     match cmd {
         "simulate" => {
             let players = arg(&args, "--players", 4);
-            let jobs = jobs_arg(&args);
+            let jobs = single_simulation_jobs_arg(&args);
             let g0 = Instant::now();
             let mut g = Game::new_with(game_options(
                 &args,
@@ -1686,8 +1700,9 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        parse_tournament_entrants, strict_f64_arg, strict_i64_arg,
-        ADVANCED_V1_SOURCE_CONTRACT_FNV, DEFAULT_TOURNAMENT_ENTRANTS,
+        jobs_arg, parse_tournament_entrants, single_simulation_jobs_arg, strict_f64_arg,
+        strict_i64_arg, ADVANCED_V1_SOURCE_CONTRACT_FNV, DEFAULT_TOURNAMENT_ENTRANTS,
+        SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
     use civvis::game::{Action, Game};
 
@@ -1709,6 +1724,21 @@ mod tests {
         let default = parse_tournament_entrants(DEFAULT_TOURNAMENT_ENTRANTS).unwrap();
         assert_eq!(default[0].identity, "advanced-20260801-policy-envoy");
         assert_eq!(default[0].controller, "advanced");
+    }
+
+    #[test]
+    fn implicit_single_simulation_workers_are_bounded_without_changing_batches() {
+        let implicit = Vec::new();
+        let host_default = civvis::parallel::default_jobs();
+        assert_eq!(jobs_arg(&implicit), host_default);
+        assert_eq!(
+            single_simulation_jobs_arg(&implicit),
+            host_default.min(SINGLE_SIMULATION_DEFAULT_MAX_JOBS)
+        );
+
+        let explicit = vec!["simulate".to_string(), "--jobs".to_string(), "9".to_string()];
+        assert_eq!(jobs_arg(&explicit), 9);
+        assert_eq!(single_simulation_jobs_arg(&explicit), 9);
     }
 
     #[test]

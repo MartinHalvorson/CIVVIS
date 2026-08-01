@@ -114,6 +114,31 @@ Every normalized report had the same SHA-256 hash for its seed. A fixed
 because the limit is already met. The evidence is specific to this clone-heavy
 frontier; it does not change the global worker default.
 
+### Single-simulation worker default (2026-08-01)
+
+The remaining global choice is different from a batch default. `simulate`
+uses one persistent pool for clone-heavy inner frontiers, whereas `soak`,
+evaluation, and other batch commands assign whole independent games to their
+workers. On this 18-core host, an omitted `simulate --jobs` therefore now uses
+`min(available_parallelism, 4)`; an explicit `--jobs` remains authoritative
+and all batch defaults remain one worker per available core.
+
+Four fixed six-player, 74-by-46, nine-city-state, 150-turn online games
+(seeds 7,311,030 through 7,311,033) compared four workers with the old
+18-worker implicit setting. Run order alternated by seed. As with the other
+single-host measurements, this supports the selected default here rather than
+a universal hardware claim.
+
+| `simulate` workers | Four-game total | Change |
+| --- | ---: | ---: |
+| 18 (former implicit setting) | 19.030s | baseline |
+| 4 (new implicit maximum) | 18.649s | -2.0% |
+
+Every normalized report had the same SHA-256 hash across worker counts. The
+full observed curve also rose from 4 to 6, 8, 12, and 18 workers on the first
+two seeds, while explicit user choices remain available for hosts or workloads
+with a different knee.
+
 ## Production-catalog follow-up
 
 The production catalog was the narrow first experiment from the profile. Its
