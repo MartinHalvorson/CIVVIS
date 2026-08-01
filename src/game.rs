@@ -6318,6 +6318,65 @@ mod governor_runtime_tests {
     }
 
     #[test]
+    fn samarkand_trading_dome_matches_firaxis_placement_yields_and_routes() {
+        let mut game = Game::new_full(3, 24, 16, 91_980, 200, 0, false);
+        let origin = found_capital(&mut game, 0);
+        let _destination = found_capital(&mut game, 1);
+        let centre = game.cities[&origin].pos;
+        let dome = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(dome).into_iter().collect();
+        for position in std::iter::once(dome).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(origin);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&origin].owned_tiles.contains(&position) {
+                game.cities.get_mut(&origin).unwrap().owned_tiles.push(position);
+            }
+        }
+        let luxury = neighbors.iter().copied().find(|pos| *pos != centre).unwrap();
+        let adjacent_dome = neighbors
+            .iter()
+            .copied()
+            .find(|pos| *pos != centre && *pos != luxury)
+            .unwrap();
+        game.map.tiles.get_mut(&luxury).unwrap().resource = Some(crate::name!("silk"));
+
+        game.players[2].is_minor = true;
+        game.players[2].civ = "Samarkand".to_string();
+        assert!(!game
+            .valid_improvements(0, dome)
+            .contains(&crate::name!("trading_dome")));
+        game.players[0].envoys.push((2, 3));
+        assert!(game
+            .valid_improvements(0, dome)
+            .contains(&crate::name!("trading_dome")));
+        game.map.tiles.get_mut(&dome).unwrap().hills = true;
+        assert!(game
+            .valid_improvements(0, dome)
+            .contains(&crate::name!("trading_dome")));
+        game.map.tiles.get_mut(&dome).unwrap().hills = false;
+
+        let bare = game.player_tile_yields(0, dome, &game.map.tiles[&dome]);
+        game.map.tiles.get_mut(&dome).unwrap().improvement =
+            Some(crate::name!("trading_dome"));
+        let improved = game.player_tile_yields(0, dome, &game.map.tiles[&dome]);
+        assert_eq!(improved.gold - bare.gold, 3.0);
+        assert_eq!(game.trading_dome_origin_route_gold(origin), 1.0);
+        assert!(!game
+            .valid_improvements(0, adjacent_dome)
+            .contains(&crate::name!("trading_dome")));
+        game.map.tiles.get_mut(&dome).unwrap().pillaged = true;
+        assert_eq!(game.trading_dome_origin_route_gold(origin), 0.0);
+    }
+
+    #[test]
     fn granada_alcazar_matches_firaxis_placement_yields_tourism_and_defense() {
         let mut game = Game::new_full(2, 24, 16, 91_978, 200, 0, false);
         let city = found_capital(&mut game, 0);
@@ -20506,6 +20565,24 @@ impl Game {
         yields
     }
 
+    /// Samarkand: each unpillaged Trading Dome in the origin city adds one
+    /// Gold to that city's outgoing international routes.
+    fn trading_dome_origin_route_gold(&self, origin: u32) -> f64 {
+        let city = &self.cities[&origin];
+        city.owned_tiles
+            .iter()
+            .filter(|position| {
+                let tile = &self.map.tiles[position];
+                tile.improvement.as_deref() == Some("trading_dome") && !tile.pillaged
+            })
+            .count() as f64
+            * self.rules.improvements["trading_dome"]
+                .effects
+                .get("international_trade_gold_at_origin")
+                .copied()
+                .unwrap_or(0.0)
+    }
+
     /// Improved strategic-resource copies controlled by one city. Great
     /// Person trade effects count copies at the destination, not empire-wide
     /// access or resources imported through diplomacy.
@@ -32948,6 +33025,23 @@ impl Game {
                         .unwrap_or(0.0);
                 }
             }
+            Some("trading_dome") => {
+                let adjacent_luxuries = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].resource.as_ref().is_some_and(|resource| {
+                            self.rules.resources[resource].class == "luxury"
+                        })
+                    })
+                    .count() as f64;
+                yields.gold += adjacent_luxuries
+                    * self.rules.improvements["trading_dome"]
+                        .effects
+                        .get("adjacent_luxury_gold")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
             Some("batey") => {
                 let effects = &self.rules.improvements["batey"].effects;
                 let late = self.players[pid]
@@ -33723,6 +33817,7 @@ impl Game {
                     rys.gold += self.policy_effect(city.owner, "domestic_trade_gold");
                 }
                 if !domestic {
+                    rys.gold += self.trading_dome_origin_route_gold(cid);
                     // E-Commerce pays only on international routes.
                     rys.gold += self.policy_effect(city.owner, "international_trade_gold");
                     rys.production +=

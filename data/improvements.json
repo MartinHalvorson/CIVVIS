@@ -107,6 +107,26 @@
    "adjacent_entertainment_complex_culture_after_exploration": 2
   }
  },
+ "trading_dome": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
+  "unique_to": "Samarkand",
+  "same_adjacent_valid": false,
+  "yields": {
+   "gold": 2
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "effects": {
+   "adjacent_luxury_gold": 1,
+   "international_trade_gold_at_origin": 1
+  }
+ },
  "mound": {
   "plunder_type": "heal",
   "plunder_amount": 50,
