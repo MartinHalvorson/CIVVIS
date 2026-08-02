@@ -492,6 +492,75 @@ fn release_foreign_production(
     released
 }
 
+/// Keep enough live defenders committed to a nearby barbarian until Firaxis
+/// confirms that it died.
+///
+/// The order bridge sends one command per unit from a single exported frame,
+/// while CIVVIS normally applies combat serially to an exact native board. In
+/// the live game those are not equivalent: CIVVIS can predict that a Slinger
+/// and Warrior kill a damaged raider, remove it from the throwaway board, and
+/// send an adjacent Spearman away. If Firaxis's terrain/modifier calculation
+/// leaves the raider alive, the unused Spearman cannot be recalled and the
+/// raider gets a free turn.
+///
+/// When at least two units can attack it now, plan a visible barbarian inside
+/// the home-defense ring at full durability. A lone defender therefore keeps
+/// exact-HP kill judgment. This changes only the disposable planning clone;
+/// the authoritative mirror keeps the exported HP, and the next frame removes
+/// the reserve as soon as Firaxis reports the target gone. Rival wars keep
+/// their ordinary exact-HP planning because this repair is for the permanently
+/// hostile barbarian seat, not a blanket license to overcommit every campaign.
+fn reserve_live_barbarian_defenders(planned_game: &mut civvis::game::Game, pid: usize) -> usize {
+    let Some(barbarian) = planned_game.barb_pid else {
+        return 0;
+    };
+    let cities = planned_game
+        .player_city_ids(pid)
+        .into_iter()
+        .filter_map(|cid| planned_game.cities.get(&cid).map(|city| city.pos))
+        .collect::<Vec<_>>();
+    let targets = planned_game
+        .units
+        .values()
+        .filter(|unit| {
+            if unit.owner != barbarian
+                || planned_game.rules.units[unit.kind].class != "military"
+                || !cities
+                    .iter()
+                    .any(|city| planned_game.wdist(*city, unit.pos) <= 6)
+                || unit.hp >= 100
+            {
+                return false;
+            }
+            let direct_attackers = planned_game
+                .units
+                .values()
+                .filter(|friendly| {
+                    if friendly.owner != pid
+                        || friendly.moves_left <= 0.0
+                        || friendly.attacks_left <= 0
+                    {
+                        return false;
+                    }
+                    let spec = &planned_game.rules.units[friendly.kind];
+                    let distance = planned_game.wdist(friendly.pos, unit.pos);
+                    spec.class == "military"
+                        && ((spec.has_ranged_attack()
+                            && distance <= planned_game.unit_attack_range(friendly.id))
+                            || (spec.is_melee_capable() && distance == 1))
+                })
+                .take(2)
+                .count();
+            direct_attackers >= 2
+        })
+        .map(|unit| unit.id)
+        .collect::<Vec<_>>();
+    for target in &targets {
+        planned_game.units.get_mut(target).unwrap().hp = 100;
+    }
+    targets.len()
+}
+
 fn decide(
     mirror_state: &mut civvis::mirror::LiveMirror,
     ai: &mut civvis::ai::AdvancedAi,
@@ -512,6 +581,7 @@ fn decide(
     // board shown to the next decision is never a mixture of one real game and one
     // speculative CIVVIS turn.
     let mut planned_game = mirror_state.game.clone();
+    let barbarian_reserve = reserve_live_barbarian_defenders(&mut planned_game, 0);
     // Firaxis keeps a Trader visible while it is travelling an active route;
     // CIVVIS's native model consumes it into `game.routes`.  The authoritative
     // mirror carries both so the map remains faithful.  Remove only the busy
@@ -589,6 +659,9 @@ fn decide(
             mirror_state.game.active_routes(0),
             pre_traders.join("; ")
         ));
+    }
+    if barbarian_reserve > 0 {
+        note_bits.push(format!("barbarian_defense_reserve={barbarian_reserve}"));
     }
 
     for (seat, action) in planned_game.log.since(before) {
@@ -2053,6 +2126,148 @@ mod tests {
             release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
             0
         );
+    }
+
+    fn local_barbarian_defense_board() -> (Snapshot, StateSnapshot) {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| (x, y)))
+                .map(|(x, y)| {
+                    serde_json::from_value::<Plot>(serde_json::json!({
+                        "x": x, "y": y, "t": "TERRAIN_GRASS"
+                    }))
+                    .expect("a plot with serde defaults deserializes")
+                })
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 30,
+            cities: vec![StateCity {
+                id: 7,
+                name: "Rome".to_string(),
+                x: 4,
+                y: 4,
+                pop: 4,
+                ..StateCity::default()
+            }],
+            units: vec![
+                StateUnit {
+                    id: 100,
+                    kind: "UNIT_SLINGER".to_string(),
+                    x: 4,
+                    y: 5,
+                    hp: 100.0,
+                    moves: 2.0,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 101,
+                    kind: "UNIT_WARRIOR".to_string(),
+                    x: 5,
+                    y: 5,
+                    hp: 100.0,
+                    moves: 2.0,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 102,
+                    kind: "UNIT_SPEARMAN".to_string(),
+                    x: 6,
+                    y: 4,
+                    hp: 100.0,
+                    moves: 2.0,
+                    ..StateUnit::default()
+                },
+            ],
+            hostiles: vec![StateUnit {
+                kind: "UNIT_WARRIOR".to_string(),
+                x: 5,
+                y: 4,
+                hp: 64.0,
+                combat: 20.0,
+                moves: 0.0,
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        (snapshot, state)
+    }
+
+    #[test]
+    fn local_barbarian_reserve_changes_only_the_throwaway_planning_board() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let barbarian = mirror.game.barb_pid.unwrap();
+        let hostile = mirror
+            .game
+            .units
+            .values()
+            .find(|unit| unit.owner == barbarian)
+            .unwrap()
+            .id;
+        let mut planned = mirror.game.clone();
+
+        assert_eq!(reserve_live_barbarian_defenders(&mut planned, 0), 1);
+        assert_eq!(planned.units[&hostile].hp, 100);
+        assert_eq!(
+            mirror.game.units[&hostile].hp, 64,
+            "the exported board must retain Firaxis's actual damage"
+        );
+
+        let extra_defenders = planned
+            .player_unit_ids(0)
+            .into_iter()
+            .skip(1)
+            .collect::<Vec<_>>();
+        for defender in extra_defenders {
+            let unit = planned.units.get_mut(&defender).unwrap();
+            unit.moves_left = 0.0;
+            unit.attacks_left = 0;
+        }
+        planned.units.get_mut(&hostile).unwrap().hp = 64;
+        assert_eq!(reserve_live_barbarian_defenders(&mut planned, 0), 0);
+        assert_eq!(
+            planned.units[&hostile].hp, 64,
+            "a lone defender still judges the host's exact damaged target"
+        );
+    }
+
+    #[test]
+    fn adjacent_spearman_is_committed_until_firaxis_confirms_the_barbarian_died() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let mut ai = civvis::ai::AdvancedAi::new();
+        let mut ours = std::collections::BTreeMap::new();
+
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &mut ours,
+        ))
+        .unwrap();
+        let spearman = reply["orders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|order| order["kind"] == "unit" && order["subject"] == 102)
+            .expect("the adjacent Spearman receives an order");
+
+        assert_eq!(spearman["verb"], "ATTACK");
+        assert_eq!(
+            (spearman["x"].as_i64(), spearman["y"].as_i64()),
+            (Some(5), Some(4))
+        );
+        assert!(reply["note"]
+            .as_str()
+            .unwrap()
+            .contains("barbarian_defense_reserve=1"));
     }
 
     #[test]
