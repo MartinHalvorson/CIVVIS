@@ -200,7 +200,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
 /// 31337` reports. Another compatibility re-pin over the merged sources,
 /// not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdf5f_2d78_2244_bcd5;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x7f61_16b1_8354_3f9f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

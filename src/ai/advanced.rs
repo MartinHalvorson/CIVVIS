@@ -17802,7 +17802,7 @@ mod tests {
         let mut differed = 0usize;
         let mut sampled = 0usize;
 
-        for seed in 0..3u64 {
+        for seed in 0..12u64 {
             let mut game = Game::new(4, 60, 38, 42_000 + seed, 500, 6);
             let mut ais = AdvancedAi::fleet(&game);
             let mut reordered = AdvancedAi::new();
