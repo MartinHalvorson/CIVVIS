@@ -1665,6 +1665,7 @@ mod tests {
             .expect("the tile hover builder ends before its event handler");
         let hover = &INDEX[start..end];
         let ordered = [
+            "for (const unit of state.units)",
             "tileOwnershipTipLine(t)",
             "lines.push(\"Terrain: \"",
             "if (t.resource)",
@@ -1675,7 +1676,6 @@ mod tests {
             "if (t.district)",
             "if (t.wonder)",
             "const city = state.cities.find",
-            "for (const unit of state.units)",
         ];
         let mut previous = 0;
         for marker in ordered {
