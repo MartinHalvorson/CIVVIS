@@ -529,6 +529,30 @@ class SetupRowReadbackTest(unittest.TestCase):
         panel = [row for row in self._panel() if row["text"] not in headings]
         self.assertEqual(self._read("difficulty", panel)[0], "DIFFICULTY_SETTLER")
 
+    def test_a_heading_hidden_by_an_open_list_is_placed_from_the_others(self) -> None:
+        """An open dropdown covers the rows beneath it.
+
+        On the live open-list shot only `difficulty` and `speed` came back; without
+        recovery the reader falls through to the bands and reads the speed row again.
+        difficulty=205 and speed=234 give a pitch of 29, which puts map_size two rows
+        below speed at 292 -- where it measures when nothing covers it.
+        """
+        covered = {"Choose Map Type", "Choose Map Size"}
+        panel = [row for row in self._panel() if row["text"] not in covered]
+        rows = civ6_play._setup_rows(panel, self.BOUNDS, self.SCREEN)
+        self.assertEqual(rows["map_type"], 263)
+        self.assertEqual(rows["map_size"], 292)
+        self.assertEqual(self._read("map_size", panel)[0], "MAPSIZE_SMALL")
+
+    def test_one_legible_heading_is_not_enough_to_invent_a_pitch(self) -> None:
+        """Two points make a scale; one makes a guess. Keep the band instead."""
+        keep = {"Choose Game Difficulty"}
+        headings = set(civ6_play.SETUP_HEADINGS.values())
+        panel = [row for row in self._panel()
+                 if row["text"] not in headings or row["text"] in keep]
+        rows = civ6_play._setup_rows(panel, self.BOUNDS, self.SCREEN)
+        self.assertEqual(set(rows), {"difficulty"})
+
 
 if __name__ == "__main__":
     unittest.main()

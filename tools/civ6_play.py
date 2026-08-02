@@ -636,6 +636,10 @@ SETUP_HEADINGS = {
     "map_size": "Choose Map Size",
 }
 
+# Top-to-bottom order of the rows in the Create Game panel.  Used to place a heading
+# an open dropdown is covering; see `_setup_rows`.
+SETUP_ROW_ORDER = ["difficulty", "speed", "map_type", "map_size"]
+
 # Fallback only, for a panel whose headings did not survive OCR.  ⚠ These bands
 # OVERLAP each other and cannot separate the rows on their own -- that is the whole
 # reason they are no longer the primary mechanism.
@@ -668,7 +672,46 @@ def _setup_rows(observations: list[dict], bounds: tuple[int, int, int, int],
             px, py = int(point[0] * screen_w), int(point[1] * screen_h)
             if x <= px <= x + w and y <= py <= y + h:
                 rows[name] = py
-    return rows
+    return _with_covered_headings(rows)
+
+
+def _with_covered_headings(rows: dict[str, int]) -> dict[str, int]:
+    """Place the headings an open dropdown is sitting on top of.
+
+    An open list covers the rows beneath it, so a shot taken while one is down reads
+    only the headings above it -- on a live map-size list, `Choose Map Type` and
+    `Choose Map Size` both vanished and only difficulty and speed came back.  Without
+    this the reader would fall through to the overlapping bands, which is exactly the
+    mechanism that read the speed row as the map size in the first place.
+
+    The panel is a fixed, evenly spaced column, so a covered heading is not a guess:
+    fit a line through the ones that ARE legible against their row index and read off
+    the missing one.  Measured on `civvis-20260802T131519Z`, difficulty=205 and
+    speed=234 give a pitch of 29, predicting map_size (two rows below speed) at 292 --
+    which is where it actually is when nothing covers it.
+
+    Needs two legible headings to establish a pitch; with fewer, the caller keeps its
+    band fallback rather than inventing a scale from one point.
+    """
+    known = [(SETUP_ROW_ORDER.index(name), py)
+             for name, py in rows.items() if name in SETUP_ROW_ORDER]
+    if len(known) < 2 or len(known) == len(SETUP_ROW_ORDER):
+        return rows
+    known.sort()
+    first, last = known[0], known[-1]
+    span = last[0] - first[0]
+    if span <= 0:
+        return rows
+    pitch = (last[1] - first[1]) / span
+    if pitch <= 0:
+        # Rows must descend down the screen.  Anything else means these are not the
+        # panel's headings, and extrapolating from them would be worse than nothing.
+        return rows
+    filled = dict(rows)
+    for index, name in enumerate(SETUP_ROW_ORDER):
+        if name not in filled:
+            filled[name] = int(round(first[1] + (index - first[0]) * pitch))
+    return filled
 
 
 def _setup_current_value(path: Path, bounds: tuple[int, int, int, int],
