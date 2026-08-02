@@ -482,6 +482,73 @@ def won(record: dict) -> bool:
     return False
 
 
+def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
+                           frozen_s: float) -> str:
+    """Wait for the attempt, and kill it if its TURN stops advancing.
+
+    ★★★★★ AN IN-LOOP WATCHDOG CANNOT CATCH A BLOCKED HARNESS. `civ6_play` has
+    `--frozen-seconds`, which watches the turn from inside its own poll loop —
+    and on 2026-08-02 that did not save run civvis-20260802T064240Z. It wedged
+    at turn 206 on `WorldCongressBetweenTurns` and sat there for over ten
+    minutes with the flag armed: no rescue line, no `summary.json`, so `follow`
+    had never returned. Replaying that run's own `events.jsonl` shows the in-loop
+    logic would have fired, so the logic was right and simply never ran.
+
+    ⚠ THE MOD APPENDS TO `events.jsonl` FROM INSIDE THE GAME, independently of
+    whether the Python harness is executing. A file that keeps growing proves the
+    GAME is alive, not the HARNESS. If `civ6_play`'s loop is blocked — in
+    `on_event`, in `keep_foreground`, in an AppleScript that never returns — the
+    code that would fire its watchdog is not running. Only a watcher in ANOTHER
+    process can see that, and the climb is already that process.
+
+    The attempt had to be cleared by hand. `play.wait(timeout=...)` would
+    otherwise have burned its full hundred minutes.
+
+    ⚠ Deliberately MORE PATIENT than the in-loop watchdog (480s). This is the
+    last resort, it kills a run that may merely be slow, and the cheaper guard
+    gets first refusal.
+
+    ⚠ Arms only once a turn has been SEEN — setup emits none, and killing every
+    attempt before it starts is the failure mode this guard must not have.
+    """
+    events = RUN_ROOT / tag / "events.jsonl"
+    deadline = time.time() + hard_timeout_s
+    last_turn, last_turn_at, offset = None, time.time(), 0
+    while time.time() < deadline:
+        try:
+            play.wait(timeout=20.0)
+            return "exited"
+        except subprocess.TimeoutExpired:
+            pass
+        # Read only what is new. The file reaches tens of megabytes on a long
+        # run and this loop runs every twenty seconds for the whole attempt.
+        try:
+            with events.open("rb") as handle:
+                handle.seek(offset)
+                fresh = handle.read()
+                offset = handle.tell()
+        except OSError:
+            continue
+        for line in fresh.splitlines():
+            try:
+                turn = json.loads(line).get("turn")
+            except (ValueError, AttributeError):
+                continue
+            if isinstance(turn, int) and (last_turn is None or turn > last_turn):
+                last_turn, last_turn_at = turn, time.time()
+        if last_turn is not None and time.time() - last_turn_at > frozen_s:
+            print(f"[watchdog] turn {last_turn} has not advanced in "
+                  f"{frozen_s:.0f}s and the harness has not noticed; killing the "
+                  f"attempt from outside", flush=True)
+            play.send_signal(signal.SIGTERM)
+            try:
+                play.wait(timeout=60.0)
+            except subprocess.TimeoutExpired:
+                play.kill()
+            return "frozen"
+    return "timeout"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
@@ -491,6 +558,13 @@ def main() -> int:
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
     ap.add_argument("--timeout", type=float, default=5400.0)
+    # ⚠ The LAST resort, not the first. `civ6_play --frozen-seconds` (480s)
+    # watches the same thing from inside its own loop and gets first refusal;
+    # this one exists for when that loop is itself blocked and therefore cannot
+    # fire. More patient for exactly that reason.
+    ap.add_argument("--frozen-seconds", type=float, default=900.0,
+                    help="kill an attempt whose TURN has not advanced for this "
+                         "long, from outside its harness")
     # ⚠⚠ THE DEFAULT WAS `domination`, AND THE COMMENT SAYING SO WAS ALREADY HERE.
     #
     # "A ladder left on this default measures a plan that cannot complete" was
@@ -706,10 +780,11 @@ def main() -> int:
         )
 
         try:
-            play.wait(timeout=args.timeout + 600)
-        except subprocess.TimeoutExpired:
-            print("attempt exceeded its own timeout; stopping it", flush=True)
-            play.send_signal(signal.SIGTERM)
+            why = wait_watching_the_turn(play, tag, args.timeout + 600,
+                                         args.frozen_seconds)
+            if why == "timeout":
+                print("attempt exceeded its own timeout; stopping it", flush=True)
+                play.send_signal(signal.SIGTERM)
         finally:
             if brain.poll() is None:
                 brain.send_signal(signal.SIGTERM)
