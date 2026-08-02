@@ -187,7 +187,7 @@ fn median(mut values: Vec<f64>) -> f64 {
     }
     values.sort_by(|left, right| left.partial_cmp(right).unwrap_or(std::cmp::Ordering::Equal));
     let middle = values.len() / 2;
-    if values.len() % 2 == 0 {
+    if values.len().is_multiple_of(2) {
         (values[middle - 1] + values[middle]) / 2.0
     } else {
         values[middle]
@@ -340,7 +340,6 @@ fn main() {
                     .partial_cmp(&endpoint_stats[*right].full_abs)
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
-            .map(|(index, candidate)| (index, candidate))
             .expect("each military gene has at least one non-incumbent bound");
         let stats = endpoint_stats[selected.0];
         let score_rate = stats.score_changed as f64 / games as f64;

@@ -70,6 +70,9 @@ struct Entry {
     chosen_projection: i64,
 }
 
+type DedicationCatalogue = Vec<(String, i64)>;
+type PendingDedication = (usize, Entry, DedicationCatalogue);
+
 /// A seat's whole game.
 #[derive(Clone)]
 struct Seat {
@@ -107,7 +110,7 @@ fn main() {
             .map(|pid| (*pid, game.players[*pid].age.clone()))
             .collect();
         let mut last_era = game.world_era;
-        let mut pending: Vec<(usize, Entry, Vec<(String, i64)>)> = Vec::new();
+        let mut pending: Vec<PendingDedication> = Vec::new();
 
         for turn in 0..turns {
             if game.winner.is_some() {
@@ -126,11 +129,11 @@ fn main() {
                 })
                 .collect();
 
-            for pid in 0..game.players.len() {
+            for (pid, agent) in fleet.iter_mut().enumerate().take(game.players.len()) {
                 if game.winner.is_some() {
                     break;
                 }
-                fleet[pid].take_turn(&mut game, pid);
+                agent.take_turn(&mut game, pid);
                 if game.winner.is_none() && game.current == pid {
                     let _ = game.apply(pid, &Action::EndTurn);
                 }
@@ -217,7 +220,7 @@ fn main() {
             .iter()
             .map(|pid| (*pid, game.score(*pid)))
             .collect();
-        order.sort_by(|left, right| right.1.cmp(&left.1));
+        order.sort_by_key(|entry| std::cmp::Reverse(entry.1));
         let seat_count = majors.len();
         majors
             .iter()

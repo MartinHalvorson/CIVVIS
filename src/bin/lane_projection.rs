@@ -141,14 +141,14 @@ fn main() {
                 }
                 break;
             }
-            for pid in 0..game.players.len() {
+            for (pid, agent) in fleet.iter_mut().enumerate().take(game.players.len()) {
                 if game.winner.is_some() {
                     break;
                 }
                 if pid == focal {
                     probe.take_turn(&mut game, pid);
                 } else {
-                    fleet[pid].take_turn(&mut game, pid);
+                    agent.take_turn(&mut game, pid);
                 }
                 if game.winner.is_none() && game.current == pid {
                     let _ = game.apply(pid, &Action::EndTurn);
