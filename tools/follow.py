@@ -214,93 +214,42 @@ def axial_to_offset(q, r):
     return q + (r - (r & 1)) // 2, r
 
 
-def transform_river_masks(source_edges, events, top):
-    """Reflect Civ VI's three-edge river encoding with the tile coordinates.
+def remap_river_masks(events, top):
+    """Reflect every known river edge without requiring the opposite plot.
 
-    A vertical reflection maps SE/SW edges to NE/NW edges. Civ VI stores only
-    E/SE/SW on each plot, so those reflected edges usually belong to the other
-    endpoint. Leaving `rv` on the reflected source plot moved whole rivers to
-    the wrong side of their hexes while every coordinate-overlap check passed.
+    Current exports carry all six edges on every revealed plot: bits 1..32 are
+    E, SE, SW, W, NW and NE in the mirror's axial frame. Older exports carried
+    only the first three. Either vocabulary is sufficient because the Rust
+    reconstruction accepts all six bits and preserves a one-sided edge when
+    the plot across a known boundary is still hidden.
+
+    The previous north-up pass still gathered only bits 1, 2 and 4 onto their
+    canonical Firaxis holders. That silently discarded the new 8, 16 and 32
+    boundary facts, then reported visible rivers as dry whenever the hidden
+    neighbour was the only possible old-style holder. A live turn-15 audit
+    reproduced it as `river@57,23 Civ6=True CIVVIS=False` while every other
+    field agreed.
+
+    Treat a river as an undirected segment instead. Reflect both endpoints and
+    encode the reflected direction on any revealed endpoint that survives the
+    display's polar-row crop. This keeps an exact one-sided boundary edge, works
+    for old three-bit archives, deduplicates the reciprocal six-bit export, and
+    loses a segment only when neither revealed endpoint can appear on screen.
+
+    Returns the number of genuinely unrepresentable segments on the newest
+    export turn. Earlier turns are transformed identically but are not summed
+    into the live diagnostic.
     """
-    plots = {}
-    for event in events:
-        if event.get("kind") != "tiles":
-            continue
-        turn = int(event.get("turn") or 0)
-        for plot in event.get("plots") or []:
-            plot["rv"] = 0
-            plots[(turn, plot.get("x"), plot.get("y"))] = plot
-
     directions = ((1, 0), (1, -1), (0, -1),
                   (-1, 0), (-1, 1), (0, 1))
     encoded = (1, 2, 4, 8, 16, 32)
-    for turn, x, y, mask in source_edges:
-        if y > top:
-            continue
-        start = offset_to_axial(x, y)
-        for direction, bit in enumerate(encoded):
-            if not mask & bit:
-                continue
-            delta = directions[direction]
-            end = start[0] + delta[0], start[1] + delta[1]
-            end_x, end_y = axial_to_offset(*end)
-            if end_y > top:
-                continue
-
-            reflected = ((x, top - y), (end_x, top - end_y))
-            axial = tuple(offset_to_axial(*point) for point in reflected)
-            delta = axial[1][0] - axial[0][0], axial[1][1] - axial[0][1]
-            try:
-                reflected_direction = directions.index(delta)
-            except ValueError:
-                continue
-            reflected_bit = encoded[reflected_direction]
-            holder = plots.get((turn, *reflected[0]))
-            if holder is not None:
-                holder["rv"] |= reflected_bit
-
-
-def remap_river_masks(events, top):
-    """A vertical reflection must MOVE two of the three river flags between plots.
-
-    Civilization VI stores a river on three of a plot's six edges: `rv` bit 1 is
-    `IsWOfRiver` (river on the plot's EAST edge), bit 2 `IsNWOfRiver` (SOUTH-EAST
-    edge), bit 4 `IsNEOfRiver` (SOUTH-WEST edge). The reconstruction applies that
-    table to whatever coordinates it is handed. `flip_north_up` reflects the
-    plots about a row centre, and an E edge survives that on the same plot — but
-    a SE edge lands as a NE edge, and the flag vocabulary has no "river on my NE
-    edge" bit. The segment is still expressible, on the OTHER plot sharing it:
-    what was this plot's south-east segment is, after the flip, the flipped
-    SE-neighbour's south-west one.
-
-    Measured before this pass existed: 58 of 108 live river segments — every
-    diagonal one — were served on the vertically mirrored edge (run
-    civvis-20260801T184324Z, turn-80 export against /state on 8610).
-
-    Gather form, in PRE-flip coordinates (odd-r offset, y grows north, east-west
-    wrap), writing each plot's mask in place so `flip_north_up` can then move
-    the plots and the composition puts every segment back where the game put it:
-
-        new bit1(P) = old bit1(P)
-        new bit2(P) = old bit4(NE(P))    NE(x,y) = (x + (y&1),     y + 1)
-        new bit4(P) = old bit2(NW(P))    NW(x,y) = (x - 1 + (y&1), y + 1)
-
-    Returns the number of segments nothing can carry after the flip FOR THE
-    NEWEST EXPORT TURN — the board the mirror actually shows: a diagonal flag
-    whose gathering plot is not in the export (the fog frontier), or an E
-    segment lying wholly in the one polar row the reflection drops. Earlier
-    exports are remapped identically but not counted, because summing losses
-    over every historical fog frontier reads as a hole in the visible board
-    (141 "lost" on a board missing 4). Bounded, counted, and logged by the
-    caller — never silent.
-    """
     lost_by_turn = {}
     by_turn = {}
     for event in events:
         if isinstance(event, dict) and event.get("kind") == "tiles":
             by_turn.setdefault(event.get("turn"), []).append(event)
     for turn, chunks in by_turn.items():
-        lost = lost_by_turn.setdefault(turn, 0)
+        lost = 0
         width = next((c["width"] for c in chunks if isinstance(c.get("width"), int)), 0)
         if width <= 0:
             continue
@@ -313,24 +262,52 @@ def remap_river_masks(events, top):
         old = {xy: (p.get("rv") or 0) for xy, p in plots.items()}
         if not any(old.values()):
             continue
-        for (x, y), p in plots.items():
-            par = y & 1
-            ne = old.get(((x + par) % width, y + 1), 0)
-            nw = old.get(((x - 1 + par) % width, y + 1), 0)
-            new = (old[(x, y)] & 1) | (2 if ne & 4 else 0) | (4 if nw & 2 else 0)
-            if new or "rv" in p:
-                p["rv"] = new
-        for (x, y), rv in old.items():
-            par = y & 1
-            if y > top:
-                # The row the reflection drops: its E segments leave with it; its
-                # diagonal flags are gathered by the surviving row below.
-                lost += 1 if rv & 1 else 0
+        segments = {}
+        for start, mask in old.items():
+            axial = offset_to_axial(*start)
+            for direction, bit in enumerate(encoded):
+                if not mask & bit:
+                    continue
+                delta = directions[direction]
+                end = axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])
+                end = (end[0] % width, end[1])
+                key = tuple(sorted((start, end)))
+                carriers = segments.setdefault(key, [])
+                if start not in carriers:
+                    carriers.append(start)
+
+        for plot in plots.values():
+            if "rv" in plot:
+                plot["rv"] = 0
+
+        for endpoints, carriers in segments.items():
+            available = [point for point in carriers if point in plots and point[1] <= top]
+            if not available:
+                # A flag held by the cropped polar row can move to its revealed
+                # opposite endpoint as the reciprocal edge.
+                available = [
+                    point for point in endpoints
+                    if point in plots and point[1] <= top
+                ]
+            if not available:
+                lost += 1
                 continue
-            if rv & 2 and ((x + par) % width, y - 1) not in plots:
+            carrier = available[0]
+            other = endpoints[1] if endpoints[0] == carrier else endpoints[0]
+            reflected_carrier = (carrier[0], top - carrier[1])
+            reflected_other = (other[0] % width, top - other[1])
+            axial = offset_to_axial(*reflected_carrier)
+            direction = next((
+                index for index, delta in enumerate(directions)
+                if (
+                    axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])[0] % width,
+                    axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])[1],
+                ) == reflected_other
+            ), None)
+            if direction is None:
                 lost += 1
-            if rv & 4 and ((x - 1 + par) % width, y - 1) not in plots:
-                lost += 1
+                continue
+            plots[carrier]["rv"] = (plots[carrier].get("rv") or 0) | encoded[direction]
         lost_by_turn[turn] = lost
     return lost_by_turn[max(lost_by_turn)] if lost_by_turn else 0
 
