@@ -36,20 +36,29 @@ Bootstrap installs two clone-wide safeguards:
    directory, so it covers every linked worktree in that clone.
 2. A per-user background service runs `civvis_collab.py refresh --scheduled`
    every five minutes through launchd, a systemd user timer, or Windows Task
-   Scheduler. It fetches and prunes GitHub refs and writes an atomic heartbeat
-   under Git's common directory.
+   Scheduler. It fetches and prunes GitHub refs, force-updates the dedicated
+   `main` management worktree to exact `origin/main`, and writes an atomic
+   heartbeat under Git's common directory.
 
 The task launcher refreshes both safeguards automatically before its first
 push, and `audit` reports a missing service, a stale heartbeat, or a heartbeat
 that has not observed GitHub's current `main` as an error. Never use
 `git push --no-verify`.
 
-The background service is intentionally **fetch-only**. It never checks out,
-stages, commits, stashes, resets, merges, rebases, pulls, or pushes anything,
-and it never changes a worktree file. Its heartbeat records each registered
+The background service automatically keeps the stable `main` management
+worktree synchronized with GitHub. It updates a clean, behind `main` by
+fast-forward. If clean `main` has local-only or divergent commits, it first
+preserves the old commit under `refs/civvis/recovery/main/`, then resets the
+management worktree to the exact fetched `origin/main`. It refuses to overwrite
+a dirty `main` and records that refusal as a synchronization error.
+
+The service never changes an isolated task worktree, stages or commits work, or
+pushes any ref. Its heartbeat records the update receipt plus every registered
 worktree's exact head, dirty state, and ahead/behind count relative to
-`origin/main`. This makes drift visible without guessing whether unfinished
-work is safe to rewrite. Inspect it at any time with:
+`origin/main`. After each fetch the installed worker also replaces itself
+atomically from `origin/main`, so already-bootstrapped machines adopt changes to
+the synchronization policy without a manual reinstall. Inspect it at any time
+with:
 
 ```bash
 python3 tools/civvis_collab.py refresh
@@ -57,10 +66,11 @@ python3 tools/civvis_collab.py refresh --json
 ```
 
 An offline computer cannot fetch, so its heartbeat becomes stale and the next
-`start` fails closed until GitHub is reachable. A computer that is online but
-idle keeps its remote view fresh. A computer actively starting work has a
-stronger guarantee: `start` performs a synchronous fetch and creates the new
-worktree from the resulting `origin/main` SHA.
+`start` fails closed until GitHub is reachable. An online, idle computer keeps
+its canonical checkout at GitHub HEAD automatically. A computer actively
+starting work has the same guarantee synchronously: `start` fetches, updates
+the management worktree, and creates the new task worktree from that exact
+`origin/main` SHA.
 
 The guard rejects all pushes or deletions of `main`, new development branches
 that do not use the fleet naming convention, and non-fast-forward updates to a
@@ -178,9 +188,10 @@ Rules during development:
 - Do not use a periodic autosync service as a backup. It cannot tell which
   agent owns a change, whether the change is complete, or what commit message
   describes it.
-- The managed freshness timer is not an autosync backup: it only fetches refs
-  and records drift. A task branch that is behind `main` stays untouched until
-  its owner performs the normal reviewed merge from `origin/main`.
+- The managed synchronization timer is not an autosync backup: it updates only
+  the canonical `main` management worktree and records task drift. A task
+  branch that is behind `main` stays untouched until its owner performs the
+  normal reviewed merge from `origin/main`.
 - Do not rebase or force-push a published branch. Stable history lets another
   computer resume it safely and makes review comments durable.
 - Keep the PR narrow. Unrelated changes get their own branch and claim.
@@ -386,11 +397,13 @@ through a semantic conflict. Those remain explicit coordination boundaries.
 
 ## Automated services
 
-Build, test, spectator, deployment, and Git freshness processes are consumers
-of Git, not authors. The freshness process may only fetch remote-tracking refs
-and write its clone-local heartbeat. Build consumers may fetch `origin/main`
-and build it in a private detached worktree. None may stage, commit, pull,
-merge, rebase, reset, or push a development checkout.
+Build, test, spectator, deployment, and Git synchronization processes are
+consumers of Git, not authors. The synchronization process may fetch
+remote-tracking refs and update only the clean, dedicated `main` management
+worktree, preserving divergent commits under `refs/civvis/recovery/main/`
+before a forced alignment. Build consumers may fetch `origin/main` and build it
+in a private detached worktree. None may stage, commit, rebase, reset, or push a
+development checkout or task branch.
 
 The spectator supervisor already follows the right shape: it builds canonical
 `origin/main` in a private worktree and preserves active developer checkouts.

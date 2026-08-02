@@ -27,8 +27,10 @@ After cloning on every computer, bootstrap the clone once:
 python3 tools/civvis_collab.py bootstrap
 ```
 
-This installs the repository guard and a five-minute, fetch-only Git freshness
-service. The task launcher repairs both on every task. Never bypass the guard
+This installs the repository guard and a five-minute Git synchronization
+service. The service force-updates the dedicated, clean `main` management
+worktree to GitHub `origin/main` while leaving task worktrees untouched. The
+task launcher repairs both safeguards on every task. Never bypass the guard
 with `--no-verify`.
 
 Start every task with the repository launcher; it creates the isolated
@@ -74,14 +76,15 @@ python3 tools/civvis_collab.py start <task-slug> --machine <machine-id> \
 - Do not force-push. Do not rebase a branch after it has been pushed. To update
   a task branch, fetch and merge `origin/main` into it once, resolve carefully,
   rerun validation, and push normally.
-- Never run a repository-wide daemon that stages, commits, pulls, rebases,
-  merges, or pushes development work. Automated builds may fetch and use a
-  private detached worktree based on `origin/main`; they must not mutate a
-  development checkout.
-- The managed Git freshness service is deliberately fetch-only. It updates
-  remote-tracking refs and a local heartbeat, then reports stale worktrees; it
-  never updates an active branch or changes files. `start` refuses to create a
-  task unless it has fetched current `origin/main` successfully.
+- Never run a repository-wide daemon that stages, commits, rebases, or pushes
+  development work. Automated builds may fetch and use a private detached
+  worktree based on `origin/main`; they must not mutate a development checkout.
+- The managed Git synchronization service fetches GitHub and force-aligns only
+  the dedicated `main` management worktree to exact `origin/main`. It never
+  changes task branches or their files. It refuses to overwrite a dirty `main`;
+  before repairing a clean divergent `main`, it preserves the old commit under
+  `refs/civvis/recovery/main/`. `start` refuses to create a task unless this
+  synchronization has succeeded.
 - Do not perform broad formatting, generated-file rewrites, or unrelated
   cleanup in a feature PR. CIVVIS has several large conflict hotspots, notably
   `src/game.rs`, `src/ai.rs`, and `web/index.html`.
