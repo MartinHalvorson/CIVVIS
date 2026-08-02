@@ -573,6 +573,24 @@ impl EmpireCounts {
 /// hostage — the failure mode #492 was merged to remove.
 const SETTLER_STALL_LIMIT: u32 = 3;
 
+/// Route-scoring is exact for the valuable prefix, then falls back to the
+/// existing reachability scan if that prefix is disconnected. This bounds the
+/// cost of asking the pathfinder about every site on a large map while keeping
+/// a reachable ordinary site from being discarded behind an offshore prefix.
+const SETTLEMENT_ROUTE_CANDIDATE_LIMIT: usize = 160;
+
+/// A settler may detour around a visible attack envelope, but it should not
+/// walk into one merely because the target is geometrically closer. This is
+/// below the direct-threat score of a healthy ancient military unit and above
+/// the one-turn approach warning used to order otherwise safe routes.
+const SETTLER_STEP_RISK_LIMIT: f64 = 30.0;
+
+/// A sparse-map fallback may keep one reachable global site alive when every
+/// ordinary candidate is below the normal score floor. It is only considered
+/// after the normal site set is empty, so this cannot make a mediocre distant
+/// city outrank a good nearby one.
+const SETTLEMENT_EMERGENCY_SITE_MIN: f64 = 8.0;
+
 #[derive(Clone)]
 pub struct AdvancedAi {
     base: BasicAi,
@@ -779,6 +797,15 @@ pub struct AdvancedAi {
     /// 35-37.** Shipped off with the measurement recorded, so the retention
     /// result can be re-derived rather than re-discovered.
     pub defensible_sites: bool,
+    /// Use the live, visible-threat settlement safety model in the shipped scorer.
+    ///
+    /// This is intentionally separate from `defensible_sites`: the latter is
+    /// the old evaluator switch for camp and support-distance terms, while
+    /// this flag covers the operational decision the settler actually faces —
+    /// visible military attack envelopes, known barbarian pressure, support
+    /// distance, and the cost of marching the route. Standard Advanced
+    /// constructors enable it; the frozen `legacy` control disables it.
+    pub settlement_safety: bool,
     /// Price a settle site's district adjacency potential — what a Campus,
     /// Commercial Hub or Harbor would earn at its best plot within two rings
     /// — via `Game::settlement_adjacency_summary`.  Gated so the frozen
@@ -1446,6 +1473,7 @@ impl AdvancedAi {
     pub fn legacy() -> AdvancedAi {
         let mut ai = Self::configured(BasicAi::new(), false, None);
         ai.battlefront_observation = false;
+        ai.settlement_safety = false;
         ai
     }
 
@@ -1481,6 +1509,7 @@ impl AdvancedAi {
             preempt_margin: 1.0,
             assigned_religion_may_expand: false,
             defensible_sites: false,
+            settlement_safety: true,
             adjacency_site_planning: false,
             food_first: 0.0,
             settler_commit: false,
@@ -10443,7 +10472,29 @@ impl AdvancedAi {
         completion_discount * raw / (7.0 + turns.max(1.0))
     }
 
-    fn settle_value(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+    /// Price the future district economy through the engine's canonical
+    /// adjacency calculator. The calculator treats the proposed center as a
+    /// city and counts planned foundations, while this wrapper keeps the
+    /// delayed district yields half-weighted and capped in the site score.
+    fn settlement_adjacency_value(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        if !self.adjacency_site_planning {
+            return 0.0;
+        }
+        let potential = g.settlement_adjacency_summary(pid, pos, 2);
+        ((potential.food * 2.0
+            + potential.production * 2.2
+            + potential.gold * 0.7
+            + potential.science * 1.2
+            + potential.culture * 1.2
+            + potential.faith * 0.4)
+            * 0.5)
+            .min(24.0)
+    }
+
+    /// The historical score retained for the frozen Advanced control and for
+    /// the old `defensible_sites` experiment. Keeping this branch explicit
+    /// prevents the new default from silently rewriting the control arm.
+    fn legacy_settle_value(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
         let tile = &g.map.tiles[&pos];
         let mut value = 0.0;
         for p in g.wdisk(pos, 2) {
@@ -10485,26 +10536,7 @@ impl AdvancedAi {
         } else {
             -5.0
         };
-        // The ground pays a second time once districts stand beside it:
-        // mountains are a Campus, the river a Commercial Hub, the shore a
-        // Harbor. Ask the engine's own adjacency calculator what each
-        // district family would earn at its best plot in the first two
-        // rings, price it with the same weights the tile yields above use,
-        // and half-weight it — these yields only arrive once the districts
-        // are built. The cap keeps a freak double-ridge from outbidding
-        // food. Everything inside is neighbour-local (radius ≤ 2), so the
-        // sphere's ring cache answers without a distance search.
-        if self.adjacency_site_planning {
-            let potential = g.settlement_adjacency_summary(pid, pos, 2);
-            value += ((potential.food * 2.0
-                + potential.production * 2.2
-                + potential.gold * 0.7
-                + potential.science * 1.2
-                + potential.culture * 1.2
-                + potential.faith * 0.4)
-                * 0.5)
-                .min(24.0);
-        }
+        value += self.settlement_adjacency_value(g, pid, pos);
         let enemy_distance = g
             .cities
             .values()
@@ -10519,6 +10551,276 @@ impl AdvancedAi {
             value += self.defensibility(g, pid, pos);
         }
         value
+    }
+
+    fn settle_value(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        if !self.settlement_safety {
+            return self.legacy_settle_value(g, pid, pos);
+        }
+        let visible = self.battlefront_visibility(g, pid);
+        self.settle_value_visible(g, pid, pos, &visible)
+    }
+
+    fn settle_value_visible(
+        &self,
+        g: &Game,
+        pid: usize,
+        pos: Pos,
+        visible: &TileBits,
+    ) -> f64 {
+        let tile = &g.map.tiles[&pos];
+        let mut value = 0.0;
+        let mut early_food = Vec::new();
+        for p in g.wdisk(pos, 2) {
+            let Some(t) = g.map.get(p) else { continue };
+            if t.owner_city.is_some() && p != pos {
+                continue;
+            }
+            let y = g.rules.tile_yields(t);
+            let ring = g.wdist(pos, p);
+            let ring_discount = if ring <= 1 { 1.0 } else { 0.45 };
+            if ring <= 1 {
+                early_food.push(y.food);
+            }
+            value += ring_discount
+                * (y.food * if ring <= 1 { 2.6 } else { 1.1 }
+                    + y.production * if ring <= 1 { 2.5 } else { 1.0 }
+                    + y.gold * 0.7
+                    + y.science * 1.2
+                    + y.culture * 1.2
+                    + y.faith * 0.4);
+            if let Some(resource) = &t.resource {
+                value += match g.rules.resources[resource].class.as_str() {
+                    "luxury" => 5.0,
+                    "strategic" => 4.0,
+                    _ => 1.5,
+                } * ring_discount;
+            }
+        }
+        early_food.sort_by(|a, b| b.total_cmp(a));
+        value += early_food.into_iter().take(3).sum::<f64>() * 1.8;
+
+        let fresh = tile.has_river()
+            || g.nbrs(pos).iter().any(|p| {
+                g.map
+                    .get(*p)
+                    .is_some_and(|t| t.feature.as_deref() == Some("oasis"))
+            });
+        let coastal = g
+            .nbrs(pos)
+            .iter()
+            .any(|p| g.map.get(*p).is_some_and(|t| g.rules.is_water(t)));
+        value += if fresh {
+            18.0
+        } else if coastal {
+            7.0
+        } else {
+            -6.0
+        };
+        value += self.settlement_adjacency_value(g, pid, pos);
+
+        let enemy_distance = g
+            .cities
+            .values()
+            .filter(|c| c.owner != pid && !g.players[c.owner].is_barbarian)
+            .map(|c| g.wdist(pos, c.pos))
+            .min()
+            .unwrap_or(20);
+        if enemy_distance < 6 {
+            value -= (6 - enemy_distance) as f64 * 6.0;
+        }
+        value -= self.settlement_safety_penalty(g, pid, pos, visible);
+        if self.defensible_sites {
+            value += self.defensibility(g, pid, pos);
+        }
+        value
+    }
+
+    /// Penalize a site for threats the acting player can actually see. Hidden
+    /// units do not enter this term: a full-state route would make CivVis
+    /// settlers clairvoyant, while an obvious visible attack envelope is
+    /// precisely the risk the player can reasonably avoid.
+    fn settlement_tile_risk(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: Option<u32>,
+        pos: Pos,
+        visible: &TileBits,
+    ) -> f64 {
+        let escorted = uid
+            .and_then(|unit| g.units.get(&unit))
+            .and_then(|unit| unit.linked_to)
+            .and_then(|escort| g.units.get(&escort))
+            .is_some_and(|escort| {
+                escort.owner == pid
+                    && g.rules.units[escort.kind].class == "military"
+                    && g.rules.units[escort.kind].domain.as_deref() != Some("air")
+            });
+        let nearby_escort = g.units.values().any(|unit| {
+            unit.owner == pid
+                && g.rules.units[unit.kind].class == "military"
+                && g.rules.units[unit.kind].domain.as_deref() != Some("air")
+                && g.rules.units[unit.kind].domain.as_deref() != Some("sea")
+                && g.wdist(unit.pos, pos) <= 1
+        });
+        let mut risk = 0.0;
+        for unit in g.units.values() {
+            if unit.owner == pid
+                || !g.is_at_war(pid, unit.owner)
+                || !g.sees(visible, unit.pos)
+                || !g.unit_visible_to(unit.id, pid)
+            {
+                continue;
+            }
+            let spec = &g.rules.units[unit.kind];
+            if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+                continue;
+            }
+            let distance = g.wdist(unit.pos, pos);
+            let attack_range = if spec.has_ranged_attack() {
+                g.unit_attack_range(unit.id)
+            } else {
+                1
+            };
+            let approach_range = attack_range + spec.moves.ceil() as i32;
+            let strength = crate::game::effective_strength(g.unit_strength(unit, false), unit.hp)
+                .max(1.0);
+            if distance <= attack_range {
+                risk += 34.0 + strength * 0.45;
+            } else if distance <= approach_range {
+                risk += 12.0 + strength * 0.15;
+            }
+        }
+        for city in g.cities.values() {
+            if city.owner == pid
+                || !g.is_at_war(pid, city.owner)
+                || !g.sees(visible, city.pos)
+            {
+                continue;
+            }
+            let distance = g.wdist(city.pos, pos);
+            if distance <= 3 {
+                risk += (4 - distance) as f64 * 7.0;
+            }
+        }
+        for camp in g.barb_camps.keys() {
+            if g.sees(visible, *camp) {
+                let distance = g.wdist(*camp, pos);
+                if distance <= 3 {
+                    risk += (4 - distance) as f64 * 6.0;
+                }
+            }
+        }
+        risk * if escorted {
+            0.25
+        } else if nearby_escort {
+            0.45
+        } else {
+            1.0
+        }
+    }
+
+    fn settlement_safety_penalty(
+        &self,
+        g: &Game,
+        pid: usize,
+        pos: Pos,
+        visible: &TileBits,
+    ) -> f64 {
+        let support_distance = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.wdist(pos, g.cities[&cid].pos))
+            .min();
+        let isolation = support_distance
+            .filter(|distance| *distance > 6)
+            .map(|distance| (distance - 6).min(8) as f64 * 3.5)
+            .unwrap_or(0.0);
+        self.settlement_tile_risk(g, pid, None, pos, visible) + isolation
+    }
+
+    fn settlement_route_risk(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        path: &[Pos],
+        visible: &TileBits,
+    ) -> (f64, f64) {
+        let mut previous = g.units[&uid].pos;
+        let mut movement_cost = 0.0;
+        let mut risk = 0.0;
+        for (index, position) in path.iter().enumerate() {
+            movement_cost += g.step_cost(previous, *position);
+            let tile_risk = self.settlement_tile_risk(g, pid, Some(uid), *position, visible);
+            risk += tile_risk * if index < 3 { 1.15 } else { 0.75 };
+            previous = *position;
+        }
+        (movement_cost, risk)
+    }
+
+    /// Follow the chosen route unless its next tile is in a visible direct
+    /// attack envelope. In that case try a legal lower-risk sidestep that
+    /// still makes progress; if none exists, hold and let the target search
+    /// reconsider rather than donating the settler to the threat.
+    fn settler_step_toward_safe(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> bool {
+        if !self.settlement_safety {
+            return self.base.settler_step_toward(g, pid, uid, target);
+        }
+        let Some(next) = g
+            .route_step(uid, target, 0)
+            .filter(|next| g.can_move(uid, *next))
+        else {
+            return self.base.settler_step_toward(g, pid, uid, target);
+        };
+        let visible = self.battlefront_visibility(g, pid);
+        let planned_risk = self.settlement_tile_risk(g, pid, Some(uid), next, &visible);
+        if planned_risk <= SETTLER_STEP_RISK_LIMIT {
+            return self.base.settler_step_toward(g, pid, uid, target);
+        }
+
+        let current = g.units[&uid].pos;
+        let current_distance = g.wdist(current, target);
+        let mut alternatives = g
+            .nbrs(current)
+            .into_iter()
+            .filter(|position| {
+                *position != next
+                    && g.map.get(*position).is_some()
+                    && g.can_move(uid, *position)
+            })
+            .map(|position| {
+                let risk = self.settlement_tile_risk(g, pid, Some(uid), position, &visible);
+                let progress = current_distance - g.wdist(position, target);
+                let score = progress as f64 * 8.0
+                    - risk * 1.5
+                    - g.step_cost(current, position) * 0.5;
+                (score, risk, position, progress)
+            })
+            .collect::<Vec<_>>();
+        alternatives.sort_by(|a, b| {
+            b.0.partial_cmp(&a.0)
+                .unwrap()
+                .then(a.2.cmp(&b.2))
+        });
+        for (_, risk, position, progress) in alternatives {
+            if risk + 5.0 >= planned_risk
+                || (progress < 0 && risk > planned_risk * 0.5)
+            {
+                continue;
+            }
+            if self.base.path_move(g, pid, uid, position) {
+                return true;
+            }
+        }
+        false
     }
 
     /// How well a site can be held, on the same scale `settle_value` uses for
@@ -10803,7 +11105,15 @@ impl AdvancedAi {
 
     fn settle_sites(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Vec<(Pos, f64)> {
         let mut sites = Vec::new();
-        let distance_penalty = if radius > 12 { 0.45 } else { 0.9 };
+        let mut emergency_sites = Vec::new();
+        let visible = self.battlefront_visibility(g, pid);
+        let distance_penalty = if self.settlement_safety {
+            if radius > 12 { 0.78 } else { 1.25 }
+        } else if radius > 12 {
+            0.45
+        } else {
+            SETTLE_DISTANCE_PENALTY
+        };
         for pos in g.wdisk(from, radius) {
             let Some(tile) = g.map.get(pos) else { continue };
             // A site the HOST engine refused is not settleable however good it looks;
@@ -10819,11 +11129,29 @@ impl AdvancedAi {
             {
                 continue;
             }
-            let value =
-                self.settle_value(g, pid, pos) - g.wdist(from, pos) as f64 * distance_penalty;
+            let site_value = if self.settlement_safety {
+                self.settle_value_visible(g, pid, pos, &visible)
+            } else {
+                self.legacy_settle_value(g, pid, pos)
+            };
+            let distance = g.wdist(from, pos);
+            let overreach = if self.settlement_safety {
+                distance.saturating_sub(8) as f64 * SETTLE_DISTANCE_PENALTY
+            } else {
+                0.0
+            };
+            let value = site_value - distance as f64 * distance_penalty - overreach;
             if value >= 12.0 {
                 sites.push((pos, value));
+            } else if self.settlement_safety
+                && radius > 12
+                && value >= SETTLEMENT_EMERGENCY_SITE_MIN
+            {
+                emergency_sites.push((pos, value));
             }
+        }
+        if sites.is_empty() {
+            sites = emergency_sites;
         }
         sites.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
         sites
@@ -10842,7 +11170,29 @@ impl AdvancedAi {
     ) -> Option<(Pos, f64)> {
         let from = g.units[&uid].pos;
         let candidates = self.settle_sites(g, pid, from, radius);
-        BasicAi::first_reachable_settle_site(g, uid, &candidates)
+        if !self.settlement_safety {
+            return BasicAi::first_reachable_settle_site(g, uid, &candidates);
+        }
+        let visible = self.battlefront_visibility(g, pid);
+        let mut routed = candidates
+            .iter()
+            .take(SETTLEMENT_ROUTE_CANDIDATE_LIMIT)
+            .filter_map(|(position, site_value)| {
+                let path = g.path_to(uid, *position)?;
+                let (movement_cost, risk) =
+                    self.settlement_route_risk(g, pid, uid, &path, &visible);
+                Some((*position, *site_value - movement_cost * 0.8 - risk))
+            })
+            .collect::<Vec<_>>();
+        if routed.is_empty() {
+            return BasicAi::first_reachable_settle_site(
+                g,
+                uid,
+                &candidates,
+            );
+        }
+        routed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap().then(a.0.cmp(&b.0)));
+        routed.into_iter().next()
     }
 
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
@@ -10851,6 +11201,7 @@ impl AdvancedAi {
         // is fixed after the first assessment, preventing a rolling optimum
         // from leading the settler across the map for many compounding turns.
         if g.player_city_ids(pid).is_empty() {
+            let visible = self.battlefront_visibility(g, pid);
             let cached = self.settler_targets.get(&uid).copied().filter(|target| {
                 let Some(tile) = g.map.get(*target) else {
                     return false;
@@ -10862,6 +11213,9 @@ impl AdvancedAi {
                         .owner_city
                         .is_none_or(|cid| g.cities[&cid].owner == pid)
                     && (*target == current || g.route_step(uid, *target, 0).is_some())
+                    && (!self.settlement_safety
+                        || self.settlement_tile_risk(g, pid, Some(uid), *target, &visible)
+                            <= SETTLER_STEP_RISK_LIMIT)
             });
             if cached.is_none() {
                 self.settler_targets.remove(&uid);
@@ -10897,6 +11251,13 @@ impl AdvancedAi {
                 target
             });
             if target == Some(current) && g.can_found_city(uid) {
+                if self.settlement_safety
+                    && self.settlement_tile_risk(g, pid, Some(uid), current, &visible)
+                        > SETTLER_STEP_RISK_LIMIT
+                {
+                    self.settler_targets.remove(&uid);
+                    return false;
+                }
                 self.settler_targets.remove(&uid);
                 think!(self.journal(), Expansion, Decision, "Founding the capital at {current:?}";
                        "the site is worth {:.1}", self.settle_value(g, pid, current); current);
@@ -10908,7 +11269,7 @@ impl AdvancedAi {
                        "worth {:.1} against {:.1} where it stands",
                        self.settle_value(g, pid, target),
                        self.settle_value(g, pid, current); target);
-                let moved = self.base.settler_step_toward(g, pid, uid, target);
+                let moved = self.settler_step_toward_safe(g, pid, uid, target);
                 if !moved {
                     self.settler_targets.remove(&uid);
                 }
@@ -10916,6 +11277,7 @@ impl AdvancedAi {
             }
             return false;
         }
+        let visible = self.battlefront_visibility(g, pid);
         let valid_target = self.settler_targets.get(&uid).copied().filter(|target| {
             let Some(tile) = g.map.get(*target) else {
                 return false;
@@ -10932,6 +11294,9 @@ impl AdvancedAi {
                 && (*target == current
                     || g.route_step(uid, *target, 0).is_some()
                     || self.settler_commit)
+                && (!self.settlement_safety
+                    || self.settlement_tile_risk(g, pid, Some(uid), *target, &visible)
+                        <= SETTLER_STEP_RISK_LIMIT)
         });
         let target = valid_target.or_else(|| {
             let local = self.best_reachable_settle_site(g, pid, uid, 8);
@@ -10955,6 +11320,13 @@ impl AdvancedAi {
             return self.base.settler_step(g, pid, uid);
         };
         if current == target && g.can_found_city(uid) {
+            if self.settlement_safety
+                && self.settlement_tile_risk(g, pid, Some(uid), current, &visible)
+                    > SETTLER_STEP_RISK_LIMIT
+            {
+                self.settler_targets.remove(&uid);
+                return false;
+            }
             self.settler_targets.remove(&uid);
             think!(self.journal(), Expansion, Decision, "Founding a city at {current:?}";
                    "the site is worth {:.1}; the empire holds {} cities and wants {}",
@@ -10976,7 +11348,7 @@ impl AdvancedAi {
         think!(self.journal(), Expansion, Detail, "Settler marching to {target:?}";
                "{} tiles away, the site is worth {:.1}",
                g.wdist(current, target), self.settle_value(g, pid, target); target);
-        let moved = self.base.settler_step_toward(g, pid, uid, target);
+        let moved = self.settler_step_toward_safe(g, pid, uid, target);
         if moved {
             self.settler_stalls.remove(&uid);
         } else if self.settler_commit {
@@ -14925,6 +15297,12 @@ impl AdvancedAi {
         }
         BasicAi::upgrade_units(g, pid);
         self.advanced_units(g, pid, &plan);
+        // A settler can found a city during the unit pass. Refresh the map so
+        // the durable directive state covers that new city as well as the
+        // cities that received production guidance earlier in the turn.
+        if self.city_strategy {
+            self.stamp_city_directives(g, pid, &plan);
+        }
         self.resolve_city_dispositions(g, pid, plan.strategy);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
@@ -17068,8 +17446,10 @@ mod tests {
             .find(|pos| game.wdist(home, *pos) > 8)
             .expect("the map is larger than the support radius");
 
-        let plain = AdvancedAi::new();
+        let mut plain = AdvancedAi::new();
+        plain.settlement_safety = false;
         let mut weighed = AdvancedAi::new();
+        weighed.settlement_safety = false;
         weighed.defensible_sites = true;
         assert!(
             !plain.defensible_sites,
@@ -17116,6 +17496,180 @@ mod tests {
             weighed.settle_value(&game, 0, home) < before,
             "while the weighed score does"
         );
+    }
+
+    #[test]
+    fn settlement_site_score_prioritizes_growth_water_and_future_districts() {
+        let game = Game::new_full(2, 30, 18, 8_114, 120, 0, false);
+        let center = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdisk(*position, 3)
+                    .into_iter()
+                    .all(|near| game.map.get(near).is_some())
+                    && game.map.get(*position).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    })
+            })
+            .expect("the test map has an interior land tile");
+        let food_tile = game
+            .nbrs(center)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .expect("the center has a neighbor");
+        let mut food = game.clone();
+        let mut production = game.clone();
+        for candidate in [&mut food, &mut production] {
+            for position in candidate.wdisk(center, 1) {
+                if let Some(tile) = candidate.map.tiles.get_mut(&position) {
+                    tile.terrain = Name::new("desert");
+                    tile.feature = None;
+                    tile.resource = None;
+                    tile.river_edges = [false; 6];
+                }
+            }
+        }
+        food.map.tiles.get_mut(&food_tile).unwrap().terrain = Name::new("grassland");
+        production.map.tiles.get_mut(&food_tile).unwrap().terrain = Name::new("plains");
+        let ai = AdvancedAi::new();
+        assert!(
+            ai.settle_value(&food, 0, center) > ai.settle_value(&production, 0, center) + 1.0,
+            "early food should beat the same tile's production-only alternative"
+        );
+
+        let mut freshwater = food.clone();
+        assert!(freshwater.map.set_river_edge(center, food_tile, true));
+        assert!(
+            ai.settle_value(&freshwater, 0, center) > ai.settle_value(&food, 0, center) + 10.0,
+            "fresh water should be a material founding advantage"
+        );
+
+        let mut district = game.clone();
+        for position in district.wdisk(center, 3) {
+            if let Some(tile) = district.map.tiles.get_mut(&position) {
+                tile.terrain = Name::new("plains");
+                tile.feature = None;
+                tile.resource = None;
+                tile.river_edges = [false; 6];
+            }
+        }
+        let district_site = district
+            .nbrs(center)
+            .into_iter()
+            .find(|position| {
+                district.map.get(*position).is_some_and(|tile| {
+                    !district.rules.is_water(tile) && district.rules.is_passable(tile)
+                })
+            })
+            .expect("the normalized ring has a district site");
+        let mountain = district
+            .nbrs(district_site)
+            .into_iter()
+            .find(|position| {
+                *position != center
+                    && district.wdist(center, *position) <= 3
+                    && district.map.get(*position).is_some()
+            })
+            .expect("the district site has an adjacency tile");
+        let without_mountain = ai.settlement_adjacency_value(&district, 0, center);
+        district.map.tiles.get_mut(&mountain).unwrap().terrain = Name::new("mountain");
+        let with_mountain = ai.settlement_adjacency_value(&district, 0, center);
+        assert!(
+            with_mountain > without_mountain + 0.1,
+            "future campus adjacency should survive into the founding score: \
+             with={with_mountain}, without={without_mountain}"
+        );
+    }
+
+    #[test]
+    fn advanced_settler_refuses_a_visible_direct_attack_tile() {
+        let mut game = Game::new_full(2, 30, 18, 8_115, 120, 0, false);
+        let initial = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("player zero starts with a settler");
+        let home = game.units[&initial].pos;
+        let origin = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdist(home, *position) > 8
+                    && game.map.get(*position).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    })
+                    && game
+                        .units
+                        .values()
+                        .all(|unit| unit.owner != 0 || game.wdist(unit.pos, *position) > 2)
+            })
+            .expect("the map has a quiet land origin");
+        let settler = game.spawn_test_unit("settler", 0, origin);
+        let next = game
+            .nbrs(origin)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                })
+            })
+            .expect("the start has a land neighbor");
+        let target = game
+            .wdisk(origin, 2)
+            .into_iter()
+            .find(|position| {
+                game.wdist(origin, *position) == 2
+                    && game.map.get(*position).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    })
+                    && game.route_step(settler, *position, 0) == Some(next)
+            })
+            .expect("the start has a two-tile route through the selected neighbor");
+        let threat = game
+            .nbrs(next)
+            .into_iter()
+            .find(|position| {
+                *position != home
+                    && *position != target
+                    && game.units_at(*position).is_empty()
+                    && game.map.get(*position).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    })
+            })
+            .expect("the route has a visible attack square");
+        let enemy = game.spawn_test_unit("warrior", 1, threat);
+        game.at_war.insert((0, 1));
+        let ai = AdvancedAi::new();
+        let visible = ai.battlefront_visibility(&game, 0);
+        let planned_risk = ai.settlement_tile_risk(&game, 0, Some(settler), next, &visible);
+        assert!(game.sees(&visible, threat));
+        assert!(
+            planned_risk > SETTLER_STEP_RISK_LIMIT,
+            "the visible warrior should make the planned tile obviously unsafe: \
+             risk={planned_risk}, distance={}, at_war={}",
+            game.wdist(threat, next),
+            game.is_at_war(0, 1)
+        );
+        let moving = ai;
+        let _ = moving.settler_step_toward_safe(&mut game, 0, settler, target);
+        assert_ne!(
+            game.units[&settler].pos, next,
+            "a settler must not step into a visible direct attack envelope"
+        );
+        assert!(game.units.contains_key(&enemy));
+    }
+
+    #[test]
+    fn settlement_safety_is_shared_by_top_advanced_constructors() {
+        assert!(AdvancedAi::new().settlement_safety);
+        assert!(AdvancedAi::targeting(VictoryTarget::Culture).settlement_safety);
+        assert!(AdvancedAi::with_weights(Weights::default()).settlement_safety);
+        assert!(!AdvancedAi::legacy().settlement_safety);
     }
 
     #[test]
@@ -17248,7 +17802,7 @@ mod tests {
         let mut differed = 0usize;
         let mut sampled = 0usize;
 
-        for seed in 0..3u64 {
+        for seed in 0..12u64 {
             let mut game = Game::new(4, 60, 38, 42_000 + seed, 500, 6);
             let mut ais = AdvancedAi::fleet(&game);
             let mut reordered = AdvancedAi::new();

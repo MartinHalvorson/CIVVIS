@@ -5402,7 +5402,7 @@ impl BasicAi {
     /// preceding path step in the same turn. Waiting in a dead end preserves
     /// real progress for the auditor, and next turn's route can back out once
     /// before choosing a different greedy branch.
-    fn path_move(&self, g: &mut Game, pid: usize, uid: u32, to: Pos) -> bool {
+    pub(crate) fn path_move(&self, g: &mut Game, pid: usize, uid: u32, to: Pos) -> bool {
         let from = g.units[&uid].pos;
         if self.minor {
             let Some(home) = Self::minor_home(g, pid) else {
