@@ -33,7 +33,7 @@ Requires the mirror server on :8610 (see civvis-civ6-mirror/follow.py).
           the per-turn rates `economy_drift` compares. Same turn, or the delta is
           just income.
 
-## Seven ways this checker itself cried wolf
+## Eight ways this checker itself cried wolf
 
 Each of these is a real bug I nearly reported, caught only by looking again:
 
@@ -70,6 +70,11 @@ Each of these is a real bug I nearly reported, caught only by looking again:
    and the reflex they build is to distrust the check. This one was the check
    being RIGHT. When a check disagrees with the board, read the mirror's own
    contract before re-indexing the ruler.
+8. It treated a live decision handoff as a missing host frame. The host writes
+   `state N`, CIVVIS decides and applies orders, and only then writes playable
+   `turn N`; during that ordinary interval the exact state already exists and
+   is the frame the viewer reconstructed. A live check now validates it and
+   reports the still-completing turn instead of calling it drift.
 
 ⚠ The board served on :8610 is follow.py's FLIPPED staged copy:
 `board_axial = offset_to_axial(x, TOP - y)`. The flip constant is discovered here
@@ -869,6 +874,23 @@ def latest_terminal_turn(run):
     return turn
 
 
+def exact_host_frame(board_turn, state_turn, completed_turn, *, archive=False,
+                     terminal_turn=None):
+    """Whether the published board has an authoritative same-turn host state.
+
+    A live turn's event order is `state` -> CIVVIS orders -> `turn`. The state is
+    the exact reconstruction source, so requiring the later completion marker
+    rejects a healthy frame while decisions are in flight. Completed archives
+    retain the stronger boundary requirement: a playable turn or the explicit
+    terminal victory/defeat event must close the state.
+    """
+    if state_turn != board_turn:
+        return False
+    if not archive:
+        return True
+    return completed_turn >= board_turn or terminal_turn == board_turn
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("run", nargs="?", help="run directory (newest by default)")
@@ -887,11 +909,14 @@ def main(argv=None):
         else:
             print("CONTROL  live game, fresh export, worker present, rig binary "
                   "not behind the decider   OK")
-    # The viewer can publish a staged board a fraction of a second before follow.py
-    # appends the corresponding host event. Never compare that future board with the
-    # previous export: one ordinary unit move then looks exactly like a dropped unit.
+    # The viewer can change boards while this process reads the growing export.
+    # Re-sample until the published turn has an exact state. Do not require the
+    # following playable `turn` event in live mode: the normal host order is
+    # state -> CIVVIS decision/orders -> turn, and the state is already the exact
+    # source used to reconstruct the board during that handoff.
     board = state = None
     game_turn = -1
+    terminal_turn = latest_terminal_turn(run) if args.archive else None
     for _ in range(20):
         board = json.load(
             urllib.request.urlopen(f"http://127.0.0.1:{PORT}/state", timeout=30)
@@ -899,19 +924,18 @@ def main(argv=None):
         _, game_turn = load_export(run)
         state = latest_state(run, upto=board["turn"])
         state_turn = int((state or {}).get("turn") or -1)
-        # A terminal frame has an exact state and victory/defeat event but no
-        # following playable `turn` event. In archive mode that pair is the
-        # authoritative host frame; requiring a turn-start marker would reject
-        # every normally completed game one frame after its last playable turn.
-        if args.archive and state_turn == board["turn"] \
-                and latest_terminal_turn(run) == board["turn"]:
-            game_turn = max(game_turn, state_turn)
-        if game_turn >= board["turn"] and state_turn == board["turn"]:
+        if exact_host_frame(
+            board["turn"], state_turn, game_turn, archive=args.archive,
+            terminal_turn=terminal_turn,
+        ):
             break
         time.sleep(0.1)
     assert board is not None
     state_turn = int((state or {}).get("turn") or -1)
-    if game_turn < board["turn"] or state_turn != board["turn"]:
+    if not exact_host_frame(
+        board["turn"], state_turn, game_turn, archive=args.archive,
+        terminal_turn=terminal_turn,
+    ):
         print(f"run   {os.path.basename(run)}")
         print(f"turn  game {game_turn}   board {board['turn']}   state {state_turn}   ⚠ DRIFT")
         print("\nDISAGREEMENTS: no exact host frame exists for the published board")
@@ -921,7 +945,9 @@ def main(argv=None):
     visible = {tuple(v) for v in board["visible"]}
 
     print(f"run   {os.path.basename(run)}")
-    print(f"turn  game {game_turn}   board {board['turn']}   state {state_turn}   OK")
+    phase = "   (decisions in flight)" if game_turn < board["turn"] else ""
+    print(f"turn  game {state_turn}   board {board['turn']}   state {state_turn}   OK"
+          f"{phase}")
 
     # --- lobby setup -------------------------------------------------------
     # The seat event is emitted once rather than copied into each state patch.
