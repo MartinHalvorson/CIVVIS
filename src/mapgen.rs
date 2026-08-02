@@ -5789,58 +5789,124 @@ fn place_artifact_quotas(
     }
 }
 
-/// Divide land into the stock number of named geographic regions. Civ VI's
-/// continent count is not a promise of disconnected landmasses; a large
-/// landmass can span several continents, so farthest-point Voronoi regions
-/// are a closer model than equating one flood-fill component to one continent.
+/// Divide land into the stock number of named geographic regions. A landmass
+/// can contain several continents (Europe and Asia are the familiar example),
+/// but a continent boundary should not jump an ocean merely because a centre
+/// on another landmass happened to be closer in straight-line distance.
+///
+/// The substantial landmasses therefore receive their proportional share of
+/// the continent budget first and are divided independently. Small offshore
+/// islands do not consume that budget: each joins the nearest finished region
+/// as a whole, so a three-tile island cannot be striped between two continents.
 fn assign_continents(wm: &mut WorldMap, land: &BTreeSet<Pos>, requested: usize, rng: &mut Rng) {
     if land.is_empty() || requested == 0 {
         return;
     }
     let count = requested.min(land.len());
-    let land_vec: Vec<Pos> = land.iter().cloned().collect();
-    // One distance field per centre, carried rather than re-derived. On a
-    // globe `wm.distance` is a graph search, not arithmetic, so asking it once
-    // per (tile, centre) pair costs a search per pair: on the largest world
-    // that is fifty centres times sixteen thousand tiles times a search over
-    // fifty-eight thousand hexes, and the pass never finishes. A field is the
-    // same search answered for every tile at once, so the whole seeding costs
-    // one per centre and the answers are identical to the pair-wise ones.
-    let mut rows: Vec<MapDistanceRow> = Vec::with_capacity(count);
-    let mut centers: Vec<Pos> = Vec::with_capacity(count);
-    let mut nearest = vec![i32::MAX; land_vec.len()];
-    let mut next = land_vec[rng.below(land_vec.len())];
-    loop {
-        let row = MapDistanceRow::new(wm, next);
-        for (index, pos) in land_vec.iter().enumerate() {
-            nearest[index] = nearest[index].min(row.distance(*pos));
-        }
-        rows.push(row);
-        centers.push(next);
-        if centers.len() >= count {
+    let components = connected_components(wm, land);
+    let fair_share = land.len().div_ceil(count);
+    // Half of one continent's fair share is enough to be geography in its own
+    // right. Anything smaller is an offshore island, unless more landmasses
+    // are needed to hold all of the requested one-tile-minimum regions.
+    let minimum_primary = fair_share.div_ceil(2).max(1);
+    let mut primary: Vec<usize> = components
+        .iter()
+        .enumerate()
+        .filter(|(_, component)| component.len() >= minimum_primary)
+        .map(|(index, _)| index)
+        .take(count)
+        .collect();
+    if primary.is_empty() {
+        primary.push(0);
+    }
+    let mut primary_land: usize = primary.iter().map(|index| components[*index].len()).sum();
+    for index in 0..components.len() {
+        if primary_land >= count || primary.len() >= count {
             break;
         }
-        // The farthest tile from every centre so far becomes the next one,
-        // ties broken by position exactly as before.
-        let (index, _) = land_vec
-            .iter()
-            .enumerate()
-            .filter(|(_, pos)| !centers.contains(pos))
-            .max_by_key(|(index, pos)| (nearest[*index], **pos))
-            .expect("more land than centres");
-        next = land_vec[index];
+        if !primary.contains(&index) {
+            primary.push(index);
+            primary_land += components[index].len();
+        }
     }
-    let assigned: Vec<(Pos, Option<usize>)> = land
+
+    // Every primary landmass gets one name. Largest-remainder apportionment
+    // divides the remaining names by area, capped so no region can be empty.
+    let weights: Vec<i64> = primary
         .iter()
-        .map(|pos| {
-            let continent = rows
+        .map(|index| components[*index].len() as i64)
+        .collect();
+    let caps: Vec<usize> = primary
+        .iter()
+        .map(|index| components[*index].len().saturating_sub(1))
+        .collect();
+    let extra = apportion_capped(&weights, &caps, count - primary.len());
+    let allocation: Vec<usize> = extra.into_iter().map(|additional| additional + 1).collect();
+
+    // Consume exactly the one draw the former whole-world Voronoi pass used,
+    // so changing continent borders does not silently redraw later spawns.
+    let phase = rng.below(land.len());
+    let mut rows: Vec<(usize, MapDistanceRow<'_>)> = Vec::with_capacity(count);
+    let mut assigned: Vec<(Pos, Option<usize>)> = Vec::with_capacity(land.len());
+    let mut next_id = 0;
+    for (slot, component_index) in primary.iter().copied().enumerate() {
+        let component: Vec<Pos> = components[component_index].iter().copied().collect();
+        let region_count = allocation[slot];
+        let mut centers = Vec::with_capacity(region_count);
+        let mut local_rows = Vec::with_capacity(region_count);
+        let mut nearest = vec![i32::MAX; component.len()];
+        let mut next = component[phase.wrapping_add(component_index) % component.len()];
+        loop {
+            let row = MapDistanceRow::new(wm, next);
+            for (index, position) in component.iter().enumerate() {
+                nearest[index] = nearest[index].min(row.distance(*position));
+            }
+            centers.push(next);
+            local_rows.push((next_id + centers.len() - 1, row));
+            if centers.len() >= region_count {
+                break;
+            }
+            let (index, _) = component
                 .iter()
                 .enumerate()
-                .min_by_key(|(id, row)| (row.distance(*pos), *id))
-                .map(|(id, _)| id);
-            (*pos, continent)
-        })
-        .collect();
+                .filter(|(_, position)| !centers.contains(position))
+                .max_by_key(|(index, position)| (nearest[*index], **position))
+                .expect("a landmass has more tiles than assigned continents");
+            next = component[index];
+        }
+        for position in component {
+            let continent = local_rows
+                .iter()
+                .min_by_key(|(id, row)| (row.distance(position), *id))
+                .map(|(id, _)| *id);
+            assigned.push((position, continent));
+        }
+        next_id += region_count;
+        rows.extend(local_rows);
+    }
+
+    // Satellite islands inherit one nearby region wholesale. Comparing the
+    // closest shore tile, rather than the island centroid, also does the right
+    // thing for a long island following a continental coast.
+    for (index, component) in components.iter().enumerate() {
+        if primary.contains(&index) {
+            continue;
+        }
+        let continent = rows
+            .iter()
+            .min_by_key(|(id, row)| {
+                (
+                    component
+                        .iter()
+                        .map(|position| row.distance(*position))
+                        .min()
+                        .unwrap_or(i32::MAX),
+                    *id,
+                )
+            })
+            .map(|(id, _)| *id);
+        assigned.extend(component.iter().map(|position| (*position, continent)));
+    }
     drop(rows);
     for (pos, continent) in assigned {
         wm.tiles.get_mut(&pos).unwrap().continent = continent;
@@ -5925,6 +5991,118 @@ mod river_tests {
             .map(|(position, _)| *position)
             .collect();
         connected_components(world, &land)
+    }
+
+    #[test]
+    fn continents_follow_landmasses_before_dividing_them() {
+        let mut world = WorldMap::new(40, 20);
+        let rectangle = |left, right, top, bottom| {
+            (top..bottom)
+                .flat_map(|row| (left..right).map(move |column| hex::offset_to_axial(column, row)))
+                .collect::<BTreeSet<Pos>>()
+        };
+        let west = rectangle(3, 13, 4, 16);
+        let east = rectangle(26, 36, 4, 16);
+        let island = rectangle(16, 18, 8, 10);
+        let land: BTreeSet<Pos> = west.iter().chain(&east).chain(&island).copied().collect();
+        for position in &land {
+            world.tiles.get_mut(position).unwrap().terrain = crate::name!("plains");
+        }
+
+        let mut actual_rng = Rng::new(38_411);
+        assign_continents(&mut world, &land, 4, &mut actual_rng);
+
+        let ids = |component: &BTreeSet<Pos>| {
+            component
+                .iter()
+                .filter_map(|position| world.tiles[position].continent)
+                .collect::<BTreeSet<_>>()
+        };
+        let west_ids = ids(&west);
+        let east_ids = ids(&east);
+        let island_ids = ids(&island);
+        assert_eq!(
+            west_ids.len(),
+            2,
+            "the west landmass should receive two regions"
+        );
+        assert_eq!(
+            east_ids.len(),
+            2,
+            "the east landmass should receive two regions"
+        );
+        assert!(
+            west_ids.is_disjoint(&east_ids),
+            "a continent ID crossed the ocean: west {west_ids:?}, east {east_ids:?}"
+        );
+        assert_eq!(
+            island_ids.len(),
+            1,
+            "an offshore island was striped between continents"
+        );
+        assert!(
+            island_ids.is_subset(&west_ids),
+            "the island beside the west coast joined {island_ids:?}, not {west_ids:?}"
+        );
+        assert_eq!(
+            land.iter()
+                .filter_map(|position| world.tiles[position].continent)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            4,
+            "the stock continent count changed"
+        );
+
+        let mut expected_rng = Rng::new(38_411);
+        expected_rng.below(land.len());
+        assert_eq!(
+            actual_rng.next_u64(),
+            expected_rng.next_u64(),
+            "continent alignment should not redraw later generated features"
+        );
+    }
+
+    #[test]
+    fn generated_continents_keep_major_landmasses_geographically_distinct() {
+        let rules = Rules::embedded();
+        for topology in [FLAT, GLOBE] {
+            let mut rng = Rng::new(38_412);
+            let (world, _) = generate_with_script(
+                &rules,
+                84,
+                54,
+                8,
+                12,
+                5,
+                4,
+                MapScript::Continents,
+                topology,
+                POLED,
+                &mut rng,
+            );
+            let components = land_components(&world, &rules);
+            assert!(
+                components.len() >= 2,
+                "{topology:?} did not build two major landmasses"
+            );
+            let mut already_seen = BTreeSet::new();
+            for component in components.iter().take(2) {
+                let here: BTreeSet<usize> = component
+                    .iter()
+                    .filter_map(|position| world.tiles[position].continent)
+                    .collect();
+                assert_eq!(
+                    here.len(),
+                    2,
+                    "{topology:?} did not divide a major landmass into two continents: {here:?}"
+                );
+                assert!(
+                    here.is_disjoint(&already_seen),
+                    "{topology:?} reused continent IDs {here:?} across major landmasses"
+                );
+                already_seen.extend(here);
+            }
+        }
     }
 
     /// An archipelago's body count is only useful when those bodies are large

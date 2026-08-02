@@ -1092,6 +1092,76 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// ★★★★ The wonder half of `build_no_plot` was being DROPPED ON THE FLOOR.
+    ///
+    /// The mod emits a refused district under the event's `district` key and a
+    /// refused WONDER under `building`. The parser read only `district`, so every
+    /// wonder refusal fell straight through it and nothing ever reached the planner.
+    /// Measured over 20 live runs: **370 wonder refusals against 55 district ones**,
+    /// from 29 distinct (run, city, wonder) combinations — a mean of 12.8 re-asks
+    /// each, and 53 consecutive turns at worst of one city ordering one wonder
+    /// Civilization VI had no ground for.
+    ///
+    /// ⚠ Two-sided on purpose: the district side must keep working, and neither key
+    /// may leak into the other's set.
+    #[test]
+    fn a_refused_wonder_is_read_from_the_building_key_not_the_district_key() {
+        let dir = std::env::temp_dir().join(format!("civvis-noplot-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("events.jsonl");
+        // Shaped exactly like the live stream, including the repeat that made this
+        // worth fixing and a bare-hash export that names nothing.
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"kind":"build_no_plot","turn":40,"city":65536,"building":"BUILDING_HANGING_GARDENS","x":8,"y":9}"#,
+                "\n",
+                r#"{"kind":"build_no_plot","turn":41,"city":65536,"building":"BUILDING_HANGING_GARDENS","x":8,"y":9}"#,
+                "\n",
+                r#"{"kind":"build_no_plot","turn":42,"city":196610,"district":"DISTRICT_THEATER","x":3,"y":4}"#,
+                "\n",
+                r#"{"kind":"build_no_plot","turn":43,"city":65536,"building":"-1743686858","x":8,"y":9}"#,
+                "\n",
+            ),
+        )
+        .expect("write events");
+
+        let wonders = refused_wonders_through(&path, None);
+        assert_eq!(
+            wonders.get(&65536).map(|set| set.len()),
+            Some(1),
+            "each distinct wonder once, however many turns it spans"
+        );
+        assert!(wonders[&65536].contains("BUILDING_HANGING_GARDENS"));
+        assert!(
+            !wonders.contains_key(&196610),
+            "a refused DISTRICT must not appear in the wonder set"
+        );
+
+        let districts = refused_districts_through(&path, None);
+        assert!(
+            districts[&196610].contains("DISTRICT_THEATER"),
+            "the district side must keep working"
+        );
+        assert!(
+            !districts.contains_key(&65536),
+            "a refused WONDER must not appear in the district set"
+        );
+
+        // And it translates through the shipped wonder table, dropping the bare hash
+        // rather than inserting a name that matches nothing.
+        let rules = crate::rules::Rules::embedded();
+        let city_ids: std::collections::BTreeMap<u32, i64> = [(7u32, 65536i64)].into_iter().collect();
+        let blocked = blocked_wonders_from(&wonders, &city_ids, &rules);
+        assert_eq!(
+            blocked.get(&7).map(|set| set.len()),
+            Some(1),
+            "a wonder CIVVIS does not model is DROPPED, not inserted under a name \
+             that matches nothing"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn trade_route_refusals_are_merged_through_the_requested_host_turn() {
         let dir = std::env::temp_dir().join(format!("civvis-route-{}", std::process::id()));
@@ -5623,6 +5693,13 @@ pub struct StateSnapshot {
     #[serde(default)]
     pub refused_districts:
         std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    /// Wonders Civilization VI refused to place, by ITS city id, from the same
+    /// `build_no_plot` event. Kept apart from [`StateSnapshot::refused_districts`]
+    /// because the mod reports a refused wonder under `building` and a refused
+    /// district under `district`, and the two translate against different rulesets.
+    #[serde(default)]
+    pub refused_wonders:
+        std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     /// Production items the host has recently reported as unplayable, by its city id.
     /// These are translated and applied as a cooldown rather than a permanent ban.
     #[serde(default)]
@@ -6363,6 +6440,7 @@ pub fn state_from_events(
         state.refused_trade_routes = refused_trade_routes_through(path, turn);
         state.refused_policy_names = refused_policies_through(path, turn);
         state.refused_districts = refused_districts_through(path, turn);
+        state.refused_wonders = refused_wonders_through(path, turn);
         state.refused_production = refused_production(path, state.turn);
         state.refused_purchases = refused_purchases(path, state.turn);
     }
@@ -6894,6 +6972,31 @@ fn blocked_districts_from(
     out
 }
 
+/// The wonder counterpart of `blocked_districts_from`, translated against the
+/// wonder ruleset: a refused `BUILDING_` name that answers to no wonder here would
+/// filter nothing while making the set look populated.
+fn blocked_wonders_from(
+    refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    city_ids: &std::collections::BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> BTreeMap<u32, std::collections::BTreeSet<Name>> {
+    let mut out: BTreeMap<u32, std::collections::BTreeSet<Name>> = Default::default();
+    for (cid, civ6_id) in city_ids {
+        let Some(names) = refused.get(civ6_id) else {
+            continue;
+        };
+        let translated: std::collections::BTreeSet<Name> = names
+            .iter()
+            .filter_map(|civ6| civvis_node_name(&rules.wonders, civ6, "BUILDING_"))
+            .map(|name| Name::new(&name))
+            .collect();
+        if !translated.is_empty() {
+            out.insert(*cid, translated);
+        }
+    }
+    out
+}
+
 /// Translate recent host production refusals onto CIVVIS city ids and typed keys.
 fn blocked_production_from(
     refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
@@ -6949,6 +7052,26 @@ fn refused_districts_through(
     path: &std::path::Path,
     turn: Option<u32>,
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
+    refused_no_plot_through(path, turn, "district", "DISTRICT_")
+}
+
+/// Wonders the host had no legal plot for, from the same event under its own key.
+fn refused_wonders_through(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
+    refused_no_plot_through(path, turn, "building", "BUILDING_")
+}
+
+/// ⚠ One event, two keys. `build_no_plot` names a refused district under `district`
+/// and a refused wonder under `building`; a parser that reads only the first drops
+/// the second entirely, which is exactly what happened to 370 of 425 refusals.
+fn refused_no_plot_through(
+    path: &std::path::Path,
+    turn: Option<u32>,
+    field: &str,
+    prefix: &str,
+) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
     let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
         Default::default();
     let Ok(raw) = std::fs::read_to_string(path) else {
@@ -6969,17 +7092,17 @@ fn refused_districts_through(
         }) {
             continue;
         }
-        let (Some(city), Some(district)) = (
+        let (Some(city), Some(named)) = (
             event.get("city").and_then(|v| v.as_i64()),
-            event.get("district").and_then(|v| v.as_str()),
+            event.get(field).and_then(|v| v.as_str()),
         ) else {
             continue;
         };
         // A bare hash is an old export; it names nothing this side can use.
-        if !district.starts_with("DISTRICT_") {
+        if !named.starts_with(prefix) {
             continue;
         }
-        refused.entry(city).or_default().insert(district.to_string());
+        refused.entry(city).or_default().insert(named.to_string());
     }
     refused
 }
@@ -8817,6 +8940,8 @@ pub fn rebuild_from_state(
     // because it needs `city_ids`, which is only complete once every city is planted.
     game.blocked_districts =
         blocked_districts_from(&state.refused_districts, &city_ids, &game.rules);
+    game.blocked_wonders =
+        blocked_wonders_from(&state.refused_wonders, &city_ids, &game.rules);
     let blocked_production =
         blocked_production_from(&state.refused_production, &city_ids, &game.rules);
     game.replace_blocked_production(blocked_production);
@@ -9278,6 +9403,15 @@ impl LiveMirror {
         );
         for (cid, names) in refused {
             self.game.blocked_districts.entry(cid).or_default().extend(names);
+        }
+        // The wonder half of the same event, unioned for the same reason.
+        let refused_wonders = blocked_wonders_from(
+            &state.refused_wonders,
+            &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
+            &self.game.rules,
+        );
+        for (cid, names) in refused_wonders {
+            self.game.blocked_wonders.entry(cid).or_default().extend(names);
         }
         // Unlike impossible district plots, a production refusal can be temporary.
         // Replace this cooldown snapshot so entries disappear after their TTL.
