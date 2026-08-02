@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::name::Name;
 use crate::game::{
-    City, Game, Item, RememberedCity, DIPLOMATIC_VICTORY_POINTS, EXOPLANET_DESTINATION,
+    City, Game, Item, RememberedCity, Unit, DIPLOMATIC_VICTORY_POINTS, EXOPLANET_DESTINATION,
     EXOPLANET_TARGETS,
 };
 use crate::world::Tile;
@@ -179,6 +179,14 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
     } else {
         g.player_visibility(pid)
     };
+    // `vis` is the exact frame used for rules and for the map's sight
+    // perimeter. During the acting player's turn, keep everything seen in an
+    // earlier frame in the lighter map region until End Turn; exact last-seen
+    // snapshots supply its contents without reading changing state under fog.
+    let mut turn_vis = vis.clone();
+    if !omniscient && g.current == pid {
+        turn_vis.extend(p.turn_visible.iter().copied());
+    }
     let mut explored = if omniscient {
         vis.clone()
     } else {
@@ -259,7 +267,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             ))
         })
         .collect();
-    let units: Vec<Value> = g
+    let mut known_units: BTreeMap<u32, &Unit> = g
         .units
         .values()
         .filter(|u| {
@@ -271,6 +279,18 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                         .iter()
                         .any(|viewer| g.unit_visible_to(u.id, *viewer)))
         })
+        .map(|unit| (unit.id, unit))
+        .collect();
+    if !omniscient && g.current == pid {
+        for unit in p.turn_units.values() {
+            let observed_pos = unit.air_patrol_pos.unwrap_or(unit.pos);
+            if !vis.contains(&observed_pos) {
+                known_units.entry(unit.id).or_insert(unit);
+            }
+        }
+    }
+    let units: Vec<Value> = known_units
+        .into_values()
         .map(|u| {
             let mut v = serde_json::to_value(u).unwrap();
             v["embarked"] = json!(g.is_embarked(u));
@@ -442,6 +462,8 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "tiles": tiles,
         },
         "visible": vis.iter().filter(|v| g.map.tiles.contains_key(v))
+            .map(|v| json!([v.0, v.1])).collect::<Vec<_>>(),
+        "turn_visible": turn_vis.iter().filter(|v| g.map.tiles.contains_key(v))
             .map(|v| json!([v.0, v.1])).collect::<Vec<_>>(),
         "camps": camps,
         "units": units,
