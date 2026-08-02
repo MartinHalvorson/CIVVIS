@@ -224,6 +224,52 @@ local function productionName(hash)
 	return nil;
 end
 
+-- Progress and cost for whatever a city is building right now.
+--
+-- ★★★★★ THERE IS NO GENERIC ACCESSOR, AND ASSUMING ONE COST A WHOLE RUN'S
+-- DIAGNOSTICS. `GetBuildQueue():GetCurrentProductionProgress()` and
+-- `…GetCurrentProductionCost()` do not exist on this build: both returned the
+-- `try` sentinel **-1 on every city of every turn** of run
+-- civvis-20260802T053109Z, while `GetProductionYield` and `GetTurnsLeft` beside
+-- them worked and read 6/9 and 5/4/3.
+--
+-- The shipped UI names the real ones, and they are TYPE-SPECIFIC — read out of
+-- `Base/Assets/UI/Panels/ProductionPanel.lua`, whose BuildQueue calls are exactly:
+--
+--     GetUnitProgress     GetUnitCost
+--     GetBuildingProgress GetBuildingCost
+--     GetDistrictProgress GetDistrictCost
+--     GetProjectProgress  GetProjectCost
+--     GetCurrentProductionTypeHash   GetTurnsLeft
+--
+-- So the hash has to be resolved to its KIND first, which `productionName` above
+-- already does by walking the same four GameInfo tables. This walks them in the
+-- same order and calls the matching pair.
+--
+-- ⚠ Returns two values and BOTH default to -1 independently, for the same reason
+-- the four fields at the call site are guarded separately: a build where one of
+-- these is missing must still yield the other.
+local function productionProgress(city, hash)
+	if hash == nil or hash == 0 then return -1, -1; end
+	local queue = try(function() return city:GetBuildQueue(); end);
+	if queue == nil then return -1, -1; end
+	local kinds = {
+		{ GameInfo.Units,      "GetUnitProgress",     "GetUnitCost"     },
+		{ GameInfo.Buildings,  "GetBuildingProgress", "GetBuildingCost" },
+		{ GameInfo.Districts,  "GetDistrictProgress", "GetDistrictCost" },
+		{ GameInfo.Projects,   "GetProjectProgress",  "GetProjectCost"  },
+	};
+	for _, row in ipairs(kinds) do
+		local present = try(function() return row[1][hash] ~= nil; end, false);
+		if present then
+			local progress = try(function() return queue[row[2]](queue, hash); end, -1);
+			local cost = try(function() return queue[row[3]](queue, hash); end, -1);
+			return progress, cost;
+		end
+	end
+	return -1, -1;
+end
+
 local function enumMembers(getter)
 	local ok, tbl = pcall(getter);
 	if not ok or type(tbl) ~= "table" then return nil; end
@@ -4107,6 +4153,8 @@ local function exportState(player, pid, turn)
 		-- Once per city, not three times: this runs for every city every turn and
 		-- each call is three guarded engine reads.
 		local loyalNow, loyalRate, loyalFallsTo = cityLoyalty(city);
+		-- Same discipline: one resolve of the hash to its kind, two engine reads.
+		local prodProgress, prodCost = productionProgress(city, queue);
 		local defStrength, defDamage = cityDefence(
 			try(function() return city:GetX(); end, -1),
 			try(function() return city:GetY(); end, -1));
@@ -4245,12 +4293,11 @@ local function exportState(player, pid, turn)
 			production = try(function()
 				return city:GetBuildQueue():GetProductionYield();
 			end, -1),
-			production_progress = try(function()
-				return city:GetBuildQueue():GetCurrentProductionProgress();
-			end, -1),
-			production_cost = try(function()
-				return city:GetBuildQueue():GetCurrentProductionCost();
-			end, -1),
+			-- ⚠ Typed accessors, not a generic one — see `productionProgress`.
+			-- The obvious `GetCurrentProductionProgress()` does not exist and
+			-- read -1 on every city of every turn until this was fixed.
+			production_progress = prodProgress,
+			production_cost = prodCost,
 			production_turns = try(function()
 				return city:GetBuildQueue():GetTurnsLeft();
 			end, -1),
