@@ -5819,9 +5819,31 @@ local function applyOrder(player, pid, row, turn)
 			--
 			-- Same cure as the settler loop: record the ground, let CIVVIS's own
 			-- planner route around it. See `Game::blocked_improvement_sites`.
+			-- ⚠⚠ NAME THE TILE THE ORDER ASKED FOR, NOT THE ONE THE BUILDER IS ON.
+			--
+			-- `x`/`y` above carry the ORDER's target and only fall back to the unit's
+			-- own tile. Reporting `unit:GetX()` here therefore named the wrong ground
+			-- whenever the builder had not reached the target — and a builder that
+			-- cannot reach its target is exactly the case this feedback exists for.
+			--
+			-- What it recorded instead was wherever the builder was stuck, usually the
+			-- capital's own centre. `Game::valid_improvements` already returns nothing
+			-- for a tile with a city on it, so the entry changed no decision, the real
+			-- tile stayed unblocked, and CIVVIS re-derived the same target from the
+			-- same board forever.
+			--
+			-- Measured on run civvis-20260802T041527Z: 286 `improve_refused`, of which
+			-- 118 + 84 + 59 + 23 + 13 name the SAME tile (63,11) — the capital centre —
+			-- across three builders, for a whole 250-turn game. Runs that expanded
+			-- refuse each tile once or twice and move on, which is what the feedback
+			-- looks like when it lands on the right ground.
+			--
+			-- ⚠ The automation rung above can move the builder before this line runs,
+			-- so `unit:GetX()` is not even reliably where the refusal happened.
 			emit("improve_refused", { turn = turn, unit = subject,
 			                          want = wanted or "IMPROVE",
-			                          x = unit:GetX(), y = unit:GetY() });
+			                          x = params[UnitOperationTypes.PARAM_X],
+			                          y = params[UnitOperationTypes.PARAM_Y] });
 			return false, wanted or "IMPROVE";
 		end
 		-- ★★★ SEND THE TRADER SOMEWHERE. Untranslated until now, so a trader stood
