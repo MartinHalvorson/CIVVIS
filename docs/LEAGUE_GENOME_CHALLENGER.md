@@ -14,12 +14,12 @@ are excluded so the test changes the general policy, not the victory target.
 
 In the current committed snapshot the selected genome is `g4-10`:
 
-The figures below are synchronized with league round **2354**.
+The figures below are synchronized with league round **2712**.
 
 | strategy | rating | RD | games | wins | lower win bound | lower placement rating |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| `g4-10` | 1709.3 | 51.7 | 256 | 87 | 28.5% | 1607.8 |
-| `advanced` anchor | 1731.6 | 59.8 | 2502 | 361 | 13.1% | 1614.4 |
+| `g4-10` | 1705.6 | 58.2 | 276 | 88 | 26.7% | 1591.5 |
+| `advanced` anchor | 1746.9 | 59.5 | 2781 | 386 | 12.6% | 1630.3 |
 
 The league snapshot is definitional provenance. If it is absent or contains
 no eligible generalist, the entrant explicitly degrades to `strategic_deep`
