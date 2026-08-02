@@ -290,6 +290,31 @@ fn decide(
                 }
             }
         }
+        // ★ PEACE RIDES THE REPORT, NOT THE LOG — and unlike the retracted
+        // war-from-plan above this is NOT the bridge upgrading a preference:
+        // the planner DECIDED to offer (it journals "Offering peace" and
+        // applies `ProposeDeal { peace: true }`). What declines is CIVVIS's
+        // internal MODEL of the rival — winning, so the deal never reaches the
+        // applied-action log — but on a mirrored game that answer belongs to
+        // the real Civilization VI rival. Run civvis-20260801T221459Z: 106
+        // offer decisions from t118, zero orders, the losing war unexitable.
+        for seat in &report.peace_offers {
+            if let Some(rival) = state.rivals.get(seat.saturating_sub(1)) {
+                let subject = rival.player as i64;
+                let already = orders
+                    .iter()
+                    .any(|o| o.kind == "peace" && o.subject == Some(subject));
+                if rival.at_war && !already {
+                    orders.push(Order {
+                        kind: "peace",
+                        subject: Some(subject),
+                        verb: Some("MAKE_PEACE".to_string()),
+                        pos: None,
+                    });
+                    note_bits.push(format!("peace_from_plan={}", rival.player));
+                }
+            }
+        }
     } else {
         note_bits.push("plan=none".to_string());
     }
@@ -582,6 +607,39 @@ fn translate(
                 .get(player.saturating_sub(1))
                 .map(|r| r.player as i64),
             verb: Some("DECLARE".to_string()),
+            pos: None,
+        }),
+        // ★★★★★ PEACE, WHICH HAD NO ARM AT ALL. A losing war could never be
+        // exited: run civvis-20260801T221459Z spent 93 turns emitting MakePeace
+        // — "Offering peace" in why.log every turn from t118 to the end — while
+        // every one fell through to the skipped tally and the harness fought
+        // on. Same seat-mapping as the war arm above; the Lua side gates on
+        // IsAtWarWith and answers with the shipped deal shape.
+        Action::MakePeace { player } => Some(Order {
+            kind: "peace",
+            subject: state
+                .rivals
+                .get(player.saturating_sub(1))
+                .map(|r| r.player as i64),
+            verb: Some("MAKE_PEACE".to_string()),
+            pos: None,
+        }),
+        // ⚠ THE PLANNER'S ACTUAL PEACE VEHICLE IS A DEAL, NOT MakePeace.
+        // `advanced.rs` deliberately proposes `ProposeDeal { peace: true, .. }`
+        // so the recipient's valuation answers, instead of the engine's direct
+        // MakePeace (which let a defender end a war the conqueror valued) —
+        // the replay of civvis-20260801T221459Z journals "Offering peace" 106
+        // times and every one was a ProposeDeal falling into the `deal` skip
+        // tally. Both variants funnel to the one Civilization VI peace order;
+        // a non-peace deal (open borders, friendship, gold) still has no
+        // counterpart and stays skipped.
+        Action::ProposeDeal { player, peace: true, .. } => Some(Order {
+            kind: "peace",
+            subject: state
+                .rivals
+                .get(player.saturating_sub(1))
+                .map(|r| r.player as i64),
+            verb: Some("MAKE_PEACE".to_string()),
             pos: None,
         }),
         Action::Research { tech, .. } => Some(Order {
