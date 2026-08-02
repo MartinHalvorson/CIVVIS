@@ -71,7 +71,7 @@ impl Game {
             .districts
             .iter()
             .find(|(_, spec)| {
-                spec.replaces == Some(Name::new(&family))
+                spec.replaces == Some(Name::new(family))
                     && spec.unique_to.as_deref() == Some(civ)
             })
             .map(|(name, _)| *name)
@@ -438,7 +438,7 @@ mod tests {
     /// calculator's whole point is seeing the cluster before it stands.
     #[test]
     fn foundations_count_toward_planned_neighbors() {
-        let (mut game, capital, center) = flattened_game();
+        let (mut game, _capital, center) = flattened_game();
         let site = game
             .nbrs(center)
             .into_iter()
