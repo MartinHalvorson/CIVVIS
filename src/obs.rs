@@ -2152,19 +2152,59 @@ mod tests {
         // The ground track itself: the orbit's own latitude and longitude, less
         // the turn the world made under it.
         assert!(INDEX.contains("const FLAT_SAT_DRIFT = .1;"));
+        assert!(INDEX.contains("const FLAT_SAT_TAIL_SCALE = .3;"));
+        assert!(INDEX.contains("const FLAT_SAT_HORIZON_RADIUS = .024;"));
         assert!(INDEX.contains("function flatSatelliteGround(orbit, theta) {"));
         assert!(
             INDEX.contains("- FLAT_SAT_DRIFT * theta;"),
             "a ground track without the world's own turn under it is a sine wave",
         );
+        assert!(INDEX.contains("track(-1.35 * FLAT_SAT_TAIL_SCALE, 0, 1, .2, false);"));
+        assert!(INDEX.contains("track(-.38 * FLAT_SAT_TAIL_SCALE, 0, 1.4, .45, false);"));
+        assert!(INDEX.contains("const horizon = WW() * FLAT_SAT_HORIZON_RADIUS;"));
         // Overhead is only in the picture once the camera is off the ground,
         // and the board keeps painting while a craft is up there — a strategic
         // map is otherwise perfectly still between turns.
         assert!(INDEX.contains("if (!state || planetMap()) return 0;"));
         assert!(INDEX.contains("return Math.max(0, Math.min(1, (.86 - cam.scale) / .34));"));
-        assert!(INDEX.contains("return flatSkyShown() > .02 && skyCrews().satellite.length > 0;"));
+        assert!(INDEX.contains("flatSkyShown() > .02 && skyCrews().satellite.length > 0"));
         assert!(INDEX.contains("|| planetSkyAnimating() || flatSkyAnimating();"));
-        assert!(INDEX.contains("  drawFlatSatellites(now0);\n  drawNuclearBlasts(now0);"));
+        assert!(INDEX.contains("  drawFlatSatellites(now0);\n  drawFlatLaunches(now0);"));
+    }
+
+    #[test]
+    fn space_race_launches_use_mission_specific_rockets_on_both_maps() {
+        const INDEX: &str = include_str!("../web/index.html");
+
+        // Apollo 11 flew Saturn V, Mars gets the Starship silhouette, and the
+        // exoplanet mission gets the explicitly oversized version of it.
+        assert!(INDEX.contains(
+            "moon:{project:SKY_CHAIN.moon, duration:2800, body:\"moon\", rocket:\"saturn_v\"}"
+        ));
+        assert!(INDEX.contains(
+            "mars:{project:SKY_CHAIN.mars, duration:3600, body:\"mars\", rocket:\"starship\"}"
+        ));
+        assert!(INDEX.contains(
+            "expedition:{project:SKY_CHAIN.expedition, duration:3000, body:\"exo\", rocket:\"starship_xl\"}"
+        ));
+        assert!(INDEX.contains("function drawMissionRocket(rocket, player, size, now"));
+        assert!(INDEX.contains("length:starshipLength * 2"));
+        assert!(INDEX.contains("halfWidth:starshipHalfWidth * 4"));
+
+        // State-diff detection is shared, then each projection owns a flight
+        // path while both call the same rocket-art renderer.
+        assert!(INDEX.contains("function queueSkyLaunches(prev, next"));
+        assert!(INDEX.contains("function drawSkyLaunches(crews, placements"));
+        assert!(INDEX.contains("drawMissionRocket(flight.rocket, player, size, now);"));
+        assert!(INDEX.contains("function flatLaunchRoute(launch, player)"));
+        assert!(INDEX.contains("function drawFlatLaunches(now)"));
+        assert!(INDEX.contains("drawMissionRocket(flight.rocket, player, size, now, pixel);"));
+        assert!(INDEX.contains(
+            "drawFlatSatellites(now0);\n  drawFlatLaunches(now0);\n  drawNuclearBlasts(now0);"
+        ));
+        assert!(
+            INDEX.contains("return activeSkyLaunches().length > 0 ||\n    (flatSkyShown() > .02")
+        );
     }
 
     #[test]
