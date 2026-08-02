@@ -36603,10 +36603,10 @@ impl Game {
                 ..
             } => {
                 let item = if *formation == 0 {
-                    Item::Unit { unit: unit.clone() }
+                    Item::Unit { unit: *unit }
                 } else {
                     Item::Formation {
-                        unit: unit.clone(),
+                        unit: *unit,
                         formation: *formation,
                     }
                 };
@@ -36615,7 +36615,7 @@ impl Game {
             Action::BuyBuilding { city, building, .. } => self.purchase_is_blocked(
                 *city,
                 &Item::Building {
-                    building: building.clone(),
+                    building: *building,
                 },
             ),
             Action::BuyDistrict {
@@ -36626,7 +36626,7 @@ impl Game {
             } => self.purchase_is_blocked(
                 *city,
                 &Item::District {
-                    district: district.clone(),
+                    district: *district,
                     pos: *pos,
                 },
             ),
@@ -38005,10 +38005,10 @@ impl Game {
             for unit in &purchasable_units {
                 for formation in 0..=2 {
                     let item = if formation == 0 {
-                        Item::Unit { unit: unit.clone() }
+                        Item::Unit { unit: *unit }
                     } else {
                         Item::Formation {
-                            unit: unit.clone(),
+                            unit: *unit,
                             formation,
                         }
                     };

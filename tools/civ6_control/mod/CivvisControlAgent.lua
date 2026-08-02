@@ -261,11 +261,31 @@ local function productionProgress(city, hash)
 		{ GameInfo.Districts,  "GetDistrictProgress", "GetDistrictCost" },
 		{ GameInfo.Projects,   "GetProjectProgress",  "GetProjectCost"  },
 	};
-	for _, row in ipairs(kinds) do
-		local present = try(function() return row[1][hash] ~= nil; end, false);
-		if present then
-			local progress = try(function() return queue[row[2]](queue, hash); end, -1);
-			local cost = try(function() return queue[row[3]](queue, hash); end, -1);
+	for _, entry in ipairs(kinds) do
+		-- ⚠⚠⚠ THE ACCESSORS TAKE `row.Index`, NOT THE HASH, AND GETTING THIS WRONG
+		-- SEGFAULTS THE GAME — `try`/`pcall` CANNOT CATCH IT.
+		--
+		-- The shipped UI is unambiguous (ProductionPanel.lua):
+		--     pBuildQueue:GetUnitCost( row.Index )
+		--     pBuildQueue:GetUnitProgress( row.Index )
+		--     pBuildQueue:GetBuildingProgress( pRow.Index )
+		--     pBuildQueue:GetDistrictProgress( pRow.Index )
+		--
+		-- The first version of this function passed the 32-bit hash from
+		-- `GetCurrentProductionTypeHash()` straight through. The engine indexed
+		-- far out of bounds and Civilization VI died with EXC_BAD_ACCESS / SIGBUS,
+		-- KERN_PROTECTION_FAILURE, in GameCore_XP2.dll +471072 — FOUR crashes in
+		-- seventeen minutes on 2026-08-02, one per attempt, each run ending at
+		-- turn 1 or 2 with `reason: "game exited"`. It took out a whole batch.
+		--
+		-- ⚠ A `pcall` around an engine call does not make it safe. It catches Lua
+		-- errors; it does not catch a native memory fault. The guard that matters
+		-- here is passing the right argument, not wrapping the wrong one.
+		local row = try(function() return entry[1][hash]; end);
+		local index = row and try(function() return row.Index; end);
+		if index ~= nil then
+			local progress = try(function() return queue[entry[2]](queue, index); end, -1);
+			local cost = try(function() return queue[entry[3]](queue, index); end, -1);
 			return progress, cost;
 		end
 	end
