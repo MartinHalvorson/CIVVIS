@@ -253,8 +253,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// part of a compiled controller, so Advanced-v1 behavior and the Elo protocol
 /// remain unchanged. The source contract is deliberately re-pinned for this
 /// reviewed test-only diff.
+///
+/// #927 adds escort progress accounting behind `linked_settler_progress`,
+/// which is false for configured and legacy engine agents and enabled only by
+/// the live `civvis_orders` bridge. Engine and Elo trajectories therefore keep
+/// their prior behavior; this is a compatibility re-pin, not a protocol bump.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbbb7_d47d_3fd9_f58f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x018f_267a_305a_0276;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

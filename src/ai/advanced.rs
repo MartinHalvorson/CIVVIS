@@ -918,8 +918,9 @@ pub struct AdvancedAi {
     /// The commitment is **bounded**, which is the whole design: an unbounded
     /// hold would re-create exactly the livelock #492 was merged to fix, a
     /// settler retrying an unreachable site forever. After
-    /// `SETTLER_STALL_LIMIT` consecutive turns without moving, the target is
-    /// released and the ordinary search runs again.
+    /// `SETTLER_STALL_LIMIT` consecutive turns without getting closer, the
+    /// target is released and the ordinary search runs again. Counting motion
+    /// would let a Settler or its escort oscillate forever.
     pub settler_commit: bool,
     /// Consecutive turns each settler has failed to make progress, when
     /// `settler_commit` is on. Reset whenever `settler_closest` improves.
@@ -938,6 +939,11 @@ pub struct AdvancedAi {
     /// moved — see `advanced_settler_step`. Storing the target alongside the
     /// distance makes a retarget self-invalidating.
     settler_closest: BTreeMap<u32, (Pos, i32)>,
+    /// Apply the same progress accounting when a military escort leads the
+    /// linked formation. The live Civ VI bridge enables this because its
+    /// persistent agent otherwise treats every legal oscillating escort move
+    /// as renewed progress; engine controllers retain their measured behavior.
+    pub linked_settler_progress: bool,
     /// Let more than one settler exist at a time, up to the shortfall against
     /// the city target.
     ///
@@ -1628,6 +1634,7 @@ impl AdvancedAi {
             settler_blocked_turns: BTreeMap::new(),
             settler_avoid: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
+            linked_settler_progress: false,
             parallel_settlers: false,
             expansion_pays_back: false,
             late_expansion: false,
@@ -14252,12 +14259,24 @@ impl AdvancedAi {
             let before = g.units[&uid].pos;
             let moved = before != target
                 && self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), true, target);
-            if moved && g.units.get(&uid).is_some_and(|escort| escort.pos != before) {
+            let after = g.units.get(&uid).map_or(before, |escort| escort.pos);
+            let distance = g.wdist(after, target);
+            let advanced = moved
+                && after != before
+                && (!self.linked_settler_progress
+                    || match self.settler_closest.get(&settler) {
+                        Some((cached, closest)) => *cached != target || distance < *closest,
+                        None => true,
+                    });
+            if advanced {
+                if self.linked_settler_progress {
+                    self.settler_closest.insert(settler, (target, distance));
+                }
                 self.settler_stalls.remove(&settler);
                 self.settler_blocked_turns.remove(&settler);
                 think!(self.journal(), Expansion, Detail, "Escort opening the route";
                        "the Settler formation advances toward {target:?}"; target);
-            } else if !moved {
+            } else if self.linked_settler_progress || !moved {
                 *self.settler_blocked_turns.entry(settler).or_insert(0) += 1;
                 let stalls = self.settler_stalls.entry(settler).or_insert(0);
                 *stalls += 1;
@@ -14266,11 +14285,14 @@ impl AdvancedAi {
                         .insert(settler, (target, g.turn + g.standard_duration(8)));
                     self.settler_targets.remove(&settler);
                     self.settler_stalls.remove(&settler);
-                    think!(self.journal(), Expansion, Decision, "Escort abandoning a blocked route";
-                           "the formation will reconsider {target:?} after a cooldown"; target);
+                    self.settler_closest.remove(&settler);
+                    think!(self.journal(), Expansion, Decision,
+                           "Escort abandoning a route without progress";
+                           "the formation failed to get closer to {target:?}; the site will be \
+                            reconsidered after a cooldown"; target);
+                    let unlinked = g.apply(pid, &Action::UnlinkUnits { unit: uid }).is_ok();
                     return Some(
-                        g.apply(pid, &Action::UnlinkUnits { unit: uid }).is_ok()
-                            || self.base.fortify_or_stop(g, pid, uid),
+                        moved || unlinked || self.base.fortify_or_stop(g, pid, uid),
                     );
                 }
             }
@@ -23974,6 +23996,98 @@ mod tests {
             game.turn += 1;
         }
         assert!(!ai.settler_targets.contains_key(&settler));
+        assert_eq!(ai.settler_avoid.get(&settler).map(|(pos, _)| *pos), Some(target));
+        assert_eq!(game.units[&settler].linked_to, None);
+        assert_eq!(game.units[&escort].linked_to, None);
+    }
+
+    #[test]
+    fn moving_escort_cannot_keep_a_stalled_settlement_target_forever() {
+        let mut game = Game::new_full(1, 24, 16, 8_120, 120, 0, false);
+        let founding_settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .unwrap();
+        let source = game.units[&founding_settler].pos;
+        game.apply(
+            0,
+            &Action::FoundCity {
+                unit: founding_settler,
+            },
+        )
+        .unwrap();
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        for position in game.wdisk(source, SETTLER_ESCORT_SEARCH_RADIUS) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        let target = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdist(source, *position) >= SETTLER_ESCORT_DISTANCE + 2
+                    && game.wdist(source, *position) <= SETTLER_ESCORT_SEARCH_RADIUS
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("fixture has a multi-turn expansion route");
+        let settler = game.spawn_test_unit("settler", 0, source);
+        let escort = game.spawn_test_unit("warrior", 0, source);
+        let mut ai = AdvancedAi::new();
+        ai.linked_settler_progress = true;
+        ai.settler_targets.insert(settler, target);
+        ai.advanced_formations(&mut game, 0);
+        assert_eq!(game.units[&settler].linked_to, Some(escort));
+
+        // Replay the live failure's essential shape: the formation executes a
+        // legal move every turn, but an obstruction sends it back to the same
+        // starting tile before the next decision. Motion is not progress.
+        let route_distance = game.wdist(source, target);
+        ai.settler_closest
+            .insert(settler, (target, route_distance - 1));
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        for attempt in 0..SETTLER_STALL_LIMIT {
+            for unit in [settler, escort] {
+                let unit = game.units.get_mut(&unit).unwrap();
+                unit.pos = source;
+                unit.moves_left = 4.0;
+                unit.acted = false;
+                unit.fortified = false;
+            }
+            assert_eq!(
+                ai.settler_escort_step(&mut game, 0, escort, &plan),
+                Some(true),
+                "the escort should execute the repeated legal move"
+            );
+            assert_ne!(game.units[&escort].pos, source);
+            if attempt + 1 < SETTLER_STALL_LIMIT {
+                assert_eq!(ai.settler_targets.get(&settler), Some(&target));
+            }
+            game.turn += 1;
+        }
+
+        assert!(!ai.settler_targets.contains_key(&settler));
+        assert!(!ai.settler_closest.contains_key(&settler));
         assert_eq!(ai.settler_avoid.get(&settler).map(|(pos, _)| *pos), Some(target));
         assert_eq!(game.units[&settler].linked_to, None);
         assert_eq!(game.units[&escort].linked_to, None);
