@@ -89,7 +89,7 @@ fn scramble(
                 .filter(|t| *t != current)
                 .collect();
             if !available.is_empty() {
-                let pick = available[rng.below(available.len())].clone();
+                let pick = available[rng.below(available.len())];
                 let progress = game.players[pid].research_progress;
                 game.players[pid].research = None;
                 if game.apply(pid, &Action::Research { tech: pick }).is_ok() {
@@ -109,7 +109,7 @@ fn scramble(
                 .filter(|c| *c != current)
                 .collect();
             if !available.is_empty() {
-                let pick = available[rng.below(available.len())].clone();
+                let pick = available[rng.below(available.len())];
                 let progress = game.players[pid].civic_progress;
                 game.players[pid].civic = None;
                 if game.apply(pid, &Action::Civic { civic: pick }).is_ok() {
@@ -165,7 +165,7 @@ fn main() {
                 if game.winner.is_some() {
                     break;
                 }
-                for pid in 0..game.players.len() {
+                for (pid, agent) in fleet.iter_mut().enumerate().take(game.players.len()) {
                     if game.winner.is_some() {
                         break;
                     }
@@ -182,7 +182,7 @@ fn main() {
                     if !game.players[pid].is_minor && is_treated(pid) && game.current == pid {
                         scramble(&mut game, pid, &mut rng, tech, civic, &mut fired);
                     }
-                    fleet[pid].take_turn(&mut game, pid);
+                    agent.take_turn(&mut game, pid);
                     if game.winner.is_none() && game.current == pid {
                         let _ = game.apply(pid, &Action::EndTurn);
                     }

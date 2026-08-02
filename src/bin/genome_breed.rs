@@ -65,6 +65,20 @@ fn number(args: &[String], flag: &str, default: usize) -> usize {
         .unwrap_or(default)
 }
 
+/// The fixed evaluation surface for one candidate genome. Grouping these
+/// parameters keeps selection and holdout measurements visibly comparable.
+#[derive(Clone, Copy)]
+struct FitnessConfig {
+    players: usize,
+    width: i32,
+    height: i32,
+    maps: usize,
+    seed0: u64,
+    turns: u32,
+    jobs: usize,
+    on_wins: bool,
+}
+
 /// One mirrored map pair. Returns the candidate's share of the table's
 /// victory-lane progress, averaged over both seat parities.
 ///
@@ -131,20 +145,18 @@ fn duel(
 }
 
 /// Mean lane-progress share and the standard error of that mean.
-fn fitness(
-    candidate: &Weights,
-    players: usize,
-    w: i32,
-    h: i32,
-    maps: usize,
-    seed0: u64,
-    turns: u32,
-    jobs: usize,
-    on_wins: bool,
-) -> (f64, f64) {
+fn fitness(candidate: &Weights, config: FitnessConfig) -> (f64, f64) {
     let genome = candidate.clone();
-    let shares = parallel::map(maps, jobs, move |index| {
-        duel(&genome, players, w, h, seed0 + index as u64, turns, on_wins)
+    let shares = parallel::map(config.maps, config.jobs, move |index| {
+        duel(
+            &genome,
+            config.players,
+            config.width,
+            config.height,
+            config.seed0 + index as u64,
+            config.turns,
+            config.on_wins,
+        )
     });
     let n = shares.len().max(1) as f64;
     let mean = shares.iter().sum::<f64>() / n;
@@ -443,20 +455,20 @@ fn main() {
     let mut best = (0.0f64, shipped.clone());
     for generation in 0..gens {
         let map_seed = seed0 + 1_000 * (generation as u64 + 1);
+        let config = FitnessConfig {
+            players,
+            width,
+            height,
+            maps,
+            seed0: map_seed,
+            turns,
+            jobs,
+            on_wins,
+        };
         let mut scored: Vec<(f64, f64, Vec<f64>)> = pop
             .iter()
             .map(|genes| {
-                let (fit, se) = fitness(
-                    &Weights::from_vec(genes),
-                    players,
-                    width,
-                    height,
-                    maps,
-                    map_seed,
-                    turns,
-                    jobs,
-                    on_wins,
-                );
+                let (fit, se) = fitness(&Weights::from_vec(genes), config);
                 (fit, se, genes.clone())
             })
             .collect();
@@ -496,7 +508,17 @@ fn main() {
     let holdout_seed = seed0 + 700_000;
     let champion = Weights::from_vec(&best.1);
     let (holdout, holdout_se) = fitness(
-        &champion, players, width, height, holdout_maps, holdout_seed, turns, jobs, on_wins,
+        &champion,
+        FitnessConfig {
+            players,
+            width,
+            height,
+            maps: holdout_maps,
+            seed0: holdout_seed,
+            turns,
+            jobs,
+            on_wins,
+        },
     );
 
     println!("\nchampion, genes that moved from the shipped value:");
