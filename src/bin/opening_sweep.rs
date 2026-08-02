@@ -34,6 +34,18 @@ const BOOK_GENES: [usize; 4] = [23, 24, 25, 26];
 /// Menu length plus one for "no scripted pick".
 const OPTIONS: usize = OPENING_MENU.len() + 1;
 
+/// The fixed map and worker surface for one opening-book evaluation.
+#[derive(Clone, Copy)]
+struct ScoreConfig {
+    players: usize,
+    width: i32,
+    height: i32,
+    maps: usize,
+    seed0: u64,
+    turns: u32,
+    jobs: usize,
+}
+
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
         .position(|arg| arg == flag)
@@ -89,23 +101,21 @@ fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u
 }
 
 /// Mean share and the standard error of that mean.
-fn score(
-    book: &[usize; 4],
-    players: usize,
-    w: i32,
-    h: i32,
-    maps: usize,
-    seed0: u64,
-    turns: u32,
-    jobs: usize,
-) -> (f64, f64) {
+fn score(book: &[usize; 4], config: ScoreConfig) -> (f64, f64) {
     let mut v = Weights::default().to_vec();
     for (slot, value) in BOOK_GENES.iter().zip(book) {
         v[*slot] = *value as f64;
     }
     let genome = Weights::from_vec(&v);
-    let shares = parallel::map(maps, jobs, move |index| {
-        duel(&genome, players, w, h, seed0 + index as u64, turns)
+    let shares = parallel::map(config.maps, config.jobs, move |index| {
+        duel(
+            &genome,
+            config.players,
+            config.width,
+            config.height,
+            config.seed0 + index as u64,
+            config.turns,
+        )
     });
     let n = shares.len().max(1) as f64;
     let mean = shares.iter().sum::<f64>() / n;
@@ -127,6 +137,15 @@ fn main() {
     let seed0 = number(&args, "--seed", 900_000) as u64;
     let holdout_maps = number(&args, "--holdout-maps", 48);
     let jobs = number(&args, "--jobs", parallel::default_jobs());
+    let score_config = ScoreConfig {
+        players,
+        width,
+        height,
+        maps,
+        seed0,
+        turns,
+        jobs,
+    };
 
     let shipped_vec = Weights::default().to_vec();
     let shipped: [usize; 4] = [
@@ -175,7 +194,12 @@ fn main() {
         book.copy_from_slice(&parsed);
         let holdout_seed = seed0 + 500_000;
         let (mean, se) = score(
-            &book, players, width, height, holdout_maps, holdout_seed, turns, jobs,
+            &book,
+            ScoreConfig {
+                maps: holdout_maps,
+                seed0: holdout_seed,
+                ..score_config
+            },
         );
         println!(
             "book {} vs shipped {}",
@@ -208,7 +232,13 @@ fn main() {
         for value in 0..OPTIONS {
             let mut book = best;
             book[slot] = value;
-            let (mean, se) = score(&book, players, width, height, maps, slot_seed, turns, jobs);
+            let (mean, se) = score(
+                &book,
+                ScoreConfig {
+                    seed0: slot_seed,
+                    ..score_config
+                },
+            );
             let mut marker = String::new();
             if value == shipped[slot] {
                 marker.push_str(" (shipped)");
@@ -255,7 +285,12 @@ fn main() {
     // Disjoint maps are what separate that from a real effect.
     let holdout_seed = seed0 + 500_000;
     let (mine, mine_se) = score(
-        &best, players, width, height, holdout_maps, holdout_seed, turns, jobs,
+        &best,
+        ScoreConfig {
+            maps: holdout_maps,
+            seed0: holdout_seed,
+            ..score_config
+        },
     );
     let edge = mine - 0.5;
     println!("\nholdout, {holdout_maps} disjoint maps at seed {holdout_seed}:");
