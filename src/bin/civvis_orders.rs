@@ -1596,9 +1596,13 @@ fn main() {
     // rebuild, which is the whole point of carrying it.
     //
     // ⚠ Bounded, and the bound is what makes it safe: `SETTLER_STALL_LIMIT`
-    // consecutive turns without moving releases the site, so an unreachable target
-    // cannot hold a settler hostage — which is the livelock #492 was merged to fix.
+    // consecutive turns without getting closer releases the site, so an unreachable
+    // target cannot hold a settler hostage — which is the livelock #492 was merged
+    // to fix. This must include a linked escort: the completed Rome comparator's
+    // escort moved legally while oscillating for 101 turns, and motion alone reset
+    // the old counter forever.
     ai.settler_commit = true;
+    ai.linked_settler_progress = true;
     // ⚠ NOT `parallel_settlers`. That widens the RATE at which settlers are produced
     // and it carries a measured null; this seat's constraint is settlers that never
     // arrive, not settlers that are never built. Turning both on at once would make
