@@ -556,12 +556,32 @@ def unit_fact_mismatches(state, board, top):
         # archer as SCYTHIAN_HORSE_ARCHER, not an absent `horse_archer` type.
         kind = IDENTIFIER_ALIASES.get(kind, kind)
         kind = UNIT_MODEL_FALLBACKS.get(kind, kind)
-        source_groups.setdefault((owner, pos, kind), []).append(source)
+        # ⚠⚠ AND THE BASE THE EXPORT ITSELF HANDS US, because the mirror
+        # DELIBERATELY approximates a unique it does not model and says so.
+        #
+        # `UNIT_MALI_MANDEKALU_CAVALRY` arrives with `base: UNIT_KNIGHT`, and
+        # `rebuild_from_state` plants it as a knight, recording
+        # `approximated_as_knight` in `dropped_units` — 39 times on the run this
+        # was measured. The board is CORRECT. This check compared raw names, found
+        # no `mali_mandekalu_cavalry` on the tile, and reported five phantom drops:
+        #
+        #     UNIT_MALI_MANDEKALU_CAVALRY@(58,20) count Civ6=1 CIVVIS=0   x5
+        #
+        # Every civilization with a unique unit would do this, on every run. A
+        # deliberate, recorded translation is not a missing unit.
+        base_kind = civ6_id(source.get("base") or "", "UNIT_")
+        base_kind = IDENTIFIER_ALIASES.get(base_kind, base_kind)
+        base_kind = UNIT_MODEL_FALLBACKS.get(base_kind, base_kind)
+        source_groups.setdefault((owner, pos, kind, base_kind), []).append(source)
 
     mismatches = []
-    for (owner, pos, kind), sources in source_groups.items():
+    for (owner, pos, kind, base_kind), sources in source_groups.items():
+        # The exact type, or the base the export named for it. Nothing wider: a
+        # wildcard here would stop this axis catching a real drop, which is the
+        # only reason it exists.
+        accepted = {kind} | ({base_kind} if base_kind else set())
         candidates = [unit for unit in by_pos.get(pos, [])
-                      if str(unit.get("type") or "").lower() == kind
+                      if str(unit.get("type") or "").lower() in accepted
                       and (owner is None or unit.get("owner") == owner)]
         if len(candidates) != len(sources):
             if not all(unmodelled_great_person(exported_unit_kind(source)) for source in sources):
