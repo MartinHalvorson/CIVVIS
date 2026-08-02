@@ -23,7 +23,8 @@ because a snapshot of one turn cannot tell a garrison from a traffic jam:
 
   stuck_unit_turns / unit_turns   a unit-turn is stuck when the unit did not change
                                   plot since the previous state AND is standing on
-                                  one of our own city centres.
+                                  one of our own city centres. Bridge-managed Great
+                                  People are counted separately, not in either side.
   worst_stack                     most own units sharing a single city-centre plot.
   frozen_units                    units that never moved at all, over their lifetime,
                                   and lived at least `--frozen-turns` turns.
@@ -66,6 +67,24 @@ from pathlib import Path
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 HERE = Path(__file__).resolve().parent
+GREAT_PERSON_UNIQUE_TYPES = {"UNIT_COMANDANTE_GENERAL"}
+GOVERNOR_BASE_PROMOTIONS = {
+    "GOVERNOR_THE_AMBASSADOR": "GOVERNOR_PROMOTION_AMBASSADOR_MESSENGER",
+    "GOVERNOR_THE_BUILDER": "GOVERNOR_PROMOTION_BUILDER_GUILDMASTER",
+    "GOVERNOR_THE_CARDINAL": "GOVERNOR_PROMOTION_CARDINAL_BISHOP",
+    "GOVERNOR_THE_DEFENDER": "GOVERNOR_PROMOTION_REDOUBT",
+    "GOVERNOR_THE_EDUCATOR": "GOVERNOR_PROMOTION_EDUCATOR_LIBRARIAN",
+    "GOVERNOR_THE_MERCHANT": "GOVERNOR_PROMOTION_MERCHANT_LAND_ACQUISITION",
+    "GOVERNOR_THE_RESOURCE_MANAGER": (
+        "GOVERNOR_PROMOTION_RESOURCE_MANAGER_GROUNDBREAKER"
+    ),
+}
+
+
+def is_bridge_managed_great_person(unit: dict) -> bool:
+    """Whether this physical unit uses the Great Person bridge instead of the model."""
+    kind = unit.get("kind") or unit.get("type") or ""
+    return kind.startswith("UNIT_GREAT_") or kind in GREAT_PERSON_UNIQUE_TYPES
 
 
 def newest_run() -> Path | None:
@@ -104,6 +123,7 @@ def dropped_units(run: Path) -> dict:
     if not notes.exists():
         return {"checked": False}
     worst, reasons, turns_with = 0, Counter(), 0
+    managed_great_people = 0
     for line in notes.read_text(errors="replace").splitlines():
         try:
             note = json.loads(line).get("note", "")
@@ -112,15 +132,27 @@ def dropped_units(run: Path) -> dict:
         found = re.search(r"dropped_units=(\d+) \[([^\]]*)\]", note)
         if not found:
             continue
-        turns_with += 1
-        worst = max(worst, int(found.group(1)))
+        unmanaged_this_turn = 0
         for entry in found.group(2).split():
-            reasons[entry.rsplit(":", 1)[-1]] += 1
+            reason = entry.rsplit(":", 1)[-1]
+            # Physical Great People intentionally bypass CIVVIS's ordinary unit
+            # model. `great_person_orders` still gives them host-validated move and
+            # activation orders, including the Prophet-specific religion path. They
+            # are bridge-managed, not units that receive no order and freeze.
+            if reason == "great_person":
+                managed_great_people += 1
+                continue
+            reasons[reason] += 1
+            unmanaged_this_turn += 1
+        if unmanaged_this_turn:
+            turns_with += 1
+            worst = max(worst, unmanaged_this_turn)
     return {
         "checked": True,
         "turns_with_drops": turns_with,
         "worst_on_one_turn": worst,
         "by_reason": dict(reasons.most_common(6)),
+        "bridge_managed_great_person_observations": managed_great_people,
     }
 
 
@@ -150,11 +182,19 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
     worst_stack = 0
     worst_at: tuple | None = None
     per_turn: list[tuple[int, int, int, int]] = []
+    managed_great_people = 0
 
     for state in states:
         turn = state.get("turn")
         centres = {(c["x"], c["y"]) for c in (state.get("cities") or [])}
-        units = state.get("units") or []
+        exported_units = state.get("units") or []
+        managed_great_people += sum(
+            is_bridge_managed_great_person(unit) for unit in exported_units
+        )
+        units = [
+            unit for unit in exported_units
+            if not is_bridge_managed_great_person(unit)
+        ]
         occupancy: dict[tuple[int, int], list[int]] = defaultdict(list)
         turn_units = 0
         turn_stuck = 0
@@ -231,7 +271,10 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
     ever, ever_turn = None, None
     for state in states:
         centres = [(c["x"], c["y"]) for c in (state.get("cities") or [])]
-        units = state.get("units") or []
+        units = [
+            unit for unit in (state.get("units") or [])
+            if not is_bridge_managed_great_person(unit)
+        ]
         if not centres or not units:
             continue
         spread = [
@@ -250,7 +293,12 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
     # How far into the game this judgement is being made. A scout has not had time to
     # get anywhere by turn 26, and a detector that cries wolf on every young run is one
     # people learn to scroll past.
+    reach["first_turn"] = states[0].get("turn") if states else None
     reach["last_turn"] = states[-1].get("turn") if states else None
+    if isinstance(reach["first_turn"], int) and isinstance(reach["last_turn"], int):
+        reach["observed_turn_span"] = reach["last_turn"] - reach["first_turn"]
+    else:
+        reach["observed_turn_span"] = None
 
     # ★★★★ OSCILLATION, WHICH THE IDLE FRACTION CANNOT SEE AT ALL. A unit bouncing
     # between two tiles moves every single turn, so it is never "stuck" and never
@@ -263,6 +311,8 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
     tracks: dict[int, list] = defaultdict(list)
     for state in states:
         for unit in state.get("units") or []:
+            if is_bridge_managed_great_person(unit):
+                continue
             uid = unit.get("id")
             if uid is not None:
                 tracks[uid].append((unit.get("x"), unit.get("y")))
@@ -312,6 +362,7 @@ def idle_stack(events: list[dict], frozen_turns: int = 20) -> dict:
         "frozen_by_kind": dict(Counter(kind for _, kind, _ in frozen).most_common()),
         "frozen_worst": sorted(frozen, key=lambda row: -row[2])[:4],
         "units_seen": len(first_seen),
+        "bridge_managed_great_person_observations": managed_great_people,
         "per_turn_tail": per_turn[-8:],
     }
 
@@ -338,6 +389,42 @@ def _modelled_improvements() -> set[str]:
 
 
 MODELLED_IMPROVEMENTS = _modelled_improvements()
+
+
+def _model_names(filename: str) -> set[str]:
+    try:
+        return set(json.loads((HERE.parent / "data" / filename).read_text()))
+    except (OSError, ValueError):
+        return set()
+
+
+MODELLED_DISTRICTS = _model_names("districts.json")
+MODELLED_WONDERS = _model_names("wonders.json")
+WONDER_ALIASES = {
+    "halicarnassus_mausoleum": "mausoleum_at_halicarnassus",
+    "statue_liberty": "statue_of_liberty",
+    "university_sankore": "university_of_sankore",
+}
+
+
+def model_infrastructure_name(civ6: str, prefix: str, names: set[str]) -> str:
+    """Independently resolve the same strict exact/article/unique-prefix contract."""
+    base = civ6.removeprefix(prefix).lower()
+    if prefix == "BUILDING_":
+        alias = WONDER_ALIASES.get(base)
+        if alias in names:
+            return alias
+    if base in names:
+        return base
+    without_article = base.removeprefix("the_")
+    if without_article in names:
+        return without_article
+    matches = [name for name in names if name.startswith(base + "_")]
+    if len(matches) == 1:
+        return matches[0]
+    # Deliberately cannot equal any actual ruleset name, so an unmodelled Firaxis
+    # district is loud instead of being treated as correctly absent.
+    return f"@unmapped:{civ6}"
 
 
 def production_health(events: list[dict], builder_per_city: float = 0.8) -> dict:
@@ -487,6 +574,49 @@ def expected(plot: dict, vocab: dict) -> dict:
 COMPARED = ("t", "h", "w", "f", "r", "im", "own")
 
 
+def expected_infrastructure(events: list[dict]) -> dict[tuple[int, int], dict]:
+    """District/wonder occupancy from the newest authoritative city roster."""
+    state = None
+    best_turn = -1
+    for event in events:
+        if event.get("kind") != "state":
+            continue
+        turn = int(event.get("turn") or 0)
+        if turn >= best_turn:
+            state, best_turn = event, turn
+    if state is None:
+        return {}
+
+    cities = list(state.get("cities") or [])
+    for actor in list(state.get("rivals") or []) + list(state.get("minors") or []):
+        cities.extend(actor.get("cities") or [])
+    expected: dict[tuple[int, int], dict] = {}
+    for city in cities:
+        for district in city.get("districts") or []:
+            kind = str(district.get("type") or "").upper()
+            if kind in ("DISTRICT_CITY_CENTER", "DISTRICT_WONDER"):
+                continue
+            key = (district.get("x"), district.get("y"))
+            complete = district.get("complete", True)
+            name = model_infrastructure_name(kind, "DISTRICT_", MODELLED_DISTRICTS)
+            expected[key] = {
+                "district": name if complete else None,
+                "foundation": name if not complete else None,
+                "wonder": None,
+                "pillaged": bool(district.get("pillaged")) if complete else False,
+            }
+        for wonder in city.get("wonders") or []:
+            key = (wonder.get("x"), wonder.get("y"))
+            kind = str(wonder.get("type") or "").upper()
+            expected[key] = {
+                "district": None,
+                "foundation": None,
+                "wonder": model_infrastructure_name(kind, "BUILDING_", MODELLED_WONDERS),
+                "pillaged": False,
+            }
+    return expected
+
+
 def latest_tiles(events: list[dict]) -> dict[tuple[int, int], dict]:
     """The most recent export of every plot, merged across chunks and re-exports.
 
@@ -501,6 +631,230 @@ def latest_tiles(events: list[dict]) -> dict[tuple[int, int], dict]:
         for plot in event.get("plots") or []:
             plots[(plot.get("x"), plot.get("y"))] = plot
     return plots
+
+
+GREAT_WORK_OBJECTS = {
+    "GREATWORKOBJECT_WRITING": "writing",
+    "GREATWORKOBJECT_LANDSCAPE": "art",
+    "GREATWORKOBJECT_PORTRAIT": "art",
+    "GREATWORKOBJECT_SCULPTURE": "art",
+    "GREATWORKOBJECT_RELIGIOUS": "religious_art",
+    "GREATWORKOBJECT_ARTIFACT": "artifact",
+    "GREATWORKOBJECT_MUSIC": "music",
+    "GREATWORKOBJECT_RELIC": "relic",
+}
+
+
+def city_economy_agreement(events: list[dict], dump: dict) -> dict:
+    """Diff exact private city facts independently of the tile comparison."""
+    states = [event for event in events if event.get("kind") == "state"]
+    if not states:
+        return {
+            "compared": 0, "agree": 0,
+            "great_work_compared": 0, "great_work_agree": 0,
+            "empire_compared": 0, "empire_agree": 0,
+            "disagree_by_field": {}, "examples": {}, "max_model_yield_drift": 0.0,
+        }
+    state = states[-1]
+    expected = {
+        (city.get("x"), city.get("y")): city
+        for city in state.get("cities") or []
+        if isinstance(city.get("yields"), dict)
+    }
+    mirrored = {(city.get("x"), city.get("y")): city for city in dump.get("cities") or []}
+    fields: Counter = Counter()
+    examples: dict[str, list] = defaultdict(list)
+    agree = 0
+    yield_names = ("food", "production", "gold", "science", "culture", "faith")
+    max_model_drift = 0.0
+    for key, want in expected.items():
+        got = mirrored.get(key)
+        bad = []
+        if got is None:
+            bad.append("missing_city")
+        else:
+            for name in yield_names:
+                a = (want.get("yields") or {}).get(name)
+                b = (got.get("yields") or {}).get(name)
+                if a is None or b is None or abs(float(a) - float(b)) > 1e-6:
+                    bad.append(f"yield_{name}")
+                model = (got.get("model_yields") or {}).get(name)
+                if a is not None and model is not None:
+                    max_model_drift = max(max_model_drift, abs(float(a) - float(model)))
+            if want.get("worked") is not None:
+                # GetWorkedPlots includes the city centre; CIVVIS accounts for
+                # that tile intrinsically and dumps only citizen assignments.
+                a = {
+                    (plot.get("x"), plot.get("y"))
+                    for plot in want.get("worked") or []
+                    if (plot.get("x"), plot.get("y")) != key
+                }
+                b = {(plot.get("x"), plot.get("y")) for plot in got.get("worked") or []}
+                if a != b:
+                    bad.append("worked")
+            if want.get("specialists") is not None:
+                # Firaxis names district types while the dump uses CIVVIS family names.
+                a = Counter(
+                    model_infrastructure_name(value, "DISTRICT_", MODELLED_DISTRICTS)
+                    for value in want.get("specialists") or []
+                )
+                b = Counter(got.get("specialists") or [])
+                if a != b:
+                    bad.append("specialists")
+            progress = want.get("production_progress")
+            if progress is not None and (
+                got.get("production_progress") is None
+                or abs(float(progress) - float(got["production_progress"])) > 1e-6
+            ):
+                bad.append("production_progress")
+        if bad:
+            for field in bad:
+                fields[field] += 1
+                if len(examples[field]) < 3:
+                    examples[field].append({"xy": key, "civ6": want, "mirror": got})
+        else:
+            agree += 1
+
+    great_work_compared = 0
+    great_work_agree = 0
+    cities = state.get("cities") or []
+    if cities and all(city.get("great_works") is not None for city in cities):
+        wanted_works: Counter = Counter()
+        for city in cities:
+            for work in city.get("great_works") or []:
+                wanted_works[GREAT_WORK_OBJECTS.get(work.get("object"), work.get("object"))] += 1
+        got_works = Counter({k: int(v) for k, v in (dump.get("great_works") or {}).items()})
+        for kind in set(wanted_works) | set(got_works):
+            great_work_compared += 1
+            if wanted_works[kind] == got_works[kind]:
+                great_work_agree += 1
+            else:
+                fields["great_works"] += 1
+                if len(examples["great_works"]) < 3:
+                    examples["great_works"].append({
+                        "kind": kind, "civ6": wanted_works[kind], "mirror": got_works[kind],
+                    })
+    empire_compared = 0
+    empire_agree = 0
+    for name in ("science", "culture"):
+        want = state.get(name)
+        got = (dump.get("empire_yields") or {}).get(name)
+        if want is None or float(want) < 0:
+            continue
+        empire_compared += 1
+        if got is not None and abs(float(want) - float(got)) <= 1e-6:
+            empire_agree += 1
+        else:
+            fields[f"empire_{name}"] += 1
+            examples[f"empire_{name}"].append({"civ6": want, "mirror": got})
+    return {
+        "compared": len(expected),
+        "agree": agree,
+        "great_work_compared": great_work_compared,
+        "great_work_agree": great_work_agree,
+        "empire_compared": empire_compared,
+        "empire_agree": empire_agree,
+        "disagree_by_field": dict(fields.most_common()),
+        "examples": dict(examples),
+        "max_model_yield_drift": round(max_model_drift, 6),
+    }
+
+
+def governor_agreement(events: list[dict], dump: dict) -> dict:
+    """Diff the exact Governor roster, assignments, promotions and title ledger."""
+    states = [event for event in events if event.get("kind") == "state"]
+    if not states or "governors" not in states[-1]:
+        return {"compared": 0, "agree": 0, "disagree_by_field": {}, "examples": {}}
+    state = states[-1]
+    wanted = {
+        governor.get("type"): governor
+        for governor in state.get("governors") or []
+        if governor.get("type")
+    }
+    mirrored = {
+        governor.get("type"): governor
+        for governor in dump.get("governors") or []
+        if governor.get("type")
+    }
+    fields: Counter = Counter()
+    examples: dict[str, list] = defaultdict(list)
+    agree = 0
+    compared = 0
+
+    for governor_type in sorted(set(wanted) | set(mirrored)):
+        compared += 1
+        expected_governor = wanted.get(governor_type)
+        actual_governor = mirrored.get(governor_type)
+        bad = []
+        if expected_governor is None:
+            bad.append("extra_governor")
+        elif actual_governor is None:
+            bad.append("missing_governor")
+        else:
+            if (expected_governor.get("x", -1), expected_governor.get("y", -1)) != (
+                actual_governor.get("x", -1), actual_governor.get("y", -1)
+            ):
+                bad.append("assignment")
+            if bool(expected_governor.get("established")) != bool(
+                actual_governor.get("established")
+            ):
+                bad.append("established")
+            if (int(expected_governor.get("neutralized_turns") or 0) > 0) != bool(
+                actual_governor.get("neutralized")
+            ):
+                bad.append("neutralized")
+            expected_promotions = set(expected_governor.get("promotions") or [])
+            # Firaxis includes the free appointment ability in GetPromotions;
+            # CIVVIS represents it on the Governor specification, not as one of
+            # the five separately purchased promotions.
+            expected_promotions.discard(GOVERNOR_BASE_PROMOTIONS.get(governor_type))
+            if expected_promotions != set(actual_governor.get("promotions") or []):
+                bad.append("promotions")
+        if bad:
+            for field in bad:
+                fields[field] += 1
+                if len(examples[field]) < 3:
+                    examples[field].append({
+                        "type": governor_type,
+                        "civ6": expected_governor,
+                        "mirror": actual_governor,
+                    })
+        else:
+            agree += 1
+
+    point_fields = (
+        ("governor_points", "titles"),
+        ("governor_points_spent", "titles_spent"),
+    )
+    for source, field in point_fields:
+        value = state.get(source)
+        if value is None or int(value) < 0:
+            continue
+        compared += 1
+        if dump.get(source) is not None and int(dump[source]) == int(value):
+            agree += 1
+        else:
+            fields[field] += 1
+            examples[field].append({"civ6": value, "mirror": dump.get(source)})
+    if state.get("governor_points") is not None and state.get("governor_points_spent") is not None:
+        expected_available = max(
+            0, int(state["governor_points"]) - int(state["governor_points_spent"])
+        )
+        compared += 1
+        if int(dump.get("governor_points_available", -1)) == expected_available:
+            agree += 1
+        else:
+            fields["titles_available"] += 1
+            examples["titles_available"].append({
+                "civ6": expected_available,
+                "mirror": dump.get("governor_points_available"),
+            })
+    return {
+        "compared": compared,
+        "agree": agree,
+        "disagree_by_field": dict(fields.most_common()),
+        "examples": dict(examples),
+    }
 
 
 def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
@@ -555,6 +909,51 @@ def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
                          "expected": a, "mirror": b})
         if not bad:
             agree += 1
+
+    expected_infra = expected_infrastructure(events)
+    infrastructure_fields = Counter()
+    infrastructure_examples: dict[str, list] = defaultdict(list)
+    infrastructure_agree = 0
+    # Public rival city records omit infrastructure. Compare every authoritative
+    # current record, but do not call remembered rival districts "ghosts" merely
+    # because the latest fog-limited roster cannot repeat them.
+    infrastructure_keys = set(expected_infra)
+    for key in infrastructure_keys:
+        got = mirrored.get(key) or {}
+        want = expected_infra.get(key) or {
+            "district": None,
+            "foundation": None,
+            "wonder": None,
+            "pillaged": False,
+        }
+        actual = {
+            "district": got.get("d"),
+            "foundation": got.get("df"),
+            "wonder": got.get("wo"),
+            "pillaged": bool(got.get("p")),
+        }
+        bad = []
+        for field in ("district", "foundation", "wonder"):
+            if want[field] != actual[field]:
+                bad.append(field)
+        if want["district"] is not None and want["pillaged"] != actual["pillaged"]:
+            bad.append("district_pillaged")
+        if bad:
+            for field in bad:
+                infrastructure_fields[field] += 1
+                if len(infrastructure_examples[field]) < 3:
+                    infrastructure_examples[field].append({
+                        "xy": key, "expected": want, "mirror": actual,
+                        "mirror_types": {
+                            "district": got.get("d"),
+                            "foundation": got.get("df"),
+                            "wonder": got.get("wo"),
+                        },
+                    })
+        else:
+            infrastructure_agree += 1
+    economy = city_economy_agreement(events, dump)
+    governors = governor_agreement(events, dump)
     return {
         "exported_plots": len(exported),
         "mirrored_plots": len(mirrored),
@@ -568,6 +967,23 @@ def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
         "unmodelled_improvements": dict(unmodelled_improvements.most_common(8)),
         "disagree_by_field": dict(disagree.most_common()),
         "examples": {k: v for k, v in examples.items()},
+        "infrastructure_compared": len(infrastructure_keys),
+        "infrastructure_agree": infrastructure_agree,
+        "infrastructure_disagree_by_field": dict(infrastructure_fields.most_common()),
+        "infrastructure_examples": dict(infrastructure_examples),
+        "city_economy_compared": economy["compared"],
+        "city_economy_agree": economy["agree"],
+        "great_work_compared": economy["great_work_compared"],
+        "great_work_agree": economy["great_work_agree"],
+        "empire_economy_compared": economy["empire_compared"],
+        "empire_economy_agree": economy["empire_agree"],
+        "city_economy_disagree_by_field": economy["disagree_by_field"],
+        "city_economy_examples": economy["examples"],
+        "max_model_yield_drift": economy["max_model_yield_drift"],
+        "governor_compared": governors["compared"],
+        "governor_agree": governors["agree"],
+        "governor_disagree_by_field": governors["disagree_by_field"],
+        "governor_examples": governors["examples"],
     }
 
 
@@ -599,7 +1015,8 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
     reach = idle.get("reach") or {}
     if (reach.get("furthest_ever") is not None
             and reach["furthest_ever"] <= 8
-            and (reach.get("last_turn") or 0) >= 60):
+            and (reach.get("last_turn") or 0) >= 60
+            and (reach.get("observed_turn_span") or 0) >= 40):
         out.append(
             f"THE EMPIRE NEVER REACHED: the furthest any unit ever got from one of our "
             f"cities was {reach['furthest_ever']} tiles, at turn "
@@ -670,6 +1087,33 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
                 f"MIRROR DISAGREES: only {mirror['agree']}/{mirror['compared']} "
                 f"({af:.1%}) of plots match tile for tile; "
                 f"{mirror.get('disagree_by_field')}")
+        if mirror.get("infrastructure_disagree_by_field"):
+            out.append(
+                "MIRROR INFRASTRUCTURE DISAGREES: "
+                f"{mirror['infrastructure_agree']}/"
+                f"{mirror['infrastructure_compared']} district/foundation/wonder "
+                "plots agree; "
+                f"{mirror['infrastructure_disagree_by_field']} "
+                f"{mirror.get('infrastructure_examples')}")
+        if mirror.get("city_economy_disagree_by_field"):
+            out.append(
+                "MIRROR CITY ECONOMY DISAGREES: "
+                f"{mirror['city_economy_agree']}/{mirror['city_economy_compared']} "
+                "cities and "
+                f"{mirror['great_work_agree']}/{mirror['great_work_compared']} Great Work "
+                "counts and "
+                f"{mirror.get('empire_economy_agree', 0)}/"
+                f"{mirror.get('empire_economy_compared', 0)} "
+                "empire rates agree; "
+                f"{mirror['city_economy_disagree_by_field']} "
+                f"{mirror.get('city_economy_examples')}")
+        if mirror.get("governor_disagree_by_field"):
+            out.append(
+                "MIRROR GOVERNORS DISAGREE: "
+                f"{mirror['governor_agree']}/{mirror['governor_compared']} roster/title "
+                "facts agree; "
+                f"{mirror['governor_disagree_by_field']} "
+                f"{mirror.get('governor_examples')}")
     return out
 
 
@@ -728,7 +1172,8 @@ def main() -> int:
         print(f"  reach: furthest EVER {reach.get('furthest_ever')} tiles "
               f"(at t{reach.get('furthest_ever_turn')}); at the last turn "
               f"{reach.get('furthest')} furthest / {reach.get('mean')} mean "
-              f"over {reach.get('units')} units")
+              f"over {reach.get('units')} units; observed "
+              f"{reach.get('observed_turn_span')} turns")
         print(f"  idle: stuck {idle['stuck_unit_turns']}/{idle['unit_turns']} unit-turns"
               f" ({idle['stuck_fraction']})  surplus-on-centres "
               f"{idle['surplus_on_centres_unit_turns']}  worst stack {idle['worst_stack']}"
@@ -739,6 +1184,15 @@ def main() -> int:
               f"  late-war military {prod['military_builds_late_war']}/{prod['builds_late_war']}"
               f"  late blocks unanswered {prod['prod_blocks_after_t100_unanswered']}"
               f"/{prod['prod_blocks_after_t100']}")
+        managed_people = max(
+            report["dropped_units"].get(
+                "bridge_managed_great_person_observations", 0
+            ),
+            idle.get("bridge_managed_great_person_observations", 0),
+        )
+        if managed_people:
+            print(f"  bridge: {managed_people} physical Great Person observation(s) "
+                  "handled outside the ordinary unit model")
         if "mirror" in report:
             mirror = report["mirror"]
             if mirror.get("error"):
@@ -748,6 +1202,23 @@ def main() -> int:
                       f"({mirror['agree_fraction']})  missing {mirror['missing_in_mirror']}"
                       f"  frontier {mirror['extra_in_mirror_frontier']}  "
                       f"{mirror['disagree_by_field']}")
+                print(f"    infrastructure: {mirror['infrastructure_agree']}/"
+                      f"{mirror['infrastructure_compared']}  "
+                      f"{mirror['infrastructure_disagree_by_field']}")
+                if (mirror.get("city_economy_compared") or mirror.get("great_work_compared")
+                        or mirror.get("empire_economy_compared")):
+                    print(f"    city economy: {mirror['city_economy_agree']}/"
+                          f"{mirror['city_economy_compared']} cities, "
+                          f"Great Works {mirror['great_work_agree']}/"
+                          f"{mirror['great_work_compared']}, empire rates "
+                          f"{mirror.get('empire_economy_agree', 0)}/"
+                          f"{mirror.get('empire_economy_compared', 0)}, raw max yield drift "
+                          f"{mirror['max_model_yield_drift']}  "
+                          f"{mirror['city_economy_disagree_by_field']}")
+                if mirror.get("governor_compared"):
+                    print(f"    governors: {mirror['governor_agree']}/"
+                          f"{mirror['governor_compared']} roster/title facts  "
+                          f"{mirror['governor_disagree_by_field']}")
                 if mirror.get("unresolved_terrain"):
                     print(f"    unresolved terrain names: {mirror['unresolved_terrain']}")
                 if mirror.get("unmodelled_improvements"):

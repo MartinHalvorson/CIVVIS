@@ -117,7 +117,9 @@ def check_modinfo(report: Report) -> None:
 def check_python(report: Report) -> None:
     print("harness Python")
     bad = 0
-    for path in sorted((ROOT / "tools").glob("civ6_*.py")):
+    paths = list((ROOT / "tools").glob("civ6_*.py"))
+    paths.append(ROOT / "tools" / "civ6_control" / "macos_input.py")
+    for path in sorted(paths):
         try:
             ast.parse(path.read_text(errors="replace"))
         except SyntaxError as exc:
@@ -125,6 +127,16 @@ def check_python(report: Report) -> None:
             bad += 1
     if not bad:
         report.ok("all civ6_*.py parse")
+
+
+def installed_source_matches(live: bytes, source: bytes) -> bool:
+    """Accept an installer-generated settings prelude before the source Lua.
+
+    ``install.py`` bakes one run's settings into each installed script, then
+    appends the worktree file byte-for-byte. Comparing whole files therefore
+    reported a stale installed module even immediately after a correct sync.
+    """
+    return live == source or live.endswith(source)
 
 
 def check_installed(report: Report) -> None:
@@ -137,13 +149,13 @@ def check_installed(report: Report) -> None:
         live = INSTALLED / path.name
         if not live.exists():
             report.fail(path.name, "not installed")
-        elif live.read_bytes() != path.read_bytes():
+        elif not installed_source_matches(live.read_bytes(), path.read_bytes()):
             # Not a failure: the harness re-syncs at attempt start, so a difference
             # before a run is normal. It is only fatal if someone is reading the
             # installed copy expecting it to be current.
-            report.warn(path.name, "installed copy differs; harness syncs at attempt start")
+            report.warn(path.name, "installed source differs; harness syncs at attempt start")
         else:
-            report.ok(path.name, "matches worktree")
+            report.ok(path.name, "matches worktree source")
 
 
 def steam_account_id() -> int | None:
@@ -202,7 +214,7 @@ def check_host(report: Report) -> None:
     """
     print("host")
     sys.path.insert(0, str(ROOT / "tools"))
-    from civ6_control import launcher
+    from civ6_control import launcher, macos_input, vision
 
     if launcher.steam_running():
         account = steam_account_id()
@@ -239,6 +251,18 @@ def check_host(report: Report) -> None:
             report.ok("Steam", f"signed in as {account}")
     else:
         report.warn("Steam", "not running; a ladder started now plays no games")
+    try:
+        report.ok("input", macos_input.probe())
+    except macos_input.InputUnavailable as error:
+        report.fail("input", str(error))
+    if vision.available():
+        report.ok("setup vision", "Pillow")
+    else:
+        report.fail(
+            "setup vision",
+            "Pillow is required for verified lobby navigation; run "
+            "python3 -m pip install --user Pillow",
+        )
     # Asked of the launcher rather than rebuilt from INSTALLED: the real binary is
     # `Civ6_Exe_Child`, four directories up and under a different name, and writing
     # that path out a second time is how two checks come to disagree.

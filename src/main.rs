@@ -124,6 +124,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// observed Advanced-v1 player-turns. The contract is re-pinned because the
 /// gated legacy path did not move; the Elo protocol does not change.
 ///
+/// The Civ VI bridge also needs to begin a route for an idle Firaxis Trader
+/// whose normal walking movement is zero. `start_zero_movement_trader_route`
+/// sits behind a default-off bridge flag enabled only by `civvis_orders` before
+/// `Ai::take_turn`; `advance_unit_serial`, which is the native tournament loop,
+/// is unchanged. The new code cannot run in an `advanced_v1` tournament game,
+/// so its historical agent and Elo protocol remain unchanged. Re-pin the source
+/// contract to make that reviewed exception explicit.
 /// #746 promotes the confirmed policy/envoy composite only through the public
 /// production constructors. `AdvancedAi::legacy()` still calls `configured`
 /// directly and cannot reach that wrapper. A release build of `e46d1b7` and a
@@ -227,8 +234,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// it returns through the prior code whenever `settler_commit` is disabled, as
 /// it is in `AdvancedAi::legacy()`. This is another compatibility re-pin, not
 /// an Elo protocol change.
+///
+/// The live Civ VI mirror's purchase-placement regression moves only a unit in
+/// a `cfg(test)` fixture. The compiled AdvancedAi implementation is unchanged;
+/// this is therefore another reviewed compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x65c4_6765_6727_07d5;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe044_0320_25a5_04e4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
