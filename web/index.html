@@ -22644,15 +22644,14 @@ function draw() {
                       11 + eh * 3, 2.6 + eh * 0.8);
       }
     } else if (t.hills && !beau) {
-      // Broad enough and tall enough to survive strategic survey zoom. Scale
-      // both the lobes and their spacing so the whole paired silhouette grows
-      // 20% wider, rather than merely making the two strokes overlap more.
-      const hillWidth = 1.2, hillHeight = 2.6 * 1.4;
+      // Keep the 20%-wider footprint and fixed lower-corner baseline, but draw
+      // the lobes twice as tall so the landform reads clearly at survey zoom.
+      const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
       // Seat the base on the horizontal through the hex's two lower outside
       // corners. Deriving it from the projected hex keeps the glyph aligned if
       // tile size or Strategic's pitch ever changes.
       const hillBaseY = y + S * YS / 2;
-      cx.strokeStyle = "#00000066"; cx.lineWidth = 2.4;
+      cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
       cx.beginPath();
       cx.ellipse(x - 7 * hillWidth, hillBaseY,
                  6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
