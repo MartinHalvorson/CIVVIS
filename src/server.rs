@@ -8658,22 +8658,48 @@ mod tests {
         let splat = EMBEDDED_INDEX
             .split("function drawStrategicVolcanicSoil")
             .nth(1)
-            .and_then(|tail| tail.split("function drawFeatureEffects").next())
+            .and_then(|tail| tail.split("const STRATEGIC_MOUNTAIN_ICON_SCALE").next())
             .expect("strategic Volcanic Soil renderer");
         assert!(splat.contains("nbrTile(t.pos, DIRS[side])"));
         assert!(splat.contains("neighbor?.feature === \"volcano\""));
         assert!(splat.contains("cx.rotate(Math.atan2(sourceY, sourceX))"));
-        assert!(splat.contains("hexPath(x, y, S - 1.1); cx.clip();"));
-        assert!(splat.contains("cx.bezierCurveTo"));
+        assert!(splat.contains("hexPath(x, y, S); cx.clip();"));
+        assert!(splat.contains("cx.moveTo(S + 2, -S)"));
+        assert!(splat.contains("cx.bezierCurveTo(6, -9, 2, -5, 0, 0)"));
+        assert!(splat.contains("cx.bezierCurveTo(18, 13, 25, 18, S + 2, S)"));
         assert!(!splat.contains("performance.now"));
         assert!(!splat.contains("requestAnimationFrame"));
 
-        let strategic_features = EMBEDDED_INDEX
-            .split("} else if (t.feature === \"volcanic_soil\") {")
+        let ground_overlay = EMBEDDED_INDEX
+            .split("// Volcanic Soil is part of the ground")
             .nth(1)
-            .and_then(|tail| tail.split("} else if (t.feature === \"impact_zone\")").next())
-            .expect("strategic Volcanic Soil feature branch");
-        assert!(strategic_features.contains("drawStrategicVolcanicSoil(t, x, y)"));
+            .and_then(|tail| tail.split("// --- hex grid (G)").next())
+            .expect("strategic Volcanic Soil ground-overlay pass");
+        assert!(ground_overlay.contains("if (t.feature !== \"volcanic_soil\") continue;"));
+        assert!(ground_overlay.contains("drawStrategicVolcanicSoil(t, x, y0 - elev(t))"));
+        assert!(ground_overlay.contains("hexPath(x, y0 - elev(t))"));
+
+        let decorations = EMBEDDED_INDEX
+            .split("// --- decorations")
+            .nth(1)
+            .expect("strategic decoration pass");
+        assert!(!decorations.contains("drawStrategicVolcanicSoil(t, x, y)"));
+    }
+
+    #[test]
+    fn strategic_mountains_and_volcanoes_share_a_fifty_percent_larger_icon() {
+        let icon = EMBEDDED_INDEX
+            .split("const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawFeatureEffects").next())
+            .expect("shared strategic mountain icon renderer");
+        assert!(icon.contains(
+            "cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE)"
+        ));
+        assert!(icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
+        assert!(icon.contains("cx.ellipse(0, -9, 4.5, 2.2"));
+        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
+        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false)"));
     }
 
     #[test]
