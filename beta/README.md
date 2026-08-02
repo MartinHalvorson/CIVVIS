@@ -11,9 +11,19 @@ viewer is not a reimplementation: it is `web/index.html`, copied byte for byte
 apart from the asset paths a subdirectory forces.
 
 ```
-civvis.ai            a landing page that points at the channel
+civvis.ai            forwards to youtube.com/@civvis
+civvis.ai/home       the landing page, linking the three below
 civvis.ai/beta       the published build, behind a password
+civvis.ai/download   the native binaries, from the latest GitHub release
 ```
+
+The domain's job is to be the channel's address — somebody typing `civvis.ai`
+wants the videos. So `/` is a **302** to the channel and the landing page moved
+to `/home`. A 302 rather than a 301 because browsers cache a permanent redirect
+effectively for ever, and the day this becomes a real front page every past
+visitor would still be sent to YouTube. Setting `ROOT_REDIRECT` in the Pages
+environment changes the destination, or `off` serves the landing page at `/`
+again — neither needs a deploy.
 
 ## How it fits together
 
@@ -22,8 +32,10 @@ civvis.ai/beta       the published build, behind a password
 | `src/wasm.rs` | The engine's request router for the browser. A child module of `server`, `cfg`-gated to wasm, answering the same endpoints over the same JSON. |
 | `beta/worker.js` | Runs the module off the main thread. A turn is not a quick call, and the viewer paints on `requestAnimationFrame`; on the page's own thread the engine would stall the frames it exists to produce. |
 | `beta/shim.js` | Intercepts `fetch` before it reaches the network. Also owns the three things that genuinely became the page's job: the turn clock, the ten-second finale countdown, and saved games in `localStorage`. |
-| `beta/_worker.js` | The password on `/beta`, checked at the edge, plus the response headers for the whole site. |
-| `beta/landing.html` | `civvis.ai` itself. |
+| `beta/_worker.js` | The password on `/beta`, the forward on `/`, plus the response headers for the whole site. |
+| `beta/landing.html` | `civvis.ai/home`. |
+| `beta/download.html` | `civvis.ai/download`. Links `releases/latest/download/<asset>`, so it never needs republishing when a release is cut. |
+| `.github/workflows/release.yml` | Builds those assets for Windows, macOS (both architectures) and Linux on a `v*` tag. |
 | `beta/publish.sh` | Assembles `beta/dist/` from a named revision. |
 | `beta/verify.py` | Opens the assembled bundle in a real browser, watches it play, and walks through the password door. |
 | `beta/serve.sh` | Serves `beta/dist/` locally the way a static host would. |
@@ -82,7 +94,39 @@ about 126 ms — four or five turns a second in a browser tab.
 
 `publish.sh` refuses to assemble a page whose asset rewrites no longer match
 the viewer, so a restructured `web/index.html` fails the build instead of
-publishing a page with missing sprites.
+publishing a page with missing sprites. The check is *"no root-absolute
+reference survives"* rather than *"exactly N were rewritten"*: an exact count
+failed the build every time somebody drew a new atlas, which is ordinary work
+and says nothing about whether the rewrite still works.
+
+## Weight
+
+A hosted build has to stay something a person can be handed over an ordinary
+connection, and both halves of it grow every week. `publish.sh` therefore fails
+above **25 MiB assembled** (`BUNDLE_BUDGET_BYTES` to move it deliberately), and
+prints where the build sits against that.
+
+Measured on `7e681b6`, which is why two things happen at publication:
+
+| | before | after |
+| --- | --- | --- |
+| engine, `wasm-opt -O3` | 9,972,139 | 8,084,494 |
+| atlases, lossless WebP | 12,464,506 | 8,869,674 |
+| **bundle** | **24,228,282** | **18,745,813** — 71% of budget |
+
+- **`wasm-opt -O3`** takes a fifth off the module. `-Oz` was measured against
+  it and is worth 0.3% more — 8,061,627 bytes — for a module that simulates
+  whole games, so `-O3` stays. Over the wire brotli makes both about 1.74 MB,
+  so this is mostly about the disk figure and the budget.
+- **Lossless WebP** is pixel-identical to the PNG it replaces, and the atlases
+  were the heaviest thing in the bundle — heavier than the engine. It happens
+  to the *copy*: `web/assets` stays PNG, which is what the desktop build serves
+  and what anyone editing the art works on. Needs Pillow; without it the
+  atlases publish as PNG and the only cost is the budget.
+
+Both steps are optional and both are the first thing to reach for when the
+budget bites. After them the bundle is dominated by art, so the next real lever
+is the atlases themselves rather than anything this directory does.
 
 **A revision is publishable when all of these hold:**
 
@@ -181,10 +225,30 @@ are sent `X-Robots-Tag: noindex`. It is not access control, and the repository
 is public, so nothing behind it should be anything that would matter if it got
 out.
 
-### 4. The channel link
+### 4. The channel
 
-`beta/landing.html` has exactly one YouTube URL, marked with a comment. When
-the new account exists, change that line and republish.
+`https://www.youtube.com/@civvis`, in three places: the forward on `/`
+(`CHANNEL` in `beta/_worker.js`), the landing page's first button, and the
+viewer's own header link in `web/index.html`.
+
+### 5. The downloads
+
+`beta/download.html` links `releases/latest/download/<asset>`, which GitHub
+resolves to the newest release, so the page is written once and never
+republished for a release. **The asset names are therefore load-bearing and
+must not acquire version numbers.** `release.yml` builds exactly those four
+names; `verify.py` fails a build whose download page links an asset no release
+job produces, because the alternative is finding out from a visitor's 404.
+
+Cutting one is a tag:
+
+```bash
+git tag v0.6.1 && git push origin v0.6.1
+```
+
+The workflow's "Run workflow" button builds all four targets without
+publishing anything, which is how you learn a target stopped compiling before
+a tag is public.
 
 ## Limits worth knowing
 

@@ -35,6 +35,7 @@ import json
 import os
 import pathlib
 import queue
+import re
 import shutil
 import socket
 import socketserver
@@ -47,16 +48,47 @@ import time
 import urllib.error
 import urllib.request
 
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+# Where Chrome is, on whichever machine is cutting the build.
+#
+# Builds get published from a Mac and checked from the Windows box that runs
+# the spectator, so a single hard-coded path means the check simply does not
+# run on one of them — and a check that silently does not run is worse than
+# no check.
+CHROME_CANDIDATES = [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+]
+
+
+def find_chrome() -> str:
+    for candidate in CHROME_CANDIDATES:
+        if candidate and pathlib.Path(candidate).exists():
+            return candidate
+    for name in ("google-chrome", "chromium", "chrome"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return CHROME_CANDIDATES[0]
+
+
+# The atlases are republished as WebP when Pillow is available and stay PNG
+# when it is not, so the required-files list asks for the terrain atlas in
+# whichever form this build actually chose.
 REQUIRED = [
     "index.html",
+    "download/index.html",
     "beta/index.html",
     "beta/civvis.wasm",
     "beta/shim.js",
     "beta/worker.js",
     "beta/cinematic3d.js",
     "beta/build.json",
-    "beta/assets/terrain-atlas.png",
+    ("beta/assets/terrain-atlas.webp", "beta/assets/terrain-atlas.png"),
     "_worker.js",
 ]
 
@@ -70,6 +102,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ".wasm": "application/wasm",
         ".js": "text/javascript",
         ".json": "application/json",
+        ".webp": "image/webp",
     }
 
     def end_headers(self):
@@ -359,7 +392,7 @@ def main(argv: list[str] | None = None) -> int:
     # dist/ is deployed, and a check's own screenshot has no business on
     # civvis.ai.
     parser.add_argument("--screenshot", default=str(here / "verify.png"))
-    parser.add_argument("--chrome", default=CHROME)
+    parser.add_argument("--chrome", default=find_chrome())
     parser.add_argument(
         "--no-gate",
         action="store_true",
@@ -373,10 +406,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"==> checking the bundle at {dist}")
-    missing = [name for name in REQUIRED if not (dist / name).exists()]
+    missing = [
+        entry
+        for entry in REQUIRED
+        if not any((dist / name).exists() for name in ((entry,) if isinstance(entry, str) else entry))
+    ]
     if missing:
-        for name in missing:
-            print(f"    MISSING {name}", file=sys.stderr)
+        for entry in missing:
+            print(f"    MISSING {entry if isinstance(entry, str) else ' or '.join(entry)}", file=sys.stderr)
         return 1
     build = json.loads((dist / "beta" / "build.json").read_text())
     print(f"    {len(REQUIRED)} required files present, build {build['short']}")
@@ -390,6 +427,28 @@ def main(argv: list[str] | None = None) -> int:
         print("    the published viewer does not load the shim", file=sys.stderr)
         return 1
     print("    the viewer is rewritten for /beta/ and loads the shim")
+
+    # The download page names its binaries; the release workflow builds
+    # binaries under names it chooses. Nothing connects the two but agreement,
+    # and a disagreement is a 404 on the only page whose whole job is handing
+    # somebody a program. Renaming an asset must therefore fail here rather
+    # than on a visitor's click.
+    downloads = (dist / "download" / "index.html").read_text(encoding="utf-8")
+    linked = set(re.findall(r"releases/latest/download/([^\"']+)", downloads))
+    workflow = here.parent / ".github" / "workflows" / "release.yml"
+    if not linked:
+        print("    the download page links no release assets at all", file=sys.stderr)
+        return 1
+    if workflow.exists():
+        built = set(re.findall(r"^\s*asset:\s*(\S+)\s*$", workflow.read_text(encoding="utf-8"), re.M))
+        orphans = sorted(linked - built)
+        if orphans:
+            for name in orphans:
+                print(f"    the download page links {name}, which no release job builds", file=sys.stderr)
+            return 1
+        print(f"    {len(linked)} downloads, every one of them built by release.yml")
+    else:
+        print(f"    {len(linked)} downloads linked (no release.yml here to check them against)")
 
     if not args.no_gate:
         print("==> opening the password gate on the exact directory to be deployed")

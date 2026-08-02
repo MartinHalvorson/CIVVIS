@@ -79,6 +79,10 @@ cp "$repo_root/beta/shim.js" "$repo_root/beta/worker.js" "$out/beta/"
 cp "$source_tree/web/cinematic3d.js" "$out/beta/"
 cp -R "$source_tree/web/assets" "$out/beta/assets"
 cp "$repo_root/beta/landing.html" "$out/index.html"
+# `/download/` rather than `/download.html`: the page outlives any one release
+# and gets linked around, so it should have the tidier address.
+mkdir -p "$out/download"
+cp "$repo_root/beta/download.html" "$out/download/index.html"
 # The gate travels *inside* the deployed directory. See beta/_worker.js for
 # why this is not a `functions/` directory.
 cp "$repo_root/beta/_worker.js" "$out/_worker.js"
@@ -86,27 +90,76 @@ cp "$repo_root/beta/_worker.js" "$out/_worker.js"
 # The viewer, copied and then made to work one directory down. Each
 # substitution is checked, because a silently unmatched one publishes a page
 # whose sprites and 3D view are simply missing.
-python3 - "$source_tree/web/index.html" "$out/beta/index.html" <<'PY'
-import sys, pathlib
+python3 - "$source_tree/web/index.html" "$out/beta/index.html" "$out/beta/assets" <<'PY'
+import re, sys, pathlib
 
 source, target = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
+assets = pathlib.Path(sys.argv[3])
 page = source.read_text(encoding="utf-8")
 
 # The page asks for its assets from the site root, which is where a desktop
 # build serves them. Published under /beta/ they sit beside the page instead.
+#
+# The check is "none left afterwards", not "exactly N rewritten". An exact
+# count fails the build every time somebody adds a sprite atlas — which is
+# normal work, happens often, and has nothing to do with whether the rewrite
+# is still correct. What actually matters is that no root-absolute reference
+# survives into the published page, because each one is a sprite that silently
+# does not load.
 edits = [
-    ('src="/cinematic3d.js"', 'src="cinematic3d.js"', 1),
-    ('"/assets/', '"assets/', 7),
+    ('src="/cinematic3d.js"', 'src="cinematic3d.js"'),
+    ('"/assets/', '"assets/'),
 ]
-for needle, replacement, expected in edits:
-    found = page.count(needle)
-    if found != expected:
+for needle, replacement in edits:
+    if needle not in page:
         raise SystemExit(
-            f"expected {expected} occurrence(s) of {needle!r} in the viewer, found {found}. "
-            "web/index.html has changed shape; beta/publish.sh needs updating before "
-            "this build can be published."
+            f"the viewer no longer contains {needle!r}. web/index.html has changed "
+            "shape; beta/publish.sh needs updating before this build can be published."
         )
     page = page.replace(needle, replacement)
+
+for stranded in ('"/assets/', 'src="/cinematic3d.js"'):
+    if stranded in page:
+        raise SystemExit(f"{stranded!r} survived the rewrite; the published page would 404 on it")
+
+# The sprite atlases, republished as lossless WebP.
+#
+# They are the heaviest thing here — heavier than the engine — and they grow
+# every time somebody draws something. Lossless WebP is *pixel-identical* to
+# the PNG it replaces, so this is purely a better container: measured at
+# publication, 12.46 MB of atlas became 8.87 MB, and nothing on screen
+# changed. It happens to the *copy*: `web/assets` stays PNG, which is what the
+# desktop build serves and what anyone editing the art works on.
+#
+# Optional, because a machine cutting a build should not need a wheel
+# installed to do it. Without Pillow the atlases publish as they are and the
+# only cost is the budget at the end of this script.
+try:
+    from PIL import Image
+except ImportError:
+    print("   Pillow is not installed; publishing the atlases as PNG")
+else:
+    before = after = 0
+    for png in sorted(assets.glob("*.png")):
+        webp = png.with_suffix(".webp")
+        image = Image.open(png)
+        image.load()
+        image.save(webp, "WEBP", lossless=True, quality=100, method=5)
+        before += png.stat().st_size
+        after += webp.stat().st_size
+        png.unlink()
+        page = page.replace(f'"assets/{png.name}"', f'"assets/{webp.name}"')
+    if before:
+        print(f"   atlases {before:,} -> {after:,} bytes as lossless WebP")
+
+# Every atlas the page asks for has to be one this build actually ships. This
+# is what catches a rewrite that half-happened: a reference the loop above
+# missed still names a `.png` that is no longer on disk.
+wanted = set(re.findall(r'"assets/([^"]+)"', page))
+have = {p.name for p in assets.iterdir()} if assets.is_dir() else set()
+missing = sorted(wanted - have)
+if missing:
+    raise SystemExit(f"the viewer asks for assets this build does not ship: {', '.join(missing)}")
 
 # The interception has to be installed before the page's own first script runs.
 head = "<head>"
@@ -119,12 +172,14 @@ print(f"   viewer written to {target} ({len(page):,} bytes)")
 PY
 
 wasm_bytes=$(wc -c < "$out/beta/civvis.wasm" | tr -d ' ')
+bundle_bytes=$(find "$out" -type f -exec wc -c {} + | tail -1 | awk '{print $1}')
 cat > "$out/beta/build.json" <<JSON
 {
   "commit": "$commit",
   "short": "$short",
   "built_at": "$built_at",
-  "wasm_bytes": $wasm_bytes
+  "wasm_bytes": $wasm_bytes,
+  "bundle_bytes": $bundle_bytes
 }
 JSON
 
@@ -134,6 +189,22 @@ echo "  engine      $(printf "%'d" "$wasm_bytes") bytes"
 if command -v brotli >/dev/null; then
   echo "  over a wire $(printf "%'d" "$(brotli -q 11 -c "$out/beta/civvis.wasm" | wc -c | tr -d ' ')") bytes brotli"
 fi
+echo "  bundle      $(printf "%'d" "$bundle_bytes") bytes on disk"
+
+# The whole point of publishing this way is that it stays something a person
+# can be handed over an ordinary connection, and the engine grows every week.
+# A budget nobody measures is a wish, so this is a build failure rather than a
+# line in a document: raise BUNDLE_BUDGET_BYTES deliberately, or find the
+# weight. (The assets are already compressed images; the module is not, and
+# `wasm-opt` plus brotli is where the room is.)
+budget=${BUNDLE_BUDGET_BYTES:-26214400}
+if [ "$bundle_bytes" -gt "$budget" ]; then
+  echo
+  echo "the bundle is $(printf "%'d" "$bundle_bytes") bytes, over the $(printf "%'d" "$budget") byte budget" >&2
+  exit 1
+fi
+echo "              $(( bundle_bytes * 100 / budget ))% of the $(( budget / 1048576 )) MiB budget"
+
 echo
 echo "check it locally with:  ./beta/serve.sh"
 echo "deploy it with:         npx wrangler pages deploy $out --project-name civvis"
