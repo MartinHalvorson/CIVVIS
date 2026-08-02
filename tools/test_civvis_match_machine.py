@@ -371,6 +371,38 @@ class MatchMachineTests(unittest.TestCase):
         self.assertIsNone(subject.pending_revision)
         self.assertEqual(subject.next_sync, 400.0)
 
+    def test_sync_replaces_a_stale_pending_revision_before_a_build(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(sync_interval=300)
+        subject.current_revision = "current-head"
+        subject.pending_revision = "stale-head"
+        subject.fetch = mock.Mock(return_value="fresh-head")
+        subject.event = mock.Mock()
+
+        with mock.patch.object(machine.time, "monotonic", return_value=100.0):
+            subject.sync()
+
+        self.assertEqual(subject.pending_revision, "fresh-head")
+        self.assertEqual(subject.next_sync, 400.0)
+        subject.event.assert_called_once_with(
+            "head_changed", current="current-head", target="fresh-head"
+        )
+
+    def test_sync_clears_a_queued_revision_when_head_returns_to_current(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(sync_interval=300)
+        subject.current_revision = "current-head"
+        subject.pending_revision = "stale-head"
+        subject.fetch = mock.Mock(return_value="current-head")
+        subject.event = mock.Mock()
+
+        with mock.patch.object(machine.time, "monotonic", return_value=100.0):
+            subject.sync()
+
+        self.assertIsNone(subject.pending_revision)
+        self.assertEqual(subject.next_sync, 400.0)
+        subject.event.assert_not_called()
+
     def test_fill_slots_resumes_paused_work_before_admitting_a_new_game(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
         subject.pending_revision = None
