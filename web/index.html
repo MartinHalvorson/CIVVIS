@@ -4389,16 +4389,17 @@ let MOUNTAIN_ATLAS_READY = false;
 MOUNTAIN_ATLAS.onload = () => { MOUNTAIN_ATLAS_READY = true; if (state) draw(); };
 MOUNTAIN_ATLAS.src = "/assets/mountain-atlas.png";
 // The blank reaches of a player's chart are an illustrated object, not a dark
-// mask. Four period-map creatures share one transparent atlas cell apiece and
-// are always painted *under* known ground, so decoration can never disclose a
-// hidden coast, biome or resource.
+// mask. Thirty period-map monsters and sailor tales share one transparent
+// atlas cell apiece and are always painted *under* known ground, so decoration
+// can never disclose a hidden coast, biome or resource.
 const HIDDEN_MAP_MONSTER_ATLAS = new Image();
 let HIDDEN_MAP_MONSTER_ATLAS_READY = false;
 HIDDEN_MAP_MONSTER_ATLAS.onload = () => {
   HIDDEN_MAP_MONSTER_ATLAS_READY = true; if (state) draw();
 };
 HIDDEN_MAP_MONSTER_ATLAS.src = "/assets/hidden-map-monsters.png";
-const HIDDEN_MAP_MONSTER_CELL = 627;
+const HIDDEN_MAP_MONSTER_CELL = 256, HIDDEN_MAP_MONSTER_COLUMNS = 6,
+      HIDDEN_MAP_MONSTER_VARIANTS = 30;
 const PARCH = "#c7b58a", PARCH_LIGHT = "#dfcea2",
       PARCH_GRID = "#8a795533", PARCH_INK = "#6d5c3a";
 const FEATURE_LABEL = {
@@ -10227,10 +10228,6 @@ function hexPath(x, y, s) {
   appendHexPath(x, y, s);
 }
 
-function positiveMod(value, period) {
-  return ((value % period) + period) % period;
-}
-
 // Whether a coordinate belongs to blank chart rather than known ground. An
 // open chart deliberately treats everything beyond its surveyed copy as
 // parchment too: outlining the storage rectangle would reveal the world's
@@ -10307,10 +10304,38 @@ function hiddenMapIsDeep(q, r, test, radius = 3) {
   return true;
 }
 
+function hiddenMapMonsterPriority(q, r, seedA, seedB) {
+  return hash2(
+    Math.imul(q, 71) + Math.imul(seedA, 3) + Math.imul(seedB, 17),
+    Math.imul(r, 73) + Math.imul(seedB, 5) + Math.imul(seedA, 19)
+  );
+}
+
+// A point survives only when it has the lowest seeded priority in its local
+// hex neighborhood. This is a deterministic blue-noise distribution: seats
+// cannot bunch together, yet they do not share rows, columns, phases, or a
+// visible coarse grid. The quick threshold skips almost every full neighbor
+// walk without materially changing which local minima survive.
+function hiddenMapMonsterSeat(q, r, seedA, seedB, radius = 3) {
+  const priority = hiddenMapMonsterPriority(q, r, seedA, seedB);
+  if (priority >= .12) return false;
+  for (let dq = -radius; dq <= radius; dq++) {
+    const from = Math.max(-radius, -dq - radius);
+    const to = Math.min(radius, -dq + radius);
+    for (let dr = from; dr <= to; dr++) {
+      if (!dq && !dr) continue;
+      const other = hiddenMapMonsterPriority(q + dq, r + dr, seedA, seedB);
+      if (other < priority ||
+          (other === priority && (dq < 0 || (!dq && dr < 0)))) return false;
+    }
+  }
+  return true;
+}
+
 function drawHiddenMapMonster(x, y, size, variant, angle, mirrored, alpha) {
   if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
-  const sourceX = (variant & 1) * HIDDEN_MAP_MONSTER_CELL;
-  const sourceY = (variant >> 1) * HIDDEN_MAP_MONSTER_CELL;
+  const sourceX = (variant % HIDDEN_MAP_MONSTER_COLUMNS) * HIDDEN_MAP_MONSTER_CELL;
+  const sourceY = Math.floor(variant / HIDDEN_MAP_MONSTER_COLUMNS) * HIDDEN_MAP_MONSTER_CELL;
   cx.save();
   cx.translate(x, y); cx.rotate(angle);
   if (mirrored) cx.scale(-1, 1);
@@ -10371,24 +10396,20 @@ function drawHiddenMapParchment(layer) {
 function drawHiddenMapMonsters(layer) {
   if (!HIDDEN_MAP_MONSTER_ATLAS_READY || !layer.cells.length) return;
   const [seedA, seedB] = hiddenMapSeedWords();
-  // Exactly one possible seat per coarse chart block keeps the creatures
-  // reliably present in an ordinary camera view while the spacing itself
-  // prevents an atlas full of monsters from becoming a wallpaper pattern.
-  const strideColumns = 8, strideRows = 5;
-  const phaseColumn = Math.floor(hash2(seedA, seedB + 41) * strideColumns);
-  const phaseRow = Math.floor(hash2(seedB, seedA + 53) * strideRows);
   for (const cell of layer.cells) {
-    if (positiveMod(cell.col - phaseColumn, strideColumns) ||
-        positiveMod(cell.r - phaseRow, strideRows)) continue;
+    if (!hiddenMapMonsterSeat(cell.q, cell.r, seedA, seedB)) continue;
     if (!hiddenMapIsDeep(cell.q, cell.r, layer.test)) continue;
-    // At an atlas-scale zoom, thin the fixed seats rather than shrinking every
+    // At an atlas-scale zoom, thin the stable seats rather than shrinking every
     // engraving into visual grit. Close views keep the fuller old-chart read.
     const lod = hash2(cell.col + seedA * 3, cell.r + seedB * 5);
     if (cam.scale < .45 ? lod < .68 : cam.scale < .72 && lod < .38) continue;
     const detail = hash2(cell.col * 17 + seedB, cell.r * 19 + seedA);
     drawHiddenMapMonster(
-      cell.x, cell.y, S * (4.8 + detail * 1.15),
-      Math.floor(hash2(cell.col * 29 + seedA, cell.r * 31 + seedB) * 4),
+      cell.x + (hash2(cell.col * 43 + seedB, cell.r * 47 + seedA) - .5) * S * 1.5,
+      cell.y + (hash2(cell.col * 53 + seedA, cell.r * 59 + seedB) - .5) * S * .95,
+      S * (4.5 + detail * .9),
+      Math.floor(hash2(cell.col * 29 + seedA, cell.r * 31 + seedB) *
+                 HIDDEN_MAP_MONSTER_VARIANTS),
       (hash2(cell.col * 7 + seedB, cell.r * 11 + seedA) - .5) * .28,
       hash2(cell.col * 37 + seedA, cell.r * 41 + seedB) > .5,
       MODE.painted ? .48 : .41
@@ -21692,15 +21713,27 @@ function drawPlanetChartMarginalia() {
   // projection is a sheet whose uncharted paper runs to the frame. Projected
   // known cells are painted next and cover every part of a creature that no
   // longer belongs to the unknown.
-  const seats = [[.17,.27],[.78,.24],[.25,.75],[.74,.72]];
+  // Greedily accept the best of many seeded candidates. The distance gate
+  // gives the pre-globe chart the same irregular-but-even character as the
+  // flat map instead of four decorations in fixed quadrants.
+  const candidates = Array.from({length:48}, (_, i) => ({
+    x:(.09 + hash2(seedA + i * 37, seedB + 71) * .82) * width,
+    y:(.12 + hash2(seedB + i * 43, seedA + 83) * .76) * height,
+    rank:hash2(seedA + i * 47, seedB + i * 53)
+  })).sort((a, b) => a.rank - b.rank);
+  const seats = [], spacing = Math.min(width, height) * .27;
+  for (const candidate of candidates) {
+    if (seats.every(seat => Math.hypot(candidate.x - seat.x, candidate.y - seat.y) >= spacing))
+      seats.push(candidate);
+    if (seats.length === 5) break;
+  }
   for (let i = 0; i < seats.length; i++) {
-    const [ux, uy] = seats[i];
+    const seat = seats[i];
     const h = hash2(seedA + i * 37, seedB + i * 43);
     const size = Math.max(104, Math.min(210, Math.min(width, height) * (.19 + h * .055)));
     drawHiddenMapMonster(
-      ux * width + (hash2(seedB + i * 11, seedA) - .5) * width * .08,
-      uy * height + (hash2(seedA + i * 13, seedB) - .5) * height * .07,
-      size, Math.floor(hash2(seedB + i * 23, seedA + 17) * 4),
+      seat.x, seat.y, size,
+      Math.floor(hash2(seedB + i * 23, seedA + 17) * HIDDEN_MAP_MONSTER_VARIANTS),
       (hash2(seedA + i * 29, seedB + 19) - .5) * .2,
       hash2(seedB + i * 31, seedA + 29) > .5, .38
     );
