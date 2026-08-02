@@ -1292,6 +1292,83 @@ mod tests {
         );
     }
 
+    /// ★★★★★ A MIRRORED CAPITAL MUST NOT BE PAID FOR ITS PALACE TWICE.
+    ///
+    /// CIVVIS models the palace positionally — `city_has_palace` derives it from
+    /// capital status, and four separate sites add its yields, housing, amenity and
+    /// great-work slots off that predicate. Nothing native ever pushes "palace" into
+    /// a `buildings` list. Civilization VI exports `BUILDING_PALACE`, the translation
+    /// put it in the list, and every one of those four sites then paid twice.
+    ///
+    /// Measured on run `civvis-20260802T014139Z`, turn 3 — one city, pop 1, palace
+    /// only. Civ 6 reported **2.5** science and the reconstruction reported **5.0**:
+    /// palace 2 twice, plus 0.5 for the citizen. With the seat re-dealt to Rome (a
+    /// civ carrying no invented per-city yield) the same replay reads
+    /// `science 2.5/2.5 +0%` afterwards, against `2.5/5.0 +98%` before.
+    ///
+    /// ⚠ **THIS TEST PINS THE MECHANISM, NOT THE NUMBER, AND THAT IS A COMPROMISE
+    /// WORTH KNOWING ABOUT.** The number is pinned by the replay above, on real
+    /// exported data, which is the stronger evidence of the two.
+    ///
+    /// It cannot be pinned here because a game built by `rebuild_from_state` in a
+    /// unit test yields **nothing at all**: `city_yields` on this fixture's capital
+    /// reads science 0, production 0 and *food 0* — through a hard `.max(2.0)` floor
+    /// on the city-centre tile, so the value is impossible and the body plainly never
+    /// runs. `city_yields_weighted`, which is documented as never being on the cached
+    /// path, reads 0 as well, so it is not the query memo.
+    ///
+    /// ⚠⚠ That silently weakens the sibling test below: it asserts only that the
+    /// drift string carries **Civ 6's** number and a `%`, never CIVVIS's own, so it
+    /// passes just as happily on a reconstruction yielding zero. Worth its own
+    /// investigation; both halves of that comparison should be assertable.
+    #[test]
+    fn a_mirrored_capital_is_not_paid_for_its_palace_twice() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 3,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 3,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Lisbon".to_string(),
+            x: 5,
+            y: 5,
+            pop: 1,
+            // Both halves matter: Civ 6 marks the seat's capital AND exports the
+            // palace inside it, and it is the pair that used to pay twice.
+            capital: true,
+            buildings: vec!["BUILDING_PALACE".to_string()],
+            ..StateCity::default()
+        });
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        let city = recon
+            .game
+            .cities
+            .values()
+            .find(|city| city.owner == 0)
+            .expect("the exported city must be on the board");
+
+        assert!(
+            !city.buildings.iter().any(|b| b.as_str() == "palace"),
+            "the palace is positional in CIVVIS; listing it is what pays it twice"
+        );
+        assert!(
+            !city.buildings.iter().any(|b| b.as_str() == "palace"),
+            "the palace is positional in CIVVIS; listing it is what paid it twice"
+        );
+        assert!(
+            recon.game.city_has_palace(city),
+            "and it must still be paid ONCE — city_has_palace is the payer, and it \
+             is true for exactly the city Civ 6 exported the palace in"
+        );
+    }
+
     /// ★★★★ The reconstruction's economic error must be a NUMBER, not a shrug.
     ///
     /// Measured live on `civvis-20260801T024428Z`: `economy civ6/civvis science
@@ -4732,6 +4809,30 @@ pub fn rebuild_from_state(
                 // permanently, because every rebuild hits it again.
                 for civ6 in &city.buildings {
                     match civvis_node_name(&game.rules.buildings, civ6, "BUILDING_") {
+                        // ★★★★★ THE PALACE IS NOT A LISTED BUILDING IN CIVVIS, AND
+                        // PUTTING IT IN THE LIST PAYS FOR IT TWICE.
+                        //
+                        // CIVVIS models the palace positionally: `city_has_palace`
+                        // derives it from capital status, and FOUR separate sites add
+                        // its yields, housing, amenity and great-work slots off that
+                        // predicate alone. Nothing in the engine ever pushes "palace"
+                        // into a `buildings` list — a native capital's list does not
+                        // contain it. Civilization VI does export `BUILDING_PALACE`,
+                        // so the translation above put it there, and every one of
+                        // those four sites then paid a capital twice.
+                        //
+                        // Measured on run civvis-20260802T014139Z, turn 3: one city,
+                        // pop 1, palace only. Civ 6 reported 2.5 science; the
+                        // reconstruction reported 5.0 — palace 2 twice plus 0.5 for
+                        // the citizen. That is the largest single term in the economy
+                        // drift the `economy civ6/civvis` line has been reporting all
+                        // along (median +50% science over 121 turns, +142% at t3,
+                        // worst exactly in the opening where settling is decided).
+                        //
+                        // ⚠ Dropping it from the LIST loses nothing: `city_has_palace`
+                        // is what every consumer reads, and it is true for precisely
+                        // the city Civ 6 exported the palace in.
+                        Some(name) if name == "palace" => {}
                         Some(name) => {
                             let named = crate::name::Name::new(&name);
                             if !built.buildings.contains(&named) {

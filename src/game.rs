@@ -33745,7 +33745,7 @@ impl Game {
     /// after that city is captured it moves to another owned city. City-states
     /// likewise have a Palace even though their city is not an original
     /// capital for Domination Victory purposes.
-    fn city_has_palace(&self, city: &City) -> bool {
+    pub(crate) fn city_has_palace(&self, city: &City) -> bool {
         let owns_original_capital = self.cities.values().any(|candidate| {
             candidate.owner == city.owner
                 && candidate.original_owner == city.owner
@@ -51459,7 +51459,7 @@ impl Game {
             .find_map(|position| {
                 let tile = &self.map.tiles[position];
                 (tile.improvement.as_deref() == Some("industry"))
-                    .then(|| tile.resource.clone().map(|resource| (*position, resource)))
+                    .then(|| tile.resource.map(|resource| (*position, resource)))
                     .flatten()
             })
             .filter(|(_, resource)| {

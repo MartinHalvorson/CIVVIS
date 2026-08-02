@@ -208,7 +208,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
 /// 31337 --jobs 1` reports. Another compatibility re-pin over the merged
 /// sources, not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc59a_3caa_1adc_df5f;
+///
+/// #838 bundles already-shared purchase-scoring inputs and replaces only
+/// `Copy`/iterator idioms in the Advanced source. The control on `main` and
+/// this branch produced byte-identical `ai_eval advanced_v1 basic --pairs 10
+/// --players 4 --turns 200 --seed 31337 --jobs 1 --deployment-comparison`
+/// reports. This is therefore a compatibility re-pin, not an Elo protocol
+/// change.
+#[cfg(test)]
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0df9_4596_c580_46fc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

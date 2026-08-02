@@ -131,7 +131,10 @@ def parse_top_cpu(text: str) -> float | None:
 def cpu_percent() -> float | None:
     if sys.platform == "darwin":
         # macOS top accepts only whole-second sample intervals.
-        result = command("top", "-l", "2", "-n", "0", "-s", "1", timeout=4)
+        try:
+            result = command("top", "-l", "2", "-n", "0", "-s", "1", timeout=4)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
         return parse_top_cpu(result.stdout)
     try:
         first = Path("/proc/stat").read_text(encoding="utf-8").splitlines()[0].split()[1:]
@@ -206,10 +209,16 @@ class Resources:
         return max(values)
 
     def overloaded(self, limit: float) -> bool:
-        return self.thermal_pressure is True or self.maximum() >= limit
+        # CPU is the admission-critical signal.  If sampling it fails, pause
+        # safely rather than guessing that enough aggregate headroom remains.
+        return self.cpu is None or self.thermal_pressure is True or self.maximum() >= limit
 
     def comfortably_below(self, limit: float, margin: float = 10.0) -> bool:
-        return self.thermal_pressure is not True and self.maximum() < limit - margin
+        return (
+            self.cpu is not None
+            and self.thermal_pressure is not True
+            and self.maximum() < limit - margin
+        )
 
 
 def resources(runtime: Path) -> Resources:
@@ -779,6 +788,13 @@ class MatchMachine:
 
     def finish(self, game: GameProcess, *, failed: bool, reason: str) -> None:
         row = match_row(self.league, game.seed)
+        # ``matches.csv`` is the authoritative, atomically recorded outcome.
+        # A shutdown can arrive during the brief result-hold window after that
+        # row has appeared, so never turn a rated result into a failure merely
+        # because its process is being stopped.
+        if row is not None and failed:
+            failed = False
+            reason = "rated result recorded before process stopped"
         stop_process(game.process)
         if game in self.games:
             self.games.remove(game)

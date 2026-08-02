@@ -1829,20 +1829,76 @@ pub fn strongest_strategy<'a>(league: &'a League, civ: Option<&str>) -> Option<&
 /// Falls back to the global bound when the pair is unplayed — which is the common
 /// case, because the league has only ever rated a handful of civilizations while
 /// Civilization VI deals from its whole roster.
+/// How many games a (strategy, civilization) pair needs before its own record is
+/// allowed to speak for it.
+///
+/// ★★★★★ `games > 0` WAS THE THRESHOLD, AND IT MADE HAVING RELEVANT HISTORY A
+/// HANDICAP. The Wilson bound is conservative by construction, so at n=1 it is
+/// dominated by the uncertainty term rather than the observed rate: one game with
+/// no win bounds at **exactly 0.0**, and even 1-from-1 bounds near 0.21. A single
+/// game therefore almost always DROPS a strategy below its own global record, and
+/// a strategy that has never touched the dealt civ keeps its full global bound and
+/// wins the comparison.
+///
+/// Measured on `data/league/league.json`, 2026-08-02 — 923 per-civ rows with any
+/// history at all:
+///
+/// | rows | share | |
+/// |---|---|---|
+/// | exactly 1 game | 286 | **31%** |
+/// | fewer than 5 games | 356 | 39% |
+/// | per-civ bound BELOW the strategy's global bound | 786 | **85%** |
+///
+/// The live case that exposed it: Civilization VI dealt Canada, `adv-religious`
+/// held **1 Canada game, 0 wins → bound 0.0** against a 123-game global record
+/// bounding at **0.393**, while `g4-10` had no Canada history at all and kept its
+/// global **0.267**. The weaker strategy was selected, and the run played it.
+///
+/// Ten, because that is where this data's own mass sits — 502 of the 923 rows have
+/// ten or more — and because below it the bound is reporting sample size rather
+/// than skill. Narrowing still happens wherever the pair has really been played,
+/// which is the whole point of [`strongest_strategy`]'s `civ` argument.
+pub const MIN_CIV_GAMES: u32 = 10;
+
 pub fn strategy_strength(strategy: &Strategy, civ: Option<&str>) -> f64 {
+    let global = strategy.strength_bound();
     if let Some(civ) = civ {
-        let rated = strategy
+        let best = strategy
             .leader_elo
             .values()
             .filter_map(|civs| civs.get(civ))
             .filter(|rating| rating.games > 0)
-            .map(|rating| rating.strength_bound())
-            .fold(f64::NEG_INFINITY, f64::max);
-        if rated.is_finite() {
-            return rated;
+            .map(|rating| (rating.strength_bound(), rating.games))
+            .fold(None::<(f64, u32)>, |best, row| match best {
+                Some((b, _)) if b >= row.0 => best,
+                _ => Some(row),
+            });
+        if let Some((rated, games)) = best {
+            // ★★★★★ A THIN PER-CIV SAMPLE MAY ONLY RAISE THE ESTIMATE, NEVER LOWER IT.
+            //
+            // The asymmetry is the whole fix, and it falls out of what a Wilson
+            // bound is. On the UPSIDE the bound already protects itself: it is
+            // conservative, so a high lower bound is hard to reach without either
+            // many games or a near-perfect record — a thin row bounding at 0.510
+            // has earned it. On the DOWNSIDE it does not: 0-from-1 bounds at
+            // exactly 0.0, which is a true statement about one game and a useless
+            // one about a civilization.
+            //
+            // Replacing the global record with that 0.0 is what made HISTORY A
+            // HANDICAP — a strategy that had played the dealt civ once ranked
+            // below one that had never played it at all.
+            //
+            // ⚠ I first fixed this with a symmetric `games >= MIN_CIV_GAMES` gate
+            // and MEASURED A REGRESSION: on Rome it discarded `g56-48`'s genuine
+            // thin-but-excellent 0.510 and selected a 0.393 instead. A gate that
+            // drops good evidence to avoid bad evidence is the wrong trade.
+            if games >= MIN_CIV_GAMES {
+                return rated;
+            }
+            return rated.max(global);
         }
     }
-    strategy.strength_bound()
+    global
 }
 
 /// The genome and victory lane a named strategy plays with, if it has one.
@@ -3461,6 +3517,77 @@ pub fn run_league(cfg: &LeagueCfg) -> League {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// ★★★★★ ONE GAME ON A CIVILIZATION MUST NOT OUTWEIGH A HUNDRED OVERALL.
+    ///
+    /// The Wilson bound is conservative, so a single game is dominated by the
+    /// uncertainty term: 0-from-1 bounds at exactly 0.0. Under the old
+    /// `games > 0` filter that number REPLACED the strategy's global bound, so a
+    /// strategy that had played the dealt civilization once was ranked below one
+    /// that had never played it at all — history was a handicap.
+    ///
+    /// Reproduces the live case that exposed it. Civilization VI dealt Canada;
+    /// `adv-religious` held 1 Canada game / 0 wins against a 123-game global
+    /// record, and lost selection to a strategy with no Canada history.
+    #[test]
+    fn a_single_civ_game_does_not_outweigh_the_global_record() {
+        let mut strong = Strategy::new(
+            "adv-religious",
+            StrategyKind::Builtin { ai: "advanced".to_string() },
+            1,
+        );
+        strong.games = 123;
+        strong.wins = 59;
+        let global = strong.strength_bound();
+        assert!(global > 0.3, "the global record should be strong: {global}");
+
+        strong.leader_elo.entry("Wilfrid Laurier".to_string()).or_default().insert(
+            "Canada".to_string(),
+            CivRating { games: 1, wins: 0, ..CivRating::default() },
+        );
+
+        // The one-game row must NOT drag the estimate below the global record.
+        let narrowed = strategy_strength(&strong, Some("Canada"));
+        assert_eq!(
+            narrowed, global,
+            "a 1-game row replaced a 123-game record and drove selection"
+        );
+
+        // ⚠ But a thin row that is GOOD must still be allowed to raise it. A
+        // symmetric minimum-sample gate regressed Rome, discarding g56-48's
+        // genuine thin-but-excellent record — measured, not hypothesised.
+        let mut lucky = Strategy::new(
+            "g56-48",
+            StrategyKind::Builtin { ai: "advanced".to_string() },
+            1,
+        );
+        lucky.games = 100;
+        lucky.wins = 20;
+        let lucky_global = lucky.strength_bound();
+        lucky.leader_elo.entry("Trajan".to_string()).or_default().insert(
+            "Rome".to_string(),
+            CivRating { games: 5, wins: 5, ..CivRating::default() },
+        );
+        let raised = strategy_strength(&lucky, Some("Rome"));
+        assert!(
+            raised > lucky_global,
+            "a thin but perfect per-civ record must still narrow upward: \
+             {raised} vs {lucky_global}"
+        );
+
+        // ⚠ But a real sample MUST still narrow — that is the whole point of the
+        // `civ` argument, and a fix that disabled narrowing would be worse than
+        // the defect.
+        strong.leader_elo.get_mut("Wilfrid Laurier").unwrap().insert(
+            "Canada".to_string(),
+            CivRating { games: MIN_CIV_GAMES, wins: 0, ..CivRating::default() },
+        );
+        let real = strategy_strength(&strong, Some("Canada"));
+        assert!(
+            real < global,
+            "ten losses on a civ must still count against it: {real} vs {global}"
+        );
+    }
 
     /// Nobody is without a rating.
     ///
