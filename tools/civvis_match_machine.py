@@ -420,6 +420,10 @@ class MatchMachine:
         self.next_seed = args.seed
         self.started_monotonic = time.monotonic()
         self.deadline = self.started_monotonic + args.duration
+        absolute_deadline = getattr(args, "deadline_utc", None)
+        if absolute_deadline is not None:
+            remaining = (absolute_deadline - datetime.now(timezone.utc)).total_seconds()
+            self.deadline = self.started_monotonic + max(0.0, remaining)
         self.stopping = False
         self.watch_identity = process_identity(args.watch_pid) if args.watch_pid else None
         self.caffeinate: subprocess.Popen[str] | None = None
@@ -507,14 +511,33 @@ class MatchMachine:
             )
             self.event("sleep_prevention_started", pid=self.caffeinate.pid, mode="idle+AC-system")
 
-    def wait_for_capacity(self, purpose: str, *, cpu_reservation: float = 0.0) -> Resources:
+    def watched_terminal_closed(self) -> bool:
+        return bool(
+            self.args.watch_pid
+            and not process_is_same(self.args.watch_pid, self.watch_identity)
+        )
+
+    def stop_for_terminal_close(self) -> None:
+        if self.stopping:
+            return
+        self.stopping = True
+        self.event("terminal_closed", watch_pid=self.args.watch_pid)
+
+    def wait_for_capacity(
+        self, purpose: str, *, cpu_reservation: float = 0.0
+    ) -> Resources | None:
         """Wait without starting work until every measured resource has headroom."""
         next_notice = 0.0
         while True:
-            if self.stopping or time.monotonic() >= self.deadline:
-                raise RuntimeError("operator window ended while waiting for capacity")
-            if self.args.watch_pid and not process_is_same(self.args.watch_pid, self.watch_identity):
-                raise RuntimeError("watched terminal closed while waiting for capacity")
+            if self.stopping:
+                return None
+            if time.monotonic() >= self.deadline:
+                self.stopping = True
+                self.event("operator_window_ended", purpose=purpose)
+                return None
+            if self.watched_terminal_closed():
+                self.stop_for_terminal_close()
+                return None
             sample = resources(self.runtime)
             now = time.monotonic()
             if self.capacity_available(sample, cpu_reservation=cpu_reservation):
@@ -998,25 +1021,37 @@ class MatchMachine:
             self.event("head_changed", current=self.current_revision, target=revision)
 
     def run(self) -> int:
-        self.event(
-            "machine_started",
-            duration=self.args.duration,
-            watch_pid=self.args.watch_pid,
-            headless=self.args.headless,
-            limit=self.args.limit,
-        )
-        self.keep_awake()
-        self.ensure_source()
-        self.sync()
-        assert self.pending_revision is not None
-        build_reservation = 100.0 * self.args.build_jobs / max(1, os.cpu_count() or 1)
-        self.wait_for_capacity("initial build", cpu_reservation=build_reservation)
-        self.build(self.pending_revision)
-        last_sample = resources(self.runtime)
+        last_sample = Resources(None, None, 0.0, None, None)
         try:
+            self.event(
+                "machine_started",
+                duration=self.args.duration,
+                watch_pid=self.args.watch_pid,
+                headless=self.args.headless,
+                limit=self.args.limit,
+            )
+            if self.watched_terminal_closed():
+                self.stop_for_terminal_close()
+                return 0
+            if time.monotonic() >= self.deadline:
+                self.stopping = True
+                self.event("operator_window_ended", purpose="startup")
+                return 0
+            self.keep_awake()
+            self.ensure_source()
+            self.sync()
+            assert self.pending_revision is not None
+            build_reservation = 100.0 * self.args.build_jobs / max(1, os.cpu_count() or 1)
+            if self.wait_for_capacity("initial build", cpu_reservation=build_reservation) is None:
+                return 0
+            if self.watched_terminal_closed():
+                self.stop_for_terminal_close()
+                return 0
+            self.build(self.pending_revision)
+            last_sample = resources(self.runtime)
             while not self.stopping and time.monotonic() < self.deadline:
-                if self.args.watch_pid and not process_is_same(self.args.watch_pid, self.watch_identity):
-                    self.event("terminal_closed", watch_pid=self.args.watch_pid)
+                if self.watched_terminal_closed():
+                    self.stop_for_terminal_close()
                     break
                 now = time.monotonic()
                 if now >= self.next_sync and self.build_future is None:
@@ -1083,6 +1118,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--runtime", type=Path, default=runtime, help="durable logs and league")
     parser.add_argument("--source", type=Path, default=source, help="private detached build worktree")
     parser.add_argument("--duration", type=float, default=24 * 60 * 60, help="seconds to operate")
+    parser.add_argument(
+        "--deadline-utc",
+        default=None,
+        help="absolute ISO-8601 UTC deadline; preserves the operator window across crash restarts",
+    )
     parser.add_argument("--watch-pid", type=int, required=True, help="terminal shell PID; its exit stops all games")
     parser.add_argument("--headless", type=int, default=8, help="concurrent headless games")
     parser.add_argument("--max-processes", type=int, default=8, help="visible plus headless hard cap")
@@ -1121,6 +1161,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8870)
     parser.add_argument("--seed", type=int, default=int(time.time()) & 0x7FFF_FFFF)
     args = parser.parse_args(argv)
+    if args.deadline_utc is not None:
+        try:
+            deadline = datetime.fromisoformat(args.deadline_utc.replace("Z", "+00:00"))
+        except ValueError:
+            parser.error("--deadline-utc must be an ISO-8601 timestamp")
+        if deadline.tzinfo is None:
+            parser.error("--deadline-utc must include a timezone")
+        args.deadline_utc = deadline.astimezone(timezone.utc)
     if args.turns is None:
         args.turns = SPEED_TURNS[args.speed]
     if not 0 < args.limit <= 70:
