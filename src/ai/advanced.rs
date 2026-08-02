@@ -12299,7 +12299,14 @@ impl AdvancedAi {
                 self.base.move_beats_holding(g, uid, candidate, stay)
             };
             if should_move {
-                return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                // ⚠ Through `path_move`, never `g.apply` directly: it records
+                // the step, and a unit stepped again this turn must not
+                // re-enter the tile it just left. This site emitted 50 of the
+                // 88 same-turn out-and-back pairs on the replay of run
+                // civvis-20260801T224944Z — net zero ground, two orders, and
+                // the second refused by Civilization VI as a MOVE_TO of the
+                // unit's own tile.
+                return self.base.path_move(g, pid, uid, pos);
             }
         }
 
@@ -12326,7 +12333,9 @@ impl AdvancedAi {
                 })
             {
                 if self.base.move_beats_holding(g, uid, score(g, pos), stay) {
-                    return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                    // Same rule as the local arm above: recorded through
+                    // `path_move` so the next same-turn step cannot undo it.
+                    return self.base.path_move(g, pid, uid, pos);
                 }
             }
         }

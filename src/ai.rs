@@ -5362,7 +5362,15 @@ impl BasicAi {
                     self.move_beats_holding(g, uid, sc, stay)
                 } =>
             {
-                g.apply(pid, &Action::Move { unit: uid, to: n }).is_ok()
+                // ⚠ Through `path_move`, never `g.apply` directly: a unit with
+                // movement left is stepped again this same turn, and a raw
+                // apply records nothing — so round two happily re-entered the
+                // tile round one just left. Net zero ground, TWO emitted
+                // orders, and on the Civilization VI side the second usually
+                // lands as a MOVE_TO of the unit's own tile: 217 of 217
+                // refused moves on run civvis-20260801T224944Z were exactly
+                // that, out-and-back pairs from this call site.
+                self.path_move(g, pid, uid, n)
             }
             _ => {
                 // Long-range search is the fallback, not the hot path: most
@@ -5374,7 +5382,7 @@ impl BasicAi {
                 };
                 let routed = score(g, n) + 2.5;
                 self.move_beats_holding(g, uid, routed, stay)
-                    && g.apply(pid, &Action::Move { unit: uid, to: n }).is_ok()
+                    && self.path_move(g, pid, uid, n)
             }
         }
     }
