@@ -12,9 +12,9 @@ The operator fetches ``origin/main`` into a private detached worktree, drains
 old headless games at a revision boundary, and builds the new HEAD in the
 background while keeping one visible match alive.  New games then use the
 immutable promoted binary.  It never edits or updates a development checkout.
-CPU, memory, disk and Apple-GPU use are sampled host-wide; game process groups
-are stopped and resumed before the configured ceiling.  macOS thermal pressure
-is an additional hard gate.
+CPU, memory, disk and Apple-GPU use are sampled host-wide; game and build
+process groups are stopped and resumed before the configured ceiling.  macOS
+thermal pressure is an additional hard gate.
 
 The process is intentionally foreground and watches the shell PID supplied by
 ``--watch-pid``.  Closing that terminal kills the fleet.  While it is alive,
@@ -38,6 +38,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from typing import Any
 from urllib.error import URLError
@@ -66,6 +67,7 @@ SHED_HEADLESS_MARGIN = 10.0
 RESUME_MARGIN = 20.0
 RESUME_COOLDOWN_SECONDS = 15.0
 RESUME_STEP_SECONDS = 5.0
+_resource_sample_lock = threading.Lock()
 
 
 def utc_now() -> str:
@@ -285,14 +287,18 @@ class Resources:
 
 
 def resources(runtime: Path) -> Resources:
-    usage = shutil.disk_usage(runtime)
-    return Resources(
-        cpu=cpu_percent(),
-        memory=memory_percent(),
-        disk=100.0 * usage.used / usage.total,
-        gpu=gpu_percent(),
-        thermal_pressure=thermal_pressure(),
-    )
+    # The background HEAD builder and operator loop can both govern work. Keep
+    # native CPU tick deltas ordered and avoid doubling the host-wide helper
+    # probes when their sampling windows overlap.
+    with _resource_sample_lock:
+        usage = shutil.disk_usage(runtime)
+        return Resources(
+            cpu=cpu_percent(),
+            memory=memory_percent(),
+            disk=100.0 * usage.used / usage.total,
+            gpu=gpu_percent(),
+            thermal_pressure=thermal_pressure(),
+        )
 
 
 def http_json(port: int, path: str, *, data: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -704,7 +710,83 @@ class MatchMachine:
         self.strategy_cursor += 1
         return strategy
 
-    def compile_build(self, revision: str) -> Path:
+    def resource_capped_command(
+        self,
+        *args: str,
+        cwd: Path,
+        env: dict[str, str] | None,
+        timeout: float,
+        purpose: str,
+        log_path: Path,
+    ) -> subprocess.CompletedProcess[str] | None:
+        """Run long work while preserving terminal, deadline, and host limits."""
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        started = time.monotonic()
+        paused = False
+        with log_path.open("w", encoding="utf-8") as output:
+            process = subprocess.Popen(
+                args,
+                cwd=cwd,
+                env=env,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                text=True,
+            )
+            while process.poll() is None:
+                now = time.monotonic()
+                if self.stopping:
+                    stop_process(process, timeout=2)
+                    return None
+                if self.watched_terminal_closed():
+                    self.stop_for_terminal_close()
+                    stop_process(process, timeout=2)
+                    return None
+                if now >= self.deadline:
+                    self.stopping = True
+                    self.event("operator_window_ended", purpose=purpose)
+                    stop_process(process, timeout=2)
+                    return None
+                if now - started >= timeout:
+                    stop_process(process, timeout=2)
+                    raise subprocess.TimeoutExpired(args, timeout)
+
+                sample = resources(self.runtime)
+                must_pause = (
+                    sample.cpu is None
+                    or sample.thermal_pressure is True
+                    or sample.maximum() >= self.args.limit - SHED_ONE_MARGIN
+                )
+                if must_pause and not paused and set_paused(process, True):
+                    paused = True
+                    self.event(
+                        "work_paused_for_resources",
+                        purpose=purpose,
+                        pid=process.pid,
+                        resources=asdict(sample),
+                    )
+                elif (
+                    paused
+                    and sample.comfortably_below(self.args.limit, margin=RESUME_MARGIN)
+                    and not any(
+                        game.paused for game in getattr(self, "games", ())
+                    )
+                    and set_paused(process, False)
+                ):
+                    paused = False
+                    self.event(
+                        "work_resumed",
+                        purpose=purpose,
+                        pid=process.pid,
+                        resources=asdict(sample),
+                    )
+                time.sleep(self.args.poll)
+            returncode = process.returncode
+
+        captured = log_path.read_text(encoding="utf-8", errors="replace")
+        return subprocess.CompletedProcess(args, returncode, captured)
+
+    def compile_build(self, revision: str) -> Path | None:
         self.event("build_started", revision=revision, jobs=self.args.build_jobs)
         reset = command("git", "reset", "--hard", revision, cwd=self.source)
         if reset.returncode != 0:
@@ -712,12 +794,16 @@ class MatchMachine:
         environment = os.environ.copy()
         environment["CARGO_BUILD_JOBS"] = str(self.args.build_jobs)
         environment.pop("CIVVIS_COMMIT", None)
-        result = command(
+        result = self.resource_capped_command(
             "cargo", "build", "--release", "--locked", "--bin", "civvis",
             cwd=self.source,
             env=environment,
             timeout=self.args.build_timeout,
+            purpose="build",
+            log_path=self.runtime / "logs" / f"build-{revision[:12]}.log",
         )
+        if result is None:
+            return None
         if result.returncode != 0:
             self.event("build_failed", revision=revision, output=result.stdout[-4000:])
             raise RuntimeError(f"CIVVIS build failed at {revision[:12]}")
@@ -729,7 +815,18 @@ class MatchMachine:
         shutil.copy2(built, temporary)
         temporary.chmod(0o755)
         os.replace(temporary, promoted)
-        check = command(str(promoted), "validate", cwd=self.source, timeout=180)
+        check = self.resource_capped_command(
+            str(promoted),
+            "validate",
+            cwd=self.source,
+            env=None,
+            timeout=180,
+            purpose="validation",
+            log_path=self.runtime / "logs" / f"validation-{revision[:12]}.log",
+        )
+        if check is None:
+            promoted.unlink(missing_ok=True)
+            return None
         if check.returncode != 0:
             promoted.unlink(missing_ok=True)
             self.event("validation_failed", revision=revision, output=check.stdout[-4000:])
@@ -752,7 +849,9 @@ class MatchMachine:
         self.next_sync = time.monotonic() + self.args.sync_interval
 
     def build(self, revision: str) -> None:
-        self.activate_build(revision, self.compile_build(revision))
+        promoted = self.compile_build(revision)
+        if promoted is not None:
+            self.activate_build(revision, promoted)
 
     def start_head_build(self, revision: str) -> None:
         self.build_revision = revision
@@ -766,7 +865,8 @@ class MatchMachine:
         assert revision is not None
         try:
             promoted = future.result()
-            self.activate_build(revision, promoted)
+            if promoted is not None:
+                self.activate_build(revision, promoted)
         except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
             self.event("revision_rejected", error=str(error))
             if self.pending_revision == revision:
