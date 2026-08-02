@@ -11,9 +11,19 @@ viewer is not a reimplementation: it is `web/index.html`, copied byte for byte
 apart from the asset paths a subdirectory forces.
 
 ```
-civvis.ai            a landing page that points at the channel
-civvis.ai/beta       the published build, behind a password
+civvis.ai            forwards to youtube.com/@civvis
+civvis.ai/home       the landing page, linking the three below
+civvis.ai/beta       the published build, open to anyone
+civvis.ai/download   the native binaries, from the latest GitHub release
 ```
+
+The domain's job is to be the channel's address — somebody typing `civvis.ai`
+wants the videos. So `/` is a **302** to the channel and the landing page moved
+to `/home`. A 302 rather than a 301 because browsers cache a permanent redirect
+effectively for ever, and the day this becomes a real front page every past
+visitor would still be sent to YouTube. Setting `ROOT_REDIRECT` in the Pages
+environment changes the destination, or `off` serves the landing page at `/`
+again — neither needs a deploy.
 
 ## How it fits together
 
@@ -22,10 +32,14 @@ civvis.ai/beta       the published build, behind a password
 | `src/wasm.rs` | The engine's request router for the browser. A child module of `server`, `cfg`-gated to wasm, answering the same endpoints over the same JSON. |
 | `beta/worker.js` | Runs the module off the main thread. A turn is not a quick call, and the viewer paints on `requestAnimationFrame`; on the page's own thread the engine would stall the frames it exists to produce. |
 | `beta/shim.js` | Intercepts `fetch` before it reaches the network. Also owns the three things that genuinely became the page's job: the turn clock, the ten-second finale countdown, and saved games in `localStorage`. |
-| `beta/_worker.js` | The password on `/beta`, checked at the edge, plus the response headers for the whole site. |
-| `beta/landing.html` | `civvis.ai` itself. |
+| `beta/_worker.js` | The password on `/beta`, the forward on `/`, plus the response headers for the whole site. |
+| `beta/landing.html` | `civvis.ai/home`. |
+| `beta/download.html` | `civvis.ai/download`. Links `releases/latest/download/<asset>`, so it never needs republishing when a release is cut. |
+| `.github/workflows/release.yml` | Builds those assets for Windows, macOS (both architectures) and Linux on a `v*` tag. |
+| `.github/workflows/publish-site.yml` | Builds, checks and deploys the whole thing from CI, so publishing needs a decision rather than a particular laptop. |
 | `beta/publish.sh` | Assembles `beta/dist/` from a named revision. |
 | `beta/verify.py` | Opens the assembled bundle in a real browser, watches it play, and walks through the password door. |
+| `beta/worker_test.py` | Calls `_worker.js` directly — the forward, the password, the headers — needing only Chrome. |
 | `beta/serve.sh` | Serves `beta/dist/` locally the way a static host would. |
 
 Nothing under `web/` is edited to suit the web build, and none of `src/wasm.rs`
@@ -67,14 +81,37 @@ you are guessing about.
 
 ## Cutting a build
 
-Every few days, when `main` is in a state worth showing:
+Every few days, when `main` is in a state worth showing: **Actions →
+publish-site → Run workflow**, on the revision you want. It installs the
+toolchain, assembles the bundle, runs both checks and deploys, and it uploads
+the bundle as an artifact whether or not the deploy runs. Unticking *deploy*
+makes it a dry run.
+
+Publishing stays manual on purpose. The gates prove a build is not broken; they
+cannot tell whether a whole game is worth watching, and that is the actual
+question.
+
+By hand, which is the same sequence:
 
 ```bash
 ./beta/publish.sh --commit <sha>   # build the bundle from a pinned revision
-./beta/verify.py                   # prove it plays and that the door is shut
+./beta/worker_test.py              # prove the forward and the door behave
+./beta/verify.py                   # prove it plays, and walk through the door
 ./beta/serve.sh                    # optional: look at it yourself
 npx wrangler pages deploy beta/dist --project-name civvis
 ```
+
+`worker_test.py` exists because `_worker.js` is the only part of the site a
+static server never runs, so opening the bundle in a browser proves nothing
+about it — and it is the part holding both the password and the domain's
+whole purpose. `verify.py`'s `check_gate` covers the same ground against the
+real runtime, but it needs `npx wrangler` and therefore Node; a machine
+without Node skipped the check entirely and said so in one line nobody reads.
+`worker_test.py` needs only Chrome: it imports the module and calls it, with
+`env.ASSETS` stubbed to report which file *would* have been served. The one
+place a browser is not the Workers runtime — `Cookie` and `Set-Cookie` are
+forbidden header names on the web and get dropped — is handled in the harness,
+and documented there.
 
 Measured on this Mac, the published engine answers `/runtime` (which builds the
 world) in about 120 ms, a whole `/state` document in about 95 ms, and a turn in
@@ -82,15 +119,48 @@ about 126 ms — four or five turns a second in a browser tab.
 
 `publish.sh` refuses to assemble a page whose asset rewrites no longer match
 the viewer, so a restructured `web/index.html` fails the build instead of
-publishing a page with missing sprites.
+publishing a page with missing sprites. The check is *"no root-absolute
+reference survives"* rather than *"exactly N were rewritten"*: an exact count
+failed the build every time somebody drew a new atlas, which is ordinary work
+and says nothing about whether the rewrite still works.
+
+## Weight
+
+A hosted build has to stay something a person can be handed over an ordinary
+connection, and both halves of it grow every week. `publish.sh` therefore fails
+above **25 MiB assembled** (`BUNDLE_BUDGET_BYTES` to move it deliberately), and
+prints where the build sits against that.
+
+Measured on `7e681b6`, which is why two things happen at publication:
+
+| | before | after |
+| --- | --- | --- |
+| engine, `wasm-opt -O3` | 9,972,139 | 8,084,494 |
+| atlases, lossless WebP | 12,464,506 | 8,869,674 |
+| **bundle** | **24,228,282** | **18,745,813** — 71% of budget |
+
+- **`wasm-opt -O3`** takes a fifth off the module. `-Oz` was measured against
+  it and is worth 0.3% more — 8,061,627 bytes — for a module that simulates
+  whole games, so `-O3` stays. Over the wire brotli makes both about 1.74 MB,
+  so this is mostly about the disk figure and the budget.
+- **Lossless WebP** is pixel-identical to the PNG it replaces, and the atlases
+  were the heaviest thing in the bundle — heavier than the engine. It happens
+  to the *copy*: `web/assets` stays PNG, which is what the desktop build serves
+  and what anyone editing the art works on. Needs Pillow; without it the
+  atlases publish as PNG and the only cost is the budget.
+
+Both steps are optional and both are the first thing to reach for when the
+budget bites. After them the bundle is dominated by art, so the next real lever
+is the atlases themselves rather than anything this directory does.
 
 **A revision is publishable when all of these hold:**
 
 1. It is on `origin/main` and its CI run is green.
 2. `cargo test --profile ci` passes at that revision.
-3. `./beta/publish.sh --commit <sha>` completes.
-4. `./beta/verify.py` reports `this build plays`.
-5. A whole game is worth watching — the check above proves it runs, not that it
+3. `./beta/publish.sh --commit <sha>` completes, inside the size budget.
+4. `./beta/worker_test.py` reports `the site routes correctly`.
+5. `./beta/verify.py` reports `this build plays`.
+6. A whole game is worth watching — the checks above prove it runs, not that it
    is good. That judgement is the point of publishing every few days rather
    than every commit.
 
@@ -115,6 +185,18 @@ wrangler pages deploy beta/dist --project-name civvis
 
 That already gives a working URL at `civvis.pages.dev`.
 
+Then, so nobody has to do that again, two repository secrets under **Settings →
+Secrets and variables → Actions**:
+
+| Secret | Where it comes from |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | My Profile → API Tokens → Create Token → **Edit Cloudflare Workers** template, scoped to this account. Pages deploys use the Workers permission. |
+| `CLOUDFLARE_ACCOUNT_ID` | The right-hand column of the account's overview page, or `wrangler whoami`. |
+
+`publish-site.yml` runs without them — it builds, checks, and keeps the bundle
+as an artifact — and fails with a clear message if asked to deploy while they
+are missing, rather than appearing to publish and doing nothing.
+
 ### 2. The domain
 
 `civvis.ai` is registered at Namecheap, on Namecheap's own nameservers, and
@@ -132,59 +214,88 @@ unwanted, at the cost of the URL being the one asked for.
 
 1. In Cloudflare, **Add a site** → `civvis.ai` → Free plan. It scans the
    existing records and gives you two nameservers.
-2. **Check the scan kept the mail records before continuing** — see below.
+2. Delete the scanned `MX` and SPF `TXT` records — they are Namecheap's mail
+   forwarding, nothing is received through them, and they will not work off
+   Namecheap's nameservers anyway. See below.
 3. At Namecheap: **Domain List → Manage → Nameservers → Custom DNS**, and enter
    those two. (They replace `dns1.registrar-servers.com` /
    `dns2.registrar-servers.com`.)
-4. Wait for Cloudflare to report the zone active — usually minutes.
+4. Wait for Cloudflare to report the zone active — usually minutes, and the
+   registrar's own propagation can take a few hours.
 5. In the Pages project → **Custom domains** → add `civvis.ai` and
    `www.civvis.ai`. The records and the certificate are created for you.
 
+Nothing else needs a DNS record. The apex and `www` are the whole site;
+`/beta` and `/download` are paths on it, not hostnames, which is why there is
+no `beta.civvis.ai` to set up.
+
 ### The mail on this domain
 
-`civvis.ai` is **not** a bare parked domain. It is currently publishing:
+`civvis.ai` currently publishes Namecheap's free email-forwarding records:
 
 ```
 MX   10 eforward1.registrar-servers.com.  (and eforward2-5)
 TXT  "v=spf1 include:spf.efwd.registrar-servers.com ~all"
 ```
 
-That is Namecheap's free email forwarding, and Namecheap ties that service to
-*their* nameservers. Moving the zone to Cloudflare will very likely stop it
+Namecheap ties that service to *their* nameservers, so moving the zone stops it
 working even though Cloudflare's scan copies the records across faithfully — the
-records will be right and the service behind them will not answer.
+records will be right and the service behind them will not answer. **Nothing is
+received at any `@civvis.ai` address** (checked with Martin, 2026-08-01), so
+this costs nothing and the records can simply be dropped.
 
-If anything is actually being received at an `@civvis.ai` address, replace it
-with **Cloudflare Email Routing** (free, in the same dashboard, under Email) and
-point the address at whatever inbox should have it. It is a better service than
-the one being replaced, and it is configured in the place the DNS now lives. Do
-this in the same sitting as the nameserver change, not afterwards.
+If that ever changes, the replacement is **Cloudflare Email Routing** — free,
+in the same dashboard under Email, and configured in the place the DNS now
+lives.
 
-### 3. The password
+### 3. The beta is open
 
-It is `2008`, and it lives in `beta/_worker.js` as the fallback. To change it
-without a deploy, set **`BETA_PASSWORD`** in the Pages project's environment
-variables (Production *and* Preview).
+`/beta` asks for nothing. It was behind a shared password while it was a thing
+not meant to be found; it is now the thing the channel points people at.
 
-The gate is a `_worker.js` rather than the more obvious Pages `functions/`
+Setting **`BETA_PASSWORD`** in the Pages project's environment variables
+(Production *and* Preview) closes it again with no deploy. There is
+deliberately **no fallback password in the code**: the old one was a literal in
+this public repository, which is not a password but a speed bump with a
+published height. Either the environment names a secret or there is no gate.
+
+Everything under `/beta` is still sent `X-Robots-Tag: noindex`. Open to anyone
+following a link is not the same as wanting an unfinished build to be the first
+search result for the project's name.
+
+The routing is a `_worker.js` rather than the more obvious Pages `functions/`
 directory, and that is not a style choice. `functions/` is resolved against the
 **working directory wrangler runs in**, not the directory being deployed: run
-the deploy from one level up and the gate is quietly left behind, the upload
-succeeds, the site works, and the beta is wide open with nothing anywhere to
-say so. That happened here once. A `_worker.js` lives *inside* the deployed
-directory and cannot be separated from it — and `verify.py` now opens the door
-and walks through it rather than trusting that it exists.
+the deploy from one level up and the whole file is quietly left behind, the
+upload succeeds, and the site looks like it works. That happened here once. A
+`_worker.js` lives *inside* the deployed directory and cannot be separated from
+it — and both checks now ask the routing rather than trusting it, including
+that `BETA_PASSWORD` has not been left set by accident.
 
-The gate is deliberately soft: one shared password, no accounts, a cookie good
-for a week. It keeps the build from being stumbled upon, and the pages behind it
-are sent `X-Robots-Tag: noindex`. It is not access control, and the repository
-is public, so nothing behind it should be anything that would matter if it got
-out.
+### 4. The channel
 
-### 4. The channel link
+`https://www.youtube.com/@civvis`, in three places: the forward on `/`
+(`CHANNEL` in `beta/_worker.js`), the landing page's first button, and the
+viewer's own header link in `web/index.html`.
 
-`beta/landing.html` has exactly one YouTube URL, marked with a comment. When
-the new account exists, change that line and republish.
+### 5. The downloads
+
+`beta/download.html` links `releases/latest/download/<asset>`, which GitHub
+resolves to the newest release, so the page is written once and never
+republished for a release. **The asset names are therefore load-bearing and
+must not acquire version numbers.** `release.yml` builds exactly those four
+names; `verify.py` fails a build whose download page links an asset no release
+job produces, because the alternative is finding out from a visitor's 404.
+
+Cutting one is a tag:
+
+```bash
+git tag v0.6.1 && git push origin v0.6.1
+```
+
+The workflow's "Run workflow" button builds all four targets without
+publishing anything, which is how you learn a target stopped compiling before
+a tag is public.
 
 ## Limits worth knowing
 
