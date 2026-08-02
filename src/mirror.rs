@@ -720,12 +720,6 @@ mod tests {
         );
     }
 
-    /// ★★★★ Landmass identity comes from the export, and invented cliffs come off.
-    ///
-    /// Same defect as the rivers above, two fields over. On the live board 200 of 776
-    /// tiles carried a continent and 576 carried none — the generated world's regions
-    /// showing through on a map where every land plot really has one.
-    #[test]
     /// ★★★★ A card the host has retired must stop being offered.
     ///
     /// `POLICY_ILKUM` was chosen and refused **105 times** on live run
@@ -752,7 +746,7 @@ mod tests {
             "precondition: the card is on offer before the host retires it"
         );
 
-        game.blocked_policies.insert(victim.clone());
+        game.blocked_policies.insert(victim);
         assert!(
             !game.available_policies(0).contains(&victim),
             "a card the host ruleset retired must not be offered again — this is the \
@@ -809,6 +803,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// ★★★★ Landmass identity comes from the export, and invented cliffs come off.
+    ///
+    /// Same defect as the rivers above, two fields over. On the live board 200 of 776
+    /// tiles carried a continent and 576 carried none — the generated world's regions
+    /// showing through on a map where every land plot really has one.
+    #[test]
     fn the_landmass_is_civ6s_and_the_generated_cliffs_are_gone() {
         let mut home = plot(5, 5, "TERRAIN_GRASS");
         home.ct = Some("CONTINENT_AFRICA".to_string());
@@ -1070,7 +1070,6 @@ mod tests {
         assert!(chunk.plots[1].f.is_none() && chunk.plots[1].r.is_none());
     }
 
-    #[test]
     /// ★★★★★ A building CIVVIS does not model must not take the decider down.
     ///
     /// `BUILDING_CASTLE` **panicked the whole decider** on live run
@@ -1219,14 +1218,14 @@ mod tests {
         game.blocked_districts
             .entry(blocked_city)
             .or_default()
-            .insert(district.clone());
+            .insert(district);
 
         assert!(
-            game.district_sites(blocked_city, &district).is_empty(),
+            game.district_sites(blocked_city, district).is_empty(),
             "the city the host refused must stop offering it"
         );
         assert!(
-            !game.district_sites(other_city, &district).is_empty(),
+            !game.district_sites(other_city, district).is_empty(),
             "and every OTHER city must be untouched — a global block would cost far \
              more than the waste it prevents"
         );
@@ -1453,7 +1452,7 @@ mod tests {
             .expect("the seat's city must be on the board");
 
         assert_eq!(
-            city.districts.get(&Name::new("campus")).copied(),
+            city.districts.get(Name::new("campus")).copied(),
             Some(crate::hex::offset_to_axial(5, 6)),
             "a built district must reach the board, on the plot the export named"
         );
@@ -1461,7 +1460,7 @@ mod tests {
         // centre is implicit. Inserting it would put a district on the board that
         // CIVVIS's own games never have — checked in the source, not assumed.
         assert!(
-            !city.districts.contains_key(&Name::new("city_center")),
+            !city.districts.contains_key(Name::new("city_center")),
             "the city centre stays implicit, as it is in an ordinary CIVVIS game"
         );
     }
@@ -1874,7 +1873,7 @@ mod tests {
              a city that reads as bare ground is exactly how CIVVIS asked 79 times"
         );
         assert!(
-            at_cap.game.district_sites(capped, &probe).is_empty(),
+            at_cap.game.district_sites(capped, probe).is_empty(),
             "population 4 allows 1 + (4-1)/3 = 2 specialty districts and this city has 3, \
              so CIVVIS must stop choosing {probe}"
         );
@@ -2032,6 +2031,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
         // ⚠ THIS FIELD EXISTED AND WAS NEVER FILLED. `religion` was null on all
         // 26,954 city records ever exported — the schema had it, the mod never sent
@@ -2923,7 +2923,7 @@ pub(crate) fn apply_city_memory(game: &mut crate::game::Game) {
 ///
 /// Idempotent.
 pub(crate) fn apply_tile_memory(game: &mut crate::game::Game, snapshot: &Snapshot) {
-    let turn = snapshot.turn.max(1) as u32;
+    let turn = snapshot.turn.max(1);
     // Decided first, applied second: reading the map and the owning city needs `game`
     // immutably while writing the seat's memory needs it mutably.
     let remembered: Vec<(crate::Pos, crate::world::RememberedTile)> = snapshot
@@ -3769,7 +3769,7 @@ fn class_representative(class: &str, rules: &crate::rules::Rules) -> Option<&'st
         "PROMOTION_CLASS_SUPPORT" => &["battering_ram", "siege_tower", "medic"],
         _ => &[],
     };
-    candidates.iter().copied().find(|c| rules.units.contains_key(*c))
+    candidates.iter().copied().find(|c| rules.units.contains_key(c))
 }
 
 /// A Civilization VI unit name with its owner qualifier removed, when that is what
@@ -4270,7 +4270,7 @@ fn civvis_production_item(
         _ => None,
     };
     if let Some(name) = project_alias
-        .filter(|name| rules.projects.contains_key(*name))
+        .filter(|name| rules.projects.contains_key(name))
         .map(str::to_string)
         .or_else(|| civvis_node_name(&rules.projects, civ6, "PROJECT_"))
     {
@@ -4445,7 +4445,7 @@ pub fn rebuild_from_state(
 
     // Land only, and revealed only. `place_city` on water or on an unseen tile
     // would put CIVVIS's empire somewhere the seat cannot act.
-    let mut plant_city = |game: &mut crate::game::Game, owner: usize, c: &StateCity| -> Option<u32> {
+    let plant_city = |game: &mut crate::game::Game, owner: usize, c: &StateCity| -> Option<u32> {
         if !snapshot.is_revealed((c.x, c.y)) {
             return None;
         }
@@ -4722,7 +4722,7 @@ pub fn rebuild_from_state(
     }
 
     let mut dropped: Vec<String> = Vec::new();
-    let mut plant_unit = |game: &mut crate::game::Game,
+    let plant_unit = |game: &mut crate::game::Game,
                           owner: usize,
                           u: &StateUnit,
                           unmapped: &mut Vec<String>,
