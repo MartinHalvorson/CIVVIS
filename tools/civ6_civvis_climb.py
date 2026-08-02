@@ -798,6 +798,45 @@ def main() -> int:
         record["difficulty_asked"] = args.difficulty
         record["code_rev"] = code_rev
 
+        # ★★★★★ A ROW THAT WAS DEALT SOMETHING ELSE MUST SAY SO, WIN OR NOT.
+        #
+        # `is_win` already refuses to count a VICTORY at the wrong rung, and the
+        # reasoning above it is right: `setup: "(absent)"` on this build means
+        # several requested settings never applied, so the `seat` event read back
+        # from inside the game is the only trustworthy witness.
+        #
+        # But that check only ever fires on a win. Every LOSING row — which is all
+        # of them so far — was written with `difficulty_asked: DIFFICULTY_SETTLER`
+        # beside a seat that said something else, and nothing said a word. Those
+        # rows then sit in the ledger being compared against each other as though
+        # they were the same experiment.
+        #
+        # Measured 2026-08-02: 25 consecutive runs dealt DIFFICULTY_SETTLER and the
+        # 26th dealt DIFFICULTY_PRINCE, on identical setup code. So this is rare,
+        # not chronic — which is exactly why it needs to be recorded rather than
+        # watched for. A one-in-twenty-six silent substitution is the kind of thing
+        # that is never noticed and quietly explains a whole batch.
+        #
+        # ⚠ Recorded, NOT fatal. A game at the wrong rung is still a game, and the
+        # data is still worth having; what it must not do is masquerade as the rung
+        # that was asked for. `settings_dealt` is the field a reader can filter on.
+        dealt = (record.get("seat") or {})
+        mismatch = {
+            field: {"asked": asked, "dealt": dealt.get(key)}
+            for field, key, asked in (
+                ("difficulty", "difficulty", args.difficulty),
+                ("map_size", "size", args.map_size),
+                ("speed", "speed", args.speed),
+            )
+            if dealt.get(key) is not None and dealt.get(key) != asked
+        }
+        if mismatch:
+            record["settings_mismatch"] = mismatch
+            for field, pair in mismatch.items():
+                print(f"  ⚠ {field}: asked {pair['asked']}, the game dealt "
+                      f"{pair['dealt']} — this row is NOT comparable with the rest "
+                      f"of the batch", flush=True)
+
         # ⚠ NO TURN WAS EVER OBSERVED, so this row is not a loss — it is a run that
         # did not happen. It is still written down, because a batch with holes in it
         # has to SHOW the holes, but it is marked and it does not spend a rung. The
