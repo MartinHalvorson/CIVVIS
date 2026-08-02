@@ -935,11 +935,12 @@ class MatchMachine:
         # immediately instead of waiting for the normal 20-point recovery
         # margin. If headless work is using that remaining headroom, pause it
         # first. The hard ceiling still wins: an overloaded host gets no new
-        # process, and the governor will pause the visible process as needed.
+        # process, but shed headless work immediately so the visible slot can
+        # be reserved on the next safe sample.
         if not any(game.visible for game in self.games):
-            if sample.overloaded(self.args.limit):
-                return
-            if not sample.comfortably_below(self.args.limit, margin=RESUME_MARGIN):
+            if sample.overloaded(self.args.limit) or not sample.comfortably_below(
+                self.args.limit, margin=RESUME_MARGIN
+            ):
                 for game in self.games:
                     if game.visible or game.paused:
                         continue
@@ -950,6 +951,8 @@ class MatchMachine:
                             seed=game.seed,
                             resources=asdict(sample),
                         )
+                if sample.overloaded(self.args.limit):
+                    return
             self.launch(visible=True)
             return
         if not sample.comfortably_below(self.args.limit, margin=RESUME_MARGIN):
