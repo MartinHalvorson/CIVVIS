@@ -33,7 +33,7 @@
 //! `ValueNet::load` is a single cwd-relative read. A translation table that
 //! silently comes back empty would put the simulator on ground that does not
 //! exist, which is a worse failure than any of those.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
@@ -634,15 +634,8 @@ mod tests {
 
     /// Revealed ground is the truth, in both directions.
     ///
-    /// ⚠ This deliberately asserts NOTHING about unseen ground. Making the unknown
-    /// walkable is a separate and better-measured change being made in `rebuild_game`
-    /// and `grow_frontier` by another writer — wipe the generated world to ocean so the
-    /// generator's land cannot masquerade as reachable frontier (416 such tiles survived
-    /// on a 60x38 rebuild), then let `grow_frontier` invent land at a controlled ring
-    /// seeded from everything revealed rather than from revealed *land*, so the ring is
-    /// not sealed inside its own coastline. That confines the invented ground to one
-    /// place; an earlier draft of this test asserted the whole unknown map was walkable,
-    /// which is a far larger fiction and would have fought it.
+    /// Unseen ground has its own explicit terrain state. Whether a bounded frontier may
+    /// be probed is recorded separately and must never change that terrain into a guess.
     #[test]
     fn revealed_ground_is_the_truth_in_both_directions() {
         let chunks = vec![TilesChunk {
@@ -665,6 +658,106 @@ mod tests {
             "revealed ocean really is water — no frontier change may turn the sea into \
              land where the seat has actually looked"
         );
+
+        let unseen = game.map.get(crate::hex::offset_to_axial(15, 15)).unwrap();
+        assert_eq!(
+            unseen.terrain.as_str(),
+            "unknown",
+            "unrevealed terrain must not secretly be generated land or ocean"
+        );
+        assert!(
+            !unseen.assumed_traversable,
+            "a bare reconstruction has no planning prior"
+        );
+    }
+
+    #[test]
+    fn frontier_access_never_turns_unknown_into_mock_land_or_water() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 4,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(10, 10, "TERRAIN_GRASS")],
+        }]);
+        let mut game = rebuild_game(&snapshot, 4, 7);
+        grow_frontier(&mut game, &snapshot, 2);
+
+        let center = crate::hex::offset_to_axial(10, 10);
+        let frontier = crate::hex::neighbors(center)
+            .into_iter()
+            .find(|pos| game.map.tiles.contains_key(pos))
+            .expect("the revealed center has an in-bounds neighbor");
+        let far = crate::hex::offset_to_axial(0, 0);
+        for (label, pos) in [("frontier", frontier), ("far", far)] {
+            let tile = &game.map.tiles[&pos];
+            assert_eq!(
+                tile.terrain.as_str(),
+                "unknown",
+                "{label} undisclosed ground keeps its actual knowledge state"
+            );
+            assert!(game.rules.is_unknown(tile));
+            assert_eq!(
+                game.rules.tile_yields(tile),
+                crate::rules::Yields::default(),
+                "unknown ground cannot leak generated yields"
+            );
+            assert_eq!(
+                serde_json::to_value(tile).unwrap()["terrain"],
+                "unknown",
+                "the serialized board exposes the unknown underneath"
+            );
+        }
+        assert!(game.map.tiles[&frontier].assumed_traversable);
+        assert!(game.rules.is_passable(&game.map.tiles[&frontier]));
+        assert!(!game.map.tiles[&far].assumed_traversable);
+        assert!(!game.rules.is_passable(&game.map.tiles[&far]));
+
+        apply_terrain(&mut game, &snapshot);
+        assert_eq!(game.map.tiles[&frontier].terrain.as_str(), "unknown");
+        assert!(
+            game.map.tiles[&frontier].assumed_traversable,
+            "an authoritative terrain refresh must not erase the separately owned prior"
+        );
+
+        let warrior = game.spawn_test_unit("warrior", 0, center);
+        let galley = game.spawn_test_unit("galley", 0, center);
+        assert!(
+            game.unit_can_traverse(warrior, frontier),
+            "land explorers may probe the terrain-neutral frontier"
+        );
+        assert!(
+            game.unit_can_traverse(galley, frontier),
+            "naval explorers may probe it without calling it water underneath"
+        );
+
+        let saved = serde_json::to_string(&game).expect("the mirror game saves");
+        let loaded: crate::game::Game =
+            serde_json::from_str(&saved).expect("the mirror game reloads");
+        assert!(loaded.rules.is_unknown(&loaded.map.tiles[&frontier]));
+        assert!(loaded.map.tiles[&frontier].assumed_traversable);
+
+        grow_frontier(&mut game, &snapshot, 0);
+        assert_eq!(game.map.tiles[&frontier].terrain.as_str(), "unknown");
+        assert!(!game.map.tiles[&frontier].assumed_traversable);
+        assert!(!game.unit_can_traverse(warrior, frontier));
+        assert!(!game.unit_can_traverse(galley, frontier));
+    }
+
+    #[test]
+    fn a_revealed_but_untranslatable_terrain_is_still_unknown_underneath() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 4,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_FROM_A_MOD")],
+        }]);
+        let game = rebuild_game(&snapshot, 4, 7);
+        let tile = &game.map.tiles[&crate::hex::offset_to_axial(5, 5)];
+        assert_eq!(tile.terrain.as_str(), "unknown");
+        assert!(!tile.assumed_traversable);
+        assert!(game.rules.is_unknown(tile));
     }
 
     /// ★★★★★ The seat must know which ground it has seen, or every adjacent tile
@@ -699,12 +792,8 @@ mod tests {
             "ground the seat has never seen must not read as explored"
         );
 
-        // ⚠ Deliberately no assertion that some unexplored tile is also *traversable*.
-        // `BasicAi::has_exploration_target` wants both halves, but the second half is
-        // supplied by `grow_frontier`, not here — see
-        // `revealed_ground_is_the_truth_in_both_directions`. Asserting it from this test
-        // would couple the explored set to a terrain policy it does not own, and would
-        // pass or fail on whatever the map generator happened to roll.
+        // Traversability remains a separate frontier policy; merely being unknown is
+        // not enough to make a tile reachable.
         assert!(
             game.map
                 .tiles
@@ -1311,13 +1400,21 @@ mod tests {
                 "wonders":[{"type":"BUILDING_PYRAMIDS","x":1,"y":3}]
             }],
             "units":[{"id":4,"kind":"UNIT_WARRIOR","x":2,"y":3,"combat":20,
-                      "ranged":0,"player":0,"formation_count":2}],
+                      "ranged":0,"player":0,"formation_count":2,"xp":19,"level":2,
+                      "promotions":["PROMOTION_BATTLECRY"],"build_charges":0,
+                      "spread_charges":0}],
             "future_empire_fact":true
         }"#;
         let state = state_from_json(raw).expect("the state remains usable");
         assert_eq!(state.cities[0].producing_hash, Some(123));
         assert_eq!(state.units[0].combat, 20.0);
         assert_eq!(state.units[0].formation_count, 2);
+        assert_eq!(state.units[0].xp, Some(19));
+        assert_eq!(state.units[0].level, Some(2));
+        assert_eq!(
+            state.units[0].promotions.as_deref(),
+            Some(["PROMOTION_BATTLECRY".to_string()].as_slice())
+        );
         assert_eq!(
             state.schema_gaps,
             vec![
@@ -3740,6 +3837,70 @@ mod tests {
     }
 
     #[test]
+    fn live_units_keep_firaxis_charges_promotions_experience_and_religion() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 93,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+        }]);
+        let state = StateSnapshot {
+            turn: 93,
+            units: vec![StateUnit {
+                id: 91,
+                kind: "UNIT_APOSTLE".to_string(),
+                x: 5,
+                y: 5,
+                xp: Some(37),
+                level: Some(2),
+                promotions: Some(vec!["PROMOTION_TRANSLATOR".to_string()]),
+                build_charges: Some(0),
+                spread_charges: Some(2),
+                religion: Some("RELIGION_CATHOLICISM".to_string()),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let apostle = mirror
+            .game
+            .units
+            .values()
+            .find(|unit| unit.owner == 0)
+            .expect("the Apostle is mirrored");
+        assert_eq!(apostle.xp, 37);
+        assert_eq!(apostle.level, 2);
+        assert_eq!(apostle.charges, 2);
+        assert_eq!(apostle.religion.as_deref(), Some("Catholicism"));
+        assert_eq!(
+            apostle
+                .promotions
+                .iter()
+                .map(|promotion| (*promotion).as_str())
+                .collect::<Vec<_>>(),
+            vec!["translator"]
+        );
+    }
+
+    #[test]
+    fn firaxis_promotion_prefix_aliases_land_on_modelled_nodes() {
+        assert_eq!(
+            civvis_unit_promotion_name("PROMOTION_MONK_COBRA_STRIKE"),
+            "cobra_strike"
+        );
+        assert_eq!(
+            civvis_unit_promotion_name("PROMOTION_SUPER_CARRIER"),
+            "supercarrier"
+        );
+        assert_eq!(
+            civvis_unit_promotion_name("PROMOTION_SURF_ROCK"),
+            "surf_band"
+        );
+    }
+
+    #[test]
     fn a_hostile_lands_on_the_barbarian_seat_and_not_on_dormant_free_cities() {
         // ⚠ The roster has TWO players carrying `is_barbarian`, and only one of them
         // is alive. Measured on run `civvis-20260731T172058Z`: all nine barbarians
@@ -4124,22 +4285,14 @@ pub fn snapshot_from_events_at(
 /// is what the export says and what the operator sees on screen; conversion happens
 /// here, at the boundary, once.
 ///
-/// ⚠ UNREVEALED PLOTS ARE FLATTENED TO OCEAN, and that is a deliberate,
-/// load-bearing choice rather than a convenience.
-///
 /// A generated map arrives full of terrain the seat has never laid eyes on. Left
 /// alone, that terrain is a map generator's invention presented as knowledge, and
 /// anything reading tile yields — `settle_value` reads them directly, with no
 /// visibility filter, because CIVVIS stores no per-player revealed map — would be
-/// planning on ground that does not exist. Ocean is the least misleading filler:
-/// it scores nothing and cannot be settled, so an unseen plot cannot attract a
-/// decision.
-///
-/// It is still wrong in a way worth naming: it makes unseen land read as water, so
-/// a reconstruction is honest about what it KNOWS and pessimistic about what it
-/// does not. That is the right direction for a viewer and for settling. It is the
-/// WRONG direction for pathfinding, which would route around phantom sea. Use
-/// [`Snapshot::is_revealed`] to tell the two apart rather than trusting the map.
+/// planning on ground that does not exist. Every undisclosed coordinate is therefore
+/// rewritten to the zero-yield, impassable `unknown` terrain. [`grow_frontier`] may
+/// separately mark a bounded ring as provisionally traversable; that planning prior
+/// never turns the underlying tile into invented land or water.
 pub fn rebuild_game(snapshot: &Snapshot, players: usize, seed: u64) -> crate::game::Game {
     rebuild_game_with_city_states(snapshot, players, seed, 0)
 }
@@ -4154,22 +4307,20 @@ fn rebuild_game_with_city_states(
     let width = snapshot.width.max(1);
     let height = snapshot.height.max(1);
     let mut game = Game::new(players.max(2), width, height, seed, 500, city_states);
-    let vocab = Vocabulary::embedded();
-    let ocean = Name::new("ocean");
+    std::sync::Arc::make_mut(&mut game.rules).enable_unknown_terrain();
 
     apply_terrain(&mut game, snapshot);
-    let _ = (ocean, vocab);
     game
 }
 
-/// Write every plot the seat has seen onto the map, and ocean everywhere else.
+/// Write every plot the seat has seen onto the map, and explicit unknowns elsewhere.
 ///
 /// Shared by the one-shot rebuild and by [`LiveMirror::sync`], which has to re-apply
-/// it as ground is revealed. Idempotent: re-running it on an existing map only
-/// overwrites terrain the snapshot has an opinion about.
+/// it as ground is revealed. An unresolved terrain name is unknown too: retaining the
+/// generated tile below it would turn a translation failure into plausible fiction.
 pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
     let vocab = Vocabulary::embedded();
-    let ocean = Name::new("ocean");
+    let unknown = Name::new("unknown");
     let visible_resources: std::collections::BTreeSet<crate::name::Name> = game
         .rules
         .resources
@@ -4199,6 +4350,7 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
         .keys()
         .map(|name| name.as_str().to_string())
         .collect();
+    let mut unknown_positions = std::collections::BTreeSet::new();
     for y in 0..height {
         for x in 0..width {
             let pos = crate::hex::offset_to_axial(x, y);
@@ -4206,25 +4358,41 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
                 continue;
             };
             let Some(plot) = snapshot.plot((x, y)) else {
-                // ⚠ Only stamp ocean where nothing is known. A tile the frontier
-                // painted as land must not be reverted on the next sync, or the
-                // frontier would flicker between land and sea every turn and CIVVIS
-                // would re-plan around it — the oscillation bug in another costume.
-                if !snapshot.is_revealed((x, y)) && tile.terrain == Name::new("plains") {
-                    continue;
-                }
-                tile.terrain = ocean;
+                unknown_positions.insert(pos);
+                // Keep `assumed_traversable`: `grow_frontier` owns that planning
+                // prior and recalculates it after this pass. Everything else came
+                // from the generated placeholder world and must be erased.
+                tile.terrain = unknown;
                 tile.hills = false;
                 tile.feature = None;
                 tile.resource = None;
+                tile.improvement = None;
+                tile.pillaged = false;
+                tile.district = None;
+                tile.district_foundation = None;
+                tile.wonder = None;
+                tile.owner_city = None;
+                tile.road = 0;
+                tile.continent = None;
+                tile.coastal_lowland = 0;
+                tile.flooded = false;
+                tile.submerged = false;
+                tile.drought = false;
+                tile.storm = None;
+                tile.fallout_until = 0;
+                tile.disaster_faith = 0.0;
+                tile.disaster_food = 0.0;
+                tile.disaster_production = 0.0;
                 continue;
             };
-            if let Some(name) = &plot.t {
-                if let Resolved::Known((terrain, hills)) = vocab.terrain(name) {
-                    tile.terrain = terrain;
-                    tile.hills = hills;
-                }
-            }
+            tile.assumed_traversable = false;
+            let resolved = plot.t.as_deref().and_then(|name| match vocab.terrain(name) {
+                Resolved::Known(value) => Some(value),
+                Resolved::Excluded(_) | Resolved::Unknown(_) => None,
+            });
+            let (terrain, hills) = resolved.unwrap_or((unknown, false));
+            tile.terrain = terrain;
+            tile.hills = hills;
             tile.feature = plot.f.as_ref().and_then(|name| match vocab.feature(name) {
                 Resolved::Known(value) => Some(value),
                 _ => None,
@@ -4252,6 +4420,13 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
                 }
             });
         }
+    }
+    // `place_city` initially claims its complete first ring. When part of that
+    // ring is undisclosed, clearing `owner_city` above must clear the city's
+    // reverse index too or the two halves of ownership disagree.
+    for city in game.cities.values_mut() {
+        city.owned_tiles
+            .retain(|pos| !unknown_positions.contains(pos));
     }
     // Rivers before the memory below, so what the seat remembers is the mirrored
     // network and not the generated one.
@@ -4616,8 +4791,8 @@ pub(crate) fn apply_city_memory(game: &mut crate::game::Game) {
 /// `Snapshot::revealed` only ever accumulates.
 ///
 /// ⚠ The frontier is deliberately excluded: this keys strictly off
-/// `Snapshot::revealed_positions`, so the invented land `grow_frontier` paints beyond
-/// the charted edge is never remembered as though the seat had seen it.
+/// `Snapshot::revealed_positions`, so a provisionally traversable unknown is never
+/// remembered as though the seat had seen it.
 ///
 /// Idempotent.
 pub(crate) fn apply_tile_memory(game: &mut crate::game::Game, snapshot: &Snapshot) {
@@ -5059,6 +5234,23 @@ pub struct StateUnit {
     /// Movement points left, as Civilization VI reports them this turn.
     #[serde(default = "unknown_strength")]
     pub moves: f64,
+    /// Exact host experience and promotion state. Option distinguishes an older
+    /// archive that never exported the facts from a level-one unit with none.
+    #[serde(default)]
+    pub xp: Option<i64>,
+    #[serde(default)]
+    pub level: Option<i32>,
+    #[serde(default)]
+    pub promotions: Option<Vec<String>>,
+    /// Civilization VI separates builder and religious charges. CIVVIS has one
+    /// typed charge counter, so the mirror selects the applicable observed pool.
+    #[serde(default)]
+    pub build_charges: Option<i32>,
+    #[serde(default)]
+    pub spread_charges: Option<i32>,
+    /// The religion physically carried by a religious unit, by Firaxis type name.
+    #[serde(default)]
+    pub religion: Option<String>,
     /// Already fortified. Civilization VI REFUSES `FORTIFY` on a unit that is, so a
     /// board that did not carry this re-ordered it every turn — 28 refusals in run
     /// 233331Z, exactly one per turn from t196 on.
@@ -6000,7 +6192,8 @@ const CITY_KEYS: &[&str] = &[
 
 const UNIT_KEYS: &[&str] = &[
     "id", "kind", "type", "base", "class", "x", "y", "hp", "combat", "ranged",
-    "player", "moves", "fortified", "fortify_turns", "formation_count", "great_person",
+    "player", "moves", "xp", "level", "promotions", "build_charges", "spread_charges",
+    "religion", "fortified", "fortify_turns", "formation_count", "great_person",
 ];
 
 /// The field names `state_schema_gaps` will accept for one struct, extracted from
@@ -6503,30 +6696,35 @@ fn is_great_person(civ6: &str) -> bool {
 const GREAT_PERSON_UNIQUES: &[&str] = &["UNIT_COMANDANTE_GENERAL"];
 
 
-/// Paint `depth` rings of neutral land beyond the edge of what the seat has seen.
+/// Let pathfinding probe `depth` rings beyond the land the seat has seen.
 ///
-/// ⚠⚠ THIS IS AN INVENTED PRIOR, and it is deliberate. `apply_terrain` fills the
-/// unknown with OCEAN, which is honest for scoring and catastrophic for deciding: a
+/// ⚠⚠ THIS IS AN EXPLICIT PRIOR, not terrain. `apply_terrain` leaves the
+/// undisclosed map UNKNOWN, which is honest for scoring but, while impassable, would
+/// be catastrophic for deciding: a
 /// seat that has revealed 51 plots sees a 51-tile island, so it has nowhere to settle,
 /// nowhere to explore, and nothing worth building but soldiers. Measured: revealed
 /// plots crawled 25 -> 150 over 104 turns, `met` stopped at 2, and ZERO rival cities
 /// were ever seen.
 ///
-/// A bounded ring is closer to what a human knows — the ground past your border is
-/// probably ground — and it cannot invent a continent, because the far unknown stays
-/// sea. Each ring becomes real terrain as it is revealed. An order onto ground that
-/// turns out to be water is refused by Civilization VI and counted, so the failure
-/// mode is a wasted order, not a plan resting on a phantom.
+/// The bounded flag means only "it is reasonable to try going there." The tile remains
+/// `unknown`, carries no yields, and makes no land/water claim; both land and naval
+/// explorers may test it. Each tile becomes real terrain only when revealed.
 pub(crate) fn grow_frontier(
     game: &mut crate::game::Game,
     snapshot: &Snapshot,
     depth: u32,
 ) {
+    // Recompute rather than accumulate. As the revealed edge advances, yesterday's
+    // frontier may lie beyond today's configured depth.
+    for tile in game.map.tiles.values_mut() {
+        if tile.terrain == "unknown" {
+            tile.assumed_traversable = false;
+        }
+    }
     if depth == 0 {
         return;
     }
 
-    let unknown_land = Name::new("plains");
     let width = snapshot.width.max(1);
     let height = snapshot.height.max(1);
     // Grown one ring at a time so depth means "tiles beyond what we have seen",
@@ -6548,7 +6746,7 @@ pub(crate) fn grow_frontier(
             if game
                 .map
                 .get(pos)
-                .map(|tile| !game.rules.is_water(tile))
+                .map(|tile| !game.rules.is_unknown(tile) && !game.rules.is_water(tile))
                 .unwrap_or(false)
             {
                 land.insert(pos);
@@ -6564,17 +6762,13 @@ pub(crate) fn grow_frontier(
                 if nx < 0 || ny < 0 || nx >= width || ny >= height {
                     continue;
                 }
-                // Never overwrite ground the seat has actually seen: a coast we
-                // scouted must stay coast, or this would invent land over water
-                // we know about.
+                // Never mark ground the seat has actually seen as speculative.
                 if snapshot.is_revealed((nx, ny)) || land.contains(&neighbour) {
                     continue;
                 }
                 if let Some(tile) = game.map.tiles.get_mut(&neighbour) {
-                    tile.terrain = unknown_land;
-                    tile.hills = false;
-                    tile.feature = None;
-                    tile.resource = None;
+                    debug_assert_eq!(tile.terrain.as_str(), "unknown");
+                    tile.assumed_traversable = true;
                 }
                 land.insert(neighbour);
                 next_edge.push(neighbour);
@@ -7530,9 +7724,95 @@ fn apply_city_health(game: &mut crate::game::Game, cid: u32, state: &StateCity) 
     }
 }
 
-fn apply_unit_observation(live: &mut crate::game::Unit, state: &StateUnit) {
+#[derive(Default)]
+struct ObservedUnitProgress {
+    promotions: Option<BTreeSet<Name>>,
+    religion: Option<String>,
+}
+
+fn civvis_unit_promotion_name(civ6: &str) -> String {
+    let bare = civ6.strip_prefix("PROMOTION_").unwrap_or(civ6);
+    let lower = bare.to_ascii_lowercase();
+    if let Some(monk) = lower.strip_prefix("monk_") {
+        return monk.to_string();
+    }
+    match lower.as_str() {
+        "super_carrier" => "supercarrier".to_string(),
+        "goes_to" => "goes_to_11".to_string(),
+        "pop" => "pop_star".to_string(),
+        "surf_rock" => "surf_band".to_string(),
+        _ => lower,
+    }
+}
+
+fn observed_unit_progress(
+    rules: &crate::rules::Rules,
+    state: &StateUnit,
+    unmapped: &mut Vec<String>,
+) -> ObservedUnitProgress {
+    let promotions = state.promotions.as_ref().map(|host| {
+        host.iter()
+            .filter_map(|civ6| {
+                let name = civvis_unit_promotion_name(civ6);
+                if rules.promotions.contains_key(&name) {
+                    Some(Name::new(&name))
+                } else {
+                    let issue = format!("{civ6}:unit_promotion");
+                    if !unmapped.contains(&issue) {
+                        unmapped.push(issue);
+                    }
+                    None
+                }
+            })
+            .collect()
+    });
+    let religion = match state.religion.as_deref() {
+        Some(civ6) => match civvis_religion_name(civ6) {
+            Some(name) => Some(name),
+            None => {
+                let issue = format!("{civ6}:unit_religion");
+                if !unmapped.contains(&issue) {
+                    unmapped.push(issue);
+                }
+                None
+            }
+        },
+        None => None,
+    };
+    ObservedUnitProgress {
+        promotions,
+        religion,
+    }
+}
+
+fn apply_unit_observation(
+    live: &mut crate::game::Unit,
+    state: &StateUnit,
+    progress: ObservedUnitProgress,
+) {
     if state.hp.is_finite() && state.hp > 0.0 {
         live.hp = (state.hp.round() as i32).clamp(1, 100);
+    }
+    if let Some(xp) = state.xp.filter(|xp| *xp >= 0) {
+        live.xp = xp;
+    }
+    if let Some(level) = state.level.filter(|level| *level >= 1) {
+        live.level = level;
+    }
+    if let Some(promotions) = progress.promotions {
+        live.promotions = promotions;
+    }
+    if let Some(religion) = progress.religion {
+        live.religion = Some(religion);
+    }
+    let observed_charges = state
+        .build_charges
+        .into_iter()
+        .chain(state.spread_charges)
+        .filter(|charges| *charges > 0)
+        .max();
+    if let Some(charges) = observed_charges {
+        live.charges = charges;
     }
     live.fortified = state.fortified;
     live.fortify_turns = state.fortify_turns.clamp(0, 2);
@@ -7908,24 +8188,18 @@ pub fn rebuild_from_state(
 
     // ★★★★★ THE FRONTIER RING — without it CIVVIS believes it lives on a tiny island.
     //
-    // `rebuild_game` fills every unrevealed plot with OCEAN, and its own doc names the
-    // limit: honest about what is known, pessimistic about what is not, and "the WRONG
-    // direction for pathfinding, which would route around phantom sea". That was
-    // tolerable while this reconstruction only fed a viewer and a settle ranking over
-    // ground already seen. It is not tolerable now that CIVVIS is the DECIDER, because
+    // `rebuild_game` makes every unrevealed plot explicit UNKNOWN. That is honest but
+    // intentionally impassable until this separate prior marks the bounded frontier
+    // as worth probing. Without the prior, now that CIVVIS is the DECIDER,
     // a seat that has revealed 51 plots sees a 51-tile island: nowhere to expand,
     // nowhere to explore, nothing to build but soldiers.
     //
     // Measured on run bisect1-114111Z: `desired_cities = 3`, and at turn 34 the empire
     // was still ONE city with 33 production orders, every one of them a Warrior.
     //
-    // One ring of neutral land at the edge of what we have seen is the minimum that
-    // lets expansion and exploration aim OUTWARD, and it is what a human knows: the
-    // ground past your border is probably ground. It stays one ring — the far unknown
-    // is still ocean — so this cannot invent a continent, and each ring becomes real
-    // terrain as it is revealed. An order onto ground that turns out to be sea is
-    // refused by Civilization VI and counted as a refusal, so the failure mode is a
-    // wasted order rather than a plan built on a phantom.
+    // A bounded traversability assumption lets expansion and exploration aim OUTWARD
+    // without assigning land, water, yields, or a continent underneath. An order the
+    // real terrain cannot support is refused by Civilization VI and counted.
     grow_frontier(&mut game, snapshot, frontier_depth);
 
     // ★★★★ TELL CIVVIS WHAT TURN IT IS. `Game::new` starts at the beginning, and the
@@ -8303,8 +8577,9 @@ pub fn rebuild_from_state(
         }
         // Carry damage across: a unit at 30 hp is a unit CIVVIS should pull out,
         // and defaulting it to full health is how an army gets thrown away.
+        let progress = observed_unit_progress(&game.rules, u, unmapped);
         if let Some(unit) = game.units.get_mut(&uid) {
-            apply_unit_observation(unit, u);
+            apply_unit_observation(unit, u, progress);
         }
         Some(uid)
     };
@@ -9123,9 +9398,9 @@ impl LiveMirror {
         };
         self.game.players[0].civic_overflow = 0.0;
 
-        // Newly revealed ground, and the frontier redrawn beyond it. Terrain that was
-        // already known does not change, so only the freshly seen needs writing —
-        // but the frontier has to be recomputed because its edge just moved.
+        // Newly revealed ground, and the traversability prior redrawn beyond it.
+        // Terrain that was already known does not change, but the frontier has to be
+        // recomputed because its edge just moved.
         if !skip_terrain {
             apply_terrain(&mut self.game, snapshot);
             grow_frontier(&mut self.game, snapshot, frontier_depth);
@@ -9171,8 +9446,13 @@ impl LiveMirror {
                     if self.game.units[&uid].pos != pos {
                         self.game.relocate(uid, pos);
                     }
+                    let progress = observed_unit_progress(
+                        &self.game.rules,
+                        unit,
+                        &mut self.unmapped,
+                    );
                     if let Some(live) = self.game.units.get_mut(&uid) {
-                        apply_unit_observation(live, unit);
+                        apply_unit_observation(live, unit, progress);
                         // ★★★★★ REFRESH THE TURN FROM REALITY, DO NOT SIMULATE IT.
                         //
                         // `take_turn` spends a unit's movement, and on a persistent
@@ -9452,8 +9732,13 @@ impl LiveMirror {
                     continue;
                 }
                 let uid = self.game.spawn_unit(&name, barb, pos);
+                let progress = observed_unit_progress(
+                    &self.game.rules,
+                    unit,
+                    &mut self.unmapped,
+                );
                 if let Some(live) = self.game.units.get_mut(&uid) {
-                    apply_unit_observation(live, unit);
+                    apply_unit_observation(live, unit, progress);
                     self.hostile_units.push(uid);
                 }
             }
@@ -9574,8 +9859,13 @@ impl LiveMirror {
                     continue;
                 }
                 let uid = self.game.spawn_unit(&name, owner, pos);
+                let progress = observed_unit_progress(
+                    &self.game.rules,
+                    unit,
+                    &mut self.unmapped,
+                );
                 if let Some(live) = self.game.units.get_mut(&uid) {
-                    apply_unit_observation(live, unit);
+                    apply_unit_observation(live, unit, progress);
                     self.rival_units.push(uid);
                 }
             }
@@ -9662,8 +9952,13 @@ impl LiveMirror {
                     && !self.game.units.values().any(|live| live.pos == pos)
                 {
                     let uid = self.game.spawn_unit(&name, owner, pos);
+                    let progress = observed_unit_progress(
+                        &self.game.rules,
+                        unit,
+                        &mut self.unmapped,
+                    );
                     if let Some(live) = self.game.units.get_mut(&uid) {
-                        apply_unit_observation(live, unit);
+                        apply_unit_observation(live, unit, progress);
                         self.rival_units.push(uid);
                     }
                 }
