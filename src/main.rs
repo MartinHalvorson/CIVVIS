@@ -223,9 +223,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// produced identical `ai_eval advanced_v1 basic --pairs 10 --players 4
 /// --turns 200 --seed 31337 --jobs 1 --deployment-comparison` reports:
 /// 18/20 Advanced wins, 119.2 average turns, and identical terminal tables.
-/// This is another compatibility re-pin, not an Elo protocol change.
+/// #848's progress-versus-motion tracker is now merged into the same path, but
+/// it returns through the prior code whenever `settler_commit` is disabled, as
+/// it is in `AdvancedAi::legacy()`. This is another compatibility re-pin, not
+/// an Elo protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf9f0_591b_c144_55da;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x65c4_6765_6727_07d5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
