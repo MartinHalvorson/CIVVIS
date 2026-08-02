@@ -7278,11 +7278,16 @@ mod tests {
         // share would undo a dragged column on the next window resize, so no
         // media rule may set either track list or either enclosing track.
         assert!(EMBEDDED_INDEX.contains(
-            "--hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 76px;"
+            "--hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;"
         ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
-            "the figure floor is declared once and holds at every width: four \
-             digits need the same room on a laptop as on a wall");
+            "the Elo floor is declared once and holds at every width: a full \
+             score needs the same room on a laptop as on a wall");
+        assert!(EMBEDDED_INDEX.contains("const HUD_ELO_MIN_FLOOR = 60;"));
+        assert!(EMBEDDED_INDEX.contains("function syncPlayerHudEloFloor()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "hud.style.setProperty(\"--hud-ident-num-min\", floor);"
+        ), "a rating longer than the signed five-digit floor raises its shared track");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-odds-min:").count(), 1,
             "and so does the two-category odds cell's own floor");
         assert!(EMBEDDED_INDEX.contains(
@@ -7364,7 +7369,7 @@ mod tests {
         // same tracks, not a copy of their ratios. A copy is what shipped
         // before, and it came apart in both directions a copy can: it carried
         // `minmax(0, …)` where the heads carry the 30px label floor and the
-        // 38px figure floor, so on a 1280px screen the ELO head stood at 38px
+        // 60px figure floor, so on a 1280px screen the ELO head stood at 60px
         // over a 27.5px figure and every "1703" rendered as "1…"; and it never
         // heard about a drag, so moving the ELO/odds bar 26px at 1920px moved
         // the head 21px and left the figures where they were.
@@ -7393,7 +7398,7 @@ mod tests {
         // `clip`, not `ellipsis`: the fitter compares integral scrollWidth with
         // integral clientWidth while the browser applies text-overflow on any
         // sub-pixel overflow, so ellipsis spends a character on a head that
-        // renders whole. Measured at 1600px: ELO in its 38px column.
+        // renders whole. Measured at 1600px: ELO in its 60px column.
         assert!(EMBEDDED_INDEX.contains(
             "border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;"
         ));
