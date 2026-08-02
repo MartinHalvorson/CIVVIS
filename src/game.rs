@@ -15371,6 +15371,14 @@ pub struct Game {
     /// name shared by two production tables cannot suppress the wrong kind of item.
     #[serde(default)]
     pub blocked_production: BTreeMap<u32, BTreeSet<String>>,
+    /// Purchases a HOST ruleset has recently refused in a particular city.
+    ///
+    /// This is deliberately separate from [`Game::blocked_production`]. A host may
+    /// reject buying a unit while still allowing the city to build it, and merging
+    /// the two would turn an actuation mismatch into the exact production starvation
+    /// the feedback is meant to repair. Ordinary CIVVIS games leave this empty.
+    #[serde(default)]
+    pub blocked_purchases: BTreeMap<u32, BTreeSet<String>>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -15682,6 +15690,7 @@ impl From<GameSer> for Game {
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             blocked_production: BTreeMap::new(),
+            blocked_purchases: BTreeMap::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
             wars: s.wars.into_iter().collect(),
             siege: SiegeCensus::default(),
@@ -16024,6 +16033,7 @@ impl Game {
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             blocked_production: BTreeMap::new(),
+            blocked_purchases: BTreeMap::new(),
             peace_treaties: BTreeMap::new(),
             wars: BTreeMap::new(),
             siege: SiegeCensus::default(),
@@ -35190,6 +35200,63 @@ impl Game {
         self.query_memo.producible.borrow_mut().clear();
     }
 
+    pub(crate) fn replace_blocked_purchases(&mut self, blocked: BTreeMap<u32, BTreeSet<String>>) {
+        self.blocked_purchases = blocked;
+    }
+
+    fn purchase_is_blocked(&self, cid: u32, item: &Item) -> bool {
+        let Some(blocked) = self.blocked_purchases.get(&cid) else {
+            return false;
+        };
+        let key = Self::production_block_key(item);
+        if blocked.contains(&key) {
+            return true;
+        }
+        // The host purchase event names the unit type, not the Corps/Army wrapper.
+        // One refusal therefore cools down every formation of that unit in this city.
+        matches!(item, Item::Formation { unit, .. } if blocked.contains(&format!("unit:{unit}")))
+    }
+
+    fn purchase_action_is_blocked(&self, action: &Action) -> bool {
+        match action {
+            Action::Buy {
+                city,
+                unit,
+                formation,
+                ..
+            } => {
+                let item = if *formation == 0 {
+                    Item::Unit { unit: unit.clone() }
+                } else {
+                    Item::Formation {
+                        unit: unit.clone(),
+                        formation: *formation,
+                    }
+                };
+                self.purchase_is_blocked(*city, &item)
+            }
+            Action::BuyBuilding { city, building, .. } => self.purchase_is_blocked(
+                *city,
+                &Item::Building {
+                    building: building.clone(),
+                },
+            ),
+            Action::BuyDistrict {
+                city,
+                district,
+                pos,
+                ..
+            } => self.purchase_is_blocked(
+                *city,
+                &Item::District {
+                    district: district.clone(),
+                    pos: *pos,
+                },
+            ),
+            _ => false,
+        }
+    }
+
     pub fn can_produce(&self, pid: usize, cid: u32, item: &Item) -> bool {
         let blocked = Self::production_block_key(item);
         if self
@@ -36000,6 +36067,8 @@ impl Game {
                 }
             }
         }
+        purchases.retain(|action| !self.purchase_action_is_blocked(action));
+        empire.retain(|action| !self.purchase_action_is_blocked(action));
         (purchases, empire)
     }
 
@@ -36512,6 +36581,7 @@ impl Game {
                     if self
                         .building_gold_purchase_cost(pid, cid, building)
                         .is_some_and(|cost| p.gold + f64::EPSILON >= cost)
+                        && !self.purchase_is_blocked(cid, item)
                     {
                         acts.push(Action::BuyBuilding {
                             city: cid,
@@ -36527,6 +36597,9 @@ impl Game {
                 for item in &producible {
                     if let Item::District { district, pos } = item {
                         if self.map.tiles[pos].district_foundation.is_some() {
+                            continue;
+                        }
+                        if self.purchase_is_blocked(cid, item) {
                             continue;
                         }
                         let cost = self
@@ -36554,6 +36627,17 @@ impl Game {
             }
             for unit in &purchasable_units {
                 for formation in 0..=2 {
+                    let item = if formation == 0 {
+                        Item::Unit { unit: unit.clone() }
+                    } else {
+                        Item::Formation {
+                            unit: unit.clone(),
+                            formation,
+                        }
+                    };
+                    if self.purchase_is_blocked(cid, &item) {
+                        continue;
+                    }
                     for (currency, bank) in [("gold", p.gold), ("faith", p.faith)] {
                         if self
                             .unit_purchase_cost_for_formation(
@@ -37166,6 +37250,7 @@ impl Game {
             }
         }
         acts.push(Action::EndTurn);
+        acts.retain(|action| !self.purchase_action_is_blocked(action));
         acts
     }
 

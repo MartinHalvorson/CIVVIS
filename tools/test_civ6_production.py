@@ -27,6 +27,9 @@ class ProductionActuatorTests(unittest.TestCase):
         cls.choose = cls.source[start:end]
         direct = cls.source.index('if kind == "produce" then')
         cls.direct = cls.source[direct:]
+        purchase = cls.source.index('if kind == "purchase" then')
+        purchase_end = cls.source.index('if kind == "unit" then', purchase)
+        cls.purchase = cls.source[purchase:purchase_end]
 
     def test_direct_orders_are_gated_before_they_are_requested(self) -> None:
         predicate = self.direct.index("CanProduce(row2.Hash, false, true)")
@@ -75,6 +78,34 @@ class ProductionActuatorTests(unittest.TestCase):
             "BUILDING_BROADCAST_CENTER",
         ):
             self.assertIn(f'"{item}"', self.choose)
+
+    def test_civilian_purchase_does_not_carry_a_military_formation(self) -> None:
+        self.assertIn(
+            "formationForCost = MilitaryFormationTypes.STANDARD_MILITARY_FORMATION",
+            self.purchase,
+        )
+        self.assertNotRegex(
+            self.purchase,
+            re.compile(
+                r"params\[CityCommandTypes\.PARAM_MILITARY_FORMATION_TYPE\]\s*=\s*"
+                r"MilitaryFormationTypes\.STANDARD_MILITARY_FORMATION"
+            ),
+        )
+        self.assertRegex(
+            self.purchase,
+            re.compile(
+                r"if formation == 1 then.*?PARAM_MILITARY_FORMATION_TYPE.*?"
+                r"elseif formation == 2 then.*?PARAM_MILITARY_FORMATION_TYPE",
+                re.DOTALL,
+            ),
+        )
+
+    def test_purchase_refusal_is_structured_feedback(self) -> None:
+        event = self.purchase.index('emit("purchase_refused"')
+        rejection = self.purchase.index('return false, "cannot_buy_"', event)
+        self.assertLess(event, rejection)
+        for field in ("turn = turn", "city = subject", "item = verb", "cost = cost"):
+            self.assertIn(field, self.purchase[event:rejection])
 
 
 if __name__ == "__main__":
