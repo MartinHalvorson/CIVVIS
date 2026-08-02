@@ -74,6 +74,18 @@ const GENE_NAMES: [&str; 8] = [
     "swap_margin",
 ];
 
+/// The fixed map and worker surface for one policy-genome evaluation.
+#[derive(Clone, Copy)]
+struct FitnessConfig {
+    players: usize,
+    width: i32,
+    height: i32,
+    maps: usize,
+    seed0: u64,
+    turns: u32,
+    jobs: usize,
+}
+
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
         .position(|arg| arg == flag)
@@ -155,19 +167,17 @@ fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u
 /// said so -- three generations of 0.500, 0.542, 0.500 looked like a search
 /// until the arithmetic was done by hand afterwards. A fitness that reports its
 /// own uncertainty cannot hide that failure a second time.
-fn fitness(
-    candidate: &Weights,
-    players: usize,
-    w: i32,
-    h: i32,
-    maps: usize,
-    seed0: u64,
-    turns: u32,
-    jobs: usize,
-) -> (f64, f64) {
+fn fitness(candidate: &Weights, config: FitnessConfig) -> (f64, f64) {
     let genome = candidate.clone();
-    let shares = parallel::map(maps, jobs, move |index| {
-        duel(&genome, players, w, h, seed0 + index as u64, turns)
+    let shares = parallel::map(config.maps, config.jobs, move |index| {
+        duel(
+            &genome,
+            config.players,
+            config.width,
+            config.height,
+            config.seed0 + index as u64,
+            config.turns,
+        )
     });
     let n = shares.len().max(1) as f64;
     let mean = shares.iter().sum::<f64>() / n;
@@ -218,6 +228,15 @@ fn main() {
     let seed0 = number(&args, "--seed", 500_000) as u64;
     let holdout_maps = number(&args, "--holdout-maps", 60);
     let jobs = number(&args, "--jobs", parallel::default_jobs());
+    let fitness_config = FitnessConfig {
+        players,
+        width,
+        height,
+        maps,
+        seed0,
+        turns,
+        jobs,
+    };
 
     // Evaluate one named genome against the shipped appetites and stop. The
     // search itself is expensive and often unnecessary: once a candidate
@@ -240,12 +259,13 @@ fn main() {
         let mut genes = [0.0f64; 8];
         genes.copy_from_slice(&parsed);
         let holdout_seed = seed0 + 900_000;
-        let (mine, mine_se) = fitness(
-            &with_policy_genes(&genes), players, width, height, holdout_maps, holdout_seed, turns, jobs,
-        );
-        let (shipped, shipped_se) = fitness(
-            &Weights::default(), players, width, height, holdout_maps, holdout_seed, turns, jobs,
-        );
+        let holdout_config = FitnessConfig {
+            maps: holdout_maps,
+            seed0: holdout_seed,
+            ..fitness_config
+        };
+        let (mine, mine_se) = fitness(&with_policy_genes(&genes), holdout_config);
+        let (shipped, shipped_se) = fitness(&Weights::default(), holdout_config);
         let edge = mine - shipped;
         let edge_se = (mine_se.powi(2) + shipped_se.powi(2)).sqrt();
         println!("candidate  {mine:.4} +/- {mine_se:.4}");
@@ -303,7 +323,11 @@ fn main() {
             .map(|genes| {
                 let candidate = with_policy_genes(genes);
                 let (fit, _se) = fitness(
-                    &candidate, players, width, height, maps, map_seed, turns, jobs,
+                    &candidate,
+                    FitnessConfig {
+                        seed0: map_seed,
+                        ..fitness_config
+                    },
                 );
                 (fit, *genes)
             })
@@ -351,12 +375,13 @@ fn main() {
     // selection score is how much of the champion is real.
     let champion = with_policy_genes(&best.1);
     let holdout_seed = seed0 + 900_000;
-    let (holdout, holdout_se) = fitness(
-        &champion, players, width, height, holdout_maps, holdout_seed, turns, jobs,
-    );
-    let (shipped_holdout, shipped_se) = fitness(
-        &Weights::default(), players, width, height, holdout_maps, holdout_seed, turns, jobs,
-    );
+    let holdout_config = FitnessConfig {
+        maps: holdout_maps,
+        seed0: holdout_seed,
+        ..fitness_config
+    };
+    let (holdout, holdout_se) = fitness(&champion, holdout_config);
+    let (shipped_holdout, shipped_se) = fitness(&Weights::default(), holdout_config);
 
     println!("\nchampion");
     for (k, name) in GENE_NAMES.iter().enumerate() {
