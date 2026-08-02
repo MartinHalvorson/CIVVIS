@@ -612,6 +612,127 @@ def latest_tiles(events: list[dict]) -> dict[tuple[int, int], dict]:
     return plots
 
 
+GREAT_WORK_OBJECTS = {
+    "GREATWORKOBJECT_WRITING": "writing",
+    "GREATWORKOBJECT_LANDSCAPE": "art",
+    "GREATWORKOBJECT_PORTRAIT": "art",
+    "GREATWORKOBJECT_SCULPTURE": "art",
+    "GREATWORKOBJECT_RELIGIOUS": "religious_art",
+    "GREATWORKOBJECT_ARTIFACT": "artifact",
+    "GREATWORKOBJECT_MUSIC": "music",
+    "GREATWORKOBJECT_RELIC": "relic",
+}
+
+
+def city_economy_agreement(events: list[dict], dump: dict) -> dict:
+    """Diff exact private city facts independently of the tile comparison."""
+    states = [event for event in events if event.get("kind") == "state"]
+    if not states:
+        return {
+            "compared": 0, "agree": 0,
+            "great_work_compared": 0, "great_work_agree": 0,
+            "empire_compared": 0, "empire_agree": 0,
+            "disagree_by_field": {}, "examples": {}, "max_model_yield_drift": 0.0,
+        }
+    state = states[-1]
+    expected = {
+        (city.get("x"), city.get("y")): city
+        for city in state.get("cities") or []
+        if isinstance(city.get("yields"), dict)
+    }
+    mirrored = {(city.get("x"), city.get("y")): city for city in dump.get("cities") or []}
+    fields: Counter = Counter()
+    examples: dict[str, list] = defaultdict(list)
+    agree = 0
+    yield_names = ("food", "production", "gold", "science", "culture", "faith")
+    max_model_drift = 0.0
+    for key, want in expected.items():
+        got = mirrored.get(key)
+        bad = []
+        if got is None:
+            bad.append("missing_city")
+        else:
+            for name in yield_names:
+                a = (want.get("yields") or {}).get(name)
+                b = (got.get("yields") or {}).get(name)
+                if a is None or b is None or abs(float(a) - float(b)) > 1e-6:
+                    bad.append(f"yield_{name}")
+                model = (got.get("model_yields") or {}).get(name)
+                if a is not None and model is not None:
+                    max_model_drift = max(max_model_drift, abs(float(a) - float(model)))
+            if want.get("worked") is not None:
+                a = {(plot.get("x"), plot.get("y")) for plot in want.get("worked") or []}
+                b = {(plot.get("x"), plot.get("y")) for plot in got.get("worked") or []}
+                if a != b:
+                    bad.append("worked")
+            if want.get("specialists") is not None:
+                # Firaxis names district types while the dump uses CIVVIS family names.
+                a = Counter(
+                    model_infrastructure_name(value, "DISTRICT_", MODELLED_DISTRICTS)
+                    for value in want.get("specialists") or []
+                )
+                b = Counter(got.get("specialists") or [])
+                if a != b:
+                    bad.append("specialists")
+            progress = want.get("production_progress")
+            if progress is not None and (
+                got.get("production_progress") is None
+                or abs(float(progress) - float(got["production_progress"])) > 1e-6
+            ):
+                bad.append("production_progress")
+        if bad:
+            for field in bad:
+                fields[field] += 1
+                if len(examples[field]) < 3:
+                    examples[field].append({"xy": key, "civ6": want, "mirror": got})
+        else:
+            agree += 1
+
+    great_work_compared = 0
+    great_work_agree = 0
+    cities = state.get("cities") or []
+    if cities and all(city.get("great_works") is not None for city in cities):
+        wanted_works: Counter = Counter()
+        for city in cities:
+            for work in city.get("great_works") or []:
+                wanted_works[GREAT_WORK_OBJECTS.get(work.get("object"), work.get("object"))] += 1
+        got_works = Counter({k: int(v) for k, v in (dump.get("great_works") or {}).items()})
+        for kind in set(wanted_works) | set(got_works):
+            great_work_compared += 1
+            if wanted_works[kind] == got_works[kind]:
+                great_work_agree += 1
+            else:
+                fields["great_works"] += 1
+                if len(examples["great_works"]) < 3:
+                    examples["great_works"].append({
+                        "kind": kind, "civ6": wanted_works[kind], "mirror": got_works[kind],
+                    })
+    empire_compared = 0
+    empire_agree = 0
+    for name in ("science", "culture"):
+        want = state.get(name)
+        got = (dump.get("empire_yields") or {}).get(name)
+        if want is None or float(want) < 0:
+            continue
+        empire_compared += 1
+        if got is not None and abs(float(want) - float(got)) <= 1e-6:
+            empire_agree += 1
+        else:
+            fields[f"empire_{name}"] += 1
+            examples[f"empire_{name}"].append({"civ6": want, "mirror": got})
+    return {
+        "compared": len(expected),
+        "agree": agree,
+        "great_work_compared": great_work_compared,
+        "great_work_agree": great_work_agree,
+        "empire_compared": empire_compared,
+        "empire_agree": empire_agree,
+        "disagree_by_field": dict(fields.most_common()),
+        "examples": dict(examples),
+        "max_model_yield_drift": round(max_model_drift, 6),
+    }
+
+
 def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
     """Ask CIVVIS for its board in OFFSET coordinates and diff it against the export."""
     exported = latest_tiles(events)
@@ -707,6 +828,7 @@ def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
                     })
         else:
             infrastructure_agree += 1
+    economy = city_economy_agreement(events, dump)
     return {
         "exported_plots": len(exported),
         "mirrored_plots": len(mirrored),
@@ -724,6 +846,15 @@ def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
         "infrastructure_agree": infrastructure_agree,
         "infrastructure_disagree_by_field": dict(infrastructure_fields.most_common()),
         "infrastructure_examples": dict(infrastructure_examples),
+        "city_economy_compared": economy["compared"],
+        "city_economy_agree": economy["agree"],
+        "great_work_compared": economy["great_work_compared"],
+        "great_work_agree": economy["great_work_agree"],
+        "empire_economy_compared": economy["empire_compared"],
+        "empire_economy_agree": economy["empire_agree"],
+        "city_economy_disagree_by_field": economy["disagree_by_field"],
+        "city_economy_examples": economy["examples"],
+        "max_model_yield_drift": economy["max_model_yield_drift"],
     }
 
 
@@ -834,6 +965,18 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
                 "plots agree; "
                 f"{mirror['infrastructure_disagree_by_field']} "
                 f"{mirror.get('infrastructure_examples')}")
+        if mirror.get("city_economy_disagree_by_field"):
+            out.append(
+                "MIRROR CITY ECONOMY DISAGREES: "
+                f"{mirror['city_economy_agree']}/{mirror['city_economy_compared']} "
+                "cities and "
+                f"{mirror['great_work_agree']}/{mirror['great_work_compared']} Great Work "
+                "counts and "
+                f"{mirror.get('empire_economy_agree', 0)}/"
+                f"{mirror.get('empire_economy_compared', 0)} "
+                "empire rates agree; "
+                f"{mirror['city_economy_disagree_by_field']} "
+                f"{mirror.get('city_economy_examples')}")
     return out
 
 
@@ -925,6 +1068,16 @@ def main() -> int:
                 print(f"    infrastructure: {mirror['infrastructure_agree']}/"
                       f"{mirror['infrastructure_compared']}  "
                       f"{mirror['infrastructure_disagree_by_field']}")
+                if (mirror.get("city_economy_compared") or mirror.get("great_work_compared")
+                        or mirror.get("empire_economy_compared")):
+                    print(f"    city economy: {mirror['city_economy_agree']}/"
+                          f"{mirror['city_economy_compared']} cities, "
+                          f"Great Works {mirror['great_work_agree']}/"
+                          f"{mirror['great_work_compared']}, empire rates "
+                          f"{mirror.get('empire_economy_agree', 0)}/"
+                          f"{mirror.get('empire_economy_compared', 0)}, raw max yield drift "
+                          f"{mirror['max_model_yield_drift']}  "
+                          f"{mirror['city_economy_disagree_by_field']}")
                 if mirror.get("unresolved_terrain"):
                     print(f"    unresolved terrain names: {mirror['unresolved_terrain']}")
                 if mirror.get("unmodelled_improvements"):

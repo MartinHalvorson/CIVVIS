@@ -179,6 +179,62 @@ class InfrastructureMirrorTest(unittest.TestCase):
 
         self.assertTrue(any("INFRASTRUCTURE DISAGREES" in verdict for verdict in verdicts))
 
+    def test_city_economy_compares_every_yield_assignment_progress_and_great_work(self) -> None:
+        events = [{
+            "kind": "state", "turn": 91, "science": 5, "culture": 4,
+            "cities": [{
+                "x": 62, "y": 16,
+                "yields": {"food": 8, "production": 7, "gold": 6,
+                           "science": 5, "culture": 4, "faith": 3},
+                "worked": [{"x": 61, "y": 16}],
+                "specialists": ["DISTRICT_THEATER"],
+                "production_progress": 12.5,
+                "great_works": [{"object": "GREATWORKOBJECT_WRITING"}],
+            }],
+        }]
+        dump = {
+            "cities": [{
+                "x": 62, "y": 16,
+                "yields": {"food": 8, "production": 7, "gold": 6,
+                           "science": 5, "culture": 4, "faith": 3},
+                "model_yields": {"food": 7, "production": 7, "gold": 6,
+                                 "science": 5, "culture": 2, "faith": 3},
+                "worked": [{"x": 61, "y": 16}],
+                "specialists": ["theater_square"],
+                "production_progress": 12.5,
+            }],
+            "great_works": {"writing": 1},
+            "empire_yields": {"science": 5, "culture": 4},
+        }
+
+        report = civ6_watchdogs.city_economy_agreement(events, dump)
+
+        self.assertEqual(report["agree"], 1)
+        self.assertEqual(report["great_work_agree"], 1)
+        self.assertEqual(report["empire_agree"], 2)
+        self.assertEqual(report["disagree_by_field"], {})
+        self.assertEqual(report["max_model_yield_drift"], 2.0)
+
+    def test_city_economy_disagreement_is_a_loud_verdict(self) -> None:
+        report = {
+            "mirror": {
+                "agree": 168, "compared": 168, "agree_fraction": 1.0,
+                "missing_in_mirror": 0,
+                "infrastructure_agree": 7, "infrastructure_compared": 7,
+                "infrastructure_disagree_by_field": {},
+                "city_economy_agree": 1, "city_economy_compared": 2,
+                "great_work_agree": 0, "great_work_compared": 1,
+                "city_economy_disagree_by_field": {
+                    "yield_culture": 1, "great_works": 1,
+                },
+                "city_economy_examples": {},
+            }
+        }
+
+        verdicts = civ6_watchdogs.verdicts(report, 0.35, 0.98)
+
+        self.assertTrue(any("CITY ECONOMY DISAGREES" in verdict for verdict in verdicts))
+
 
 if __name__ == "__main__":
     unittest.main()

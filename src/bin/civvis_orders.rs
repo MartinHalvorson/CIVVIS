@@ -1253,15 +1253,68 @@ fn main() {
             .iter()
             .map(|(name, count)| format!("\"{name}\":{count}"))
             .collect();
+        let mut cities = Vec::new();
+        for city in game.cities.values().filter(|city| city.owner == 0) {
+            let (x, y) = civvis::hex::axial_to_offset(city.pos.0, city.pos.1);
+            let plan = game.city_citizen_plan(city.id);
+            let worked = plan
+                .worked_tiles
+                .iter()
+                .map(|pos| {
+                    let (wx, wy) = civvis::hex::axial_to_offset(pos.0, pos.1);
+                    serde_json::json!({"x": wx, "y": wy})
+                })
+                .collect::<Vec<_>>();
+            cities.push(serde_json::json!({
+                "x": x,
+                "y": y,
+                "name": city.name,
+                "pop": city.pop,
+                "production_progress": city.production,
+                "worked": worked,
+                "specialists": plan.specialists,
+                "yields": game.city_yields(city.id),
+                "model_yields": game.city_yields_model(city.id),
+            }));
+        }
+        let great_works = [
+            "writing", "art", "religious_art", "artifact", "music", "relic",
+        ]
+        .into_iter()
+        .map(|kind| {
+            (
+                kind,
+                game.players[0]
+                    .counters
+                    .get(&format!("great_work:{kind}"))
+                    .copied()
+                    .unwrap_or(0),
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+        let mut empire_yields = civvis::rules::Yields::default();
+        let mut model_empire_yields = civvis::rules::Yields::default();
+        for city in game.cities.values().filter(|city| city.owner == 0) {
+            empire_yields.add(game.city_yields(city.id));
+            model_empire_yields.add(game.city_yields_model(city.id));
+        }
+        if let Some(adjustment) = game.observed_yield_adjustments.get(&0) {
+            empire_yields.add(*adjustment);
+        }
         println!(
             "{{\"turn\":{},\"width\":{},\"height\":{},\"revealed\":{},\
-             \"unresolved_terrain\":{{{}}},\"plots\":[{}]}}",
+             \"unresolved_terrain\":{{{}}},\"plots\":[{}],\"cities\":{},\
+             \"great_works\":{},\"empire_yields\":{},\"model_empire_yields\":{}}}",
             state.turn,
             width,
             height,
             snapshot.revealed_count(),
             unresolved_json.join(","),
-            plots.join(",")
+            plots.join(","),
+            serde_json::to_string(&cities).unwrap(),
+            serde_json::to_string(&great_works).unwrap(),
+            serde_json::to_string(&empire_yields).unwrap(),
+            serde_json::to_string(&model_empire_yields).unwrap(),
         );
         return;
     }

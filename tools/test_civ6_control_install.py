@@ -15,6 +15,19 @@ from civ6_control import install  # noqa: E402
 
 
 class ProtectedInstallTest(unittest.TestCase):
+    def test_city_export_preserves_great_works_citizens_yields_and_progress(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        exporter = source.split("local function exportState", 1)[1].split(
+            "local units = {};", 1
+        )[0]
+
+        self.assertIn("citizens:IsPlotWorked(px, py)", exporter)
+        self.assertIn("plot:GetWorkerCount()", exporter)
+        self.assertIn("blds:GetGreatWorkInSlot", exporter)
+        self.assertIn("Game.GetGreatWorkDataFromIndex", exporter)
+        self.assertIn("city:GetYield(YieldTypes.SCIENCE)", exporter)
+        self.assertIn("production_progress = productionProgress(city, queue)", exporter)
+
     def test_district_export_distinguishes_foundations_from_completed_districts(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         exporter = source.split("-- ★★★★★ AND WHAT IT HAS DISTRICTED", 1)[1].split(

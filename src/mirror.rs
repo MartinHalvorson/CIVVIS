@@ -1411,6 +1411,86 @@ mod tests {
     }
 
     #[test]
+    fn exact_city_economy_and_great_work_survive_reconstruction() {
+        let mut center = plot(5, 4, "TERRAIN_PLAINS");
+        center.o = 0;
+        let mut worked = plot(6, 4, "TERRAIN_GRASS");
+        worked.o = 0;
+        let mut theater = plot(5, 5, "TERRAIN_PLAINS");
+        theater.o = 0;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![center, worked, theater],
+        }]);
+        let host_yields = crate::rules::Yields {
+            food: 8.25,
+            production: 7.5,
+            gold: 6.75,
+            science: 5.5,
+            culture: 9.25,
+            faith: 2.0,
+        };
+        let state = StateSnapshot {
+            turn: 60,
+            science: host_yields.science,
+            culture: host_yields.culture,
+            cities: vec![StateCity {
+                id: 10,
+                name: "Wroclaw".to_string(),
+                x: 5,
+                y: 4,
+                pop: 2,
+                buildings: vec!["BUILDING_AMPHITHEATER".to_string()],
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_THEATER".to_string(),
+                    x: 5,
+                    y: 5,
+                    complete: true,
+                    ..StateDistrict::default()
+                }],
+                worked: Some(vec![StateWorkedPlot { x: 6, y: 4 }]),
+                specialists: Some(vec!["DISTRICT_THEATER".to_string()]),
+                great_works: Some(vec![StateGreatWork {
+                    kind: "GREATWORK_QU_YUAN_1".to_string(),
+                    object: "GREATWORKOBJECT_WRITING".to_string(),
+                    era: Some("ERA_CLASSICAL".to_string()),
+                    creator: "LOC_GREAT_PERSON_INDIVIDUAL_QU_YUAN_NAME".to_string(),
+                    building: "BUILDING_AMPHITHEATER".to_string(),
+                    slot: 0,
+                }]),
+                yields: Some(host_yields),
+                producing: Some("UNIT_WARRIOR".to_string()),
+                production_progress: 12.5,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let cid = recon.game.player_city_ids(0)[0];
+        let plan = recon.game.city_citizen_plan(cid);
+        assert_eq!(
+            plan.worked_tiles,
+            vec![crate::hex::offset_to_axial(6, 4)],
+            "the host assignment, not a freshly optimized replacement, is current state"
+        );
+        assert_eq!(plan.specialists, vec!["theater_square"]);
+        assert_eq!(recon.game.players[0].counters["great_work:writing"], 1);
+        assert_eq!(recon.game.players[0].great_work_pieces.len(), 1);
+        assert_eq!(recon.game.cities[&cid].production, 12.5);
+        assert_eq!(recon.game.city_yields(cid), host_yields);
+
+        let saved = serde_json::to_string(&recon.game).expect("save exact city mirror");
+        let loaded: crate::game::Game = serde_json::from_str(&saved).expect("load exact city mirror");
+        assert_eq!(loaded.city_citizen_plan(cid).worked_tiles, plan.worked_tiles);
+        assert_eq!(loaded.city_yields(cid), host_yields);
+        assert_eq!(loaded.players[0].counters["great_work:writing"], 1);
+    }
+
+    #[test]
     fn met_city_state_is_an_actor_instead_of_anonymous_blocked_land() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 30,
@@ -3819,6 +3899,32 @@ pub struct StateWonder {
     pub y: i32,
 }
 
+/// One population-worked Firaxis plot, in OFFSET coordinates.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateWorkedPlot {
+    #[serde(default)]
+    pub x: i32,
+    #[serde(default)]
+    pub y: i32,
+}
+
+/// One Great Work in an exact Firaxis city slot.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateGreatWork {
+    #[serde(default, rename = "type")]
+    pub kind: String,
+    #[serde(default)]
+    pub object: String,
+    #[serde(default)]
+    pub era: Option<String>,
+    #[serde(default)]
+    pub creator: String,
+    #[serde(default)]
+    pub building: String,
+    #[serde(default)]
+    pub slot: i32,
+}
+
 /// One city as Civilization VI reported it, in OFFSET coordinates.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateCity {
@@ -3873,6 +3979,20 @@ pub struct StateCity {
     pub districts: Vec<StateDistrict>,
     #[serde(default)]
     pub wonders: Vec<StateWonder>,
+    /// Exact citizen assignments. `None` means an older export or an unavailable
+    /// Firaxis query; `Some([])` means this city works no non-centre plots/jobs.
+    #[serde(default)]
+    pub worked: Option<Vec<StateWorkedPlot>>,
+    #[serde(default)]
+    pub specialists: Option<Vec<String>>,
+    /// Exact works housed by this city. Great People are physical host units but
+    /// immediate CIVVIS effects, so this permanent result must cross separately.
+    #[serde(default)]
+    pub great_works: Option<Vec<StateGreatWork>>,
+    /// Firaxis's final city yield vector after every local and empire modifier.
+    /// Stored as an additive correction to preserve modeled counterfactual deltas.
+    #[serde(default)]
+    pub yields: Option<crate::rules::Yields>,
     /// What Civilization VI is CURRENTLY building here, by type name.
     ///
     /// ★★★★ Exported as a raw hash for the whole project (`producing:
@@ -3884,6 +4004,9 @@ pub struct StateCity {
     /// Raw production hash retained so a failed name lookup is observable.
     #[serde(default)]
     pub producing_hash: Option<i64>,
+    /// Production already invested in `producing`.
+    #[serde(default = "unknown_metric")]
+    pub production_progress: f64,
     /// Food stockpiled toward the next citizen.
     #[serde(default)]
     pub food: f64,
@@ -4639,12 +4762,16 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     ];
     const CITY: &[&str] = &[
         "id", "name", "buildings", "religion", "religion_next", "religion_turns",
-        "pantheon_active", "districts", "wonders", "producing", "producing_hash", "food",
-        "loyalty_per_turn", "falls_to", "x", "y", "pop", "capital", "defense",
-        "damage", "max_damage", "wall_damage", "max_wall_damage", "loyalty",
+        "pantheon_active", "districts", "wonders", "worked", "specialists", "great_works",
+        "yields", "producing", "producing_hash", "production_progress", "food",
+        "loyalty_per_turn", "falls_to", "x", "y", "pop", "capital", "defense", "damage",
+        "max_damage", "wall_damage", "max_wall_damage", "loyalty",
     ];
     const DISTRICT: &[&str] = &["type", "x", "y", "pillaged", "complete"];
     const WONDER: &[&str] = &["type", "x", "y"];
+    const WORKED: &[&str] = &["x", "y"];
+    const GREAT_WORK: &[&str] = &["type", "object", "era", "creator", "building", "slot"];
+    const YIELDS: &[&str] = &["food", "production", "gold", "science", "culture", "faith"];
     const UNIT: &[&str] = &[
         "id", "kind", "type", "x", "y", "hp", "combat", "ranged", "player", "moves",
         "fortified", "fortify_turns", "great_person",
@@ -4670,6 +4797,15 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
             }
             for wonder in city.get("wonders").and_then(|v| v.as_array()).into_iter().flatten() {
                 keys(wonder, WONDER, "wonder", gaps);
+            }
+            for plot in city.get("worked").and_then(|v| v.as_array()).into_iter().flatten() {
+                keys(plot, WORKED, "worked", gaps);
+            }
+            for work in city.get("great_works").and_then(|v| v.as_array()).into_iter().flatten() {
+                keys(work, GREAT_WORK, "great_work", gaps);
+            }
+            if let Some(yields) = city.get("yields") {
+                keys(yields, YIELDS, "yields", gaps);
             }
         }
     }
@@ -5314,7 +5450,7 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
     let mut science = 0.0f64;
     let mut culture = 0.0f64;
     for city in game.cities.values().filter(|city| city.owner == 0) {
-        let yields = game.city_yields(city.id);
+        let yields = game.city_yields_model(city.id);
         science += yields.science;
         culture += yields.culture;
     }
@@ -5882,7 +6018,151 @@ fn mirrored_envoys(player: &crate::game::Player, minor: usize) -> i64 {
 /// Apply public host measurements after the reconstructed economy and city
 /// roster are complete. Yield differences are stored as corrections so an AI
 /// clone can still measure the effect of a candidate policy or building.
-fn apply_observed_host_metrics(game: &mut crate::game::Game, state: &StateSnapshot) {
+fn great_work_kind(object: &str) -> Option<&'static str> {
+    match object {
+        "GREATWORKOBJECT_WRITING" => Some("writing"),
+        "GREATWORKOBJECT_LANDSCAPE"
+        | "GREATWORKOBJECT_PORTRAIT"
+        | "GREATWORKOBJECT_SCULPTURE" => Some("art"),
+        "GREATWORKOBJECT_RELIGIOUS" => Some("religious_art"),
+        "GREATWORKOBJECT_ARTIFACT" => Some("artifact"),
+        "GREATWORKOBJECT_MUSIC" => Some("music"),
+        "GREATWORKOBJECT_RELIC" => Some("relic"),
+        _ => None,
+    }
+}
+
+fn great_work_era(era: Option<&str>) -> usize {
+    let bare = era
+        .unwrap_or("ERA_ANCIENT")
+        .strip_prefix("ERA_")
+        .unwrap_or(era.unwrap_or("ANCIENT"));
+    crate::rules::ERA_NAMES
+        .iter()
+        .position(|name| name.eq_ignore_ascii_case(bare))
+        .unwrap_or(0)
+}
+
+/// Restore exact private city facts before deriving host-to-model corrections.
+fn apply_observed_city_economy(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    unmapped: &mut Vec<String>,
+) {
+    game.observed_city_yield_adjustments.clear();
+    game.observed_city_worked_tiles.clear();
+    game.observed_city_specialists.clear();
+
+    for observed in &state.cities {
+        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+        let Some(cid) = game.city_at(pos) else { continue };
+        if let Some(worked) = &observed.worked {
+            let positions = worked
+                .iter()
+                .map(|plot| crate::hex::offset_to_axial(plot.x, plot.y))
+                .collect::<Vec<_>>();
+            let all_valid = positions.iter().all(|worked_pos| {
+                *worked_pos != pos
+                    && game.map.get(*worked_pos).is_some()
+                    && game.cities[&cid].owned_tiles.contains(worked_pos)
+            });
+            if all_valid {
+                game.observed_city_worked_tiles.insert(cid, positions);
+            } else {
+                let issue = format!("{}:worked_plot", observed.name);
+                if !unmapped.contains(&issue) {
+                    unmapped.push(issue);
+                }
+            }
+        }
+        if let Some(specialists) = &observed.specialists {
+            let mut translated = Vec::new();
+            let mut all_valid = true;
+            for civ6 in specialists {
+                match civvis_node_name(&game.rules.districts, civ6, "DISTRICT_") {
+                    Some(name) => translated.push(
+                        game.district_family(crate::name::Name::new(&name)).to_string(),
+                    ),
+                    None => {
+                        all_valid = false;
+                        let issue = format!("{civ6}:specialist");
+                        if !unmapped.contains(&issue) {
+                            unmapped.push(issue);
+                        }
+                    }
+                }
+            }
+            if all_valid {
+                game.observed_city_specialists.insert(cid, translated);
+            }
+        }
+    }
+
+    // Replace only when every own-city query succeeded. A partial export is
+    // unknown, not authority to erase works housed in the omitted city.
+    if !state.cities.is_empty() && state.cities.iter().all(|city| city.great_works.is_some()) {
+        for kind in ["writing", "art", "religious_art", "artifact", "music", "relic"] {
+            game.players[0].counters.insert(format!("great_work:{kind}"), 0);
+        }
+        game.players[0].great_work_pieces.clear();
+        let mut seen = std::collections::BTreeSet::new();
+        let works = state
+            .cities
+            .iter()
+            .flat_map(|city| city.great_works.as_deref().unwrap_or_default());
+        for work in works {
+            if !seen.insert(work.kind.clone()) {
+                continue;
+            }
+            match great_work_kind(&work.object) {
+                Some(kind) => game.grant_great_work(
+                    0,
+                    kind,
+                    great_work_era(work.era.as_deref()),
+                    &work.creator,
+                ),
+                None => {
+                    let issue = format!("{}:{}:great_work", work.kind, work.object);
+                    if !unmapped.contains(&issue) {
+                        unmapped.push(issue);
+                    }
+                }
+            }
+        }
+    }
+
+    // Exact citizen assignments and durable Great Work state are now in place.
+    // What remains is a local correction for host rules CIVVIS has not modeled.
+    for observed in &state.cities {
+        let Some(host) = observed.yields else { continue };
+        if ![
+            host.food, host.production, host.gold, host.science, host.culture, host.faith,
+        ]
+        .iter()
+        .all(|value| value.is_finite())
+        {
+            continue;
+        }
+        let pos = crate::hex::offset_to_axial(observed.x, observed.y);
+        let Some(cid) = game.city_at(pos) else { continue };
+        let model = game.city_yields_model(cid);
+        let adjustment = crate::rules::Yields {
+            food: host.food - model.food,
+            production: host.production - model.production,
+            gold: host.gold - model.gold,
+            science: host.science - model.science,
+            culture: host.culture - model.culture,
+            faith: host.faith - model.faith,
+        };
+        game.observed_city_yield_adjustments.insert(cid, adjustment);
+    }
+}
+
+fn apply_observed_host_metrics(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    unmapped: &mut Vec<String>,
+) {
     game.observed_trade_capacity.clear();
     game.observed_yield_adjustments.clear();
     game.observed_city_loyalty_per_turn.clear();
@@ -5891,6 +6171,8 @@ fn apply_observed_host_metrics(game: &mut crate::game::Game, state: &StateSnapsh
     if let Some(capacity) = state.trade_capacity.filter(|capacity| *capacity >= 0) {
         game.observed_trade_capacity.insert(0, capacity);
     }
+
+    apply_observed_city_economy(game, state, unmapped);
 
     let mut derived = crate::rules::Yields::default();
     for cid in game.player_city_ids(0) {
@@ -6246,6 +6528,9 @@ pub fn rebuild_from_state(
                         built.queue.push(item);
                     }
                 }
+                if city.production_progress.is_finite() && city.production_progress >= 0.0 {
+                    built.production = city.production_progress;
+                }
                 // ★★★★ WHAT THE CITY ALREADY HAS. Without this a city reads as empty
                 // forever and CIVVIS re-orders the same development every turn:
                 // measured 19 Builders and 17 Granaries for ONE city, against one
@@ -6568,7 +6853,7 @@ pub fn rebuild_from_state(
         &state.trade_routes,
         &known_city_ids,
     ));
-    apply_observed_host_metrics(&mut game, state);
+    apply_observed_host_metrics(&mut game, state, &mut unmapped);
 
     // Districts the host has refused to place, mapped onto CIVVIS's cities. Done here
     // because it needs `city_ids`, which is only complete once every city is planted.
@@ -7283,6 +7568,9 @@ impl LiveMirror {
                     if let Some(item) = queued {
                         live.queue.push(item);
                     }
+                    if city.production_progress.is_finite() && city.production_progress >= 0.0 {
+                        live.production = city.production_progress;
+                    }
                     // Same translation as the rebuild path, and for the same reason:
                     // an untranslated name here panics `rules.buildings[..]` later.
                     live.buildings.clear();
@@ -7615,7 +7903,7 @@ impl LiveMirror {
         apply_territory(&mut self.game, snapshot, state);
         apply_tile_memory(&mut self.game, snapshot);
         apply_city_memory(&mut self.game);
-        apply_observed_host_metrics(&mut self.game, state);
+        apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
     }
 }
 

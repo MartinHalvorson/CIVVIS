@@ -221,6 +221,32 @@ local function productionName(hash)
 	return nil;
 end
 
+-- Production already invested in the current item.  The stock City Panel uses
+-- these same four accessors; carrying only the item name makes a nearly finished
+-- build and a newly selected build look identical to the planner.
+local function productionProgress(city, hash)
+	if hash == nil or hash == 0 then return 0; end
+	local queue = try(function() return city:GetBuildQueue(); end);
+	if queue == nil then return nil; end
+	local building = GameInfo.Buildings[hash];
+	if building ~= nil then
+		return try(function() return queue:GetBuildingProgress(building.Index); end);
+	end
+	local district = GameInfo.Districts[hash];
+	if district ~= nil then
+		return try(function() return queue:GetDistrictProgress(district.Index); end);
+	end
+	local unit = GameInfo.Units[hash];
+	if unit ~= nil then
+		return try(function() return queue:GetUnitProgress(unit.Index); end);
+	end
+	local project = GameInfo.Projects[hash];
+	if project ~= nil then
+		return try(function() return queue:GetProjectProgress(project.Index); end);
+	end
+	return nil;
+end
+
 local function enumMembers(getter)
 	local ok, tbl = pcall(getter);
 	if not ok or type(tbl) ~= "table" then return nil; end
@@ -4048,20 +4074,39 @@ local function exportState(player, pid, turn)
 		local ownedPlots = try(function()
 			return Map.GetCityPlots():GetPurchasedPlots(city);
 		end);
+		local worked = nil;
+		local specialists = nil;
 		if ownedPlots ~= nil then
 			placed = {};
 			wonders = {};
+			worked = {};
+			specialists = {};
+			local citizens = try(function() return city:GetCitizens(); end);
 			for _, plotIndex in ipairs(ownedPlots) do
 				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
 				if plot ~= nil then
+					local px = try(function() return plot:GetX(); end, -1);
+					local py = try(function() return plot:GetY(); end, -1);
+					if citizens ~= nil and try(function()
+						return citizens:IsPlotWorked(px, py);
+					end, false) then
+						worked[#worked + 1] = { x = px, y = py };
+					end
 					local dtype = try(function() return plot:GetDistrictType(); end, -1);
 					if dtype ~= nil and dtype >= 0 then
 						local info = GameInfo.Districts[dtype];
 						if info ~= nil then
+							local workers = try(function() return plot:GetWorkerCount(); end, 0) or 0;
+							if info.DistrictType ~= "DISTRICT_CITY_CENTER"
+								and info.DistrictType ~= "DISTRICT_WONDER" then
+								for _ = 1, workers do
+									specialists[#specialists + 1] = info.DistrictType;
+								end
+							end
 							placed[#placed + 1] = {
 								type = info.DistrictType,
-								x = try(function() return plot:GetX(); end, -1),
-								y = try(function() return plot:GetY(); end, -1),
+								x = px,
+								y = py,
 								pillaged = try(function() return plot:IsDistrictPillaged(); end, false),
 								complete = districtComplete[
 									tostring(try(function() return plot:GetX(); end, -1)) .. "," ..
@@ -4087,9 +4132,62 @@ local function exportState(player, pid, turn)
 				end
 			end
 		end
+		-- Great People disappear after activation, but their Great Works are permanent
+		-- state.  Export the occupied slots exactly so the next reconstruction does
+		-- not forget the yield, Tourism, theming identity, or consumed slot.
+		local greatWorks = nil;
+		if blds ~= nil then
+			greatWorks = {};
+			for buildingInfo in GameInfo.Buildings() do
+				if try(function() return blds:HasBuilding(buildingInfo.Index); end, false) then
+					local slots = try(function()
+						return blds:GetNumGreatWorkSlots(buildingInfo.Index);
+					end, 0) or 0;
+					for slot = 0, slots - 1 do
+						local workIndex = try(function()
+							return blds:GetGreatWorkInSlot(buildingInfo.Index, slot);
+						end, -1);
+						if workIndex ~= nil and workIndex >= 0 then
+							local workType = try(function()
+								return blds:GetGreatWorkTypeFromIndex(workIndex);
+							end, -1);
+							local info = workType ~= nil and workType >= 0
+								and GameInfo.GreatWorks[workType] or nil;
+							local instance = try(function()
+								return Game.GetGreatWorkDataFromIndex(workIndex);
+							end);
+							if info ~= nil then
+								greatWorks[#greatWorks + 1] = {
+									type = info.GreatWorkType,
+									object = info.GreatWorkObjectType,
+									era = info.EraType,
+									creator = instance and instance.CreatorName or "",
+									building = buildingInfo.BuildingType,
+									slot = slot,
+								};
+							end
+						end
+					end
+				end
+			end
+		end
+		local exactYields = try(function()
+			return {
+				food = city:GetYield(YieldTypes.FOOD),
+				production = city:GetYield(YieldTypes.PRODUCTION),
+				gold = city:GetYield(YieldTypes.GOLD),
+				science = city:GetYield(YieldTypes.SCIENCE),
+				culture = city:GetYield(YieldTypes.CULTURE),
+				faith = city:GetYield(YieldTypes.FAITH),
+			};
+		end);
 		cities[#cities + 1] = {
 			districts = placed,
 			wonders = wonders,
+			worked = worked,
+			specialists = specialists,
+			great_works = greatWorks,
+			yields = exactYields,
 			-- ★★★★★ WHOSE RELIGION THIS CITY FOLLOWS, AND WHAT IS CONVERTING IT.
 			--
 			-- `religion` was **null on all 26,954 city records ever exported**, the
@@ -4133,6 +4231,7 @@ local function exportState(player, pid, turn)
 			-- CIVVIS re-decided production every turn blind to work in progress.
 			producing = productionName(queue),
 			producing_hash = queue,
+			production_progress = productionProgress(city, queue),
 			food = try(function() return city:GetGrowth():GetFood(); end, -1),
 			-- ⚠ Was `GetDistricts():GetDefenseStrength()` — the method on the
 			-- collection, which does not exist, so this read -1 for the whole

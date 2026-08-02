@@ -15625,6 +15625,16 @@ pub struct Game {
     /// counterfactual deltas when the AI evaluates a policy or build on a clone.
     #[serde(default)]
     pub observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
+    /// Per-city host-to-model corrections and exact citizen assignments for a
+    /// mirrored Firaxis turn. Native games leave these empty. Corrections are
+    /// additive so counterfactual buildings, policies, and assignments still
+    /// contribute their modeled delta instead of being hidden by an override.
+    #[serde(default)]
+    pub observed_city_yield_adjustments: BTreeMap<u32, crate::rules::Yields>,
+    #[serde(default)]
+    pub observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
+    #[serde(default)]
+    pub observed_city_specialists: BTreeMap<u32, Vec<String>>,
     /// Host loyalty rates and banner defense strengths for reconstructed cities.
     /// Keys are CIVVIS city ids, populated only by the live mirror.
     #[serde(default)]
@@ -15908,6 +15918,12 @@ struct GameSer {
     #[serde(default)]
     observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
     #[serde(default)]
+    observed_city_yield_adjustments: BTreeMap<u32, crate::rules::Yields>,
+    #[serde(default)]
+    observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
+    #[serde(default)]
+    observed_city_specialists: BTreeMap<u32, Vec<String>>,
+    #[serde(default)]
     observed_city_loyalty_per_turn: BTreeMap<u32, f64>,
     #[serde(default)]
     observed_city_strength: BTreeMap<u32, f64>,
@@ -16034,6 +16050,9 @@ impl From<GameSer> for Game {
             observed_trade_capacity: s.observed_trade_capacity,
             observed_leader_types: s.observed_leader_types,
             observed_yield_adjustments: s.observed_yield_adjustments,
+            observed_city_yield_adjustments: s.observed_city_yield_adjustments,
+            observed_city_worked_tiles: s.observed_city_worked_tiles,
+            observed_city_specialists: s.observed_city_specialists,
             observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
             observed_city_strength: s.observed_city_strength,
             observed_city_max_wall_hp: s.observed_city_max_wall_hp,
@@ -16201,6 +16220,9 @@ impl From<Game> for GameSer {
             observed_trade_capacity: g.observed_trade_capacity,
             observed_leader_types: g.observed_leader_types,
             observed_yield_adjustments: g.observed_yield_adjustments,
+            observed_city_yield_adjustments: g.observed_city_yield_adjustments,
+            observed_city_worked_tiles: g.observed_city_worked_tiles,
+            observed_city_specialists: g.observed_city_specialists,
             observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
             observed_city_strength: g.observed_city_strength,
             observed_city_max_wall_hp: g.observed_city_max_wall_hp,
@@ -16254,6 +16276,9 @@ impl Game {
         self.observed_city_loyalty_per_turn.clear();
         self.observed_city_strength.clear();
         self.observed_city_max_wall_hp.clear();
+        self.observed_city_yield_adjustments.clear();
+        self.observed_city_worked_tiles.clear();
+        self.observed_city_specialists.clear();
         for tile in self.map.tiles.values_mut() {
             tile.owner_city = None;
             let had_infrastructure = tile.district.is_some()
@@ -16312,6 +16337,9 @@ impl Game {
         self.observed_city_loyalty_per_turn.remove(&cid);
         self.observed_city_strength.remove(&cid);
         self.observed_city_max_wall_hp.remove(&cid);
+        self.observed_city_yield_adjustments.remove(&cid);
+        self.observed_city_worked_tiles.remove(&cid);
+        self.observed_city_specialists.remove(&cid);
         for player in self.players.iter_mut() {
             player.city_directives.remove(&cid);
         }
@@ -16468,6 +16496,9 @@ impl Game {
             observed_trade_capacity: BTreeMap::new(),
             observed_leader_types: BTreeMap::new(),
             observed_yield_adjustments: BTreeMap::new(),
+            observed_city_yield_adjustments: BTreeMap::new(),
+            observed_city_worked_tiles: BTreeMap::new(),
+            observed_city_specialists: BTreeMap::new(),
             observed_city_loyalty_per_turn: BTreeMap::new(),
             observed_city_strength: BTreeMap::new(),
             observed_city_max_wall_hp: BTreeMap::new(),
@@ -32610,6 +32641,22 @@ impl Game {
         if let Some(weights) = weights {
             strategy.weights = weights;
         }
+        // A live Firaxis mirror has already made its citizen assignment. Use that
+        // exact baseline for ordinary planning and yields; weighted probes remain
+        // counterfactual and deliberately run CIVVIS's governor below.
+        if weights.is_none() {
+            if let Some(worked_tiles) = self.observed_city_worked_tiles.get(&cid) {
+                return CitizenPlan {
+                    strategy,
+                    worked_tiles: worked_tiles.clone(),
+                    specialists: self
+                        .observed_city_specialists
+                        .get(&cid)
+                        .cloned()
+                        .unwrap_or_default(),
+                };
+            }
+        }
         let mut center = self.workable_tile_yields(city.pos);
         center.food = center.food.max(2.0);
         center.production = center.production.max(1.0);
@@ -33443,14 +33490,25 @@ impl Game {
     /// an instrument can bound the food available to a capital without the
     /// engine adopting a different governor — see `docs/OPENINGS.md`.
     pub fn city_yields_weighted(&self, cid: u32, weights: Yields) -> Yields {
-        self.city_yields_inner(cid, Some(weights))
+        self.city_yields_inner(cid, Some(weights), true)
     }
 
     fn city_yields_uncached(&self, cid: u32) -> Yields {
-        self.city_yields_inner(cid, None)
+        self.city_yields_inner(cid, None, true)
     }
 
-    fn city_yields_inner(&self, cid: u32, weights: Option<Yields>) -> Yields {
+    /// The modeled yield before a live-host correction. Mirror reconciliation
+    /// uses this to derive the additive correction without reading itself.
+    pub fn city_yields_model(&self, cid: u32) -> Yields {
+        self.city_yields_inner(cid, None, false)
+    }
+
+    fn city_yields_inner(
+        &self,
+        cid: u32,
+        weights: Option<Yields>,
+        apply_observation: bool,
+    ) -> Yields {
         // A city's yields reach for two empire-wide derivations — its Amenity
         // band and its housed Great Works. Opening a scope here means they are
         // taken once per city rather than once per lookup, and nests harmlessly
@@ -34415,6 +34473,11 @@ impl Game {
         ys.science *= 1.0 + handicap.science / 100.0;
         ys.culture *= 1.0 + handicap.culture / 100.0;
         ys.faith *= 1.0 + handicap.faith / 100.0;
+        if apply_observation {
+            if let Some(adjustment) = self.observed_city_yield_adjustments.get(&cid) {
+                ys.add(*adjustment);
+            }
+        }
         ys
     }
 
