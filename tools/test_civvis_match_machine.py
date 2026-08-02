@@ -139,6 +139,22 @@ class MatchMachineTests(unittest.TestCase):
 
         subject.launch.assert_called_once_with(visible=True)
 
+    def test_fill_slots_reserves_visible_slot_before_recovery_margin(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = None
+        subject.build_future = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        headless = SimpleNamespace(visible=False, paused=False, process=object(), seed=7)
+        subject.games = [headless]
+        subject.launch = mock.Mock()
+        subject.event = mock.Mock()
+
+        with mock.patch.object(machine, "set_paused", return_value=True):
+            subject.fill_slots(machine.Resources(60, 20, 12, 0, False))
+
+        self.assertTrue(headless.paused)
+        subject.launch.assert_called_once_with(visible=True)
+
     def test_fill_slots_drains_headless_games_while_head_build_is_pending(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
         subject.pending_revision = "new-head"
