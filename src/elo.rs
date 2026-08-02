@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 80] = [
+pub const EVAL_ONLY_AIS: [&str; 82] = [
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -78,6 +78,11 @@ pub const EVAL_ONLY_AIS: [&str; 80] = [
     "advanced_late_expansion",
     "advanced_expansion_dispatch",
     "advanced_expansion_complete",
+    // The victory lane the deployed Civ 6 decider is actually given. Named so
+    // `ai_eval` can measure the choice `civ6_civvis_climb.py --victory` makes
+    // for every real run; see the constructor arms below.
+    "advanced_target_domination",
+    "advanced_target_score",
     "advanced_food_first",
     "advanced_measured_dedication",
     "advanced_lane_reachable",
@@ -196,6 +201,8 @@ define_arm_kinds! {
     AdvancedRushConnected => "advanced_rush_connected",
     AdvancedSettlerCommit => "advanced_settler_commit",
     AdvancedSettlerFirst => "advanced_settler_first",
+    AdvancedTargetDomination => "advanced_target_domination",
+    AdvancedTargetScore => "advanced_target_score",
     AdvancedStrategicCommitment => "advanced_strategic_commitment",
     AdvancedV1 => "advanced_v1",
     AdvancedWideOpening => "advanced_wide_opening",
@@ -1941,6 +1948,23 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             w.dedication_choice = crate::ai::DedicationChoice::Banking;
             Box::new(AdvancedAi::with_weights(w))
         }
+        // ★★★★★ THE VICTORY LANE THE REAL GAMES ARE ACTUALLY GIVEN.
+        //
+        // `civ6_civvis_climb.py --victory` defaults to `domination` and every one
+        // of the 104 ladder rows carries it, with **zero wins**. Nothing in the
+        // registry could measure that choice, so the single most consequential
+        // setting in the deployment was the one axis never evaluated.
+        //
+        // ⚠ It is not merely unwon, it is out of budget: `victory_eval`'s own
+        // per-target turn limits are 650 for Domination and 300 for Score, and
+        // the deployment runs **250**. At 6 players / 250 turns, 8 of 8 games
+        // targeting domination ended by score at the limit instead.
+        "advanced_target_domination" => Box::new(AdvancedAi::targeting(
+            crate::ai::VictoryTarget::Domination,
+        )),
+        "advanced_target_score" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score))
+        }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
         "random" => Box::new(RandomAi::new(seed)),
         // Exact netless fallback played by `neural` when the committed
@@ -2610,6 +2634,11 @@ impl ArmKind {
             }
             Self::AdvancedFoodFirst => &["food-first"],
             Self::AdvancedSettlerCommit => &["settler-commitment"],
+            // The two arms differ only in the lane they are told to win, which is
+            // the axis: the deployed Civ 6 decider is handed one of these by
+            // `civ6_civvis_climb.py --victory` and nothing could compare them.
+            Self::AdvancedTargetDomination => &["victory-lane-domination"],
+            Self::AdvancedTargetScore => &["victory-lane-score"],
             Self::AdvancedBlindToLeaders | Self::AdvancedEvolvedBlind => &["leader-denial-off"],
             Self::AdvancedRush => &["early-rush"],
             Self::AdvancedRushConnected => &["early-rush", "connected-rush"],
@@ -3167,6 +3196,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_rush_connected" => (Vec::new(), "advanced_rush_connected"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
+        "advanced_target_domination" => (Vec::new(), "advanced_target_domination"),
+        "advanced_target_score" => (Vec::new(), "advanced_target_score"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
@@ -4183,7 +4214,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 47] = [
+            const SCRIPTED: [&str; 49] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4228,6 +4259,10 @@ mod tests {
                 "advanced_joint_tactics",
                 "advanced_relief_scoped",
                 "advanced_settler_first",
+                // Built from code, not from a weights artifact: these two differ
+                // from `advanced` only in the victory lane they are handed.
+                "advanced_target_domination",
+                "advanced_target_score",
                 "advanced_v1",
                 "basic",
                 "random",
