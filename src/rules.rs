@@ -83,6 +83,10 @@ fn done_usize() -> usize {
 pub struct TerrainSpec {
     #[serde(default)]
     pub yields: Yields,
+    /// Synthetic terrain used only when an external partial-map source has not
+    /// disclosed what occupies a coordinate. It makes no land/water claim.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unknown: bool,
     #[serde(default)]
     pub water: bool,
     #[serde(default = "dtrue")]
@@ -2550,8 +2554,29 @@ impl Rules {
         ys
     }
 
+    /// Add the synthetic terrain used by an external partial-map reconstruction.
+    /// This deliberately happens after ruleset loading so a mirror-only knowledge
+    /// marker cannot change the audited source fingerprint or invalidate ratings.
+    pub(crate) fn enable_unknown_terrain(&mut self) {
+        self.terrains.insert(
+            "unknown".to_string(),
+            TerrainSpec {
+                yields: Yields::default(),
+                unknown: true,
+                water: false,
+                passable: false,
+                move_cost: 1.0,
+                defense: 0.0,
+            },
+        );
+    }
+
     pub fn is_water(&self, t: &Tile) -> bool {
         self.terrains[t.terrain].water
+    }
+
+    pub fn is_unknown(&self, t: &Tile) -> bool {
+        self.terrains[t.terrain].unknown
     }
 
     pub fn is_passable(&self, t: &Tile) -> bool {
@@ -2560,7 +2585,12 @@ impl Rules {
                 return false;
             }
         }
-        self.terrains[t.terrain].passable
+        let terrain = &self.terrains[t.terrain];
+        if terrain.unknown {
+            t.assumed_traversable
+        } else {
+            terrain.passable
+        }
     }
 
     pub fn move_cost(&self, t: &Tile) -> f64 {
