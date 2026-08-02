@@ -130,9 +130,11 @@ def parse_top_cpu(text: str) -> float | None:
 
 def cpu_percent() -> float | None:
     if sys.platform == "darwin":
-        # macOS top accepts only whole-second sample intervals.
+        # ``top -l 1`` already reports the host-wide CPU aggregate.  Asking
+        # macOS for a second sample adds a whole-second wait and can exceed the
+        # sampling timeout while a simulator and a build are both active.
         try:
-            result = command("top", "-l", "2", "-n", "0", "-s", "1", timeout=4)
+            result = command("top", "-l", "1", "-n", "0", timeout=4)
         except (OSError, subprocess.TimeoutExpired):
             return None
         return parse_top_cpu(result.stdout)
