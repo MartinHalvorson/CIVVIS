@@ -626,10 +626,11 @@ fn decide(
     war_from_plan: bool,
     ours: &mut std::collections::BTreeMap<i64, String>,
 ) -> String {
-    // Only the live bridge has Firaxis's non-walking Trader representation.
-    // Enable its narrow route-start adapter before the AI simulates its turn;
-    // the ordinary tournament controller remains on its frozen path.
+    // Only the live bridge has Firaxis's non-walking Trader representation and
+    // host-city religious purchase rule. Enable those narrow adapters before
+    // the AI simulates its turn; the tournament controller stays frozen.
     ai.enable_live_trader_route_adapter();
+    ai.enable_live_religious_purchase_guard();
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.
@@ -3173,6 +3174,79 @@ mod tests {
         );
         assert_eq!(mirror.civ6_of.len(), 1);
         assert_eq!(mirror.uid_of.len(), 1);
+    }
+
+    #[test]
+    fn converted_holy_site_never_emits_a_rival_missionary_purchase() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 151,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 151,
+            techs: vec!["TECH_ASTROLOGY".to_string()],
+            founded_religion: Some("RELIGION_CATHOLICISM".to_string()),
+            founded_religions: vec![
+                "RELIGION_CATHOLICISM".to_string(),
+                "RELIGION_ISLAM".to_string(),
+            ],
+            faith: 1_000,
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Rome".to_string(),
+                x: 8,
+                y: 8,
+                pop: 7,
+                capital: true,
+                religion: Some("RELIGION_ISLAM".to_string()),
+                buildings: vec!["BUILDING_SHRINE".to_string()],
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_HOLY_SITE".to_string(),
+                    x: 9,
+                    y: 8,
+                    pillaged: false,
+                    complete: true,
+                }],
+                producing: Some("PROJECT_HOLY_SITE_PRAYERS".to_string()),
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let city = mirror.game.player_city_ids(0)[0];
+        assert_eq!(
+            mirror.game.players[0].religion.as_deref(),
+            Some("Catholicism")
+        );
+        assert_eq!(
+            mirror.game.city_religion(&mirror.game.cities[&city]),
+            Some("Islam")
+        );
+
+        let mut ai = civvis::ai::AdvancedAi::new();
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &mut Default::default(),
+        ))
+        .expect("the decision is JSON");
+
+        assert!(
+            reply["orders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|order| order["verb"].as_str() != Some("UNIT_MISSIONARY")),
+            "a live recommendation must not buy the converted city's rival-faith Missionary"
+        );
     }
 
     #[test]

@@ -1261,6 +1261,10 @@ pub struct BasicAi {
     barb: bool,
     culture_focus: bool,
     pursue_religion: bool,
+    /// Enforce the live Firaxis rule that a religious unit inherits its
+    /// purchase city's majority. Off for the frozen native controllers and
+    /// enabled explicitly by the Civilization VI bridge.
+    live_religious_purchase_guard: bool,
     w: Weights,
     book_pos: usize, // opening-book progress (capital builds played so far)
     /// Units that have withdrawn from combat stay in recovery until they are
@@ -2079,6 +2083,7 @@ impl BasicAi {
             barb: false,
             culture_focus: false,
             pursue_religion: true,
+            live_religious_purchase_guard: false,
             w: Weights::default(),
             book_pos: 0,
             recovering_units: HashSet::new(),
@@ -2098,6 +2103,7 @@ impl BasicAi {
             barb: false,
             culture_focus: false,
             pursue_religion: true,
+            live_religious_purchase_guard: false,
             w,
             book_pos: 0,
             recovering_units: HashSet::new(),
@@ -3842,6 +3848,7 @@ impl BasicAi {
             && g.players[pid].religion.is_some()
             && g.players[pid].faith >= 250.0
         {
+            let religion = g.players[pid].religion.clone().unwrap();
             let missionaries = g
                 .units
                 .values()
@@ -3849,8 +3856,20 @@ impl BasicAi {
                 .count();
             if missionaries < 2 {
                 for cid in &city_ids {
-                    if g.cities[cid].districts.contains_key(crate::name!("holy_site")) {
-                        let _ = g.apply(
+                    // Firaxis gives a purchased religious unit the city's
+                    // majority religion. A converted Holy Site would spend
+                    // our Faith strengthening the rival faith; on a live
+                    // mirror this also produced a purchase the host refused
+                    // every turn once Rome converted. The live adapter keeps
+                    // looking when the first matching city cannot place it.
+                    if !g.cities[cid].districts.contains_key(crate::name!("holy_site"))
+                        || (self.live_religious_purchase_guard
+                            && g.city_religion(&g.cities[cid]) != Some(religion.as_str()))
+                    {
+                        continue;
+                    }
+                    let applied = g
+                        .apply(
                             pid,
                             &Action::Buy {
                                 city: *cid,
@@ -3858,7 +3877,11 @@ impl BasicAi {
                                 formation: 0,
                                 currency: "faith".to_string(),
                             },
-                        );
+                        )
+                        .is_ok();
+                    // Preserve the frozen controller's historical first-Holy-Site
+                    // exit. Only the live adapter may continue after a refusal.
+                    if !self.live_religious_purchase_guard || applied {
                         break;
                     }
                 }
@@ -8258,6 +8281,84 @@ mod tests {
             Item::District { ref district, .. }
                 if game.district_family(district) == "holy_site"
         ));
+    }
+
+    #[test]
+    fn live_missionary_buyer_never_strengthens_a_rival_majority() {
+        let mut game = Game::new_full(2, 24, 16, 91_775, 120, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .unwrap();
+        let city = game.player_city_ids(0)[0];
+        let center = game.cities[&city].pos;
+        let holy_site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != center)
+            .unwrap();
+        game.map.tiles.get_mut(&holy_site).unwrap().district =
+            Some(crate::name!("holy_site"));
+        {
+            let city = game.cities.get_mut(&city).unwrap();
+            city.districts.insert(crate::name!("holy_site"), holy_site);
+            city.buildings.push(crate::name!("shrine"));
+            city.atheist_pressure = 0.0;
+            city.pressure.insert("Rival Faith".to_string(), 1_000.0);
+            // Keep this test on the post-production Faith-spending path.
+            city.queue.push(Item::Project {
+                project: crate::name!("holy_site_prayers"),
+            });
+        }
+        game.players[0].religion = Some("Home Faith".to_string());
+        game.players[1].religion = Some("Rival Faith".to_string());
+        game.players[0].techs.insert(crate::name!("astrology"));
+        game.players[0].faith = 1_000.0;
+        let mut historical = game.clone();
+        BasicAi::new().cities(&mut historical, 0);
+        assert!(
+            historical.units.values().any(|unit| {
+                unit.owner == 0
+                    && unit.kind == "missionary"
+                    && unit.religion.as_deref() == Some("Rival Faith")
+            }),
+            "the default-off gate preserves the frozen native controller"
+        );
+
+        let mut ai = BasicAi::new();
+        ai.w.faith_builder = f64::INFINITY;
+        ai.live_religious_purchase_guard = true;
+
+        let before = game.log.len();
+        ai.cities(&mut game, 0);
+        assert!(
+            !game.log.since(before).any(|(_, action)| matches!(
+                action,
+                Action::Buy { unit, currency, .. }
+                    if unit == "missionary" && currency == "faith"
+            )),
+            "a converted Holy Site must not buy the rival's Missionary"
+        );
+
+        let city_state = game.cities.get_mut(&city).unwrap();
+        city_state.pressure.clear();
+        city_state.pressure.insert("Home Faith".to_string(), 1_000.0);
+        ai.cities(&mut game, 0);
+        assert!(game.log.iter().any(|(_, action)| matches!(
+            action,
+            Action::Buy { city: bought_at, unit, currency, .. }
+                if *bought_at == city && unit == "missionary" && currency == "faith"
+        )));
+        let missionary = game
+            .units
+            .values()
+            .find(|unit| unit.owner == 0 && unit.kind == "missionary")
+            .expect("the same Holy Site can buy once its majority is ours");
+        assert_eq!(missionary.religion.as_deref(), Some("Home Faith"));
     }
 
     #[test]

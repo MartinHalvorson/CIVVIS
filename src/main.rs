@@ -258,8 +258,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// which is false for configured and legacy engine agents and enabled only by
 /// the live `civvis_orders` bridge. Engine and Elo trajectories therefore keep
 /// their prior behavior; this is a compatibility re-pin, not a protocol bump.
+///
+/// #911's escorted-settler correction remains behind `settlement_safety`,
+/// which `AdvancedAi::legacy()` disables. The live religious-purchase guard
+/// added afterward is likewise default-off in `BasicAi` and enabled only by
+/// `civvis_orders`; its focused test preserves the historical rival-faith
+/// purchase with the flag off. A matched 10-map, 20-game deployment comparison
+/// had identical substantive output across 3,801 observed Advanced-v1 turns.
+/// These are compatibility re-pins, not an Elo protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x018f_267a_305a_0276;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf721_691f_e582_6a0e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
