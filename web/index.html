@@ -719,8 +719,7 @@
      number, so it is the same figure in the same cell — only unfilled, the
      way an unearned thing should look. Opacity and nothing else: a marker
      character would widen the narrowest column in the table, and italics
-     would push a four-digit rating into the ellipsis this cell already
-     carries. */
+     would compete with the protected width reserved for the full score. */
   .diplomacy-elo-value.provisional { opacity: 0.62; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   /* Start and Now are two numeric categories on matching tracks. The narrow
@@ -2432,16 +2431,18 @@
        of the columns inside it, which is what lets one bar move width out of
        the last identity column and into the first value column. */
     /* The label floor narrows with the screen; the figure floors do not. Elo is
-       four digits and 38px is what that needs whatever size the window is — a
-       label that gives up width ellipsizes and keeps its tooltip, where a figure
-       that gives up width becomes a smaller number that is simply wrong. The
-       odds cell carries two separately aligned figures and the arrow between
-       them, so it stands on a wider floor of its own: 76px keeps the longer
-       START label and both numeric tracks whole at the fitter's 9px floor. Each
-       breakpoint below moves the label floor only, and keeps
-       5 labels + 2 figure cells adding up to what the identity block claims at
-       that width. */
-    --hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 76px;
+       a signed score, not a four-digit display: 60px keeps five digits, a
+       possible minus sign, the cell inset and its divider whole at the fitter's
+       13px ceiling. `syncPlayerHudEloFloor()` raises that floor before layout
+       when a live rating needs more. A label that gives up width ellipsizes and
+       keeps its tooltip, where a figure that gives up width becomes a smaller
+       number that is simply wrong. The odds cell carries two separately aligned
+       figures and the arrow between them, so it stands on a wider floor of its
+       own: 76px keeps the longer START label and both numeric tracks whole at
+       the fitter's 9px floor. Each breakpoint below moves the label floor only,
+       and keeps 5 labels + 2 figure cells adding up to what the identity block
+       claims at that width. */
+    --hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;
     /* How much of the flexible width the identity block asks for relative to
        the values, over and above the sum of its own columns. A wide panel can
        afford whole names; a narrow one gives the identity up first, because a
@@ -2526,7 +2527,7 @@
      which are integers, while the browser applies text-overflow on any
      sub-pixel overflow at all — so a head the fitter has correctly settled at
      its exact width overflows by a third of a pixel, and `ellipsis` spends a
-     whole character saying so. Measured at 1600px: ELO in its 38px column
+     whole character saying so. Measured at 1600px: ELO in its 60px column
      renders whole under `clip` and as "EL…" under `ellipsis`. Every head is
      short enough to stand at its own floor, and each carries a title. */
   .diplomacy-identity-head > span {
@@ -2692,10 +2693,10 @@
      the shares here are `1 : .55 : .55 : .7 : 1.1`, which is the same proportion
      the heading uses, and the columns still came apart in two ways that a
      reading of the stylesheet does not show.
-     - **Floors.** The heads carry the 30px label floor and the 38px figure
+     - **Floors.** The heads carry the 30px label floor and the 60px figure
        floor; a copy carrying `minmax(0, …)` keeps shrinking after the heads
        have stopped. Measured on a 1280px screen: the ELO head stood at its
-       38px floor over a 27.5px figure, and the value under the WIN% head was
+       60px floor over a 27.5px figure, and the value under the WIN% head was
        11.5px to the left of it.
      - **The seam bars.** A drag rewrites `--hud-identity-tracks`, which is
        the heading's list *and* this block's parent — but a copy of the old
@@ -2751,7 +2752,7 @@
     border-left: 0; border-top: 0;
   }
   /* A truncated name still reads; a truncated number lies. The identity column
-     is allowed to ellipsize and gives up width first, so four digits stay whole
+     is allowed to ellipsize and gives up width first, so every Elo score stays whole
      down to a narrow desktop. */
   /* A flat number on a dark panel is easier to read than a glowing one. The
      8px currentColor bloom this used to carry haloed every figure in its own
@@ -6327,8 +6328,13 @@ const HUD_RESIZE_EDGES = [
 //
 // The floors are the other half of the contract and stay in the stylesheet,
 // where the width breakpoints can lower them together: a column may be dragged
-// down to its floor and no further, so four digits stay four digits.
+// down to its floor and no further, so an Elo score never loses digits.
 const HUD_COLUMN_STORAGE_KEY = "civvis-hud-columns-v1";
+// This is the CSS floor for a signed five-digit rating. A live value can be
+// longer, so syncPlayerHudEloFloor() measures it at the ELO type ceiling and
+// raises the same floor before the shared grid tracks are laid out.
+const HUD_ELO_MIN_FLOOR = 60;
+const HUD_ELO_MAX_TYPE_SIZE = 13;
 // Reading order, left to right. `min` names the custom property carrying this
 // column's floor, and `head` is its index among the heading cells of the block
 // it sits in — which is how a column is *measured* during a drag rather than
@@ -6429,6 +6435,48 @@ function syncPlayerHudColumns(placeGrips = true) {
     scheduleResponsiveType(hud);
   }
   if (placeGrips) syncPlayerHudColumnGrips();
+}
+
+// The ELO track is one shared column, so its floor has to cover the widest
+// score the table is showing. Measure at the text fitter's maximum rather than
+// at its current fitted size: a wider panel must never let a score grow back
+// into an ellipsis. The field's own inset and divider live inside its grid
+// track, and therefore belong in the floor too.
+function syncPlayerHudEloFloor() {
+  const hud = document.getElementById("playerhud");
+  const scores = [...(hud?.querySelectorAll(".diplomacy-elo-value") || [])];
+  if (!hud || !scores.length) return;
+  const probe = document.createElement("span");
+  probe.style.cssText = "position:fixed; visibility:hidden; inset:auto; display:inline-block; " +
+    "width:max-content; min-width:max-content; max-width:none; overflow:visible; " +
+    "white-space:nowrap; pointer-events:none; line-height:1;";
+  document.body.append(probe);
+  let minimum = HUD_ELO_MIN_FLOOR;
+  for (const score of scores) {
+    const style = getComputedStyle(score);
+    probe.style.fontFamily = style.fontFamily;
+    probe.style.fontWeight = style.fontWeight;
+    probe.style.fontStyle = style.fontStyle;
+    probe.style.fontStretch = style.fontStretch;
+    probe.style.fontVariant = style.fontVariant;
+    probe.style.fontKerning = style.fontKerning;
+    probe.style.fontOpticalSizing = style.fontOpticalSizing;
+    probe.style.fontVariantNumeric = style.fontVariantNumeric;
+    probe.style.letterSpacing = style.letterSpacing;
+    probe.style.fontSize = `${HUD_ELO_MAX_TYPE_SIZE}px`;
+    probe.textContent = score.textContent;
+    const fieldStyle = getComputedStyle(score.parentElement);
+    const inset = (parseFloat(fieldStyle.paddingLeft) || 0) +
+      (parseFloat(fieldStyle.paddingRight) || 0) +
+      (parseFloat(fieldStyle.borderLeftWidth) || 0) +
+      (parseFloat(fieldStyle.borderRightWidth) || 0);
+    minimum = Math.max(minimum, Math.ceil(probe.getBoundingClientRect().width + inset + 1));
+  }
+  probe.remove();
+  const floor = `${minimum}px`;
+  if (hud.style.getPropertyValue("--hud-ident-num-min") === floor) return;
+  hud.style.setProperty("--hud-ident-num-min", floor);
+  syncPlayerHudColumns(false);
 }
 
 function playerHudHeadingCells(heading) {
@@ -6680,7 +6728,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-civ", min:9, max:13},
   {selector:"#playerhud .diplomacy-leader-name", min:9, max:13},
   {selector:"#playerhud .diplomacy-player", min:9, max:13},
-  {selector:"#playerhud .diplomacy-elo-value", min:9, max:13},
+  {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-expected-value", min:9, max:13},
   {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
   {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
@@ -24389,7 +24437,7 @@ function drawPlayerHud() {
         ? `${eloValue} ELO${eloProvisional ? ` (${provisionalNote})` : ""}`
         : "Unrated";
       // The column heading already supplies the unit, so keep its cells to the
-      // rating itself. This makes a four-digit ELO fit without truncation, so
+      // rating itself. The protected ELO track keeps the full score visible, so
       // a provisional one is marked by its class rather than by a character
       // that would push the value over the column's width.
       const playerElo = eloKnown ? `${eloValue}` : "—";
@@ -24487,6 +24535,7 @@ function drawPlayerHud() {
   }
   hudHtml = html;
   hud.innerHTML = html;
+  syncPlayerHudEloFloor();
   const playerRibbon = hud.querySelector(".diplomacy-ribbon");
   if (playerRibbon) playerRibbon.scrollTop = playerScroll;
   // innerHTML replaced the elements the observer was watching.
