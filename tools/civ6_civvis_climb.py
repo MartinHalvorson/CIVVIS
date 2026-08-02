@@ -639,8 +639,18 @@ def main() -> int:
              "--tile-export-every", str(args.tile_export_every),
              # The operator's 2026-08-01 layout: the game owns the LOWER right
              # at 2/3 of the screen each way; CIVVIS holds the upper left.
-             "--window-side", "bottomright",
-             "--window-frac", "0.667", "--window-vfrac", "0.667"],
+             # The operator's 2026-08-02 layout is QUADRANTS: CIVVIS upper-left,
+             # Civilization VI upper-RIGHT, the terminal lower-left, and the
+             # lower-right deliberately empty for them to fill. `right` is
+             # top-anchored, so a half in each axis lands the game exactly in the
+             # upper-right quarter and nothing overlaps.
+             #
+             # ⚠ This has to be passed here rather than set by hand: the in-game
+             # loop re-places the window every turn, so any manual move is undone
+             # within seconds. It is also read at process start, so changing it
+             # needs a new attempt — not a live edit.
+             "--window-side", "right",
+             "--window-frac", "0.5", "--window-vfrac", "0.5"],
             stdout=play_log, stderr=subprocess.STDOUT,
         )
         time.sleep(3)
