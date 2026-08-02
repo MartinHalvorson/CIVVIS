@@ -631,6 +631,15 @@ fn decide(
     // the AI simulates its turn; the tournament controller stays frozen.
     ai.enable_live_trader_route_adapter();
     ai.enable_live_religious_purchase_guard();
+    // ⚠ Barbarians are excluded from `at_major_war` by design, so every defensive
+    // escalation in the production picker reads a barbarian siege as no threat at
+    // all: a one-city empire's standing-army floor stays at `mil_per_city` (1.0)
+    // and it cannot want a third defender while horsemen stand on its doorstep.
+    // Measured on run `civvis-20260802T202501Z` — four settlers built into that
+    // siege and captured, two on the capital tile without ever moving, one city
+    // until t80, score 140 against a best rival's 416. The tournament controller
+    // stays frozen so its recorded ladders remain comparable.
+    ai.enable_siege_muster();
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.

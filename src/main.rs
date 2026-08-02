@@ -266,8 +266,23 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// purchase with the flag off. A matched 10-map, 20-game deployment comparison
 /// had identical substantive output across 3,801 observed Advanced-v1 turns.
 /// These are compatibility re-pins, not an Elo protocol change.
+///
+/// #930 adds `besieged_military_floor`, which lets a city under visible siege
+/// raise its standing-army floor against hostiles the empire has no diplomatic
+/// state with (Barbarians are excluded from `at_major_war` by design, so every
+/// defensive escalation in `pick_item` previously read a barbarian siege as no
+/// threat at all). It sits behind `siege_muster`, a `BasicAi` flag that is
+/// false in both constructors and is enabled only by the live `civvis_orders`
+/// bridge, so configured, legacy and Elo agents keep their prior behavior —
+/// `besieged_military_floor` returns 0.0 before reading the board when the flag
+/// is off. Unconditional, the same change perturbed
+/// `oracle::tests::the_modernity_grant_actually_fires`; gated, the full suite
+/// is unchanged. A compatibility re-pin, not a protocol bump. The same flag
+/// also gates `besieged_city_item`, which lets a city with a raiding party at
+/// its gates build walls or a defender ahead of the ordinary build order; both
+/// entry points return early on `!siege_muster` before reading the board.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf721_691f_e582_6a0e;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x66fd_2c34_d554_b29f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

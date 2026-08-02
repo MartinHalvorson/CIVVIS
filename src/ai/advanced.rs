@@ -1693,6 +1693,13 @@ impl AdvancedAi {
         self.base.live_religious_purchase_guard = true;
     }
 
+    /// Let a besieged city raise its standing-army floor against hostiles it
+    /// has no diplomatic state with. Native tournament games leave this
+    /// disabled so their recorded ladders stay comparable.
+    pub fn enable_siege_muster(&mut self) {
+        self.base.siege_muster = true;
+    }
+
     /// Redirect an existing agent at a new explicit victory target without
     /// discarding campaign memory; the strategic plan re-assesses on the
     /// next turn. Used by the rollout-driven `StrategicAi`.
