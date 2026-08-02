@@ -468,6 +468,32 @@ fn translate(
     let civ6_of = &mirror_state.civ6_of;
     match action {
         Action::MoveTo { unit, to } | Action::Move { unit, to } => {
+            // ★★★★ A MOVE ONTO THE TILE THE UNIT IS ALREADY STANDING ON IS A NO-OP
+            // THE ENGINE ALWAYS REFUSES, and it costs the unit its turn.
+            //
+            // Measured on run civvis-20260802T030910Z, 84 turns: **18 of 21
+            // `move_refused` events had `from_x,from_y` identical to `x,y`** — the
+            // destination WAS the origin. Seven different units, so it is not one
+            // stuck unit; the mod dutifully recorded each refusal with
+            // `dest_impassable: false` on ordinary grass, plains and tundra, which
+            // is why the terrain fields never explained them.
+            //
+            // ⚠ COUNTED, NOT SILENTLY DROPPED. If the AI meant "hold", emitting
+            // nothing is exactly right and the unit stays put either way. If it
+            // meant to go somewhere and computed its own tile, that is a real
+            // planning defect and swallowing the order would hide it — so this
+            // lands in `skipped`, the same map every other refusal reason uses,
+            // and shows up in the run's notes as `self_tile_move=N`.
+            //
+            // Compared in AXIAL, on CIVVIS's own board, so no coordinate conversion
+            // sits between the two values being tested. `axial_to_offset` still runs
+            // afterwards for the orders that survive.
+            if let Some(here) = mirror_state.game.units.get(unit).map(|u| u.pos) {
+                if (here.0, here.1) == (to.0, to.1) {
+                    *skipped.entry("self_tile_move".to_string()).or_default() += 1;
+                    return None;
+                }
+            }
             civ6_of.get(unit).map(|civ6| Order {
                 kind: "unit",
                 subject: Some(*civ6),

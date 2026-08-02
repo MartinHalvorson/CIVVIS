@@ -172,6 +172,105 @@ def busy() -> str | None:
     return out.strip() or None
 
 
+def _detach(cmd: list[str], log_path: Path, what: str) -> None:
+    """Start a helper that must outlive this batch's process group.
+
+    `start_new_session` is the load-bearing argument. Without it the child joins
+    this batch's group and dies with it — which is exactly how the fifteen-turn
+    mirror hole described in `ensure_mirror` was opened.
+
+    Never fatal. A batch that cannot raise its helpers is still a batch that
+    measures play, and refusing to start one because a window is missing would
+    trade the measurement for the picture.
+    """
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a") as handle:
+            subprocess.Popen(
+                cmd, stdout=handle, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL, start_new_session=True,
+            )
+        print(f"[{what}] started; it logs to {log_path}", flush=True)
+    except OSError as exc:
+        print(f"[{what}] could not start: {exc}", flush=True)
+
+
+def ensure_popup_clear() -> None:
+    """Back the mod's autoclose shim with the out-of-game clearer.
+
+    ⚠ **AUTOCLOSE GIVES UP PERMANENTLY.** The shim calls `ClearUpdate` on its
+    twentieth failed attempt at a screen, which kills the CONTEXT — so a screen it
+    cannot close stays on the map for the rest of the game and no later turn
+    retries it. `popup_clear.py` is the backstop written for precisely that, and
+    nothing has ever started it.
+
+    Measured 2026-08-02 on run civvis-20260802T014139Z: the shim closed 167 popups
+    across eight screens and reported `autoclose_stuck` twice — `DiplomacyActionView`
+    and `WorldCongressPopup`. The Diplomacy one was a Barbarossa leader scene, and it
+    sat over the whole game window until this was started by hand, at which point it
+    cleared in one held click and caught a second scene fifteen seconds later.
+
+    ⚠ A leader asking a QUESTION ignores every in-Lua rung and ignores Escape too —
+    a question needs an ANSWER, so only a held click on the dialogue button resolves
+    it. That is the case the mod structurally cannot reach.
+
+    2.5s rather than the 6s default: the operator watches this window, and six
+    seconds of a leader portrait over the map is the difference they notice. The
+    tool's own guards make a tight interval safe — it refuses to click unless
+    Civilization VI is frontmost AND the map is positively covered AND the harness
+    has already recorded a turn, so it cannot touch the setup screens.
+    """
+    if run(["pgrep", "-f", "popup_clear.py"]).strip():
+        print("[popups] clearer already running", flush=True)
+        return
+    clearer = HERE / "civ6_control" / "popup_clear.py"
+    if not clearer.exists():
+        print(f"[popups] no clearer at {clearer}; stuck screens will sit on the map",
+              flush=True)
+        return
+    _detach(
+        [sys.executable, "-u", str(clearer), "--interval", "2.5",
+         "--runs", str(RUN_ROOT), "--log", str(RUN_ROOT.parent / "popup_clear.log")],
+        RUN_ROOT.parent / "popup_clear.log", "popups",
+    )
+
+
+def ensure_mirror() -> None:
+    """Make sure something is FEEDING the mirror window, not just serving it.
+
+    ⚠⚠ THE SERVER BEING UP IS NOT THE MIRROR BEING LIVE, and the two failure modes
+    look identical from `/status`. `civvis play --serve` on :8610 reads a staged
+    board out of `civvis-civ6-mirror/stage`; `tools/follow.py` is what rebuilds that
+    stage from the running attempt's `events.jsonl`. The server is long-lived and
+    reparented to init, so it answers `/status` cheerfully with LAST NIGHT'S BOARD
+    while follow.py is dead — turn, frames_painted and frames_missed all stay frozen
+    at whatever they were, which reads as a healthy idle mirror.
+
+    Measured 2026-08-02 on run civvis-20260802T014139Z: follow.py exited, the game
+    ran on to turn 97, and :8610 kept reporting `turn 82, frames_painted 82,
+    frames_missed 0` — a fifteen-turn hole that no status field named. The operator
+    saw a CIVVIS window that had simply stopped agreeing with the game.
+
+    The batch has always relied on someone having started follow.py by hand, which
+    is the whole defect: "both games visible" is a REQUIREMENT of every run here and
+    nothing enforced it. Starting the stager costs one process launch per batch.
+
+    Deliberately not fatal. A batch that cannot raise the viewer is still a batch
+    that measures play, and refusing to start one because a window is missing would
+    trade the measurement for the picture.
+    """
+    if run(["pgrep", "-f", "tools/follow.py"]).strip():
+        print("[mirror] stager already running", flush=True)
+        return
+    follow = HERE / "follow.py"
+    if not follow.exists():
+        print(f"[mirror] no stager at {follow}; the window will not track the game",
+              flush=True)
+        return
+    _detach([sys.executable, "-u", str(follow)],
+            Path.home() / "civvis-civ6-mirror" / "follow.log", "mirror")
+
+
 def code_state() -> str:
     """A name for the program this attempt will actually run.
 
@@ -448,6 +547,12 @@ def main() -> int:
 
     # A batch is a COMPARISON, so it is pinned to one program by default. Opting out
     # is a deliberate act with a name, not the silent default it used to be.
+    # Raise the viewer and the popup backstop before the first attempt, not after:
+    # the opening is the part of the game the operator most needs to see against the
+    # real one, and a stuck screen in it costs the whole attempt.
+    ensure_mirror()
+    ensure_popup_clear()
+
     pinned = None if args.no_pin else code_state()
     if pinned is not None:
         print(f"batch pinned to {pinned}"
@@ -534,8 +639,18 @@ def main() -> int:
              "--tile-export-every", str(args.tile_export_every),
              # The operator's 2026-08-01 layout: the game owns the LOWER right
              # at 2/3 of the screen each way; CIVVIS holds the upper left.
-             "--window-side", "bottomright",
-             "--window-frac", "0.667", "--window-vfrac", "0.667"],
+             # The operator's 2026-08-02 layout is QUADRANTS: CIVVIS upper-left,
+             # Civilization VI upper-RIGHT, the terminal lower-left, and the
+             # lower-right deliberately empty for them to fill. `right` is
+             # top-anchored, so a half in each axis lands the game exactly in the
+             # upper-right quarter and nothing overlaps.
+             #
+             # ⚠ This has to be passed here rather than set by hand: the in-game
+             # loop re-places the window every turn, so any manual move is undone
+             # within seconds. It is also read at process start, so changing it
+             # needs a new attempt — not a live edit.
+             "--window-side", "right",
+             "--window-frac", "0.5", "--window-vfrac", "0.5"],
             stdout=play_log, stderr=subprocess.STDOUT,
         )
         time.sleep(3)
