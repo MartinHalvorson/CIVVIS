@@ -7014,7 +7014,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_orders_settings_event_log_and_strategy() {
+    fn browser_orders_setup_controls_logs_and_display() {
         // Readability is a shared interface contract, not a collection of
         // one-off enlargements. Panels inherit one system stack and a named
         // scale with a 9px floor; map labels use the same platform-native
@@ -7422,11 +7422,20 @@ mod tests {
             );
         }
 
+        let title = EMBEDDED_INDEX
+            .find("<div class=\"side-head\">")
+            .expect("sidebar title");
+        let sidebar = EMBEDDED_INDEX
+            .find("<div class=\"side-scroll\">")
+            .expect("scrolling sidebar");
         let game_settings = EMBEDDED_INDEX
-            .find("id=\"game-settings\"")
+            .find("<details class=\"sidebar-section\" id=\"setupsec\"")
             .expect("game settings panel");
+        let simulation_controls = EMBEDDED_INDEX
+            .find("<div class=\"side-actions\" aria-label=\"Simulation controls\">")
+            .expect("simulation controls");
         let display_settings = EMBEDDED_INDEX
-            .find("id=\"display-settings\"")
+            .find("<details class=\"sidebar-section\" data-section=\"display-settings\">")
             .expect("display settings panel");
         let event_log = EMBEDDED_INDEX
             .find("<span>Game event log</span>")
@@ -7440,6 +7449,16 @@ mod tests {
         let strategy = EMBEDDED_INDEX
             .find("<span>Active AI strategy</span>")
             .expect("active strategy section");
+        let government = EMBEDDED_INDEX
+            .find("data-section=\"government\"")
+            .expect("government section");
+        let keyboard_shortcuts = EMBEDDED_INDEX
+            .find("<summary>Keyboard shortcuts</summary>")
+            .expect("keyboard shortcuts");
+        // Game setup is the first thing below the title. The controls that act
+        // on those choices follow it directly, before the observation panels.
+        assert!(title < sidebar && sidebar < game_settings);
+        assert!(game_settings < simulation_controls && simulation_controls < strategy);
         // The column runs deepest-cause first — what a civilization is trying
         // to do now, why it acted, the wars that reasoning started, then the
         // world's record of what happened — so reading the column downward
@@ -7448,13 +7467,14 @@ mod tests {
         // of: the reasoning log is an account over turns, and this is the
         // current answer.
         assert!(
-            game_settings < display_settings
-                && display_settings < strategy
-                && strategy < reasoning_log
+            strategy < reasoning_log
                 && reasoning_log < war_log
-                && war_log < event_log,
-            "left panel should show game setup, display settings, \
-             the active AI strategy and then the three logs"
+                && war_log < event_log
+                && event_log < government
+                && government < display_settings
+                && display_settings < keyboard_shortcuts,
+            "left panel should show game setup, controls, strategy, the three logs, \
+             government, display settings and then keyboard shortcuts"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
         for overlay in ["players", "victory", "minimap", "controls", "lenses"] {

@@ -3746,55 +3746,6 @@
     </div>
   </div>
   <div class="side-scroll">
-    <div class="side-actions" aria-label="Simulation controls">
-      <div class="footer-actions" id="humanfooter">
-        <button class="primary" id="endturn">End turn · Enter</button>
-        <div class="autoplay-bar" id="autoplaybar">
-          <div class="autoplay-fields">
-            <label class="autoplay-field"><span>Agent</span>
-              <select id="autoplaystrategy" title="Which of our strategies plays your seat"></select></label>
-            <label class="autoplay-field"><span>Turns</span>
-              <select id="autoplayturns" title="How many turns it plays before handing the seat back">
-                <option value="1" selected>1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
-                <option value="10">10</option>
-                <option value="20">20</option>
-                <option value="30">30</option>
-                <option value="40">40</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="150">150</option>
-                <option value="200">200</option>
-                <option value="250">250</option>
-                <option value="all">All</option>
-              </select></label>
-          </div>
-          <button id="autoplaybtn" title="Hand your seat to the selected strategy (Ctrl+A · press again to stop)">▶▶ Auto-play · ^A</button>
-          <div class="autoplay-note" id="autoplaynote"></div>
-        </div>
-      </div>
-      <div id="specbar" style="display:none">
-        <div class="spec-controls">
-          <button class="primary" id="specpause">⏸ Pause</button>
-          <button id="restart-sim" title="Restart with the same settings"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>
-        </div>
-        <script>
-          // A supervised restart replaces this whole page. Restore the label
-          // beside the button so the default Pause text is never painted while
-          // a paused simulation is coming back as paused.
-          try {
-            const paused = window.CIVVIS_RESTART_HANDOFF?.paused ??
-              (sessionStorage.getItem("civvis-restart-paused-v1") === "1" ? true : null);
-            if (paused !== null)
-              document.getElementById("specpause").textContent =
-                paused ? "▶ Resume" : "⏸ Pause";
-          } catch (e) {}
-        </script>
-      </div>
-    </div>
     <details class="sidebar-section" id="setupsec" data-section="game-settings">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">⚙</span><span>Game setup</span></span>
@@ -3925,70 +3876,55 @@
       </div>
       </div>
     </details>
-
-    <details class="sidebar-section" data-section="display-settings">
-      <summary class="section-label" id="display-settings-header">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◈</span><span>Display settings</span></span>
-        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
-      </summary>
-      <div class="sec settings-sec" id="display-settings">
-      <div class="utility-group">
-        <div class="view-row"><span>Terrain</span>
-          <select id="viewsel" aria-label="Map style">
-            <option value="strategic">Strategic</option>
-            <option value="balanced">Painted 2D</option>
-            <option value="cinematic">Cinematic 3D</option>
-          </select>
-        </div>
-        <div class="observer-settings" id="observer-settings">
-          <div class="view-row"><span>Watch as</span>
-            <select id="viewplayer" aria-label="Observation perspective">
-              <option value="spectator">Spectator - Full Map Visablity</option>
-            </select>
+    <div class="side-actions" aria-label="Simulation controls">
+      <div class="footer-actions" id="humanfooter">
+        <button class="primary" id="endturn">End turn · Enter</button>
+        <div class="autoplay-bar" id="autoplaybar">
+          <div class="autoplay-fields">
+            <label class="autoplay-field"><span>Agent</span>
+              <select id="autoplaystrategy" title="Which of our strategies plays your seat"></select></label>
+            <label class="autoplay-field"><span>Turns</span>
+              <select id="autoplayturns" title="How many turns it plays before handing the seat back">
+                <option value="1" selected>1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+                <option value="40">40</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="150">150</option>
+                <option value="200">200</option>
+                <option value="250">250</option>
+                <option value="all">All</option>
+              </select></label>
           </div>
-          <div class="speed-row"><span>Watch pace</span>
-            <select id="specspeed" title="Simulation watch pace">
-              <option value="0">Lightning</option>
-              <option value="1000" selected>Blitz</option>
-              <option value="2000">Fast</option>
-              <option value="4000">Standard</option>
-              <option value="10000">Slow</option>
-            </select>
-          </div>
-          <label class="setting-row" id="cinema-setting" hidden><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
+          <button id="autoplaybtn" title="Hand your seat to the selected strategy (Ctrl+A · press again to stop)">▶▶ Auto-play · ^A</button>
+          <div class="autoplay-note" id="autoplaynote"></div>
         </div>
-        <div class="overlay-options display-advanced-setting" data-advanced-order="10" role="group" aria-labelledby="overlay-options-title">
-          <h2 id="overlay-options-title">Map overlays</h2>
-          <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
-          <div class="small overlay-layout-help">In the standings, drag a thin bar in the column heading to divide two columns differently; double-click one to put that pair back. Widths are shares of the panel, so they follow it as the window resizes. ◉ locks a row: it stays in view while the rest of the table scrolls past it. Two seats of the same civilization lock separately, and a lock is remembered into the next game.</div>
-          <div class="overlay-option-grid">
-            <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
-          </div>
-          <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
-        </div>
-        <div class="overlay-options display-advanced-setting" data-advanced-order="20" id="flat-map-wrap-settings" role="group"
-             aria-labelledby="flat-map-wrap-title">
-          <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
-          <div class="overlay-option-grid">
-            <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
-            <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
-          </div>
-        </div>
-        <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
-        <label class="setting-row"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
-        <label class="setting-row"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
-        <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
-        <details class="advanced-settings" id="display-advanced-settings" data-advanced-settings="display">
-          <summary><span class="advanced-settings-summary">Advanced Settings<small>Overlay layout, map edges &amp; archaeology</small></span></summary>
-          <div class="advanced-settings-body" id="display-advanced-settings-body"></div>
-        </details>
       </div>
+      <div id="specbar" style="display:none">
+        <div class="spec-controls">
+          <button class="primary" id="specpause">⏸ Pause</button>
+          <button id="restart-sim" title="Restart with the same settings"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>
+        </div>
+        <script>
+          // A supervised restart replaces this whole page. Restore the label
+          // beside the button so the default Pause text is never painted while
+          // a paused simulation is coming back as paused.
+          try {
+            const paused = window.CIVVIS_RESTART_HANDOFF?.paused ??
+              (sessionStorage.getItem("civvis-restart-paused-v1") === "1" ? true : null);
+            if (paused !== null)
+              document.getElementById("specpause").textContent =
+                paused ? "▶ Resume" : "⏸ Pause";
+          } catch (e) {}
+        </script>
       </div>
-    </details>
+    </div>
 
     <!-- The column runs deepest-cause first: what a civilization is trying to
          do *now*, then why it acted, then the wars that reasoning started, then
@@ -4107,6 +4043,70 @@
         <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec"><div id="gov"></div></div>
+    </details>
+
+    <details class="sidebar-section" data-section="display-settings">
+      <summary class="section-label" id="display-settings-header">
+        <span class="section-title"><span class="section-icon" aria-hidden="true">◈</span><span>Display settings</span></span>
+        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
+      </summary>
+      <div class="sec settings-sec" id="display-settings">
+      <div class="utility-group">
+        <div class="view-row"><span>Terrain</span>
+          <select id="viewsel" aria-label="Map style">
+            <option value="strategic">Strategic</option>
+            <option value="balanced">Painted 2D</option>
+            <option value="cinematic">Cinematic 3D</option>
+          </select>
+        </div>
+        <div class="observer-settings" id="observer-settings">
+          <div class="view-row"><span>Watch as</span>
+            <select id="viewplayer" aria-label="Observation perspective">
+              <option value="spectator">Spectator - Full Map Visablity</option>
+            </select>
+          </div>
+          <div class="speed-row"><span>Watch pace</span>
+            <select id="specspeed" title="Simulation watch pace">
+              <option value="0">Lightning</option>
+              <option value="1000" selected>Blitz</option>
+              <option value="2000">Fast</option>
+              <option value="4000">Standard</option>
+              <option value="10000">Slow</option>
+            </select>
+          </div>
+          <label class="setting-row" id="cinema-setting" hidden><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
+        </div>
+        <div class="overlay-options display-advanced-setting" data-advanced-order="10" role="group" aria-labelledby="overlay-options-title">
+          <h2 id="overlay-options-title">Map overlays</h2>
+          <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
+          <div class="small overlay-layout-help">In the standings, drag a thin bar in the column heading to divide two columns differently; double-click one to put that pair back. Widths are shares of the panel, so they follow it as the window resizes. ◉ locks a row: it stays in view while the rest of the table scrolls past it. Two seats of the same civilization lock separately, and a lock is remembered into the next game.</div>
+          <div class="overlay-option-grid">
+            <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
+          </div>
+          <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
+        </div>
+        <div class="overlay-options display-advanced-setting" data-advanced-order="20" id="flat-map-wrap-settings" role="group"
+             aria-labelledby="flat-map-wrap-title">
+          <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
+          <div class="overlay-option-grid">
+            <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
+            <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
+          </div>
+        </div>
+        <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
+        <label class="setting-row"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
+        <label class="setting-row"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
+        <details class="advanced-settings" id="display-advanced-settings" data-advanced-settings="display">
+          <summary><span class="advanced-settings-summary">Advanced Settings<small>Overlay layout, map edges &amp; archaeology</small></span></summary>
+          <div class="advanced-settings-body" id="display-advanced-settings-body"></div>
+        </details>
+      </div>
+      </div>
     </details>
   </div>
   <details class="shortcut-panel">
