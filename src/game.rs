@@ -4525,7 +4525,7 @@ mod belief_runtime_tests {
         // Unique districts carry their own rows in the table and every one of
         // them repeats its parent's numbers, so testing the families covers
         // them once district_family has resolved the replacement.
-        let (mut game, cities) = game_with_capitals(24_907);
+        let (game, cities) = game_with_capitals(24_907);
         let dest = cities[1];
         let base_domestic = game.route_yields(dest, true);
         let base_international = game.route_yields(dest, false);
@@ -5635,11 +5635,11 @@ mod governor_runtime_tests {
         let apostle = game.place_new_unit("apostle", 0, center).unwrap();
         game.apply_training_district_effects(city, apostle);
         assert!(game.units[&apostle].extra_first_promotion);
-        let first = game.available_promotions(apostle)[0].clone();
+        let first = game.available_promotions(apostle)[0];
         game.do_promote(0, apostle, &first).unwrap();
         game.units.get_mut(&apostle).unwrap().moves_left = 4.0;
         assert!(game.promotion_pending(apostle));
-        let second = game.available_promotions(apostle)[0].clone();
+        let second = game.available_promotions(apostle)[0];
         game.do_promote(0, apostle, &second).unwrap();
         assert_eq!(game.units[&apostle].promotions.len(), 2);
 
@@ -6694,7 +6694,8 @@ mod action_family_tests {
         let game = played_in_game();
         let pid = game.current;
         let all = game.legal_actions(pid);
-        let cases: [(ActionFamilies, fn(&Action) -> bool); 8] = [
+        type ActionCase = (ActionFamilies, fn(&Action) -> bool);
+        let cases: [ActionCase; 8] = [
             (ActionFamilies::CHEAP, |action| {
                 matches!(
                     action,
@@ -9603,7 +9604,7 @@ mod government_runtime_tests {
         // DESTINATION owns, so it is worth nothing into a bare city and grows
         // with what the far city actually holds.
         let gold_for = |game: &mut Game, resources: &[&str]| {
-            let tiles: Vec<_> = game.cities[&abroad].owned_tiles.iter().copied().collect();
+            let tiles = game.cities[&abroad].owned_tiles.to_vec();
             for position in &tiles {
                 game.map.tiles.get_mut(position).unwrap().resource = None;
             }
@@ -10733,7 +10734,7 @@ mod district_building_wonder_runtime_tests {
             .techs
             .iter()
             .find(|(_, spec)| spec.era == 1)
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| *name)
             .unwrap();
         game.players[0].techs.insert(classical);
         assert_eq!(game.road_level_for(0), 2);
@@ -11168,7 +11169,7 @@ mod district_building_wonder_runtime_tests {
             0,
             &Action::Promote {
                 unit: band,
-                promotion: offers[0].clone(),
+                promotion: offers[0],
             },
         )
         .unwrap();
@@ -12545,6 +12546,11 @@ struct MonopolyContext<'a> {
 /// tiles, districts, buildings, techs, policies, religion and wonders — is
 /// what guarantees the cache cannot go stale. Nothing can reach a `&mut Game`
 /// while one of those entries is live.
+type GreatWorksByCity = BTreeMap<u32, BTreeMap<String, usize>>;
+type HousedWorksByPlayer = BTreeMap<usize, GreatWorksByCity>;
+type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
+type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
+
 #[derive(Default)]
 pub struct QueryCache {
     yields: std::cell::RefCell<Option<BTreeMap<u32, Yields>>>,
@@ -12560,7 +12566,7 @@ pub struct QueryCache {
     // computed over, not the scope it is read at.
     lux_alloc: std::cell::RefCell<Option<BTreeMap<usize, BTreeMap<u32, i64>>>>,
     lux_names: std::cell::RefCell<Option<BTreeMap<usize, BTreeSet<Name>>>>,
-    housed_works: std::cell::RefCell<Option<BTreeMap<usize, BTreeMap<u32, BTreeMap<String, usize>>>>>,
+    housed_works: std::cell::RefCell<Option<HousedWorksByPlayer>>,
     // A city-state's patron, which is a poll of every major's effective envoy
     // count. Deciding whether a step crosses a hostile border asks it, so a
     // route search asks it of the same city-state at every tile it considers.
@@ -12569,8 +12575,8 @@ pub struct QueryCache {
     // kind would find a home. Deciding what a Builder or an Archaeologist may
     // do on a tile asks the second of these, and the answer is the same at
     // every tile.
-    gw_slots: std::cell::RefCell<Option<BTreeMap<usize, Vec<(u32, String)>>>>,
-    gw_housing: std::cell::RefCell<Option<BTreeMap<(usize, String, usize), bool>>>,
+    gw_slots: std::cell::RefCell<Option<GreatWorkSlotsByPlayer>>,
+    gw_housing: std::cell::RefCell<Option<GreatWorkHousing>>,
     // What every regional building in the empire sends this city. Both its
     // yields and its Amenities are read through it, so a single valuation of
     // one city walks the whole empire's buildings twice.
@@ -13910,18 +13916,31 @@ pub struct WarRecord {
     pub theater: Vec<WarTheaterSite>,
 }
 
+/// Metadata shared by every front opened from one declaration.
+struct WarDeclaration {
+    conflict: u32,
+    declarer: usize,
+    target: usize,
+    declared_front: bool,
+    casus_belli: Option<String>,
+    joint_war_until: Option<u32>,
+}
+
 impl WarRecord {
     fn new(
-        conflict: u32,
-        declarer: usize,
-        target: usize,
         aggressor: usize,
         defender: usize,
         turn: u32,
-        declared_front: bool,
-        casus_belli: Option<String>,
-        joint_war_until: Option<u32>,
+        declaration: WarDeclaration,
     ) -> Self {
+        let WarDeclaration {
+            conflict,
+            declarer,
+            target,
+            declared_front,
+            casus_belli,
+            joint_war_until,
+        } = declaration;
         Self {
             conflict,
             declarer,
@@ -17732,12 +17751,14 @@ impl Game {
         self.open_war_front(
             aggressor,
             defender,
-            conflict,
-            aggressor,
-            defender,
-            true,
-            None,
-            None,
+            WarDeclaration {
+                conflict,
+                declarer: aggressor,
+                target: defender,
+                declared_front: true,
+                casus_belli: None,
+                joint_war_until: None,
+            },
         );
     }
 
@@ -17745,12 +17766,7 @@ impl Game {
         &mut self,
         aggressor: usize,
         defender: usize,
-        conflict: u32,
-        declarer: usize,
-        target: usize,
-        declared_front: bool,
-        casus_belli: Option<&str>,
-        joint_war_until: Option<u32>,
+        declaration: WarDeclaration,
     ) {
         if aggressor == defender
             || self.players[aggressor].is_barbarian
@@ -17766,32 +17782,26 @@ impl Game {
         // intelligible theater of the declaration.  Only the declared front
         // contributes this seed; alliance fronts will add their own real
         // action sites if and when fighting reaches them.
-        let opening_site = if declared_front {
+        let opening_site = if declaration.declared_front {
             self.cities
                 .values()
-                .find(|city| city.owner == target && city.is_capital)
-                .or_else(|| self.cities.values().find(|city| city.owner == target))
+                .find(|city| city.owner == declaration.target && city.is_capital)
+                .or_else(|| {
+                    self.cities
+                        .values()
+                        .find(|city| city.owner == declaration.target)
+                })
                 .map(|city| city.pos)
                 .or_else(|| {
                     self.units
                         .values()
-                        .find(|unit| unit.owner == target)
+                        .find(|unit| unit.owner == declaration.target)
                         .map(|unit| unit.pos)
                 })
         } else {
             None
         };
-        let mut record = WarRecord::new(
-            conflict,
-            declarer,
-            target,
-            aggressor,
-            defender,
-            self.turn,
-            declared_front,
-            casus_belli.map(str::to_string),
-            joint_war_until,
-        );
+        let mut record = WarRecord::new(aggressor, defender, self.turn, declaration);
         if let Some(pos) = opening_site {
             record.record_theater_site(self.turn, pos);
         }
@@ -24594,6 +24604,7 @@ impl Game {
             .sum()
     }
 
+    #[cfg(test)]
     /// `MOMENT_BARBARIAN_CAMP_DESTROYED` is available from Ancient through
     /// Medieval. Keep this compatibility accessor for clients while deriving
     /// its value and window from the same catalogue as every other Moment.
@@ -43249,12 +43260,14 @@ impl Game {
                     self.open_war_front(
                         attacker,
                         defender,
-                        conflict,
-                        pid,
-                        other,
-                        attacker == pid && defender == other,
-                        Some(profile.id),
-                        committed_joint_war,
+                        WarDeclaration {
+                            conflict,
+                            declarer: pid,
+                            target: other,
+                            declared_front: attacker == pid && defender == other,
+                            casus_belli: Some(profile.id.to_string()),
+                            joint_war_until: committed_joint_war,
+                        },
                     );
                 }
             }
@@ -47045,12 +47058,14 @@ impl Game {
             self.open_war_front(
                 *member,
                 proposal.target,
-                id,
-                coalition_leader,
-                proposal.target,
-                *member == coalition_leader,
-                None,
-                None,
+                WarDeclaration {
+                    conflict: id,
+                    declarer: coalition_leader,
+                    target: proposal.target,
+                    declared_front: *member == coalition_leader,
+                    casus_belli: None,
+                    joint_war_until: None,
+                },
             );
         }
         let members_vec: Vec<usize> = members.iter().copied().collect();
@@ -52286,6 +52301,7 @@ mod dedication_era_tests {
     }
 }
 
+#[cfg(test)]
 mod team_tests {
     use super::*;
 
@@ -56398,7 +56414,7 @@ mod combat_scenarios {
             "earned promotions remain explicit choices"
         );
         for expected_level in 2..=8 {
-            let promotion = g.available_promotions(veteran)[0].clone();
+            let promotion = g.available_promotions(veteran)[0];
             g.apply(
                 0,
                 &Action::Promote {
@@ -57699,7 +57715,8 @@ mod victory_conditions {
 
     #[test]
     fn every_victory_path_can_be_disabled_independently() {
-        let conditions: [(&str, fn(&mut VictoryConditions) -> &mut bool); 6] = [
+        type VictoryConditionToggle = (&'static str, fn(&mut VictoryConditions) -> &mut bool);
+        let conditions: [VictoryConditionToggle; 6] = [
             ("science", |v: &mut VictoryConditions| &mut v.science),
             ("culture", |v: &mut VictoryConditions| &mut v.culture),
             ("religious", |v: &mut VictoryConditions| &mut v.religious),
@@ -57860,7 +57877,7 @@ mod victory_conditions {
             size.width,
             size.height,
             90_311,
-            online.turns as u32,
+            online.turns,
             size.default_city_states,
         );
         options.speed = "online".to_string();
@@ -57959,7 +57976,7 @@ mod victory_conditions {
                 .techs
                 .iter()
                 .find(|(_, spec)| spec.era == era)
-                .map(|(name, _)| name.clone())
+                .map(|(name, _)| *name)
                 .unwrap();
             g.players[0].techs.clear();
             g.players[0].techs.insert(tech);
@@ -57970,7 +57987,7 @@ mod victory_conditions {
                 .civics
                 .iter()
                 .find(|(_, spec)| spec.era == era)
-                .map(|(name, _)| name.clone())
+                .map(|(name, _)| *name)
                 .unwrap();
             g.players[0].techs.clear();
             g.players[0].civics.clear();
@@ -62923,10 +62940,10 @@ mod district_mechanics {
             "the uninvolved pact remains in force"
         );
         for member in [2, 3] {
-            assert!(game.players[member].diplomatic_missions.get(&0).is_none());
-            assert!(game.players[0].diplomatic_missions.get(&member).is_none());
-            assert!(game.players[member].promises.get(&0).is_none());
-            assert!(game.players[0].promises.get(&member).is_none());
+            assert!(!game.players[member].diplomatic_missions.contains_key(&0));
+            assert!(!game.players[0].diplomatic_missions.contains_key(&member));
+            assert!(!game.players[member].promises.contains_key(&0));
+            assert!(!game.players[0].promises.contains_key(&member));
         }
         let coalition_ceasefire = game
             .concluded_wars
@@ -64182,7 +64199,7 @@ mod diplomatic_relations_tests {
 
     #[test]
     fn grievances_offset_to_one_signed_balance_before_reversing() {
-        let mut game = game_with_contacts(2, 91_102_1);
+        let mut game = game_with_contacts(2, 911_021);
 
         game.add_grievances(1, 0, 100.0);
         game.add_grievances(0, 1, 40.0);
@@ -64196,7 +64213,7 @@ mod diplomatic_relations_tests {
 
     #[test]
     fn city_state_declaration_charges_its_suzerain_and_other_envoys() {
-        let mut game = game_with_contacts(3, 91_102_2);
+        let mut game = game_with_contacts(3, 911_022);
         let city_state = game.players.len();
         game.players.push(Player::new(city_state, "Geneva", true));
         game.record_contact(0, city_state);
@@ -64220,7 +64237,7 @@ mod diplomatic_relations_tests {
 
     #[test]
     fn city_capture_is_population_scaled_then_charged_again_when_ceded() {
-        let mut game = game_with_contacts(2, 91_102_3);
+        let mut game = game_with_contacts(2, 911_023);
         let target_position = game
             .map
             .tiles
@@ -64261,7 +64278,7 @@ mod diplomatic_relations_tests {
 
     #[test]
     fn returning_an_occupied_city_relieves_its_former_owner_only() {
-        let mut game = game_with_contacts(3, 91_102_31);
+        let mut game = game_with_contacts(3, 9_110_231);
         let target_position = game
             .map
             .tiles
@@ -64298,7 +64315,7 @@ mod diplomatic_relations_tests {
 
     #[test]
     fn liberation_relieves_a_city_value_without_erasing_unrelated_grievances() {
-        let mut game = game_with_contacts(4, 91_102_4);
+        let mut game = game_with_contacts(4, 911_024);
         let target_position = game
             .map
             .tiles
@@ -64394,7 +64411,7 @@ mod diplomatic_relations_tests {
 
     #[test]
     fn city_state_promises_are_scoped_to_the_requesters_suzerainties() {
-        let mut game = game_with_contacts(3, 91_104_1);
+        let mut game = game_with_contacts(3, 911_041);
         let protected = game.players.len();
         game.players.push(Player::new(protected, "Geneva", true));
         let unrelated = game.players.len();
