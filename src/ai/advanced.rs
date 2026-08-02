@@ -872,9 +872,15 @@ pub struct AdvancedAi {
     /// `SETTLER_STALL_LIMIT` consecutive turns without moving, the target is
     /// released and the ordinary search runs again.
     pub settler_commit: bool,
-    /// Consecutive turns each settler has failed to move, when `settler_commit`
-    /// is on. Reset on any successful step.
+    /// Consecutive turns each settler has failed to make progress, when
+    /// `settler_commit` is on. Reset whenever `settler_closest` improves.
     settler_stalls: BTreeMap<u32, u32>,
+    /// The target each settler is committed to and the closest it has come to
+    /// it. A dodge around a hostile is a legal move but not progress, so the
+    /// stall counter is driven from this rather than from whether the unit
+    /// moved — see `advanced_settler_step`. Storing the target alongside the
+    /// distance makes a retarget self-invalidating.
+    settler_closest: BTreeMap<u32, (Pos, i32)>,
     /// Let more than one settler exist at a time, up to the shortfall against
     /// the city target.
     ///
@@ -1485,6 +1491,11 @@ impl AdvancedAi {
             .iter()
             .filter_map(|(uid, stalls)| map.get(uid).map(|new| (*new, *stalls)))
             .collect();
+        self.settler_closest = self
+            .settler_closest
+            .iter()
+            .filter_map(|(uid, progress)| map.get(uid).map(|new| (*new, *progress)))
+            .collect();
         // Rebuilt from the board every turn regardless, so there is nothing to carry.
         self.force_groups.clear();
         self.force_groups_dirty = true;
@@ -1541,6 +1552,7 @@ impl AdvancedAi {
             food_first: 0.0,
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
+            settler_closest: BTreeMap::new(),
             parallel_settlers: false,
             expansion_pays_back: false,
             late_expansion: false,
@@ -11379,17 +11391,47 @@ impl AdvancedAi {
                "{} tiles away, the site is worth {:.1}",
                g.wdist(current, target), self.settle_value(g, pid, target); target);
         let moved = self.settler_step_toward_safe(g, pid, uid, target);
-        if moved {
+        if !self.settler_commit {
+            if moved {
+                self.settler_stalls.remove(&uid);
+            } else {
+                self.settler_targets.remove(&uid);
+            }
+            return moved;
+        }
+        // ⚠ Under commitment the counter has to measure PROGRESS, not motion.
+        // `settler_step_toward_safe` may legitimately step sideways or back to
+        // stay out of a captor's reach, and such a step returns `true` — so a
+        // motion test clears the counter every turn and the bounded commitment
+        // documented on `settler_commit` can never expire. A settler beside a
+        // roaming hostile then dodges for the rest of the game while holding a
+        // target it is walking away from.
+        //
+        // Measured on run `civvis-20260802T041527Z` (Russia, one city, score
+        // 149 against a best rival's 1030): target held at axial (63,12) while
+        // the journal reported 7, then 8, then 9 tiles away on t244-t246, with
+        // the stall counter pinned at zero throughout.
+        //
+        // The yardstick is the CLOSEST the settler has come to this target, not
+        // last turn's distance, so an oscillation between two tiles cannot keep
+        // buying turns either. It is stored beside the target and compared
+        // against it, which makes a retarget self-invalidating.
+        let distance = g.wdist(g.units[&uid].pos, target);
+        let advanced = match self.settler_closest.get(&uid) {
+            Some((cached, closest)) => *cached != target || distance < *closest,
+            None => true,
+        };
+        if advanced {
+            self.settler_closest.insert(uid, (target, distance));
             self.settler_stalls.remove(&uid);
-        } else if self.settler_commit {
+        } else {
             let stalls = self.settler_stalls.entry(uid).or_insert(0);
             *stalls += 1;
             if *stalls >= SETTLER_STALL_LIMIT {
                 self.settler_targets.remove(&uid);
                 self.settler_stalls.remove(&uid);
+                self.settler_closest.remove(&uid);
             }
-        } else {
-            self.settler_targets.remove(&uid);
         }
         moved
     }
@@ -14694,6 +14736,8 @@ impl AdvancedAi {
         }
         self.settler_targets
             .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_closest
+            .retain(|uid, _| g.units.contains_key(uid));
         self.builder_targets
             .retain(|uid, _| g.units.contains_key(uid));
     }
@@ -15962,6 +16006,61 @@ mod tests {
             .map
             .get(g.units[&settler].pos)
             .is_some_and(|tile| g.rules.is_water(tile)));
+    }
+
+    /// A dodge is a legal move that is not progress. The commitment bound has
+    /// to expire on one, or a settler beside a roaming hostile holds a site it
+    /// is walking away from for the rest of the game — measured on run
+    /// `civvis-20260802T041527Z`, which finished with one city and score 149.
+    #[test]
+    fn a_committed_settler_that_never_closes_the_gap_releases_its_site() {
+        let mut g = Game::new_full(2, 30, 18, 9_204, 120, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| g.units[uid].kind == "settler")
+            .unwrap();
+        let home = g.units[&settler].pos;
+        g.found_city_for(0, home, None);
+        let start = g
+            .nbrs(home)
+            .into_iter()
+            .find(|position| {
+                g.map
+                    .get(*position)
+                    .is_some_and(|tile| !g.rules.is_water(tile) && g.rules.is_passable(tile))
+            })
+            .expect("the capital has a land neighbour");
+        g.units.get_mut(&settler).unwrap().pos = start;
+
+        let mut ai = AdvancedAi::new();
+        ai.settler_commit = true;
+
+        let unit = g.units.get_mut(&settler).unwrap();
+        unit.moves_left = 4.0;
+        unit.acted = false;
+        ai.advanced_settler_step(&mut g, 0, settler);
+        let target = *ai
+            .settler_targets
+            .get(&settler)
+            .expect("the settler commits to a site");
+
+        // It moves every turn and is put back where it began, so it never gets
+        // closer. Under the old motion test this cleared the stall counter on
+        // every step and the bound below could never be reached.
+        for _ in 0..SETTLER_STALL_LIMIT {
+            let unit = g.units.get_mut(&settler).unwrap();
+            unit.pos = start;
+            unit.moves_left = 4.0;
+            unit.acted = false;
+            ai.advanced_settler_step(&mut g, 0, settler);
+        }
+
+        assert_ne!(
+            ai.settler_targets.get(&settler),
+            Some(&target),
+            "a settler that never closes the gap must release its site"
+        );
     }
 
     #[test]

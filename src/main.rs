@@ -216,7 +216,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// reports. This is therefore a compatibility re-pin, not an Elo protocol
 /// change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0df9_4596_c580_46fc;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0c7a_84c7_29c2_06cd;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
