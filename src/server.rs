@@ -8202,13 +8202,38 @@ mod tests {
         }
         assert!(EMBEDDED_INDEX.contains("{id: \"Diplomacy\", key: \"F8\""));
 
-        // Movement: a left drag pans, the right button moves units, and the
-        // middle one centres. Merely resting near an edge must not move the map.
+        // Movement: a left click only selects, a left drag pans, a secondary
+        // press/release moves units, and the middle button centres. This is the
+        // event split in Civ 6's shipped WorldInput.lua.
         assert!(!EMBEDDED_INDEX.contains("updateEdgePan"));
         assert!(!EMBEDDED_INDEX.contains("edgepanchk"));
         assert!(!EMBEDDED_INDEX.contains("civvis-edge-pan"));
+        assert!(EMBEDDED_INDEX.contains("const MAC_POINTER_PLATFORM = /mac/i.test("));
+        assert!(EMBEDDED_INDEX.contains("function isSecondaryMapButton(ev)"));
+        assert!(EMBEDDED_INDEX.contains("function issueSelectedUnitOrder(pos)"));
+        assert!(EMBEDDED_INDEX.contains("issueSelectedUnitOrder(pos);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "for (const p of (sel.reachable || [])) hl[key(p)] = 1;"
+        ));
+        let ordinary_click = EMBEDDED_INDEX
+            .split_once("cv.addEventListener(\"click\", ev => {")
+            .expect("the map must have an ordinary click handler")
+            .1
+            .split_once("\n});\n\n// Civ 6's ordinary unit order gesture")
+            .expect("the selection handler must end before the movement handler")
+            .0;
+        assert!(!ordinary_click.contains("move_to"));
+        assert!(!ordinary_click.contains("orderTravel("));
+        assert!(ordinary_click.contains("const here = state.units.filter"));
+        assert!(!EMBEDDED_INDEX.contains(
+            "sel = here.find(u => u.moves_left > 0) || here[0]"
+        ));
         assert!(EMBEDDED_INDEX.contains("else if (ev.button === 1) {"));
-        // Command belongs to the browser on a Mac; only Control chords are ours.
+        // macOS Control-click is a platform secondary click; Command belongs to
+        // the browser, and never becomes a map binding.
+        assert!(EMBEDDED_INDEX.contains(
+            "(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"
+        ));
         assert!(EMBEDDED_INDEX.contains("if (ev.metaKey) return undefined;"));
     }
 
@@ -9975,12 +10000,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("openCityScreen(city.id);"));
     }
 
-    /// Clicking a distant tile is Civ 6's "go there", and it cannot be built
-    /// on `move_to`: `path_to` seeds its search with the unit's remaining
-    /// movement, so anything further is `"unreachable"`. `/route` exposes the
-    /// long-range router the AI already uses, one step at a time, and the
-    /// client still sends a normal Move for that step — so the engine stays
-    /// the authority on whether the move is legal now.
+    /// Secondary-clicking a distant tile is Civ 6's "go there", and it cannot
+    /// be built on `move_to`: `path_to` seeds its search with the unit's
+    /// remaining movement, so anything further is `"unreachable"`. `/route`
+    /// exposes the long-range router the AI already uses, one step at a time,
+    /// and the client still sends a normal Move for that step — so the engine
+    /// stays the authority on whether the move is legal now.
     #[test]
     fn route_offers_one_step_of_a_journey_the_current_turn_cannot_finish() {
         let session = Session::new(current());

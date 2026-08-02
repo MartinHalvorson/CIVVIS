@@ -67,13 +67,13 @@ cannot be overridden becomes a trap the first time a player disagrees with it.
 
 A unit "needs orders" when it belongs to the player, has movement left, and has
 neither an engine standing order (fortified, or sleeping through an air
-patrol) nor a client-side one. Two client-side orders exist, matching Civ 6:
+patrol) nor a client-side one. Three client-side orders exist, matching Civ 6:
 
 - **Skip** (`Space`) — done for this turn only. Cleared when the turn advances.
 - **Sleep** (`Z`) — done until something changes: an enemy comes within two
   tiles, the unit takes damage, or the player selects it again.
-- **Travel** — clicking a tile outside this turn's movement is an order to go
-  there, and the unit walks it over as many turns as it takes.
+- **Travel** — secondary-clicking a tile outside this turn's movement is an
+  order to go there, and the unit walks it over as many turns as it takes.
 
 Travel cannot be built on `move_to`: `path_to` seeds its search with the
 unit's *remaining* movement, so anything further is `"unreachable"`. `/route`
@@ -412,7 +412,7 @@ camera and spectator keys alone.
 | `F` | Fortify the selected unit — with nothing selected, toggle the command deck |
 | `Tab` | Select the next unit needing orders |
 | `Escape` | Clear the selection |
-| Click a far tile | Travel there over as many turns as it takes |
+| Secondary-click a far tile | Travel there over as many turns as it takes |
 | `P` | Civilopedia |
 | `D` | Quick Deals |
 | `A` | Auto-play the selected agent for the selected turns — again to stop |
