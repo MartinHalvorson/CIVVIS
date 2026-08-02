@@ -215,8 +215,20 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// --players 4 --turns 200 --seed 31337 --jobs 1 --deployment-comparison`
 /// reports. This is therefore a compatibility re-pin, not an Elo protocol
 /// change.
+///
+/// #840 adds population-four settlement forecasting, bounded travel,
+/// stalled-route recovery, and land escorts to the shared Advanced source.
+/// Every decision path is gated by `settlement_safety`, which
+/// `AdvancedAi::legacy()` disables. Clean `bc58acb` and candidate builds
+/// produced identical `ai_eval advanced_v1 basic --pairs 10 --players 4
+/// --turns 200 --seed 31337 --jobs 1 --deployment-comparison` reports:
+/// 18/20 Advanced wins, 119.2 average turns, and identical terminal tables.
+/// #848's progress-versus-motion tracker is now merged into the same path, but
+/// it returns through the prior code whenever `settler_commit` is disabled, as
+/// it is in `AdvancedAi::legacy()`. This is another compatibility re-pin, not
+/// an Elo protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0c7a_84c7_29c2_06cd;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x65c4_6765_6727_07d5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

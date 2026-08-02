@@ -340,6 +340,14 @@ mod tests {
                 "\n",
                 r#"{"kind":"civvis_build_unplayable","turn":91,"city":12,"item":"DISTRICT_CAMPUS"}"#,
                 "\n",
+                r#"{"kind":"purchase_refused","turn":80,"city":12,"item":"UNIT_BUILDER"}"#,
+                "\n",
+                r#"{"kind":"purchase_refused","turn":89,"city":12,"item":"UNIT_SETTLER","balance":768,"cost":220}"#,
+                "\n",
+                r#"{"kind":"purchase_refused","turn":90,"city":14,"item":"BUILDING_LIBRARY"}"#,
+                "\n",
+                r#"{"kind":"purchase_refused","turn":90,"city":14,"item":"DISTRICT_CAMPUS"}"#,
+                "\n",
             ),
         )
         .expect("write events");
@@ -375,6 +383,29 @@ mod tests {
             ])),
             "Firaxis's district-project name must translate through the same alias as orders"
         );
+        let purchase_refusals = refused_purchases(&path, 90);
+        assert_eq!(
+            purchase_refusals.get(&12),
+            Some(&std::collections::BTreeSet::from([
+                "UNIT_SETTLER".to_string()
+            ])),
+            "an old purchase refusal expires while the current Settler refusal remains"
+        );
+        let blocked_purchases = blocked_production_from(&purchase_refusals, &city_ids, &rules);
+        assert_eq!(
+            blocked_purchases.get(&41),
+            Some(&std::collections::BTreeSet::from([
+                "unit:settler".to_string()
+            ]))
+        );
+        assert_eq!(
+            blocked_purchases.get(&42),
+            Some(&std::collections::BTreeSet::from([
+                "building:library".to_string(),
+                "district:campus".to_string(),
+            ])),
+            "district purchase refusals do not need a production-placement plot"
+        );
 
         let mut game = crate::game::Game::new(1, 20, 14, 73_001, 120, 0);
         let settler = game
@@ -401,6 +432,46 @@ mod tests {
         assert!(
             !game.producible_items(0, city).contains(&warrior),
             "and invalidate a production menu cached before the host refusal arrived"
+        );
+
+        let settler_item = crate::game::Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        game.blocked_production.clear();
+        game.cities.get_mut(&city).unwrap().pop = 4;
+        game.players[0].gold = 10_000.0;
+        assert!(game.can_produce(0, city, &settler_item));
+        assert!(game
+            .legal_actions_within(0, crate::game::ActionFamilies::PURCHASES)
+            .iter()
+            .any(
+                |action| matches!(action, crate::game::Action::Buy { city: bought_at, unit, .. }
+                if *bought_at == city && unit == "settler")
+            ));
+        game.replace_blocked_purchases(BTreeMap::from([(
+            city,
+            std::collections::BTreeSet::from(["unit:settler".to_string()]),
+        )]));
+        assert!(
+            !game
+                .legal_actions_within(0, crate::game::ActionFamilies::PURCHASES)
+                .iter()
+                .any(
+                    |action| matches!(action, crate::game::Action::Buy { city: bought_at, unit, .. }
+                    if *bought_at == city && unit == "settler")
+                ),
+            "the rejected host purchase must leave the purchase menu"
+        );
+        assert!(
+            !game.legal_purchase_actions(0).iter().any(
+                |action| matches!(action, crate::game::Action::Buy { city: bought_at, unit, .. }
+                if *bought_at == city && unit == "settler")
+            ),
+            "the city-parallel purchase projection must enforce the same cooldown"
+        );
+        assert!(
+            game.can_produce(0, city, &settler_item),
+            "a purchase refusal must not suppress the production fallback"
         );
 
         let _ = std::fs::remove_dir_all(&dir);
@@ -3512,6 +3583,11 @@ pub struct StateSnapshot {
     #[serde(default)]
     pub refused_production:
         std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    /// Purchases Civilization VI recently rejected, by its city id. Kept apart
+    /// from production refusals so a failed purchase causes a build fallback
+    /// instead of suppressing that build as well.
+    #[serde(default)]
+    pub refused_purchases: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     /// Barbarian units this seat can SEE.
     ///
     /// ★★★★ The rival export is built from `GetAliveMajorIDs`, so barbarians could
@@ -3730,6 +3806,7 @@ pub fn state_from_events(
         state.refused_policy_names = refused_policies(path);
         state.refused_districts = refused_districts(path);
         state.refused_production = refused_production(path, state.turn);
+        state.refused_purchases = refused_purchases(path, state.turn);
     }
     best
 }
@@ -4156,8 +4233,14 @@ fn blocked_production_from(
         };
         let translated: std::collections::BTreeSet<String> = names
             .iter()
-            .filter_map(|name| civvis_production_item(rules, Some(name), &[]))
-            .map(|item| crate::game::Game::production_block_key(&item))
+            .filter_map(|name| {
+                civvis_production_item(rules, Some(name), &[])
+                    .map(|item| crate::game::Game::production_block_key(&item))
+                    .or_else(|| {
+                        civvis_node_name(&rules.districts, name, "DISTRICT_")
+                            .map(|district| format!("district:{district}"))
+                    })
+            })
             .collect();
         if !translated.is_empty() {
             out.insert(*cid, translated);
@@ -4224,9 +4307,11 @@ pub fn refused_districts(
 /// to be selected and enter the queue, while guaranteeing a changed city is retried.
 const PRODUCTION_REFUSAL_TTL: u32 = 8;
 
-pub fn refused_production(
+fn recent_host_item_refusals(
     path: &std::path::Path,
     current_turn: u32,
+    event_kind: &str,
+    accepted_prefixes: &[&str],
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
     let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
         Default::default();
@@ -4235,15 +4320,13 @@ pub fn refused_production(
     };
     let oldest = current_turn.saturating_sub(PRODUCTION_REFUSAL_TTL);
     for line in raw.lines() {
-        if !line.contains("civvis_build_unplayable") {
+        if !line.contains(event_kind) {
             continue;
         }
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
-        if event.get("kind").and_then(|value| value.as_str())
-            != Some("civvis_build_unplayable")
-        {
+        if event.get("kind").and_then(|value| value.as_str()) != Some(event_kind) {
             continue;
         }
         let (Some(turn), Some(city), Some(item)) = (
@@ -4256,14 +4339,41 @@ pub fn refused_production(
         if city < 0 || turn < u64::from(oldest) || turn > u64::from(current_turn) {
             continue;
         }
-        if item.starts_with("UNIT_")
-            || item.starts_with("BUILDING_")
-            || item.starts_with("PROJECT_")
+        if accepted_prefixes
+            .iter()
+            .any(|prefix| item.starts_with(prefix))
         {
             refused.entry(city).or_default().insert(item.to_string());
         }
     }
     refused
+}
+
+pub fn refused_production(
+    path: &std::path::Path,
+    current_turn: u32,
+) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
+    recent_host_item_refusals(
+        path,
+        current_turn,
+        "civvis_build_unplayable",
+        &["UNIT_", "BUILDING_", "PROJECT_"],
+    )
+}
+
+/// Host purchase refusals use the same short cooldown as production refusals,
+/// but feed a separate legal-action gate. The distinction is load-bearing: when
+/// buying a Settler fails, producing one must become *more* likely, not illegal.
+pub fn refused_purchases(
+    path: &std::path::Path,
+    current_turn: u32,
+) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
+    recent_host_item_refusals(
+        path,
+        current_turn,
+        "purchase_refused",
+        &["UNIT_", "BUILDING_", "DISTRICT_"],
+    )
 }
 
 /// How far CIVVIS's own economy has drifted from the one Civilization VI reports.
@@ -5170,6 +5280,9 @@ pub fn rebuild_from_state(
     let blocked_production =
         blocked_production_from(&state.refused_production, &city_ids, &game.rules);
     game.replace_blocked_production(blocked_production);
+    let blocked_purchases =
+        blocked_production_from(&state.refused_purchases, &city_ids, &game.rules);
+    game.replace_blocked_purchases(blocked_purchases);
 
     Reconstruction {
         game,
@@ -5544,6 +5657,16 @@ impl LiveMirror {
             &self.game.rules,
         );
         self.game.replace_blocked_production(blocked_production);
+        let blocked_purchases = blocked_production_from(
+            &state.refused_purchases,
+            &self
+                .cid_of
+                .iter()
+                .map(|(civ6, cid)| (*cid, *civ6))
+                .collect(),
+            &self.game.rules,
+        );
+        self.game.replace_blocked_purchases(blocked_purchases);
         // Rivals are met as the game goes on, so identity is not a one-time job at
         // reconstruction: a civilization first seen on turn 90 arrives here.
         apply_identity(&mut self.game, state);
