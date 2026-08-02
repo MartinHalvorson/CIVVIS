@@ -310,6 +310,16 @@ class RankingTests(unittest.TestCase):
             "Existing introduction.\n",
         )
 
+    def test_generated_block_documents_the_working_default_refresh_command(self):
+        block = rankings.render_block(1, [], [], minimum_games=5, z=1.96)
+
+        self.assertIn(
+            "Refresh from the live league when it is present, otherwise the committed snapshot:",
+            block,
+        )
+        self.assertIn("`python3 tools/update_readme_rankings.py`", block)
+        self.assertNotIn("--league league/league.json", block)
+
 
 if __name__ == "__main__":
     unittest.main()
