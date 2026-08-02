@@ -12,7 +12,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
-from civvis_frames import autoplay, gaps  # noqa: E402
+from civvis_frames import autoplay, frame_key, frame_query, gaps  # noqa: E402
 
 
 class GapsTest(unittest.TestCase):
@@ -34,6 +34,16 @@ class GapsTest(unittest.TestCase):
 
     def test_no_observations_is_not_a_claim_either_way(self):
         self.assertEqual(gaps([]), [])
+
+    def test_same_turn_player_frames_are_distinct_and_acknowledged_exactly(self):
+        first = {"seed": 7, "turn": 12, "winner": None, "frame_sequence": 40}
+        second = {**first, "frame_sequence": 41}
+        self.assertNotEqual(frame_key(first), frame_key(second))
+        self.assertEqual(
+            frame_query(frame_key(second)),
+            "painted=12&world=7&finished=0&frame=41&have=7:12:0:41",
+        )
+        self.assertEqual(gaps([40, 41, 43]), [42])
 
 
 class FakeGame(BaseHTTPRequestHandler):

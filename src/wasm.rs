@@ -43,6 +43,10 @@ thread_local! {
     /// build reads them but the page that set them.
     static PACE: Cell<u64> = const { Cell::new(0) };
     static PAUSED: Cell<bool> = const { Cell::new(false) };
+    /// Monotonic identity of the frame most recently completed for this page.
+    /// Multiple player turns share one game turn at Blitz and slower, so
+    /// `(seed, turn, finished)` no longer identifies every paint boundary.
+    static FRAME_SEQUENCE: Cell<u64> = const { Cell::new(0) };
     /// The seed the opening world is rolled from.
     ///
     /// A module has no clock and no entropy of its own, and this one imports
@@ -109,19 +113,15 @@ fn with_session<T>(f: impl FnOnce(&mut Session) -> T) -> T {
 
 /// The frame a page is looking at: what the stepper calls a completed turn.
 fn current_frame(session: &Session) -> SpectatorFrame {
-    SpectatorFrame {
-        seed: session.game.seed,
-        turn: session.game.turn,
-        finished: session.game.winner.is_some(),
-    }
+    spectator_frame(&session.game, FRAME_SEQUENCE.with(Cell::get))
 }
 
 /// Play the world on until it is no longer the frame the page is holding.
 ///
 /// This is [`auto_step_loop`](super::auto_step_loop)'s inner move: take one
-/// seat at a time and stop the moment `(seed, turn, finished)` differs, which
-/// is what makes every turn a frame somebody can see rather than a batch that
-/// paints once at the end.
+/// seat at a time and stop at the next publication boundary. Lightning keeps
+/// one frame per round; Blitz and every slower offered pace stop after the
+/// first seat, so each major, city-state, and barbarian moves in its own frame.
 ///
 /// It returns without playing anything when the page is holding a frame that
 /// is not the one on the table — a stale tab, or a world it has not caught up
@@ -140,7 +140,17 @@ fn advance_one_frame(session: &mut Session, held: SpectatorFrame) {
     // sits well above the largest roster the lobby can seat.
     const STEP_CAP: usize = 1024;
     for _ in 0..STEP_CAP {
+        let turn_before = session.game.turn;
+        let finished_before = session.game.winner.is_some();
         session.step();
+        if spectator_step_completes_frame(
+            PACE.with(Cell::get),
+            turn_before,
+            finished_before,
+            &session.game,
+        ) {
+            FRAME_SEQUENCE.with(|sequence| sequence.set(sequence.get().wrapping_add(1)));
+        }
         if current_frame(session) != held {
             return;
         }
@@ -151,6 +161,7 @@ fn advance_one_frame(session: &mut Session, held: SpectatorFrame) {
 fn decorate_browser(o: &mut Value) {
     o["pace"] = json!(PACE.with(Cell::get));
     o["paused"] = json!(PAUSED.with(Cell::get));
+    o["frame_sequence"] = json!(FRAME_SEQUENCE.with(Cell::get));
     // The setup panel reads its own staged choices back out of `/state`, and
     // the queue no longer lives in the session, so it is attached here for the
     // same reason the server's `decorate` attaches it.
@@ -325,6 +336,11 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             if session.params.spectate {
                 let count = parsed["count"].as_u64().unwrap_or(1) as usize;
                 let steps = session.step_many(count);
+                if !steps.is_empty() {
+                    FRAME_SEQUENCE.with(|sequence| {
+                        sequence.set(sequence.get().wrapping_add(1))
+                    });
+                }
                 out = session.state();
                 let visible_steps: Vec<_> = steps
                     .iter()
