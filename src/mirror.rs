@@ -1379,6 +1379,67 @@ mod tests {
         );
     }
 
+    /// ★★★★★ AND IT MUST NAME THE PART THAT IS NOT A DEFECT.
+    ///
+    /// CIVVIS's civilization abilities are not Civilization VI's — `data/civs.json`
+    /// gives Arabia "House of Wisdom: +1 science and +1 faith in every city" where
+    /// the real ability grants no flat per-city yield. A mirrored seat therefore
+    /// runs hot by exactly `effect x cities`, and on run civvis-20260802T064240Z
+    /// that was the ENTIRE residual: science +18% median, culture -0%.
+    ///
+    /// Without attribution that 18% gets re-investigated every time somebody reads
+    /// it. With it, a reader separates the known offset from a new defect at a
+    /// glance.
+    ///
+    /// ⚠ Asserted in BOTH directions. A civ with no flat effect must not grow the
+    /// clause at all — a line that always fires says nothing.
+    #[test]
+    fn the_drift_attributes_the_civ_ability_it_knows_about() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 8,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 8,
+            science: 5.0,
+            culture: 3.0,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Mecca".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            capital: true,
+            ..StateCity::default()
+        });
+        let mut recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+
+        recon.game.players[0].civ = "Arabia".to_string();
+        let arabia = economy_drift(&recon.game, &state).expect("yields present");
+        assert!(
+            arabia.contains("of which civ ability Arabia"),
+            "the known offset must be named: {arabia}"
+        );
+        assert!(
+            arabia.contains("science +1.0"),
+            "and quantified at its real size — city_science 1 over one city: {arabia}"
+        );
+
+        // ⚠ Rome carries no flat per-city science or culture, so the clause must be
+        // absent entirely rather than reading "+0.0".
+        recon.game.players[0].civ = "Rome".to_string();
+        let rome = economy_drift(&recon.game, &state).expect("yields present");
+        assert!(
+            !rome.contains("of which civ ability"),
+            "a civ with no flat effect must not grow the clause: {rome}"
+        );
+    }
+
     /// ★★★★ The reconstruction's economic error must be a NUMBER, not a shrug.
     ///
     /// Measured live on `civvis-20260801T024428Z`: `economy civ6/civvis science
@@ -4411,14 +4472,57 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
         }
         format!("{:+.0}%", 100.0 * (ours - theirs) / theirs)
     };
+    // ★★★★★ A DRIFT THAT CANNOT NAME ITS OWN CAUSE GETS RE-INVESTIGATED FOREVER.
+    //
+    // The single largest term is known, expected, and has nothing to do with the
+    // reconstruction being wrong: **CIVVIS's civilization abilities are not
+    // Civilization VI's**. `data/civs.json` gives eleven civs a flat
+    // `city_science` and many more a flat `city_culture`/`city_gold` — Arabia's
+    // entry reads "House of Wisdom: +1 science and +1 faith in every city", where
+    // the real ability is a Madrasa/religion effect granting no flat per-city
+    // yield. So a mirrored seat plays a different civilization from the one the
+    // game dealt, by exactly `effect x cities`.
+    //
+    // Measured on run civvis-20260802T064240Z (Arabia, 4-5 cities): science ran
+    // **+18% median** while culture sat at **-0%** — the palace double-pay having
+    // been fixed — and the absolute gap was +3.2 to +3.6 against `city_science: 1`
+    // across four cities. That is the whole residual.
+    //
+    // ⚠ Reported, NOT silently subtracted. The gap is real: CIVVIS is planning on
+    // yields the game will not pay it, and hiding that would be the same class of
+    // error as the instruments this file exists to repair. What changes is that a
+    // reader can now tell the KNOWN offset from a NEW defect at a glance, which is
+    // the difference between a number and a shrug.
+    //
+    // ⚠ Fixing the underlying data moves `Rules::source_fingerprint`, so the Elo
+    // ledger rejects new games at bind time — the #703 trap. That is an operator
+    // decision, and until it is taken this line is how the cost stays visible.
+    let cities = game.cities.values().filter(|city| city.owner == 0).count() as f64;
+    let civ_science = game.civ_effect(0, "city_science") * cities;
+    let civ_culture = game.civ_effect(0, "city_culture") * cities;
+    let attributed = if civ_science > 0.0 || civ_culture > 0.0 {
+        format!(
+            "; of which civ ability {} accounts for science {:+.1} culture {:+.1} over {} cities",
+            game.players
+                .get(0)
+                .map(|player| player.civ.as_str())
+                .unwrap_or("?"),
+            civ_science,
+            civ_culture,
+            cities as u32,
+        )
+    } else {
+        String::new()
+    };
     Some(format!(
-        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}",
+        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}",
         state.science,
         science,
         pct(science, state.science),
         state.culture,
         culture,
         pct(culture, state.culture),
+        attributed,
     ))}
 
 /// Policy cards the host ruleset has retired, learned from its own refusals.
