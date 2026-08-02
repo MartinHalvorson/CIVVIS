@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import io
 import sys
 import tempfile
 import unittest
@@ -112,6 +113,14 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertFalse(civ6_play.state_export_enabled(
             SimpleNamespace(export_state=False, civvis_decides=False)
         ))
+
+    def test_live_launcher_rejects_plan_forced_wars(self) -> None:
+        error = io.StringIO()
+        with patch.object(civ6_play.sys, "stderr", error):
+            result = civ6_play.main(["--status", "--civvis-war-from-plan"])
+
+        self.assertEqual(result, 2)
+        self.assertIn("bypasses CIVVIS's war decision", error.getvalue())
 
     def test_setup_does_not_start_when_a_required_dropdown_is_unverified(self) -> None:
         with tempfile.TemporaryDirectory() as temporary, \

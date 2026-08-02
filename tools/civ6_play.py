@@ -1808,8 +1808,6 @@ def _play(args: argparse.Namespace) -> int:
             "--strategy", args.civvis_strategy,
             "--seconds", str(max(21600.0, args.timeout + 3600.0)),
         ]
-        if args.civvis_war_from_plan:
-            command.append("--war-from-plan")
         brain = subprocess.Popen(
             command,
             cwd=REPO_ROOT,
@@ -2188,6 +2186,22 @@ def status() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = sys.argv[1:] if argv is None else argv
+    # `--war-from-plan` is still available on the lower-level replay tools, where
+    # comparing the bridge override with CIVVIS's actual decision is useful.  It is
+    # deliberately not a live-game option.  The override turns a plan's preferred
+    # rival into an immediate declaration even when the planner declined war: live
+    # run `live-loop-rome-20260802-0800` forced that declaration under a Religion
+    # plan on turn 37, spent the remaining 213 turns in Recovery asking for peace,
+    # and finished 400-1081.  A production launcher must not be able to bypass the
+    # decider whose behavior it claims to measure.
+    if "--civvis-war-from-plan" in raw_argv:
+        print(
+            "--civvis-war-from-plan is replay-only: it bypasses CIVVIS's war "
+            "decision and cannot be used for a live game",
+            file=sys.stderr,
+        )
+        return 2
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--tag", default=None, help="run tag; names the run directory")
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER", choices=LADDER)
@@ -2290,8 +2304,6 @@ def main(argv: list[str] | None = None) -> int:
                     help="victory objective passed to the supervised CIVVIS worker")
     ap.add_argument("--civvis-strategy", default="auto",
                     help="rated CIVVIS strategy name; auto selects the strongest bound")
-    ap.add_argument("--civvis-war-from-plan", action="store_true", default=False,
-                    help="bridge-only fallback for a plan target blocked by host diplomacy")
     ap.add_argument("--governor-appoint", action="store_true", default=False,
                     help="spend governor titles (KNOWN to segfault the Game Core)")
     ap.add_argument("--governor-assign", action="store_true", default=False,
@@ -2330,7 +2342,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--focus-every", type=float, default=15.0,
                     help="seconds between raising the game window (0 disables)")
     ap.add_argument("--status", action="store_true")
-    args = ap.parse_args(argv)
+    args = ap.parse_args(raw_argv)
     global GAME_SIDE, GAME_FRACTION, GAME_VFRACTION
     GAME_SIDE, GAME_FRACTION = args.window_side, args.window_frac
     GAME_VFRACTION = args.window_vfrac
