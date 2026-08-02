@@ -17,6 +17,20 @@ import civ6_mirror_check  # noqa: E402
 
 
 class MirrorCheckTest(unittest.TestCase):
+    def test_live_state_is_exact_while_turn_completion_is_in_flight(self) -> None:
+        self.assertTrue(civ6_mirror_check.exact_host_frame(96, 96, 95))
+        self.assertFalse(civ6_mirror_check.exact_host_frame(96, 95, 95))
+
+    def test_archive_state_still_requires_a_completed_boundary(self) -> None:
+        self.assertFalse(
+            civ6_mirror_check.exact_host_frame(251, 251, 250, archive=True)
+        )
+        self.assertTrue(
+            civ6_mirror_check.exact_host_frame(
+                251, 251, 250, archive=True, terminal_turn=251
+            )
+        )
+
     def test_terminal_frame_is_an_exact_completed_archive_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             events = Path(temporary) / "events.jsonl"
