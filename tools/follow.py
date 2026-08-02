@@ -400,9 +400,6 @@ def hold_the_frame():
 
 
 MIRROR_URL = f"http://127.0.0.1:{PORT}/"
-# Left half of the display, beside the Civilization VI window the controller
-# parks on the right (`civ6_play --window-side right`).
-MIRROR_BOUNDS = "{0, 33, 864, 1117}"
 
 
 def chrome(script):
@@ -429,6 +426,9 @@ def mirror_on_screen():
 def ensure_on_screen(misses):
     """Put the mirror back on the display if it has been closed.
 
+    Leave placement and sizing to the operator. The follower owns the mirror's
+    availability, not the desktop layout.
+
     Deliberately does NOT `activate` Chrome. Civilization VI runs its turn loop
     off frame-tied events and macOS starves a background app of frames, so
     stealing the foreground every few seconds would stop the very game this
@@ -444,7 +444,6 @@ def ensure_on_screen(misses):
     chrome(f'''tell application "Google Chrome"
       make new window
       set URL of active tab of window 1 to "{MIRROR_URL}"
-      set bounds of window 1 to {MIRROR_BOUNDS}
     end tell''')
     return 0
 
