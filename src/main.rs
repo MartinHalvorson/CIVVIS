@@ -215,6 +215,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// --players 4 --turns 200 --seed 31337 --jobs 1 --deployment-comparison`
 /// reports. This is therefore a compatibility re-pin, not an Elo protocol
 /// change.
+#[cfg(test)]
 const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0df9_4596_c580_46fc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
