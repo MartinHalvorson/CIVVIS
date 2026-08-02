@@ -121,6 +121,22 @@ struct Harvest {
 
 type TurnObjectives = BTreeMap<(u32, usize), Vec<Pos>>;
 
+/// The reproducible game profile and sibling-sampling controls for one
+/// dataset harvest. Keeping them together prevents a test or parallel worker
+/// from silently measuring a different game than the report describes.
+#[derive(Clone, Copy)]
+struct HarvestConfig<'a> {
+    seats: usize,
+    width: i32,
+    height: i32,
+    turns: u32,
+    city_states: usize,
+    speed: &'a str,
+    negatives: usize,
+    same_kind: bool,
+    same_actor: bool,
+}
+
 /// Play with the same loop as `ai::run_game`, while retaining the plan each
 /// AdvancedAi reports for the actions it took that turn. The action log remains
 /// the authoritative trajectory; this side table supplies strategic context
@@ -173,28 +189,24 @@ fn outcomes(game: &Game, seats: usize) -> Vec<(f32, f32)> {
         .collect()
 }
 
-fn harvest(
-    game_id: u64,
-    seats: usize,
-    width: i32,
-    height: i32,
-    turns: u32,
-    city_states: usize,
-    speed: &str,
-    negatives: usize,
-    same_kind: bool,
-    same_actor: bool,
-) -> Harvest {
+fn harvest(game_id: u64, config: HarvestConfig<'_>) -> Harvest {
     // Pass one: play it. Nothing is recorded here beyond the log the engine
     // keeps anyway, so the agents behave exactly as they do in any other run.
     let options = GameOptions {
-        speed: speed.to_string(),
-        ..GameOptions::new(seats, width, height, game_id, turns, city_states)
+        speed: config.speed.to_string(),
+        ..GameOptions::new(
+            config.seats,
+            config.width,
+            config.height,
+            game_id,
+            config.turns,
+            config.city_states,
+        )
     };
     let mut played = Game::new_with(options.clone());
     let mut fleet = AdvancedAi::fleet(&played);
     let objectives = run_game_with_objectives(&mut played, &mut fleet);
-    let label = outcomes(&played, seats);
+    let label = outcomes(&played, config.seats);
     let finished = played.winner.is_some();
     let played_turns = played.turn;
     let wins = label.iter().filter(|(won, _)| *won > 0.5).count();
@@ -215,7 +227,7 @@ fn harvest(
     for (seat, action) in log {
         // EndTurn is the loop's exit rather than a choice, and every turn has
         // exactly one, so scoring it teaches a head only how long a game is.
-        if matches!(action, Action::EndTurn) || seat >= seats {
+        if matches!(action, Action::EndTurn) || seat >= config.seats {
             rejected += replay.apply(seat, &action).is_err() as usize;
             continue;
         }
@@ -242,7 +254,7 @@ fn harvest(
         planned += !objectives.is_empty() as usize;
         winning_rows += (won > 0.5) as usize;
 
-        if negatives > 0 {
+        if config.negatives > 0 {
             // Siblings are drawn from the legal set with the taken action
             // removed. A stride rather than a prefix, because `legal_actions`
             // is ordered by unit and a prefix would sample one unit's options
@@ -264,21 +276,23 @@ fn harvest(
             let others: Vec<&Action> = legal
                 .iter()
                 .filter(|candidate| **candidate != action && !matches!(candidate, Action::EndTurn))
-                .filter(|candidate| !same_kind || action_space::kind_name(candidate) == wanted)
                 .filter(|candidate| {
-                    !same_actor
+                    !config.same_kind || action_space::kind_name(candidate) == wanted
+                })
+                .filter(|candidate| {
+                    !config.same_actor
                         || wanted_actor.is_some()
                             && action_space::acting_unit(candidate) == wanted_actor
                 })
                 .collect();
             if !others.is_empty() {
-                let stride = (others.len() / negatives.max(1)).max(1);
+                let stride = (others.len() / config.negatives.max(1)).max(1);
                 picker = picker
                     .wrapping_add(0x9E37_79B9_7F4A_7C15)
                     .rotate_left(31)
                     .wrapping_mul(0xBF58_476D_1CE4_E5B9);
                 let start = (picker >> 33) as usize % others.len();
-                for step in 0..negatives.min(others.len()) {
+                for step in 0..config.negatives.min(others.len()) {
                     let other = others[(start + step * stride) % others.len()];
                     let row =
                         action_space::features_with_context(&replay, seat, other, &context);
@@ -300,7 +314,7 @@ fn harvest(
         rejected += replay.apply(seat, &action).is_err() as usize;
     }
 
-    let agrees = (0..seats).all(|pid| replay.score(pid) == played.score(pid));
+    let agrees = (0..config.seats).all(|pid| replay.score(pid) == played.score(pid));
 
     Harvest {
         rows,
@@ -366,6 +380,17 @@ fn main() {
     let seed = number(&args, "--seed", 90_000) as u64;
     let jobs = number(&args, "--jobs", parallel::default_jobs());
     let out = text(&args, "--out", "evolved/q_dataset.csv");
+    let config = HarvestConfig {
+        seats,
+        width,
+        height,
+        turns,
+        city_states,
+        speed: &speed,
+        negatives,
+        same_kind,
+        same_actor,
+    };
 
     println!(
         "q_dataset: {games} games, {seats} players, {width}x{height}, {turns} turns, {speed} speed, \
@@ -384,20 +409,7 @@ fn main() {
         STATE_WIDTH + action_space::FEATURE_WIDTH
     );
 
-    let harvests = parallel::map(games, jobs, |index| {
-        harvest(
-            seed + index as u64,
-            seats,
-            width,
-            height,
-            turns,
-            city_states,
-            &speed,
-            negatives,
-            same_kind,
-            same_actor,
-        )
-    });
+    let harvests = parallel::map(games, jobs, move |index| harvest(seed + index as u64, config));
 
     if let Some(parent) = std::path::Path::new(&out).parent() {
         if !parent.as_os_str().is_empty() {
@@ -472,9 +484,29 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use super::{harvest, header};
+    use super::{harvest, header, HarvestConfig};
     use civvis::action_space;
     use civvis::decision_features::WIDTH as STATE_WIDTH;
+
+    fn test_config(
+        turns: u32,
+        speed: &'static str,
+        negatives: usize,
+        same_kind: bool,
+        same_actor: bool,
+    ) -> HarvestConfig<'static> {
+        HarvestConfig {
+            seats: 3,
+            width: 24,
+            height: 16,
+            turns,
+            city_states: 0,
+            speed,
+            negatives,
+            same_kind,
+            same_actor,
+        }
+    }
 
     /// The whole method rests on one property: replaying `game.log` against a
     /// fresh game of the same seed reproduces the game. If it does not, every
@@ -483,7 +515,7 @@ mod tests {
     /// that the case does not arise.
     #[test]
     fn replay_reproduces_the_game_it_records() {
-        let run = harvest(4_242, 3, 24, 16, 40, 0, "standard", 0, false, false);
+        let run = harvest(4_242, test_config(40, "standard", 0, false, false));
         assert_eq!(
             run.rejected, 0,
             "replay rejected an action the game applied"
@@ -503,7 +535,7 @@ mod tests {
     fn rows_are_as_wide_as_the_header_says() {
         let expected = 4 + STATE_WIDTH + action_space::FEATURE_WIDTH + 2;
         assert_eq!(header().trim_end().split(',').count(), expected);
-        let run = harvest(77, 3, 24, 16, 30, 0, "standard", 2, false, false);
+        let run = harvest(77, test_config(30, "standard", 2, false, false));
         for line in run.rows.lines() {
             assert_eq!(line.split(',').count(), expected, "row width: {line:.60}");
         }
@@ -515,7 +547,7 @@ mod tests {
     /// Standard default that this emitter historically hard-coded.
     #[test]
     fn online_replay_reproduces_the_profile_it_records() {
-        let run = harvest(8_181, 3, 24, 16, 40, 0, "online", 1, true, false);
+        let run = harvest(8_181, test_config(40, "online", 1, true, false));
         assert_eq!(run.rejected, 0);
         assert!(run.agrees);
         assert!(run.decisions > 0);
@@ -526,7 +558,7 @@ mod tests {
     /// rather than merely learning which unit the expert activates next.
     #[test]
     fn same_actor_negatives_exist_in_real_games() {
-        let run = harvest(9_191, 3, 24, 16, 50, 0, "standard", 4, true, true);
+        let run = harvest(9_191, test_config(50, "standard", 4, true, true));
         assert_eq!(run.rejected, 0);
         assert!(run.agrees);
         assert!(run.negatives > 0, "no unit had two same-kind legal actions");

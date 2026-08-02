@@ -414,9 +414,11 @@ fn gated_choice(scores: &[f32], threshold: f32) -> usize {
                 best
             }
         });
-    (sigmoid(scores[alternative] - scores[0]) + EPS >= threshold)
-        .then_some(alternative)
-        .unwrap_or(0)
+    if sigmoid(scores[alternative] - scores[0]) + EPS >= threshold {
+        alternative
+    } else {
+        0
+    }
 }
 
 fn evaluate(net: &Linear, groups: &[Group], threshold: f32) -> BTreeMap<u64, GameMetrics> {
