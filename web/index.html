@@ -17006,6 +17006,36 @@ function drawPlanetNaturalWonderPerimeters(cells) {
   cx.restore();
 }
 
+// Exact sight is a moving shape, distinct from both explored ground and the
+// tiles retained for the rest of this player turn. Trace only seams whose
+// near side is visible now. Iterating every boundary seam naturally preserves
+// remote islands of sight from scouts, suzerain cities, and shared vision.
+function drawPlanetVisibilityPerimeter(cells, visible) {
+  const segments = [];
+  for (const {tile, cell, points} of cells) {
+    if (!cell || !visible.has(key(tile.pos))) continue;
+    for (let side = 0; side < points.length; side++) {
+      const across = cell.nbrs[side];
+      if (across && visible.has(across)) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      segments.push([a.x, a.y, b.x, b.y]);
+    }
+  }
+  if (!segments.length) return;
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [width, color] of [
+    [3.0, "rgba(5,10,15,.68)"],
+    [1.15, "rgba(213,244,255,.94)"],
+  ]) {
+    cx.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+    cx.strokeStyle = color; cx.lineWidth = width; cx.stroke();
+  }
+  cx.restore();
+}
+
 function planetFeatureGlyph(tile) {
   if (tile.terrain === "mountain") return "▲";
   if (tile.feature === "forest") return "♠";
@@ -21276,6 +21306,40 @@ function drawEmpireLensFlat(tiles) {
   cx.restore();
 }
 
+// A fine live-sight line, independent of the lighter turn-visible fill below
+// it. Each visible component contributes its own boundary, so a distant unit
+// or diplomatic reveal becomes another closed trace rather than being joined
+// to the capital by an invented corridor.
+function drawFlatVisibilityPerimeter(tiles, visible) {
+  const segments = [];
+  for (const tile of tiles) {
+    if (!visible.has(key(tile.pos))) continue;
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    for (let side = 0; side < DIRS.length; side++) {
+      const direction = DIRS[side];
+      const across = canonPos([tile.pos[0] + direction[0], tile.pos[1] + direction[1]]);
+      if (visible.has(key(across))) continue;
+      const [a, b] = EDGE_CORNERS[side];
+      segments.push([...corner(x, y, S - .45, a), ...corner(x, y, S - .45, b)]);
+    }
+  }
+  if (!segments.length) return;
+  const k = UI_K();
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [width, color] of [
+    [3.0 * k, "rgba(5,10,15,.68)"],
+    [1.15 * k, "rgba(213,244,255,.94)"],
+  ]) {
+    cx.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+    cx.strokeStyle = color; cx.lineWidth = width; cx.stroke();
+  }
+  cx.restore();
+}
+
 function drawPlanetChartMarginalia() {
   if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
   const [seedA, seedB] = hiddenMapSeedWords();
@@ -21321,6 +21385,7 @@ function drawPlanetMap() {
   // around the middle of the window.
   const [centerX, centerY] = planetEarthCenter(radius);
   const visible = new Set(state.visible.map(key));
+  const turnVisible = new Set((state.turn_visible || state.visible).map(key));
   const spectator = !Number.isInteger(state.view_player);
   const empireLens = mapLens === "empire";
   PLANET_HIT_CELLS = [];
@@ -21399,9 +21464,9 @@ function drawPlanetMap() {
 
   const baseCells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
   const cells = planetReliefCells(baseCells, camera, radius, centerX, centerY,
-                                  visible, spectator);
-  drawPlanetReliefSides(cells, radius, centerX, centerY, visible, spectator);
-  drawPlanetGround(cells, camera, scale, radius, centerX, centerY, visible, spectator);
+                                  turnVisible, spectator);
+  drawPlanetReliefSides(cells, radius, centerX, centerY, turnVisible, spectator);
+  drawPlanetGround(cells, camera, scale, radius, centerX, centerY, turnVisible, spectator);
   for (const {tile, points, center} of cells)
     PLANET_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
 
@@ -21434,7 +21499,7 @@ function drawPlanetMap() {
   // use landform paint clipped to each real spherical face instead.
   if (!empireLens && MODE.painted && radius >= SKY_MARKERS) {
     for (const cell of cells) {
-      if ((!spectator && !visible.has(key(cell.tile.pos))) ||
+      if ((!spectator && !turnVisible.has(key(cell.tile.pos))) ||
           cell.center.z < (onSheet ?? .04)) continue;
       drawPlanetSurfaceDetail(cell, centerX, centerY);
     }
@@ -21459,6 +21524,8 @@ function drawPlanetMap() {
   else if (mapLens === "empire") drawEmpireDetailsPlanet(cells);
   else if (mapLens) drawThematicLensPlanet(cells);
   if (radius >= SKY_MARKERS) drawPlanetNaturalWonderPerimeters(cells);
+  if (!spectator && radius >= SKY_MARKERS)
+    drawPlanetVisibilityPerimeter(cells, visible);
   // Cities and armies are drawn at a floor size so they stay clickable, and a
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
@@ -21525,7 +21592,7 @@ function drawPlanetMap() {
   // map script, globe frequency and chart scale retains a readable army.
   const paintedFigureIds = MODE.painted
     ? drawPlanetPaintedUnits(visibleUnits, cellByKey, centerX, centerY,
-                              visible, spectator, onSheet, camera)
+                              turnVisible, spectator, onSheet, camera)
     : null;
   for (const unit of visibleUnits) {
     // A painting replaces its overview dot only when the cell is wide enough
@@ -21656,7 +21723,8 @@ function draw() {
   onscreen.sort((a, b) => a[0] - b[0]);
   const tiles = onscreen.map(v => v[1]);
   const naturalWonderPlacements = buildNaturalWonderPlacements(tiles);
-  const visSet = new Set(state.visible.map(key));
+  const visible = new Set(state.visible.map(key));
+  const visSet = new Set((state.turn_visible || state.visible).map(key));
   const campSet = new Set(state.camps.map(key));
   const cityTiles = new Set(state.cities.map(c => key(c.pos)));
   const workedSet = new Set(state.cities.flatMap(c =>
@@ -22439,12 +22507,13 @@ function draw() {
       cx.strokeStyle = "#ffffff8c"; cx.lineWidth = 1.6; cx.stroke(); }
     else { cx.strokeStyle = "#ff5050c4"; cx.lineWidth = 3; cx.stroke(); }
   }
-  // --- fog: parchment wash over explored-but-not-visible tiles
+  // --- fog: parchment wash over explored tiles not seen this player turn
   for (const t of tiles) {
     if (visSet.has(key(t.pos))) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
-    // A fogged tile that still touches sight gets a lighter wash, so knowledge
+    // A fogged tile that still touches this turn's seen region gets a lighter
+    // wash, so knowledge
     // falls off over two steps rather than one hard hex cut. The penumbra is
     // put on the fogged side only — bleeding haze onto a visible tile would
     // make it ambiguous which tiles the player can actually see.
@@ -22494,6 +22563,8 @@ function draw() {
     // hex, and disappears one segment at a time as that ground is explored.
     drawHiddenMapFrontier(tiles);
   }
+  if (Number.isInteger(state.view_player))
+    drawFlatVisibilityPerimeter(tiles, visible);
   // --- right-drag order line
   if (rdrag && rdragTo && sel) {
     const ts = TMAP.get(key(sel.pos)), tt = TMAP.get(key(rdragTo));
@@ -23624,7 +23695,7 @@ function drawPlanetMini() {
     mx2.fillStyle = "#123b55";
     mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.fill();
   }
-  const visible = new Set(state.visible.map(key));
+  const visible = new Set((state.turn_visible || state.visible).map(key));
   const spectator = !Number.isInteger(state.view_player);
   const reach = Math.hypot(width, height) / 2;
   const cells = planetCells(camera, scale, centerX, centerY, reach);
@@ -23802,7 +23873,7 @@ function drawMini() {
     mx2.translate(-miniWidth / 2, -miniHeight / 2);
   }
   const layout = miniLayout(miniWidth, miniHeight);
-  const visible = new Set(state.visible.map(key));
+  const visible = new Set((state.turn_visible || state.visible).map(key));
   for (const t of tiles) {
     const [x, y] = miniHexCenter(t.pos, layout);
     const terrainColor = TERRAIN[t.terrain] || "#333";
