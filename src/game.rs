@@ -51374,7 +51374,7 @@ impl Game {
             .find_map(|position| {
                 let tile = &self.map.tiles[position];
                 (tile.improvement.as_deref() == Some("industry"))
-                    .then(|| tile.resource.clone().map(|resource| (*position, resource)))
+                    .then(|| tile.resource.map(|resource| (*position, resource)))
                     .flatten()
             })
             .filter(|(_, resource)| {
