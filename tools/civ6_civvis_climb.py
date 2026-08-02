@@ -283,6 +283,35 @@ def ensure_mirror() -> None:
             Path.home() / "civvis-civ6-mirror" / "follow.log", "mirror")
 
 
+def commits_behind_main() -> int | None:
+    """How many commits this tree is behind `origin/main`, or None if unknown.
+
+    ⚠⚠ WHY THIS EXISTS. On 2026-08-02 the batch tree spent hours at `#868` while
+    four merged fixes — including the two the session's whole diagnosis rested on —
+    sat unbuilt. It had briefly reached `#880` and was moved BACK. Nothing in the log
+    said so: `batch pinned to 1000a13` reads identically whether that commit is main
+    or eighteen behind it, and the resulting batch measured an engine nobody meant to
+    test.
+
+    Pinning to an old commit is legitimate — it is how a controlled batch stays
+    comparable — so this reports and never refuses. What it removes is the case where
+    a tree is stale by ACCIDENT and the log looks exactly the same.
+
+    ⚠ Does not fetch. A batch must not depend on the network, and a stale
+    `origin/main` ref simply under-reports rather than blocking anything.
+    """
+    # ⚠ The module's own `run()`, not `subprocess.run` — it merges stdout and stderr
+    # and never raises, which is what every other git call here relies on, and what
+    # the tests fake.
+    out = run(["git", "-C", str(HERE.parent), "rev-list", "--count",
+               "HEAD..origin/main"]).strip()
+    try:
+        return int(out)
+    except ValueError:
+        # No such ref, not a repository, or git said something else entirely.
+        return None
+
+
 def code_state() -> str:
     """A name for the program this attempt will actually run.
 
@@ -679,9 +708,17 @@ def main() -> int:
 
     pinned = None if args.no_pin else code_state()
     if pinned is not None:
+        behind = commits_behind_main()
+        # Loud above a handful, because that is where "deliberately pinned" stops
+        # being the likely explanation and "nobody rebuilt this tree" starts.
+        staleness = ""
+        if behind:
+            staleness = (f"  ⚠ {behind} commits behind origin/main"
+                         if behind >= 5 else f"  ({behind} behind origin/main)")
         print(f"batch pinned to {pinned}"
               + ("  ⚠ working tree is dirty; the fingerprint tracks it"
-                 if "+" in pinned else ""), flush=True)
+                 if "+" in pinned else "")
+              + staleness, flush=True)
 
     played = 0          # attempts that produced a MEASUREMENT — the only budget
     started = 0         # iterations, for the log line only
