@@ -64,14 +64,14 @@ fn wonders_score_fifteen_and_unique_districts_score_double() {
         .districts
         .iter()
         .find(|(_, spec)| spec.unique_to.is_none())
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| *name)
         .unwrap();
     let unique = game
         .rules
         .districts
         .iter()
         .find(|(_, spec)| spec.unique_to.is_some())
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| *name)
         .unwrap();
     let after_wonder = game.score(0);
     game.cities
