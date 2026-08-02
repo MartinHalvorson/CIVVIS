@@ -255,6 +255,7 @@ def main():
     warned_cards = False
     while True:
         idle = False
+        covered = False
         try:
             box = window_box()
             if not box:
@@ -273,6 +274,7 @@ def main():
                 kind, targets, dark = classify(window)
                 front = frontmost()
                 playing = game_in_progress(args.runs)
+                covered = kind != "map"
                 if kind == "map":
                     pass
                 elif kind == "card" and not args.cards:
@@ -340,7 +342,31 @@ def main():
             log(f"error: {error}")
         if args.once:
             return
-        time.sleep(args.interval * 5 if idle else args.interval)
+        # ★★★★ POLL SLOWLY WHEN THERE IS NOTHING TO DO, FAST WHILE A SCREEN IS UP.
+        #
+        # A leader conversation is not one click. Measured 2026-08-02 on run
+        # civvis-20260802T014139Z: a single Barbarossa scene logged `clicked leader;
+        # a leader is up now` then `a card is up now` before the map came back, and
+        # twice it read `leader on screen but no target found` while the dialogue
+        # buttons were still fading in. Each of those retries waited a full interval,
+        # so one scene sat over the map for 18 seconds at a 2.5s setting — and the
+        # operator sees the portrait, not the cadence.
+        #
+        # Once `classify` says the map is covered there is no cheapness argument
+        # left: we already know the screen needs clearing, and the only question is
+        # how soon we look again. A pass costs ~0.5s in-loop, so chasing at 0.75s
+        # while covered is a fifth of one turn's budget and only while it matters.
+        #
+        # ⚠ The chase does NOT weaken any guard. Frontmost, map-positively-covered,
+        # turn-recorded and the two-strike no-op rule are all still checked on every
+        # pass; this changes when we look, never what we are willing to click.
+        if idle:
+            delay = args.interval * 5      # no game window at all — between games
+        elif covered:
+            delay = min(0.75, args.interval)
+        else:
+            delay = args.interval
+        time.sleep(delay)
 
 
 if __name__ == "__main__":
