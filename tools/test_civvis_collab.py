@@ -137,12 +137,13 @@ class FreshnessTests(unittest.TestCase):
         self.git(root, "add", "tracked.txt")
         self.git(root, "commit", "-m", "one")
 
-    def test_refresh_fetches_main_without_changing_a_development_worktree(self):
+    def test_refresh_updates_main_without_changing_a_development_worktree(self):
         with tempfile.TemporaryDirectory() as temporary:
             base = Path(temporary)
             remote = base / "remote.git"
             seed = base / "seed"
             clone = base / "clone"
+            task = base / "task"
             self.git(base, "init", "--bare", str(remote))
             self.committed_repo(seed)
             self.git(seed, "remote", "add", "origin", str(remote))
@@ -153,9 +154,9 @@ class FreshnessTests(unittest.TestCase):
             self.git(base, "clone", str(remote), str(clone))
             self.git(clone, "config", "user.email", "freshness@example.invalid")
             self.git(clone, "config", "user.name", "Freshness Test")
-            self.git(clone, "switch", "-c", "local-task")
-            Path(clone, "tracked.txt").write_text("local dirty work\n", encoding="utf-8")
-            local_head = self.git(clone, "rev-parse", "HEAD")
+            self.git(clone, "worktree", "add", "-b", "local-task", str(task))
+            Path(task, "tracked.txt").write_text("local dirty work\n", encoding="utf-8")
+            task_head = self.git(task, "rev-parse", "HEAD")
 
             Path(seed, "upstream.txt").write_text("two\n", encoding="utf-8")
             self.git(seed, "add", "upstream.txt")
@@ -166,17 +167,133 @@ class FreshnessTests(unittest.TestCase):
             report = collab.refresh_repository(clone)
 
             self.assertEqual(report["origin_main"], upstream_head)
+            self.assertEqual(
+                report["main_update"]["mode"],
+                "fast-forward",
+            )
+            self.assertEqual(self.git(clone, "rev-parse", "HEAD"), upstream_head)
+            self.assertTrue(Path(clone, "upstream.txt").is_file())
+            self.assertEqual(self.git(task, "rev-parse", "HEAD"), task_head)
+            self.assertEqual(
+                Path(task, "tracked.txt").read_text(encoding="utf-8"),
+                "local dirty work\n",
+            )
+            self.assertFalse(Path(task, "upstream.txt").exists())
+            rows = {row["branch"]: row for row in report["worktrees"]}
+            self.assertEqual(rows["main"]["behind"], 0)
+            self.assertFalse(rows["main"]["dirty"])
+            self.assertTrue(rows["local-task"]["dirty"])
+            self.assertEqual(rows["local-task"]["behind"], 1)
+
+    def test_refresh_preserves_divergent_main_before_forcing_remote_head(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            remote = base / "remote.git"
+            seed = base / "seed"
+            clone = base / "clone"
+            self.git(base, "init", "--bare", str(remote))
+            self.committed_repo(seed)
+            self.git(seed, "remote", "add", "origin", str(remote))
+            self.git(seed, "push", "-u", "origin", "main")
+            self.git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+            self.git(base, "clone", str(remote), str(clone))
+            self.git(clone, "config", "user.email", "freshness@example.invalid")
+            self.git(clone, "config", "user.name", "Freshness Test")
+
+            Path(clone, "local.txt").write_text("preserve me\n", encoding="utf-8")
+            self.git(clone, "add", "local.txt")
+            self.git(clone, "commit", "-m", "local main commit")
+            local_head = self.git(clone, "rev-parse", "HEAD")
+
+            Path(seed, "upstream.txt").write_text("remote head\n", encoding="utf-8")
+            self.git(seed, "add", "upstream.txt")
+            self.git(seed, "commit", "-m", "remote main commit")
+            upstream_head = self.git(seed, "rev-parse", "HEAD")
+            self.git(seed, "push", "origin", "main")
+
+            report = collab.refresh_repository(clone)
+
+            update = report["main_update"]
+            self.assertEqual(update["mode"], "forced")
+            self.assertEqual(update["before"], local_head)
+            self.assertEqual(update["after"], upstream_head)
+            self.assertEqual(self.git(clone, "rev-parse", "HEAD"), upstream_head)
+            self.assertEqual(
+                self.git(clone, "rev-parse", update["recovery_ref"]),
+                local_head,
+            )
+            self.assertFalse(Path(clone, "local.txt").exists())
+            self.assertTrue(Path(clone, "upstream.txt").is_file())
+
+    def test_refresh_refuses_to_overwrite_dirty_main(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            remote = base / "remote.git"
+            seed = base / "seed"
+            clone = base / "clone"
+            self.git(base, "init", "--bare", str(remote))
+            self.committed_repo(seed)
+            self.git(seed, "remote", "add", "origin", str(remote))
+            self.git(seed, "push", "-u", "origin", "main")
+            self.git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+            self.git(base, "clone", str(remote), str(clone))
+            local_head = self.git(clone, "rev-parse", "HEAD")
+            Path(clone, "tracked.txt").write_text("dirty local work\n", encoding="utf-8")
+
+            Path(seed, "upstream.txt").write_text("remote head\n", encoding="utf-8")
+            self.git(seed, "add", "upstream.txt")
+            self.git(seed, "commit", "-m", "remote main commit")
+            upstream_head = self.git(seed, "rev-parse", "HEAD")
+            self.git(seed, "push", "origin", "main")
+
+            report = collab.refresh_repository(clone)
+
+            self.assertIn("dirty main management worktree", report["main_update_error"])
             self.assertEqual(self.git(clone, "rev-parse", "HEAD"), local_head)
             self.assertEqual(
                 Path(clone, "tracked.txt").read_text(encoding="utf-8"),
-                "local dirty work\n",
+                "dirty local work\n",
             )
-            self.assertFalse(Path(clone, "upstream.txt").exists())
             [row] = report["worktrees"]
             self.assertTrue(row["dirty"])
             self.assertEqual(row["behind"], 1)
+            self.assertIn(
+                "last automatic main update failed",
+                collab.freshness_state_error(clone, upstream_head),
+            )
 
-    def test_macos_service_only_runs_the_fetch_only_refresh_command(self):
+    def test_main_update_fails_closed_when_status_cannot_be_read(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            self.committed_repo(root)
+            head = self.git(root, "rev-parse", "HEAD")
+            original_git = collab.git
+            mutating_commands = []
+
+            def fail_status(repo, *args, check=True):
+                if args and args[0] in {"merge", "reset", "update-ref"}:
+                    mutating_commands.append(args[0])
+                if args[:3] == (
+                    "status",
+                    "--porcelain=v1",
+                    "--untracked-files=all",
+                ):
+                    if check:
+                        raise collab.CommandError("simulated status read failure")
+                    return ""
+                return original_git(repo, *args, check=check)
+
+            with patch.object(collab, "git", side_effect=fail_status):
+                with self.assertRaisesRegex(
+                    collab.CommandError,
+                    "simulated status read failure",
+                ):
+                    collab.force_update_main_worktree(root, head)
+
+            self.assertEqual(mutating_commands, [])
+            self.assertEqual(self.git(root, "rev-parse", "HEAD"), head)
+
+    def test_macos_service_runs_the_automatic_main_refresh_command(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "repo"
             self.committed_repo(root)
@@ -187,9 +304,40 @@ class FreshnessTests(unittest.TestCase):
         self.assertEqual(command[2:4], ["refresh", "--scheduled"])
         self.assertIn("--repo", command)
         self.assertEqual(payload["StartInterval"], collab.FRESHNESS_INTERVAL_SECONDS)
-        rendered = " ".join(command)
-        for forbidden in ("commit", "merge", "pull", "push", "rebase", "reset", "stash"):
-            self.assertNotIn(forbidden, rendered)
+
+    def test_existing_managed_worker_self_updates_from_remote_main(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            base = Path(temporary)
+            remote = base / "remote.git"
+            seed = base / "seed"
+            clone = base / "clone"
+            self.git(base, "init", "--bare", str(remote))
+            self.committed_repo(seed)
+            tools = seed / "tools"
+            tools.mkdir()
+            source = tools / "civvis_collab.py"
+            old_worker = f"# {collab.FRESHNESS_MARKER}\nold worker\n"
+            source.write_text(old_worker, encoding="utf-8")
+            self.git(seed, "add", "tools/civvis_collab.py")
+            self.git(seed, "commit", "-m", "old worker")
+            self.git(seed, "remote", "add", "origin", str(remote))
+            self.git(seed, "push", "-u", "origin", "main")
+            self.git(remote, "symbolic-ref", "HEAD", "refs/heads/main")
+            self.git(base, "clone", str(remote), str(clone))
+
+            target = collab.freshness_worker_path(clone)
+            target.parent.mkdir(parents=True)
+            target.write_text(old_worker, encoding="utf-8")
+            new_worker = f"# {collab.FRESHNESS_MARKER}\nnew automatic sync worker\n"
+            source.write_text(new_worker, encoding="utf-8")
+            self.git(seed, "add", "tools/civvis_collab.py")
+            self.git(seed, "commit", "-m", "new worker")
+            self.git(seed, "push", "origin", "main")
+
+            report = collab.refresh_repository(clone)
+
+            self.assertNotIn("fetch_error", report)
+            self.assertEqual(target.read_text(encoding="utf-8"), new_worker)
 
     def test_a_stale_or_wrong_revision_heartbeat_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:

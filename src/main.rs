@@ -238,8 +238,23 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// The live Civ VI mirror's purchase-placement regression moves only a unit in
 /// a `cfg(test)` fixture. The compiled AdvancedAi implementation is unchanged;
 /// this is therefore another reviewed compatibility re-pin.
+///
+/// #896 keeps repeatable economic projects out of the live controller's
+/// wartime land-force gap. The new branch is gated by `victory_planning`,
+/// which `AdvancedAi::legacy()` disables. Clean `f114601` and candidate
+/// release builds produced byte-identical stdout from `ai_eval advanced_v1
+/// basic --pairs 10 --players 4 --turns 200 --seed 31337 --jobs 1
+/// --deployment-comparison`: 16/20 Advanced-v1 wins, 125.9 average turns, and
+/// identical terminal and strategy-transition tables. Compatibility re-pin;
+/// the Elo protocol does not change.
+///
+/// #879 replaces `filter(...).next()` with `find(...)` in one `cfg(test)`
+/// fixture and removes an unnecessary `mut` from another. Neither change is
+/// part of a compiled controller, so Advanced-v1 behavior and the Elo protocol
+/// remain unchanged. The source contract is deliberately re-pinned for this
+/// reviewed test-only diff.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe044_0320_25a5_04e4;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x78a7_5e9a_003d_457c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

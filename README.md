@@ -437,3 +437,14 @@ implementation map, [AI_GAPS](docs/AI_GAPS.md) for the current assessment,
 [LEAGUE](docs/LEAGUE.md) for seating and ratings. [GROUNDING](docs/GROUNDING.md)
 and [CIV6_COMPUTER_CONTROL](docs/CIV6_COMPUTER_CONTROL.md) document the two
 real-game bridges.
+
+## Licence
+
+CIVVIS is free software under the **GNU General Public License, version 3 or
+later** — see [LICENSE](LICENSE). You may use, study, change and redistribute
+it; anything you distribute that is built on it has to reach its users under
+the same terms, with source.
+
+It was previously published as MIT. That relicensing is the copyright holder's
+to make and applies going forward; revisions released before it remain
+available under the terms they carried at the time.

@@ -440,3 +440,44 @@ class SettingsDealt(unittest.TestCase):
         """⚠ Absent is not wrong. An old export naming nothing must not be
         reported as the game having dealt the wrong rung."""
         self.assertEqual(self._mismatch(self.ASKED, {}), {})
+
+
+class BatchPinStalenessTests(unittest.TestCase):
+    """The pin line must say when the tree is behind, or a stale tree is invisible.
+
+    On 2026-08-02 the batch tree ran hours behind `origin/main` with four merged
+    fixes unbuilt, and `batch pinned to 1000a13` read exactly as it would have on
+    main. Reporting is enough — pinning to an old commit is a legitimate way to keep
+    a batch comparable — but it must not be silent.
+    """
+
+    def test_the_helper_reports_rather_than_refuses(self) -> None:
+        source = (Path(__file__).resolve().parent
+                  / "civ6_civvis_climb.py").read_text(encoding="utf-8")
+        start = source.index("def commits_behind_main()")
+        whole = source[start:source.index("\ndef ", start + 10)]
+        # ⚠ Assert against CODE, not prose. The docstring says "does not fetch",
+        # and a substring check that reads the docstring is checking the comment.
+        opening = whole.index('"""')
+        code = whole[whole.index('"""', opening + 3) + 3:]
+        self.assertIn("rev-list", code)
+        self.assertIn("HEAD..origin/main", code)
+        # ⚠ Must never fetch: a batch cannot depend on the network.
+        self.assertNotIn("fetch", code)
+        # ⚠ Must never abort: an old pin is legitimate.
+        self.assertNotIn("sys.exit", code)
+
+    def test_the_pin_line_carries_the_staleness(self) -> None:
+        source = (Path(__file__).resolve().parent
+                  / "civ6_civvis_climb.py").read_text(encoding="utf-8")
+        # ⚠ Assert on the PRINT EXPRESSION, not the neighbourhood. The first version
+        # of this test read 700 characters either side, so it passed unchanged when
+        # the staleness was computed and then never concatenated — which is exactly
+        # the bug it exists to catch.
+        start = source.index('print(f"batch pinned to {pinned}"')
+        statement = source[start:source.index("flush=True)", start)]
+        self.assertIn("staleness", statement,
+                      f"the computed staleness must reach the printed line: {statement}")
+        before = source[start - 700:start]
+        self.assertIn("commits_behind_main()", before)
+        self.assertIn("behind origin/main", before)

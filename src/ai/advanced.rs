@@ -9765,6 +9765,20 @@ impl AdvancedAi {
         } else {
             desired_military
         };
+        let land_military = counts
+            .military
+            .saturating_sub(counts.naval + counts.aircraft);
+        // Keep empty-city scoring consistent with
+        // `redirect_repeatable_projects_for_force_gap`. That pass pauses an
+        // existing district race when a war plan is short of land units, but
+        // without the same gate here another empty city could immediately
+        // start a fresh Great Person project instead of filling the gap.
+        let strategic_land_force_gap = self.victory_planning
+            && matches!(
+                plan.strategy,
+                GrandStrategy::Conquest | GrandStrategy::Recovery
+            )
+            && land_military < desired_military;
         let raw = match item {
             Item::Unit { unit } if unit == "settler" => {
                 let site = self.best_settle_site(g, pid, city.pos, 11).or_else(|| {
@@ -9893,9 +9907,7 @@ impl AdvancedAi {
                 let current = if naval {
                     counts.naval
                 } else {
-                    counts
-                        .military
-                        .saturating_sub(counts.naval + counts.aircraft)
+                    land_military
                 };
                 if self.victory_planning
                     && current >= desired.saturating_add(2)
@@ -9929,9 +9941,6 @@ impl AdvancedAi {
                     } else {
                         city_count.div_ceil(2).max(1)
                     };
-                    let land_military = counts
-                        .military
-                        .saturating_sub(counts.naval + counts.aircraft);
                     if naval && !BasicAi::city_is_coastal(g, cid) {
                         return -10_000.0;
                     }
@@ -10479,6 +10488,7 @@ impl AdvancedAi {
                 }
             }
             Item::Project { project } => {
+                let spec = &g.rules.projects[project];
                 let space_race = matches!(
                     project.as_str(),
                     "launch_earth_satellite"
@@ -10488,7 +10498,11 @@ impl AdvancedAi {
                         | "lagrange_laser_station"
                         | "terrestrial_laser_station"
                 );
-                if (space_race
+                let repeatable_economic_project = spec.repeatable
+                    && (!spec.completion_gpp.is_empty() || !spec.ongoing_yields.is_empty());
+                if strategic_land_force_gap && repeatable_economic_project {
+                    -10_000.0
+                } else if (space_race
                     && self.victory_target.is_some()
                     && self.victory_target != Some(VictoryTarget::Science))
                     || turns > remaining_turns * 0.8
@@ -10496,7 +10510,6 @@ impl AdvancedAi {
                     -10_000.0
                 } else {
                     let completed = g.players[pid].science_projects.len() as f64;
-                    let spec = &g.rules.projects[project];
                     match project.as_str() {
                         "repair_outer_defenses" => {
                             let missing = (g.city_max_wall_hp(city) - city.wall_hp).max(0);
@@ -21910,6 +21923,86 @@ mod tests {
     }
 
     #[test]
+    fn defensive_recovery_force_gap_outranks_rear_city_great_person_project() {
+        let mut game = Game::new(2, 24, 16, 7_104, 200, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let threatened_city = game.player_city_ids(0)[0];
+        let threatened_position = game.cities[&threatened_city].pos;
+        let rear_city = found_nearby_test_city(&mut game, 0, threatened_position);
+        install_ai_test_district(&mut game, rear_city, "theater_square");
+        game.cities
+            .get_mut(&rear_city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("amphitheater"));
+        game.players[0]
+            .civics
+            .insert(crate::name!("drama_poetry"));
+
+        for unit in game.player_unit_ids(0) {
+            if game.rules.units[game.units[&unit].kind].class == "military" {
+                game.remove_unit(unit);
+            }
+        }
+        for _ in 0..3 {
+            game.spawn_test_unit("warrior", 0, game.cities[&rear_city].pos);
+        }
+        game.record_contact(0, 1);
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+
+        let project = Item::Project {
+            project: crate::name!("theater_square_festival"),
+        };
+        let award = game.project_completion_gpp_awards(
+            0,
+            rear_city,
+            "theater_square_festival",
+        )["writer"];
+        let cost = game.gp_cost(0, "writer");
+        game.players[0]
+            .gpp
+            .insert("writer".to_string(), cost - award);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: Some(threatened_city),
+            desired_cities: 2,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let ai = AdvancedAi::new();
+        let counts = ai.counts(&game, 0);
+        assert_eq!(counts.military, 3, "the two-city defense is one unit short");
+        assert!(game.can_produce(0, rear_city, &project));
+        assert!(
+            ai.production_value(&game, 0, rear_city, &project, &plan, &counts) < -9_000.0,
+            "a rear city must reinforce a threatened empire before forcing a cultural Great Person race"
+        );
+        let warrior = Item::Unit {
+            unit: crate::name!("warrior"),
+        };
+        assert!(
+            ai.production_value(&game, 0, rear_city, &warrior, &plan, &counts) > 0.0,
+            "the missing land defender must remain a productive alternative"
+        );
+
+        let rear_position = game.cities[&rear_city].pos;
+        game.spawn_test_unit("warrior", 0, rear_position);
+        let reinforced = ai.counts(&game, 0);
+        assert_eq!(reinforced.military, 4);
+        assert!(
+            ai.production_value(&game, 0, rear_city, &project, &plan, &reinforced) > -9_000.0,
+            "Great Person races may resume once the defensive force gap is filled"
+        );
+    }
+
+    #[test]
     fn bread_and_circuses_value_tracks_real_loyalty_need() {
         let mut game = Game::new(1, 20, 14, 7_105, 160, 0);
         let settler = game
@@ -23737,14 +23830,13 @@ mod tests {
             .tiles
             .keys()
             .copied()
-            .filter(|position| {
+            .find(|position| {
                 game.wdist(source, *position) >= SETTLER_ESCORT_DISTANCE
                     && game.wdist(source, *position) <= SETTLER_ESCORT_SEARCH_RADIUS
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
             })
-            .next()
             .expect("fixture has a reachable expansion target");
         let settler = game.spawn_test_unit("settler", 0, source);
         let escort = game.spawn_test_unit("warrior", 0, source);
@@ -24058,7 +24150,7 @@ mod tests {
         game.record_contact(0, 1);
         game.record_contact(0, minor);
 
-        let mut ai = AdvancedAi::new();
+        let ai = AdvancedAi::new();
         let plan = ai.assess(&game, 0);
 
         assert_eq!(plan.target_player, Some(1));
