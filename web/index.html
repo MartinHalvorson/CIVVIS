@@ -30108,6 +30108,16 @@ function tileOwnershipTipLine(t) {
 }
 function tileTipLines(t, pos, tileKey) {
   const lines = [];
+  // Who is standing here is what a hover over an occupied tile is asking, so
+  // the units lead and the ground they are standing on follows them.
+  for (const unit of state.units) {
+    if (key(unit.pos) !== tileKey) continue;
+    const civ = state.players[unit.owner]?.civ || `Player ${unit.owner}`;
+    lines.push(`<span class="tip-unit">● ${civAdjective(civ)} ${titleCase(unit.type)} — ` +
+      fmtYield(unit.hp) + " HP, " + fmtYield(unit.moves_left) + " MP" +
+      (unit.level > 1 ? ", level " + unit.level : "") + (unit.embarked ? ", embarked" : "") +
+      (unit.fortified ? ", fortified" : "") + "</span>");
+  }
   const owner = tileOwnershipTipLine(t);
   if (owner) lines.push(owner);
   if (mapLens === "government" && t.owner !== null && t.owner !== undefined) {
@@ -30199,15 +30209,6 @@ function tileTipLines(t, pos, tileKey) {
         `${entry.religion ? titleCase(entry.religion) : "No religion"} ` +
         `${Math.round(entry.pressure * 100 / total)}%`).join(" · "));
     }
-  }
-
-  for (const unit of state.units) {
-    if (key(unit.pos) !== tileKey) continue;
-    const civ = state.players[unit.owner]?.civ || `Player ${unit.owner}`;
-    lines.push(`<span class="tip-unit">● ${civAdjective(civ)} ${titleCase(unit.type)} — ` +
-      fmtYield(unit.hp) + " HP, " + fmtYield(unit.moves_left) + " MP" +
-      (unit.level > 1 ? ", level " + unit.level : "") + (unit.embarked ? ", embarked" : "") +
-      (unit.fortified ? ", fortified" : "") + "</span>");
   }
   return lines;
 }
