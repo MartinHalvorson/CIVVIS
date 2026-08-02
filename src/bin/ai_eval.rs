@@ -812,6 +812,18 @@ struct MatrixProfile {
     requirement: MatrixRequirement,
 }
 
+struct MatrixChildRequest<'a> {
+    challenger: &'a str,
+    incumbent: &'a str,
+    pairs: usize,
+    jobs: usize,
+    seed: u64,
+    profile: MatrixProfile,
+    difficulty: &'a str,
+    require_artifacts: bool,
+    confirm_seed: Option<u64>,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum MatrixRequirement {
     NoRegression,
@@ -859,17 +871,18 @@ fn matrix_profile_seed(seed: u64, profile_index: usize) -> u64 {
     seed + profile_index as u64 * MATRIX_PROFILE_SEED_STRIDE
 }
 
-fn matrix_child_args(
-    challenger: &str,
-    incumbent: &str,
-    pairs: usize,
-    jobs: usize,
-    seed: u64,
-    profile: MatrixProfile,
-    difficulty: &str,
-    require_artifacts: bool,
-    confirm_seed: Option<u64>,
-) -> Vec<String> {
+fn matrix_child_args(request: MatrixChildRequest<'_>) -> Vec<String> {
+    let MatrixChildRequest {
+        challenger,
+        incumbent,
+        pairs,
+        jobs,
+        seed,
+        profile,
+        difficulty,
+        require_artifacts,
+        confirm_seed,
+    } = request;
     let mut args: Vec<String> = [
         challenger.to_string(),
         incumbent.to_string(),
@@ -974,7 +987,7 @@ fn matrix_job_budgets(total_jobs: usize) -> [usize; 2] {
         // These run sequentially, so each child can use the sole worker.
         return [1, 1];
     }
-    let compact = ((total_jobs + 2) / 3).max(1);
+    let compact = total_jobs.div_ceil(3).max(1);
     [compact, total_jobs - compact]
 }
 
@@ -1044,17 +1057,17 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                 let profile_seed = matrix_profile_seed(seed, index);
                 let profile_confirm_seed = confirm_base_seed
                     .map(|prior| matrix_profile_seed(prior, index));
-                let child_args = matrix_child_args(
+                let child_args = matrix_child_args(MatrixChildRequest {
                     challenger,
                     incumbent,
                     pairs,
-                    1,
-                    profile_seed,
+                    jobs: 1,
+                    seed: profile_seed,
                     profile,
-                    &difficulty,
+                    difficulty: &difficulty,
                     require_artifacts,
-                    profile_confirm_seed,
-                );
+                    confirm_seed: profile_confirm_seed,
+                });
                 let output = Command::new(&executable)
                     .args(child_args)
                     .output()
@@ -1074,17 +1087,17 @@ fn run_profile_matrix(args: &[String], challenger: &str, incumbent: &str) -> ! {
                         let profile_seed = matrix_profile_seed(seed, index);
                         let profile_confirm_seed = confirm_base_seed
                             .map(|prior| matrix_profile_seed(prior, index));
-                        let child_args = matrix_child_args(
+                        let child_args = matrix_child_args(MatrixChildRequest {
                             challenger,
                             incumbent,
                             pairs,
-                            job_budgets[index],
-                            profile_seed,
+                            jobs: job_budgets[index],
+                            seed: profile_seed,
                             profile,
-                            &difficulty,
+                            difficulty: &difficulty,
                             require_artifacts,
-                            profile_confirm_seed,
-                        );
+                            confirm_seed: profile_confirm_seed,
+                        });
                         let output = Command::new(executable)
                             .args(child_args)
                             .output()
@@ -1980,28 +1993,28 @@ mod tests {
 
     #[test]
     fn promotion_matrix_pins_compact_and_deployment_profiles() {
-        let compact = matrix_child_args(
-            "challenger",
-            "incumbent",
-            60,
-            4,
-            90_000,
-            PROMOTION_PROFILES[0],
-            "prince",
-            false,
-            None,
-        );
-        let deployment = matrix_child_args(
-            "challenger",
-            "incumbent",
-            60,
-            4,
-            1_090_000,
-            PROMOTION_PROFILES[1],
-            "prince",
-            false,
-            None,
-        );
+        let compact = matrix_child_args(MatrixChildRequest {
+            challenger: "challenger",
+            incumbent: "incumbent",
+            pairs: 60,
+            jobs: 4,
+            seed: 90_000,
+            profile: PROMOTION_PROFILES[0],
+            difficulty: "prince",
+            require_artifacts: false,
+            confirm_seed: None,
+        });
+        let deployment = matrix_child_args(MatrixChildRequest {
+            challenger: "challenger",
+            incumbent: "incumbent",
+            pairs: 60,
+            jobs: 4,
+            seed: 1_090_000,
+            profile: PROMOTION_PROFILES[1],
+            difficulty: "prince",
+            require_artifacts: false,
+            confirm_seed: None,
+        });
         for args in [&compact, &deployment] {
             assert_eq!(text(args, "--map", "missing"), "continents");
             assert_eq!(text(args, "--shape", "missing"), "planet");
@@ -2022,30 +2035,30 @@ mod tests {
         assert_eq!(text(&deployment, "--speed", "missing"), "online");
         assert_eq!(matrix_profile_seed(90_000, 0), 90_000);
         assert_eq!(matrix_profile_seed(90_000, 1), 1_090_000);
-        let extended = matrix_child_args(
-            "challenger",
-            "incumbent",
-            120,
-            4,
-            matrix_profile_seed(90_000, 1),
-            PROMOTION_PROFILES[1],
-            "prince",
-            false,
-            None,
-        );
+        let extended = matrix_child_args(MatrixChildRequest {
+            challenger: "challenger",
+            incumbent: "incumbent",
+            pairs: 120,
+            jobs: 4,
+            seed: matrix_profile_seed(90_000, 1),
+            profile: PROMOTION_PROFILES[1],
+            difficulty: "prince",
+            require_artifacts: false,
+            confirm_seed: None,
+        });
         assert_eq!(number(&extended, "--seed", 0), 1_090_000);
 
-        let confirmed = matrix_child_args(
-            "challenger",
-            "incumbent",
-            120,
-            4,
-            matrix_profile_seed(92_000, 1),
-            PROMOTION_PROFILES[1],
-            "prince",
-            false,
-            Some(matrix_profile_seed(90_000, 1)),
-        );
+        let confirmed = matrix_child_args(MatrixChildRequest {
+            challenger: "challenger",
+            incumbent: "incumbent",
+            pairs: 120,
+            jobs: 4,
+            seed: matrix_profile_seed(92_000, 1),
+            profile: PROMOTION_PROFILES[1],
+            difficulty: "prince",
+            require_artifacts: false,
+            confirm_seed: Some(matrix_profile_seed(90_000, 1)),
+        });
         assert_eq!(number(&confirmed, "--seed", 0), 1_092_000);
         assert_eq!(number(&confirmed, "--confirm", 0), 1_090_000);
     }
@@ -2215,7 +2228,7 @@ mod tests {
 
     #[test]
     fn minimum_map_gate_overrides_an_early_clean_sweep() {
-        let result = paired_inference(&vec![1.0; PROMOTION_MIN_MAPS - 1]);
+        let result = paired_inference(&[1.0; PROMOTION_MIN_MAPS - 1]);
         assert!(result.low > 0.5);
         assert_eq!(result.anytime.challenger_peak_e, 1.0);
         assert_eq!(result.anytime.challenger_p, 1.0);
