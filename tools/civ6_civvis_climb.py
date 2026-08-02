@@ -4,7 +4,7 @@
 cannot be used for a CIVVIS-driven attempt. This does one rung, repeatedly, with the
 decision loop attached, and keeps a ledger.
 
-    python3 tools/civ6_civvis_climb.py --attempts 12 --victory score
+    python3 tools/civ6_civvis_climb.py --attempts 12 --victory civvis
 
 ⚠ ONE HARNESS AT A TIME. There is one installation, one mod directory, one log and
 one run lock. Two harnesses driving it interleave their installs and each reads the
@@ -508,23 +508,34 @@ def main() -> int:
     # --turns 250`): eight of eight domination-targeted games ended by score at the
     # turn limit, none by conquest. Score is the only lane whose budget is near 250.
     #
-    # ★★★★★ And it is not merely unwinnable, it is WORSE. Mirrored head-to-head at
-    # this ladder's own profile, `ai_eval advanced_target_score
-    # advanced_target_domination --pairs 30 --players 6 --turns 250`:
+    # ★★★★★ AND THE ANSWER IS NOT ANOTHER LANE — IT IS NOT PINNING ONE.
     #
-    #     discovery    seed 71000000   68.3%   +134 Elo   p=0.0010
-    #     confirmation seed 82000000   70.0%   +147 Elo   p=0.0042   CONFIRMED
+    # Mirrored head-to-head at this ladder's own profile, 30 map pairs, 6 players,
+    # 250 turns, using the arms added in #857:
     #
-    # The confirmation came in ABOVE the discovery estimate rather than regressing
-    # toward parity. Per-seat means on the confirmed arm: gold 1226 against 194,
-    # culture 81 against 48, score 429 against 373 — the conquest lane takes MORE
-    # cities (5.08 against 4.49) and converts none of them, which is the treasury
-    # collapse recorded in `civvis-civ6-expansion-ends-in-bankruptcy`.
+    #     score-target   vs domination-target   68.3% / 70.0%   +147 Elo  CONFIRMED
+    #     adaptive       vs score-target        98.3%           -708 for score
+    #     adaptive       vs domination-target   100.0%  60-0    p=0.0000
     #
-    # ⚠ `domination` stays available and unchanged; only the default moves. Anyone
-    # comparing against the 104 existing rows must pass `--victory domination`
-    # explicitly, and rows either side of this commit are NOT comparable.
-    ap.add_argument("--victory", default="score")
+    # So the ordering is **adaptive >> score > domination**, and the deployed
+    # setting is the worst of the three: untargeted `advanced` beat it 60-0, with
+    # `advanced_target_domination` recording ZERO victories of any type in 60 games.
+    #
+    # ⚠ THE REASONING THAT MOTIVATED PINNING A LANE AT ALL DOES NOT HOLD. The note
+    # on `--victory` in civvis_orders.rs says that left to itself the agent "picked
+    # `religion` with `victory=None`, unreachable in 250 turns". Untargeted
+    # `advanced` wins 48 of its 60 BY RELIGION at a 250-turn cap in the run above.
+    # Whatever made religion look unreachable, it was not the turn budget.
+    #
+    # `civvis` is the value that restores letting the agent choose; it maps to a
+    # plain `AdvancedAi::new()` with no `VictoryTarget`, which is the `advanced`
+    # controller both evaluations above were run against.
+    #
+    # ⚠ `domination`, `score` and `science` stay available and unchanged; only the
+    # default moves. Anyone comparing against the 104 existing rows must pass
+    # `--victory domination` explicitly, and rows either side of this commit are
+    # NOT comparable.
+    ap.add_argument("--victory", default="civvis")
     # Passed straight through to the brain; see its `--strategy` note for why the
     # default changed from the built-in AdvancedAi and what would undo it.
     ap.add_argument("--strategy", default="auto",
