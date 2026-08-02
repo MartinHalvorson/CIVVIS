@@ -2660,6 +2660,40 @@ mod tests {
         );
     }
 
+    /// ⚠⚠ A GAP LIST THAT REPORTS A FIELD THE MIRROR DOES READ IS A BROKEN
+    /// INSTRUMENT, and this project navigates by `unmapped`.
+    ///
+    /// `state_schema_gaps` keeps its own names beside `StateCity`/`StateUnit` and
+    /// nothing kept the two in step. #877 added `production`, `production_cost` and
+    /// `production_turns` to the struct and the decider went on printing
+    /// `unmapped: schema:city.production,...` every turn while reading them
+    /// perfectly well. `class` had been doing it for longer.
+    ///
+    /// A superset is fine — serde aliases mean `kind` also answers to `type`, and
+    /// only the export side needs both. What must never happen again is a struct
+    /// field with no entry.
+    #[test]
+    fn the_schema_allowlists_cover_every_declared_field() {
+        for (struct_name, allowed) in
+            [("StateCity", CITY_KEYS), ("StateUnit", UNIT_KEYS)]
+        {
+            let declared = declared_fields(struct_name);
+            assert!(
+                !declared.is_empty(),
+                "{struct_name} parsed to no fields — the extractor broke, not the list"
+            );
+            let missing: Vec<&String> = declared
+                .iter()
+                .filter(|field| !allowed.contains(&field.as_str()))
+                .collect();
+            assert!(
+                missing.is_empty(),
+                "{struct_name} declares {missing:?}, which state_schema_gaps would \
+                 report as unmapped even though the mirror reads them"
+            );
+        }
+    }
+
     /// ★★★★★ `DISTRICT_GOVERNMENT` is CIVVIS's `government_plaza`, and missing that
     /// cost two separate bugs.
     ///
@@ -5866,6 +5900,57 @@ fn apply_identity(game: &mut crate::game::Game, state: &StateSnapshot) -> Vec<St
 ///
 /// ⚠ Newest-wins rather than first-match: the mod re-emits state as a turn is
 /// replayed, and an early partial export would otherwise win forever.
+/// Keys `state_schema_gaps` accepts on an exported city and unit.
+///
+/// ⚠⚠ HOISTED SO A TEST CAN SEE THEM. These are a second list of field names beside
+/// `StateCity`/`StateUnit`, and nothing kept the two in step — so #877 added
+/// `production`, `production_cost` and `production_turns` to the struct, the mirror
+/// read them correctly, and the decider went on reporting
+/// `unmapped: schema:city.production,...` on every turn. `class` had been doing the
+/// same thing for longer.
+///
+/// An instrument that reports a gap where there is none is worse than no instrument:
+/// this project relies on `unmapped` to find exactly this class of defect, and a list
+/// with known-false entries is one nobody reads. `the_schema_allowlists_cover_every_
+/// declared_field` now fails if they drift apart again.
+///
+/// ⚠ A superset is correct, not an error. Serde aliases mean one field answers to two
+/// names — `kind` also accepts `type` — and only the export side needs both.
+const CITY_KEYS: &[&str] = &[
+    "id", "name", "buildings", "religion", "religion_next", "religion_turns",
+    "pantheon_active", "districts", "wonders", "worked", "specialists", "great_works",
+    "yields", "producing", "producing_hash", "production_progress", "production",
+    "production_cost", "production_turns", "food", "loyalty_per_turn", "falls_to",
+    "x", "y", "pop", "capital", "defense", "damage", "max_damage", "wall_damage",
+    "max_wall_damage", "loyalty",
+];
+
+const UNIT_KEYS: &[&str] = &[
+    "id", "kind", "type", "base", "class", "x", "y", "hp", "combat", "ranged",
+    "player", "moves", "fortified", "fortify_turns", "formation_count", "great_person",
+];
+
+/// The field names `state_schema_gaps` will accept for one struct, extracted from
+/// this file's own source.
+///
+/// ⚠ Only used by the drift test below. It is deliberately crude — `pub name:` lines
+/// inside the named `pub struct` block — because the alternative was another
+/// hand-maintained list, which is the failure it exists to catch.
+#[cfg(test)]
+fn declared_fields(struct_name: &str) -> Vec<String> {
+    let source = include_str!("mirror.rs");
+    let head = format!("pub struct {struct_name} {{");
+    let start = source.find(&head).expect("the struct is declared in this file");
+    let body = &source[start + head.len()..];
+    let end = body.find("\n}").expect("the struct block terminates");
+    body[..end]
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("pub "))
+        .filter_map(|rest| rest.split(':').next())
+        .map(|name| name.trim().to_string())
+        .collect()
+}
+
 fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     fn keys(
         value: &serde_json::Value,
@@ -5890,22 +5975,13 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "military", "trade_capacity", "governor_points", "governor_points_spent",
         "governors", "cities", "units", "trade_routes", "rivals", "minors", "hostiles",
     ];
-    const CITY: &[&str] = &[
-        "id", "name", "buildings", "religion", "religion_next", "religion_turns",
-        "pantheon_active", "districts", "wonders", "worked", "specialists", "great_works",
-        "yields", "producing", "producing_hash", "production_progress", "food",
-        "loyalty_per_turn", "falls_to", "x", "y", "pop", "capital", "defense", "damage",
-        "max_damage", "wall_damage", "max_wall_damage", "loyalty",
-    ];
+    const CITY: &[&str] = CITY_KEYS;
     const DISTRICT: &[&str] = &["type", "x", "y", "pillaged", "complete"];
     const WONDER: &[&str] = &["type", "x", "y"];
     const WORKED: &[&str] = &["x", "y"];
     const GREAT_WORK: &[&str] = &["type", "object", "era", "creator", "building", "slot"];
     const YIELDS: &[&str] = &["food", "production", "gold", "science", "culture", "faith"];
-    const UNIT: &[&str] = &[
-        "id", "kind", "type", "x", "y", "hp", "combat", "ranged", "player", "moves",
-        "fortified", "fortify_turns", "formation_count", "great_person",
-    ];
+    const UNIT: &[&str] = UNIT_KEYS;
     const ROUTE: &[&str] = &[
         "trader", "origin", "destination", "destination_player", "origin_x", "origin_y",
         "destination_x", "destination_y",
