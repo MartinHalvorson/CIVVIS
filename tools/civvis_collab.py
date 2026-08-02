@@ -41,7 +41,7 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,31}$")
 TASK_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,47}$")
 PUSH_GUARD_MARKER = "CIVVIS managed pre-push guard v1"
 FRESHNESS_MARKER = "CIVVIS managed Git freshness service v1"
-FRESHNESS_SCHEMA = 1
+FRESHNESS_SCHEMA = 2
 FRESHNESS_INTERVAL_SECONDS = 300
 FRESHNESS_STALE_SECONDS = 15 * 60
 FRESHNESS_LOCK_STALE_SECONDS = 30 * 60
@@ -1275,8 +1275,13 @@ def bootstrap_command(args: argparse.Namespace) -> int:
     configure_clone(root)
     hook = install_push_guard(root)
     report = refresh_repository(root, wait_seconds=30.0)
-    if report.get("fetch_error") or report.get("skipped"):
-        raise CommandError(str(report.get("fetch_error") or report.get("skipped")))
+    failure = (
+        report.get("fetch_error")
+        or report.get("main_update_error")
+        or report.get("skipped")
+    )
+    if failure:
+        raise CommandError(str(failure))
     service_paths = install_freshness_service(root)
     print(f"installed CIVVIS pre-push guard: {hook}")
     for path in service_paths:
@@ -1341,10 +1346,14 @@ def start_task(args: argparse.Namespace) -> int:
     configure_clone(root)
     install_push_guard(root)
     report = refresh_repository(root, wait_seconds=30.0)
-    if report.get("fetch_error") or report.get("skipped"):
+    failure = (
+        report.get("fetch_error")
+        or report.get("main_update_error")
+        or report.get("skipped")
+    )
+    if failure:
         raise CommandError(
-            "cannot start from a verified current origin/main: "
-            + str(report.get("fetch_error") or report.get("skipped"))
+            "cannot start from a synchronized origin/main: " + str(failure)
         )
     install_freshness_service(root)
     git(root, "worktree", "add", "-b", branch, str(worktree), "origin/main")
@@ -1509,6 +1518,69 @@ def main_worktree(repo: Path) -> Path:
     )
 
 
+def force_update_main_worktree(repo: Path, origin_main: str) -> Dict[str, str]:
+    """Align the clean management worktree to the exact fetched main revision.
+
+    Task worktrees are never candidates for this update. A dirty management
+    worktree is preserved verbatim and reported as an error. If a clean local
+    main has commits that are not ancestors of GitHub main, keep an immutable
+    recovery ref before resetting it so the scheduled repair loses no history.
+    """
+    path = main_worktree(repo)
+    dirty = git(
+        path,
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+        check=False,
+    )
+    if dirty:
+        raise CommandError(
+            f"refusing to force-update dirty main management worktree: {path}"
+        )
+
+    before = git(path, "rev-parse", "HEAD")
+    result = {
+        "path": str(path),
+        "before": before,
+        "after": origin_main,
+        "mode": "current",
+    }
+    if before == origin_main:
+        return result
+
+    ancestry = run(
+        ("git", "-C", str(path), "merge-base", "--is-ancestor", before, origin_main),
+        check=False,
+    )
+    if ancestry.returncode == 0:
+        git(path, "merge", "--ff-only", origin_main)
+        result["mode"] = "fast-forward"
+    elif ancestry.returncode == 1:
+        stamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        recovery_ref = (
+            f"refs/civvis/recovery/main/{stamp}-{secrets.token_hex(2)}-{before[:12]}"
+        )
+        git(path, "update-ref", recovery_ref, before)
+        git(path, "reset", "--hard", origin_main)
+        result["mode"] = "forced"
+        result["recovery_ref"] = recovery_ref
+    else:
+        raise CommandError(
+            f"cannot determine whether local main {before[:12]} precedes "
+            f"origin/main {origin_main[:12]}"
+        )
+
+    actual = git(path, "rev-parse", "HEAD")
+    if actual != origin_main:
+        raise CommandError(
+            f"main update stopped at {actual[:12]}, expected {origin_main[:12]}"
+        )
+    if git(path, "status", "--porcelain=v1", "--untracked-files=all", check=False):
+        raise CommandError(f"main update left unexpected worktree changes: {path}")
+    return result
+
+
 def worktree_freshness(repo: Path, origin_main: str) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     registrations = parse_worktrees(git(repo, "worktree", "list", "--porcelain"))
@@ -1540,11 +1612,15 @@ def refresh_managed_worker(repo: Path) -> None:
     target = freshness_worker_path(repo)
     if not target.exists():
         return
-    source = git(
-        repo,
-        "show",
-        f"origin/{DEFAULT_BRANCH}:tools/civvis_collab.py",
-    ).encode("utf-8")
+    source = run(
+        (
+            "git",
+            "-C",
+            str(repo),
+            "show",
+            f"origin/{DEFAULT_BRANCH}:tools/civvis_collab.py",
+        )
+    ).stdout.encode("utf-8")
     if FRESHNESS_MARKER.encode("utf-8") not in source:
         # During this feature's own rollout the installed worker is newer than
         # main. Keep it until the protected trunk contains the managed version;
@@ -1571,10 +1647,15 @@ def refresh_repository(repo: Path, *, wait_seconds: float = 0.0) -> Dict[str, An
             origin_main = git(root, "rev-parse", f"origin/{DEFAULT_BRANCH}")
             report["fetched_at"] = utc_now()
             report["origin_main"] = origin_main
-            report["worktrees"] = worktree_freshness(root, origin_main)
-            refresh_managed_worker(root)
         except CommandError as error:
             report["fetch_error"] = str(error)
+        else:
+            try:
+                report["main_update"] = force_update_main_worktree(root, origin_main)
+            except CommandError as error:
+                report["main_update_error"] = str(error)
+            report["worktrees"] = worktree_freshness(root, origin_main)
+            refresh_managed_worker(root)
         write_freshness_state(root, report)
         return report
 
@@ -1590,6 +1671,18 @@ def print_refresh_report(report: Dict[str, Any]) -> None:
         f"origin/{DEFAULT_BRANCH} fetched at {report.get('fetched_at', '?')} "
         f"({str(report.get('origin_main', ''))[:12]})"
     )
+    update = report.get("main_update") or {}
+    if update:
+        detail = (
+            f"main {update.get('mode', '?')}: "
+            f"{str(update.get('before', ''))[:12]} -> "
+            f"{str(update.get('after', ''))[:12]} ({update.get('path', '')})"
+        )
+        if update.get("recovery_ref"):
+            detail += f"; recovery {update['recovery_ref']}"
+        print(detail)
+    if report.get("main_update_error"):
+        print(f"main sync ERROR: {report['main_update_error']}", file=sys.stderr)
     for row in report.get("worktrees", []):
         if row.get("prunable"):
             detail = "prunable"
@@ -1606,9 +1699,13 @@ def refresh_command(args: argparse.Namespace) -> int:
     report = refresh_repository(root, wait_seconds=0.0 if args.scheduled else 30.0)
     if args.json:
         print(json.dumps(report, indent=2, sort_keys=True))
-    elif not args.scheduled or report.get("fetch_error"):
+    elif (
+        not args.scheduled
+        or report.get("fetch_error")
+        or report.get("main_update_error")
+    ):
         print_refresh_report(report)
-    return 1 if report.get("fetch_error") else 0
+    return 1 if report.get("fetch_error") or report.get("main_update_error") else 0
 
 
 def install_managed_freshness_worker(repo: Path) -> Path:
@@ -1842,6 +1939,8 @@ def freshness_state_error(repo: Path, remote_main: str = "") -> Optional[str]:
         return "Git freshness heartbeat belongs to a different machine identity"
     if state.get("fetch_error"):
         return "last Git freshness fetch failed: " + str(state["fetch_error"])
+    if state.get("main_update_error"):
+        return "last automatic main update failed: " + str(state["main_update_error"])
     try:
         observed = dt.datetime.fromisoformat(str(state.get("fetched_at", "")))
         if observed.tzinfo is None:
@@ -2137,36 +2236,43 @@ def audit_repo(root: Path) -> Dict[str, List[str]]:
     if service_error:
         errors.append(service_error)
     else:
-        ok.append("fetch-only Git freshness service is installed and enabled")
+        ok.append("automatic Git main synchronization service is installed and enabled")
     state_error = freshness_state_error(root, remote_main)
     if state_error:
         errors.append(state_error)
     else:
-        ok.append("this computer fetched the current GitHub main recently")
+        ok.append("this computer synchronized its management checkout to GitHub main recently")
         state = read_freshness_state(root) or {}
         for row in state.get("worktrees", []):
             behind = int(row.get("behind", 0))
             if behind:
-                warnings.append(
+                message = (
                     f"local worktree {row.get('branch', 'detached')} is "
                     f"{behind} commit(s) behind main: {row.get('path', '')}"
                 )
+                if row.get("branch") == DEFAULT_BRANCH:
+                    errors.append(message)
+                else:
+                    warnings.append(message)
 
     if sys.platform == "darwin":
         agents = Path.home() / "Library" / "LaunchAgents"
         active = sorted(agents.glob("*civvis*autosync*.plist")) if agents.exists() else []
         if active:
-            errors.append("mutating CIVVIS launch agents remain installed: " + ", ".join(map(str, active)))
+            errors.append(
+                "unmanaged mutating CIVVIS launch agents remain installed: "
+                + ", ".join(map(str, active))
+            )
         else:
-            ok.append("no mutating CIVVIS launch agent is installed")
+            ok.append("no unmanaged mutating CIVVIS launch agent is installed")
     elif os.name == "nt" and shutil.which("schtasks"):
         result = run(("schtasks", "/Query", "/TN", "CIVVIS Git Autosync"), check=False)
         if result.returncode == 0:
-            errors.append("mutating CIVVIS scheduled task remains installed")
+            errors.append("unmanaged mutating CIVVIS scheduled task remains installed")
     elif shutil.which("systemctl"):
         result = run(("systemctl", "--user", "is-enabled", "civvis-autosync.timer"), check=False)
         if result.returncode == 0:
-            errors.append("mutating CIVVIS systemd timer remains enabled")
+            errors.append("unmanaged mutating CIVVIS systemd timer remains enabled")
 
     return findings
 
@@ -2287,13 +2393,13 @@ def build_parser() -> argparse.ArgumentParser:
 
     bootstrap = sub.add_parser(
         "bootstrap",
-        help="install clone guards and the fetch-only background freshness service",
+        help="install clone guards and automatic main synchronization",
     )
     bootstrap.set_defaults(func=bootstrap_command)
 
     refresh = sub.add_parser(
         "refresh",
-        help="fetch GitHub and report every local worktree's trunk freshness",
+        help="force-update the main checkout and report task-worktree freshness",
     )
     refresh.add_argument("--json", action="store_true")
     refresh.add_argument("--scheduled", action="store_true", help=argparse.SUPPRESS)
