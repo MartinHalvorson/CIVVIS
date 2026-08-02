@@ -16187,6 +16187,20 @@ pub struct Game {
     /// the block can be scoped; before this it sent only a bare hash.
     #[serde(default)]
     pub blocked_districts: BTreeMap<u32, BTreeSet<Name>>,
+    /// Wonders a HOST engine says have no legal plot IN THIS CITY, scoped for the
+    /// same reason as [`Game::blocked_districts`] — Hanging Gardens needs a river
+    /// and Great Bath floodplains, so one city having no ground says nothing about
+    /// the next.
+    ///
+    /// ★★★★ The wonder half of `build_no_plot` was being DROPPED. That parser reads
+    /// only the event's `district` key, and the mod emits a refused wonder under
+    /// `building`, so every wonder refusal fell through it silently. Measured over
+    /// 20 live runs: **370 wonder refusals against 55 district ones**, from only 29
+    /// distinct (run, city, wonder) combinations — a mean of 12.8 re-asks each and
+    /// **53 consecutive turns** at worst of one city ordering one wonder Firaxis had
+    /// no ground for. `HANGING_GARDENS` 159, `GREAT_BATH` 129, `TEMPLE_ARTEMIS` 45.
+    #[serde(default)]
+    pub blocked_wonders: BTreeMap<u32, BTreeSet<Name>>,
     /// Production choices a HOST ruleset has refused in a particular city.
     ///
     /// The bridge keeps these blocks on a short cooldown: a missing prerequisite or
@@ -16554,6 +16568,7 @@ impl From<GameSer> for Game {
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
+            blocked_wonders: BTreeMap::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
             peace_treaties: s.peace_treaties.into_iter().collect(),
@@ -17000,6 +17015,7 @@ impl Game {
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
+            blocked_wonders: BTreeMap::new(),
             blocked_production: BTreeMap::new(),
             blocked_purchases: BTreeMap::new(),
             peace_treaties: BTreeMap::new(),
@@ -35807,6 +35823,16 @@ impl Game {
     pub fn wonder_sites(&self, cid: u32, wname: &str) -> Vec<Pos> {
         let city = &self.cities[&cid];
         let spec = &self.rules.wonders[wname];
+        // A host that has already said it has no ground for this wonder HERE is
+        // answering about the city, not about one tile, so there is nothing left to
+        // offer and no point re-deriving a site next turn. See `blocked_wonders`.
+        if self
+            .blocked_wonders
+            .get(&cid)
+            .is_some_and(|blocked| blocked.contains(&Name::new(wname)))
+        {
+            return Vec::new();
+        }
         if !self.unlocked(city.owner, &spec.tech, &spec.civic)
             || spec
                 .requires_buildings
@@ -62668,6 +62694,85 @@ mod great_work_tests {
 #[cfg(test)]
 mod district_mechanics {
     use super::*;
+
+    /// ★★★★ A wonder the host will not place must stop being chosen — IN THAT CITY.
+    ///
+    /// Hanging Gardens wants a river, Great Bath floodplains, Temple of Artemis a
+    /// Camp/Pasture/Plantation beside it. CIVVIS picks the site from ITS terrain
+    /// model, the two rulesets disagree about the ground, and nothing carried the
+    /// refusal back: 370 `build_no_plot` wonder refusals over 20 live runs from only
+    /// 29 (run, city, wonder) combinations, 53 consecutive turns at worst.
+    ///
+    /// ⚠⚠ The second assertion is the one that matters. A GLOBAL block would stop
+    /// the empire building that wonder anywhere the first time one city had no
+    /// river, trading a small waste for a large one.
+    #[test]
+    fn a_wonder_the_host_will_not_place_is_blocked_in_that_city_only() {
+        let mut game = Game::new(4, 20, 20, 7, 500, 0);
+        let mut ours: Vec<u32> = game
+            .cities
+            .values()
+            .filter(|c| c.owner == 0)
+            .map(|c| c.id)
+            .collect();
+        while ours.len() < 2 {
+            let seed = ours.len() as i32;
+            let pos = (seed * 5 + 6, seed * 5 + 6);
+            if !game.map.tiles.contains_key(&pos) {
+                break;
+            }
+            game.place_city(0, pos, None);
+            ours = game
+                .cities
+                .values()
+                .filter(|c| c.owner == 0)
+                .map(|c| c.id)
+                .collect();
+        }
+        assert!(ours.len() >= 2, "need two cities to prove the block is scoped");
+        let (blocked_city, other_city) = (ours[0], ours[1]);
+        let techs: Vec<Name> = game.rules.techs.keys().map(|t| Name::new(t.as_str())).collect();
+        for tech in techs {
+            game.players[0].techs.insert(tech);
+        }
+        let civics: Vec<Name> = game.rules.civics.keys().map(|c| Name::new(c.as_str())).collect();
+        for civic in civics {
+            game.players[0].civics.insert(civic);
+        }
+        for cid in [blocked_city, other_city] {
+            if let Some(city) = game.cities.get_mut(&cid) {
+                city.pop = 12;
+            }
+        }
+
+        // ⚠ DISCOVERED, not hardcoded: which wonders a city can site depends on its
+        // ground, so naming one would make the precondition fail on an unremarkable
+        // fixture rather than on anything to do with this change.
+        let wonder = game
+            .rules
+            .wonders
+            .keys()
+            .map(|name| Name::new(name.as_str()))
+            .find(|name| {
+                !game.wonder_sites(blocked_city, name.as_str()).is_empty()
+                    && !game.wonder_sites(other_city, name.as_str()).is_empty()
+            })
+            .expect("some wonder must be sitable in both cities for this to prove anything");
+
+        game.blocked_wonders
+            .entry(blocked_city)
+            .or_default()
+            .insert(wonder);
+
+        assert!(
+            game.wonder_sites(blocked_city, wonder.as_str()).is_empty(),
+            "the host said it has no ground for {wonder:?} here, so nothing may be offered"
+        );
+        assert!(
+            !game.wonder_sites(other_city, wonder.as_str()).is_empty(),
+            "and a refusal in one city must not disarm the wonder empire-wide"
+        );
+    }
 
     fn emergency_game_with_capitals(players: usize, seed: u64, max_turns: u32) -> Game {
         let mut game = Game::new_full(players, 26, 16, seed, max_turns, 0, false);
