@@ -304,6 +304,10 @@ class MatchMachineTests(unittest.TestCase):
             subject.args = SimpleNamespace(limit=70, poll=1)
             subject.deadline = machine.time.monotonic() + 60
             subject.stopping = False
+            # A HEAD build must get a recovery slot even when the game
+            # governor has shed part of the fleet. Requiring every game to
+            # resume first can starve promotion under steady moderate load.
+            subject.games = [SimpleNamespace(paused=True)]
             subject.watched_terminal_closed = mock.Mock(return_value=False)
             subject.event = mock.Mock()
             process = mock.Mock(pid=1234, returncode=0)

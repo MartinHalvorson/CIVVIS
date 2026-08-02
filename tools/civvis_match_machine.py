@@ -768,9 +768,6 @@ class MatchMachine:
                 elif (
                     paused
                     and sample.comfortably_below(self.args.limit, margin=RESUME_MARGIN)
-                    and not any(
-                        game.paused for game in getattr(self, "games", ())
-                    )
                     and set_paused(process, False)
                 ):
                     paused = False
