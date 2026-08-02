@@ -389,7 +389,7 @@ mod tests {
     /// never the order names happened to be interned in.
     #[test]
     fn names_order_like_their_text() {
-        let mut interned = vec![
+        let mut interned = [
             Name::new("zebra_pen"),
             Name::new("aqueduct"),
             Name::new("aqueducts"),

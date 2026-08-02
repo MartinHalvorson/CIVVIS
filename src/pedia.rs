@@ -420,7 +420,7 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
 
     for (id, spec) in &rules.governments {
         let (mut facts, links) = gates(&None, &spec.civic);
-        let slots = serde_json::to_value(&spec.slots).unwrap_or_default();
+        let slots = serde_json::to_value(spec.slots).unwrap_or_default();
         if let Some(map) = slots.as_object() {
             let mut listed: Vec<String> = map
                 .iter()

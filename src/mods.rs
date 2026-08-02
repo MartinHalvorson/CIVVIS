@@ -182,7 +182,7 @@ fn merge(base: &mut Value, overlay: Value) -> Result<(), String> {
 mod tests {
     use super::{load, merge};
     use serde_json::json;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     fn scratch(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join(format!("civvis-mod-test-{name}"));
@@ -191,7 +191,7 @@ mod tests {
         dir
     }
 
-    fn write(dir: &PathBuf, file: &str, value: serde_json::Value) {
+    fn write(dir: &Path, file: &str, value: serde_json::Value) {
         std::fs::write(dir.join(file), serde_json::to_string_pretty(&value).unwrap()).unwrap();
     }
 
@@ -223,7 +223,7 @@ mod tests {
         write(&dir, "civs.json", json!({"Aztec": {"agenda": null}}));
 
         let shipped = crate::rules::Rules::shipped();
-        let (rules, loaded) = load(&[dir.clone()]).expect("the mod loads");
+        let (rules, loaded) = load(std::slice::from_ref(&dir)).expect("the mod loads");
         assert_eq!(loaded.len(), 1);
         assert_eq!(loaded[0].name, "Cheap Warriors");
         assert_eq!(loaded[0].files, vec!["agendas", "civs", "units"]);
@@ -245,7 +245,9 @@ mod tests {
     fn a_mod_that_breaks_the_ruleset_is_refused() {
         let dir = scratch("broken");
         write(&dir, "units.json", json!({"warrior": {"tech": "phlogiston"}}));
-        let error = load(&[dir.clone()]).map(|_| ()).expect_err("a dangling tech is refused");
+        let error = load(std::slice::from_ref(&dir))
+            .map(|_| ())
+            .expect_err("a dangling tech is refused");
         assert!(error.contains("does not validate"), "{error}");
         assert!(error.contains("phlogiston"), "{error}");
         let _ = std::fs::remove_dir_all(&dir);
@@ -256,7 +258,9 @@ mod tests {
     fn an_unknown_ruleset_file_is_refused() {
         let dir = scratch("typo");
         write(&dir, "unit.json", json!({}));
-        let error = load(&[dir.clone()]).map(|_| ()).expect_err("units.json was misspelled");
+        let error = load(std::slice::from_ref(&dir))
+            .map(|_| ())
+            .expect_err("units.json was misspelled");
         assert!(error.contains("not a ruleset file"), "{error}");
         let _ = std::fs::remove_dir_all(&dir);
     }
