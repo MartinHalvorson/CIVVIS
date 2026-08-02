@@ -4215,6 +4215,45 @@ local function exportState(player, pid, turn)
 			-- CIVVIS re-decided production every turn blind to work in progress.
 			producing = productionName(queue),
 			producing_hash = queue,
+			-- ★★★★★ WHAT THE CITY IS BUILDING WAS EXPORTED; HOW FAST, AND HOW FAR
+			-- ALONG, WERE NOT. That is the whole reason the settler stall has never
+			-- been diagnosable.
+			--
+			-- Measured on run civvis-20260802T041527Z (Russia, Settler/Small/Online):
+			-- the capital was on UNIT_SETTLER for **84 turns** — the most-produced
+			-- item of the game — across 12 separate stretches of 6 to 11 turns, and
+			-- **not one settler ever existed**. Zero settlers alive on any of 171
+			-- turns, so the empire sat on ONE city while `settle_choice` re-picked
+			-- the same site (61,12) from turn 13 to turn 141.
+			--
+			-- Nothing could say why, because the export carried no production yield,
+			-- no accumulated progress and no turns-remaining. Nine uninterrupted
+			-- turns on a settler (t130-t138) produced nothing and the stream had no
+			-- field that could distinguish "the city makes 2 production a turn" from
+			-- "progress is being reset" from "completion is blocked".
+			--
+			-- ⚠ It is also a decision input, not only a diagnostic. CIVVIS chooses
+			-- what to build with no idea what the city can actually finish, which is
+			-- the same class of blindness as `producing` itself once was — see the
+			-- note directly above.
+			--
+			-- ⚠ Each is guarded separately. `GetBuildQueue` exists on this build but
+			-- these accessors are exactly the shape that has silently returned nil
+			-- before (see the `GetDefenseStrength` note below, which read -1 for the
+			-- project's entire history). A missing one must leave -1 and not take
+			-- the others with it.
+			production = try(function()
+				return city:GetBuildQueue():GetProductionYield();
+			end, -1),
+			production_progress = try(function()
+				return city:GetBuildQueue():GetCurrentProductionProgress();
+			end, -1),
+			production_cost = try(function()
+				return city:GetBuildQueue():GetCurrentProductionCost();
+			end, -1),
+			production_turns = try(function()
+				return city:GetBuildQueue():GetTurnsLeft();
+			end, -1),
 			food = try(function() return city:GetGrowth():GetFood(); end, -1),
 			-- ⚠ Was `GetDistricts():GetDefenseStrength()` — the method on the
 			-- collection, which does not exist, so this read -1 for the whole
