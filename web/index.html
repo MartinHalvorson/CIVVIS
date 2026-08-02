@@ -11841,38 +11841,27 @@ function drawFeatureEffects(t, x, y) {
 }
 
 // Strategic terrain marks are tiny map symbols, not reduced illustrations.
-// A marsh therefore gets the two facts a player needs at a glance: shallow
-// water and reeds. Keep the clump low so it cannot be mistaken for Woods.
+// Marsh uses a shallow inverse-hill silhouette: a broad, low W that reads as
+// wet ground without competing with units, yields, or improvements.
 function drawStrategicMarsh(x, y) {
   cx.save();
   cx.lineCap = "round"; cx.lineJoin = "round";
-
-  // One broken ripple is enough to seat the plants in water without painting
-  // a blue pond over the terrain underneath.
-  cx.strokeStyle = "#4c91a0"; cx.lineWidth = 1.55;
+  cx.fillStyle = "#86cddd";
+  cx.strokeStyle = "#285f79";
+  cx.lineWidth = 1.8;
   cx.beginPath();
-  cx.moveTo(x - 15, y + 7);
-  cx.quadraticCurveTo(x - 8, y + 3.5, x - 2, y + 7);
-  cx.moveTo(x + 3, y + 7);
-  cx.quadraticCurveTo(x + 9, y + 4, x + 15, y + 7);
-  cx.stroke();
-
-  // Three uneven stems and their spare blades form one unmistakable reed bed.
-  // The warm seed heads keep the symbol legible over grassland, plains, and
-  // tundra without adding an outline or a filled badge.
-  const reeds = [[-8, 8, -9, -5], [0, 9, 1, -9], [8, 8, 7, -3]];
-  cx.strokeStyle = "#245b40"; cx.lineWidth = 1.8;
-  cx.beginPath();
-  for (const [bx, by, tx, ty] of reeds) {
-    cx.moveTo(x + bx, y + by); cx.quadraticCurveTo(x + bx, y, x + tx, y + ty);
-    cx.moveTo(x + bx, y + 3); cx.lineTo(x + bx - 4, y - 1);
-    cx.moveTo(x + bx, y + 1); cx.lineTo(x + bx + 4, y - 3);
-  }
-  cx.stroke();
-  cx.fillStyle = "#6b5630";
-  for (const [, , tx, ty] of reeds) {
-    cx.beginPath(); cx.ellipse(x + tx, y + ty - 1.8, 1.55, 3.1, -.12, 0, 7); cx.fill();
-  }
+  cx.moveTo(x - 15, y - 7);
+  cx.bezierCurveTo(x - 13, y - 1, x - 12, y + 5, x - 7, y + 5);
+  cx.bezierCurveTo(x - 3.5, y + 5, x - 3, y - 1, x, y - 1);
+  cx.bezierCurveTo(x + 3, y - 1, x + 3.5, y + 5, x + 7, y + 5);
+  cx.bezierCurveTo(x + 12, y + 5, x + 13, y - 1, x + 15, y - 7);
+  cx.lineTo(x + 15, y - 2);
+  cx.bezierCurveTo(x + 12.5, y + 5, x + 11, y + 8, x + 7, y + 8);
+  cx.bezierCurveTo(x + 3.5, y + 8, x + 3, y + 2, x, y + 2);
+  cx.bezierCurveTo(x - 3, y + 2, x - 3.5, y + 8, x - 7, y + 8);
+  cx.bezierCurveTo(x - 11, y + 8, x - 12.5, y + 5, x - 15, y - 2);
+  cx.closePath();
+  cx.fill(); cx.stroke();
   cx.restore();
 }
 
@@ -15364,6 +15353,76 @@ function drawResourceBadge(t, x, y) {
   }
 }
 
+// Barbarian camps are hostile little fortifications, not tents. The sharpened
+// palisade is deliberately the largest part of the silhouette so it survives
+// strategic zoom; the fire and broken front gate make the ring read as an
+// occupied encampment instead of a generic fence.
+function drawBarbarianCamp(x, y) {
+  cx.save();
+  cx.lineJoin = "round"; cx.lineCap = "round";
+  const dir = -LITF;
+  if (MODE.painted) castShadow(x, y + 7, 11, 15, .34);
+  contactAO(x, y + 7.5, 15, 5, .34);
+
+  // Trampled, fire-darkened ground contained by the palisade ring.
+  cx.fillStyle = "rgba(48,31,24,.82)";
+  cx.beginPath(); cx.ellipse(x, y + 2.5, 14, 7.5, 0, 0, 7); cx.fill();
+
+  const stake = (dx, base, tip, width, col) => {
+    const p = new Path2D();
+    p.moveTo(x + dx - width / 2, y + base);
+    p.lineTo(x + dx - width * .38, y + tip + 3.2);
+    p.lineTo(x + dx, y + tip);
+    p.lineTo(x + dx + width * .38, y + tip + 3.2);
+    p.lineTo(x + dx + width / 2, y + base);
+    p.closePath();
+    cx.fillStyle = col; cx.fill(p);
+    cx.strokeStyle = "rgba(35,21,15,.9)"; cx.lineWidth = 1; cx.stroke(p);
+    if (FINE()) {
+      cx.strokeStyle = "rgba(242,190,112,.32)"; cx.lineWidth = .65;
+      cx.beginPath();
+      cx.moveTo(x + dx + dir * width * .16, y + tip + 3.2);
+      cx.lineTo(x + dx + dir * width * .16, y + base - 1); cx.stroke();
+    }
+  };
+
+  // Tall rear stakes establish the jagged skyline.
+  const rear = [[-12,3,-6],[-8,1,-10],[-3,0,-13],[3,0,-12],[8,1,-9],[12,3,-6]];
+  for (let i = 0; i < rear.length; i++) {
+    const [dx, base, tip] = rear[i];
+    stake(dx, base, tip, 4.2, i % 2 ? "#765033" : "#8a5c38");
+  }
+  cx.strokeStyle = "#3b281d"; cx.lineWidth = 2.2;
+  cx.beginPath();
+  cx.moveTo(x - 13, y - 1); cx.quadraticCurveTo(x, y - 5, x + 13, y - 1); cx.stroke();
+
+  // A live fire glows through the open front gate.
+  shaft(x - 4.5, y + 5.5, x + 4, y + 2, 1.9, dir, "#5c3924");
+  shaft(x + 4.5, y + 5.5, x - 4, y + 2, 1.9, dir, "#5c3924");
+  cx.fillStyle = "#d44b26";
+  cx.beginPath();
+  cx.moveTo(x - 4, y + 3); cx.quadraticCurveTo(x - 1, y - 4, x, y - 7);
+  cx.quadraticCurveTo(x + 2, y - 2, x + 4, y + 3); cx.closePath(); cx.fill();
+  cx.fillStyle = "#ffbc45";
+  cx.beginPath();
+  cx.moveTo(x - 1.8, y + 2.5); cx.quadraticCurveTo(x, y - 1, x + .5, y - 3);
+  cx.quadraticCurveTo(x + 2.2, y, x + 2.2, y + 2.5); cx.closePath(); cx.fill();
+
+  // Shorter foreground stakes close the ring while leaving a threatening,
+  // firelit entrance in the middle.
+  const front = [[-12,7,-1],[-7,8,-4],[7,8,-4],[12,7,-1]];
+  for (let i = 0; i < front.length; i++) {
+    const [dx, base, tip] = front[i];
+    stake(dx, base, tip, 4.5, i % 2 ? "#805433" : "#69452e");
+  }
+  cx.strokeStyle = "#39261b"; cx.lineWidth = 2.3;
+  cx.beginPath();
+  cx.moveTo(x - 14, y + 3); cx.quadraticCurveTo(x - 10, y + 5, x - 5, y + 5.5);
+  cx.moveTo(x + 5, y + 5.5); cx.quadraticCurveTo(x + 10, y + 5, x + 14, y + 3);
+  cx.stroke();
+  cx.restore();
+}
+
 function drawImprovement(t, x, y) {
   const imp = t.improvement;
   cx.save();
@@ -15565,13 +15624,42 @@ function drawImprovement(t, x, y) {
     cx.moveTo(x - 3.6, y - 5); cx.lineTo(x + 1, y - 10.4); cx.lineTo(x + 5.6, y - 5);
     cx.closePath(); cx.fill(); cx.stroke();
   } else if (imp === "goody_hut") {
-    cx.fillStyle = "#b8925c"; cx.strokeStyle = "#4a3722"; cx.lineWidth = 1;
-    cx.beginPath(); cx.arc(x, y + 4, 7.5, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.fillStyle = "#f2dfa0";                        // something worth finding
+    // A small shelter: broad pitched thatch gives it the familiar tent shape,
+    // while the low wattle walls and doorway keep it unmistakably hut-like.
+    const walls = new Path2D();
+    walls.moveTo(x - 7.5, y - 1); walls.lineTo(x + 7.5, y - 1);
+    walls.lineTo(x + 7, y + 8); walls.lineTo(x - 7, y + 8); walls.closePath();
+    volume(walls, matteMat("#9b7146", dir, 7.5), dir,
+           "#d0a66d", "rgba(45,29,17,.72)", 1);
+
+    const roofSun = new Path2D();
+    roofSun.moveTo(x, y - 10); roofSun.lineTo(x + dir * 11, y + 1);
+    roofSun.lineTo(x, y + 1); roofSun.closePath();
+    const roofShade = new Path2D();
+    roofShade.moveTo(x, y - 10); roofShade.lineTo(x - dir * 11, y + 1);
+    roofShade.lineTo(x, y + 1); roofShade.closePath();
+    cx.fillStyle = tone("#c89e54", 1.2); cx.fill(roofSun);
+    cx.fillStyle = tone("#c89e54", .68); cx.fill(roofShade);
+    cx.strokeStyle = "rgba(61,42,22,.84)"; cx.lineWidth = 1.1;
     cx.beginPath();
-    cx.moveTo(x, y - 9); cx.lineTo(x + 1.7, y - 5.6); cx.lineTo(x + 5, y - 4.6);
-    cx.lineTo(x + 1.7, y - 3.4); cx.lineTo(x, y); cx.lineTo(x - 1.7, y - 3.4);
-    cx.lineTo(x - 5, y - 4.6); cx.lineTo(x - 1.7, y - 5.6);
+    cx.moveTo(x - 11, y + 1); cx.lineTo(x, y - 10); cx.lineTo(x + 11, y + 1);
+    cx.stroke();
+    if (FINE()) {                                    // loose thatch at the eaves
+      cx.strokeStyle = "rgba(89,59,27,.7)"; cx.lineWidth = .8;
+      cx.beginPath();
+      for (const ex of [-8,-4,4,8]) {
+        cx.moveTo(x + ex, y + .2); cx.lineTo(x + ex + Math.sign(ex), y + 2.8);
+      }
+      cx.stroke();
+    }
+    cx.fillStyle = "#2d2016";                       // sheltered doorway
+    cx.beginPath(); cx.roundRect(x - 2.4, y + 2, 4.8, 6, [2.4,2.4,0,0]); cx.fill();
+
+    cx.fillStyle = "#f4dc84";                       // something worth finding
+    cx.beginPath();
+    cx.moveTo(x + 7.4, y - 7); cx.lineTo(x + 8.4, y - 4.8); cx.lineTo(x + 10.8, y - 4.2);
+    cx.lineTo(x + 8.4, y - 3.4); cx.lineTo(x + 7.4, y - 1.2); cx.lineTo(x + 6.5, y - 3.4);
+    cx.lineTo(x + 4, y - 4.2); cx.lineTo(x + 6.5, y - 4.8);
     cx.closePath(); cx.fill();
   } else {
     // Everything rarer still reads as a built installation rather than a smear
@@ -22661,15 +22749,14 @@ function draw() {
                       11 + eh * 3, 2.6 + eh * 0.8);
       }
     } else if (t.hills && !beau) {
-      // Broad enough and tall enough to survive strategic survey zoom. Scale
-      // both the lobes and their spacing so the whole paired silhouette grows
-      // 20% wider, rather than merely making the two strokes overlap more.
-      const hillWidth = 1.2, hillHeight = 2.6 * 1.4;
+      // Keep the 20%-wider footprint and fixed lower-corner baseline, but draw
+      // the lobes twice as tall so the landform reads clearly at survey zoom.
+      const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
       // Seat the base on the horizontal through the hex's two lower outside
       // corners. Deriving it from the projected hex keeps the glyph aligned if
       // tile size or Strategic's pitch ever changes.
       const hillBaseY = y + S * YS / 2;
-      cx.strokeStyle = "#00000066"; cx.lineWidth = 2.4;
+      cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
       cx.beginPath();
       cx.ellipse(x - 7 * hillWidth, hillBaseY,
                  6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
@@ -22752,7 +22839,7 @@ function draw() {
     }
     drawFeatureEffects(t, x, y);
     if (t.improvement === "barbarian_camp" || campSet.has(k)) {
-      cx.font = "18px sans-serif"; cx.fillText("⛺", x, y);
+      drawBarbarianCamp(x, y);
     } else if (t.improvement) {
       drawImprovement(t, x, y);
     }
