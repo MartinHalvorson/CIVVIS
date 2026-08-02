@@ -104,6 +104,26 @@ class ProductionActuatorTests(unittest.TestCase):
             ),
         )
 
+    def test_standard_unit_eligibility_omits_the_request_formation(self) -> None:
+        self.assertRegex(
+            self.purchase,
+            re.compile(
+                r"local eligibilityParams = params;.*?"
+                r'if row2\.Kind == "KIND_UNIT" and \(tonumber\(x\) or 0\) == 0.*?'
+                r"key ~= CityCommandTypes\.PARAM_MILITARY_FORMATION_TYPE.*?"
+                r"eligibilityParams\[key\] = value",
+                re.DOTALL,
+            ),
+        )
+        predicate = self.purchase.index(
+            "false, eligibilityParams, true"
+        )
+        request = self.purchase.index(
+            "CityManager.RequestCommand(city, CityCommandTypes.PURCHASE, params)",
+            predicate,
+        )
+        self.assertLess(predicate, request)
+
     def test_purchase_refusal_is_structured_feedback(self) -> None:
         event = self.purchase.index('emit("purchase_refused"')
         rejection = self.purchase.index('return false, "cannot_buy_"', event)

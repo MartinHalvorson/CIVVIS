@@ -6536,6 +6536,24 @@ local function applyOrder(player, pid, row, turn)
 		local currency = try(function() return GameInfo.Yields[yieldName].Index; end);
 		if currency == nil then return false, "no_yield"; end
 		params[CityCommandTypes.PARAM_YIELD_TYPE] = currency;
+		-- Firaxis's `ComposeUnitForPurchase` asks whether a standard unit is
+		-- purchasable with UNIT_TYPE and YIELD_TYPE only. `PurchaseUnit` adds
+		-- STANDARD_MILITARY_FORMATION to the later request. The distinction is
+		-- observable: run live-head-rome-religious-actions-20260802T173404Z had
+		-- three Heavy Chariot checks rejected with the explicit standard formation,
+		-- while an otherwise identical Catapult purchase succeeded. Preserve the
+		-- formation on the request below, but make the eligibility predicate match
+		-- the stock Production Panel. Corps and Armies remain explicit in both.
+		local eligibilityParams = params;
+		if row2.Kind == "KIND_UNIT" and (tonumber(x) or 0) == 0
+			and params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] ~= nil then
+			eligibilityParams = {};
+			for key, value in pairs(params) do
+				if key ~= CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE then
+					eligibilityParams[key] = value;
+				end
+			end
+		end
 		-- ⚠⚠ ASK BEFORE CLAIMING. `pcall` succeeding means the call did not throw, not
 		-- that the city bought anything — the trap this file documents three times and
 		-- which I walked into again here. Run civvis-20260730T173235Z issued purchases
@@ -6554,7 +6572,7 @@ local function applyOrder(player, pid, row, turn)
 			-- and fifth arguments are booleans; passing `params` as argument three
 			-- made every otherwise valid purchase answer false without throwing.
 			return CityManager.CanStartCommand(city, CityCommandTypes.PURCHASE,
-			                                   false, params, true);
+			                                   false, eligibilityParams, true);
 		end);
 		if okCan then canBuy, results = hostCan == true, hostResults; end
 		if not canBuy then
