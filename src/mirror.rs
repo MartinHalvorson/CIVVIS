@@ -2503,6 +2503,21 @@ mod tests {
         assert!(
             drift.contains('%'),
             "and the gap is expressed as a percentage: {drift}"        );
+
+        // ⚠⚠ PRODUCTION was exported by #845 and never deserialized, so it could not
+        // appear here at all. It is the yield that decides what every city builds,
+        // and since #867 CIVVIS chooses that for every city every turn.
+        assert!(
+            !drift.contains("production"),
+            "a city reporting no production figure must stay silent, not claim a \
+             100% drift: {drift}"
+        );
+        state.cities[0].production = 12.0;
+        let drift = economy_drift(&recon.game, &state).expect("yields present");
+        assert!(
+            drift.contains("production 12.0/"),
+            "the game's own production leads, as science and culture do: {drift}"
+        );
     }
 
     /// ★★★★★ A barbarian that appears AFTER the mirror is built must reach the board.
@@ -4824,6 +4839,33 @@ pub struct StateCity {
     /// Production already invested in `producing`.
     #[serde(default = "unknown_metric")]
     pub production_progress: f64,
+    /// ⚠⚠ THE CITY'S PRODUCTION YIELD PER TURN, AND IT WAS BEING THROWN AWAY.
+    ///
+    /// PR #845 added `production`, `production_cost` and `production_turns` to the
+    /// export precisely because they are a DECISION input and not only a diagnostic,
+    /// and `StateCity` deserialized only `production_progress`. The other three
+    /// arrived on every state event and were dropped — visible the whole time as
+    /// `unmapped: schema:city.production,schema:city.production_cost,
+    /// schema:city.production_turns` in the decider's own note, which is the
+    /// instrument this file added for exactly this failure.
+    ///
+    /// Live on run `civvis-20260802T083838Z`: `production: 11`, `production_cost: 60`,
+    /// `production_turns: 3` for a Quadrireme at `production_progress: 27`.
+    ///
+    /// ⚠ This matters far more since #867, which stopped CIVVIS deferring to the
+    /// mod's ladder and made it choose production for every city every turn. Choosing
+    /// what to build against a production rate the bridge never supplied is the same
+    /// shape as the bankruptcy detector reading a `gold_per_turn` nobody wrote.
+    #[serde(default = "unknown_metric")]
+    pub production: f64,
+    /// What `producing` costs in production. With `production` and
+    /// `production_progress`, this is what says whether a city can finish an item
+    /// before the game ends.
+    #[serde(default = "unknown_metric")]
+    pub production_cost: f64,
+    /// Civilization VI's own estimate of turns remaining on `producing`.
+    #[serde(default = "unknown_metric")]
+    pub production_turns: f64,
     /// Food stockpiled toward the next citizen.
     #[serde(default)]
     pub food: f64,
@@ -6701,11 +6743,29 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
     }
     let mut science = 0.0f64;
     let mut culture = 0.0f64;
+    let mut production = 0.0f64;
     for city in game.cities.values().filter(|city| city.owner == 0) {
         let yields = game.city_yields_model(city.id);
         science += yields.science;
         culture += yields.culture;
+        production += yields.production;
     }
+    // ★★★★ PRODUCTION BELONGS ON THIS LINE NOW, AND COULD NOT BEFORE.
+    //
+    // Science and culture arrive as seat totals; production only ever existed
+    // per-city, and `StateCity` was not reading it (see the field). Summing the
+    // export's own per-city figure gives the same civ6-versus-CIVVIS comparison for
+    // the yield that decides what every city builds.
+    //
+    // ⚠ Only cities the export actually reported a figure for are summed, so an
+    // older mod reads as unknown rather than as zero — the same rule the seat totals
+    // follow. `unknown_metric` is negative, which is why the filter is `>= 0`.
+    let host_production: f64 = state
+        .cities
+        .iter()
+        .map(|city| city.production)
+        .filter(|value| *value >= 0.0)
+        .sum();
     let pct = |ours: f64, theirs: f64| {
         if theirs.abs() < 1e-6 {
             return "n/a".to_string();
@@ -6754,14 +6814,26 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
     } else {
         String::new()
     };
+    // Omitted rather than printed as 0.0/x when no city reported a figure, so an
+    // older mod is silent here instead of claiming a 100% drift.
+    let production_part = match host_production > 0.0 {
+        true => format!(
+            " production {:.1}/{:.1} {}",
+            host_production,
+            production,
+            pct(production, host_production)
+        ),
+        false => String::new(),
+    };
     Some(format!(
-        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}",
+        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}",
         state.science,
         science,
         pct(science, state.science),
         state.culture,
         culture,
         pct(culture, state.culture),
+        production_part,
         attributed,
     ))}
 
