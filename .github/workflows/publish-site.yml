@@ -1,0 +1,127 @@
+name: publish-site
+
+# Builds and publishes civvis.ai.
+#
+# Cutting a build used to mean being at a particular Mac with wasm-opt, Pillow,
+# Node and a Cloudflare login on it. That is one machine and one person, and it
+# is why `beta/README.md` describes publishing as something that happens "every
+# few days" — the cost was the setup, not the judgement. Here the whole
+# toolchain is declared and the deploy needs two repository secrets, so the
+# judgement is all that is left.
+#
+# It is deliberately **manual**. Publishing is a decision about whether a whole
+# game is worth watching, which no gate can make; the gates below only prove
+# the build is not broken.
+#
+#   Actions -> publish-site -> Run workflow -> pick a branch or tag
+#
+# Without the Cloudflare secrets it still builds, checks, and uploads the
+# bundle as an artifact — which is the useful thing to have before the domain
+# exists, and stays useful as a dry run afterwards.
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy to Cloudflare Pages (otherwise build and check only)"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-site
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: cargo-wasm-publish-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: cargo-wasm-publish-
+
+      # `wasm-opt` takes a fifth off the module and Pillow republishes the
+      # atlases as lossless WebP; between them the bundle goes from 92% of its
+      # size budget to 71%. Both are optional in `publish.sh` — it degrades to
+      # a bigger bundle rather than failing — so they are installed here rather
+      # than assumed.
+      - name: Toolchain for the bundle
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends binaryen brotli
+          python3 -m pip install --quiet --disable-pip-version-check pillow
+          wasm-opt --version
+
+      - name: Build the bundle
+        run: ./beta/publish.sh
+
+      # The site's routing — the forward to the channel, and the password on
+      # /beta — is the one part no static check touches. It is also the part
+      # that has already been lost silently once.
+      - name: Check the routing
+        run: ./beta/worker_test.py
+
+      # And the part that proves the engine underneath is alive rather than
+      # merely present: a real browser, watched until turns advance.
+      - name: Check it plays
+        run: ./beta/verify.py --seconds 40
+
+      # Kept whether or not the deploy runs: a bundle that failed to publish is
+      # still the thing you need to look at.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: civvis-site
+          path: |
+            beta/dist
+            beta/verify.png
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Refuse to deploy without credentials
+        if: ${{ inputs.deploy && env.CLOUDFLARE_API_TOKEN == '' }}
+        run: |
+          echo "::error::CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are not set." \
+               "Add them under Settings -> Secrets and variables -> Actions," \
+               "or run this workflow with deploy unchecked."
+          exit 1
+
+      - name: Deploy to Cloudflare Pages
+        if: ${{ inputs.deploy && env.CLOUDFLARE_API_TOKEN != '' }}
+        uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          command: pages deploy beta/dist --project-name civvis --branch main
+
+      - name: Where it went
+        if: ${{ inputs.deploy && env.CLOUDFLARE_API_TOKEN != '' }}
+        run: |
+          {
+            echo "### Published"
+            echo
+            echo '```json'
+            cat beta/dist/beta/build.json
+            echo '```'
+            echo
+            echo "- https://civvis.ai — forwards to the channel"
+            echo "- https://civvis.ai/home — the landing page"
+            echo "- https://civvis.ai/beta/ — the build, behind the password"
+            echo "- https://civvis.ai/download/ — the native binaries"
+          } >> "$GITHUB_STEP_SUMMARY"
