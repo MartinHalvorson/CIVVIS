@@ -37,6 +37,14 @@ const RELIEF_MARCH_TURNS: f64 = 3.0;
 /// empires holding `masonry` by then; 60 leaves the lane a margin on the wrong
 /// side of that and keeps it honestly *ancient*.
 const RUSH_WINDOW_CLOSES: u32 = 60;
+
+/// How long the defensive-war `Recovery` posture may hold on the power-gap
+/// trigger alone before the empire returns to its own lane, in standard turns.
+///
+/// Recovery is described in `assess` as a temporary battlefield posture. It
+/// lasted 164 turns on `civvis-20260802T205959Z` because its trigger is a
+/// condition it cannot resolve. This is what "temporary" is worth.
+const RECOVERY_POSTURE_LIMIT: u32 = 25;
 /// Tiles a rush will march. Measured capital separations on 6p 74x46 run a
 /// median 13 and a p90 17, so 16 covers roughly nine seats in ten while
 /// refusing the marches that cannot arrive before the window shuts.
@@ -1279,6 +1287,17 @@ pub struct AdvancedAi {
     /// which `advanced_blind_to_leaders` already bounds from the other side.
     pub counter_in_lane: bool,
 
+    /// Whether the defensive-war posture is BOUNDED in time.
+    ///
+    /// `assess`'s first arm drops the empire into `Recovery` whenever it is at
+    /// war and `my_power * 1.25 < strongest_rival`. Recovery is meant to be a
+    /// temporary battlefield posture, but it does not build an army, so that
+    /// test stays true because of the choice it caused — the definition of an
+    /// absorbing state. With this on, the power-gap half of the trigger stops
+    /// re-firing after `RECOVERY_POSTURE_LIMIT` standard turns and the empire
+    /// returns to its own best lane. The threatened-city half is untouched.
+    pub bounded_recovery: bool,
+
     /// Whether a Science or Expansion threat is simply not reacted to.
     ///
     /// `counter_in_lane` changes two things at once: it stops the empire
@@ -1659,6 +1678,7 @@ impl AdvancedAi {
             route_connected_rush: false,
             rush_route_targets: None,
             counter_in_lane: false,
+            bounded_recovery: false,
             counter_stand_down: false,
             early_score_alarm: false,
             congress_counter_leader: false,
@@ -1698,6 +1718,12 @@ impl AdvancedAi {
     /// disabled so their recorded ladders stay comparable.
     pub fn enable_siege_muster(&mut self) {
         self.base.siege_muster = true;
+    }
+
+    /// Stop the defensive-war posture from becoming permanent. Native
+    /// tournament games leave this disabled.
+    pub fn enable_bounded_recovery(&mut self) {
+        self.bounded_recovery = true;
     }
 
     /// Redirect an existing agent at a new explicit victory target without
@@ -3251,8 +3277,35 @@ impl AdvancedAi {
         // cost nothing to build; they exist so the spectator's reasoning log
         // can say which of these tests the empire's whole plan turned on
         // instead of only naming the strategy that came out.
+        // ⚠ Recovery is documented one screen down as "a temporary battlefield
+        // posture", and this branch is the only thing that makes it permanent.
+        // A threatened city IS transient — the attacker leaves or the city
+        // falls. A power gap against a runaway leader is not: Recovery does not
+        // build an army, so `my_power * 1.25 < strongest_rival` stays true
+        // precisely because Recovery is what we chose, and it re-fires every
+        // assessment for the rest of the game.
+        //
+        // Measured on `civvis-20260802T205959Z` (Sweden, Settler, small): the
+        // journal names this exact arm — "at war and losing ground at home" —
+        // **160 times**, matching all 160 Recovery turns. The empire held that
+        // posture from t65 to t229, 72% of the game, peaking at 4 cities on t61
+        // and holding 1 by t85. It finished with ONE warrior, military 34
+        // against the Mapuche's 1354, score 205 against 1324.
+        //
+        // So the power-gap half is bounded and the threatened-city half is not.
+        // Local defence no longer depends on this posture in any case: #930's
+        // `besieged_city_item` builds walls or a defender for a city with a
+        // raiding party at its gates before the ordinary build order, whatever
+        // the grand strategy says.
+        let recovery_is_stale = self.bounded_recovery
+            && self
+                .plan
+                .as_ref()
+                .is_some_and(|plan| plan.strategy == GrandStrategy::Recovery)
+            && g.turn.saturating_sub(self.strategy_since)
+                >= g.standard_duration(RECOVERY_POSTURE_LIMIT).max(1);
         let (mut strategy, mut because, trigger) = if at_war
-            && (threatened_city.is_some() || my_power * 1.25 < strongest_rival)
+            && (threatened_city.is_some() || (my_power * 1.25 < strongest_rival && !recovery_is_stale))
         {
             (
                 GrandStrategy::Recovery,
@@ -16596,6 +16649,84 @@ mod tests {
                 tile.feature = None;
             }
         }
+    }
+
+    /// One city, at war with a rival far too strong to fight, and no enemy
+    /// anywhere near home — `assess`'s first arm, with only its power-gap half
+    /// true.
+    fn outgunned_at_war_fixture() -> (Game, AdvancedAi) {
+        let mut game = Game::new_full(2, 24, 16, 5_150, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|id| game.units[id].kind == "settler")
+            .expect("a starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let rival_settler = game
+            .player_unit_ids(1)
+            .into_iter()
+            .find(|id| game.units[id].kind == "settler")
+            .expect("a rival settler");
+        // Not `Action::FoundCity`: it is player 0's turn and the engine refuses.
+        game.found_city_for(1, game.units[&rival_settler].pos, None);
+        // Make the rival overwhelming, at home, so `threatened_city` stays
+        // None and only the power gap can fire the arm.
+        let rival_home = game.cities[&game.player_city_ids(1)[0]].pos;
+        for position in game.wdisk(rival_home, 3) {
+            if game.units_at(position).is_empty() && !game.rules.is_water(&game.map.tiles[&position])
+            {
+                game.spawn_test_unit("swordsman", 1, position);
+            }
+        }
+        game.at_war.insert((0, 1));
+        game.at_war.insert((1, 0));
+        (game, AdvancedAi::new())
+    }
+
+    #[test]
+    fn a_defensive_posture_that_cannot_win_is_not_held_for_ever() {
+        let (mut game, ai) = outgunned_at_war_fixture();
+        let opening = ai.assess(&game, 0);
+        assert_eq!(
+            opening.strategy,
+            GrandStrategy::Recovery,
+            "the fixture must exercise the defensive-war arm"
+        );
+        assert!(
+            opening.threatened_city.is_none(),
+            "only the power-gap half of the trigger may be true here"
+        );
+
+        // Held it for longer than a battlefield posture is worth. Untreated,
+        // the arm re-fires for ever: its own condition is one Recovery cannot
+        // resolve, which is how a live run spent 160 turns here.
+        game.turn = 100;
+        let mut untreated = AdvancedAi::new();
+        untreated.plan = Some(opening.clone());
+        untreated.strategy_since = 0;
+        assert_eq!(untreated.assess(&game, 0).strategy, GrandStrategy::Recovery);
+
+        let mut bounded = AdvancedAi::new();
+        bounded.bounded_recovery = true;
+        bounded.plan = Some(opening.clone());
+        bounded.strategy_since = 0;
+        assert_ne!(
+            bounded.assess(&game, 0).strategy,
+            GrandStrategy::Recovery,
+            "a posture the empire has held past the limit must release"
+        );
+
+        // ⚠ And it must NOT release early: a battlefield posture is allowed to
+        // do its job first.
+        let mut fresh = AdvancedAi::new();
+        fresh.bounded_recovery = true;
+        fresh.plan = Some(opening);
+        fresh.strategy_since = game.turn.saturating_sub(1);
+        assert_eq!(
+            fresh.assess(&game, 0).strategy,
+            GrandStrategy::Recovery,
+            "the bound must not fire on a posture adopted last turn"
+        );
     }
 
     #[test]
