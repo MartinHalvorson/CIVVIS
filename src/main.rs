@@ -254,7 +254,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// remain unchanged. The source contract is deliberately re-pinned for this
 /// reviewed test-only diff.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x78a7_5e9a_003d_457c;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbbb7_d47d_3fd9_f58f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
