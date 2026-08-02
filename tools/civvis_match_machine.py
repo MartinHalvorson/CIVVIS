@@ -745,6 +745,11 @@ class MatchMachine:
         self.initialize_league()
         self.refresh_ranking()
         self.event("build_ready", revision=revision, binary=str(promoted))
+        # A build can take longer than the regular sync interval.  Start that
+        # interval again only after a validated promotion so the new revision
+        # has time to fill the headless fleet before another HEAD transition
+        # begins its drain-and-build cycle.
+        self.next_sync = time.monotonic() + self.args.sync_interval
 
     def build(self, revision: str) -> None:
         self.activate_build(revision, self.compile_build(revision))
