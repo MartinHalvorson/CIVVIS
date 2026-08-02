@@ -23830,14 +23830,13 @@ mod tests {
             .tiles
             .keys()
             .copied()
-            .filter(|position| {
+            .find(|position| {
                 game.wdist(source, *position) >= SETTLER_ESCORT_DISTANCE
                     && game.wdist(source, *position) <= SETTLER_ESCORT_SEARCH_RADIUS
                     && game.map.get(*position).is_some_and(|tile| {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
             })
-            .next()
             .expect("fixture has a reachable expansion target");
         let settler = game.spawn_test_unit("settler", 0, source);
         let escort = game.spawn_test_unit("warrior", 0, source);
@@ -24151,7 +24150,7 @@ mod tests {
         game.record_contact(0, 1);
         game.record_contact(0, minor);
 
-        let mut ai = AdvancedAi::new();
+        let ai = AdvancedAi::new();
         let plan = ai.assess(&game, 0);
 
         assert_eq!(plan.target_player, Some(1));

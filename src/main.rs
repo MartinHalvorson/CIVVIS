@@ -247,8 +247,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// --deployment-comparison`: 16/20 Advanced-v1 wins, 125.9 average turns, and
 /// identical terminal and strategy-transition tables. Compatibility re-pin;
 /// the Elo protocol does not change.
+///
+/// #879 replaces `filter(...).next()` with `find(...)` in one `cfg(test)`
+/// fixture and removes an unnecessary `mut` from another. Neither change is
+/// part of a compiled controller, so Advanced-v1 behavior and the Elo protocol
+/// remain unchanged. The source contract is deliberately re-pinned for this
+/// reviewed test-only diff.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa7df_c90c_ef1f_063b;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x78a7_5e9a_003d_457c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
