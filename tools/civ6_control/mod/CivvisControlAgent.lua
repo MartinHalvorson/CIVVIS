@@ -167,7 +167,7 @@ local function resolveActions()
 		"UNITOPERATION_HEAL", "UNITOPERATION_AUTOMATE_EXPLORE",
 		"UNITOPERATION_BUILD_IMPROVEMENT", "UNITOPERATION_RANGE_ATTACK",
 		"UNITOPERATION_HARVEST_RESOURCE", "UNITOPERATION_REST_REPAIR",
-		"UNITOPERATION_MAKE_TRADE_ROUTE",
+		"UNITOPERATION_MAKE_TRADE_ROUTE", "UNITOPERATION_SPREAD_RELIGION",
 	}) do
 		OP[name] = opHash(name);
 	end
@@ -599,6 +599,44 @@ local function unitClass(name)
 	local row = try(function() return GameInfo.Units[name]; end);
 	if row == nil then return nil; end
 	return try(function() return row.PromotionClass; end);
+end
+
+-- Facts that decide what a unit may do next. Reconstructing every live unit from
+-- its type defaults reset Apostles to full charges with no promotion and military
+-- units to level one on every turn, so CIVVIS repeatedly chose actions Firaxis had
+-- already consumed. The stock Unit Panel reads these exact accessors.
+local function unitProgress(unit)
+	local experience = try(function() return unit:GetExperience(); end);
+	local promotions = {};
+	if experience ~= nil then
+		for _, index in ipairs(try(function()
+			return experience:GetPromotions();
+		end, {}) or {}) do
+			local row = try(function() return GameInfo.UnitPromotions[index]; end);
+			if row ~= nil and row.UnitPromotionType ~= nil then
+				promotions[#promotions + 1] = row.UnitPromotionType;
+			end
+		end
+	end
+	table.sort(promotions);
+	local religion = nil;
+	local religionIndex = try(function() return unit:GetReligionType(); end, -1);
+	if religionIndex ~= nil and religionIndex >= 0 then
+		local row = try(function() return GameInfo.Religions[religionIndex]; end);
+		religion = row ~= nil and row.ReligionType or nil;
+	end
+	return {
+		xp = experience ~= nil and try(function()
+			return experience:GetExperiencePoints();
+		end) or nil,
+		level = experience ~= nil and try(function()
+			return experience:GetLevel();
+		end) or nil,
+		promotions = promotions,
+		build_charges = try(function() return unit:GetBuildCharges(); end, 0),
+		spread_charges = try(function() return unit:GetSpreadCharges(); end, 0),
+		religion = religion,
+	};
 end
 
 
@@ -4396,7 +4434,19 @@ local function exportState(player, pid, turn)
 								type = info.DistrictType,
 								x = px,
 								y = py,
-								pillaged = try(function() return plot:IsDistrictPillaged(); end, false),
+								-- ★★★★★ ASK THE CITY DISTRICTS COLLECTION, AS FIRAXIS DOES.
+								--
+								-- `Plot:IsDistrictPillaged()` is not the stock UI API. It
+								-- throws on this build, `try` converted that to `false`, and
+								-- every damaged district was exported as healthy. Live turn
+								-- 112 then showed Ostia's Campus as `pillaged=false` while
+								-- `CanProduce` refused its Library with "The required district
+								-- is damaged." The shipped PlotToolTip and MapSearchPanel both
+								-- call `cityDistricts:IsPillaged(type, plotId)`.
+								pillaged = try(function()
+									return cityDistricts ~= nil
+										and cityDistricts:IsPillaged(dtype, plotIndex);
+								end, false),
 								complete = districtComplete[
 									tostring(try(function() return plot:GetX(); end, -1)) .. "," ..
 									tostring(try(function() return plot:GetY(); end, -1))],
@@ -4621,6 +4671,7 @@ local function exportState(player, pid, turn)
 				activation_plots = activationPlots,
 			};
 		end
+		local progress = unitProgress(unit);
 		units[#units + 1] = {
 			id = try(function() return unit:GetID(); end, -1),
 			kind = name,
@@ -4632,6 +4683,12 @@ local function exportState(player, pid, turn)
 			y = try(function() return unit:GetY(); end, -1),
 			hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 			moves = try(function() return unit:GetMovesRemaining(); end, -1),
+			xp = progress.xp,
+			level = progress.level,
+			promotions = progress.promotions,
+			build_charges = progress.build_charges,
+			spread_charges = progress.spread_charges,
+			religion = progress.religion,
 			combat = row ~= nil and (row.Combat or 0) or 0,
 			ranged = row ~= nil and (row.RangedCombat or 0) or 0,
 			-- ★★★ ALREADY FORTIFIED, WHICH IS WHY FORTIFY WAS BEING REFUSED.
@@ -4742,12 +4799,18 @@ local function exportState(player, pid, turn)
 						if PlayersVisibility[pid]:IsVisible(ux, uy) then
 							local name = unitTypeName(unit);
 							local row = GameInfo.Units[name];
+							local progress = unitProgress(unit);
 							theirUnits[#theirUnits + 1] = {
 								x = ux, y = uy, kind = name,
 								base = unitBaseType(name),
 								class = unitClass(name),
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								moves = try(function() return unit:GetMovesRemaining(); end, -1),
+								xp = progress.xp, level = progress.level,
+								promotions = progress.promotions,
+								build_charges = progress.build_charges,
+								spread_charges = progress.spread_charges,
+								religion = progress.religion,
 								combat = row ~= nil and (row.Combat or 0) or 0,
 								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
 								fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
@@ -4837,10 +4900,16 @@ local function exportState(player, pid, turn)
 						if PlayersVisibility[pid]:IsVisible(ux, uy) then
 							local name = unitTypeName(unit);
 							local row = GameInfo.Units[name];
+							local progress = unitProgress(unit);
 							theirUnits[#theirUnits + 1] = {
 								x = ux, y = uy, kind = name,
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								moves = try(function() return unit:GetMovesRemaining(); end, -1),
+								xp = progress.xp, level = progress.level,
+								promotions = progress.promotions,
+								build_charges = progress.build_charges,
+								spread_charges = progress.spread_charges,
+								religion = progress.religion,
 								combat = row ~= nil and (row.Combat or 0) or 0,
 								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
 								fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
@@ -5008,11 +5077,17 @@ local function exportState(player, pid, turn)
 								return GameInfo.Units[unit:GetUnitType()].UnitType;
 							end, "?");
 							local row = GameInfo.Units[name];
+							local progress = unitProgress(unit);
 							hostiles[#hostiles + 1] = {
 								x = ux, y = uy, player = bid,
 								type = name,
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								moves = try(function() return unit:GetMovesRemaining(); end, -1),
+								xp = progress.xp, level = progress.level,
+								promotions = progress.promotions,
+								build_charges = progress.build_charges,
+								spread_charges = progress.spread_charges,
+								religion = progress.religion,
 								combat = row ~= nil and (row.Combat or 0) or 0,
 								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
 								fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
@@ -6904,8 +6979,45 @@ local function applyOrder(player, pid, row, turn)
 		if verb == "UPGRADE" then
 			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"]), verb;
 		end
+		local promotionName = string.match(tostring(verb), "^PROMOTE:(.+)$");
+		if promotionName ~= nil then
+			local promotion = try(function()
+				return GameInfo.UnitPromotions[promotionName];
+			end);
+			local hash = CMD["UNITCOMMAND_PROMOTE"];
+			if promotion == nil or hash == nil then
+				return false, "unknown_promotion_" .. promotionName;
+			end
+			-- Use the stock promotion popup's own availability result. A syntactically
+			-- valid promotion from another class must remain an observable refusal,
+			-- never a RequestCommand we merely assume the engine accepted.
+			local okCan, can, results = pcall(function()
+				return UnitManager.CanStartCommand(unit, hash, true, true);
+			end);
+			local offered = results ~= nil
+				and results[UnitCommandResults.PROMOTIONS] or nil;
+			local available = false;
+			if okCan and can == true and type(offered) == "table" then
+				for _, index in ipairs(offered) do
+					if index == promotion.Index then available = true; break; end
+				end
+			end
+			if not available then
+				emit("promotion_refused", {
+					turn = turn, unit = subject, promotion = promotionName,
+				});
+				return false, "cannot_promote_" .. promotionName;
+			end
+			local params = {};
+			params[UnitCommandTypes.PARAM_PROMOTION_TYPE] = promotion.Index;
+			local ok = pcall(function()
+				UnitManager.RequestCommand(unit, hash, params);
+			end);
+			return ok, ok and verb or "throw";
+		end
 		-- Anything else is a named operation from the resolved table: FORTIFY,
-		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT.
+		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT,
+		-- SPREAD_RELIGION.
 		local hash = OP["UNITOPERATION_" .. verb];
 		if hash == nil then return false, "unknown_op_" .. verb; end
 		return operate(unit, hash, {}), verb;

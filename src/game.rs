@@ -14833,6 +14833,16 @@ pub struct Player {
     #[serde(default)]
     pub co2_emissions: f64,
     pub explored: BTreeSet<Pos>,
+    /// Tiles this civilization has seen at any point during its active player
+    /// turn. Current sight remains authoritative for rules and targeting; this
+    /// short-lived union exists so the map can keep the just-seen frame lit
+    /// until this player's End Turn, then fall back to ordinary fog memory.
+    #[serde(default)]
+    pub turn_visible: BTreeSet<Pos>,
+    /// Rival units last observed during this active player turn. Unlike the
+    /// long-term map memory, these contacts survive only until End Turn.
+    #[serde(default)]
+    pub turn_units: BTreeMap<u32, Unit>,
     /// Whether this civilization's own knowledge has ever run the whole way
     /// round the world — see [`Game::update_world_lap`]. Once a people have
     /// been around they know the shape they live on; until then they do not,
@@ -15075,6 +15085,8 @@ impl Player {
             power_fuel_consumed: BTreeMap::new(),
             co2_emissions: 0.0,
             explored: BTreeSet::new(),
+            turn_visible: BTreeSet::new(),
+            turn_units: BTreeMap::new(),
             went_around: false,
             remembered_tiles: TileMemory::default(),
             remembered_cities: BTreeMap::new(),
@@ -16473,7 +16485,13 @@ struct GameSer {
 impl From<GameSer> for Game {
     fn from(s: GameSer) -> Game {
         let needs_visibility_backfill = s.visibility_memory_version == 0;
-        let rules = Rules::for_game(s.seed, s.future_tree_layout.as_ref());
+        let has_unknown_terrain = s.map.tiles.values().any(|tile| tile.terrain == "unknown");
+        let mut rules = Rules::for_game(s.seed, s.future_tree_layout.as_ref());
+        if has_unknown_terrain {
+            // Mirror-only terrain is injected after normal ruleset loading so it
+            // survives a save round trip without changing the audited fingerprint.
+            Arc::make_mut(&mut rules).enable_unknown_terrain();
+        }
         // Both speed representations exist for save compatibility. Prefer an
         // explicit ruleset speed, except when loading an older map-script save
         // whose absent string field defaulted to Standard.
@@ -25141,6 +25159,13 @@ impl Game {
         if !self.rules.is_passable(tile) && !mountain_worker && !improvement_passage {
             return false;
         }
+        // A mirror frontier is an invitation to discover the tile, not a claim
+        // that it is land or water. Until the host reveals it, either movement
+        // domain may plan toward it; the next authoritative sync replaces the
+        // unknown with its real terrain before subsequent orders are chosen.
+        if self.rules.is_unknown(tile) {
+            return tile.assumed_traversable;
+        }
         let water = self.rules.is_water(tile);
         if water && tile.terrain == "ocean" && !class.ocean {
             return false;
@@ -30185,6 +30210,11 @@ impl Game {
         visible: &TileBits,
         memory_world: u64,
     ) {
+        // This active-turn union is deliberately recorded before the
+        // last-known snapshot's early-out. A unit can walk back across ground
+        // whose tile memory is already current; the browser still needs to
+        // know that it was in sight earlier in this player turn.
+        self.record_turn_visibility(pid, visible);
         if self.remembered_under.len() < self.players.len() {
             self.remembered_under
                 .resize(self.players.len(), (0, 0, TileBits::default()));
@@ -30232,6 +30262,38 @@ impl Game {
         if let Some(slot) = self.remembered_under.get_mut(pid) {
             *slot = (settled, settled_tiles, taken);
         }
+    }
+
+    /// Retain every visibility frame acquired by the player who is currently
+    /// acting, including rival units that have since fallen back under fog.
+    /// Other seats continue to expose only their exact current sight: their
+    /// previous player turn has ended, even if the world turn has not.
+    fn record_turn_visibility(&mut self, pid: usize, visible: &TileBits) {
+        if !self.track_fog_memory || pid != self.current || pid >= self.players.len() {
+            return;
+        }
+        let seen = self.tiles_of(visible);
+        let viewers = self.visibility_viewers(pid);
+        let units: BTreeMap<u32, Unit> = self
+            .units
+            .values()
+            .filter(|unit| unit.owner != pid)
+            .filter(|unit| {
+                let position = unit.air_patrol_pos.unwrap_or(unit.pos);
+                seen.contains(&position)
+                    && viewers
+                        .iter()
+                        .any(|viewer| self.unit_visible_to(unit.id, *viewer))
+            })
+            .map(|unit| (unit.id, unit.clone()))
+            .collect();
+        let player = &mut self.players[pid];
+        player.turn_units.retain(|id, unit| {
+            let position = unit.air_patrol_pos.unwrap_or(unit.pos);
+            !seen.contains(&position) || units.contains_key(id)
+        });
+        player.turn_units.extend(units);
+        player.turn_visible.extend(seen);
     }
 
     /// Meet everyone standing in `pid`'s sight.
@@ -50343,6 +50405,7 @@ impl Game {
         // closing snapshots. Refresh after every civilization has completed
         // its actions so the next observation sees the latest total and peak.
         self.sync_war_log();
+        let ending = self.current;
         let n = self.players.len();
         let mut nxt = None;
         for i in 1..=n {
@@ -50357,6 +50420,14 @@ impl Game {
             _ => return,
         };
         let wrapped = nxt <= self.current;
+        // This is a player-turn boundary, not a world-turn boundary. Ground
+        // that fell out of sight while `ending` was acting now becomes normal
+        // remembered terrain; `nxt` starts with a fresh union that the
+        // post-action visibility refresh will seed from its current sight.
+        self.players[ending].turn_visible.clear();
+        self.players[ending].turn_units.clear();
+        self.players[nxt].turn_visible.clear();
+        self.players[nxt].turn_units.clear();
         self.current = nxt;
         if wrapped {
             self.turn += 1;
@@ -55052,11 +55123,51 @@ mod visibility_tests {
             .get_mut(&remembered_position)
             .unwrap()
             .improvement = Some(crate::name!("mine"));
+        game.units.get_mut(&enemy).unwrap().hp = 41;
         game.cities.get_mut(&city).unwrap().pop = 9;
         game.cities.get_mut(&city).unwrap().name = "Changed Under Fog".to_string();
 
+        let held = crate::obs::observation(&game, 0);
+        assert!(!game.player_visibility(0).contains(&remembered_position));
+        assert!(!held["visible"]
+            .as_array()
+            .unwrap()
+            .contains(&json!([remembered_position.0, remembered_position.1])));
+        assert!(held["turn_visible"]
+            .as_array()
+            .unwrap()
+            .contains(&json!([remembered_position.0, remembered_position.1])));
+        assert_eq!(
+            observed_tile(&held, remembered_position)["improvement"],
+            "farm",
+            "turn visibility holds the last frame rather than leaking a change under fog"
+        );
+        let held_enemy = held["units"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|unit| unit["id"] == enemy)
+            .expect("the last-seen enemy remains on its turn-visible tile");
+        assert_eq!(
+            held_enemy["hp"], 100,
+            "a turn contact is a last-seen snapshot, not its changing hidden state"
+        );
+        let held_city = held["cities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|known| known["id"] == city)
+            .unwrap();
+        assert_eq!(held_city["name"], "Last Seen");
+        assert_eq!(held_city["pop"], 4);
+
+        game.apply(0, &Action::EndTurn).unwrap();
         let fogged = crate::obs::observation(&game, 0);
         assert!(!game.player_visibility(0).contains(&remembered_position));
+        assert!(!fogged["turn_visible"]
+            .as_array()
+            .unwrap()
+            .contains(&json!([remembered_position.0, remembered_position.1])));
         assert_eq!(
             observed_tile(&fogged, remembered_position)["improvement"],
             "farm"
@@ -55103,7 +55214,80 @@ mod visibility_tests {
             .find(|known| known["id"] == city)
             .unwrap();
         assert_eq!(revealed_city["name"], "Changed Under Fog");
-        assert_eq!(revealed_city["pop"], 9);
+        assert_eq!(
+            revealed_city["pop"], restored.cities[&city].pop,
+            "seeing the city again reveals its post-turn live population"
+        );
+    }
+
+    #[test]
+    fn moving_sight_updates_the_live_perimeter_but_holds_contacts_until_player_end_turn() {
+        let (mut game, origin) = controlled_game(91_010);
+        let trailing = along(&game, origin, -2);
+        let step = along(&game, origin, 1);
+        let scout = game.spawn_unit("warrior", 0, origin);
+        let enemy = game.spawn_unit("warrior", 1, trailing);
+        game.refresh_all_visibility();
+        assert!(game.player_visibility(0).contains(&trailing));
+
+        game.apply(
+            0,
+            &Action::Move {
+                unit: scout,
+                to: step,
+            },
+        )
+        .unwrap();
+        assert!(
+            !game.player_visibility(0).contains(&trailing),
+            "the exact current sight perimeter follows the moving unit"
+        );
+        let held = crate::obs::observation(&game, 0);
+        assert!(!held["visible"]
+            .as_array()
+            .unwrap()
+            .contains(&json!([trailing.0, trailing.1])));
+        assert!(held["turn_visible"]
+            .as_array()
+            .unwrap()
+            .contains(&json!([trailing.0, trailing.1])));
+        assert!(held["units"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|unit| unit["id"] == enemy));
+
+        let world_turn = game.turn;
+        game.apply(0, &Action::EndTurn).unwrap();
+        assert_eq!(
+            game.turn, world_turn,
+            "turn memory expires at the player's boundary before the world turn wraps"
+        );
+        let remembered = crate::obs::observation(&game, 0);
+        assert!(!remembered["turn_visible"]
+            .as_array()
+            .unwrap()
+            .contains(&json!([trailing.0, trailing.1])));
+        assert!(!remembered["units"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|unit| unit["id"] == enemy));
+    }
+
+    #[test]
+    fn browser_lights_turn_memory_but_traces_only_exact_current_sight() {
+        const INDEX: &str = include_str!("../web/index.html");
+        assert!(INDEX.contains("function drawFlatVisibilityPerimeter(tiles, visible)"));
+        assert!(INDEX.contains("function drawPlanetVisibilityPerimeter(cells, visible)"));
+        assert!(INDEX.contains("const visible = new Set(state.visible.map(key));"));
+        assert!(INDEX.contains(
+            "const turnVisible = new Set((state.turn_visible || state.visible).map(key));"
+        ));
+        assert!(INDEX
+            .contains("const visSet = new Set((state.turn_visible || state.visible).map(key));"));
+        assert!(INDEX.contains("drawPlanetVisibilityPerimeter(cells, visible);"));
+        assert!(INDEX.contains("drawFlatVisibilityPerimeter(tiles, visible);"));
     }
 
     #[test]

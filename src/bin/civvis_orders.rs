@@ -21,9 +21,10 @@
 //! ⚠ THE RECONSTRUCTION IS PARTIAL, and the partiality has a direction. Terrain,
 //! both empires' remembered cities, own units, visible hostile units, research,
 //! government, development, treasury and public aggregate strength cross over.
-//! Unit promotions remain an explicit modeling gap. Firaxis's physical Great Person units
-//! are bridged through its own activation verdict and legal activation plots, matching
-//! CIVVIS's immediate-effect semantics without reproducing those rules here. An
+//! Unit promotions, religious spread charges, and the religion a unit carries cross
+//! through the live mirror. Firaxis's physical Great Person units are bridged through
+//! its own activation verdict and legal activation plots, matching CIVVIS's
+//! immediate-effect semantics without reproducing those rules here. An
 //! untranslatable order or entity is refused or counted rather than guessed, so
 //! partiality stays visible in the run ledger.
 //!
@@ -130,12 +131,28 @@ fn civ6_improvement_type(name: &civvis::name::Name) -> String {
     format!("IMPROVEMENT_{id}")
 }
 
+/// Civilization VI keeps the three wall tiers under internal implementation names.
+///
+/// The mirror already translates these names in the other direction.  Keep the
+/// outbound boundary symmetric: live turns 165-219 refused 200 production orders
+/// for the nonexistent `BUILDING_MEDIEVAL_WALLS`, leaving three or four queues idle
+/// per turn.  The shipped Buildings.xml names the tiers WALLS, CASTLE, and STAR_FORT.
+fn civ6_building_type(name: &civvis::name::Name) -> String {
+    let id = match name.as_str() {
+        "ancient_walls" => "WALLS",
+        "medieval_walls" => "CASTLE",
+        "renaissance_walls" => "STAR_FORT",
+        other => return format!("BUILDING_{}", other.to_ascii_uppercase()),
+    };
+    format!("BUILDING_{id}")
+}
+
 fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
     use civvis::game::Item;
     let upper = |name: &civvis::name::Name| name.as_str().to_ascii_uppercase();
     match item {
         Item::Unit { unit } => Some(civ6_unit_type(unit)),
-        Item::Building { building } => Some(format!("BUILDING_{}", upper(building))),
+        Item::Building { building } => Some(civ6_building_type(building)),
         Item::District { district, .. } => Some(format!("DISTRICT_{}", upper(district))),
         Item::Wonder { wonder, .. } => Some(format!("BUILDING_{}", upper(wonder))),
         // ⚠ CIVVIS'S DISTRICT PROJECTS ARE NOT NAMED LIKE CIVILIZATION VI'S, and the
@@ -166,6 +183,28 @@ fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
     }
 }
 
+/// Resolve a live production item that needs board context.
+///
+/// Firaxis repairs a pillaged district by building that already-placed district
+/// type again. CIVVIS names the repair operation and its plot, so recover the
+/// district type from the authoritative mirrored tile instead of inventing a
+/// `PROJECT_REPAIR_*` id that does not exist in the shipped database.
+fn civ6_live_build_name(
+    item: &civvis::game::Item,
+    game: &civvis::game::Game,
+) -> Option<String> {
+    use civvis::game::Item;
+    match item {
+        Item::Repair { repair, pos } if repair == "district" => game
+            .map
+            .get(*pos)
+            .and_then(|tile| tile.district.as_ref())
+            .map(|district| format!("DISTRICT_{}", district.as_str().to_ascii_uppercase())),
+        Item::Repair { repair, .. } => Some(civ6_building_type(repair)),
+        _ => civ6_build_name(item),
+    }
+}
+
 /// Preserve the plot CIVVIS selected for placeable production.
 ///
 /// District and wonder placement is part of the decision, not an implementation
@@ -186,6 +225,24 @@ fn civ6_tech_name(civvis: &str) -> String {
 
 fn civ6_civic_name(civvis: &str) -> String {
     format!("CIVIC_{}", civvis.to_ascii_uppercase())
+}
+
+/// CIVVIS mostly uses Firaxis promotion identifiers without their prefix. Keep the
+/// few deliberate vocabulary contractions explicit in both directions rather than
+/// asking Lua to guess from localized display names.
+fn civ6_unit_promotion_name(civvis: &str) -> String {
+    let suffix = match civvis {
+        "cobra_strike" | "dancing_crane" | "disciples" | "exploding_palms" | "shadow_strike"
+        | "sweeping_wind" | "twilight_veil" => {
+            format!("MONK_{}", civvis.to_ascii_uppercase())
+        }
+        "supercarrier" => "SUPER_CARRIER".to_string(),
+        "goes_to_11" => "GOES_TO".to_string(),
+        "pop_star" => "POP".to_string(),
+        "surf_band" => "SURF_ROCK".to_string(),
+        other => other.to_ascii_uppercase(),
+    };
+    format!("PROMOTION_{suffix}")
 }
 
 struct Order {
@@ -1131,7 +1188,7 @@ fn translate(
                     "purchase"
                 },
                 subject: Some(*civ6),
-                verb: Some(format!("BUILDING_{}", building.as_str().to_ascii_uppercase())),
+                verb: Some(civ6_building_type(building)),
                 pos: None,
             }),
         Action::BuyDistrict {
@@ -1197,6 +1254,21 @@ fn translate(
             kind: "unit",
             subject: Some(*civ6),
             verb: Some("UPGRADE".to_string()),
+            pos: None,
+        }),
+        Action::Promote { unit, promotion } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some(format!(
+                "PROMOTE:{}",
+                civ6_unit_promotion_name(promotion.as_str())
+            )),
+            pos: None,
+        }),
+        Action::Spread { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("SPREAD_RELIGION".to_string()),
             pos: None,
         }),
         // ⚠⚠ A CASUS-BELLI WAR IS STILL A WAR, AND THIS DROPPED IT ON THE FLOOR.
@@ -1317,7 +1389,7 @@ fn translate(
         Action::Produce { city, item } => {
             mirror_state.cid_of.iter().find(|(_, cid)| **cid == *city).and_then(
                 |(civ6, _)| {
-                    civ6_build_name(item).map(|name| Order {
+                    civ6_live_build_name(item, &mirror_state.game).map(|name| Order {
                         kind: "produce",
                         subject: Some(*civ6),
                         verb: Some(name),
@@ -2355,6 +2427,65 @@ mod tests {
     }
 
     #[test]
+    fn religious_promotions_and_spreads_reach_firaxis_unit_orders() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 93,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![grass(5, 5)],
+        }]);
+        let state = StateSnapshot {
+            turn: 93,
+            units: vec![StateUnit {
+                id: 91,
+                kind: "UNIT_APOSTLE".to_string(),
+                x: 5,
+                y: 5,
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let unit = *mirror.uid_of.get(&91).expect("the Apostle is mirrored");
+
+        let promotion = translate(
+            &Action::Promote {
+                unit,
+                promotion: civvis::name!("translator"),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("the promotion crosses");
+        assert_eq!(promotion.kind, "unit");
+        assert_eq!(promotion.subject, Some(91));
+        assert_eq!(
+            promotion.verb.as_deref(),
+            Some("PROMOTE:PROMOTION_TRANSLATOR")
+        );
+
+        let spread =
+            translate(&Action::Spread { unit }, &mirror, &state).expect("the spread crosses");
+        assert_eq!(spread.kind, "unit");
+        assert_eq!(spread.subject, Some(91));
+        assert_eq!(spread.verb.as_deref(), Some("SPREAD_RELIGION"));
+    }
+
+    #[test]
+    fn contracted_promotion_names_expand_to_the_firaxis_database_ids() {
+        assert_eq!(
+            civ6_unit_promotion_name("cobra_strike"),
+            "PROMOTION_MONK_COBRA_STRIKE"
+        );
+        assert_eq!(
+            civ6_unit_promotion_name("supercarrier"),
+            "PROMOTION_SUPER_CARRIER"
+        );
+        assert_eq!(civ6_unit_promotion_name("surf_band"), "PROMOTION_SURF_ROCK");
+    }
+
+    #[test]
     fn every_great_person_reserves_its_hex_for_the_firaxis_batch() {
         let state = StateSnapshot {
             units: vec![
@@ -2532,6 +2663,20 @@ mod tests {
         assert_eq!(unit.verb.as_deref(), Some("UNIT_MISSIONARY"));
         assert_eq!(unit.pos, Some((2, -1)));
 
+        let walls = translate(
+            &Action::BuyBuilding {
+                city,
+                building: civvis::name!("medieval_walls"),
+                currency: "gold".to_string(),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a wall purchase crosses through the same building vocabulary");
+        assert_eq!(walls.kind, "purchase");
+        assert_eq!(walls.subject, Some(77));
+        assert_eq!(walls.verb.as_deref(), Some("BUILDING_CASTLE"));
+
         let pos = (7, 6);
         let district = translate(
             &Action::BuyDistrict {
@@ -2550,6 +2695,61 @@ mod tests {
             district.pos,
             Some(civvis::hex::axial_to_offset(pos.0, pos.1))
         );
+    }
+
+    #[test]
+    fn pillaged_district_repair_reuses_the_firaxis_district_type() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 112,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 112,
+            cities: vec![StateCity {
+                id: 77,
+                name: "Ostia".to_string(),
+                x: 6,
+                y: 6,
+                pop: 4,
+                capital: true,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_CAMPUS".to_string(),
+                    x: 7,
+                    y: 6,
+                    pillaged: true,
+                    complete: true,
+                }],
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+        let city = mirror.game.player_city_ids(0)[0];
+        let pos = civvis::hex::offset_to_axial(7, 6);
+        assert!(mirror.game.map.tiles[&pos].pillaged);
+
+        let order = translate(
+            &Action::Produce {
+                city,
+                item: civvis::game::Item::Repair {
+                    repair: civvis::name!("district"),
+                    pos,
+                },
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a CIVVIS district repair must reach Firaxis");
+
+        assert_eq!(order.kind, "produce");
+        assert_eq!(order.subject, Some(77));
+        assert_eq!(order.verb.as_deref(), Some("DISTRICT_CAMPUS"));
+        assert_eq!(order.pos, None);
     }
 
     #[test]
@@ -2865,6 +3065,30 @@ mod tests {
         };
         assert_eq!(civ6_build_pos(&district), Some((9, 4)));
         assert_eq!(civ6_build_pos(&wonder), Some((7, 8)));
+    }
+
+    #[test]
+    fn wall_production_and_repairs_use_firaxis_internal_type_ids() {
+        for (civvis, firaxis) in [
+            ("ancient_walls", "BUILDING_WALLS"),
+            ("medieval_walls", "BUILDING_CASTLE"),
+            ("renaissance_walls", "BUILDING_STAR_FORT"),
+        ] {
+            let building = civvis::game::Item::Building {
+                building: civvis::name::Name::new(civvis),
+            };
+            assert_eq!(civ6_build_name(&building).as_deref(), Some(firaxis));
+
+            let repair = civvis::game::Item::Repair {
+                repair: civvis::name::Name::new(civvis),
+                pos: (4, 4),
+            };
+            let game = civvis::game::Game::new(2, 12, 12, 1, 50, 0);
+            assert_eq!(
+                civ6_live_build_name(&repair, &game).as_deref(),
+                Some(firaxis)
+            );
+        }
     }
 
     #[test]
