@@ -2431,6 +2431,63 @@ mod city_name_tests {
     }
 
     #[test]
+    fn terrain_route_does_not_build_through_an_incompatible_feature() {
+        let mut game = Game::new(2, 24, 16, 2, 200, 0);
+        let centre = game
+            .map
+            .tiles
+            .iter()
+            .find(|(_, tile)| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .map(|(pos, _)| *pos)
+            .unwrap();
+        let city = game.place_city(0, centre, None);
+        let site = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|pos| *pos != centre)
+            .unwrap();
+        let tile = game.map.tiles.get_mut(&site).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.hills = true;
+        tile.feature = Some(crate::name!("forest"));
+        tile.resource = None;
+        tile.improvement = None;
+        game.players[0].techs.insert(crate::name!("mining"));
+
+        assert!(
+            !game.valid_improvements(0, site).contains(&crate::name!("mine")),
+            "Firaxis does not offer the Hills terrain route through Woods"
+        );
+        game.map.tiles.get_mut(&site).unwrap().feature = None;
+        assert!(game.valid_improvements(0, site).contains(&crate::name!("mine")));
+    }
+
+    #[test]
+    fn a_host_refused_trade_route_is_not_offered_again() {
+        let mut game = Game::new(2, 24, 16, 3, 200, 0);
+        let sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        let origin = sites[0];
+        let destination = sites
+            .iter()
+            .copied()
+            .find(|pos| game.wdist(origin, *pos) >= 4 && game.wdist(origin, *pos) <= 15)
+            .unwrap();
+        let origin_city = game.place_city(0, origin, None);
+        let destination_city = game.place_city(1, destination, None);
+        assert!(game.can_establish_trade_route(0, origin_city, destination_city));
+
+        game.blocked_trade_routes.insert((origin, destination));
+        assert!(!game.can_establish_trade_route(0, origin_city, destination_city));
+    }
+
+    #[test]
     fn every_civilization_has_a_deep_unique_city_name_pool() {
         for civilization in CIV_NAMES {
             let names = city_names(civilization);
@@ -2785,6 +2842,30 @@ fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
         .districts
         .insert(Name::new(district), position);
     position
+}
+
+#[cfg(test)]
+pub(crate) fn vacate_land_combat_purchase_slot(game: &mut Game, player: usize, city: u32) {
+    let center = game.cities[&city].pos;
+    let blocker = game.units_at(center).into_iter().find(|unit| {
+        let unit = &game.units[unit];
+        let spec = &game.rules.units[unit.kind];
+        unit.owner == player
+            && spec.class == "military"
+            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+    });
+    if let Some(unit) = blocker {
+        let destination = game
+            .nbrs(center)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                }) && game.units_at(*position).is_empty()
+            })
+            .expect("test city has an open adjacent land-combat slot");
+        game.relocate(unit, destination);
+    }
 }
 
 pub mod adjacency;
@@ -5964,6 +6045,627 @@ mod governor_runtime_tests {
             game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]).culture,
             culture + 1.0
         );
+
+        // The Ziggurat starts at 2 Science, gains Culture beside a river, and
+        // gains another Culture at Natural History.
+        game.players[0].civics.remove(&crate::name!("natural_history"));
+        game.map.tiles.get_mut(&kurgan).unwrap().improvement = Some(crate::name!("ziggurat"));
+        let plain = game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]);
+        assert_eq!(plain.science, 2.0);
+        game.map.tiles.get_mut(&kurgan).unwrap().river_edges[0] = true;
+        let riverside = game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]);
+        assert_eq!(riverside.culture, plain.culture + 1.0);
+        game.players[0].civics.insert(crate::name!("natural_history"));
+        assert_eq!(
+            game.player_tile_yields(0, kurgan, &game.map.tiles[&kurgan]).culture,
+            riverside.culture + 1.0
+        );
+    }
+
+    #[test]
+    fn rock_hewn_church_matches_firaxis_placement_yields_appeal_and_tourism() {
+        let mut game = Game::new_full(1, 24, 16, 91_976, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let church = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(church).into_iter().collect();
+        let mountain = neighbors.iter().copied().find(|at| *at != centre).unwrap();
+        let hill = neighbors
+            .iter()
+            .copied()
+            .find(|at| *at != centre && *at != mountain)
+            .unwrap();
+        let volcanic = neighbors
+            .iter()
+            .copied()
+            .find(|at| *at != centre && *at != mountain && *at != hill)
+            .unwrap();
+        let flat = neighbors
+            .iter()
+            .copied()
+            .find(|at| *at != centre && *at != mountain && *at != hill && *at != volcanic)
+            .unwrap();
+
+        for position in std::iter::once(church).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&city].owned_tiles.contains(&position) {
+                game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
+            }
+        }
+        game.map.tiles.get_mut(&church).unwrap().hills = true;
+        game.map.tiles.get_mut(&mountain).unwrap().terrain = crate::name!("mountain");
+        game.map.tiles.get_mut(&hill).unwrap().hills = true;
+        game.map.tiles.get_mut(&volcanic).unwrap().feature = Some(crate::name!("volcanic_soil"));
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+
+        assert!(!game
+            .valid_improvements(0, church)
+            .contains(&crate::name!("rock_hewn_church")));
+        game.players[0].civ = "Ethiopia".to_string();
+        assert!(game
+            .valid_improvements(0, church)
+            .contains(&crate::name!("rock_hewn_church")));
+        assert!(game
+            .valid_improvements(0, volcanic)
+            .contains(&crate::name!("rock_hewn_church")));
+        assert!(!game
+            .valid_improvements(0, flat)
+            .contains(&crate::name!("rock_hewn_church")));
+
+        let adjacent_appeal = game.tile_appeal(flat);
+        let site_appeal = game.tile_appeal(church).max(0) as f64;
+        let bare_faith = game.player_tile_yields(0, church, &game.map.tiles[&church]).faith;
+        game.map.tiles.get_mut(&church).unwrap().improvement =
+            Some(crate::name!("rock_hewn_church"));
+        let church_faith = game.player_tile_yields(0, church, &game.map.tiles[&church]).faith;
+        assert_eq!(church_faith - bare_faith, 1.0 + site_appeal + 2.0);
+        assert_eq!(game.tile_appeal(flat), adjacent_appeal + 1);
+
+        for adjacent in [hill, volcanic] {
+            assert!(!game
+                .valid_improvements(0, adjacent)
+                .contains(&crate::name!("rock_hewn_church")));
+        }
+
+        let before_flight = game
+            .tourism_by_tile(0)
+            .get(&church)
+            .copied()
+            .unwrap_or(0.0);
+        game.players[0].techs.insert(crate::name!("flight"));
+        let after_flight = game
+            .tourism_by_tile(0)
+            .get(&church)
+            .copied()
+            .unwrap_or(0.0);
+        assert_eq!(after_flight - before_flight, church_faith - bare_faith);
+    }
+
+    #[test]
+    fn pairidaeza_matches_firaxis_identity_adjacency_progression_and_tourism() {
+        let mut game = Game::new_full(1, 24, 16, 91_977, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let garden = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(garden).into_iter().collect();
+        let holy = neighbors.iter().copied().find(|at| *at != centre).unwrap();
+        let appeal_target = neighbors
+            .iter()
+            .copied()
+            .find(|at| *at != centre && *at != holy)
+            .unwrap();
+        for position in std::iter::once(garden).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&city].owned_tiles.contains(&position) {
+                game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
+            }
+        }
+        game.map.tiles.get_mut(&holy).unwrap().district = Some(crate::name!("holy_site"));
+        game.players[0].civics.insert(crate::name!("early_empire"));
+
+        assert!(!game
+            .valid_improvements(0, garden)
+            .contains(&crate::name!("pairidaeza")));
+        game.players[0].civ = "Persia".to_string();
+        assert!(game
+            .valid_improvements(0, garden)
+            .contains(&crate::name!("pairidaeza")));
+
+        let bare = game.player_tile_yields(0, garden, &game.map.tiles[&garden]);
+        let appeal = game.tile_appeal(appeal_target);
+        game.map.tiles.get_mut(&garden).unwrap().improvement = Some(crate::name!("pairidaeza"));
+        let early = game.player_tile_yields(0, garden, &game.map.tiles[&garden]);
+        assert_eq!(early.gold - bare.gold, 3.0, "2 base plus 1 beside the city centre");
+        assert_eq!(early.culture - bare.culture, 2.0, "1 base plus 1 beside a Holy Site");
+        assert_eq!(game.tile_appeal(appeal_target), appeal + 1);
+
+        game.players[0].civics.insert(crate::name!("diplomatic_service"));
+        let late = game.player_tile_yields(0, garden, &game.map.tiles[&garden]);
+        assert_eq!(late.culture - early.culture, 1.0);
+        let before_flight = game.tourism_by_tile(0).get(&garden).copied().unwrap_or(0.0);
+        game.players[0].techs.insert(crate::name!("flight"));
+        let after_flight = game.tourism_by_tile(0).get(&garden).copied().unwrap_or(0.0);
+        assert_eq!(after_flight - before_flight, late.culture - bare.culture);
+    }
+
+    #[test]
+    fn cahokia_mound_matches_firaxis_suzerain_placement_and_progression() {
+        let mut game = Game::new_full(2, 24, 16, 91_975, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let mound = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(mound).into_iter().collect();
+        for position in std::iter::once(mound).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&city].owned_tiles.contains(&position) {
+                game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
+            }
+        }
+        let district_sites: Vec<Pos> = neighbors
+            .iter()
+            .copied()
+            .filter(|position| *position != centre)
+            .take(2)
+            .collect();
+        game.map.tiles.get_mut(&district_sites[0]).unwrap().district =
+            Some(crate::name!("campus"));
+        game.map.tiles.get_mut(&district_sites[1]).unwrap().district =
+            Some(crate::name!("theater_square"));
+        let adjacent_site = neighbors
+            .iter()
+            .copied()
+            .find(|position| *position != centre && !district_sites.contains(position))
+            .unwrap();
+
+        game.players[1].is_minor = true;
+        game.players[1].civ = "Cahokia".to_string();
+        assert!(!game
+            .valid_improvements(0, mound)
+            .contains(&crate::name!("mound")));
+        game.players[0].envoys.push((1, 3));
+        assert!(game
+            .valid_improvements(0, mound)
+            .contains(&crate::name!("mound")));
+        game.map.tiles.get_mut(&mound).unwrap().hills = true;
+        assert!(!game
+            .valid_improvements(0, mound)
+            .contains(&crate::name!("mound")));
+        game.map.tiles.get_mut(&mound).unwrap().hills = false;
+
+        let housing_before = game.city_housing(&game.cities[&city]);
+        let amenities_before = game.city_local_amenities(&game.cities[&city]);
+        let bare = game.player_tile_yields(0, mound, &game.map.tiles[&mound]);
+        game.map.tiles.get_mut(&mound).unwrap().improvement = Some(crate::name!("mound"));
+        let initial = game.player_tile_yields(0, mound, &game.map.tiles[&mound]);
+        assert_eq!(initial.gold - bare.gold, 3.0);
+        assert_eq!(initial.food, bare.food);
+        assert_eq!(game.city_housing(&game.cities[&city]), housing_before + 1.0);
+        assert_eq!(game.city_local_amenities(&game.cities[&city]), amenities_before + 1);
+        assert!(!game
+            .valid_improvements(0, adjacent_site)
+            .contains(&crate::name!("mound")));
+
+        game.players[0].civics.insert(crate::name!("feudalism"));
+        let medieval = game.player_tile_yields(0, mound, &game.map.tiles[&mound]);
+        assert_eq!(medieval.food, initial.food + 1.0);
+        game.players[0].techs.insert(crate::name!("replaceable_parts"));
+        let mechanized = game.player_tile_yields(0, mound, &game.map.tiles[&mound]);
+        assert_eq!(mechanized.food, initial.food + 2.0);
+        game.players[0]
+            .civics
+            .insert(crate::name!("cultural_heritage"));
+        assert_eq!(game.city_housing(&game.cities[&city]), housing_before + 2.0);
+
+        let second = game
+            .wdisk(centre, 3)
+            .into_iter()
+            .find(|position| {
+                game.map.tiles.contains_key(position)
+                    && game.city_at(*position).is_none()
+                    && game.wdist(*position, mound) > 1
+            })
+            .unwrap();
+        {
+            let tile = game.map.tiles.get_mut(&second).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = Some(crate::name!("mound"));
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+        }
+        if !game.cities[&city].owned_tiles.contains(&second) {
+            game.cities.get_mut(&city).unwrap().owned_tiles.push(second);
+        }
+        assert_eq!(game.city_local_amenities(&game.cities[&city]), amenities_before + 1);
+        game.players[0].civics.insert(crate::name!("natural_history"));
+        assert_eq!(game.city_local_amenities(&game.cities[&city]), amenities_before + 2);
+    }
+
+    #[test]
+    fn armagh_monastery_matches_firaxis_placement_faith_and_religious_healing() {
+        let mut game = Game::new_full(2, 24, 16, 91_982, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let monastery = game.nbrs(game.cities[&city].pos)[0];
+        {
+            let tile = game.map.tiles.get_mut(&monastery).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+        }
+        if !game.cities[&city].owned_tiles.contains(&monastery) {
+            game.cities.get_mut(&city).unwrap().owned_tiles.push(monastery);
+        }
+
+        game.players[1].is_minor = true;
+        game.players[1].civ = "Armagh".to_string();
+        assert!(!game
+            .valid_improvements(0, monastery)
+            .contains(&crate::name!("monastery")));
+        game.players[0].envoys.push((1, 3));
+        assert!(game
+            .valid_improvements(0, monastery)
+            .contains(&crate::name!("monastery")));
+
+        let bare = game.player_tile_yields(0, monastery, &game.map.tiles[&monastery]);
+        game.map.tiles.get_mut(&monastery).unwrap().improvement =
+            Some(crate::name!("monastery"));
+        let improved = game.player_tile_yields(0, monastery, &game.map.tiles[&monastery]);
+        assert_eq!(improved.faith - bare.faith, 2.0);
+
+        let missionary = game.spawn_unit("missionary", 0, monastery);
+        assert_eq!(game.unit_heal_rate(missionary), 15);
+        game.map.tiles.get_mut(&monastery).unwrap().pillaged = true;
+        assert_eq!(game.unit_heal_rate(missionary), 0);
+    }
+
+    #[test]
+    fn cree_mekewap_matches_firaxis_placement_yields_and_housing_progression() {
+        let mut game = Game::new_full(1, 24, 16, 91_977, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let mekewap = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(mekewap).into_iter().collect();
+        for position in std::iter::once(mekewap).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&city].owned_tiles.contains(&position) {
+                game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
+            }
+        }
+        let resource_sites: Vec<Pos> = neighbors
+            .iter()
+            .copied()
+            .filter(|position| *position != centre)
+            .take(3)
+            .collect();
+
+        game.players[0].techs.insert(crate::name!("pottery"));
+        assert!(!game
+            .valid_improvements(0, mekewap)
+            .contains(&crate::name!("mekewap")));
+        game.players[0].civ = "Cree".to_string();
+        assert!(!game
+            .valid_improvements(0, mekewap)
+            .contains(&crate::name!("mekewap")));
+        game.map.tiles.get_mut(&resource_sites[0]).unwrap().resource =
+            Some(crate::name!("wheat"));
+        game.map.tiles.get_mut(&resource_sites[1]).unwrap().resource =
+            Some(crate::name!("rice"));
+        game.map.tiles.get_mut(&resource_sites[2]).unwrap().resource =
+            Some(crate::name!("silk"));
+        assert!(game
+            .valid_improvements(0, mekewap)
+            .contains(&crate::name!("mekewap")));
+
+        let housing_before = game.city_housing(&game.cities[&city]);
+        let bare = game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
+        game.map.tiles.get_mut(&mekewap).unwrap().improvement =
+            Some(crate::name!("mekewap"));
+        let initial = game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
+        assert_eq!(initial.production - bare.production, 1.0);
+        assert_eq!(initial.food - bare.food, 1.0);
+        assert_eq!(initial.gold - bare.gold, 1.0);
+        assert_eq!(game.city_housing(&game.cities[&city]), housing_before + 1.0);
+
+        game.players[0].civics.insert(crate::name!("civil_service"));
+        let civil_service =
+            game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
+        assert_eq!(civil_service.production, initial.production + 1.0);
+        assert_eq!(game.city_housing(&game.cities[&city]), housing_before + 2.0);
+        game.players[0].civics.insert(crate::name!("conservation"));
+        let conservation =
+            game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
+        assert_eq!(conservation.food, initial.food + 1.0);
+        game.players[0].techs.insert(crate::name!("cartography"));
+        let cartography = game.player_tile_yields(0, mekewap, &game.map.tiles[&mekewap]);
+        assert_eq!(cartography.gold, initial.gold + 2.0);
+
+        let adjacent_site = neighbors
+            .iter()
+            .copied()
+            .find(|position| {
+                *position != centre
+                    && game
+                        .nbrs(*position)
+                        .iter()
+                        .any(|candidate| resource_sites.contains(candidate))
+            })
+            .unwrap();
+        assert!(!game
+            .valid_improvements(0, adjacent_site)
+            .contains(&crate::name!("mekewap")));
+    }
+
+    #[test]
+    fn samarkand_trading_dome_matches_firaxis_placement_yields_and_routes() {
+        let mut game = Game::new_full(3, 24, 16, 91_980, 200, 0, false);
+        let origin = found_capital(&mut game, 0);
+        let _destination = found_capital(&mut game, 1);
+        let centre = game.cities[&origin].pos;
+        let dome = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(dome).into_iter().collect();
+        for position in std::iter::once(dome).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(origin);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&origin].owned_tiles.contains(&position) {
+                game.cities.get_mut(&origin).unwrap().owned_tiles.push(position);
+            }
+        }
+        let luxury = neighbors.iter().copied().find(|pos| *pos != centre).unwrap();
+        let adjacent_dome = neighbors
+            .iter()
+            .copied()
+            .find(|pos| *pos != centre && *pos != luxury)
+            .unwrap();
+        game.map.tiles.get_mut(&luxury).unwrap().resource = Some(crate::name!("silk"));
+
+        game.players[2].is_minor = true;
+        game.players[2].civ = "Samarkand".to_string();
+        assert!(!game
+            .valid_improvements(0, dome)
+            .contains(&crate::name!("trading_dome")));
+        game.players[0].envoys.push((2, 3));
+        assert!(game
+            .valid_improvements(0, dome)
+            .contains(&crate::name!("trading_dome")));
+        game.map.tiles.get_mut(&dome).unwrap().hills = true;
+        assert!(game
+            .valid_improvements(0, dome)
+            .contains(&crate::name!("trading_dome")));
+        game.map.tiles.get_mut(&dome).unwrap().hills = false;
+
+        let bare = game.player_tile_yields(0, dome, &game.map.tiles[&dome]);
+        game.map.tiles.get_mut(&dome).unwrap().improvement =
+            Some(crate::name!("trading_dome"));
+        let improved = game.player_tile_yields(0, dome, &game.map.tiles[&dome]);
+        assert_eq!(improved.gold - bare.gold, 3.0);
+        assert_eq!(game.trading_dome_origin_route_gold(origin), 1.0);
+        assert!(!game
+            .valid_improvements(0, adjacent_dome)
+            .contains(&crate::name!("trading_dome")));
+        game.map.tiles.get_mut(&dome).unwrap().pillaged = true;
+        assert_eq!(game.trading_dome_origin_route_gold(origin), 0.0);
+    }
+
+    #[test]
+    fn granada_alcazar_matches_firaxis_placement_yields_tourism_and_defense() {
+        let mut game = Game::new_full(2, 24, 16, 91_978, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let alcazar = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(alcazar).into_iter().collect();
+        for position in std::iter::once(alcazar).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&city].owned_tiles.contains(&position) {
+                game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
+            }
+        }
+
+        game.players[1].is_minor = true;
+        game.players[1].civ = "Granada".to_string();
+        assert!(!game
+            .valid_improvements(0, alcazar)
+            .contains(&crate::name!("alcazar")));
+        game.players[0].envoys.push((1, 3));
+        assert!(game
+            .valid_improvements(0, alcazar)
+            .contains(&crate::name!("alcazar")));
+        game.map.tiles.get_mut(&alcazar).unwrap().hills = true;
+        assert!(game
+            .valid_improvements(0, alcazar)
+            .contains(&crate::name!("alcazar")));
+        game.map.tiles.get_mut(&alcazar).unwrap().hills = false;
+        game.map.tiles.get_mut(&alcazar).unwrap().feature = Some(crate::name!("forest"));
+        assert!(!game
+            .valid_improvements(0, alcazar)
+            .contains(&crate::name!("alcazar")));
+        game.map.tiles.get_mut(&alcazar).unwrap().feature = None;
+
+        let appeal = game.tile_appeal(alcazar).max(0) as f64;
+        let bare = game.player_tile_yields(0, alcazar, &game.map.tiles[&alcazar]);
+        game.map.tiles.get_mut(&alcazar).unwrap().improvement = Some(crate::name!("alcazar"));
+        let improved = game.player_tile_yields(0, alcazar, &game.map.tiles[&alcazar]);
+        assert_eq!(improved.culture - bare.culture, 2.0);
+        assert_eq!(improved.science - bare.science, appeal * 0.5);
+        assert_eq!(game.tile_defense_bonus(alcazar), 4.0);
+        let adjacent = neighbors
+            .iter()
+            .copied()
+            .find(|position| *position != centre)
+            .unwrap();
+        assert!(!game
+            .valid_improvements(0, adjacent)
+            .contains(&crate::name!("alcazar")));
+
+        let before_flight = game
+            .tourism_by_tile(0)
+            .get(&alcazar)
+            .copied()
+            .unwrap_or(0.0);
+        game.players[0].techs.insert(crate::name!("flight"));
+        let after_flight = game
+            .tourism_by_tile(0)
+            .get(&alcazar)
+            .copied()
+            .unwrap_or(0.0);
+        assert_eq!(after_flight - before_flight, 2.0);
+
+        let warrior = game.spawn_unit("warrior", 0, adjacent);
+        game.relocate(warrior, alcazar);
+        assert_eq!(game.units[&warrior].fortify_turns, 2);
+        assert_eq!(game.unit_strength(&game.units[&warrior], true), 26.0);
+        game.begin_turn(0);
+        assert_eq!(game.units[&warrior].fortify_turns, 2);
+        game.map.tiles.get_mut(&alcazar).unwrap().pillaged = true;
+        assert_eq!(game.tile_defense_bonus(alcazar), 0.0);
+    }
+
+    #[test]
+    fn caguana_batey_matches_firaxis_placement_adjacency_and_tourism() {
+        let mut game = Game::new_full(2, 24, 16, 91_979, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let batey = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(batey).into_iter().collect();
+        for position in std::iter::once(batey).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&city].owned_tiles.contains(&position) {
+                game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
+            }
+        }
+
+        game.players[1].is_minor = true;
+        game.players[1].civ = "Caguana".to_string();
+        assert!(!game
+            .valid_improvements(0, batey)
+            .contains(&crate::name!("batey")));
+        game.players[0].envoys.push((1, 3));
+        assert!(game
+            .valid_improvements(0, batey)
+            .contains(&crate::name!("batey")));
+        game.map.tiles.get_mut(&batey).unwrap().hills = true;
+        assert!(!game
+            .valid_improvements(0, batey)
+            .contains(&crate::name!("batey")));
+        game.map.tiles.get_mut(&batey).unwrap().hills = false;
+        game.map.tiles.get_mut(&batey).unwrap().feature = Some(crate::name!("forest"));
+        assert!(!game
+            .valid_improvements(0, batey)
+            .contains(&crate::name!("batey")));
+        game.map.tiles.get_mut(&batey).unwrap().feature = None;
+
+        let bonus = neighbors
+            .iter()
+            .copied()
+            .find(|position| *position != centre)
+            .unwrap();
+        let entertainment = neighbors
+            .iter()
+            .copied()
+            .find(|position| *position != centre && *position != bonus)
+            .unwrap();
+        let adjacent_batey = neighbors
+            .iter()
+            .copied()
+            .find(|position| {
+                *position != centre && *position != bonus && *position != entertainment
+            })
+            .unwrap();
+        game.map.tiles.get_mut(&bonus).unwrap().resource = Some(crate::name!("wheat"));
+        set_district(
+            &mut game,
+            city,
+            entertainment,
+            "entertainment_complex",
+        );
+
+        let bare = game.player_tile_yields(0, batey, &game.map.tiles[&batey]);
+        game.map.tiles.get_mut(&batey).unwrap().improvement = Some(crate::name!("batey"));
+        let initial = game.player_tile_yields(0, batey, &game.map.tiles[&batey]);
+        assert_eq!(initial.culture - bare.culture, 3.0);
+        assert!(!game
+            .valid_improvements(0, adjacent_batey)
+            .contains(&crate::name!("batey")));
+
+        game.players[0].civics.insert(crate::name!("exploration"));
+        let exploration = game.player_tile_yields(0, batey, &game.map.tiles[&batey]);
+        assert_eq!(exploration.culture - bare.culture, 5.0);
+
+        let before_flight = game.tourism_by_tile(0).get(&batey).copied().unwrap_or(0.0);
+        game.players[0].techs.insert(crate::name!("flight"));
+        let after_flight = game.tourism_by_tile(0).get(&batey).copied().unwrap_or(0.0);
+        assert_eq!(after_flight - before_flight, 5.0);
     }
 
     #[test]
@@ -10074,6 +10776,7 @@ mod government_runtime_tests {
     #[test]
     fn democracy_discounts_gold_unit_building_and_district_purchases() {
         let (mut game, city) = one_city(774_507);
+        vacate_land_combat_purchase_slot(&mut game, 0, city);
         game.players[0].government = Some("democracy".to_string());
         game.players[0].gold = 100_000.0;
         game.players[0].techs.insert(crate::name!("pottery"));
@@ -10377,8 +11080,52 @@ mod district_building_wonder_runtime_tests {
     }
 
     #[test]
+    fn land_combat_purchase_requires_an_unreserved_city_center_combat_layer() {
+        let (mut game, city, _) = one_city(774_405);
+        let center = game.cities[&city].pos;
+        let open_land = game
+            .nbrs(center)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                })
+            })
+            .unwrap();
+        for unit in game.units_at(center) {
+            game.relocate(unit, open_land);
+        }
+
+        // Live Firaxis evidence: Rome offered a Scout purchase with an empty
+        // center while a Warrior was completing, but refused it with the
+        // explicit same-class placement reason. A Settler queue did not
+        // reserve the combat layer and the next military purchase succeeded.
+        game.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
+            unit: crate::name!("warrior"),
+        }];
+        assert_eq!(game.unit_purchase_cost(0, city, "scout", "gold"), None);
+        game.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
+            unit: crate::name!("settler"),
+        }];
+        assert_eq!(
+            game.unit_purchase_cost(0, city, "scout", "gold"),
+            Some(120.0)
+        );
+
+        game.cities.get_mut(&city).unwrap().queue.clear();
+        let blocker = game.spawn_unit("warrior", 0, center);
+        assert_eq!(game.unit_purchase_cost(0, city, "scout", "gold"), None);
+        game.relocate(blocker, open_land);
+        assert_eq!(
+            game.unit_purchase_cost(0, city, "scout", "gold"),
+            Some(120.0)
+        );
+    }
+
+    #[test]
     fn formations_can_be_bought_directly_for_full_constituent_cost() {
         let (mut game, city, _) = one_city(774_406);
+        vacate_land_combat_purchase_slot(&mut game, 0, city);
         game.cities
             .get_mut(&city)
             .unwrap()
@@ -10412,6 +11159,20 @@ mod district_building_wonder_runtime_tests {
             .unwrap();
         assert_eq!(game.units[&bought].formation, 1);
         assert!(game.players[0].gold.abs() < 1e-9);
+
+        // Firaxis purchases into the City Center's combat layer, so clear the
+        // first formation before quoting a second one from this city.
+        let center = game.cities[&city].pos;
+        let open_land = game
+            .nbrs(center)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                }) && game.units_at(*position).is_empty()
+            })
+            .unwrap();
+        game.relocate(bought, open_land);
 
         game.players[0].government = Some("theocracy".to_string());
         assert_eq!(
@@ -15293,6 +16054,53 @@ pub struct Game {
     pub spies: BTreeMap<u32, Spy>,
     pub cities: BTreeMap<u32, City>,
     pub at_war: BTreeSet<(usize, usize)>,
+    /// Military scores reported by an authoritative host, keyed by CIVVIS seat.
+    ///
+    /// Ordinary games leave this empty and derive strength from their units. A
+    /// live mirror cannot do that for a met rival whose army is currently under
+    /// fog, even though Civilization VI exposes that rival's aggregate military
+    /// score to the player. Keeping the host score here lets the ordinary AI use
+    /// the public information without inventing hidden unit positions.
+    #[serde(default)]
+    pub observed_military_power: BTreeMap<usize, f64>,
+    /// Public host score for mirrored seats. Empty in native CIVVIS games.
+    #[serde(default)]
+    pub observed_score: BTreeMap<usize, i64>,
+    /// Exact host trade-route capacity for mirrored seats. Native games derive
+    /// this from their own infrastructure and leave the map empty.
+    #[serde(default)]
+    pub observed_trade_capacity: BTreeMap<usize, i64>,
+    /// Exact Firaxis leader type for mirrored seats. CIVVIS models one leader
+    /// per civilization, while Civ VI can seat alternates and personas; keeping
+    /// the host type separate preserves identity without claiming their rules
+    /// have been folded into the modeled civilization.
+    #[serde(default)]
+    pub observed_leader_types: BTreeMap<usize, String>,
+    /// Host-to-model yield corrections for mirrored empires. Native games leave
+    /// this empty. A correction, rather than an absolute replacement, preserves
+    /// counterfactual deltas when the AI evaluates a policy or build on a clone.
+    #[serde(default)]
+    pub observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
+    /// Per-city host-to-model corrections and exact citizen assignments for a
+    /// mirrored Firaxis turn. Native games leave these empty. Corrections are
+    /// additive so counterfactual buildings, policies, and assignments still
+    /// contribute their modeled delta instead of being hidden by an override.
+    #[serde(default)]
+    pub observed_city_yield_adjustments: BTreeMap<u32, crate::rules::Yields>,
+    #[serde(default)]
+    pub observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
+    #[serde(default)]
+    pub observed_city_specialists: BTreeMap<u32, Vec<String>>,
+    /// Host loyalty rates and banner defense strengths for reconstructed cities.
+    /// Keys are CIVVIS city ids, populated only by the live mirror.
+    #[serde(default)]
+    pub observed_city_loyalty_per_turn: BTreeMap<u32, f64>,
+    #[serde(default)]
+    pub observed_city_strength: BTreeMap<u32, f64>,
+    /// Host-reported outer-defense capacity for mirrored cities. Native games
+    /// derive this from wall buildings and leave the override empty.
+    #[serde(default)]
+    pub observed_city_max_wall_hp: BTreeMap<u32, i32>,
     /// Sites a HOST ruleset forbids for a reason CIVVIS's own rules cannot see.
     ///
     /// ★★★★ Empty in an ordinary game, and load-bearing when CIVVIS is driving a
@@ -15320,6 +16128,11 @@ pub struct Game {
     /// with seven builders alive against an army of one.
     #[serde(default)]
     pub blocked_improvement_sites: BTreeSet<Pos>,
+    /// Origin/destination pairs a host engine rejected for a trade route.
+    /// Native games leave this empty; a live mirror learns it from Firaxis so an
+    /// unreachable city is not offered again every turn on geometric range alone.
+    #[serde(default)]
+    pub blocked_trade_routes: BTreeSet<(Pos, Pos)>,
     /// Policy cards a HOST ruleset has retired, for the same reasons and with the
     /// same emptiness in an ordinary game as [`Game::blocked_city_sites`].
     ///
@@ -15568,6 +16381,28 @@ struct GameSer {
     rng: Rng,
     at_war: Vec<(usize, usize)>,
     #[serde(default)]
+    observed_military_power: BTreeMap<usize, f64>,
+    #[serde(default)]
+    observed_score: BTreeMap<usize, i64>,
+    #[serde(default)]
+    observed_trade_capacity: BTreeMap<usize, i64>,
+    #[serde(default)]
+    observed_leader_types: BTreeMap<usize, String>,
+    #[serde(default)]
+    observed_yield_adjustments: BTreeMap<usize, crate::rules::Yields>,
+    #[serde(default)]
+    observed_city_yield_adjustments: BTreeMap<u32, crate::rules::Yields>,
+    #[serde(default)]
+    observed_city_worked_tiles: BTreeMap<u32, Vec<Pos>>,
+    #[serde(default)]
+    observed_city_specialists: BTreeMap<u32, Vec<String>>,
+    #[serde(default)]
+    observed_city_loyalty_per_turn: BTreeMap<u32, f64>,
+    #[serde(default)]
+    observed_city_strength: BTreeMap<u32, f64>,
+    #[serde(default)]
+    observed_city_max_wall_hp: BTreeMap<u32, i32>,
+    #[serde(default)]
     peace_treaties: Vec<((usize, usize), u32)>,
     #[serde(default)]
     wars: Vec<((usize, usize), WarRecord)>,
@@ -15683,10 +16518,22 @@ impl From<GameSer> for Game {
             spies: s.spies.into_iter().map(|spy| (spy.id, spy)).collect(),
             cities: s.cities.into_iter().map(|c| (c.id, c)).collect(),
             at_war: s.at_war.into_iter().collect(),
+            observed_military_power: s.observed_military_power,
+            observed_score: s.observed_score,
+            observed_trade_capacity: s.observed_trade_capacity,
+            observed_leader_types: s.observed_leader_types,
+            observed_yield_adjustments: s.observed_yield_adjustments,
+            observed_city_yield_adjustments: s.observed_city_yield_adjustments,
+            observed_city_worked_tiles: s.observed_city_worked_tiles,
+            observed_city_specialists: s.observed_city_specialists,
+            observed_city_loyalty_per_turn: s.observed_city_loyalty_per_turn,
+            observed_city_strength: s.observed_city_strength,
+            observed_city_max_wall_hp: s.observed_city_max_wall_hp,
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
+            blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             blocked_production: BTreeMap::new(),
@@ -15843,6 +16690,17 @@ impl From<Game> for GameSer {
             next_id: g.next_id,
             rng: g.rng,
             at_war: g.at_war.into_iter().collect(),
+            observed_military_power: g.observed_military_power,
+            observed_score: g.observed_score,
+            observed_trade_capacity: g.observed_trade_capacity,
+            observed_leader_types: g.observed_leader_types,
+            observed_yield_adjustments: g.observed_yield_adjustments,
+            observed_city_yield_adjustments: g.observed_city_yield_adjustments,
+            observed_city_worked_tiles: g.observed_city_worked_tiles,
+            observed_city_specialists: g.observed_city_specialists,
+            observed_city_loyalty_per_turn: g.observed_city_loyalty_per_turn,
+            observed_city_strength: g.observed_city_strength,
+            observed_city_max_wall_hp: g.observed_city_max_wall_hp,
             peace_treaties: g.peace_treaties.into_iter().collect(),
             wars: g.wars.into_iter().collect(),
             concluded_wars: g.concluded_wars,
@@ -15883,6 +16741,86 @@ impl From<Game> for GameSer {
 }
 
 impl Game {
+    /// Remove the generated settlements before a foreign authoritative board is
+    /// planted. Map generation seats city-states immediately; a mirror needs their
+    /// player slots but must not retain their invented cities or borders.
+    pub(crate) fn clear_mirror_cities(&mut self) {
+        self.cities.clear();
+        self.city_by_pos.clear();
+        self.routes.clear();
+        self.observed_city_loyalty_per_turn.clear();
+        self.observed_city_strength.clear();
+        self.observed_city_max_wall_hp.clear();
+        self.observed_city_yield_adjustments.clear();
+        self.observed_city_worked_tiles.clear();
+        self.observed_city_specialists.clear();
+        for tile in self.map.tiles.values_mut() {
+            tile.owner_city = None;
+            let had_infrastructure = tile.district.is_some()
+                || tile.district_foundation.is_some()
+                || tile.wonder.is_some();
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            if had_infrastructure {
+                tile.pillaged = false;
+            }
+        }
+        for player in self.players.iter_mut() {
+            player.remembered_cities.clear();
+            player.city_directives.clear();
+        }
+    }
+
+    /// Reconcile an authoritative external city roster without firing conquest
+    /// rewards, grievances, population loss, or any other simulated transition.
+    pub(crate) fn mirror_set_city_owner(&mut self, cid: u32, owner: usize) {
+        if let Some(city) = self.cities.get_mut(&cid) {
+            city.owner = owner;
+        }
+        *self.query_memo.city_ids.borrow_mut() = None;
+    }
+
+    /// Remove a city that the authoritative mirror says this seat no longer owns.
+    /// A later observed owner can place it again in the same synchronization pass.
+    pub(crate) fn mirror_remove_city(&mut self, cid: u32) {
+        let Some(city) = self.cities.remove(&cid) else { return };
+        let mut infrastructure: BTreeSet<Pos> = city
+            .districts
+            .iter()
+            .map(|(_, position)| *position)
+            .chain(city.wonders.values().copied())
+            .collect();
+        infrastructure.extend(city.queue.iter().filter_map(|item| match item {
+            Item::District { pos, .. } | Item::Wonder { pos, .. } => Some(*pos),
+            _ => None,
+        }));
+        self.city_by_pos.remove(&city.pos);
+        for tile in self.map.tiles.values_mut() {
+            if tile.owner_city == Some(cid) {
+                tile.owner_city = None;
+            }
+        }
+        for position in infrastructure {
+            if let Some(tile) = self.map.tiles.get_mut(&position) {
+                tile.district = None;
+                tile.district_foundation = None;
+                tile.wonder = None;
+                tile.pillaged = false;
+            }
+        }
+        self.observed_city_loyalty_per_turn.remove(&cid);
+        self.observed_city_strength.remove(&cid);
+        self.observed_city_max_wall_hp.remove(&cid);
+        self.observed_city_yield_adjustments.remove(&cid);
+        self.observed_city_worked_tiles.remove(&cid);
+        self.observed_city_specialists.remove(&cid);
+        for player in self.players.iter_mut() {
+            player.city_directives.remove(&cid);
+        }
+        *self.query_memo.city_ids.borrow_mut() = None;
+    }
+
     pub fn new(
         num_players: usize,
         width: i32,
@@ -16028,8 +16966,20 @@ impl Game {
             spies: BTreeMap::new(),
             cities: BTreeMap::new(),
             at_war: BTreeSet::new(),
+            observed_military_power: BTreeMap::new(),
+            observed_score: BTreeMap::new(),
+            observed_trade_capacity: BTreeMap::new(),
+            observed_leader_types: BTreeMap::new(),
+            observed_yield_adjustments: BTreeMap::new(),
+            observed_city_yield_adjustments: BTreeMap::new(),
+            observed_city_worked_tiles: BTreeMap::new(),
+            observed_city_specialists: BTreeMap::new(),
+            observed_city_loyalty_per_turn: BTreeMap::new(),
+            observed_city_strength: BTreeMap::new(),
+            observed_city_max_wall_hp: BTreeMap::new(),
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
+            blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
             blocked_production: BTreeMap::new(),
@@ -18332,6 +19282,17 @@ impl Game {
         }
         if spec.class == "religious" {
             let mut best: f64 = 0.0;
+            if self.map.get(unit.pos).is_some_and(|tile| {
+                tile.improvement.as_deref() == Some("monastery") && !tile.pillaged
+            }) {
+                best = best.max(
+                    self.rules.improvements["monastery"]
+                        .effects
+                        .get("religious_unit_heal_rate")
+                        .copied()
+                        .unwrap_or(0.0),
+                );
+            }
             for position in self.wdisk(unit.pos, 1) {
                 let Some(tile) = self.map.get(position) else {
                     continue;
@@ -20026,6 +20987,9 @@ impl Game {
     /// Trading capacity: 1 with Foreign Trade, plus capacity granted by
     /// buildings/districts and +2 under Merchant Republic.
     pub fn trade_capacity(&self, pid: usize) -> i64 {
+        if let Some(capacity) = self.observed_trade_capacity.get(&pid) {
+            return *capacity;
+        }
         let p = &self.players[pid];
         let tree_capacity = self.tree_effect(pid, "trade_route_capacity") as i64;
         if tree_capacity <= 0 {
@@ -20175,6 +21139,24 @@ impl Game {
         yields
     }
 
+    /// Samarkand: each unpillaged Trading Dome in the origin city adds one
+    /// Gold to that city's outgoing international routes.
+    fn trading_dome_origin_route_gold(&self, origin: u32) -> f64 {
+        let city = &self.cities[&origin];
+        city.owned_tiles
+            .iter()
+            .filter(|position| {
+                let tile = &self.map.tiles[position];
+                tile.improvement.as_deref() == Some("trading_dome") && !tile.pillaged
+            })
+            .count() as f64
+            * self.rules.improvements["trading_dome"]
+                .effects
+                .get("international_trade_gold_at_origin")
+                .copied()
+                .unwrap_or(0.0)
+    }
+
     /// Improved strategic-resource copies controlled by one city. Great
     /// Person trade effects count copies at the destination, not empire-wide
     /// access or resources imported through diplomacy.
@@ -20215,6 +21197,12 @@ impl Game {
         }
         if self.is_at_war(pid, dc.owner) {
             return Err("cannot trade with an enemy".into());
+        }
+        if self
+            .blocked_trade_routes
+            .contains(&(origin_city.pos, dc.pos))
+        {
+            return Err("host rejected that trade route".into());
         }
         if origin_city.owner != dc.owner
             && (self.congress_effect_active("trade_policy", "B", &pid.to_string())
@@ -23442,6 +24430,16 @@ impl Game {
             .sum()
     }
 
+    /// Numeric abilities inherent to the unit type plus earned promotions.
+    fn unit_effect(&self, unit: &Unit, effect: &str) -> f64 {
+        self.rules.units[unit.kind]
+            .effects
+            .get(effect)
+            .copied()
+            .unwrap_or(0.0)
+            + self.promotion_effect(unit, effect)
+    }
+
     pub fn available_promotions(&self, uid: u32) -> Vec<Name> {
         let Some(unit) = self.units.get(&uid) else {
             return vec![];
@@ -24358,9 +25356,9 @@ impl Game {
     }
 
     fn ranged_defense_bonus(&self, unit: &Unit, city_attack: bool) -> f64 {
-        self.promotion_effect(unit, "defend_ranged")
+        self.unit_effect(unit, "defend_ranged")
             + if city_attack {
-                self.promotion_effect(unit, "defend_city_attack")
+                self.unit_effect(unit, "defend_city_attack")
             } else {
                 0.0
             }
@@ -24456,12 +25454,34 @@ impl Game {
             .filter(|p| self.wdist(city.pos, **p) <= 3)
         {
             if let Some(improvement) = self.map.tiles[pos].improvement.as_deref() {
-                h += self
+                let spec = self
                     .rules
                     .improvements
                     .get(improvement)
-                    .map(|spec| spec.housing)
-                    .unwrap_or(0.0);
+                    .expect("a placed improvement is in the ruleset");
+                h += spec.housing;
+                if improvement == "mound"
+                    && self.players[city.owner]
+                        .civics
+                        .contains(&crate::name!("cultural_heritage"))
+                {
+                    h += spec
+                        .effects
+                        .get("housing_after_cultural_heritage")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                if improvement == "mekewap"
+                    && self.players[city.owner]
+                        .civics
+                        .contains(&crate::name!("civil_service"))
+                {
+                    h += spec
+                        .effects
+                        .get("housing_after_civil_service")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
             }
         }
         for b in city.buildings.iter().filter(|building| {
@@ -26470,6 +27490,33 @@ impl Game {
                 }
             }
         }
+        let mound = &self.rules.improvements["mound"];
+        let mound_count = city
+            .owned_tiles
+            .iter()
+            .filter(|position| {
+                let tile = &self.map.tiles[position];
+                !tile.pillaged && tile.improvement.as_deref() == Some("mound")
+            })
+            .count() as f64;
+        let mound_limit = if self.players[city.owner]
+            .civics
+            .contains(&crate::name!("natural_history"))
+        {
+            mound
+                .effects
+                .get("city_amenity_limit_after_natural_history")
+                .copied()
+                .unwrap_or(0.0)
+        } else {
+            mound
+                .effects
+                .get("city_amenity_limit")
+                .copied()
+                .unwrap_or(0.0)
+        };
+        supply += mound_count.min(mound_limit)
+            * mound.effects.get("city_amenity").copied().unwrap_or(0.0);
         let active_specialty_districts = city
             .districts
             .iter()
@@ -26873,6 +27920,9 @@ impl Game {
     /// population multipliers are deliberately absent — they score nothing
     /// in the shipped game.
     pub fn score(&self, pid: usize) -> i64 {
+        if let Some(score) = self.observed_score.get(&pid) {
+            return (*score).max(0);
+        }
         self.score_parts(pid).iter().sum()
     }
 
@@ -26925,7 +27975,7 @@ impl Game {
     /// technologies, wonders). Higher is better on every key.
     pub fn score_rank_key(&self, pid: usize) -> (i64, [i64; 9]) {
         let parts = self.score_parts(pid);
-        (parts.iter().sum(), parts)
+        (self.score(pid), parts)
     }
 
     /// The stock team score is the sum of every member civilization's score;
@@ -26933,17 +27983,19 @@ impl Game {
     /// remains deterministic between tied teams.
     pub fn team_score_rank_key(&self, pid: usize) -> (i64, [i64; 9]) {
         let mut parts = [0_i64; 9];
+        let mut score = 0_i64;
         for member in self.team_members(pid) {
+            score += self.score(member);
             let member_parts = self.score_parts(member);
             for (total, value) in parts.iter_mut().zip(member_parts) {
                 *total += value;
             }
         }
-        (parts.iter().sum(), parts)
+        (score, parts)
     }
 
     pub fn military_power(&self, pid: usize) -> f64 {
-        self.units
+        let represented = self.units
             .values()
             .filter(|u| u.owner == pid)
             .map(|u| {
@@ -26951,7 +28003,13 @@ impl Game {
                     * u.hp as f64
                     / 100.0
             })
-            .sum()
+            .sum::<f64>();
+        self.observed_military_power
+            .get(&pid)
+            .copied()
+            .unwrap_or(0.0)
+            .max(0.0)
+            .max(represented)
     }
 
     fn unlocked(&self, pid: usize, tech: &Option<Name>, civic: &Option<Name>) -> bool {
@@ -27843,10 +28901,28 @@ impl Game {
                 self.occ.remove(&old);
             }
         }
-        self.units.get_mut(&uid).unwrap().pos = pos;
+        let fortification = self.improvement_fortification_at(pos);
+        let unit = self.units.get_mut(&uid).unwrap();
+        unit.pos = pos;
+        unit.fortify_turns = unit.fortify_turns.max(fortification);
         self.occ.entry(pos).or_default().push(uid);
         let sight = self.unit_sight(uid);
         self.reveal(owner, pos, sight);
+    }
+
+    fn improvement_fortification_at(&self, pos: Pos) -> i32 {
+        let tile = &self.map.tiles[&pos];
+        if tile.pillaged {
+            return 0;
+        }
+        tile.improvement
+            .as_deref()
+            .and_then(|improvement| self.rules.improvements.get(improvement))
+            .and_then(|improvement| improvement.effects.get("grant_fortification"))
+            .copied()
+            .unwrap_or(0.0)
+            .round()
+            .clamp(0.0, 2.0) as i32
     }
 
     /// A height table sized to this map, for one visibility sweep.
@@ -27931,12 +29007,12 @@ impl Game {
         {
             cost = 1.0;
         }
-        if self.promotion_effect(unit, "woods_move_cost") > 0.0
+        if self.unit_effect(unit, "woods_move_cost") > 0.0
             && matches!(tile.feature.as_deref(), Some("forest" | "jungle"))
         {
             cost = 1.0;
         }
-        if self.promotion_effect(unit, "hills_move_cost") > 0.0 && tile.hills {
+        if self.unit_effect(unit, "hills_move_cost") > 0.0 && tile.hills {
             cost = 1.0;
         }
         if self.promotion_effect(unit, "amphibious") > 0.0 && self.crosses_river(from, to) {
@@ -28408,7 +29484,7 @@ impl Game {
 
     fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
         let unit = &self.units[&uid];
-        if self.promotion_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
+        if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
             let attacker_height = self.see_from_level(unit.pos);
             return self.tile_has_visibility_line(
                 &mut HeightField::none(),
@@ -28505,6 +29581,16 @@ impl Game {
         self.unit_base_max_moves_at(uid, self.units[&uid].pos)
     }
 
+    fn unit_shares_escort_movement(&self, unit: &Unit) -> bool {
+        self.promotion_effect(unit, "escort_mobility") > 0.0
+            || self.rules.units[unit.kind]
+                .effects
+                .get("escort_mobility")
+                .copied()
+                .unwrap_or(0.0)
+                > 0.0
+    }
+
     fn unit_max_moves_at(&self, uid: u32, pos: Pos) -> f64 {
         let base = self.unit_base_max_moves_at(uid, pos);
         let unit = &self.units[&uid];
@@ -28512,7 +29598,9 @@ impl Game {
             return base;
         };
         let spec = &self.rules.units[unit.kind];
-        if spec.class != "military" || self.promotion_effect(unit, "escort_mobility") > 0.0 {
+        if spec.class != "military" && self.unit_shares_escort_movement(linked) {
+            self.unit_base_max_moves_at(linked.id, pos)
+        } else if spec.class != "military" || self.unit_shares_escort_movement(unit) {
             base
         } else {
             base.min(self.unit_base_max_moves_at(linked.id, pos))
@@ -28646,7 +29734,7 @@ impl Game {
         let spec = &self.rules.units[unit.kind];
         let origin = unit.air_patrol_pos.unwrap_or(unit.pos);
         let sight = self.unit_sight(uid);
-        let see_through_woods = self.promotion_effect(unit, "see_through_woods") > 0.0;
+        let see_through_woods = self.unit_effect(unit, "see_through_woods") > 0.0;
         let flying = spec.domain.as_deref() == Some("air");
         let viewer_height = self.see_from_level(origin);
         let key = vision_key(&[
@@ -30726,6 +31814,9 @@ impl Game {
 
     /// Gathering Storm grants 100 HP of Outer Defenses per wall level.
     pub fn city_max_wall_hp(&self, city: &City) -> i32 {
+        if let Some(max) = self.observed_city_max_wall_hp.get(&city.id) {
+            return (*max).max(0);
+        }
         let built: i32 = city
             .buildings
             .iter()
@@ -30771,6 +31862,9 @@ impl Game {
     }
 
     pub fn city_strength(&self, cid: u32) -> f64 {
+        if let Some(strength) = self.observed_city_strength.get(&cid) {
+            return strength.max(0.0);
+        }
         let city = &self.cities[&cid];
         let city_state_bonus = self.city_state_envoy_strength(city.owner);
         let current_best = self
@@ -32117,6 +33211,22 @@ impl Game {
         if let Some(weights) = weights {
             strategy.weights = weights;
         }
+        // A live Firaxis mirror has already made its citizen assignment. Use that
+        // exact baseline for ordinary planning and yields; weighted probes remain
+        // counterfactual and deliberately run CIVVIS's governor below.
+        if weights.is_none() {
+            if let Some(worked_tiles) = self.observed_city_worked_tiles.get(&cid) {
+                return CitizenPlan {
+                    strategy,
+                    worked_tiles: worked_tiles.clone(),
+                    specialists: self
+                        .observed_city_specialists
+                        .get(&cid)
+                        .cloned()
+                        .unwrap_or_default(),
+                };
+            }
+        }
         let mut center = self.workable_tile_yields(city.pos);
         center.food = center.food.max(2.0);
         center.production = center.production.max(1.0);
@@ -32437,6 +33547,47 @@ impl Game {
                         * self.tree_effect(pid, "farm_pair_adjacency_food");
                 }
             }
+            Some("pairidaeza") => {
+                let effects = &self.rules.improvements["pairidaeza"].effects;
+                for neighbor in self.nbrs(pos) {
+                    let adjacent = &self.map.tiles[&neighbor];
+                    if self.city_at(neighbor).is_some() {
+                        yields.gold += effects
+                            .get("adjacent_city_center_gold")
+                            .copied()
+                            .unwrap_or(0.0);
+                    }
+                    if let Some(district) = adjacent.district {
+                        if self.district_is_family(district, crate::name!("commercial_hub")) {
+                            yields.gold += effects
+                                .get("adjacent_commercial_hub_gold")
+                                .copied()
+                                .unwrap_or(0.0);
+                        } else if self.district_is_family(district, crate::name!("holy_site")) {
+                            yields.culture += effects
+                                .get("adjacent_holy_site_culture")
+                                .copied()
+                                .unwrap_or(0.0);
+                        } else if self
+                            .district_is_family(district, crate::name!("theater_square"))
+                        {
+                            yields.culture += effects
+                                .get("adjacent_theater_square_culture")
+                                .copied()
+                                .unwrap_or(0.0);
+                        }
+                    }
+                }
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("diplomatic_service"))
+                {
+                    yields.culture += effects
+                        .get("culture_after_diplomatic_service")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
             Some("sphinx") => {
                 let effects = &self.rules.improvements["sphinx"].effects;
                 yields.culture += self.tree_effect(pid, "sphinx_culture");
@@ -32476,6 +33627,176 @@ impl Game {
                         })
                         .count() as f64;
             }
+            Some("mound") => {
+                let effects = &self.rules.improvements["mound"].effects;
+                let adjacent_districts = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| self.map.tiles[neighbor].district.is_some())
+                    .count() as f64;
+                if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("replaceable_parts"))
+                {
+                    yields.food += adjacent_districts
+                        * effects
+                            .get("adjacent_district_food_after_replaceable_parts")
+                            .copied()
+                            .unwrap_or(0.0);
+                } else if self.players[pid].civics.contains(&crate::name!("feudalism")) {
+                    yields.food += (adjacent_districts / 2.0).floor()
+                        * effects
+                            .get("adjacent_district_pair_food_after_feudalism")
+                            .copied()
+                            .unwrap_or(0.0);
+                }
+            }
+            Some("mekewap") => {
+                let effects = &self.rules.improvements["mekewap"].effects;
+                let adjacent_resource_count = |class: &str| {
+                    self.nbrs(pos)
+                        .iter()
+                        .filter(|neighbor| {
+                            self.map.tiles[neighbor].resource.as_ref().is_some_and(|resource| {
+                                self.rules
+                                    .resources
+                                    .get(resource.as_str())
+                                    .is_some_and(|spec| spec.class == class)
+                            })
+                        })
+                        .count() as f64
+                };
+                let bonus = adjacent_resource_count("bonus");
+                let luxury = adjacent_resource_count("luxury");
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("conservation"))
+                {
+                    yields.food += bonus
+                        * effects
+                            .get("adjacent_bonus_food_after_conservation")
+                            .copied()
+                            .unwrap_or(0.0);
+                } else {
+                    yields.food += (bonus / 2.0).floor()
+                        * effects
+                            .get("adjacent_bonus_pair_food")
+                            .copied()
+                            .unwrap_or(0.0);
+                }
+                if luxury > 0.0 {
+                    yields.gold += effects
+                        .get("adjacent_luxury_gold")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("cartography"))
+                {
+                    yields.gold += luxury
+                        * effects
+                            .get("adjacent_luxury_gold_after_cartography")
+                            .copied()
+                            .unwrap_or(0.0);
+                }
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("civil_service"))
+                {
+                    yields.production += effects
+                        .get("production_after_civil_service")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
+            Some("trading_dome") => {
+                let adjacent_luxuries = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].resource.as_ref().is_some_and(|resource| {
+                            self.rules.resources[resource].class == "luxury"
+                        })
+                    })
+                    .count() as f64;
+                yields.gold += adjacent_luxuries
+                    * self.rules.improvements["trading_dome"]
+                        .effects
+                        .get("adjacent_luxury_gold")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
+            Some("batey") => {
+                let effects = &self.rules.improvements["batey"].effects;
+                let late = self.players[pid]
+                    .civics
+                    .contains(&crate::name!("exploration"));
+                let bonus_resources = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor]
+                            .resource
+                            .as_ref()
+                            .filter(|resource| self.resource_visible_to(pid, resource))
+                            .and_then(|resource| self.rules.resources.get(resource.as_str()))
+                            .is_some_and(|resource| resource.class == "bonus")
+                    })
+                    .count() as f64;
+                let entertainment_complexes = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor]
+                            .district
+                            .is_some_and(|district| {
+                                self.district_is_family(
+                                    district,
+                                    crate::name!("entertainment_complex"),
+                                )
+                            })
+                    })
+                    .count() as f64;
+                let bonus_key = if late {
+                    "adjacent_bonus_culture_after_exploration"
+                } else {
+                    "adjacent_bonus_culture"
+                };
+                let district_key = if late {
+                    "adjacent_entertainment_complex_culture_after_exploration"
+                } else {
+                    "adjacent_entertainment_complex_culture"
+                };
+                yields.culture += bonus_resources * effects.get(bonus_key).copied().unwrap_or(0.0)
+                    + entertainment_complexes
+                        * effects.get(district_key).copied().unwrap_or(0.0);
+            }
+            Some("rock_hewn_church") => {
+                let effects = &self.rules.improvements["rock_hewn_church"].effects;
+                yields.faith += self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        let adjacent = &self.map.tiles[neighbor];
+                        adjacent.hills || adjacent.terrain == "mountain"
+                    })
+                    .count() as f64
+                    * effects
+                        .get("adjacent_hill_mountain_faith")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
+            Some("ziggurat") => {
+                yields.culture += self.tree_effect(pid, "ziggurat_culture");
+                if tile.has_river() {
+                    yields.culture += self.rules.improvements["ziggurat"]
+                        .effects
+                        .get("river_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
             Some("great_wall") => {
                 let adjacent = self
                     .nbrs(pos)
@@ -32497,9 +33818,22 @@ impl Game {
         }
         if !tile.pillaged {
             if let Some(improvement) = tile.improvement.as_deref() {
+                yields.science += self.rules.improvements[improvement]
+                    .effects
+                    .get("appeal_science_percent")
+                    .copied()
+                    .unwrap_or(0.0)
+                    / 100.0
+                    * self.tile_appeal(pos).max(0) as f64;
                 yields.gold += self.rules.improvements[improvement]
                     .effects
                     .get("appeal_gold")
+                    .copied()
+                    .unwrap_or(0.0)
+                    * self.tile_appeal(pos).max(0) as f64;
+                yields.faith += self.rules.improvements[improvement]
+                    .effects
+                    .get("appeal_faith")
                     .copied()
                     .unwrap_or(0.0)
                     * self.tile_appeal(pos).max(0) as f64;
@@ -32767,14 +34101,25 @@ impl Game {
     /// an instrument can bound the food available to a capital without the
     /// engine adopting a different governor — see `docs/OPENINGS.md`.
     pub fn city_yields_weighted(&self, cid: u32, weights: Yields) -> Yields {
-        self.city_yields_inner(cid, Some(weights))
+        self.city_yields_inner(cid, Some(weights), true)
     }
 
     fn city_yields_uncached(&self, cid: u32) -> Yields {
-        self.city_yields_inner(cid, None)
+        self.city_yields_inner(cid, None, true)
     }
 
-    fn city_yields_inner(&self, cid: u32, weights: Option<Yields>) -> Yields {
+    /// The modeled yield before a live-host correction. Mirror reconciliation
+    /// uses this to derive the additive correction without reading itself.
+    pub fn city_yields_model(&self, cid: u32) -> Yields {
+        self.city_yields_inner(cid, None, false)
+    }
+
+    fn city_yields_inner(
+        &self,
+        cid: u32,
+        weights: Option<Yields>,
+        apply_observation: bool,
+    ) -> Yields {
         // A city's yields reach for two empire-wide derivations — its Amenity
         // band and its housed Great Works. Opening a scope here means they are
         // taken once per city rather than once per lookup, and nests harmlessly
@@ -33168,6 +34513,7 @@ impl Game {
                     rys.gold += self.policy_effect(city.owner, "domestic_trade_gold");
                 }
                 if !domestic {
+                    rys.gold += self.trading_dome_origin_route_gold(cid);
                     // E-Commerce pays only on international routes.
                     rys.gold += self.policy_effect(city.owner, "international_trade_gold");
                     rys.production +=
@@ -33738,6 +35084,11 @@ impl Game {
         ys.science *= 1.0 + handicap.science / 100.0;
         ys.culture *= 1.0 + handicap.culture / 100.0;
         ys.faith *= 1.0 + handicap.faith / 100.0;
+        if apply_observation {
+            if let Some(adjustment) = self.observed_city_yield_adjustments.get(&cid) {
+                ys.add(*adjustment);
+            }
+        }
         ys
     }
 
@@ -33906,9 +35257,24 @@ impl Game {
                             .get(*neighbor)
                             .is_some_and(|tile| self.rules.is_water(tile))
                     }));
-            let adjacent_ski_resort = name == "ski_resort"
+            let same_adjacent_invalid = !spec.same_adjacent_valid
                 && self.nbrs(pos).iter().any(|neighbor| {
-                    self.map.tiles[neighbor].improvement.as_deref() == Some("ski_resort")
+                    self.map.tiles[neighbor].improvement.as_deref() == Some(name.as_str())
+                });
+            let adjacent_resource_class_invalid = !spec
+                .requires_adjacent_resource_classes
+                .is_empty()
+                && !self.nbrs(pos).iter().any(|neighbor| {
+                    self.map.tiles[neighbor]
+                        .resource
+                        .as_ref()
+                        .filter(|resource| self.resource_visible_to(pid, resource))
+                        .and_then(|resource| self.rules.resources.get(resource.as_str()))
+                        .is_some_and(|resource| {
+                            spec.requires_adjacent_resource_classes
+                                .iter()
+                                .any(|class| class == &resource.class)
+                        })
                 });
             // Civ 6 sites an improvement through any one of three routes —
             // a valid terrain, a valid feature, or a valid resource. Farms
@@ -33933,13 +35299,22 @@ impl Game {
                 || spec.terrain.contains(&t.terrain)
                 || feature_route
                 || resource_route;
+            // Firaxis evaluates a featured plot through Improvement_ValidFeatures
+            // (or a compatible resource), not through the terrain hidden below it.
+            // Treating the underlying Hills as sufficient offered Mines on Woods;
+            // the live engine refused both attempts in the turn-150 Poland trace.
+            let incompatible_feature =
+                t.feature.is_some() && !feature_route && !resource_route;
             if spec.unbuildable
                 || !self.unlocked(pid, &spec.tech, &spec.civic)
-                || spec.unique_to.as_deref().is_some_and(|owner| owner != civ)
+                || spec.unique_to.as_deref().is_some_and(|owner| {
+                    owner != civ && !self.grants_city_state_unique_bonus(pid, owner)
+                })
                 || water != spec.water
                 || t.improvement.as_deref() == Some(name)
                 || (spec.requires_hills && !t.hills)
                 || (spec.hills_or_resource && !t.hills && visible_resource.is_none())
+                || (spec.hills_or_feature && !t.hills && !feature_route)
                 || (spec.requires_flat
                     && t.hills
                     && !seaside_volcanic
@@ -33949,9 +35324,11 @@ impl Game {
                     && t.feature
                         .as_deref()
                         .is_some_and(|feature| !self.feature_removal_unlocked(pid, feature)))
+                || incompatible_feature
                 || (!sited && !seaside_volcanic)
                 || seaside_invalid
-                || adjacent_ski_resort
+                || same_adjacent_invalid
+                || adjacent_resource_class_invalid
             {
                 continue;
             }
@@ -37801,7 +39178,7 @@ impl Game {
         }
         if let Some(peer) = linked {
             self.relocate(peer, to);
-            let escort_speed = self.promotion_effect(&self.units[&uid], "escort_mobility") > 0.0;
+            let escort_speed = self.unit_shares_escort_movement(&self.units[&uid]);
             let peer_cost = if escort_speed {
                 cost
             } else {
@@ -40934,6 +42311,32 @@ impl Game {
         self.unit_purchase_cost_for_formation(pid, cid, unit, 0, currency)
     }
 
+    /// Firaxis buys ordinary land-combat units into the City Center's combat
+    /// layer. Unlike production completion, purchase does not search adjacent
+    /// tiles: an existing land-combat unit, or one completing from the active
+    /// queue, makes the purchase button refuse with "Too many units of the
+    /// same class in this location." Keep this deliberately scoped to the
+    /// live-proven layer; civilian, religious, naval, and air purchases use
+    /// different placement rules and districts.
+    fn land_combat_purchase_slot_open(&self, pid: usize, city: &City) -> bool {
+        let is_land_combat = |unit: &Name| {
+            self.rules.units.get(unit).is_some_and(|spec| {
+                spec.class == "military"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            })
+        };
+        if self.units_at(city.pos).into_iter().any(|uid| {
+            let other = &self.units[&uid];
+            other.owner != pid || is_land_combat(&other.kind)
+        }) {
+            return false;
+        }
+        !city.queue.first().is_some_and(|item| match item {
+            Item::Unit { unit } | Item::Formation { unit, .. } => is_land_combat(unit),
+            _ => false,
+        })
+    }
+
     fn unit_purchase_cost_for_formation(
         &self,
         pid: usize,
@@ -40958,6 +42361,12 @@ impl Game {
         let rock_band = unit == "rock_band";
         let naturalist = unit == "naturalist";
         if formation > 0 && (religious || rock_band || naturalist) {
+            return None;
+        }
+        if spec.class == "military"
+            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            && !self.land_combat_purchase_slot_open(pid, city)
+        {
             return None;
         }
         if rock_band || naturalist {
@@ -46210,6 +47619,9 @@ impl Game {
     }
 
     pub fn city_loyalty_per_turn(&self, city: &City) -> f64 {
+        if let Some(delta) = self.observed_city_loyalty_per_turn.get(&city.id) {
+            return *delta;
+        }
         self.loyalty_change_for_city(city.owner, city.id).delta
     }
 
@@ -48696,6 +50108,20 @@ impl Game {
                 };
                 let mut improvement_tourism = effects.get("tourism").copied().unwrap_or(0.0)
                     + effects.get("appeal_tourism").copied().unwrap_or(0.0) * tourism_appeal as f64;
+                if self.players[pid].techs.contains(&crate::name!("flight")) {
+                    let faith_factor = effects
+                        .get("faith_tourism_after_flight")
+                        .copied()
+                        .unwrap_or(0.0);
+                    if faith_factor != 0.0 {
+                        let improved = self.player_tile_yields(pid, *pos, tile);
+                        let mut bare = tile.clone();
+                        bare.improvement = None;
+                        let unimproved = self.player_tile_yields(pid, *pos, &bare);
+                        improvement_tourism +=
+                            (improved.faith - unimproved.faith).max(0.0) * faith_factor;
+                    }
+                }
                 if improvement == "seastead" {
                     improvement_tourism += self
                         .nbrs(*pos)
@@ -49080,6 +50506,8 @@ impl Game {
             let attacks = self.unit_max_attacks(uid);
             let spec = &self.rules.units[kind];
             let embarked = self.is_embarked(&self.units[&uid]);
+            let improvement_fortification =
+                self.improvement_fortification_at(self.units[&uid].pos);
             let heal = if hp < 100
                 && (!acted
                     || (attacks_left < attacks
@@ -49106,6 +50534,7 @@ impl Game {
             } else if acted {
                 u.fortify_turns = 0;
             }
+            u.fortify_turns = u.fortify_turns.max(improvement_fortification);
             u.acted = false;
         }
         // Snapshot ZOC after every per-turn stop flag has been cleared. This
@@ -53107,6 +54536,7 @@ mod visibility_tests {
             "helicopter",
             "giant_death_robot",
             "naturalist",
+            "oromo_cavalry",
         ]
         .into_iter()
         .collect();
@@ -53126,6 +54556,42 @@ mod visibility_tests {
             };
             assert_eq!(spec.sight, expected, "incorrect stock sight for {unit}");
         }
+    }
+
+    #[test]
+    fn kongo_shield_bearer_matches_firaxis_identity_movement_sight_and_defense() {
+        let (mut game, origin) = controlled_game(91_011);
+        let woods = along(&game, origin, 1);
+        let beyond = along(&game, origin, 2);
+        game.map.tiles.get_mut(&woods).unwrap().feature = Some(crate::name!("forest"));
+        let unit = game.spawn_unit("kongo_shield_bearer", 0, origin);
+        let spec = &game.rules.units["kongo_shield_bearer"];
+
+        assert_eq!((spec.cost, spec.maintenance, spec.strength), (110.0, 2.0, 38.0));
+        assert_eq!(spec.resource_cost, 5.0);
+        assert_eq!(spec.replaces.as_deref(), Some("swordsman"));
+        assert_eq!(spec.upgrade_to.as_deref(), Some("man_at_arms"));
+        assert_eq!(game.unit_step_cost(unit, origin, woods), 1.0);
+        assert!(game.unit_visible_tiles(unit).contains(&beyond));
+        assert_eq!(game.ranged_defense_bonus(&game.units[&unit], false), 10.0);
+    }
+
+    #[test]
+    fn oromo_cavalry_matches_firaxis_identity_sight_and_hill_movement() {
+        let (mut game, origin) = controlled_game(91_012);
+        let hill = along(&game, origin, 1);
+        game.map.tiles.get_mut(&hill).unwrap().hills = true;
+        game.players[0].civ = "Ethiopia".to_string();
+        let unit = game.spawn_unit("oromo_cavalry", 0, origin);
+        let spec = &game.rules.units["oromo_cavalry"];
+
+        assert_eq!((spec.cost, spec.maintenance, spec.strength), (200.0, 3.0, 48.0));
+        assert_eq!((spec.moves, spec.sight), (5.0, 3));
+        assert_eq!(spec.resource_cost, 10.0);
+        assert_eq!(spec.requires_resource.as_deref(), Some("horses"));
+        assert_eq!(spec.replaces.as_deref(), Some("courser"));
+        assert_eq!(spec.upgrade_to.as_deref(), Some("cavalry"));
+        assert_eq!(game.unit_step_cost(unit, origin, hill), 1.0);
     }
 
     #[test]
@@ -55047,6 +56513,35 @@ mod combat_scenarios {
         assert!(g.units[&ram].zoc_stopped);
         assert_eq!(g.units[&ram].moves_left, 0.0);
         assert!(g.apply(0, &Action::UnlinkUnits { unit: ram }).is_err());
+    }
+
+    #[test]
+    fn keshig_shares_its_four_moves_with_an_escorted_civilian() {
+        let (mut g, center, ring) = controlled_game(3181);
+        let keshig = g.spawn_unit("keshig", 0, center);
+        let builder = g.spawn_unit("builder", 0, center);
+        g.apply(
+            0,
+            &Action::LinkUnits {
+                unit: keshig,
+                with: builder,
+            },
+        )
+        .unwrap();
+        g.begin_turn(0);
+
+        assert_eq!(g.unit_max_moves(keshig), 4.0);
+        assert_eq!(g.unit_max_moves(builder), 4.0);
+        let second = g
+            .nbrs(ring[0])
+            .into_iter()
+            .find(|pos| *pos != center && g.map.tiles.contains_key(pos))
+            .unwrap();
+        for to in [ring[0], second] {
+            g.apply(0, &Action::Move { unit: keshig, to }).unwrap();
+        }
+        assert_eq!(g.units[&keshig].moves_left, 2.0);
+        assert_eq!(g.units[&builder].moves_left, 2.0);
     }
 
     #[test]

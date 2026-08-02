@@ -312,6 +312,14 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         empire[4] += yields.culture;
         empire[5] += yields.faith;
     }
+    if let Some(adjustment) = g.observed_yield_adjustments.get(&pid) {
+        empire[0] += adjustment.food;
+        empire[1] += adjustment.production;
+        empire[2] += adjustment.gold;
+        empire[3] += adjustment.science;
+        empire[4] += adjustment.culture;
+        empire[5] += adjustment.faith;
+    }
 
     enum KnownCity<'a> {
         Live(&'a City),
@@ -645,6 +653,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             for &cid in &city_ids {
                 output.add(g.city_yields(cid));
             }
+            if let Some(adjustment) = g.observed_yield_adjustments.get(&o.id) {
+                output.add(*adjustment);
+            }
             let total_population: i32 = city_ids
                 .iter()
                 .map(|&cid| g.cities[&cid].pop)
@@ -662,7 +673,21 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             json!({
                 "id": o.id, "civ": o.civ,
                 "met": true,
-                "leader": g.rules.civs.get(&o.civ).map(|c| c.leader.clone()),
+                "leader": g.observed_leader_types.get(&o.id)
+                    .map(|leader| leader
+                        .trim_start_matches("LEADER_")
+                        .replace('_', " ")
+                        .to_lowercase()
+                        .split_whitespace()
+                        .map(|word| {
+                            let mut chars = word.chars();
+                            chars.next().map(|first| first.to_uppercase().collect::<String>()
+                                + chars.as_str()).unwrap_or_default()
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" "))
+                    .or_else(|| g.rules.civs.get(&o.civ).map(|c| c.leader.clone())),
+                "leader_type": g.observed_leader_types.get(&o.id),
                 // A leader's agenda is public knowledge in Civ VI once you
                 // have met them, and so is roughly how they feel about you.
                 "agenda": g.agenda_of(o.id).map(|agenda| json!({
@@ -1476,6 +1501,7 @@ fn live_city_json(g: &Game, pid: usize, city: &City, omniscient: bool) -> Value 
         "can_strike": g.city_can_strike(city),
         "loyalty": round1(city.loyalty),
         "loyalty_per_turn": round1(g.city_loyalty_per_turn(city)),
+        "defense": round1(g.city_strength(city.id)),
         "loyalty_state": Game::loyalty_state(city.loyalty),
         "free_city": g.players[city.owner].is_free_city,
         "governor": g.players[city.owner].governors.contains(&city.id),

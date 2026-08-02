@@ -29,6 +29,8 @@ import sys
 import time
 from pathlib import Path
 
+from civ6_control.orders import orders_db_path
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS orders (
     run TEXT NOT NULL, turn INTEGER NOT NULL, seq INTEGER NOT NULL,
@@ -61,7 +63,8 @@ def stub_orders(state: dict) -> list[tuple]:
     return [("research", None, tech, None, None)]
 
 
-def civvis_orders(binary: Path, run_dir: Path, turn: int, victory: str) -> list[tuple]:
+def civvis_orders(binary: Path, run_dir: Path, turn: int, victory: str,
+                  strategy: str | None = None, civ: str | None = None) -> list[tuple]:
     """Ask CIVVIS. Its stdout is a JSON array of orders; anything else is an error.
 
     ⚠ A non-zero exit or unparseable stdout returns NO orders rather than a guess.
@@ -69,9 +72,14 @@ def civvis_orders(binary: Path, run_dir: Path, turn: int, victory: str) -> list[
     orders here would put my heuristics back in the game under CIVVIS's name.
     """
     try:
+        command = [str(binary), "--mirror", str(run_dir), "--turn", str(turn),
+                   "--victory", victory]
+        if strategy:
+            command.extend(["--strategy", strategy])
+        if civ:
+            command.extend(["--civ", civ])
         proc = subprocess.run(
-            [str(binary), "--mirror", str(run_dir), "--turn", str(turn),
-             "--victory", victory],
+            command,
             capture_output=True, text=True, timeout=60,
         )
     except (subprocess.SubprocessError, OSError) as exc:
@@ -208,7 +216,7 @@ class Decider:
     """
 
     def __init__(self, binary: Path, run_dir: Path, victory: str,
-                 war_from_plan: bool = False, strategy: str = ""):
+                 war_from_plan: bool = False, strategy: str | None = "auto"):
         self.binary = binary
         self.run_dir = run_dir
         self.victory = victory
@@ -222,7 +230,31 @@ class Decider:
         # ZERO declarations. So the decline is an artefact of the reconstruction
         # rather than a judgement about the war.
         self.war_from_plan = war_from_plan
+        self.civ: str | None = None
         self.proc: subprocess.Popen | None = None
+
+    def command(self) -> list[str]:
+        """The precise decider invocation for the current seat identity."""
+        command = [str(self.binary), "--mirror", str(self.run_dir), "--serve",
+                   "--fresh-board", "--explain", "--victory", self.victory]
+        if self.strategy:
+            command.extend(["--strategy", self.strategy])
+        if self.civ:
+            command.extend(["--civ", self.civ])
+        if self.war_from_plan:
+            command.append("--war-from-plan")
+        return command
+
+    def set_civ(self, civ: object) -> None:
+        """Restart before a decision if the run tells us which civ the seat received."""
+        value = str(civ).strip() if civ is not None else ""
+        value = value or None
+        if value == self.civ:
+            return
+        # A genome is selected at process startup.  Do not let a generic process
+        # answer a turn after the seat event gave us the actual civilization.
+        self.stop()
+        self.civ = value
 
     def start(self) -> None:
         # ★★★★ KEEP CIVVIS'S REASONING. This used to send the decider's stderr to
@@ -234,16 +266,13 @@ class Decider:
         # the decider's own crash output, which DEVNULL was also swallowing.
         why = (self.run_dir / "why.log").open("a", buffering=1)
         self.proc = subprocess.Popen(
-            [str(self.binary), "--mirror", str(self.run_dir), "--serve",
-             "--fresh-board", "--explain", "--victory", self.victory]
-            + (["--strategy", self.strategy] if self.strategy else [])
-            + (["--civ", civ] if self.strategy and (civ := seat_civ(self.run_dir)) else [])
-            + (["--war-from-plan"] if self.war_from_plan else []),
+            self.command(),
             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=why, text=True, bufsize=1,
         )
-        print("[brain] decider server up (fresh board, persistent agent, explaining "
-              f"into {self.run_dir / 'why.log'})", flush=True)
+        print("[brain] decider server up (fresh board, persistent agent, "
+              f"strategy={self.strategy or 'stock'} civ={self.civ or 'unknown'}, "
+              f"explaining into {self.run_dir / 'why.log'})", flush=True)
 
     def ask(self, turn: int) -> tuple[list[tuple], str]:
         if self.proc is None or self.proc.poll() is not None:
@@ -319,6 +348,44 @@ def write_turn(conn: sqlite3.Connection, run: str, turn: int,
     return len(rows)
 
 
+def completed_turns(conn: sqlite3.Connection, run: str) -> set[int]:
+    """Turns whose complete order batch was durably signalled to the game."""
+    return {int(turn) for (turn,) in conn.execute(
+        "SELECT turn FROM ready WHERE run = ?", (run,)
+    )}
+
+
+def completed_game_turns(events: Path, run: str) -> set[int]:
+    """Recover turns the game has already completed from its append-only journal.
+
+    ``ready`` is the normal restart checkpoint.  The game's ``turn`` record is a
+    second, narrower recovery checkpoint: it is emitted only after a turn has
+    been actuated and ended.  If an operator replaces the SQLite database while
+    the game remains open, replaying every old ``state`` would rewrite history
+    before reaching the live turn.  These records let a new brain skip only turns
+    the game itself proves are already over.
+    """
+    done: set[int] = set()
+    try:
+        with events.open("r", errors="replace") as handle:
+            for raw in handle:
+                try:
+                    event = json.loads(raw)
+                except ValueError:
+                    continue
+                if event.get("kind") != "turn" or event.get("run") != run:
+                    continue
+                try:
+                    turn = int(event.get("turn"))
+                except (TypeError, ValueError):
+                    continue
+                if turn >= 0:
+                    done.add(turn)
+    except OSError:
+        pass
+    return done
+
+
 
 def record_note(run_dir: Path, turn: int, note: str) -> None:
     """Append CIVVIS's per-turn diagnostic to a durable file beside the events.
@@ -342,7 +409,9 @@ def record_note(run_dir: Path, turn: int, note: str) -> None:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-dir", required=True)
-    ap.add_argument("--orders-db", default=str(Path.home() / "civvis-civ6-runs" / "orders.sqlite"))
+    ap.add_argument("--orders-db", default=None,
+                    help="SQLite path shared with the live game; defaults to "
+                         "<run-dir>/orders.sqlite")
     ap.add_argument("--mode", choices=["stub", "civvis"], default="civvis")
     ap.add_argument("--bin", default=None,
                     help="path to the civvis-orders binary (--mode civvis)")
@@ -428,16 +497,33 @@ def main() -> int:
               f"skip_verbs={sorted(skip_verbs)} one_per_unit={args.one_order_per_unit}"
               " — this run is not a clean measurement of CIVVIS", flush=True)
 
-    conn = connect(Path(args.orders_db).expanduser())
-    print(f"[brain] mode={args.mode} run={run_tag} db={args.orders_db} "
+    orders_db = orders_db_path(run_dir, args.orders_db)
+    conn = connect(orders_db)
+    print(f"[brain] mode={args.mode} run={run_tag} db={orders_db} "
           f"decider={'server' if args.server else 'per-turn'}", flush=True)
-    decider = (Decider(binary, run_dir, args.victory, args.war_from_plan,
-                       args.strategy)
+    strategy = None if args.strategy.strip().lower() in {"", "stock", "none"} else args.strategy
+    decider = (Decider(binary, run_dir, args.victory, args.war_from_plan, strategy)
                if args.mode == "civvis" and args.server else None)
 
     deadline = time.time() + args.seconds
     offset = 0
-    served: set[int] = set()
+    # A brain is intentionally time-bounded so an operator can upgrade or
+    # restart it during a long game. `ready` is written only after the full batch
+    # is committed, which makes it the authoritative resume checkpoint.  When an
+    # operator has replaced the DB, completed game records recover old turns so
+    # replay cannot rewrite the history before reaching the live state.
+    served = completed_turns(conn, run_tag)
+    journaled = completed_game_turns(events, run_tag)
+    recovered = journaled - served
+    served.update(journaled)
+    seat_civ: str | None = None
+    if recovered:
+        print(f"[brain] recovered {len(recovered)} completed turn(s) from the "
+              f"game journal after the SQLite checkpoint was absent; "
+              f"latest={max(recovered)}", flush=True)
+    if served:
+        print(f"[brain] resuming after {len(served)} completed turn(s); "
+              f"latest={max(served)}", flush=True)
     while time.time() < deadline:
         if not events.exists():
             time.sleep(0.5)
@@ -450,6 +536,11 @@ def main() -> int:
             try:
                 event = json.loads(raw)
             except ValueError:
+                continue
+            if event.get("kind") == "seat":
+                seat_civ = str(event.get("civ") or "").strip() or None
+                if decider is not None:
+                    decider.set_civ(seat_civ)
                 continue
             if event.get("kind") != "state":
                 continue
@@ -476,7 +567,7 @@ def main() -> int:
                     # not be explained from a finished run.
                     record_note(run_dir, turn, note)
             else:
-                rows = civvis_orders(binary, run_dir, turn, args.victory)
+                rows = civvis_orders(binary, run_dir, turn, args.victory, strategy, seat_civ)
             before = len(rows)
             rows = filter_orders(rows, skip_kinds, skip_verbs, args.one_order_per_unit)
             if len(rows) != before:

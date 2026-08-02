@@ -27,7 +27,9 @@ class ProductionActuatorTests(unittest.TestCase):
         cls.choose = cls.source[start:end]
         direct = cls.source.index('if kind == "produce" then')
         cls.direct = cls.source[direct:]
-        purchase = cls.source.index('if kind == "purchase" then')
+        purchase = cls.source.index(
+            'if kind == "purchase" or kind == "purchase_faith" then'
+        )
         purchase_end = cls.source.index('if kind == "unit" then', purchase)
         cls.purchase = cls.source[purchase:purchase_end]
 
@@ -106,7 +108,13 @@ class ProductionActuatorTests(unittest.TestCase):
         event = self.purchase.index('emit("purchase_refused"')
         rejection = self.purchase.index('return false, "cannot_buy_"', event)
         self.assertLess(event, rejection)
-        for field in ("turn = turn", "city = subject", "item = verb", "cost = cost"):
+        for field in (
+            "turn = turn",
+            "city = subject",
+            "item = resolved",
+            "currency = yieldName",
+            "cost = cost",
+        ):
             self.assertIn(field, self.purchase[event:rejection])
 
 

@@ -56,7 +56,9 @@ let units = [
     UnitSource(type: "ironclad", title: "Ironclad icon (Civ6).png"),
     UnitSource(type: "jet_bomber", title: "Jet Bomber icon (Civ6).png"),
     UnitSource(type: "jet_fighter", title: "Jet Fighter icon (Civ6).png"),
+    UnitSource(type: "keshig", title: "Keshig icon (Civ6).png"),
     UnitSource(type: "knight", title: "Knight icon (Civ6).png"),
+    UnitSource(type: "kongo_shield_bearer", title: "Ngao Mbeba icon (Civ6).png"),
     UnitSource(type: "legion", title: "Legion icon (Civ6).png"),
     UnitSource(type: "line_infantry", title: "Line Infantry icon (Civ6).png"),
     UnitSource(type: "machine_gun", title: "Machine Gun icon (Civ6).png"),
@@ -74,6 +76,7 @@ let units = [
     UnitSource(type: "naturalist", title: "Naturalist icon (Civ6).png"),
     UnitSource(type: "nuclear_submarine", title: "Nuclear Submarine icon (Civ6).png"),
     UnitSource(type: "observation_balloon", title: "Observation Balloon icon (Civ6).png"),
+    UnitSource(type: "oromo_cavalry", title: "Oromo Cavalry icon (Civ6).png"),
     UnitSource(type: "pike_and_shot", title: "Pike and Shot icon (Civ6).png"),
     UnitSource(type: "pikeman", title: "Pikeman icon (Civ6).png"),
     UnitSource(type: "pitati_archer", title: "Pítati Archer icon (Civ6).png"),
@@ -100,6 +103,7 @@ let units = [
     UnitSource(type: "trebuchet", title: "Trebuchet icon (Civ6).png"),
     UnitSource(type: "war_cart", title: "War-Cart icon (Civ6).png"),
     UnitSource(type: "warrior", title: "Warrior icon (Civ6).png"),
+    UnitSource(type: "winged_hussar", title: "Winged Hussar icon (Civ6).png"),
     UnitSource(type: "warrior_monk", title: "Warrior Monk icon (Civ6).png"),
 ]
 

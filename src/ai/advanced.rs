@@ -694,6 +694,10 @@ pub struct AdvancedAi {
     /// that compatibility boundary is guarded by the source contract in the
     /// CLI tests.
     battlefront_observation: bool,
+    /// Adapt a live Firaxis Trader's zero walking movement to its distinct
+    /// route-start action.  This stays off for every native game and is enabled
+    /// only by the Civ VI order bridge.
+    live_trader_route_adapter: bool,
     /// Immutable information frame captured before this major acts.  It is
     /// cleared after the turn so direct evaluators outside a turn still read
     /// the game's current observation.
@@ -1607,6 +1611,7 @@ impl AdvancedAi {
             work_pool: None,
             belief: BeliefState::new(),
             battlefront_observation: true,
+            live_trader_route_adapter: false,
             battlefront_frame: None,
             scoped_relief_hold: false,
             refuse_unreachable_lanes: false,
@@ -1667,6 +1672,12 @@ impl AdvancedAi {
 
     pub fn with_weights_and_target(weights: Weights, target: VictoryTarget) -> AdvancedAi {
         Self::promoted_policy_envoy(weights, Some(target))
+    }
+
+    /// Enable the narrow Trader adaptation required by a live Civilization VI
+    /// export.  Native tournament games leave this disabled.
+    pub fn enable_live_trader_route_adapter(&mut self) {
+        self.live_trader_route_adapter = true;
     }
 
     /// Redirect an existing agent at a new explicit victory target without
@@ -3144,6 +3155,11 @@ impl AdvancedAi {
             .filter(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id))
             .map(|p| p.id)
             .collect();
+        let wartime_majors: Vec<usize> = wartime_rivals
+            .iter()
+            .copied()
+            .filter(|rival| !g.players[*rival].is_minor)
+            .collect();
         let at_war = !wartime_rivals.is_empty();
         let strongest_rival = major_rivals
             .iter()
@@ -3424,7 +3440,16 @@ impl AdvancedAi {
             })
             })
         } else {
-            wartime_rivals
+            // A suzerained city-state joins its major's war, but it is not a
+            // reason to abandon the weaker major city the campaign was staged
+            // to capture. Only make a city-state the primary front when there
+            // is no living major war left to finish.
+            let active_fronts = if wartime_majors.is_empty() {
+                &wartime_rivals
+            } else {
+                &wartime_majors
+            };
+            active_fronts
                 .iter()
                 .copied()
                 .map(|rival| {
@@ -12030,6 +12055,37 @@ impl AdvancedAi {
         self.base.step_toward(g, pid, uid, g.cities[&origin].pos)
     }
 
+    /// Start a route for the non-walking Trader representation used by the
+    /// Civilization VI live bridge.
+    ///
+    /// Firaxis exports an idle Trader with zero normal movement, while CIVVIS's
+    /// native simulation gives it walking movement until it reaches an origin.
+    /// Keep that adaptation out of [`Self::advance_unit_serial`]: the latter is
+    /// the tournament agent's historical path.  The bridge calls this only for
+    /// an externally-normalized, stationary Trader after its ordinary turn.
+    fn start_zero_movement_trader_route(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        strategy: GrandStrategy,
+    ) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        if unit.owner != pid || unit.kind != "trader" || unit.moves_left > 0.0 {
+            return false;
+        }
+        let current = unit.pos;
+        let Some(origin) = g.city_at(current).filter(|cid| g.cities[cid].owner == pid) else {
+            return false;
+        };
+        let Some((_, city)) = self.best_trade_route_destination(g, pid, origin, strategy) else {
+            return false;
+        };
+        g.apply(pid, &Action::TradeRoute { unit: uid, city }).is_ok()
+    }
+
     fn best_trade_route_destination(
         &self,
         g: &Game,
@@ -12783,7 +12839,13 @@ impl AdvancedAi {
                     .copied()
                     .filter(|candidate| {
                         Self::force_domain(g, *candidate) == domain
-                            && units.iter().any(|member| {
+                            // `command_radius` is the maximum separation inside
+                            // one force, not a graph edge. Using `any` made a
+                            // six-tile chain merge a front-line army with every
+                            // reinforcement back to the capital; the moving
+                            // medoid then ordered the whole column to muster
+                            // home indefinitely.
+                            && units.iter().all(|member| {
                                 g.wdist(g.units[member].pos, g.units[candidate].pos)
                                     <= command_radius
                             })
@@ -15205,6 +15267,24 @@ impl AdvancedAi {
 
     fn advanced_units(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         self.base.begin_movement_turn(g, pid);
+        // In a native game a Trader has walking movement and the ordinary unit
+        // loop below handles it. Firaxis exports an idle Trader with zero
+        // walking movement but still permits TradeRoute from the city it
+        // occupies. Handle exactly that bridge-only representation before the
+        // ordinary loop, while it is still this player's turn.
+        if self.live_trader_route_adapter {
+            let stationary_traders = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .filter(|uid| {
+                    let unit = &g.units[uid];
+                    unit.kind == "trader" && unit.moves_left <= 0.0
+                })
+                .collect::<Vec<_>>();
+            for uid in stationary_traders {
+                let _ = self.start_zero_movement_trader_route(g, pid, uid, plan.strategy);
+            }
+        }
         if self.victory_planning {
             self.rebuild_force_groups(g, pid, plan);
         } else {
@@ -15989,6 +16069,40 @@ mod tests {
     fn legacy_controller_keeps_battlefront_observation_off() {
         assert!(AdvancedAi::new().battlefront_observation);
         assert!(!AdvancedAi::legacy().battlefront_observation);
+    }
+
+    #[test]
+    fn advanced_settlers_wait_out_a_visible_hostile_capture_envelope() {
+        let mut game = Game::new(2, 20, 14, 91_480, 80, 0);
+        let (hostile_pos, civilian_step) = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            .find_map(|(pos, _)| {
+                game.nbrs(*pos).into_iter().find(|next| {
+                    game.map.get(*next).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+                })
+                .map(|next| (*pos, next))
+            })
+            .expect("map has adjacent land");
+        game.spawn_test_unit("settler", 0, civilian_step);
+        game.spawn_test_unit("warrior", 1, hostile_pos);
+        game.at_war.insert((0, 1));
+        let ai = AdvancedAi::new();
+        let visible = ai.battlefront_visibility(&game, 0);
+
+        assert!(
+            ai.settlement_tile_risk(&game, 0, None, civilian_step, &visible)
+                > SETTLER_STEP_RISK_LIMIT
+        );
+        game.at_war.clear();
+        assert_eq!(
+            ai.settlement_tile_risk(&game, 0, None, civilian_step, &visible),
+            0.0
+        );
     }
 
     #[test]
@@ -20652,6 +20766,49 @@ mod tests {
     }
 
     #[test]
+    fn command_radius_is_a_group_diameter_not_a_transitive_chain() {
+        let mut game = Game::new_full(2, 24, 16, 71_005, 120, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        game.at_war.insert((0, 1));
+        let chain = [
+            game.spawn_test_unit("warrior", 0, (2, 5)),
+            game.spawn_test_unit("warrior", 0, (8, 5)),
+            game.spawn_test_unit("warrior", 0, (14, 5)),
+        ];
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+
+        ai.rebuild_force_groups(&game, 0, &plan);
+
+        assert!(ai.force_groups.iter().all(|group| {
+            group.units.iter().all(|left| {
+                group.units.iter().all(|right| {
+                    game.wdist(game.units[left].pos, game.units[right].pos) <= 6
+                })
+            })
+        }));
+        assert!(!ai
+            .force_groups
+            .iter()
+            .any(|group| chain.iter().all(|unit| group.units.contains(unit))));
+    }
+
+    #[test]
     fn local_superiority_prices_the_objective_city_defense() {
         let mut game = Game::new_full(2, 24, 16, 71_006, 120, 0, false);
         game.current = 1;
@@ -23111,6 +23268,8 @@ mod tests {
                 .unwrap();
         }
         game.current = 0;
+        let home = game.player_city_ids(0)[0];
+        crate::game::vacate_land_combat_purchase_slot(&mut game, 0, home);
         game.players[0].civics.insert(crate::name!("reformed_church"));
         game.players[0].faith = 1_500.0;
         let target = game.player_city_ids(1)[0];
@@ -23875,6 +24034,35 @@ mod tests {
                     .any(|unit| g.units[unit].owner == minor)
         );
         assert_eq!(orders.posture, ForcePosture::Engage);
+    }
+
+    #[test]
+    fn an_active_major_war_stays_ahead_of_its_suzerained_city_state() {
+        let mut game = Game::new_full(2, 24, 16, 97, 80, 1, false);
+        game.current = 1;
+        let settler = game
+            .player_unit_ids(1)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(1, &Action::FoundCity { unit: settler }).unwrap();
+        game.current = 0;
+        let minor = game
+            .players
+            .iter()
+            .find(|player| player.is_minor && !player.is_barbarian)
+            .map(|player| player.id)
+            .unwrap();
+        game.at_war.insert((0, 1));
+        game.at_war.insert((0, minor));
+        game.record_contact(0, 1);
+        game.record_contact(0, minor);
+
+        let mut ai = AdvancedAi::new();
+        let plan = ai.assess(&game, 0);
+
+        assert_eq!(plan.target_player, Some(1));
+        assert_eq!(plan.target_city, game.player_city_ids(1).first().copied());
     }
 
     #[test]
