@@ -60,11 +60,16 @@ Each of these is a real bug I nearly reported, caught only by looking again:
    the board is the SEATED view. The check was asking the board to hold units the
    seat cannot see. It is now gated on `visible`, and the decider's own
    `dropped_units` -- which recorded no hostile dropped -- was what disproved it.
-7. RIVALS and PUBLIC paired the Nth met rival with CIVVIS seat N. The export
-   carries the real seat in `rival["player"]` and Civilization VI does not hand
-   them out in met-order, so a correctly-seated board read as an off-by-one
-   mirror bug and every rival's military read `CIVVIS=0`. Pair by the seat the
-   export names.
+7. RIVALS and PUBLIC were re-indexed to `rival["player"]` (#878) on the belief
+   that met-order pairing was an off-by-one. IT WAS NOT: mirror.rs compacts
+   rivals into seats 1..n in export order and says so. The re-index left two
+   tests in this file red on main -- Python tests are not covered by cargo-test
+   -- and it SILENCED a real disagreement (Egypt at CIVVIS seat 1 where the
+   export's first rival was Netherlands). Reverted. ⚠ THE LESSON IS THE
+   DANGEROUS DIRECTION: the first six entries here were checks that cried wolf,
+   and the reflex they build is to distrust the check. This one was the check
+   being RIGHT. When a check disagrees with the board, read the mirror's own
+   contract before re-indexing the ruler.
 
 ⚠ The board served on :8610 is follow.py's FLIPPED staged copy:
 `board_axial = offset_to_axial(x, TOP - y)`. The flip constant is discovered here
@@ -188,27 +193,24 @@ def rival_identity_mismatches(state, board):
     """Compare each exported rival with the compact CIVVIS seat that owns it."""
     players = {player.get("id"): player for player in board.get("players") or []}
     mismatches = []
-    # ⚠⚠ PAIR BY THE SEAT THE EXPORT NAMES, NOT BY LIST POSITION.
+    # ⚠⚠ COMPACTED SEATS, BY LIST POSITION — and I broke this once by "fixing" it.
     #
-    # `enumerate(rivals, start=1)` assumed the Nth met rival occupies CIVVIS seat
-    # N. It does not: the export carries the real seat in `rival["player"]`, and
-    # Civilization VI does not hand them out in met-order. Measured 2026-08-02 —
-    # the export named Netherlands `player: 2` and Khmer `player: 5`, CIVVIS had
-    # correctly seated Netherlands at 2, and this function reported
+    # mirror.rs says it outright: "Rival entities are deliberately compacted into
+    # seats 1..n in export order; `rival.player` is the original Firaxis id and is
+    # used only when translating". So the Nth exported rival IS CIVVIS seat N, and
+    # `enumerate(rivals, start=1)` is correct.
     #
-    #     seat 1 Civ6=netherlands CIVVIS=egypt; seat 2 Civ6=khmer CIVVIS=netherlands
+    # #878 changed this to pair by `rival["player"]` on the strength of one live
+    # run where the two happened to coincide. That did two bad things: it left two
+    # tests in this file failing on main (Python tests are not covered by
+    # cargo-test, so CI stayed green), and — much worse — it SILENCED A REAL
+    # DEFECT. The run that motivated it genuinely had Egypt at CIVVIS seat 1 while
+    # the export's first rival was Netherlands. That is exactly the disagreement
+    # this axis exists to report, and I turned it off by changing the ruler.
     #
-    # which reads exactly like an off-by-one in the MIRROR and is an off-by-one in
-    # the CHECK. The same indexing in `public_fact_mismatches` is why every rival's
-    # military read `CIVVIS=0` against Civ 6's 239 and 366: it was reading a seat
-    # those rivals do not occupy.
-    #
-    # ⚠ A checker that cries wolf on every run buries the defects it exists to
-    # find. That is the fifth and sixth entry in this file's own list.
-    for rival in state.get("rivals") or []:
-        seat = rival.get("player")
-        if seat is None:
-            continue
+    # ⚠ If the two conventions ever genuinely diverge, fix the MIRROR or say so
+    # here — do not quietly re-index the check until it agrees.
+    for seat, rival in enumerate(state.get("rivals") or [], start=1):
         player = players.get(seat, {})
         expected_civ = civ6_id(rival.get("civ"), "CIVILIZATION_")
         expected_leader = civ6_id(rival.get("leader"), "LEADER_")
@@ -229,13 +231,9 @@ def rival_identity_mismatches(state, board):
 def public_fact_mismatches(state, board):
     """Compare diplomacy-ribbon facts and the viewed empire's live economy."""
     players = {player.get("id"): player for player in board.get("players") or []}
-    # ⚠ Same pairing rule as `rival_identity_mismatches` — by the seat the export
-    # names, never by list position. See the note there.
-    expected = [(0, state)] + [
-        (rival.get("player"), rival)
-        for rival in state.get("rivals") or []
-        if rival.get("player") is not None
-    ]
+    # Same compacted-seat rule as `rival_identity_mismatches`. See the note there,
+    # including why re-indexing this to `rival["player"]` was a mistake.
+    expected = [(0, state)] + list(enumerate(state.get("rivals") or [], start=1))
     mismatches = []
     for seat, source in expected:
         player = players.get(seat, {})
