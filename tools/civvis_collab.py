@@ -1532,7 +1532,6 @@ def force_update_main_worktree(repo: Path, origin_main: str) -> Dict[str, str]:
         "status",
         "--porcelain=v1",
         "--untracked-files=all",
-        check=False,
     )
     if dirty:
         raise CommandError(
@@ -1576,7 +1575,7 @@ def force_update_main_worktree(repo: Path, origin_main: str) -> Dict[str, str]:
         raise CommandError(
             f"main update stopped at {actual[:12]}, expected {origin_main[:12]}"
         )
-    if git(path, "status", "--porcelain=v1", "--untracked-files=all", check=False):
+    if git(path, "status", "--porcelain=v1", "--untracked-files=all"):
         raise CommandError(f"main update left unexpected worktree changes: {path}")
     return result
 

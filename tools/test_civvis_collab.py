@@ -262,6 +262,37 @@ class FreshnessTests(unittest.TestCase):
                 collab.freshness_state_error(clone, upstream_head),
             )
 
+    def test_main_update_fails_closed_when_status_cannot_be_read(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "repo"
+            self.committed_repo(root)
+            head = self.git(root, "rev-parse", "HEAD")
+            original_git = collab.git
+            mutating_commands = []
+
+            def fail_status(repo, *args, check=True):
+                if args and args[0] in {"merge", "reset", "update-ref"}:
+                    mutating_commands.append(args[0])
+                if args[:3] == (
+                    "status",
+                    "--porcelain=v1",
+                    "--untracked-files=all",
+                ):
+                    if check:
+                        raise collab.CommandError("simulated status read failure")
+                    return ""
+                return original_git(repo, *args, check=check)
+
+            with patch.object(collab, "git", side_effect=fail_status):
+                with self.assertRaisesRegex(
+                    collab.CommandError,
+                    "simulated status read failure",
+                ):
+                    collab.force_update_main_worktree(root, head)
+
+            self.assertEqual(mutating_commands, [])
+            self.assertEqual(self.git(root, "rev-parse", "HEAD"), head)
+
     def test_macos_service_runs_the_automatic_main_refresh_command(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary) / "repo"
