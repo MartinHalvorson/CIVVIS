@@ -214,13 +214,20 @@ unwanted, at the cost of the URL being the one asked for.
 
 1. In Cloudflare, **Add a site** → `civvis.ai` → Free plan. It scans the
    existing records and gives you two nameservers.
-2. **Check the scan kept the mail records before continuing** — see below.
+2. Delete the scanned `MX` and SPF `TXT` records — they are Namecheap's mail
+   forwarding, nothing is received through them, and they will not work off
+   Namecheap's nameservers anyway. See below.
 3. At Namecheap: **Domain List → Manage → Nameservers → Custom DNS**, and enter
    those two. (They replace `dns1.registrar-servers.com` /
    `dns2.registrar-servers.com`.)
-4. Wait for Cloudflare to report the zone active — usually minutes.
+4. Wait for Cloudflare to report the zone active — usually minutes, and the
+   registrar's own propagation can take a few hours.
 5. In the Pages project → **Custom domains** → add `civvis.ai` and
    `www.civvis.ai`. The records and the certificate are created for you.
+
+Nothing else needs a DNS record. The apex and `www` are the whole site;
+`/beta` and `/download` are paths on it, not hostnames, which is why there is
+no `beta.civvis.ai` to set up.
 
 ### The mail on this domain
 
