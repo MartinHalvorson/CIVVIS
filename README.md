@@ -24,9 +24,9 @@ selects parents, retirement and live seating on. **0 of 50 pairs meet that bar.*
 rest are reported as coverage rather than ranked, because on this evidence they have no
 best strategy.
 
-Refresh after the live league changes:
+Refresh from the live league when it is present, otherwise the committed snapshot:
 
-`python3 tools/update_readme_rankings.py --league league/league.json`
+`python3 tools/update_readme_rankings.py`
 
 Add `--check` to verify without writing.
 
@@ -116,18 +116,16 @@ had won 15.8% of its 530 league games against stock `advanced`'s 21.5% of 2049
 — significantly *worse* (p = 0.004).
 
 So the table now ranks on the bound the league selects on, and prints a row
-only where that bound actually separates the leader from every rival. On the
-committed round-60 snapshot nothing separates, which is the honest answer for
-960 games spread across 50 pairs. On the live round-3205 league exactly **one**
-pair separates: Rome/Trajan → `advanced_v1`, 161/314, bound 0.458 — and that is
-a *baseline*, not one of the bred genomes. Everything else is reported as
-coverage, with the leading strategy's real record beside it, so the distance
-between the evidence and the claim stays visible.
+only where that bound actually separates the leader from every rival. The
+committed snapshot above is the reproducible answer: no pair clears that bar,
+so every row is coverage rather than an unjustified recommendation. Each row
+still shows the leading strategy's real record, so the distance between the
+evidence and the claim stays visible.
 
-That also makes the table reproducible from the repository for the first time.
-It is generated from the committed `data/league/` snapshot, so
-`python3 tools/update_readme_rankings.py --check` passes on a fresh clone;
-previously `/league/` was gitignored and the refresh command exited 2.
+The table is generated from a mounted live league when one is available and
+otherwise from the committed `data/league/league.json` snapshot.
+`python3 tools/update_readme_rankings.py --check` verifies the rendered section
+in a fresh clone; the default command makes the same fallback automatically.
 
 Design and rationale: `docs/EVAL_INTEGRITY.md` §5.
 
