@@ -15,7 +15,7 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// blend two players into one lifetime average and erase the very improvement
 /// the longitudinal tournament is supposed to expose.
 const DEFAULT_TOURNAMENT_ENTRANTS: &str =
-    "advanced-20260801-policy-envoy=advanced,advanced_v1,basic-20260731-settlement=basic,random-20260730=random";
+    "advanced-20260801-diplomacy=advanced,advanced_v1,basic-20260801-diplomacy=basic,random-20260730=random";
 
 /// `advanced_v1` freezes the planning configuration, but deliberately shares
 /// the production Basic/Advanced implementation. Pin those sources so a code
@@ -108,6 +108,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// turns. The source contract is deliberately re-pinned after that direct
 /// compatibility check rather than changing the Elo protocol.
 ///
+/// #684 adds one default-off evaluator field, `AdvancedAi::plan_city_target`,
+/// and the delegated-call substitution it gates. With the flag false the
+/// substitution is a `bool::then` that returns `None` and touches nothing, so
+/// this is a compatibility re-pin and not a protocol change. It is earned the
+/// way the entries above are: a matched `ai_eval advanced basic --pairs 10
+/// --players 4 --turns 200 --seed 31337 --jobs 1` on a clean `origin/main`
+/// build and on this branch, compared in full.
+///
 /// #719 freezes that live battlefront observation at the start of a major
 /// turn, including camouflage detection. `advanced_v1` still disables the
 /// observation path. Clean before/after release builds produced byte-identical
@@ -157,15 +165,81 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `932cfabf125e729a5264ce43d2fd8b05d013d3fe84939b1dcd366ff122ddc84a`).
 /// This is a compatibility re-pin, not an Elo protocol change.
 ///
-/// The grounded Firaxis campaign audit then changed force grouping from a
-/// transitive chain to a bounded group diameter and kept active major wars
-/// ahead of their suzerained city-states. Those paths are shared by the legacy
-/// anchor, so this is a real protocol change: protocol v3 is preserved at
-/// `data/elo_ratings_v3.json`, protocol v4 was regenerated from these exact
-/// sources, and this pin identifies that new contract.
-// Re-pinned after a cfg(test)-only purchase-placement fixture changed in
-// ai/advanced.rs; the compiled AdvancedAi implementation is unchanged.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa041_5eeb_949b_de0a;
+/// #766 bounds only the live controller's clone-heavy purchase-menu batch to
+/// three workers. `AdvancedAi::legacy()` has no `work_pool` and continues to
+/// select the literal serial action enumeration. Clean `8812d36` and candidate
+/// release builds produced byte-identical reports from the same 20-game
+/// deployment comparison (SHA-256
+/// `932cfabf125e729a5264ce43d2fd8b05d013d3fe84939b1dcd366ff122ddc84a`).
+/// This is a compatibility re-pin, not an Elo protocol change.
+///
+/// #782 repairs runaway military production and wartime science/culture
+/// neglect only for the live controller. Every new strategic branch is gated
+/// by `victory_planning`; `AdvancedAi::legacy()` sets that flag false. The
+/// regression test checks the legacy yield weights and production choice as
+/// well as the live behavior. The source contract is deliberately re-pinned;
+/// the Elo protocol does not move.
+///
+/// #786 adds live Delegation/Embassy, Defensive Pact, Joint War, promise, and
+/// demand decisions to the shared Basic and Advanced diplomacy paths. The
+/// frozen `advanced_v1` controller invokes that shared path, so the combined
+/// source contract intentionally moves to protocol v4 with a fresh ledger.
+///
+/// #801 makes compiler-equivalent `BasicAi` cleanup only: redundant clones of
+/// `Copy` values and needless references become direct values, a periodic
+/// modulo test becomes `is_multiple_of`, a candidate tuple gains a name, and
+/// unused mutability goes away. It changes no choice condition, score, or
+/// iteration/action ordering. This was checked rather than inferred: clean
+/// `e3481e4` and candidate release builds produced byte-identical reports from
+/// `ai_eval advanced_v1 basic --pairs 10 --jobs 1 --seed 31337 --players 4
+/// --turns 200 --deployment-comparison` (SHA-256
+/// `f6d9e17ee19fe298e14a573f97a896280a75a767306dca6ef0d80d2020384b2c`).
+/// This is a compatibility re-pin, not an Elo protocol change.
+///
+/// #799 adds the live settlement-site intelligence and visible transit-risk
+/// gates to the shared Advanced source. `AdvancedAi::legacy()` explicitly
+/// keeps the historical settlement scorer and disables those gates, so the
+/// source contract is deliberately re-pinned without moving the Elo protocol.
+/// #802 adds a settle-scoring adjacency term gated behind
+/// `AdvancedAi::adjacency_site_planning` — on in `promoted_policy_envoy`,
+/// off in `configured()`, so `AdvancedAi::legacy()` never evaluates it.
+/// Checked the same way: baseline and branch builds produced byte-identical
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
+/// 31337` reports. Another compatibility re-pin over the merged sources,
+/// not an Elo protocol change.
+///
+/// #808 records the planner's peace-offer decisions (`peace_offers`, a
+/// BTreeSet written at the offer site) and exposes them on `PlanReport`,
+/// which is observer-only by contract — nothing in play reads the field.
+/// Checked the same way: baseline and branch builds produced byte-identical
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
+/// 31337 --jobs 1` reports. Another compatibility re-pin over the merged
+/// sources, not an Elo protocol change.
+///
+/// #838 bundles already-shared purchase-scoring inputs and replaces only
+/// `Copy`/iterator idioms in the Advanced source. The control on `main` and
+/// this branch produced byte-identical `ai_eval advanced_v1 basic --pairs 10
+/// --players 4 --turns 200 --seed 31337 --jobs 1 --deployment-comparison`
+/// reports. This is therefore a compatibility re-pin, not an Elo protocol
+/// change.
+///
+/// #840 adds population-four settlement forecasting, bounded travel,
+/// stalled-route recovery, and land escorts to the shared Advanced source.
+/// Every decision path is gated by `settlement_safety`, which
+/// `AdvancedAi::legacy()` disables. Clean `bc58acb` and candidate builds
+/// produced identical `ai_eval advanced_v1 basic --pairs 10 --players 4
+/// --turns 200 --seed 31337 --jobs 1 --deployment-comparison` reports:
+/// 18/20 Advanced wins, 119.2 average turns, and identical terminal tables.
+/// #848's progress-versus-motion tracker is now merged into the same path, but
+/// it returns through the prior code whenever `settler_commit` is disabled, as
+/// it is in `AdvancedAi::legacy()`. This is another compatibility re-pin, not
+/// an Elo protocol change.
+///
+/// The live Civ VI mirror's purchase-placement regression moves only a unit in
+/// a `cfg(test)` fixture. The compiled AdvancedAi implementation is unchanged;
+/// this is therefore another reviewed compatibility re-pin.
+#[cfg(test)]
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe044_0320_25a5_04e4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1563,6 +1637,10 @@ fn main() {
                         (!dir.is_empty()).then_some(dir)
                     },
                     league_record: args.iter().any(|a| a == "--league-record"),
+                    force_strategy: {
+                        let name = arg_text(&args, "--force-strategy", "");
+                        (!name.is_empty()).then_some(name)
+                    },
                 },
                 mirrored.or(resumed),
                 args.iter().any(|a| a == "--paused"),
@@ -1704,7 +1782,7 @@ fn main() {
                       [--leader-pool civ6|expanded] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
-                      [--spectate] [--supervised] [--resume checkpoint.json] [--strict] \
+                      [--spectate] [--supervised] [--force-strategy NAME] [--resume checkpoint.json] [--strict] \
                       [--league dir] [--league-record] [--standings [--civ Rome | --civs]] [--rounds N] \
                       [--evolve-every N] [--pop N] [--worker ID] [--lease-seconds N] \
                       [rating: --dir league/ --backtest|--sweep|--stages --burn-in F --stage-decay F --anchors a,b]"
@@ -1738,7 +1816,7 @@ mod tests {
         assert!(parse_tournament_entrants("advanced,,basic").is_err());
 
         let default = parse_tournament_entrants(DEFAULT_TOURNAMENT_ENTRANTS).unwrap();
-        assert_eq!(default[0].identity, "advanced-20260801-policy-envoy");
+        assert_eq!(default[0].identity, "advanced-20260801-diplomacy");
         assert_eq!(default[0].controller, "advanced");
     }
 

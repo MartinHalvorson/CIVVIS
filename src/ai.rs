@@ -55,6 +55,10 @@ const MINOR_DEFENSE_RADIUS: i32 = 6;
 /// instead of letting an idle Engineer pave the stockpile down to zero.
 const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 
+/// The ranked candidate for an immediate border purchase: its utility, a
+/// deterministic city/position tie-breaker, and the legal action to replay.
+type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
+
 mod advanced;
 mod tactics;
 pub use advanced::{
@@ -120,6 +124,14 @@ pub struct PlanReport {
     pub threatened_city: Option<u32>,
     pub desired_cities: usize,
     pub assessed_turn: u32,
+    /// Rivals this planner decided to offer peace this turn. The offer itself
+    /// is `ProposeDeal { peace: true }`, answered on an ordinary board by the
+    /// other seat's valuation — so a declined offer never reaches the
+    /// applied-action log. A mirrored game must still ASK the real rival, so
+    /// the made decision is reported as intent here. Unlike the retracted
+    /// war-from-plan channel this exports a decision the planner took, not a
+    /// preference upgraded into one.
+    pub peace_offers: Vec<usize>,
     pub forces: Vec<ForceReport>,
 }
 
@@ -540,7 +552,7 @@ fn revise_policy_deck(g: &mut Game, pid: usize, w: &Weights, pool: Option<&WorkP
         return;
     }
     let held: Vec<Name> = g.players[pid].policies.iter().cloned().collect();
-    if held.len() as i64 >= total && g.turn % POLICY_REVIEW_EVERY != 0 {
+    if held.len() as i64 >= total && !g.turn.is_multiple_of(POLICY_REVIEW_EVERY) {
         return;
     }
 
@@ -2837,7 +2849,7 @@ impl BasicAi {
                         pid,
                         &Action::FoundReligion {
                             follower: Name::new(&follower),
-                            founder: Name::new(&founder),
+                            founder: Name::new(founder),
                         },
                     )
                     .is_ok()
@@ -2869,7 +2881,7 @@ impl BasicAi {
                     "pingala", "magnus", "liang", "reyna", "victor", "moksha", "amani",
                 ]
                 .into_iter()
-                .find(|governor| !g.players[pid].governor_roster.contains_key(*governor));
+                .find(|governor| !g.players[pid].governor_roster.contains_key(governor));
                 if let Some(governor) = governor {
                     if g.apply(
                         pid,
@@ -3009,7 +3021,7 @@ impl BasicAi {
                         state.city.is_none(),
                         governor == "victor",
                         source_loyalty,
-                        std::cmp::Reverse(governor.clone()),
+                        std::cmp::Reverse(*governor),
                         action,
                     ))
             })
@@ -3044,7 +3056,37 @@ impl BasicAi {
                         .get(&deal.from)
                         .copied()
                         .unwrap_or(0.0);
+                    let special_accept = if deal.defensive_pact {
+                        grievance < 75.0
+                            && partner_power < g.military_power(pid) * 1.8 + 20.0
+                    } else if let Some(target) = deal.joint_war_target {
+                        let joint_power = g.military_power(pid) + partner_power;
+                        let target_power = g.military_power(target);
+                        g.players[pid]
+                            .grievances
+                            .get(&target)
+                            .copied()
+                            .unwrap_or(0.0)
+                            >= 20.0
+                            && joint_power > target_power * 1.2 + 20.0
+                    } else if let Some(promise) = deal.promise.as_deref() {
+                        match promise {
+                            // An early Basic AI still needs nearby expansion
+                            // room; later on it can safely give this promise.
+                            "no_settling" => g.player_city_ids(pid).len() >= 3,
+                            "no_city_state_attack" => !g.players.iter().any(|city_state| {
+                                city_state.is_minor
+                                    && !city_state.is_barbarian
+                                    && g.is_at_war(pid, city_state.id)
+                            }),
+                            "no_conversion" | "no_spying" => true,
+                            _ => false,
+                        }
+                    } else {
+                        false
+                    };
                     deal.peace
+                        || special_accept
                         || deal.give_gold >= deal.request_gold
                         || ((deal.friendship || deal.alliance.is_some() || deal.open_borders)
                             && grievance < 75.0
@@ -3192,6 +3234,56 @@ impl BasicAi {
         if self.minor {
             return;
         }
+        // Delegations and Resident Embassies are a small, recurring
+        // investment rather than an AI-only stat. Establish one with the
+        // least aggrieved major on a staggered cadence, preferring the later
+        // Embassy replacement once Diplomatic Service is known.
+        if g.turn % 9 == pid as u32 % 9 {
+            let partner = others
+                .iter()
+                .copied()
+                .filter(|other| {
+                    !g.players[*other].is_minor
+                        && !g.is_at_war(pid, *other)
+                        && g.players[pid].grievances.get(other).copied().unwrap_or(0.0) < 50.0
+                })
+                .min_by(|first, second| {
+                    g.players[pid]
+                        .grievances
+                        .get(first)
+                        .copied()
+                        .unwrap_or(0.0)
+                        .total_cmp(
+                            &g.players[pid]
+                                .grievances
+                                .get(second)
+                                .copied()
+                                .unwrap_or(0.0),
+                        )
+                        .then(first.cmp(second))
+                });
+            if let Some(partner) = partner {
+                let embassy_ready = g.players[pid]
+                    .civics
+                    .contains(&crate::name!("diplomatic_service"))
+                    && g.players[pid].gold >= 25.0
+                    && !g
+                        .diplomatic_mission_to(pid, partner)
+                        .is_some_and(|mission| mission.kind == "embassy");
+                let action = if embassy_ready {
+                    Some(Action::SendEmbassy { player: partner })
+                } else if g.players[pid].gold >= 10.0
+                    && g.diplomatic_mission_to(pid, partner).is_none()
+                {
+                    Some(Action::SendDelegation { player: partner })
+                } else {
+                    None
+                };
+                if let Some(action) = action {
+                    let _ = g.apply(pid, &action);
+                }
+            }
+        }
         if g.turn % 20 == pid as u32 % 20 {
             if let Some(partner) = others.iter().copied().find(|other| {
                 !g.players[*other].is_minor
@@ -3236,6 +3328,23 @@ impl BasicAi {
                         alliance,
                     },
                 );
+            }
+        }
+        // A Defensive Pact is deliberately separate from an Alliance. Once
+        // an allied partner is in place, offer the explicit 30-turn treaty
+        // instead of treating every Alliance as an automatic call to war.
+        if g.turn % 15 == pid as u32 % 15 {
+            if let Some(partner) = others.iter().copied().find(|other| {
+                !g.players[*other].is_minor
+                    && g.are_allied(pid, *other)
+                    && g.defensive_pact_until(pid, *other).is_none()
+                    && !g.pending_deals.iter().any(|deal| {
+                        deal.defensive_pact
+                            && ((deal.from == pid && deal.to == *other)
+                                || (deal.from == *other && deal.to == pid))
+                    })
+            }) {
+                let _ = g.apply(pid, &Action::ProposeDefensivePact { player: partner });
             }
         }
         let at_war = others.iter().any(|o| g.is_at_war(pid, *o));
@@ -3412,7 +3521,7 @@ impl BasicAi {
         let front_line = Self::front_line_strength(g, pid, &city_ids);
         let mut force = 0.0;
         for uid in g.player_unit_ids(pid) {
-            let kind = g.units[&uid].kind.clone();
+            let kind = g.units[&uid].kind;
             match kind.as_str() {
                 "settler" => settlers += 1,
                 "builder" => builders += 1,
@@ -3871,7 +3980,7 @@ impl BasicAi {
             if !matches_role {
                 continue;
             }
-            if !g.can_produce(pid, cid, &Item::Unit { unit: name.clone() }) {
+            if !g.can_produce(pid, cid, &Item::Unit { unit: *name }) {
                 continue;
             }
             let power = spec.strength.max(spec.ranged_attack_strength());
@@ -3900,7 +4009,7 @@ impl BasicAi {
                         pid,
                         cid,
                         &Item::Unit {
-                            unit: (*name).clone(),
+                            unit: **name,
                         },
                     )
             })
@@ -3922,7 +4031,7 @@ impl BasicAi {
                     }
                     _ => 0.0,
                 };
-                (power * 3.0 + role - spec.cost * 0.04, name.clone())
+                (power * 3.0 + role - spec.cost * 0.04, *name)
             })
             .max_by(|a, b| a.0.partial_cmp(&b.0).unwrap().then_with(|| b.1.cmp(&a.1)))
             .map(|(_, name)| name)
@@ -3950,7 +4059,7 @@ impl BasicAi {
                     pid,
                     *cid,
                     &Item::Unit {
-                        unit: name.clone(),
+                        unit: *name,
                     },
                 ) {
                     continue;
@@ -4105,7 +4214,7 @@ impl BasicAi {
                     }
                     let price = spec.cost * 4.0;
                     if price > budget + 1e-9
-                        || !g.can_produce(pid, *cid, &Item::Unit { unit: name.clone() })
+                        || !g.can_produce(pid, *cid, &Item::Unit { unit: *name })
                     {
                         continue;
                     }
@@ -4174,7 +4283,7 @@ impl BasicAi {
                         pid,
                         *cid,
                         &Item::Building {
-                            building: building.clone(),
+                            building: *building,
                         },
                     )
                 {
@@ -4260,7 +4369,7 @@ impl BasicAi {
     /// unit upgrades and emergency purchases.
     fn buy_gold_plot(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
         let bank = g.players[pid].gold;
-        let mut best: Option<(f64, std::cmp::Reverse<(u32, Pos)>, Action)> = None;
+        let mut best: Option<PlotPurchaseCandidate> = None;
         for action in g.legal_actions_within(pid, ActionFamilies::PURCHASES) {
             let Action::BuyPlot { city, pos, cost } = action else {
                 continue;
@@ -4453,7 +4562,7 @@ impl BasicAi {
                     pid,
                     cid,
                     &Item::Building {
-                        building: (*building).clone(),
+                        building: **building,
                     },
                 )
             })
@@ -4463,8 +4572,8 @@ impl BasicAi {
                     net_gold / spec.cost.max(1.0),
                     net_gold,
                     std::cmp::Reverse(spec.cost as i64),
-                    std::cmp::Reverse(building.clone()),
-                    building.clone(),
+                    std::cmp::Reverse(*building),
+                    *building,
                 )
             })
             .max_by(|left, right| {
@@ -4523,7 +4632,7 @@ impl BasicAi {
             .filter(|(_, spec)| !spec.wonder && spec.maintenance <= f64::EPSILON)
             .filter_map(|(name, spec)| {
                 let item = Item::Building {
-                    building: name.clone(),
+                    building: *name,
                 };
                 if !g.can_produce(pid, cid, &item) {
                     return None;
@@ -4539,7 +4648,7 @@ impl BasicAi {
                 (value > 0.0).then_some((
                     value / spec.cost.max(1.0),
                     value,
-                    std::cmp::Reverse(name.clone()),
+                    std::cmp::Reverse(*name),
                     item,
                 ))
             })
@@ -4565,7 +4674,7 @@ impl BasicAi {
                     )
             })
             .map(|(project, _)| Item::Project {
-                project: project.clone(),
+                project: *project,
             })
             .filter(|item| g.can_produce(pid, cid, item))
             .min_by(|left, right| {
@@ -4577,19 +4686,19 @@ impl BasicAi {
 
     fn minor_district_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
         let family = Self::minor_district_family(g, pid);
-        if g.city_has_district_family(&g.cities[&cid], Name::new(&family)) {
+        if g.city_has_district_family(&g.cities[&cid], Name::new(family)) {
             return None;
         }
         let district = Self::civ_district(g, pid, family);
-        g.district_sites(cid, &district)
+        g.district_sites(cid, district)
             .into_iter()
             .filter_map(|pos| {
                 let item = Item::District {
-                    district: district,
+                    district,
                     pos,
                 };
                 g.can_produce(pid, cid, &item).then_some((
-                    g.district_yields(&district, pos).total(),
+                    g.district_yields(district, pos).total(),
                     std::cmp::Reverse(pos),
                     item,
                 ))
@@ -4744,7 +4853,7 @@ impl BasicAi {
             {
                 return Some(product);
             }
-            let mut projects: Vec<Item> = g
+            let projects: Vec<Item> = g
                 .rules
                 .projects
                 .iter()
@@ -4756,7 +4865,7 @@ impl BasicAi {
                         )
                 })
                 .map(|(project, _)| Item::Project {
-                    project: project.clone(),
+                    project: *project,
                 })
                 .filter(|item| {
                     let Item::Project { project } = item else {
@@ -4832,11 +4941,11 @@ impl BasicAi {
             && !g.city_has_district_family(&g.cities[&cid], crate::name!("harbor"))
         {
             let harbor = Self::civ_district(g, pid, "harbor");
-            let sites = g.district_sites(cid, &harbor);
+            let sites = g.district_sites(cid, harbor);
             if let Some(pos) = sites.into_iter().max_by(|a, b| {
-                g.district_yields(&harbor, *a)
+                g.district_yields(harbor, *a)
                     .total()
-                    .partial_cmp(&g.district_yields(&harbor, *b).total())
+                    .partial_cmp(&g.district_yields(harbor, *b).total())
                     .unwrap()
                     .then(a.cmp(b))
             }) {
@@ -4889,7 +4998,7 @@ impl BasicAi {
                     continue;
                 }
             }
-            if g.city_has_district_family(&g.cities[&cid], Name::new(&family)) {
+            if g.city_has_district_family(&g.cities[&cid], Name::new(family)) {
                 continue;
             }
             // Ask for the district this civilization actually builds. Greece
@@ -4916,8 +5025,8 @@ impl BasicAi {
                 let best = *sites
                     .iter()
                     .max_by(|a, b| {
-                        let ya = g.district_yields(&dname, **a).total();
-                        let yb = g.district_yields(&dname, **b).total();
+                        let ya = g.district_yields(dname, **a).total();
+                        let yb = g.district_yields(dname, **b).total();
                         ya.partial_cmp(&yb).unwrap().then(a.cmp(b))
                     })
                     .unwrap();
@@ -4985,7 +5094,7 @@ impl BasicAi {
         // districts, or district buildings. A completely developed city-state
         // may instead leave its production queue empty.
         if !self.barb && !self.minor {
-            let mut projects: Vec<Item> = g
+            let projects: Vec<Item> = g
                 .rules
                 .projects
                 .iter()
@@ -4997,7 +5106,7 @@ impl BasicAi {
                         )
                 })
                 .map(|(project, _)| Item::Project {
-                    project: project.clone(),
+                    project: *project,
                 })
                 .filter(|item| g.can_produce(pid, cid, item))
                 .collect();
@@ -5027,7 +5136,7 @@ impl BasicAi {
             .cities
             .values()
             .filter_map(|city| match city.queue.first() {
-                Some(Item::Wonder { wonder, .. }) => Some(wonder.clone()),
+                Some(Item::Wonder { wonder, .. }) => Some(*wonder),
                 _ => None,
             })
             .collect();
@@ -5065,7 +5174,7 @@ impl BasicAi {
                 if g.units[&uid].moves_left <= 0.0 {
                     break;
                 }
-                let kind = g.units[&uid].kind.clone();
+                let kind = g.units[&uid].kind;
                 let acted = match kind.as_str() {
                     "settler" => self.settler_step(g, pid, uid),
                     "builder" => self.builder_step(g, pid, uid),
@@ -5309,7 +5418,7 @@ impl BasicAi {
     /// preceding path step in the same turn. Waiting in a dead end preserves
     /// real progress for the auditor, and next turn's route can back out once
     /// before choosing a different greedy branch.
-    fn path_move(&self, g: &mut Game, pid: usize, uid: u32, to: Pos) -> bool {
+    pub(crate) fn path_move(&self, g: &mut Game, pid: usize, uid: u32, to: Pos) -> bool {
         let from = g.units[&uid].pos;
         if self.minor {
             let Some(home) = Self::minor_home(g, pid) else {
@@ -5820,9 +5929,9 @@ impl BasicAi {
             .districts
             .iter()
             .find(|(_, spec)| {
-                spec.replaces == Some(Name::new(&family)) && spec.unique_to.as_deref() == Some(civ)
+                spec.replaces == Some(Name::new(family)) && spec.unique_to.as_deref() == Some(civ)
             })
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| *name)
             .unwrap_or_else(|| Name::new(family))
     }
 
@@ -5841,9 +5950,9 @@ impl BasicAi {
         g.rules
             .buildings
             .iter()
-            .filter(|(_, spec)| spec.replaces == Some(Name::new(&family)))
+            .filter(|(_, spec)| spec.replaces == Some(Name::new(family)))
             .map(|(name, _)| Item::Building {
-                building: name.clone(),
+                building: *name,
             })
             .find(|item| g.can_produce(pid, cid, item))
     }
@@ -5854,7 +5963,7 @@ impl BasicAi {
     /// with a Farm forfeits that permanently. Otherwise take the most
     /// valuable yield, weighted the way the rest of this AI values output.
     fn best_improvement(g: &Game, pos: Pos, options: &[Name]) -> Option<Name> {
-        let resource = g.map.get(pos).and_then(|tile| tile.resource.clone());
+        let resource = g.map.get(pos).and_then(|tile| tile.resource);
         options
             .iter()
             .max_by(|a, b| {
@@ -6868,7 +6977,7 @@ impl BasicAi {
         let target = {
             let unit = &g.units[&uid];
             let upos = unit.pos;
-            if g.unit_upgrade_target(pid, &unit.kind).is_none() {
+            if g.unit_upgrade_target(pid, unit.kind).is_none() {
                 return false;
             }
             let at_home = g
@@ -7421,7 +7530,7 @@ mod tests {
             "kinds={:?}",
             veterans
                 .iter()
-                .map(|uid| g.units[uid].kind.clone())
+                .map(|uid| g.units[uid].kind)
                 .collect::<Vec<_>>()
         );
         // Every Warrior in the empire modernized, at 110 Gold each.
@@ -9730,7 +9839,7 @@ mod tests {
             panic!("expected a Commercial Hub, got {district:?}");
         };
         assert_eq!(district, "commercial_hub");
-        g.map.tiles.get_mut(&commercial_hub).unwrap().district = Some(district.clone());
+        g.map.tiles.get_mut(&commercial_hub).unwrap().district = Some(district);
         g.cities
             .get_mut(&cid)
             .unwrap()
@@ -10048,7 +10157,7 @@ mod tests {
             }
         );
 
-        let tower_tech = g.rules.units["siege_tower"].tech.clone().unwrap();
+        let tower_tech = g.rules.units["siege_tower"].tech.unwrap();
         g.players[0].techs.insert(tower_tech);
         let tower = ai.pick_item(&g, 0, home, 1, 0, 1, 0, 0, 2, 2, 0).unwrap();
         assert_eq!(
@@ -10154,7 +10263,14 @@ mod tests {
             .unwrap();
         g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
         let city = g.player_city_ids(0)[0];
-        g.cities.get_mut(&city).unwrap().captured_from = Some(1);
+        {
+            let captured = g.cities.get_mut(&city).unwrap();
+            // This is an unresolved capture of player 1's original city;
+            // resolving a genuine recapture of player 0's own original city
+            // correctly produces no grievance.
+            captured.original_owner = 1;
+            captured.captured_from = Some(1);
+        }
         assert!(matches!(
             g.legal_actions(0).as_slice(),
             [Action::KeepCity { city: pending }] if *pending == city

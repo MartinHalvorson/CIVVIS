@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 79] = [
+pub const EVAL_ONLY_AIS: [&str; 82] = [
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -73,10 +73,16 @@ pub const EVAL_ONLY_AIS: [&str; 79] = [
     "advanced_evolved_blind",
     "advanced_settler_commit",
     "advanced_wide_opening",
+    "advanced_plan_city_target",
     "advanced_expansion_payback",
     "advanced_late_expansion",
     "advanced_expansion_dispatch",
     "advanced_expansion_complete",
+    // The victory lane the deployed Civ 6 decider is actually given. Named so
+    // `ai_eval` can measure the choice `civ6_civvis_climb.py --victory` makes
+    // for every real run; see the constructor arms below.
+    "advanced_target_domination",
+    "advanced_target_score",
     "advanced_food_first",
     "advanced_measured_dedication",
     "advanced_lane_reachable",
@@ -186,6 +192,7 @@ define_arm_kinds! {
     AdvancedLeagueTop => "advanced_league_top",
     AdvancedMeasuredDedication => "advanced_measured_dedication",
     AdvancedParallelSettlers => "advanced_parallel_settlers",
+    AdvancedPlanCityTarget => "advanced_plan_city_target",
     AdvancedPolicyLiveControl => "advanced_policy_live_control",
     AdvancedPolicyEnvoyPriority => "advanced_policy_envoy_priority",
     AdvancedProphetFirst => "advanced_prophet_first",
@@ -194,6 +201,8 @@ define_arm_kinds! {
     AdvancedRushConnected => "advanced_rush_connected",
     AdvancedSettlerCommit => "advanced_settler_commit",
     AdvancedSettlerFirst => "advanced_settler_first",
+    AdvancedTargetDomination => "advanced_target_domination",
+    AdvancedTargetScore => "advanced_target_score",
     AdvancedStrategicCommitment => "advanced_strategic_commitment",
     AdvancedV1 => "advanced_v1",
     AdvancedWideOpening => "advanced_wide_opening",
@@ -252,8 +261,8 @@ pub const HISTORICAL_V1_RATINGS_PATH: &str = "data/elo_ratings_v1.json";
 /// Immutable protocol-v2 baseline retained after the island-settlement repair
 /// changed the shared legacy controller again.
 pub const HISTORICAL_V2_RATINGS_PATH: &str = "data/elo_ratings_v2.json";
-/// Immutable protocol-v3 baseline retained after the stock Firaxis rules audit
-/// added previously absent unique units and an improvement to the simulation.
+/// Immutable protocol-v3 baseline retained after the intergovernment
+/// diplomacy pass changed both shared scripted-controller paths.
 pub const HISTORICAL_V3_RATINGS_PATH: &str = "data/elo_ratings_v3.json";
 const LEAGUE_SNAPSHOT_DIR: &str = "data/league";
 const LEAGUE_SNAPSHOT_FILE: &str = "data/league/league.json";
@@ -862,20 +871,15 @@ impl EloPool {
             entry.1 = entry.1.saturating_add(rating.games);
         }
         for (player, (weighted, games)) in accumulated {
-            if !overall.contains_key(&player) {
-                overall.insert(
-                    player,
-                    Rating {
-                        elo: if games > 0 {
-                            weighted / f64::from(games)
-                        } else {
-                            stored.base_rating
-                        },
-                        games: 0,
-                        wins: 0,
-                    },
-                );
-            }
+            overall.entry(player).or_insert_with(|| Rating {
+                elo: if games > 0 {
+                    weighted / f64::from(games)
+                } else {
+                    stored.base_rating
+                },
+                games: 0,
+                wins: 0,
+            });
         }
         let games = if stored.schema_version == ELO_SCHEMA_VERSION {
             stored.games
@@ -1472,14 +1476,18 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // mechanisms, so using its ordinary constructors here would collapse
         // a control into the treatment it is meant to diagnose.
         "advanced_policy_live_control" => {
-            let mut weights = Weights::default();
-            weights.policy_deck = crate::ai::PolicyDeck::Live;
+            let weights = Weights {
+                policy_deck: crate::ai::PolicyDeck::Live,
+                ..Weights::default()
+            };
             Box::new(AdvancedAi::pre_policy_envoy_with_weights(weights))
         }
         "advanced_envoy_policy" => {
-            let mut weights = Weights::default();
-            weights.policy_deck = crate::ai::PolicyDeck::Live;
-            weights.pol_influence = 4.0;
+            let weights = Weights {
+                policy_deck: crate::ai::PolicyDeck::Live,
+                pol_influence: 4.0,
+                ..Weights::default()
+            };
             Box::new(AdvancedAi::pre_policy_envoy_with_weights(weights))
         }
         "advanced_envoy_infrastructure" => {
@@ -1498,9 +1506,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(ai)
         }
         "advanced_envoy_economy" => {
-            let mut weights = Weights::default();
-            weights.policy_deck = crate::ai::PolicyDeck::Live;
-            weights.pol_influence = 4.0;
+            let weights = Weights {
+                policy_deck: crate::ai::PolicyDeck::Live,
+                pol_influence: 4.0,
+                ..Weights::default()
+            };
             let mut ai = AdvancedAi::pre_policy_envoy_with_weights(weights);
             ai.envoy_infrastructure = true;
             Box::new(ai)
@@ -1518,7 +1528,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_evolved_commitment" => {
             let mut ai = crate::evolve::load_champion("evolved")
                 .map(AdvancedAi::with_weights)
-                .unwrap_or_else(AdvancedAi::new);
+                .unwrap_or_default();
             ai.strategic_commitment = true;
             Box::new(ai)
         }
@@ -1802,6 +1812,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.city_target_floor = 6;
             Box::new(ai)
         }
+        // Treatment for the city-target axis: identical to `advanced` except
+        // that the baseline production governor is handed the empire's own
+        // `plan.desired_cities` instead of the flat `city_target` gene. See
+        // `AdvancedAi::plan_city_target` and `docs/OPENINGS.md` §19.
+        "advanced_plan_city_target" => {
+            let mut ai = AdvancedAi::new();
+            ai.plan_city_target = true;
+            Box::new(ai)
+        }
         "advanced_lane_reachable" => {
             let mut ai = AdvancedAi::new();
             ai.refuse_unreachable_lanes = true;
@@ -1901,14 +1920,14 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_evolved_blind" => {
             let mut ai = crate::evolve::load_champion("evolved")
                 .map(AdvancedAi::with_weights)
-                .unwrap_or_else(AdvancedAi::new);
+                .unwrap_or_default();
             ai.deny_leaders = false;
             Box::new(ai)
         }
         "advanced_evolved" => Box::new(
             crate::evolve::load_champion("evolved")
                 .map(AdvancedAi::with_weights)
-                .unwrap_or_else(AdvancedAi::new),
+                .unwrap_or_default(),
         ),
         // The Dedication chooser that ranks the offer by what each Dedication
         // would have paid over the era just ended. **A recorded negative
@@ -1928,6 +1947,23 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             let mut w = crate::evolve::load_champion("evolved").unwrap_or_default();
             w.dedication_choice = crate::ai::DedicationChoice::Banking;
             Box::new(AdvancedAi::with_weights(w))
+        }
+        // ★★★★★ THE VICTORY LANE THE REAL GAMES ARE ACTUALLY GIVEN.
+        //
+        // `civ6_civvis_climb.py --victory` defaults to `domination` and every one
+        // of the 104 ladder rows carries it, with **zero wins**. Nothing in the
+        // registry could measure that choice, so the single most consequential
+        // setting in the deployment was the one axis never evaluated.
+        //
+        // ⚠ It is not merely unwon, it is out of budget: `victory_eval`'s own
+        // per-target turn limits are 650 for Domination and 300 for Score, and
+        // the deployment runs **250**. At 6 players / 250 turns, 8 of 8 games
+        // targeting domination ended by score at the limit instead.
+        "advanced_target_domination" => Box::new(AdvancedAi::targeting(
+            crate::ai::VictoryTarget::Domination,
+        )),
+        "advanced_target_score" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score))
         }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
         "random" => Box::new(RandomAi::new(seed)),
@@ -2598,6 +2634,11 @@ impl ArmKind {
             }
             Self::AdvancedFoodFirst => &["food-first"],
             Self::AdvancedSettlerCommit => &["settler-commitment"],
+            // The two arms differ only in the lane they are told to win, which is
+            // the axis: the deployed Civ 6 decider is handed one of these by
+            // `civ6_civvis_climb.py --victory` and nothing could compare them.
+            Self::AdvancedTargetDomination => &["victory-lane-domination"],
+            Self::AdvancedTargetScore => &["victory-lane-score"],
             Self::AdvancedBlindToLeaders | Self::AdvancedEvolvedBlind => &["leader-denial-off"],
             Self::AdvancedRush => &["early-rush"],
             Self::AdvancedRushConnected => &["early-rush", "connected-rush"],
@@ -2630,6 +2671,7 @@ impl ArmKind {
             Self::AdvancedExpansionDispatch => &["expansion-dispatch"],
             Self::AdvancedExpansionComplete => &["late-expansion", "expansion-dispatch"],
             Self::AdvancedWideOpening => &["city-target-floor"],
+            Self::AdvancedPlanCityTarget => &["plan-city-target"],
             Self::AdvancedLaneReachable => &["lane-reachability"],
             Self::AdvancedSettlerFirst => &["settler-oracle"],
             Self::AdvancedProphetFirst => &["prophet-priority"],
@@ -3100,6 +3142,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         ),
         "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
         "advanced_wide_opening" => (Vec::new(), "advanced_wide_opening"),
+        "advanced_plan_city_target" => (Vec::new(), "advanced_plan_city_target"),
         "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
         "advanced_late_expansion" => (Vec::new(), "advanced_late_expansion"),
         "advanced_expansion_dispatch" => (Vec::new(), "advanced_expansion_dispatch"),
@@ -3153,6 +3196,8 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_rush_connected" => (Vec::new(), "advanced_rush_connected"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
+        "advanced_target_domination" => (Vec::new(), "advanced_target_domination"),
+        "advanced_target_score" => (Vec::new(), "advanced_target_score"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
         "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
         "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
@@ -3800,7 +3845,8 @@ mod tests {
         win_shares, BuiltinAiBuildError, EloPool, RatedPlayer, RatingKey, TournamentProfile,
         TourneyCfg, WeightSource, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
         ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, HISTORICAL_V1_RATINGS_PATH,
-        HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH, VALUENET_FILE,
+        HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH,
+        VALUENET_FILE,
     };
     use crate::game::{Action, Game};
     use crate::rng::Rng;
@@ -4168,7 +4214,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 46] = [
+            const SCRIPTED: [&str; 49] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4190,6 +4236,7 @@ mod tests {
                 "advanced_early_score_build",
                 "advanced_settler_commit",
                 "advanced_wide_opening",
+                "advanced_plan_city_target",
                 "advanced_expansion_payback",
                 "advanced_late_expansion",
                 "advanced_expansion_dispatch",
@@ -4212,6 +4259,10 @@ mod tests {
                 "advanced_joint_tactics",
                 "advanced_relief_scoped",
                 "advanced_settler_first",
+                // Built from code, not from a weights artifact: these two differ
+                // from `advanced` only in the victory lane they are handed.
+                "advanced_target_domination",
+                "advanced_target_score",
                 "advanced_v1",
                 "basic",
                 "random",
@@ -4327,7 +4378,7 @@ mod tests {
     #[test]
     fn league_genome_challenger_loads_a_win_selected_searching_agent() {
         let (name, _) = league_generalist().expect("committed league has a generalist genome");
-        assert_eq!(name, "g20-21", "update the documented transfer candidate");
+        assert_eq!(name, "g4-10", "update the documented transfer candidate");
         let ai = builtin_ai("strategic_deep_league", 1);
         assert_eq!(ai.review_census(), Some(Default::default()));
         let provenance = builtin_provenance("strategic_deep_league", "unused");
@@ -5069,14 +5120,21 @@ mod tests {
     #[test]
     fn shipped_protocol_v4_ledger_is_a_canonical_fresh_baseline() {
         let pool = EloPool::load(DEFAULT_RATINGS_PATH).unwrap();
-        assert_eq!(
-            pool.profile.as_ref().map(|profile| profile.protocol_version),
-            Some(4)
-        );
-        assert_eq!(
-            pool.profile.as_ref().map(|profile| profile.rules_fingerprint.as_str()),
-            Some("fnv1a64:0923f8f3bc30eca0")
-        );
+        let expected_cfg = TourneyCfg {
+            rating_anchor: Some("advanced_v1".to_string()),
+            controller_roster: ["advanced", "advanced_v1", "basic", "random"]
+                .into_iter()
+                .map(str::to_string)
+                .collect(),
+            ..TourneyCfg::default()
+        };
+        assert_eq!(pool.base_rating, ELO_BASE_RATING);
+        let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
+        // The checked-in v4 games predate the Firaxis-exact unique-unit and
+        // improvement rows. Keep their measured rules binding honest instead of
+        // relabeling old evidence with the current rules fingerprint.
+        historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
+        assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
         assert!(pool.history.iter().all(|game| {
@@ -5084,6 +5142,34 @@ mod tests {
                 .as_deref()
                 .is_some_and(|id| id.starts_with("v4:"))
         }));
+        assert_eq!(
+            pool.history.len(),
+            pool.overall
+                .values()
+                .map(|rating| rating.games)
+                .max()
+                .unwrap_or(0) as usize
+        );
+        assert_eq!(
+            pool.overall.keys().map(String::as_str).collect::<Vec<_>>(),
+            vec![
+                "advanced-20260801-diplomacy",
+                "advanced_v1",
+                "basic-20260801-diplomacy",
+                "random-20260730",
+            ]
+        );
+        assert_eq!(pool.ratings.len(), 16);
+
+        let direct = direct_anchor_performance(&pool, "advanced_v1");
+        let advanced = direct
+            .iter()
+            .find(|(player, _, _, _, _, _)| player == "advanced-20260801-diplomacy")
+            .unwrap();
+        assert_eq!((advanced.2, advanced.3), (29.0, 40));
+        assert!((advanced.1 - 1663.6).abs() < 0.1);
+        assert!((100.0 * advanced.4 - 57.2).abs() < 0.1);
+        assert!((100.0 * advanced.5 - 83.9).abs() < 0.1);
     }
 
     #[test]

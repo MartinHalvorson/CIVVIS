@@ -1,0 +1,542 @@
+#!/usr/bin/env python3
+
+import importlib.util
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+from types import SimpleNamespace
+import unittest
+from unittest import mock
+
+
+MODULE_PATH = Path(__file__).with_name("civvis_match_machine.py")
+SPEC = importlib.util.spec_from_file_location("civvis_match_machine", MODULE_PATH)
+machine = importlib.util.module_from_spec(SPEC)
+assert SPEC.loader is not None
+sys.modules[SPEC.name] = machine
+SPEC.loader.exec_module(machine)
+
+
+class MatchMachineTests(unittest.TestCase):
+    def test_game_contract_is_online_continents_free_for_all(self):
+        command = machine.game_command(
+            Path("/tmp/civvis"), Path("/tmp/league"), 42, 8870, visible=False
+        )
+        value = lambda flag: command[command.index(flag) + 1]
+        self.assertEqual(value("--players"), "8")
+        self.assertEqual((value("--width"), value("--height")), ("84", "54"))
+        self.assertEqual(value("--city-states"), "12")
+        self.assertEqual(value("--turns"), "250")
+        self.assertEqual(value("--speed"), "online")
+        self.assertEqual(value("--map"), "continents")
+        self.assertNotIn("--teams", command)
+        self.assertIn("--league-record", command)
+        self.assertIn("--no-open", command)
+
+    def test_game_contract_accepts_explicit_speed_and_turn_override(self):
+        command = machine.game_command(
+            Path("civvis"),
+            Path("league"),
+            1,
+            2,
+            visible=False,
+            speed="standard",
+            turns=600,
+        )
+        value = lambda flag: command[command.index(flag) + 1]
+        self.assertEqual(value("--speed"), "standard")
+        self.assertEqual(value("--turns"), "600")
+
+    def test_headless_contract_carries_a_strategy_coverage_target(self):
+        command = machine.game_command(
+            Path("civvis"), Path("league"), 1, 2, visible=False, focus_strategy="g4-10"
+        )
+        self.assertEqual(command[command.index("--force-strategy") + 1], "g4-10")
+
+    def test_strategy_schedule_covers_every_unretired_entry_and_repeats_top_eight(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            league = root / "league"
+            league.mkdir()
+            (league / "league.json").write_text(
+                json.dumps(
+                    {
+                        "strategies": [
+                            {"name": "low", "rating": 1200},
+                            {"name": "top", "rating": 1800},
+                            {"name": "retired", "rating": 2000, "retired": True},
+                        ]
+                    }
+                ),
+                encoding="utf-8",
+            )
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.league = league
+            subject.strategy_cursor = 0
+            subject.strategy_schedule = []
+            subject.event = mock.Mock()
+            subject.refresh_strategy_schedule()
+            self.assertEqual(subject.strategy_schedule, ["top", "low", "top", "low"])
+            self.assertEqual(
+                [subject.next_focus_strategy() for _ in range(4)],
+                ["top", "low", "top", "low"],
+            )
+
+    def test_cli_derives_the_stock_turn_limit_for_the_selected_speed(self):
+        online = machine.parse_args(["--watch-pid", "1"])
+        standard = machine.parse_args(["--watch-pid", "1", "--speed", "standard"])
+        self.assertEqual((online.speed, online.turns), ("online", 250))
+        self.assertEqual((standard.speed, standard.turns), ("standard", 500))
+        self.assertEqual(online.visible_pace, 0)
+
+    def test_cli_accepts_a_timezone_aware_absolute_deadline(self):
+        args = machine.parse_args(
+            ["--watch-pid", "1", "--deadline-utc", "2026-08-02T15:50:48Z"]
+        )
+
+        self.assertEqual(args.deadline_utc.isoformat(), "2026-08-02T15:50:48+00:00")
+
+    def test_first_visible_game_opens_browser_and_replacements_reuse_tab(self):
+        visible = machine.game_command(Path("civvis"), Path("league"), 1, 2, visible=True)
+        replacement = machine.game_command(
+            Path("civvis"),
+            Path("league"),
+            2,
+            2,
+            visible=True,
+            open_browser=False,
+        )
+        headless = machine.game_command(Path("civvis"), Path("league"), 1, 2, visible=False)
+        self.assertNotIn("--no-open", visible)
+        self.assertIn("--no-open", replacement)
+        self.assertIn("--no-open", headless)
+
+    def test_port_selection_reserves_the_base_port_for_visible_successors(self):
+        with mock.patch.object(machine, "port_available", return_value=True):
+            self.assertEqual(machine.game_port(8870, set(), visible=True), 8870)
+        with mock.patch.object(machine, "port_available", return_value=False):
+            self.assertIsNone(machine.game_port(8870, set(), visible=True))
+        with mock.patch.object(machine, "free_port", return_value=8871) as choose:
+            self.assertEqual(machine.game_port(8870, set(), visible=False), 8871)
+            choose.assert_called_once_with(8871, set())
+
+    def test_fill_slots_replaces_a_completed_visible_game(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        subject.games = []
+        subject.visible_started = True
+        subject.launch = mock.Mock()
+
+        subject.fill_slots(machine.Resources(20, 20, 12, 0, False))
+
+        subject.launch.assert_called_once_with(visible=True)
+
+    def test_fill_slots_replaces_visible_game_while_head_build_is_pending(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = "new-head"
+        subject.build_future = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        subject.games = []
+        subject.launch = mock.Mock()
+
+        subject.fill_slots(machine.Resources(20, 20, 12, 0, False))
+
+        subject.launch.assert_called_once_with(visible=True)
+
+    def test_fill_slots_sheds_headless_before_reserving_visible_at_hard_ceiling(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = "new-head"
+        subject.build_future = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        game = SimpleNamespace(visible=False, paused=False, process=object(), seed=7)
+        subject.games = [game]
+        subject.event = mock.Mock()
+        subject.launch = mock.Mock()
+
+        with mock.patch.object(machine, "set_paused", return_value=True) as pause:
+            subject.fill_slots(machine.Resources(70, 20, 12, 0, False))
+
+        pause.assert_called_once_with(game.process, True)
+        self.assertTrue(game.paused)
+        subject.launch.assert_not_called()
+        subject.event.assert_called_once()
+
+    def test_fill_slots_reserves_visible_slot_before_recovery_margin(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = None
+        subject.build_future = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        headless = SimpleNamespace(visible=False, paused=False, process=object(), seed=7)
+        subject.games = [headless]
+        subject.launch = mock.Mock()
+        subject.event = mock.Mock()
+
+        with mock.patch.object(machine, "set_paused", return_value=True):
+            subject.fill_slots(machine.Resources(60, 20, 12, 0, False))
+
+        self.assertTrue(headless.paused)
+        subject.launch.assert_called_once_with(visible=True)
+
+    def test_fill_slots_drains_headless_games_while_head_build_is_pending(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = "new-head"
+        subject.build_future = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        subject.games = [SimpleNamespace(visible=True, paused=False)]
+        subject.launch = mock.Mock()
+
+        subject.fill_slots(machine.Resources(20, 20, 12, 0, False))
+
+        subject.launch.assert_not_called()
+
+    def test_capacity_reserves_cpu_for_background_build(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(limit=70)
+
+        self.assertTrue(
+            subject.capacity_available(
+                machine.Resources(20, 20, 12, 0, False), cpu_reservation=25
+            )
+        )
+        self.assertFalse(
+            subject.capacity_available(
+                machine.Resources(41, 20, 12, 0, False), cpu_reservation=25
+            )
+        )
+
+    def test_terminal_watcher_compares_the_original_process_identity(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(watch_pid=42)
+        subject.watch_identity = "started-at"
+
+        with mock.patch.object(machine, "process_is_same", return_value=True):
+            self.assertFalse(subject.watched_terminal_closed())
+        with mock.patch.object(machine, "process_is_same", return_value=False):
+            self.assertTrue(subject.watched_terminal_closed())
+
+    def test_capacity_wait_returns_cleanly_when_the_watched_terminal_closes(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(watch_pid=42, resource_log_interval=60, poll=1)
+        subject.watch_identity = "started-at"
+        subject.deadline = machine.time.monotonic() + 60
+        subject.stopping = False
+        subject.event = mock.Mock()
+        subject.watched_terminal_closed = mock.Mock(return_value=True)
+
+        self.assertIsNone(subject.wait_for_capacity("initial build"))
+
+        self.assertTrue(subject.stopping)
+        subject.event.assert_called_once_with("terminal_closed", watch_pid=42)
+
+    def test_closed_terminal_before_initial_build_cleans_up_without_starting_work(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(duration=60, watch_pid=42, headless=6, limit=70)
+        subject.stopping = False
+        subject.games = []
+        subject.caffeinate = None
+        subject.build_future = None
+        subject.build_executor = mock.Mock()
+        subject.completed = 0
+        subject.failed = 0
+        subject.event = mock.Mock()
+        subject.keep_awake = mock.Mock()
+        subject.ensure_source = mock.Mock()
+        subject.refresh_ranking = mock.Mock()
+        subject.persist = mock.Mock()
+        subject.watched_terminal_closed = mock.Mock(return_value=True)
+
+        self.assertEqual(subject.run(), 0)
+
+        subject.keep_awake.assert_not_called()
+        subject.ensure_source.assert_not_called()
+        subject.build_executor.shutdown.assert_called_once_with(wait=True)
+        subject.event.assert_any_call("terminal_closed", watch_pid=42)
+
+    def test_expired_window_before_initial_build_cleans_up_without_starting_work(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(duration=60, watch_pid=42, headless=6, limit=70)
+        subject.deadline = 10.0
+        subject.stopping = False
+        subject.games = []
+        subject.caffeinate = None
+        subject.build_future = None
+        subject.build_executor = mock.Mock()
+        subject.completed = 0
+        subject.failed = 0
+        subject.event = mock.Mock()
+        subject.keep_awake = mock.Mock()
+        subject.ensure_source = mock.Mock()
+        subject.refresh_ranking = mock.Mock()
+        subject.persist = mock.Mock()
+        subject.watched_terminal_closed = mock.Mock(return_value=False)
+
+        with mock.patch.object(machine.time, "monotonic", return_value=10.0):
+            self.assertEqual(subject.run(), 0)
+
+        subject.keep_awake.assert_not_called()
+        subject.ensure_source.assert_not_called()
+        subject.build_executor.shutdown.assert_called_once_with(wait=True)
+        subject.event.assert_any_call("operator_window_ended", purpose="startup")
+
+    def test_completed_background_build_is_activated_on_operator_thread(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        future = machine.Future()
+        promoted = Path("/tmp/civvis-new")
+        future.set_result(promoted)
+        subject.build_future = future
+        subject.build_revision = "new-head"
+        subject.activate_build = mock.Mock()
+
+        subject.poll_head_build(100.0)
+
+        subject.activate_build.assert_called_once_with("new-head", promoted)
+        self.assertIsNone(subject.build_future)
+        self.assertIsNone(subject.build_revision)
+
+    def test_fill_slots_resumes_paused_work_before_admitting_a_new_game(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = None
+        subject.args = SimpleNamespace(limit=70, headless=8, max_processes=8)
+        subject.games = [SimpleNamespace(visible=True, paused=True)]
+        subject.launch = mock.Mock()
+
+        subject.fill_slots(machine.Resources(20, 20, 12, 0, False))
+
+        subject.launch.assert_not_called()
+
+    def test_cpu_parser_uses_the_last_top_sample(self):
+        report = "CPU usage: 10.0% user, 5.0% sys, 85.0% idle\nCPU usage: 20.0% user, 9.5% sys, 70.5% idle"
+        self.assertEqual(machine.parse_top_cpu(report), 29.5)
+        self.assertIsNone(machine.parse_top_cpu("not top"))
+
+    def test_cpu_sampling_timeout_fails_closed_without_crashing_the_machine(self):
+        with mock.patch.object(machine.sys, "platform", "darwin"), mock.patch.object(
+            machine,
+            "command",
+            side_effect=subprocess.TimeoutExpired(["top"], 4),
+        ):
+            self.assertIsNone(machine.cpu_percent())
+
+        missing_cpu = machine.Resources(None, 20, 12, 0, False)
+        self.assertTrue(missing_cpu.overloaded(70))
+        self.assertFalse(missing_cpu.comfortably_below(70))
+        self.assertEqual(machine.resource_action(missing_cpu, 70), "shed_all")
+
+    def test_macos_cpu_sampling_uses_one_immediate_top_snapshot(self):
+        report = "CPU usage: 12.0% user, 8.0% sys, 80.0% idle\n"
+        completed = subprocess.CompletedProcess(["top"], 0, report)
+        with mock.patch.object(machine.sys, "platform", "darwin"), mock.patch.object(
+            machine, "command", return_value=completed
+        ) as run:
+            self.assertEqual(machine.cpu_percent(), 20.0)
+
+        run.assert_called_once_with("top", "-l", "1", "-n", "0", timeout=4)
+
+    def test_resource_ceiling_is_hard_and_resume_has_headroom(self):
+        safe = machine.Resources(59.0, 20.0, 12.0, 0.0, False)
+        edge = machine.Resources(70.0, 20.0, 12.0, 0.0, False)
+        thermal = machine.Resources(1.0, 1.0, 1.0, 1.0, True)
+        self.assertTrue(safe.comfortably_below(70))
+        self.assertFalse(safe.overloaded(70))
+        self.assertTrue(edge.overloaded(70))
+        self.assertTrue(thermal.overloaded(70))
+        self.assertEqual(machine.resource_action(machine.Resources(49, 20, 12, 0, False), 70), "resume")
+        self.assertEqual(machine.resource_action(machine.Resources(55, 20, 12, 0, False), 70), "shed_one")
+        self.assertEqual(machine.resource_action(machine.Resources(60, 20, 12, 0, False), 70), "shed_headless")
+        self.assertEqual(machine.resource_action(edge, 70), "shed_all")
+
+    def test_match_lookup_finds_a_concurrent_out_of_order_result(self):
+        with tempfile.TemporaryDirectory() as directory:
+            league = Path(directory)
+            (league / "matches.csv").write_text(
+                "round,seed,turns,victory,placements\n"
+                "60,12,300,science,a@Trajan@Rome@0|b@Cleopatra@Egypt@1\n"
+                "61,10,250,culture,b@Trajan@Rome@0|a@Cleopatra@Egypt@1\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(machine.match_row(league, 12)["victory"], "science")
+            self.assertIsNone(machine.match_row(league, 99))
+
+    def test_recorded_result_is_authoritative_over_later_server_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            league = Path(directory)
+            (league / "matches.csv").write_text(
+                "round,seed,turns,victory,placements\n"
+                "60,12,423,science,a@Trajan@Rome@0|b@Cleopatra@Egypt@1\n",
+                encoding="utf-8",
+            )
+            row = machine.match_row(league, 12)
+            self.assertEqual(machine.winner_placement(row), "a@Trajan@Rome@0")
+
+    def test_state_write_is_atomic_json(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "state.json"
+            machine.atomic_json(target, {"active": 8})
+            self.assertEqual(json.loads(target.read_text()), {"active": 8})
+            self.assertFalse(target.with_suffix(".json.tmp").exists())
+
+    def test_visible_browser_open_state_survives_operator_restart(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "state.json"
+            self.assertFalse(machine.visible_browser_already_opened(state))
+            state.write_text('{"visible_started": true}\n', encoding="utf-8")
+            self.assertTrue(machine.visible_browser_already_opened(state))
+
+    def test_game_lifecycle_events_do_not_collide_with_event_kind(self):
+        with tempfile.TemporaryDirectory() as directory:
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.args = SimpleNamespace(port=8870)
+            subject.binary = Path("/tmp/civvis")
+            subject.league = Path(directory) / "league"
+            subject.logs = Path(directory) / "logs"
+            subject.logs.mkdir()
+            subject.current_revision = "abc123"
+            subject.next_seed = 100
+            subject.games = []
+            subject.visible_started = False
+            subject.visible_completed = False
+            subject.visible_completed_count = 0
+            subject.visible_browser_opened = False
+            subject.completed = 0
+            subject.failed = 0
+            events = []
+            subject.event = lambda kind, **values: events.append((kind, values))
+            process = mock.Mock(pid=1234)
+
+            with mock.patch.object(machine, "game_port", return_value=8870), mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ):
+                subject.launch(visible=True)
+            subject.games[0].last_status = {
+                "turn": 435,
+                "winner": 1,
+                "victory_type": "religious",
+            }
+            with mock.patch.object(machine, "stop_process"), mock.patch.object(
+                machine,
+                "match_row",
+                return_value={
+                    "seed": "100",
+                    "turns": "423",
+                    "victory": "science",
+                    "placements": "a@Trajan@Rome@0|b@Cleopatra@Egypt@1",
+                },
+            ):
+                subject.finish(
+                    subject.games[0],
+                    failed=True,
+                    reason="match machine stopped before result",
+                )
+
+            self.assertEqual(events[0][0], "game_started")
+            self.assertEqual(events[0][1]["game_kind"], "visible")
+            self.assertEqual(events[1][0], "game_completed")
+            self.assertEqual(events[1][1]["game_kind"], "visible")
+            self.assertEqual(events[1][1]["reason"], "rated result recorded before process stopped")
+            self.assertEqual(events[1][1]["turn"], "423")
+            self.assertEqual(events[1][1]["victory"], "science")
+            self.assertIsNone(events[1][1]["winner"])
+            self.assertEqual(events[1][1]["winner_placement"], "a@Trajan@Rome@0")
+            self.assertEqual(subject.completed, 1)
+            self.assertEqual(subject.failed, 0)
+
+    def test_visible_successor_reuses_process_and_records_both_lifecycle_events(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        process = mock.Mock(pid=1234)
+        game = machine.GameProcess(
+            process=process,
+            seed=100,
+            port=8870,
+            revision="abc123",
+            visible=True,
+            started_monotonic=10.0,
+            started_utc="then",
+            log="visible.log",
+            winner_seen=20.0,
+            last_status={"turn": 250, "winner": 1},
+        )
+        subject.games = [game]
+        subject.completed = 0
+        subject.failed = 0
+        subject.visible_completed = False
+        subject.visible_completed_count = 0
+        subject.next_seed = 101
+        events = []
+        subject.event = lambda kind, **values: events.append((kind, values))
+        row = {
+            "seed": "100",
+            "turns": "250",
+            "victory": "score",
+            "placements": "a@Trajan@Rome@0|b@Cleopatra@Egypt@1",
+        }
+
+        with mock.patch.object(machine.time, "monotonic", return_value=30.0):
+            subject.adopt_visible_successor(
+                game, seed=200, row=row, status={"turn": 1, "winner": None}
+            )
+
+        self.assertIs(subject.games[0].process, process)
+        self.assertEqual(subject.games[0].seed, 200)
+        self.assertEqual(subject.games[0].last_status["turn"], 1)
+        self.assertIsNone(subject.games[0].winner_seen)
+        self.assertEqual(subject.completed, 1)
+        self.assertEqual(subject.visible_completed_count, 1)
+        self.assertEqual([event[0] for event in events], ["game_completed", "game_started"])
+        self.assertTrue(events[1][1]["reused_process"])
+
+    def test_poll_adopts_automatic_visible_successor_without_stopping_server(self):
+        with tempfile.TemporaryDirectory() as directory:
+            league = Path(directory)
+            (league / "matches.csv").write_text(
+                "round,seed,turns,victory,placements\n"
+                "1,100,250,score,a@Trajan@Rome@0|b@Cleopatra@Egypt@1\n",
+                encoding="utf-8",
+            )
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+            subject.league = league
+            subject.current_revision = "abc123"
+            subject.games = [
+                machine.GameProcess(
+                    process=process,
+                    seed=100,
+                    port=8870,
+                    revision="abc123",
+                    visible=True,
+                    started_monotonic=10.0,
+                    started_utc="then",
+                    log="visible.log",
+                    winner_seen=20.0,
+                    last_status={"turn": 250, "winner": 1},
+                )
+            ]
+            subject.completed = 0
+            subject.failed = 0
+            subject.visible_completed = False
+            subject.visible_completed_count = 0
+            subject.next_seed = 101
+            subject.event = mock.Mock()
+
+            def response(_port, path, **_kwargs):
+                return (
+                    {"seed": 200, "server_instance": 1234}
+                    if path == "/runtime"
+                    else {"turn": 1, "winner": None}
+                )
+
+            with mock.patch.object(machine.time, "monotonic", return_value=30.0), mock.patch.object(
+                machine, "http_json", side_effect=response
+            ), mock.patch.object(machine, "stop_process") as stop:
+                changed = subject.poll_games()
+
+            self.assertTrue(changed)
+            stop.assert_not_called()
+            self.assertEqual(subject.games[0].seed, 200)
+            self.assertEqual(subject.completed, 1)
+
+if __name__ == "__main__":
+    unittest.main()

@@ -41,6 +41,12 @@ COLUMN = (0.50, 0.49, 0.60, 0.665)
 MENU_ROW_STEP = 0.0306
 MENU_ROW_TOLERANCE = 0.006
 
+# The TOP-LEVEL menu column. Wider to the left than the submenu's (the parent
+# rows start further left), capped at 0.90 vertically because the window's
+# bottom edge carries bright non-menu furniture (2026-08: a "What's new with
+# Civ VII" promo banner and its pager dots read as rows at 0.933/0.949).
+MENU_COLUMN = (0.44, 0.40, 0.62, 0.90)
+
 
 def available() -> bool:
     return Image is not None
@@ -121,8 +127,26 @@ def rows_in(shot: Path, bounds: tuple[int, int, int, int], column,
 
 
 def submenu_rows(shot: Path, bounds: tuple[int, int, int, int],
-                 scale: float = 2.0) -> list[float]:
-    return _regular_menu_rows(rows_in(shot, bounds, COLUMN, scale))
+                 scale: float = 2.0,
+                 near: float | None = None,
+                 pitch: float = 0.029) -> list[float]:
+    """Rows of the open submenu.
+
+    With ``near`` (the parent row's read height) the crop FOLLOWS the menu:
+    the promo banner shifts the whole column, so the fixed band misses a
+    shifted submenu entirely — measured 2026-08-01, sixteen straight reads of
+    0 rows while the submenu was on screen. The crop starts one row pitch
+    below the parent (its highlight is brighter than any submenu entry) and
+    spans the deepest submenu (Resume + Create Game … Play By Cloud), capped
+    at 0.92 for the same bottom furniture MENU_COLUMN avoids.
+    """
+    if near is None:
+        rows = rows_in(shot, bounds, COLUMN, scale)
+    else:
+        top = max(0.30, near + pitch)
+        bottom = min(0.92, near + 7.5 * pitch)
+        rows = rows_in(shot, bounds, (COLUMN[0], top, COLUMN[2], bottom), scale)
+    return _regular_menu_rows(rows)
 
 
 def _regular_menu_rows(rows: list[float]) -> list[float]:
@@ -146,6 +170,18 @@ def _regular_menu_rows(rows: list[float]) -> list[float]:
         if len(sequence) > len(best):
             best = sequence
     return best if len(best) >= 3 else []
+
+
+def menu_rows(shot: Path, bounds: tuple[int, int, int, int],
+              scale: float = 2.0) -> list[float]:
+    """Row centres of the TOP-LEVEL main menu, read off the screen.
+
+    The 2026-08 "Civ VII" promo banner shifted the whole menu ~0.11 of the
+    window DOWN, so any fixed fraction aims above the list at empty artwork —
+    an entire batch of attempts clicked nothing sixteen times each. The first
+    row is "Single Player" on this build's main menu (Continue lives inside
+    the Single Player submenu as "Resume", not at the top level)."""
+    return rows_in(shot, bounds, MENU_COLUMN, scale)
 
 
 def create_game_row(shot: Path, bounds: tuple[int, int, int, int],

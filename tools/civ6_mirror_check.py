@@ -26,8 +26,14 @@ Requires the mirror server on :8610 (see civvis-civ6-mirror/follow.py).
 - CITIES  compare the SETS and name what is missing, never the counts.
 - UNITS   likewise. "21 exported, 15 reconstructed" once read as healthy because
           nothing compared them.
+- HOSTILES every hostile the seat can SEE must be on the board. FOG-GATED, and one
+          direction only: the export's threat list is not fog-gated and the board is
+          the seated view, so an unseen hostile is correctly absent.
+- TREASURY gold and faith are BALANCES (`GetGoldBalance`, `GetFaithBalance`), not
+          the per-turn rates `economy_drift` compares. Same turn, or the delta is
+          just income.
 
-## Three ways this checker itself cried wolf
+## Six ways this checker itself cried wolf
 
 Each of these is a real bug I nearly reported, caught only by looking again:
 
@@ -39,6 +45,21 @@ Each of these is a real bug I nearly reported, caught only by looking again:
 3. It asserted water carries no continent. Civilization VI really does put COAST
    tiles on a continent -- 17 read CONTINENT_AUSTRALIA on one run -- so the check
    is agreement with the export, not a rule of its own.
+4. TREASURY, read against the NEWEST export rather than the board's own turn,
+   showed `gold 176 vs 167` and `faith 23 vs 21` -- a confident 5% shortfall that
+   was one turn of income at +9 gold and +2 faith. Bounded, the same instant read
+   134/134 and 27/27. That is defect 1 again, in a new check, which is why the
+   note below its `latest_state` says to bound every future reader.
+5. HOSTILES, on its very first run, printed `export 0  board 1` as though those
+   were a matched pair. They are not: the board's non-seat units include rivals
+   and city-states, the export's `hostiles` is only the threat list. The count
+   comparison was removed the same minute it was written -- a line that invites a
+   false reading is worse than no line.
+6. HOSTILES again, one run later: it reported `8 exported, 5 NOT on the board` on
+   a healthy game. `hostiles` is the planner's threat list and is NOT fog-gated;
+   the board is the SEATED view. The check was asking the board to hold units the
+   seat cannot see. It is now gated on `visible`, and the decider's own
+   `dropped_units` -- which recorded no hostile dropped -- was what disproved it.
 
 ⚠ The board served on :8610 is follow.py's FLIPPED staged copy:
 `board_axial = offset_to_axial(x, TOP - y)`. The flip constant is discovered here
@@ -680,6 +701,21 @@ def load_export(run, upto=None):
     return plots, turn
 
 
+def latest_terminal_turn(run):
+    """Return the last victory/own-defeat frame in a completed event stream."""
+    turn = None
+    with open(os.path.join(run, "events.jsonl")) as handle:
+        for line in handle:
+            try:
+                event = json.loads(line)
+            except ValueError:
+                continue
+            kind = event.get("kind") or event.get("event")
+            if kind == "victory" or (kind == "defeat" and event.get("ours")):
+                turn = int(event.get("turn") or 0)
+    return turn
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("run", nargs="?", help="run directory (newest by default)")
@@ -709,6 +745,13 @@ def main(argv=None):
         _, game_turn = load_export(run)
         state = latest_state(run, upto=board["turn"])
         state_turn = int((state or {}).get("turn") or -1)
+        # A terminal frame has an exact state and victory/defeat event but no
+        # following playable `turn` event. In archive mode that pair is the
+        # authoritative host frame; requiring a turn-start marker would reject
+        # every normally completed game one frame after its last playable turn.
+        if args.archive and state_turn == board["turn"] \
+                and latest_terminal_turn(run) == board["turn"]:
+            game_turn = max(game_turn, state_turn)
         if game_turn >= board["turn"] and state_turn == board["turn"]:
             break
         time.sleep(0.1)
@@ -1045,6 +1088,112 @@ def main(argv=None):
                   f"CIVVIS does not model; the decider's `dropped_units` names which")
     print(f"UNITS    export {len(civ6_units)}  board {len(ours)}"
           + (detail or "   OK"))
+
+    # --- HOSTILES ----------------------------------------------------------
+    #
+    # ★★★★★ THE ONE THING ON THE BOARD THE SEAT MOST NEEDS TO SEE, AND NOTHING
+    # CHECKED IT. Every other line here verifies what the empire OWNS. The threat
+    # list is what it must plan AROUND, and until now no instrument compared it.
+    #
+    # Measured 2026-08-02 on run civvis-20260802T041527Z: 14 settlers were built
+    # and every one vanished at hp 100 having moved 0-4 tiles from the capital,
+    # while the city count sat at 1 from turn 41 to 241. Civilization VI CAPTURES
+    # civilians rather than killing them, so full health at disappearance is the
+    # signature of capture — and on each settler's last turn a hostile stood 1-3
+    # tiles away, 8 of 13 of them ADJACENT. One of those "hostiles" was itself a
+    # UNIT_SETTLER: ours, already taken.
+    #
+    # The first question that asks is whether the seat could SEE them, and it took
+    # a hand-written pass over events.jsonl to answer (it could — 11 to 15 hostiles
+    # exported on every capture turn). This line makes that answer automatic.
+    #
+    # ⚠ Hostiles are planted under the BARBARIAN SEAT, not the viewer, so they are
+    # board units whose owner is not `view_player` — see `rebuild_from_state`'s
+    # `barbarian_seat` branch, which records `no_barbarian_seat` for every hostile
+    # when that seat is missing. A roster with no barbarian seat cannot hold the
+    # threat list at all, and that reads here as every hostile missing.
+    civ6_hostiles = list(state.get("hostiles") or [])
+    seat = board.get("view_player", 0)
+    theirs = [u for u in board.get("units", []) if u.get("owner") != seat]
+    their_pos = {tuple(u["pos"]) for u in theirs if u.get("pos")}
+    # ⚠⚠ FOG-GATE IT, OR IT CRIES WOLF ON EVERY RUN.
+    #
+    # `hostiles` is documented in mirror.rs as "a threat list the planner needs,
+    # NOT knowledge the seat has" -- it is not fog-gated. The board on :8610 is the
+    # SEATED view and shows only what the seat can currently see. Comparing the two
+    # directly asks the board to contain units the seat cannot see, which it must
+    # not.
+    #
+    # The first version of this check did exactly that and reported
+    # `8 exported, 5 NOT on the board` on a healthy run, while the decider's own
+    # `dropped_units` recorded no hostile dropped at all -- only three Great
+    # Writers. Same shape as the TREASURY wolf: two numbers that look comparable
+    # and are measured over different populations.
+    #
+    # What IS assertable: a hostile standing on a tile the seat can SEE must be on
+    # the board. Anything beyond the fog is the planner's private threat list and
+    # is none of this check's business.
+    seen_hostiles = [
+        h for h in civ6_hostiles
+        if axial(h.get("x", 0), best - h.get("y", 0)) in visible
+    ]
+    missing_hostiles = [
+        f'{h.get("type") or h.get("kind") or "?"}@{h.get("x")},{h.get("y")}'
+        for h in seen_hostiles
+        if axial(h.get("x", 0), best - h.get("y", 0)) not in their_pos
+    ]
+    # ⚠ `type`, not `kind`. Our own units are exported as `kind`; the hostiles list
+    # uses `type`, and reading the wrong one printed every name as "?".
+    if missing_hostiles:
+        problems.append("hostiles")
+    print(f"HOSTILES export {len(civ6_hostiles)}, {len(seen_hostiles)} in sight"
+          + (f"   ⚠ {len(missing_hostiles)} visible but NOT on the board: "
+             f"{missing_hostiles[:6]}"
+             if missing_hostiles
+             else ("   all visible ones on the board   OK" if seen_hostiles
+                   else "   none in sight   OK")))
+
+    # --- TREASURY ----------------------------------------------------------
+    #
+    # ⚠⚠ THESE TWO ARE STOCKS, NOT RATES, AND THAT IS WHY THEY GET THEIR OWN
+    # CHECK RATHER THAN JOINING `economy_drift`.
+    #
+    # The mod exports `gold` from `GetTreasury():GetGoldBalance()` and `faith`
+    # from `GetReligion():GetFaithBalance()` — balances. `economy_drift` compares
+    # science and culture, which the mod takes from `GetTechs():GetScienceYield()`
+    # — a per-turn rate. Putting a balance beside a rate under one heading is the
+    # apples-to-oranges the rest of this file exists to prevent.
+    #
+    # ⚠ AND IT MUST BE READ AT THE SAME TURN, which is the whole reason this was
+    # worth adding rather than eyeballing. Measured 2026-08-02 on run
+    # civvis-20260802T030910Z: read against the NEWEST export the treasury showed
+    # `gold 176 vs 167` and `faith 23 vs 21` — a confident-looking 5% shortfall
+    # that is nothing but one turn of income at +9 gold and +2 faith. Bounded to
+    # the board's own turn the same instant read **134 vs 134 and 27 vs 27,
+    # delta 0.0 on both**. An unbounded version of this check would have reported
+    # a treasury defect on a perfectly faithful mirror, every single time.
+    board_me = next((p for p in board.get("players") or [] if p.get("id") == 0), None)
+    if board_me is None:
+        print("TREASURY no seated player 0 on the board; cannot compare")
+    else:
+        rows = []
+        for field in ("gold", "faith"):
+            theirs, ours_value = state.get(field), board_me.get(field)
+            # -1 is the mod's own "could not read it" sentinel, and a missing key
+            # is an older export. Neither is a disagreement — say so rather than
+            # inventing a delta, the same way `economy_drift` refuses to claim
+            # anything from an export carrying no yields.
+            if theirs is None or ours_value is None or theirs < 0:
+                rows.append(f"{field} unknown")
+                continue
+            delta = ours_value - theirs
+            rows.append(f"{field} {theirs:g}/{ours_value:g}"
+                        + ("" if abs(delta) < 0.5 else f" ⚠{delta:+g}"))
+            if abs(delta) >= 0.5:
+                problems.append(f"treasury:{field}")
+        print(f"TREASURY {'  '.join(rows)}"
+              + ("   OK" if not any("⚠" in r for r in rows) else ""))
+
     # ⚠ Non-zero on a real disagreement, so this can gate a run rather than only
     # inform one. A frame mismatch already returned 1 above for the same reason:
     # a comparison whose coordinates do not line up is worse than no comparison.

@@ -26,7 +26,11 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("blds:GetGreatWorkInSlot", exporter)
         self.assertIn("Game.GetGreatWorkDataFromIndex", exporter)
         self.assertIn("city:GetYield(YieldTypes.SCIENCE)", exporter)
-        self.assertIn("production_progress = productionProgress(city, queue)", exporter)
+        self.assertIn(
+            "local prodProgress, prodCost = productionProgress(city, queue)", exporter
+        )
+        self.assertIn("production_progress = prodProgress", exporter)
+        self.assertIn("production_cost = prodCost", exporter)
 
     def test_purchase_actuator_preserves_faith_formation_and_district_placement(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()

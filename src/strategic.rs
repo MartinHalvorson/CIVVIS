@@ -13,7 +13,6 @@
 //! estimate is deliberately regularized toward score share because the
 //! counterfactual rollout endpoints remain out of distribution for ordinary
 //! self-play trajectories.
-use crate::name::Name;
 use crate::ai::{run_game, AdvancedAi, Ai, PlanReport, VictoryTarget, Weights};
 use crate::evolve::features;
 use crate::game::{Action, ActionFamilies, Game, Item};
@@ -942,7 +941,7 @@ impl StrategicAi {
             (VictoryTarget::Diplomacy, diplomacy),
         ];
         lanes.retain(|(target, _)| Self::target_enabled(g, *target));
-        lanes.sort_by(|left, right| right.1.cmp(&left.1));
+        lanes.sort_by_key(|right| std::cmp::Reverse(right.1));
         let (target, progress) = *lanes.first()?;
         let runner_up = lanes.get(1).map_or(0, |(_, progress)| *progress);
         // Thirty is the first point at which technology progress has moved
@@ -1186,9 +1185,8 @@ impl StrategicAi {
             {
                 return None;
             }
-            let counter = if g.players[pid].religion.is_some() {
-                VictoryTarget::Religion
-            } else if Self::viable_religious_commitment(g, pid)
+            let counter = if g.players[pid].religion.is_some()
+                || Self::viable_religious_commitment(g, pid)
                 || Self::religious_option_open(g, pid)
             {
                 VictoryTarget::Religion
@@ -2461,14 +2459,14 @@ mod tests {
             if g.winner.is_some() {
                 break;
             }
-            for pid in 0..g.players.len() {
+            for (pid, ai) in ais.iter_mut().enumerate() {
                 if g.winner.is_some() {
                     break;
                 }
                 if pid == 0 {
                     strategic.take_turn(&mut g, pid);
                 } else {
-                    ais[pid].take_turn(&mut g, pid);
+                    ai.take_turn(&mut g, pid);
                 }
             }
         }
@@ -2498,14 +2496,14 @@ mod tests {
             if g.winner.is_some() {
                 break;
             }
-            for pid in 0..g.players.len() {
+            for (pid, ai) in ais.iter_mut().enumerate() {
                 if g.winner.is_some() {
                     break;
                 }
                 if pid == 0 {
                     strategic.take_turn(&mut g, pid);
                 } else {
-                    ais[pid].take_turn(&mut g, pid);
+                    ai.take_turn(&mut g, pid);
                 }
             }
         }
@@ -2539,11 +2537,11 @@ mod tests {
         let mut g = Game::new(2, 20, 14, 21, 120, 0);
         let mut ais = BasicAi::fleet(&g);
         for _ in 0..12 {
-            for pid in 0..g.players.len() {
+            for (pid, ai) in ais.iter_mut().enumerate() {
                 if g.winner.is_some() {
                     break;
                 }
-                ais[pid].take_turn(&mut g, pid);
+                ai.take_turn(&mut g, pid);
             }
         }
         let mut strategic = StrategicAi::new();
@@ -2634,14 +2632,14 @@ mod tests {
                 if g.winner.is_some() {
                     break;
                 }
-                for pid in 0..g.players.len() {
+                for (pid, rival) in rivals.iter_mut().enumerate() {
                     if g.winner.is_some() {
                         break;
                     }
                     if pid == 0 {
                         strategic.take_turn(&mut g, pid);
                     } else {
-                        rivals[pid].take_turn(&mut g, pid);
+                        rival.take_turn(&mut g, pid);
                     }
                 }
             }
@@ -2703,11 +2701,11 @@ mod tests {
                 if g.winner.is_some() {
                     break;
                 }
-                for pid in 0..g.players.len() {
+                for (pid, ai) in ais.iter_mut().enumerate() {
                     if g.winner.is_some() {
                         break;
                     }
-                    ais[pid].take_turn(&mut g, pid);
+                    ai.take_turn(&mut g, pid);
                 }
             }
             if g.winner.is_some() {

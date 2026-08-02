@@ -387,6 +387,162 @@ mod tests {
         let _ = std::fs::remove_dir(dir);
     }
 
+    #[test]
+    fn recent_host_production_refusals_are_city_scoped_typed_and_expire() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-production-refusal-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("events.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"kind":"civvis_build_unplayable","turn":81,"city":12,"item":"BUILDING_UNIVERSITY"}"#,
+                "\n",
+                r#"{"kind":"civvis_build_unplayable","turn":89,"city":12,"item":"BUILDING_LIBRARY","reasons":["LOC_BUILDING_REQUIRES_DISTRICT"]}"#,
+                "\n",
+                r#"{"kind":"civvis_build_unplayable","turn":90,"city":14,"item":"PROJECT_ENHANCE_DISTRICT_THEATER"}"#,
+                "\n",
+                r#"{"kind":"civvis_build_unplayable","turn":91,"city":12,"item":"DISTRICT_CAMPUS"}"#,
+                "\n",
+                r#"{"kind":"purchase_refused","turn":80,"city":12,"item":"UNIT_BUILDER"}"#,
+                "\n",
+                r#"{"kind":"purchase_refused","turn":89,"city":12,"item":"UNIT_SETTLER","balance":768,"cost":220}"#,
+                "\n",
+                r#"{"kind":"purchase_refused","turn":90,"city":14,"item":"BUILDING_LIBRARY"}"#,
+                "\n",
+                r#"{"kind":"purchase_refused","turn":90,"city":14,"item":"DISTRICT_CAMPUS"}"#,
+                "\n",
+            ),
+        )
+        .expect("write events");
+
+        let refused = refused_production(&path, 90);
+        assert_eq!(
+            refused.get(&12),
+            Some(&std::collections::BTreeSet::from([
+                "BUILDING_LIBRARY".to_string()
+            ])),
+            "the stale University, future Campus, and unsupported district event are absent"
+        );
+        assert_eq!(
+            refused.get(&14),
+            Some(&std::collections::BTreeSet::from([
+                "PROJECT_ENHANCE_DISTRICT_THEATER".to_string()
+            ]))
+        );
+
+        let rules = crate::rules::Rules::embedded();
+        let city_ids = BTreeMap::from([(41, 12), (42, 14)]);
+        let blocked = blocked_production_from(&refused, &city_ids, &rules);
+        assert_eq!(
+            blocked.get(&41),
+            Some(&std::collections::BTreeSet::from([
+                "building:library".to_string()
+            ]))
+        );
+        assert_eq!(
+            blocked.get(&42),
+            Some(&std::collections::BTreeSet::from([
+                "project:theater_square_festival".to_string()
+            ])),
+            "Firaxis's district-project name must translate through the same alias as orders"
+        );
+        let purchase_refusals = refused_purchases(&path, 90);
+        assert_eq!(
+            purchase_refusals.get(&12),
+            Some(&std::collections::BTreeSet::from([
+                "UNIT_SETTLER".to_string()
+            ])),
+            "an old purchase refusal expires while the current Settler refusal remains"
+        );
+        let blocked_purchases = blocked_production_from(&purchase_refusals, &city_ids, &rules);
+        assert_eq!(
+            blocked_purchases.get(&41),
+            Some(&std::collections::BTreeSet::from([
+                "unit:settler".to_string()
+            ]))
+        );
+        assert_eq!(
+            blocked_purchases.get(&42),
+            Some(&std::collections::BTreeSet::from([
+                "building:library".to_string(),
+                "district:campus".to_string(),
+            ])),
+            "district purchase refusals do not need a production-placement plot"
+        );
+
+        let mut game = crate::game::Game::new(1, 20, 14, 73_001, 120, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &crate::game::Action::FoundCity { unit: settler })
+            .expect("found city");
+        let city = game.player_city_ids(0)[0];
+        let warrior = crate::game::Item::Unit {
+            unit: crate::name!("warrior"),
+        };
+        assert!(game.can_produce(0, city, &warrior));
+        let _ = game.producible_items(0, city);
+        game.replace_blocked_production(BTreeMap::from([(
+            city,
+            std::collections::BTreeSet::from(["unit:warrior".to_string()]),
+        )]));
+        assert!(
+            !game.can_produce(0, city, &warrior),
+            "the cooldown must reach the legal-production chokepoint"
+        );
+        assert!(
+            !game.producible_items(0, city).contains(&warrior),
+            "and invalidate a production menu cached before the host refusal arrived"
+        );
+
+        let settler_item = crate::game::Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        game.blocked_production.clear();
+        game.cities.get_mut(&city).unwrap().pop = 4;
+        game.players[0].gold = 10_000.0;
+        assert!(game.can_produce(0, city, &settler_item));
+        assert!(game
+            .legal_actions_within(0, crate::game::ActionFamilies::PURCHASES)
+            .iter()
+            .any(
+                |action| matches!(action, crate::game::Action::Buy { city: bought_at, unit, .. }
+                if *bought_at == city && unit == "settler")
+            ));
+        game.replace_blocked_purchases(BTreeMap::from([(
+            city,
+            std::collections::BTreeSet::from(["unit:settler".to_string()]),
+        )]));
+        assert!(
+            !game
+                .legal_actions_within(0, crate::game::ActionFamilies::PURCHASES)
+                .iter()
+                .any(
+                    |action| matches!(action, crate::game::Action::Buy { city: bought_at, unit, .. }
+                    if *bought_at == city && unit == "settler")
+                ),
+            "the rejected host purchase must leave the purchase menu"
+        );
+        assert!(
+            !game.legal_purchase_actions(0).iter().any(
+                |action| matches!(action, crate::game::Action::Buy { city: bought_at, unit, .. }
+                if *bought_at == city && unit == "settler")
+            ),
+            "the city-parallel purchase projection must enforce the same cooldown"
+        );
+        assert!(
+            game.can_produce(0, city, &settler_item),
+            "a purchase refusal must not suppress the production fallback"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// A civilization-unique unit resolves; a Great Person does not, and must not be
     /// forced to by stripping a prefix that is not a civilization.
     ///
@@ -790,7 +946,7 @@ mod tests {
             "precondition: the card is on offer before the host retires it"
         );
 
-        game.blocked_policies.insert(victim.clone());
+        game.blocked_policies.insert(victim);
         assert!(
             !game.available_policies(0).contains(&victim),
             "a card the host ruleset retired must not be offered again — this is the \
@@ -1931,6 +2087,7 @@ mod tests {
     }
 
     /// ★★★★★ Building aliases cross; a truly unknown building stays observable.
+    /// ★★★★★ A building CIVVIS does not model must not take the decider down.
     ///
     /// `BUILDING_CASTLE` **panicked the whole decider** on live run
     /// `civvis-20260801T012454Z` at turn 238:
@@ -2148,16 +2305,93 @@ mod tests {
         game.blocked_districts
             .entry(blocked_city)
             .or_default()
-            .insert(district.clone());
+            .insert(district);
 
         assert!(
-            game.district_sites(blocked_city, &district).is_empty(),
+            game.district_sites(blocked_city, district).is_empty(),
             "the city the host refused must stop offering it"
         );
         assert!(
-            !game.district_sites(other_city, &district).is_empty(),
+            !game.district_sites(other_city, district).is_empty(),
             "and every OTHER city must be untouched — a global block would cost far \
              more than the waste it prevents"
+        );
+    }
+
+    /// ★★★★★ A MIRRORED CAPITAL MUST NOT BE PAID FOR ITS PALACE TWICE.
+    ///
+    /// CIVVIS models the palace positionally — `city_has_palace` derives it from
+    /// capital status, and four separate sites add its yields, housing, amenity and
+    /// great-work slots off that predicate. Nothing native ever pushes "palace" into
+    /// a `buildings` list. Civilization VI exports `BUILDING_PALACE`, the translation
+    /// put it in the list, and every one of those four sites then paid twice.
+    ///
+    /// Measured on run `civvis-20260802T014139Z`, turn 3 — one city, pop 1, palace
+    /// only. Civ 6 reported **2.5** science and the reconstruction reported **5.0**:
+    /// palace 2 twice, plus 0.5 for the citizen. With the seat re-dealt to Rome (a
+    /// civ carrying no invented per-city yield) the same replay reads
+    /// `science 2.5/2.5 +0%` afterwards, against `2.5/5.0 +98%` before.
+    ///
+    /// ⚠ **THIS TEST PINS THE MECHANISM, NOT THE NUMBER, AND THAT IS A COMPROMISE
+    /// WORTH KNOWING ABOUT.** The number is pinned by the replay above, on real
+    /// exported data, which is the stronger evidence of the two.
+    ///
+    /// It cannot be pinned here because a game built by `rebuild_from_state` in a
+    /// unit test yields **nothing at all**: `city_yields` on this fixture's capital
+    /// reads science 0, production 0 and *food 0* — through a hard `.max(2.0)` floor
+    /// on the city-centre tile, so the value is impossible and the body plainly never
+    /// runs. `city_yields_weighted`, which is documented as never being on the cached
+    /// path, reads 0 as well, so it is not the query memo.
+    ///
+    /// ⚠⚠ That silently weakens the sibling test below: it asserts only that the
+    /// drift string carries **Civ 6's** number and a `%`, never CIVVIS's own, so it
+    /// passes just as happily on a reconstruction yielding zero. Worth its own
+    /// investigation; both halves of that comparison should be assertable.
+    #[test]
+    fn a_mirrored_capital_is_not_paid_for_its_palace_twice() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 3,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 3,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Lisbon".to_string(),
+            x: 5,
+            y: 5,
+            pop: 1,
+            // Both halves matter: Civ 6 marks the seat's capital AND exports the
+            // palace inside it, and it is the pair that used to pay twice.
+            capital: true,
+            buildings: vec!["BUILDING_PALACE".to_string()],
+            ..StateCity::default()
+        });
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        let city = recon
+            .game
+            .cities
+            .values()
+            .find(|city| city.owner == 0)
+            .expect("the exported city must be on the board");
+
+        assert!(
+            !city.buildings.iter().any(|b| b.as_str() == "palace"),
+            "the palace is positional in CIVVIS; listing it is what pays it twice"
+        );
+        assert!(
+            !city.buildings.iter().any(|b| b.as_str() == "palace"),
+            "the palace is positional in CIVVIS; listing it is what paid it twice"
+        );
+        assert!(
+            recon.game.city_has_palace(city),
+            "and it must still be paid ONCE — city_has_palace is the payer, and it \
+             is true for exactly the city Civ 6 exported the palace in"
         );
     }
 
@@ -2220,6 +2454,64 @@ mod tests {
     /// Measured on live run `civvis-20260801T040700Z`: Montréal founded turn 26, gone
     /// by turn 42, loyalty 100 throughout and at war with nobody it had met — so
     /// neither revolt nor a rival took it, and `hostiles` was non-empty in the export.
+    /// ⚠⚠ `gold_per_turn` gates the whole bankruptcy response and the bridge
+    /// never wrote it, so `economic_recovery` was unreachable in every real
+    /// game. A treasury pinned at zero is the case that matters: Civilization VI
+    /// clamps the balance there and disbands units to pay, so differencing alone
+    /// reports a healthy zero exactly when the empire is broke.
+    #[test]
+    fn an_empty_treasury_reports_insolvency_rather_than_a_flat_balance() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 1,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 1,
+            gold: 120,
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 1, 1, 500, 0);
+
+        // The first sample cannot be differenced against anything.
+        state.turn = 2;
+        state.gold = 108;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(
+            mirror.game.players[0].gold_per_turn, -12.0,
+            "a falling treasury is negative net income"
+        );
+
+        state.turn = 3;
+        state.gold = 130;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[0].gold_per_turn, 22.0);
+
+        // The defect: broke, and staying broke. The delta is zero and the old
+        // reading would have called that solvent.
+        state.turn = 4;
+        state.gold = 0;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror.game.players[0].gold_per_turn < -0.5);
+        state.turn = 5;
+        state.gold = 0;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.players[0].gold_per_turn < -0.5,
+            "a treasury pinned at zero is insolvency, not thrift — this is the \
+             reading that makes economic_recovery reachable at all"
+        );
+
+        // A gap of unknown length is not a rate. Leave the last reading alone
+        // rather than inventing one across a resync.
+        state.turn = 40;
+        state.gold = 400;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror.game.players[0].gold_per_turn < -0.5);
+    }
+
     /// A seat that cannot see barbarians cannot garrison against them.
     #[test]
     fn a_barbarian_that_appears_after_construction_reaches_the_board() {
@@ -2397,7 +2689,7 @@ mod tests {
         let city_id = city.id;
 
         assert_eq!(
-            city.districts.get(&Name::new("campus")).copied(),
+            city.districts.get(Name::new("campus")).copied(),
             Some(crate::hex::offset_to_axial(5, 6)),
             "a built district must reach the board, on the plot the export named"
         );
@@ -2405,7 +2697,7 @@ mod tests {
         // centre is implicit. Inserting it would put a district on the board that
         // CIVVIS's own games never have — checked in the source, not assumed.
         assert!(
-            !city.districts.contains_key(&Name::new("city_center")),
+            !city.districts.contains_key(Name::new("city_center")),
             "the city centre stays implicit, as it is in an ordinary CIVVIS game"
         );
 
@@ -2612,6 +2904,131 @@ mod tests {
         assert!(mirror.game.city_at(crate::hex::offset_to_axial(3, 3)).is_none());
     }
 
+    /// ★★★★ A rival's unique unit must reach the board as what it REPLACES.
+    ///
+    /// `UNIT_NORWEGIAN_LONGSHIP` was dropped on every turn it was visible on live run
+    /// `civvis-20260801T145302Z` — CIVVIS models no Norwegian uniques — so an enemy
+    /// warship was not on the board at all. A Longship replaces a Galley, which
+    /// CIVVIS does model.
+    #[test]
+    fn a_rivals_unique_unit_lands_as_what_it_replaces() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12, width: 8, height: 8, chunk: 1,
+            plots: vec![plot(2, 2, "TERRAIN_OCEAN"), plot(4, 4, "TERRAIN_GRASS")],
+        }]);
+        let build = |kind: &str, base: Option<&str>| {
+            let mut state = StateSnapshot { turn: 12, ..StateSnapshot::default() };
+            state.units.push(StateUnit {
+                id: 7,
+                kind: kind.to_string(),
+                base: base.map(|b| b.to_string()),
+                x: 2, y: 2, hp: 100.0, ..StateUnit::default()
+            });
+            rebuild_from_state(&snapshot, &state, 4, 1, 500, 0)
+        };
+
+        // ⚠ Precondition: the unique must genuinely be untranslatable, or this test
+        // passes for the wrong reason.
+        let bare = build("UNIT_NORWEGIAN_LONGSHIP", None);
+        assert!(
+            bare.game.units.is_empty(),
+            "the fixture must be a unit CIVVIS cannot name, or the fallback is untested"
+        );
+
+        let with_base = build("UNIT_NORWEGIAN_LONGSHIP", Some("UNIT_GALLEY"));
+        let unit = with_base.game.units.values().next()
+            .expect("a unique with a known base must reach the board");
+        assert_eq!(unit.kind.as_str(), "galley", "it lands as what it replaces");
+        // ⚠ And it must SAY it approximated. A collapsed distinction that nobody can
+        // see is the failure the mapping rule names.
+        assert!(
+            with_base.dropped_units.iter().any(|d| d.contains("approximated_as_galley")),
+            "the approximation must be reported, not silent: {:?}", with_base.dropped_units
+        );
+
+        // A base CIVVIS also cannot name must still not invent a unit.
+        let nonsense = build("UNIT_NORWEGIAN_LONGSHIP", Some("UNIT_NOT_A_REAL_UNIT"));
+        assert!(nonsense.game.units.is_empty(), "an unknown base must not be guessed at");
+    }
+
+    /// ★★★★★ A STANDALONE unique — no `UnitReplaces` row — must land by its class.
+    ///
+    /// Run `civvis-20260801T175955Z` was lost with two `UNIT_MAPUCHE_MALON_RAIDER`
+    /// two tiles from the final city, dropped as untranslatable: the conquering
+    /// army was not on CIVVIS's board at all. `base` cannot save it (there is no
+    /// base); `class` must.
+    #[test]
+    fn a_standalone_unique_lands_by_its_promotion_class() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12, width: 8, height: 8, chunk: 1,
+            plots: vec![plot(2, 2, "TERRAIN_GRASS"), plot(4, 4, "TERRAIN_GRASS")],
+        }]);
+        let build = |kind: &str, class: Option<&str>| {
+            let mut state = StateSnapshot { turn: 12, ..StateSnapshot::default() };
+            state.units.push(StateUnit {
+                id: 9,
+                kind: kind.to_string(),
+                class: class.map(|c| c.to_string()),
+                x: 2, y: 2, hp: 100.0, ..StateUnit::default()
+            });
+            rebuild_from_state(&snapshot, &state, 4, 1, 500, 0)
+        };
+
+        // ⚠ Precondition: with neither base nor class the unit must genuinely drop,
+        // or the fallback under test is not what put it on the board.
+        let bare = build("UNIT_MAPUCHE_MALON_RAIDER", None);
+        assert!(
+            bare.game.units.is_empty(),
+            "the fixture must be a unit CIVVIS cannot name, or the fallback is untested"
+        );
+
+        let classed = build("UNIT_MAPUCHE_MALON_RAIDER", Some("PROMOTION_CLASS_LIGHT_CAVALRY"));
+        let unit = classed.game.units.values().next()
+            .expect("a standalone unique with a known class must reach the board");
+        assert_eq!(unit.kind.as_str(), "horseman", "it lands as the class representative");
+        assert!(
+            classed.dropped_units.iter()
+                .any(|d| d.contains("approximated_as_horseman_from_light_cavalry")),
+            "the approximation must be reported, not silent: {:?}", classed.dropped_units
+        );
+
+        // A class CIVVIS has no representative for must still not invent a unit.
+        let nonsense = build("UNIT_MAPUCHE_MALON_RAIDER", Some("PROMOTION_CLASS_NOT_REAL"));
+        assert!(nonsense.game.units.is_empty(), "an unknown class must not be guessed at");
+
+        // RANGED_CAVALRY was missing from the first fallback table. Preserve a
+        // representative for an otherwise-unmodelled standalone unique.
+        let ranged_unique = build(
+            "UNIT_EXAMPLE_RANGED_RIDER",
+            Some("PROMOTION_CLASS_RANGED_CAVALRY"),
+        );
+        let unit = ranged_unique.game.units.values().next()
+            .expect("a ranged-cavalry unique must reach the board");
+        assert_eq!(unit.kind.as_str(), "saka_horse_archer");
+
+        // Keshig is now modelled exactly; an exact name must outrank the class
+        // approximation so its distinct strength and upgrade path survive.
+        let keshig = build("UNIT_MONGOLIAN_KESHIG", Some("PROMOTION_CLASS_RANGED_CAVALRY"));
+        let unit = keshig.game.units.values().next()
+            .expect("a modelled Keshig must reach the board");
+        assert_eq!(unit.kind.as_str(), "keshig");
+
+        // ⚠ And a REPLACING unique keeps preferring its base: class must only be
+        // the rung below `base`, or a Longship would land as a generic hull even
+        // when the ruleset models what it replaces.
+        let mut state = StateSnapshot { turn: 12, ..StateSnapshot::default() };
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_NORWEGIAN_LONGSHIP".to_string(),
+            base: Some("UNIT_GALLEY".to_string()),
+            class: Some("PROMOTION_CLASS_NAVAL_MELEE".to_string()),
+            x: 2, y: 2, hp: 100.0, ..StateUnit::default()
+        });
+        let both = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        let unit = both.game.units.values().next().expect("the base rung must still fire");
+        assert_eq!(unit.kind.as_str(), "galley", "base outranks class");
+    }
+
     /// ★★★★★ The game speed Civilization VI is running must reach the board.
     ///
     /// The ladder plays `GAMESPEED_ONLINE`, whose costs are HALF of Standard, and a
@@ -2799,7 +3216,7 @@ mod tests {
              a city that reads as bare ground is exactly how CIVVIS asked 79 times"
         );
         assert!(
-            at_cap.game.district_sites(capped, &probe).is_empty(),
+            at_cap.game.district_sites(capped, probe).is_empty(),
             "population 4 allows 1 + (4-1)/3 = 2 specialty districts and this city has 3, \
              so CIVVIS must stop choosing {probe}"
         );
@@ -3279,6 +3696,149 @@ mod tests {
         assert!(
             !recon.game.players[owner].is_free_city,
             "Free Cities is not the barbarian seat, however its flags read"
+        );
+    }
+
+    fn open_grass_board(side: i32) -> Snapshot {
+        let chunks = vec![TilesChunk {
+            turn: 4,
+            width: side,
+            height: side,
+            chunk: 1,
+            plots: (0..side)
+                .flat_map(|x| {
+                    (0..side).map(move |y| Plot {
+                        x,
+                        y,
+                        im: None,
+                        t: Some("TERRAIN_GRASS".to_string()),
+                        f: None,
+                        r: None,
+                        o: -1,
+                        w: false,
+                        i: false,
+                        fw: false,
+                        rv: 0,
+                        ri: false,
+                        ct: None,
+                        cl: -1,
+                    })
+                })
+                .collect(),
+        }];
+        Snapshot::from_chunks(&chunks)
+    }
+
+    #[test]
+    fn a_city_states_city_reaches_the_board_and_blocks_the_ring_civ6_refuses() {
+        // ★★★★ The defect in one board: run civvis-20260801T224944Z was refused
+        // founding six times, every one `can_start=false,no_reasons`, and every
+        // early one 2-3 tiles from a city-state city the export never mentioned.
+        // `can_found_city`'s four-tile floor was correct and blind — the city it
+        // needed was structurally absent, because `rivals` is built from
+        // `GetAliveMajorIDs`.
+        let snapshot = open_grass_board(12);
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        state.units.push(StateUnit {
+            kind: "UNIT_SETTLER".to_string(),
+            x: 4,
+            y: 6,
+            ..StateUnit::default()
+        });
+        state.minors.push(StateMinor {
+            player: 7,
+            civ: "CIVILIZATION_KABUL".to_string(),
+            cities: vec![StateCity {
+                id: 5,
+                name: "Kabul".to_string(),
+                x: 6,
+                y: 6,
+                ..StateCity::default()
+            }],
+            ..StateMinor::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(recon.placed_minor_cities, 1, "the city-state's city must be planted");
+        let minor_city = recon
+            .game
+            .cities
+            .values()
+            .find(|city| city.owner != 0)
+            .expect("the minor's city must be on the board");
+        let seat = minor_city.owner;
+        assert!(recon.game.players[seat].is_minor, "a city-state seats as a minor");
+        assert!(
+            seat >= 4,
+            "a minor must never take a 1..n seat — those indices are the \
+             DeclareWar-to-Civ-6-id mapping and a minor in the middle would aim a \
+             declaration at the wrong civilization"
+        );
+        let (uid, _) = recon
+            .game
+            .units
+            .iter()
+            .find(|(_, unit)| unit.owner == 0)
+            .expect("our settler must be on the board");
+        assert!(
+            !recon.game.can_found_city(*uid),
+            "two tiles from Kabul the four-tile floor must refuse — before this \
+             fix the city was invisible and CIVVIS aimed here every time"
+        );
+    }
+
+    #[test]
+    fn a_seated_but_cityless_minors_ground_is_still_blocked() {
+        // Borders are visible before centres are: a city-state's territory can
+        // arrive while its city is still under fog. A seat we can NAME but that
+        // holds no city must not read as free land — that is the same hole the
+        // unattributable-owner arm closes for minors we cannot name.
+        let mut chunks = vec![TilesChunk {
+            turn: 4,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| {
+                    (0..8).map(move |y| Plot {
+                        x,
+                        y,
+                        im: None,
+                        t: Some("TERRAIN_GRASS".to_string()),
+                        f: None,
+                        r: None,
+                        o: if (5..=6).contains(&x) && (5..=6).contains(&y) { 7 } else { -1 },
+                        w: false,
+                        i: false,
+                        fw: false,
+                        rv: 0,
+                        ri: false,
+                        ct: None,
+                        cl: -1,
+                    })
+                })
+                .collect(),
+        }];
+        let snapshot = Snapshot::from_chunks(&std::mem::take(&mut chunks));
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        state.minors.push(StateMinor {
+            player: 7,
+            civ: "CIVILIZATION_KABUL".to_string(),
+            ..StateMinor::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(recon.placed_minor_cities, 0, "no city was visible to plant");
+        let pos = crate::hex::offset_to_axial(5, 5);
+        assert!(
+            recon.game.blocked_city_sites.contains(&pos),
+            "ground a named-but-cityless minor owns must stay unfoundable"
         );
     }
 
@@ -3878,7 +4438,7 @@ pub(crate) fn apply_city_memory(game: &mut crate::game::Game) {
 ///
 /// Idempotent.
 pub(crate) fn apply_tile_memory(game: &mut crate::game::Game, snapshot: &Snapshot) {
-    let turn = snapshot.turn.max(1) as u32;
+    let turn = snapshot.turn.max(1);
     // Decided first, applied second: reading the map and the owning city needs `game`
     // immutably while writing the seat's memory needs it mutably.
     let remembered: Vec<(crate::Pos, crate::world::RememberedTile)> = snapshot
@@ -4264,6 +4824,15 @@ pub struct StateUnit {
     /// the name was `""`.
     #[serde(default, alias = "type")]
     pub kind: String,
+    /// What this unit REPLACES, when it is a civilization unique — Civ 6's
+    /// `UnitReplaces.ReplacesUnitType`. See the fallback in `plant_unit`.
+    #[serde(default)]
+    pub base: Option<String>,
+    /// The unit's `PromotionClass` — the last honest rung for a STANDALONE
+    /// unique that replaces nothing (Malón Raider, Varu, Nihang), whose `base`
+    /// is therefore absent. See [`class_representative`].
+    #[serde(default)]
+    pub class: Option<String>,
     pub x: i32,
     pub y: i32,
     #[serde(default)]
@@ -4652,6 +5221,16 @@ pub struct StateSnapshot {
     #[serde(default)]
     pub refused_districts:
         std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    /// Production items the host has recently reported as unplayable, by its city id.
+    /// These are translated and applied as a cooldown rather than a permanent ban.
+    #[serde(default)]
+    pub refused_production:
+        std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    /// Purchases Civilization VI recently rejected, by its city id. Kept apart
+    /// from production refusals so a failed purchase causes a build fallback
+    /// instead of suppressing that build as well.
+    #[serde(default)]
+    pub refused_purchases: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     /// Barbarian units this seat can SEE.
     ///
     /// ★★★★ The rival export is built from `GetAliveMajorIDs`, so barbarians could
@@ -5339,6 +5918,8 @@ pub fn state_from_events(
         state.refused_trade_routes = refused_trade_routes_through(path, turn);
         state.refused_policy_names = refused_policies_through(path, turn);
         state.refused_districts = refused_districts_through(path, turn);
+        state.refused_production = refused_production(path, state.turn);
+        state.refused_purchases = refused_purchases(path, state.turn);
     }
     best
 }
@@ -5471,6 +6052,9 @@ pub struct Reconstruction {
     pub placed_units: usize,
     pub placed_rival_cities: usize,
     pub placed_rival_units: usize,
+    /// City-state cities on the board. Counted apart from the rivals' so a
+    /// missing minor reads as a mirror gap rather than vanishing into a total.
+    pub placed_minor_cities: usize,
     pub unmapped: Vec<String>,
     /// Every unit the export named that did NOT end up on the board, with the reason.
     ///
@@ -5526,6 +6110,46 @@ fn civvis_improvement_name(civ6: &str) -> String {
         "beach_resort" => "seaside_resort".to_string(),
         _ => base,
     }
+}
+
+/// The CIVVIS unit that stands in for a Civilization VI promotion class, for a
+/// unique whose own name is unmodelled and that REPLACES nothing — `UnitReplaces`
+/// has no row for a Malón Raider, a Varu or a Nihang, so the `base` fallback one
+/// rung up never fires for them.
+///
+/// Run `civvis-20260801T175955Z` was LOST at turn 140 with two
+/// `UNIT_MAPUCHE_MALON_RAIDER` sitting two tiles from the final city, dropped as
+/// untranslatable — the army that took the empire was invisible on the board.
+/// An approximation understates a unique's strength and says so in
+/// `dropped_units`; absence said nothing at all.
+///
+/// Candidates are ordered and the first one the LOADED ruleset has wins, so a
+/// trimmed ruleset cannot make this invent a unit kind it does not model.
+fn class_representative(class: &str, rules: &crate::rules::Rules) -> Option<&'static str> {
+    let candidates: &[&str] = match class {
+        "PROMOTION_CLASS_MELEE" => &["swordsman", "warrior"],
+        "PROMOTION_CLASS_ANTI_CAVALRY" => &["spearman", "pikeman"],
+        "PROMOTION_CLASS_LIGHT_CAVALRY" => &["horseman", "courser", "cavalry"],
+        // Found the hard way: batch-4 attempt 1 dealt MONGOLIA, whose signature
+        // Keshig is a standalone RANGED_CAVALRY unique — a class this table did
+        // not carry, so it would have dropped exactly like the Malón Raider.
+        "PROMOTION_CLASS_RANGED_CAVALRY" => &["saka_horse_archer", "courser", "horseman"],
+        "PROMOTION_CLASS_HEAVY_CAVALRY" => &["knight", "heavy_chariot", "cuirassier"],
+        "PROMOTION_CLASS_RANGED" => &["archer", "crossbowman", "slinger"],
+        "PROMOTION_CLASS_SIEGE" => &["catapult", "trebuchet", "bombard"],
+        "PROMOTION_CLASS_RECON" => &["scout", "skirmisher", "ranger"],
+        "PROMOTION_CLASS_SKIRMISHER" => &["skirmisher", "ranger", "scout"],
+        "PROMOTION_CLASS_NAVAL_MELEE" => &["galley", "caravel", "ironclad"],
+        "PROMOTION_CLASS_NAVAL_RANGED" => &["quadrireme", "frigate"],
+        "PROMOTION_CLASS_NAVAL_RAIDER" => &["privateer", "submarine"],
+        "PROMOTION_CLASS_NAVAL_CARRIER" => &["aircraft_carrier"],
+        "PROMOTION_CLASS_MONK" => &["warrior_monk"],
+        "PROMOTION_CLASS_AIR_FIGHTER" => &["fighter", "biplane"],
+        "PROMOTION_CLASS_AIR_BOMBER" => &["bomber"],
+        "PROMOTION_CLASS_SUPPORT" => &["battering_ram", "siege_tower", "medic"],
+        _ => &[],
+    };
+    candidates.iter().copied().find(|c| rules.units.contains_key(c))
 }
 
 /// A Civilization VI unit name with its owner qualifier removed, when that is what
@@ -5824,6 +6448,35 @@ fn blocked_districts_from(
     out
 }
 
+/// Translate recent host production refusals onto CIVVIS city ids and typed keys.
+fn blocked_production_from(
+    refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    city_ids: &std::collections::BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> BTreeMap<u32, std::collections::BTreeSet<String>> {
+    let mut out: BTreeMap<u32, std::collections::BTreeSet<String>> = Default::default();
+    for (cid, civ6_id) in city_ids {
+        let Some(names) = refused.get(civ6_id) else {
+            continue;
+        };
+        let translated: std::collections::BTreeSet<String> = names
+            .iter()
+            .filter_map(|name| {
+                civvis_production_item(rules, Some(name), &[])
+                    .map(|item| crate::game::Game::production_block_key(&item))
+                    .or_else(|| {
+                        civvis_node_name(&rules.districts, name, "DISTRICT_")
+                            .map(|district| format!("district:{district}"))
+                    })
+            })
+            .collect();
+        if !translated.is_empty() {
+            out.insert(*cid, translated);
+        }
+    }
+    out
+}
+
 /// Districts the host refused to place, per Civilization VI city id.
 ///
 /// ★★★★ Read from `build_no_plot`, which the mod emits when
@@ -5883,6 +6536,84 @@ fn refused_districts_through(
         refused.entry(city).or_default().insert(district.to_string());
     }
     refused
+}
+
+/// Host production choices rejected recently enough to still describe this board.
+///
+/// A host `CanProduce` failure is exact for one city and one moment. Remembering it
+/// forever would turn a temporary resource or prerequisite shortage into a permanent
+/// rules change; forgetting it immediately recreates the live loop where Library was
+/// selected and rejected every turn. Eight turns is long enough for another building
+/// to be selected and enter the queue, while guaranteeing a changed city is retried.
+const PRODUCTION_REFUSAL_TTL: u32 = 8;
+
+fn recent_host_item_refusals(
+    path: &std::path::Path,
+    current_turn: u32,
+    event_kind: &str,
+    accepted_prefixes: &[&str],
+) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
+    let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
+        Default::default();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return refused;
+    };
+    let oldest = current_turn.saturating_sub(PRODUCTION_REFUSAL_TTL);
+    for line in raw.lines() {
+        if !line.contains(event_kind) {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|value| value.as_str()) != Some(event_kind) {
+            continue;
+        }
+        let (Some(turn), Some(city), Some(item)) = (
+            event.get("turn").and_then(|value| value.as_u64()),
+            event.get("city").and_then(|value| value.as_i64()),
+            event.get("item").and_then(|value| value.as_str()),
+        ) else {
+            continue;
+        };
+        if city < 0 || turn < u64::from(oldest) || turn > u64::from(current_turn) {
+            continue;
+        }
+        if accepted_prefixes
+            .iter()
+            .any(|prefix| item.starts_with(prefix))
+        {
+            refused.entry(city).or_default().insert(item.to_string());
+        }
+    }
+    refused
+}
+
+pub fn refused_production(
+    path: &std::path::Path,
+    current_turn: u32,
+) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
+    recent_host_item_refusals(
+        path,
+        current_turn,
+        "civvis_build_unplayable",
+        &["UNIT_", "BUILDING_", "PROJECT_"],
+    )
+}
+
+/// Host purchase refusals use the same short cooldown as production refusals,
+/// but feed a separate legal-action gate. The distinction is load-bearing: when
+/// buying a Settler fails, producing one must become *more* likely, not illegal.
+pub fn refused_purchases(
+    path: &std::path::Path,
+    current_turn: u32,
+) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
+    recent_host_item_refusals(
+        path,
+        current_turn,
+        "purchase_refused",
+        &["UNIT_", "BUILDING_", "DISTRICT_"],
+    )
 }
 
 /// How far CIVVIS's own economy has drifted from the one Civilization VI reports.
@@ -6039,10 +6770,11 @@ fn civvis_production_item(
         "PROJECT_ENHANCE_DISTRICT_THEATER" => Some("theater_square_festival"),
         _ => None,
     };
-    let project = project_alias
+    if let Some(name) = project_alias
+        .filter(|name| rules.projects.contains_key(name))
         .map(str::to_string)
-        .or_else(|| civvis_node_name(&rules.projects, civ6, "PROJECT_"));
-    if let Some(name) = project {
+        .or_else(|| civvis_node_name(&rules.projects, civ6, "PROJECT_"))
+    {
         return Some(crate::game::Item::Project {
             project: crate::name::Name::new(&name),
         });
@@ -6820,10 +7552,11 @@ pub fn rebuild_from_state(
     let mut placed_units = 0;
     let mut placed_rival_cities = 0;
     let mut placed_rival_units = 0;
+    let mut placed_minor_cities = 0;
 
     // Land only, and revealed only. `place_city` on water or on an unseen tile
     // would put CIVVIS's empire somewhere the seat cannot act.
-    let mut plant_city = |game: &mut crate::game::Game, owner: usize, c: &StateCity| -> Option<u32> {
+    let plant_city = |game: &mut crate::game::Game, owner: usize, c: &StateCity| -> Option<u32> {
         if !snapshot.is_revealed((c.x, c.y)) {
             return None;
         }
@@ -7062,11 +7795,29 @@ pub fn rebuild_from_state(
                 // permanently, because every rebuild hits it again.
                 for civ6 in &city.buildings {
                     match civvis_node_name(&game.rules.buildings, civ6, "BUILDING_") {
-                        // CIVVIS models the Palace as an intrinsic property of the
-                        // current capital and adds its yields in city_yields_inner.
-                        // Importing Firaxis's explicit BUILDING_PALACE row into the
-                        // ordinary building list charged it a second time: the live
-                        // Rome capital read 5.0 science against Firaxis's 2.5.
+                        // ★★★★★ THE PALACE IS NOT A LISTED BUILDING IN CIVVIS, AND
+                        // PUTTING IT IN THE LIST PAYS FOR IT TWICE.
+                        //
+                        // CIVVIS models the palace positionally: `city_has_palace`
+                        // derives it from capital status, and FOUR separate sites add
+                        // its yields, housing, amenity and great-work slots off that
+                        // predicate alone. Nothing in the engine ever pushes "palace"
+                        // into a `buildings` list — a native capital's list does not
+                        // contain it. Civilization VI does export `BUILDING_PALACE`,
+                        // so the translation above put it there, and every one of
+                        // those four sites then paid a capital twice.
+                        //
+                        // Measured on run civvis-20260802T014139Z, turn 3: one city,
+                        // pop 1, palace only. Civ 6 reported 2.5 science; the
+                        // reconstruction reported 5.0 — palace 2 twice plus 0.5 for
+                        // the citizen. That is the largest single term in the economy
+                        // drift the `economy civ6/civvis` line has been reporting all
+                        // along (median +50% science over 121 turns, +142% at t3,
+                        // worst exactly in the opening where settling is decided).
+                        //
+                        // ⚠ Dropping it from the LIST loses nothing: `city_has_palace`
+                        // is what every consumer reads, and it is true for precisely
+                        // the city Civ 6 exported the palace in.
                         Some(name) if name == "palace" => {}
                         Some(name) => {
                             let named = crate::name::Name::new(&name);
@@ -7090,7 +7841,7 @@ pub fn rebuild_from_state(
     }
 
     let mut dropped: Vec<String> = Vec::new();
-    let mut plant_unit = |game: &mut crate::game::Game,
+    let plant_unit = |game: &mut crate::game::Game,
                           owner: usize,
                           u: &StateUnit,
                           unmapped: &mut Vec<String>,
@@ -7126,7 +7877,53 @@ pub fn rebuild_from_state(
         // that, because the settler danger rule reads exactly this list. The tile is
         // still checked for EXISTENCE below; that is the honest gate.
         let _ = &snapshot;
-        let Some(name) = resolved_civvis_unit_name(&game.rules, &u.kind) else {
+        let mut name = resolved_civvis_unit_name(&game.rules, &u.kind)
+            .unwrap_or_else(|| civvis_unit_name(&u.kind));
+        if !game.rules.units.contains_key(&name) {
+            // ★★★★ WHAT IT REPLACES, rather than nothing at all.
+            //
+            // A rival's unique unit is untranslatable and was therefore DISCARDED.
+            // Live run `civvis-20260801T145302Z` dropped `UNIT_NORWEGIAN_LONGSHIP`
+            // on every turn it was visible — CIVVIS models no Norwegian uniques at
+            // all — so an enemy WARSHIP was simply not on the board. That is not one
+            // unit; it is every civilization's uniques, for every civilization met.
+            //
+            // A Longship replaces a Galley and CIVVIS models `galley`, so the base
+            // type is a true statement about the unit where the exact name is not.
+            //
+            // ⚠ Recorded as `approximated`, never silently. Collapsing a distinction
+            // without saying so is the failure this project's mapping rule names
+            // explicitly, and a reader must be able to see that the board holds a
+            // Galley where Civilization VI has a Longship.
+            if let Some(base) = u.base.as_ref().filter(|b| !b.is_empty()) {
+                let from_base = civvis_unit_name(base);
+                if game.rules.units.contains_key(&from_base) {
+                    dropped.push(format!(
+                        "{}@{},{}:approximated_as_{from_base}", u.kind, u.x, u.y
+                    ));
+                    name = from_base;
+                }
+            }
+            // A STANDALONE unique replaces nothing, so `base` never fires for it.
+            // Its promotion class is the last honest rung before the board loses
+            // the unit: a Malón Raider lands as a horseman, visibly approximated,
+            // instead of leaving an invisible army at the gates.
+            if !game.rules.units.contains_key(&name) {
+                if let Some(class) = u.class.as_ref().filter(|c| !c.is_empty()) {
+                    if let Some(rep) = class_representative(class, &game.rules) {
+                        let label = class
+                            .strip_prefix("PROMOTION_CLASS_")
+                            .unwrap_or(class)
+                            .to_ascii_lowercase();
+                        dropped.push(format!(
+                            "{}@{},{}:approximated_as_{rep}_from_{label}", u.kind, u.x, u.y
+                        ));
+                        name = rep.to_string();
+                    }
+                }
+            }
+        }
+        if !game.rules.units.contains_key(&name) {
             // A Great Person is not a unit CIVVIS failed to name, it is a unit CIVVIS
             // does not model — see `is_great_person`. Reported apart so the
             // translation count stays a translation count.
@@ -7306,7 +8103,7 @@ pub fn rebuild_from_state(
                     known_city_ids.insert(city.id, cid);
                 }
                 apply_observed_city_infrastructure(&mut game, cid, city, &mut unmapped);
-                placed_rival_cities += 1;
+                placed_minor_cities += 1;
             }
         }
         for unit in &minor.units {
@@ -7410,6 +8207,12 @@ pub fn rebuild_from_state(
     // because it needs `city_ids`, which is only complete once every city is planted.
     game.blocked_districts =
         blocked_districts_from(&state.refused_districts, &city_ids, &game.rules);
+    let blocked_production =
+        blocked_production_from(&state.refused_production, &city_ids, &game.rules);
+    game.replace_blocked_production(blocked_production);
+    let blocked_purchases =
+        blocked_production_from(&state.refused_purchases, &city_ids, &game.rules);
+    game.replace_blocked_purchases(blocked_purchases);
 
     Reconstruction {
         game,
@@ -7420,6 +8223,7 @@ pub fn rebuild_from_state(
         placed_units,
         placed_rival_cities,
         placed_rival_units,
+        placed_minor_cities,
         unmapped,
         dropped_units: dropped,
     }
@@ -7530,6 +8334,13 @@ fn apply_territory(
             });
             if owner.is_some() {
                 assign.push((pos, owner));
+            } else if seat != 0 {
+                // A seat we can NAME but that holds no city on this board —
+                // their centre is unrevealed, or refused planting. Their
+                // ground is still not ours to found on; leaving it unassigned
+                // would re-open the exact hole the unattributable arm above
+                // closes.
+                blocked.insert(pos);
             }
         }
     }
@@ -7606,6 +8417,11 @@ pub struct LiveMirror {
     /// unit that will stand still, and nothing else in the telemetry can say so.
     pub dropped_units: Vec<String>,
     pub turns_synced: u32,
+    /// The turn and treasury of the previous sync, so net income can be derived.
+    /// See [`LiveMirror::mirror_net_income`] — the export carries the treasury
+    /// BALANCE and no rate at all, and `gold_per_turn` is what CIVVIS's
+    /// bankruptcy response reads.
+    last_treasury: Option<(u32, f64)>,
 }
 
 /// A unit's full movement allowance from the ruleset.
@@ -7688,6 +8504,51 @@ impl LiveMirror {
             unmapped: rebuilt.unmapped,
             dropped_units: rebuilt.dropped_units,
             turns_synced: 1,
+            // Seed the baseline here so the very first sync can be differenced.
+            // A resync rebuilds through this constructor too, which is exactly
+            // when the previous baseline has become meaningless.
+            last_treasury: match state.gold >= 0 {
+                true => Some((state.turn.max(1), state.gold as f64)),
+                false => None,
+            },
+        }
+    }
+
+    /// Net gold per turn, derived from the treasury balance because the export
+    /// carries no rate.
+    ///
+    /// ⚠⚠ `gold_per_turn` gates CIVVIS's whole bankruptcy response — the
+    /// `economic_recovery` branch of `BasicAi::product_for` requires
+    /// `gold_per_turn < -0.5` — and **nothing in the bridge has ever written
+    /// it**. Outside a mirrored game it is computed by CIVVIS's own economy;
+    /// inside one it holds whatever that simulation last produced over a board
+    /// whose maintenance rules are not Civilization VI's. So the recovery has
+    /// been unreachable in every real game.
+    ///
+    /// Measured on run `civvis-20260802T044726Z`: the treasury reached zero on
+    /// t85 and stayed there for 56 turns while the seat produced seven heavy
+    /// chariots, three battering rams, two archers and a trebuchet. Cities went
+    /// 3 → 2 → 1 and the score finished 143 against a best rival's 613.
+    ///
+    /// ⚠ **A treasury pinned at zero is insolvency, not thrift, and the first
+    /// difference reads ZERO exactly then** — Civilization VI clamps the balance
+    /// at zero and disbands units to pay the bill, so the delta cannot go
+    /// negative once the empire is already broke. An empty treasury that is not
+    /// refilling is therefore reported as negative outright.
+    ///
+    /// Only consecutive turns are differenced. A resync, a replayed turn or a
+    /// gap leaves the previous value alone rather than inventing a rate from a
+    /// span of unknown length.
+    fn mirror_net_income(&mut self, turn: u32, gold: f64) -> Option<f64> {
+        let previous = self.last_treasury.replace((turn, gold));
+        let (last_turn, last_gold) = previous?;
+        if turn != last_turn + 1 {
+            return None;
+        }
+        let delta = gold - last_gold;
+        match gold <= 0.0 {
+            true => Some(delta.min(-1.0)),
+            false => Some(delta),
         }
     }
 
@@ -7772,6 +8633,24 @@ impl LiveMirror {
         for (cid, names) in refused {
             self.game.blocked_districts.entry(cid).or_default().extend(names);
         }
+        // Unlike impossible district plots, a production refusal can be temporary.
+        // Replace this cooldown snapshot so entries disappear after their TTL.
+        let blocked_production = blocked_production_from(
+            &state.refused_production,
+            &self.cid_of.iter().map(|(civ6, cid)| (*cid, *civ6)).collect(),
+            &self.game.rules,
+        );
+        self.game.replace_blocked_production(blocked_production);
+        let blocked_purchases = blocked_production_from(
+            &state.refused_purchases,
+            &self
+                .cid_of
+                .iter()
+                .map(|(civ6, cid)| (*cid, *civ6))
+                .collect(),
+            &self.game.rules,
+        );
+        self.game.replace_blocked_purchases(blocked_purchases);
         // Rivals are met as the game goes on, so identity is not a one-time job at
         // reconstruction: a civilization first seen on turn 90 arrives here.
         apply_identity(&mut self.game, state);
@@ -7786,6 +8665,9 @@ impl LiveMirror {
         }
         if state.gold >= 0 {
             self.game.players[0].gold = state.gold as f64;
+            if let Some(net) = self.mirror_net_income(self.game.turn, state.gold as f64) {
+                self.game.players[0].gold_per_turn = net;
+            }
         }
         if state.faith >= 0 {
             self.game.players[0].faith = state.faith as f64;

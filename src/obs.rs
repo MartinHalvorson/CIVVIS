@@ -291,7 +291,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // Whether the unit has been left behind by the ruleset is worth
             // showing even when the upgrade itself is out of reach this turn.
             if u.owner == pid || omniscient {
-                v["obsolete"] = json!(g.unit_is_obsolete(u.owner, &u.kind));
+                v["obsolete"] = json!(g.unit_is_obsolete(u.owner, u.kind));
             }
             v
         })
@@ -545,9 +545,15 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "dvp": p.dvp,
             "grievances": p.grievances,
             "denounced_until": p.denounced_until,
+            "denounced_since": p.denounced_since,
             "friends_until": p.friends_until,
             "open_borders_until": p.open_borders_until,
             "alliances": p.alliances,
+            "diplomatic_missions": p.diplomatic_missions,
+            "defensive_pacts": p.defensive_pacts,
+            "promises": p.promises,
+            "diplomatic_incidents": p.diplomatic_incidents,
+            "broken_promises_until": p.broken_promises_until,
             "age": p.age,
             "tourism": round1(p.tourism_lifetime),
             "religious_tourism": round1(p.religious_tourism_lifetime),
@@ -642,13 +648,18 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // Civ VI's diplomacy ribbon keeps every major's broad empire
             // output visible.  These are aggregate public indicators rather
             // than hidden city details, and make spectator comparisons useful.
+            let city_ids = g.player_city_ids(o.id);
             let mut output = crate::rules::Yields::default();
-            for cid in g.player_city_ids(o.id) {
+            for &cid in &city_ids {
                 output.add(g.city_yields(cid));
             }
             if let Some(adjustment) = g.observed_yield_adjustments.get(&o.id) {
                 output.add(*adjustment);
             }
+            let total_population: i32 = city_ids
+                .iter()
+                .map(|&cid| g.cities[&cid].pop)
+                .sum();
             let military = g.military_power(o.id).round() as i64;
             // Founding is permanent history, but the standings marker is
             // about a faith that is still present now. Compute that from the
@@ -684,6 +695,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                     "description": agenda.description,
                 })),
                 "opinion_of_me": round1(g.agenda_opinion(o.id, pid)),
+                "relationship_opinion_of_me": round1(g.relationship_opinion(o.id, pid)),
                 "alive": o.alive,
                 "is_minor": o.is_minor,
                 "is_barbarian": o.is_barbarian,
@@ -708,12 +720,13 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "anarchy_turns": o.anarchy_turns,
                 "age": o.age,
                 "score": g.score(o.id),
-                "cities": g.player_city_ids(o.id).len(),
+                "cities": city_ids.len(),
+                "population": total_population,
                 "suzerain_count": g.players.iter()
                     .filter(|minor| minor.alive && minor.is_minor && !minor.is_barbarian)
                     .filter(|minor| g.suzerain_of(minor.id) == Some(o.id))
                     .count(),
-                "wonder_count": g.player_city_ids(o.id).iter()
+                "wonder_count": city_ids.iter()
                     .map(|city| g.cities[city].wonders.len())
                     .sum::<usize>(),
                 "victories": if !o.is_minor && !o.is_barbarian {
@@ -736,6 +749,17 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "friend": g.are_friends(pid, o.id),
                 "allied": g.are_allied(pid, o.id),
                 "alliance": g.alliance_with(pid, o.id),
+                "relationship": g.relationship_state(pid, o.id),
+                "their_relationship": g.relationship_state(o.id, pid),
+                "defensive_pact": g.defensive_pact_until(pid, o.id),
+                // Keep the old delegation-named fields for API consumers,
+                // but publish neutral names too: an Embassy replaces a
+                // Delegation and is not a second kind of delegation.
+                "mission_to_them": g.diplomatic_mission_to(pid, o.id),
+                "mission_to_me": g.diplomatic_mission_to(o.id, pid),
+                "delegation_to_them": g.diplomatic_mission_to(pid, o.id),
+                "delegation_to_me": g.diplomatic_mission_to(o.id, pid),
+                "diplomatic_visibility": round1(g.diplomatic_visibility(pid, o.id)),
                 "open_borders_to_me": g.has_open_borders(pid, o.id),
                 "my_open_borders_to_them": g.has_open_borders(o.id, pid),
             })
@@ -838,6 +862,10 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
             let ended = (!ongoing)
                 .then(|| records.iter().filter_map(|war| war.ended).max())
                 .flatten();
+            let casus_belli = records
+                .iter()
+                .find_map(|war| war.casus_belli.as_deref());
+            let joint_war_until = records.iter().filter_map(|war| war.joint_war_until).max();
 
             let mut losses: BTreeMap<usize, crate::game::WarLosses> = BTreeMap::new();
             for war in &records {
@@ -1035,6 +1063,8 @@ fn wars_json(g: &Game, explored: &BTreeSet<Pos>) -> Vec<Value> {
                 "conflict": anchor.conflict,
                 "aggressor": anchor.declarer,
                 "defender": anchor.target,
+                "casus_belli": casus_belli,
+                "joint_war_until": joint_war_until,
                 "started": started,
                 "ended": ended,
                 "turns": ended.unwrap_or(g.turn).saturating_sub(started),
@@ -1244,7 +1274,7 @@ fn tile_json(
     // A district still in the production queue reports what its site would pay
     // today — the figure a player is actually deciding on.
     let planned = planned
-        .filter(|district| tile.district.is_none() && g.rules.districts.contains_key(*district))
+        .filter(|district| tile.district.is_none() && g.rules.districts.contains_key(district))
         .map(|district| {
             json!({
                 "district": district,
@@ -1761,6 +1791,7 @@ mod tests {
             "yields",
             "military",
             "cities",
+            "population",
             "gold",
             "leader",
             "agenda",
@@ -2280,6 +2311,8 @@ mod tests {
             })
             .unwrap();
         game.found_city_for(0, capital_position, None);
+        let city_id = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city_id).unwrap().pop = 7;
         let observed = observation_spectator(&game, 0);
         assert_eq!(observed["max_turns"], serde_json::json!(120));
         // The setup panel adopts the running game's handicap, so the
@@ -2300,6 +2333,11 @@ mod tests {
             player["cities"],
             serde_json::json!(game.player_city_ids(0).len()),
         );
+        assert_eq!(
+            player["population"],
+            serde_json::json!(7),
+            "the player HUD payload reports the empire's total population"
+        );
         assert!(player["suzerain_count"].is_number());
         assert!(player["wonder_count"].is_number());
 
@@ -2311,7 +2349,6 @@ mod tests {
             .unwrap();
         assert_eq!(free_cities["alive"], serde_json::json!(false));
 
-        let city_id = game.player_city_ids(0)[0];
         let source_city = &game.cities[&city_id];
         let city = observed["cities"]
             .as_array()

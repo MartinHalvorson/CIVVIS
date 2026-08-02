@@ -214,7 +214,7 @@ fn main() {
     let quiet: Vec<&(usize, String, usize, Option<f64>)> =
         rows.iter().filter(|r| r.2 == 0).collect();
 
-    println!("{:<4} {:<20} {:>8}  {}", "idx", "gene", "bites", "mean first divergence turn");
+    println!("{:<4} {:<20} {:>8}  mean first divergence turn", "idx", "gene", "bites");
     for (index, name, bit, mean) in &rows {
         let when = mean
             .map(|t| format!("{t:.0}"))

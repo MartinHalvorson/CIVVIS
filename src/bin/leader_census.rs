@@ -37,7 +37,6 @@
 //! exhibition actually deploys.
 //!
 //! Diagnostic only: it never changes a decision, and no agent can name it.
-use civvis::name::Name;
 use civvis::ai::{AdvancedAi, Ai, GrandStrategy, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;
@@ -163,7 +162,7 @@ fn note(slot: &mut Option<u32>, turn: u32) {
 }
 
 /// Median of a set of readings, or `None` when empty.
-fn median(values: &mut Vec<i64>) -> Option<i64> {
+fn median(values: &mut [i64]) -> Option<i64> {
     if values.is_empty() {
         return None;
     }
@@ -245,11 +244,11 @@ fn main() {
                 end_turn = turn;
                 break;
             }
-            for pid in 0..game.players.len() {
+            for (pid, agent) in fleet.iter_mut().enumerate().take(game.players.len()) {
                 if game.winner.is_some() {
                     break;
                 }
-                fleet[pid].take_turn(&mut game, pid);
+                agent.take_turn(&mut game, pid);
                 if game.winner.is_none() && game.current == pid {
                     let _ = game.apply(pid, &Action::EndTurn);
                 }

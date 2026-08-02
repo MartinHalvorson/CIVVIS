@@ -816,7 +816,7 @@ fn distinguished_units_and_underdog_kills_pay_their_rows() {
             unit.moves_left = 2.0;
             unit.acted = false;
         }
-        let promotion = game.available_promotions(veteran)[0].clone();
+        let promotion = game.available_promotions(veteran)[0];
         game.do_promote(0, veteran, &promotion).unwrap();
         assert_eq!(game.units[&veteran].level, expected_level);
     }
@@ -1373,7 +1373,7 @@ fn team_contact_final_capitals_and_invalid_casus_belli_do_not_misaward() {
     let foreign = found_capital(&mut conquest, 1);
     conquest.players[0].era_score = 0;
     conquest.transfer_city(foreign, 0, true);
-    conquest.capture_rewards(0, 1, 0.0);
+    conquest.capture_rewards(0, 1, foreign, false);
     assert_eq!(
         conquest.players[0].era_score, 5,
         "the final original capital pays Final Foreign City only, not another +4"

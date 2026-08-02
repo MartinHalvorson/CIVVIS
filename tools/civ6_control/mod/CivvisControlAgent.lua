@@ -55,6 +55,10 @@ local residualAnswers = {};
 -- Civ 6 city id -> the item CIVVIS asked that city to build THIS turn. Cleared with
 -- the rest of the per-turn handshake state; see `chooseProduction`.
 local civvisBuild = {};
+-- Per-city production names the engine has already rejected on this turn. This is
+-- deliberately turn-scoped: a strategic resource or prerequisite can change later,
+-- but retrying the same impossible choice in every blocker pass cannot help.
+local refusedByCity = {};
 -- Emitted once: a defeat is not a per-turn condition.
 local defeatReported = false;
 
@@ -222,30 +226,50 @@ local function productionName(hash)
 	return nil;
 end
 
--- Production already invested in the current item.  The stock City Panel uses
--- these same four accessors; carrying only the item name makes a nearly finished
--- build and a newly selected build look identical to the planner.
+-- Progress and cost for whatever a city is building right now.
+--
+-- ★★★★★ THERE IS NO GENERIC ACCESSOR, AND ASSUMING ONE COST A WHOLE RUN'S
+-- DIAGNOSTICS. `GetBuildQueue():GetCurrentProductionProgress()` and
+-- `…GetCurrentProductionCost()` do not exist on this build: both returned the
+-- `try` sentinel **-1 on every city of every turn** of run
+-- civvis-20260802T053109Z, while `GetProductionYield` and `GetTurnsLeft` beside
+-- them worked and read 6/9 and 5/4/3.
+--
+-- The shipped UI names the real ones, and they are TYPE-SPECIFIC — read out of
+-- `Base/Assets/UI/Panels/ProductionPanel.lua`, whose BuildQueue calls are exactly:
+--
+--     GetUnitProgress     GetUnitCost
+--     GetBuildingProgress GetBuildingCost
+--     GetDistrictProgress GetDistrictCost
+--     GetProjectProgress  GetProjectCost
+--     GetCurrentProductionTypeHash   GetTurnsLeft
+--
+-- So the hash has to be resolved to its KIND first, which `productionName` above
+-- already does by walking the same four GameInfo tables. This walks them in the
+-- same order and calls the matching pair.
+--
+-- ⚠ Returns two values and BOTH default to -1 independently, for the same reason
+-- the four fields at the call site are guarded separately: a build where one of
+-- these is missing must still yield the other.
 local function productionProgress(city, hash)
-	if hash == nil or hash == 0 then return 0; end
+	if hash == nil or hash == 0 then return -1, -1; end
 	local queue = try(function() return city:GetBuildQueue(); end);
-	if queue == nil then return nil; end
-	local building = GameInfo.Buildings[hash];
-	if building ~= nil then
-		return try(function() return queue:GetBuildingProgress(building.Index); end);
+	if queue == nil then return -1, -1; end
+	local kinds = {
+		{ GameInfo.Units,      "GetUnitProgress",     "GetUnitCost"     },
+		{ GameInfo.Buildings,  "GetBuildingProgress", "GetBuildingCost" },
+		{ GameInfo.Districts,  "GetDistrictProgress", "GetDistrictCost" },
+		{ GameInfo.Projects,   "GetProjectProgress",  "GetProjectCost"  },
+	};
+	for _, row in ipairs(kinds) do
+		local present = try(function() return row[1][hash] ~= nil; end, false);
+		if present then
+			local progress = try(function() return queue[row[2]](queue, hash); end, -1);
+			local cost = try(function() return queue[row[3]](queue, hash); end, -1);
+			return progress, cost;
+		end
 	end
-	local district = GameInfo.Districts[hash];
-	if district ~= nil then
-		return try(function() return queue:GetDistrictProgress(district.Index); end);
-	end
-	local unit = GameInfo.Units[hash];
-	if unit ~= nil then
-		return try(function() return queue:GetUnitProgress(unit.Index); end);
-	end
-	local project = GameInfo.Projects[hash];
-	if project ~= nil then
-		return try(function() return queue:GetProjectProgress(project.Index); end);
-	end
-	return nil;
+	return -1, -1;
 end
 
 local function enumMembers(getter)
@@ -523,6 +547,41 @@ local function unitTypeName(unit)
 	end, "?");
 end
 
+-- What a unique unit REPLACES, so the board keeps it instead of dropping it.
+--
+-- ★★★★ A rival's unique unit is untranslatable and is therefore DISCARDED. Live run
+-- `civvis-20260801T145302Z` dropped `UNIT_NORWEGIAN_LONGSHIP` every turn it was
+-- visible: CIVVIS models no Norwegian uniques at all (`unique_to == Norway` is
+-- empty in `data/units.json`), so an enemy WARSHIP simply was not on the board.
+-- That is not one unit — it is every civilization's uniques, for every civilization
+-- we meet.
+--
+-- A Longship is a Galley replacement, and a Galley CIVVIS does model. Sending the
+-- base type lets the mirror fall back to something true rather than nothing, which
+-- is the standing rule: a dropped entity is worse than an approximate one.
+--
+-- ⚠ Copied from `ToolTipHelper_Babylon_Heroes.lua`, not guessed:
+--     local replaces = GameInfo.UnitReplaces[unitType];
+--     if replaces then ... GameInfo.Units[replaces.ReplacesUnitType] end
+local function unitBaseType(name)
+	if name == nil or name == "" then return nil; end
+	local replaces = try(function() return GameInfo.UnitReplaces[name]; end);
+	if replaces == nil then return nil; end
+	return try(function() return replaces.ReplacesUnitType; end);
+end
+
+-- A STANDALONE unique has no UnitReplaces row at all — Malón Raider, Varu,
+-- Nihang — so `base` comes back nil and the mirror used to drop the unit
+-- entirely. Its PromotionClass is still in the shipped database, and class is
+-- enough for the mirror to land it as something true rather than nothing.
+local function unitClass(name)
+	if name == nil or name == "" then return nil; end
+	local row = try(function() return GameInfo.Units[name]; end);
+	if row == nil then return nil; end
+	return try(function() return row.PromotionClass; end);
+end
+
+
 -- ⚠⚠ THE pcall GOES INSIDE THE LOOP.
 --
 -- This is the bug that hid every other unit bug in this file. With one pcall
@@ -643,7 +702,7 @@ local function countUnits(player)
 			counts.military = counts.military + 1;
 			-- Ranged counts as military AND as ranged: a siege needs both kinds and
 			-- the ladder has to be able to tell them apart.
-			if (row.RangedCombat or 0) > 0 then
+			if (row.RangedCombat or 0) > 0 or (row.Bombard or 0) > 0 then
 				counts.ranged = counts.ranged + 1;
 			end
 		end
@@ -803,12 +862,29 @@ end
 -- That is the same shape as `no_params` x 221 and `move_refused` x 33: an anonymous
 -- count. Both times naming it made the cause fall out immediately and both times the
 -- standing hypothesis was wrong, so this names it BEFORE anything is changed.
-local upgradeTried, upgradeBlocked = 0, {};
+local upgradeTried, upgradeBlocked, upgradeBlockedWhy = 0, {}, {};
 local function upgradeUnit(unit)
 	upgradeTried = upgradeTried + 1;
 	if commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"]) then return "upgrade"; end
 	local name = unitTypeName(unit) or "?";
 	upgradeBlocked[name] = (upgradeBlocked[name] or 0) + 1;
+	-- Ask the engine WHY, the way the shipped UnitPanel does: the two-flag form
+	-- of CanStartCommand returns a results table whose FAILURE_REASONS names
+	-- gold, missing tech, missing resource. Runs plateau at army 5-7 against
+	-- rival 850+ with upgrade_blocked counting Warriors and Trebuchets every
+	-- turn — the COUNT is known, the reason is the decision-relevant part.
+	-- Blocked path only; the accepting path stays one call.
+	try(function()
+		local can, results = UnitManager.CanStartCommand(
+			unit, CMD["UNITCOMMAND_UPGRADE"], true, true);
+		if can ~= true and type(results) == "table"
+				and UnitCommandResults ~= nil then
+			local reasons = results[UnitCommandResults.FAILURE_REASONS];
+			if type(reasons) == "table" and #reasons > 0 then
+				upgradeBlockedWhy[name] = table.concat(reasons, "; ");
+			end
+		end
+	end);
 	return nil;
 end
 
@@ -1857,6 +1933,10 @@ local probesOut = 0;
 -- What the last probe decision actually resolved to, for the fires-check.
 local probeDest, probeKind = nil, nil;
 local warDeclared = {};
+-- Last turn a peace deal was asked of each target, so a standing MakePeace
+-- intent does not rebuild the working deal and re-open a session every turn
+-- against a rival who just declined. See the `peace` arm of `applyOrder`.
+local peaceAsked = {};
 
 -- How many units have already been aimed at the target plot this turn, and
 -- which approach tiles are taken.
@@ -2370,6 +2450,21 @@ local function warPressure()
 	return atWar, ours, worst;
 end
 
+local function productionFailureReasons(results)
+	local reasons = {};
+	pcall(function()
+		local failures = results ~= nil
+			and results[CityCommandResults.FAILURE_REASONS]
+			or nil;
+		if failures ~= nil then
+			for _, reason in ipairs(failures) do
+				reasons[#reasons + 1] = tostring(reason);
+			end
+		end
+	end);
+	return reasons;
+end
+
 local function chooseProduction(city, counts, nCities, turn, refused)
 	refused = refused or {};
 	-- Hoisted, because BOTH the expansion gate and the army cap need it and the
@@ -2427,16 +2522,48 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		-- DIFFERENT QUESTION than the one being asked, while every request logs
 		-- `applied = true`. "The request did not throw" is not "the engine took it",
 		-- and here it was not even the right question.
-		local ok, can = pcall(function()
+		local ok, can, results = pcall(function()
 			-- Three-arg form returns (canStart, results); take the verdict only.
-			local canStart = city:GetBuildQueue():CanProduce(row.Hash, false, true);
-			return canStart;
+			return city:GetBuildQueue():CanProduce(row.Hash, false, true);
 		end);
 		if ok and can == true then return row; end
-		return nil;
+		refused[name] = true;
+		return nil, productionFailureReasons(results);
 	end
 
 	local ladder = {};
+	-- Era-proof land forces. The old fixed Warrior/Spearman/Swordsman list becomes
+	-- entirely obsolete, after which a losing modern war silently falls through to a
+	-- Builder. Firaxis's own unit table is the authority on the current ruleset;
+	-- `playable` below still applies every city-specific prerequisite and resource rule.
+	local landUnits = {};
+	for row in GameInfo.Units() do
+		if row.Domain == "DOMAIN_LAND" and (row.Combat or 0) > 0 then
+			landUnits[#landUnits + 1] = {
+				name = row.UnitType,
+				capture = (row.RangedCombat or 0) <= 0 and (row.Bombard or 0) <= 0,
+				strength = math.max(row.Combat or 0, row.RangedCombat or 0,
+				                    row.Bombard or 0),
+			};
+		end
+	end
+	table.sort(landUnits, function(a, b)
+		if a.capture ~= b.capture then return a.capture; end
+		if a.strength ~= b.strength then return a.strength > b.strength; end
+		return a.name < b.name;
+	end);
+	local function pushLandUnits(reason)
+		for _, unit in ipairs(landUnits) do
+			ladder[#ladder + 1] = { unit.name, reason };
+		end
+	end
+	local function pushRangedLandUnits(reason)
+		for _, unit in ipairs(landUnits) do
+			if not unit.capture then
+				ladder[#ladder + 1] = { unit.name, reason };
+			end
+		end
+	end
 	-- ⚠ ONE SETTLER IN FLIGHT AT A TIME.
 	--
 	-- The condition used to be `(nCities + counts.settler) < CityTarget` with no
@@ -2571,7 +2698,42 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- to escort them or to stop parking half the army on approach tiles (`surround`
 	-- 47 against `advance` 46 at the same turn) — neither is attempted here, because
 	-- one change at a time is the rule while pairing is unavailable.
-	if warTarget ~= nil and (counts.siege or 0) < (cfg.SiegeUnits or 4) then
+	-- ★★★★★ AND NOT WHILE BEING OVERRUN. A ram BREAKS a city; it cannot hold one.
+	--
+	-- FIFTH instance of this file's recurring class, after `ArmyCap`, the production
+	-- floor, `MaxProductionPasses` and `expand`: a gate that is right when attacking
+	-- and wrong in the one state that ends runs.
+	--
+	-- `UNIT_BATTERING_RAM` is a SUPPORT unit with no combat strength of its own — it
+	-- only boosts an adjacent melee unit attacking a wall. Measured on live run
+	-- `civvis-20260801T175955Z` (Egypt), builds from turn 60 while losing three of
+	-- four cities:
+	--
+	--     siege 23    improve 11    ranged 7    army 7    civvis 4
+	--
+	-- **43% of wartime production**, and at the end ZERO rams were alive: all 23 were
+	-- built, sent at the enemy and destroyed, while the empire went from four cities
+	-- to one. The cap works (`counts.siege < SiegeUnits`); it just refills a hole.
+	--
+	-- The gate asked only whether a war TARGET exists, never whether WE are the ones
+	-- under siege. Rams belong in an offensive, and an offensive is not what a seat
+	-- losing its cities is conducting.
+	--
+	-- ⚠ AND `losingWar` CANNOT SEE PEACETIME HOPELESSNESS. `warPressure` reads
+	-- strength only from players we are AT WAR with, so before any declaration it
+	-- returns 0 and the guard above is inert. Run `civvis-20260801T211015Z`
+	-- (Indonesia): 25 rams built t69–t210, 20 of them BEFORE the t186 war, at
+	-- military strength 4 against a target above 1000 — 42% of the game's whole
+	-- production spent refilling a siege train that died faster than it could
+	-- march. A siege train serves an offensive, and an offensive needs an army
+	-- near the target's class — so ask the TARGET's strength, which exists in
+	-- peace and war alike, and require half of it before spending on rams.
+	local targetStrength = warTarget ~= nil and (try(function()
+		return Players[warTarget.player]:GetStats():GetMilitaryStrength();
+	end, 0) or 0) or 0;
+	if warTarget ~= nil and not losingWar
+			and ourStrength * 2 >= targetStrength
+			and (counts.siege or 0) < (cfg.SiegeUnits or 4) then
 		ladder[#ladder + 1] = { "UNIT_BATTERING_RAM", "siege" };
 	end
 	-- ★★ A PURE MELEE ARMY CANNOT REDUCE A CITY, only walk into one.
@@ -2589,9 +2751,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- 518 archer advances and 31 range attacks with zero captures, because ranged
 	-- cannot take a plot. Two or three archers alongside the melee, then melee again.
 	if warTarget ~= nil and (counts.ranged or 0) < (cfg.RangedFloor or 3) then
-		for _, name in ipairs({ "UNIT_ARCHER", "UNIT_SLINGER" }) do
-			ladder[#ladder + 1] = { name, "ranged" };
-		end
+		pushRangedLandUnits("ranged");
 	end
 	-- ★★★★★ THE ECONOMY GOES ABOVE THE OPEN-ENDED ARMY, OR IT IS DEAD CODE.
 	--
@@ -2621,9 +2781,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- would invert the failure and never raise a soldier at all.
 	local defenceFloor = math.max(1, nCities);
 	if counts.military < defenceFloor then
-		for _, name in ipairs({ "UNIT_WARRIOR", "UNIT_SPEARMAN", "UNIT_SLINGER" }) do
-			ladder[#ladder + 1] = { name, "defend" };
-		end
+		pushLandUnits("defend");
 	end
 	if counts.builder < math.max(1, nCities * (cfg.BuilderPerCity or 0.8)) then
 		ladder[#ladder + 1] = { "UNIT_BUILDER", "improve" };
@@ -2657,8 +2815,17 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- below an open-ended target; check what ELSE is down there; and check the target is
 	-- reachable in the state you actually care about.
 	local DEVELOP = { "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
-	                  "DISTRICT_HOLY_SITE", "DISTRICT_COMMERCIAL_HUB",
-	                  "BUILDING_WATER_MILL", "DISTRICT_THEATER",
+	                  "BUILDING_UNIVERSITY", "BUILDING_RESEARCH_LAB",
+	                  "DISTRICT_THEATER", "BUILDING_AMPHITHEATER",
+	                  "BUILDING_ART_MUSEUM", "BUILDING_ARCHAEOLOGICAL_MUSEUM",
+	                  "BUILDING_BROADCAST_CENTER",
+	                  "DISTRICT_COMMERCIAL_HUB", "BUILDING_MARKET",
+	                  "BUILDING_BANK", "BUILDING_STOCK_EXCHANGE",
+	                  "DISTRICT_HARBOR", "BUILDING_LIGHTHOUSE",
+	                  "BUILDING_SHIPYARD", "BUILDING_SEAPORT",
+	                  "DISTRICT_INDUSTRIAL_ZONE", "BUILDING_WORKSHOP",
+	                  "BUILDING_FACTORY", "DISTRICT_HOLY_SITE",
+	                  "BUILDING_WATER_MILL",
 	                  -- ⚠ `BUILDING_WALLS`, not `BUILDING_ANCIENT_WALLS`. Civilization
 	                  -- VI has no such type: grepping every shipped Asset for
 	                  -- `BUILDING_ANCIENT_WALLS` returns exactly ONE file, this mod,
@@ -2687,10 +2854,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		-- anything. Swordsman needs Iron and is often unavailable, so the
 		-- melee that is always buildable comes before the ranged that is
 		-- always tempting.
-		for _, name in ipairs({ "UNIT_SWORDSMAN", "UNIT_SPEARMAN", "UNIT_WARRIOR",
-		                        "UNIT_ARCHER", "UNIT_SLINGER" }) do
-			ladder[#ladder + 1] = { name, "army" };
-		end
+		pushLandUnits("army");
 	end
 	-- The same list below the army on the other two turns in three, so development is
 	-- still preferred over the always-available floor when the army IS satisfied.
@@ -2706,7 +2870,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	--
 	-- Forty-four builders for a six-city empire that wanted five
 	-- (`BuilderPerCity` 0.8). The floor reached its FIRST TWO entries zero times:
-	-- `PROJECT_CAMPUS_RESEARCH_GRANT` needs a Campus in THAT city and most cities
+	-- the campus project needs a Campus in THAT city and most cities
 	-- had none, and `UNIT_WARRIOR` and `UNIT_SLINGER` go OBSOLETE mid-game and stop
 	-- being buildable at all. `UNIT_BUILDER` never obsoletes, so as the eras pass
 	-- every fallback above it evaporates and the floor becomes "build a builder,
@@ -2716,23 +2880,30 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- silently wrong later. When a list is a fallback, check what remains PLAYABLE
 	-- at turn 150, not what is playable at turn 1.
 	--
-	-- The melee ladder goes in above the builder so the floor stays non-degenerate:
-	-- these are the units the army block already prefers, and `playable` drops the
-	-- obsolete ones, so the first still-buildable tier wins.
-	-- Firaxis names district grants `PROJECT_ENHANCE_DISTRICT_*`.  The old
-	-- `PROJECT_CAMPUS_RESEARCH_GRANT` name does not exist in the shipped ruleset,
-	-- so the supposedly safe repeatable floor was dead and every mature city fell
-	-- through to another Builder.  Offer every ordinary district project before
-	-- any unit floor; `playable` keeps only projects this city can actually run.
+	-- The army rung above is now derived from the live unit table and is present only
+	-- while the bounded target is short. The floor therefore does not need a second,
+	-- unconditional military list -- the exact escape hatch that produced 85 units.
+	-- ⚠ `PROJECT_ENHANCE_DISTRICT_CAMPUS`, not `PROJECT_CAMPUS_RESEARCH_GRANT`.
+	-- Civilization VI HAS NO SUCH PROJECT. Grepping every shipped Asset for
+	-- `PROJECT_CAMPUS_RESEARCH_GRANT` returns exactly one file — this mod — while
+	-- Firaxis's own district projects are `PROJECT_ENHANCE_DISTRICT_<DISTRICT>`.
+	--
+	-- So the floor's FIRST entry, the one that exists to guarantee a city always has
+	-- something to build, has never been buildable on any turn of any run. That is
+	-- the real reason the floor fell through to `UNIT_BUILDER` every time — #748
+	-- attributed it to "needs a Campus", which was a guess about a name that does
+	-- not resolve at all.
+	--
+	-- One project is offered for every ordinary specialty district. No single project
+	-- is universal, but a developed city can now convert production into its own yield
+	-- instead of falling from a missing Campus project into another military unit.
 	for _, name in ipairs({ "PROJECT_ENHANCE_DISTRICT_CAMPUS",
+	                        "PROJECT_ENHANCE_DISTRICT_THEATER",
 	                        "PROJECT_ENHANCE_DISTRICT_COMMERCIAL_HUB",
+	                        "PROJECT_ENHANCE_DISTRICT_HARBOR",
 	                        "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE",
 	                        "PROJECT_ENHANCE_DISTRICT_HOLY_SITE",
-	                        "PROJECT_ENHANCE_DISTRICT_THEATER",
-	                        "PROJECT_ENHANCE_DISTRICT_HARBOR",
-	                        "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT",
-	                        "UNIT_SWORDSMAN", "UNIT_SPEARMAN", "UNIT_WARRIOR",
-	                        "UNIT_ARCHER", "UNIT_SLINGER" }) do
+	                        "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT" }) do
 		ladder[#ladder + 1] = { name, "floor" };
 	end
 	-- Gated exactly like the `improve` rung, which was the only thing holding the
@@ -2753,7 +2924,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- so the `build` events say which program decided, and the production fraction in
 	-- `civ6_civvis_status.py` can be read honestly.
 	if wanted ~= nil then
-		local row = playable(wanted);
+		local row, reasons = playable(wanted);
 		if row ~= nil then return wanted, row, "civvis"; end
 		-- ★★★★★ SAY WHAT CIVVIS ASKED FOR AND COULD NOT HAVE.
 		--
@@ -2770,11 +2941,12 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		-- ⚠ `item`, not `kind`: `emit` claims `kind`, `ctx` and `run`, and a payload
 		-- field named `kind` is overwritten before the line is written. That already
 		-- cost this file one blind instrument.
-		if not refused[wanted] then
+		if not refused[wanted] and reasons ~= nil and #reasons > 0 then
 			emit("civvis_build_unplayable", {
 				turn = turn,
 				city = try(function() return city:GetID(); end, -1),
 				item = tostring(wanted),
+				reasons = reasons,
 			});
 		end
 	end
@@ -2837,6 +3009,69 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 	-- actuate a different decision; only the emergency ladder may take the first.
 	if requestedX ~= nil or requestedY ~= nil then return nil; end
 	return first;
+end
+
+-- ★ A PROBE, NOT A MAPPING — the measurement that decides whether repair can ship.
+--
+-- Civilization VI has no PROJECT_REPAIR_<district> (the only repair project in the
+-- shipped Assets is PROJECT_REPAIR_OUTER_DEFENSES); a pillaged district is repaired
+-- by BUILDING the district again, flagged as a repair by the engine. What kept that
+-- translation unshipped is one unverified question: does GetOperationTargets for a
+-- city that ALREADY HAS the pillaged district offer the existing district's plot
+-- (a repair) or fresh sites (a NEW district — expensive and wrong)? 52 repair asks
+-- were discarded on run civvis-20260801T184324Z while an Encampment sat pillaged.
+--
+-- This emits what the engine offers, once per city+district per run, and changes
+-- no order. When live runs show the existing plot among `offered`, the mapping in
+-- the produce arm is one line; if they show only fresh sites, it never ships.
+local probedRepairs = {};
+local function probeDistrictRepair(city, districtName, asked, turn)
+	local key = tostring(try(function() return city:GetID(); end, -1)) .. districtName;
+	if probedRepairs[key] then return; end
+	probedRepairs[key] = true;
+	local row = try(function() return GameInfo.Districts[districtName]; end);
+	if row == nil then return; end
+	local have, hx, hy, pillaged = false, -1, -1, false;
+	try(function()
+		local districts = city:GetDistricts();
+		for _, d in districts:Members() do
+			if d:GetType() == row.Index then
+				have = true;
+				hx = try(function() return d:GetX(); end, -1);
+				hy = try(function() return d:GetY(); end, -1);
+				pillaged = try(function()
+					return districts:IsPillaged(row.Index);
+				end, false);
+			end
+		end
+	end);
+	local offered = {};
+	try(function()
+		local probe = {};
+		probe[CityOperationTypes.PARAM_DISTRICT_TYPE] = row.Hash;
+		local results = CityManager.GetOperationTargets(
+			city, CityOperationTypes.BUILD, probe);
+		local plots = results and results[CityOperationResults.PLOTS];
+		if plots ~= nil then
+			for _, plotIndex in pairs(plots) do
+				if #offered >= 12 then break; end
+				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+				if plot ~= nil then
+					offered[#offered + 1] = {
+						x = try(function() return plot:GetX(); end, -1),
+						y = try(function() return plot:GetY(); end, -1),
+					};
+				end
+			end
+		end
+	end);
+	emit("repair_probe", {
+		turn = turn,
+		city = try(function() return city:GetID(); end, -1),
+		district = districtName, asked = asked,
+		has_district = have, at_x = hx, at_y = hy, pillaged = pillaged,
+		offered = offered,
+	});
 end
 
 -- The religion a city actually follows, by type name, and the one converting it.
@@ -2975,16 +3210,14 @@ end
 -- request, so the "queue is empty" test fires again and again.
 local lastBuild = {};
 
--- Items a given city asked for and never started, remembered across turns.
+-- Items the host's start-now predicate rejected in a city on this turn.
 --
 -- ⚠ The queue does NOT reflect a BUILD request in the same tick it is made, so
 -- a synchronous "did it start?" check reads false for everything and is worse
 -- than no check: it made the ladder re-order all six candidates every turn.
--- The honest place to notice is the FOLLOWING turn — if the queue is still
--- empty then, the order never took, and that item is refused for this city from
--- now on so the ladder can fall through to something it can actually build.
-local refusedByCity = {};
-
+-- This table does not infer anything from that asynchronous queue read. It records
+-- only synchronous `CanProduce(..., false, true)` failures and expires at the next
+-- turn, so the ladder can fall through without inventing a permanent host rule.
 local function driveProduction(player, turn, force)
 	local counts = countUnits(player);
 	local cities = {};
@@ -2999,6 +3232,11 @@ local function driveProduction(player, turn, force)
 			return queue and queue:GetCurrentProductionTypeHash() or 0;
 		end, 0);
 		local cityId = try(function() return city:GetID(); end, -1);
+		local refused = refusedByCity[cityId];
+		if refused == nil or refused.turn ~= turn then
+			refused = { turn = turn };
+			refusedByCity[cityId] = refused;
+		end
 		local remembered = lastBuild[cityId];
 		-- The memo stops per-tick spam, but when the game says it is *blocked*
 		-- on production the whole point is to try again: an order that was
@@ -3035,7 +3273,11 @@ local function driveProduction(player, turn, force)
 			-- `autoclose` events because THIS FILE never loaded. The autoclose
 			-- context lives in a separate file and kept working, which is what
 			-- made it look like a stalled game rather than a broken script.
-			local rejected, searching = {}, true;
+			local rejected = {};
+			for item, value in pairs(refused or {}) do
+				if value == true then rejected[item] = true; end
+			end
+			local searching = true;
 			while searching do
 				local name, row, why = chooseProduction(
 					city, counts, #cities, turn, rejected);
@@ -4039,6 +4281,8 @@ local function exportState(player, pid, turn)
 		-- Once per city, not three times: this runs for every city every turn and
 		-- each call is three guarded engine reads.
 		local loyalNow, loyalRate, loyalFallsTo = cityLoyalty(city);
+		-- Same discipline: one resolve of the hash to its kind, two engine reads.
+		local prodProgress, prodCost = productionProgress(city, queue);
 		local defStrength, defDamage, defMax, wallDamage, wallMax = cityDefence(
 			try(function() return city:GetX(); end, -1),
 			try(function() return city:GetY(); end, -1));
@@ -4256,7 +4500,44 @@ local function exportState(player, pid, turn)
 			-- CIVVIS re-decided production every turn blind to work in progress.
 			producing = productionName(queue),
 			producing_hash = queue,
-			production_progress = productionProgress(city, queue),
+			-- ★★★★★ WHAT THE CITY IS BUILDING WAS EXPORTED; HOW FAST, AND HOW FAR
+			-- ALONG, WERE NOT. That is the whole reason the settler stall has never
+			-- been diagnosable.
+			--
+			-- Measured on run civvis-20260802T041527Z (Russia, Settler/Small/Online):
+			-- the capital was on UNIT_SETTLER for **84 turns** — the most-produced
+			-- item of the game — across 12 separate stretches of 6 to 11 turns, and
+			-- **not one settler ever existed**. Zero settlers alive on any of 171
+			-- turns, so the empire sat on ONE city while `settle_choice` re-picked
+			-- the same site (61,12) from turn 13 to turn 141.
+			--
+			-- Nothing could say why, because the export carried no production yield,
+			-- no accumulated progress and no turns-remaining. Nine uninterrupted
+			-- turns on a settler (t130-t138) produced nothing and the stream had no
+			-- field that could distinguish "the city makes 2 production a turn" from
+			-- "progress is being reset" from "completion is blocked".
+			--
+			-- ⚠ It is also a decision input, not only a diagnostic. CIVVIS chooses
+			-- what to build with no idea what the city can actually finish, which is
+			-- the same class of blindness as `producing` itself once was — see the
+			-- note directly above.
+			--
+			-- ⚠ Each is guarded separately. `GetBuildQueue` exists on this build but
+			-- these accessors are exactly the shape that has silently returned nil
+			-- before (see the `GetDefenseStrength` note below, which read -1 for the
+			-- project's entire history). A missing one must leave -1 and not take
+			-- the others with it.
+			production = try(function()
+				return city:GetBuildQueue():GetProductionYield();
+			end, -1),
+			-- ⚠ Typed accessors, not a generic one — see `productionProgress`.
+			-- The obvious `GetCurrentProductionProgress()` does not exist and
+			-- read -1 on every city of every turn until this was fixed.
+			production_progress = prodProgress,
+			production_cost = prodCost,
+			production_turns = try(function()
+				return city:GetBuildQueue():GetTurnsLeft();
+			end, -1),
 			food = try(function() return city:GetGrowth():GetFood(); end, -1),
 			-- ⚠ Was `GetDistricts():GetDefenseStrength()` — the method on the
 			-- collection, which does not exist, so this read -1 for the whole
@@ -4323,6 +4604,10 @@ local function exportState(player, pid, turn)
 		units[#units + 1] = {
 			id = try(function() return unit:GetID(); end, -1),
 			kind = name,
+			-- See `unitBaseType`: what this replaces, when it is a civ unique.
+			base = unitBaseType(name),
+			-- See `unitClass`: the fallback for a unique that replaces nothing.
+			class = unitClass(name),
 			x = try(function() return unit:GetX(); end, -1),
 			y = try(function() return unit:GetY(); end, -1),
 			hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
@@ -4439,6 +4724,8 @@ local function exportState(player, pid, turn)
 							local row = GameInfo.Units[name];
 							theirUnits[#theirUnits + 1] = {
 								x = ux, y = uy, kind = name,
+								base = unitBaseType(name),
+								class = unitClass(name),
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
 								moves = try(function() return unit:GetMovesRemaining(); end, -1),
 								combat = row ~= nil and (row.Combat or 0) or 0,
@@ -5549,6 +5836,74 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and "declared" or "throw";
 	end
 
+	-- ★★★★★ PEACE, WHICH NO CODE COULD EVER MAKE. CIVVIS emitted MakePeace on
+	-- 93 turns of run civvis-20260801T221459Z — every turn from t118 to the end
+	-- — and there was no arm for it anywhere, so the seat begged in why.log
+	-- while the harness fought a war it had already lost. A war that cannot be
+	-- exited turns every bad matchup into a death sentence.
+	--
+	-- Two shipped shapes, copied not guessed:
+	-- - a MINOR takes the plain operation — CityStates.lua:818
+	--   (`DIPLOMACY_MAKE_PEACE` with PARAM_PLAYER_ONE/TWO);
+	-- - a MAJOR takes the deal: DiplomacyActionView.lua:434 CHOICE_MAKE_PEACE —
+	--   a locked MAKE_PEACE agreement in the outgoing working deal, validated,
+	--   then a MAKE_DEAL session. The rival answers on its own turn; acceptance
+	--   shows up as `at_war` dropping in a later export, and nothing here may
+	--   claim more than "asked".
+	--
+	-- ⚠ Re-asking every turn would rebuild the working deal and re-open a
+	-- session against a rival who just said no — and the deal screen is a known
+	-- stall shape. One ask per target per PeaceRetryTurns (default 5) turns.
+	if kind == "peace" then
+		local diplomacy = try(function() return player:GetDiplomacy(); end);
+		if diplomacy == nil then return false, "no_diplomacy"; end
+		if subject < 0 then
+			emit("peace_unmapped", { turn = turn, subject = subject });
+			return false, "peace_target_unmapped";
+		end
+		if not try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+			return false, "peace_not_at_war";
+		end
+		local asked = peaceAsked[subject];
+		if asked ~= nil and (turn - asked) < (cfg.PeaceRetryTurns or 5) then
+			return false, "peace_cooldown";
+		end
+		local major = try(function() return Players[subject]:IsMajor(); end, true);
+		local ok;
+		if major then
+			ok = pcall(function()
+				if not DealManager.HasPendingDeal(pid, subject) then
+					DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
+					local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
+					if deal ~= nil then
+						local item = deal:AddItemOfType(DealItemTypes.AGREEMENTS, pid);
+						if item ~= nil then
+							item:SetSubType(DealAgreementTypes.MAKE_PEACE);
+							item:SetLocked(true);
+						end
+						-- "Validate the deal, this will make sure peace is on
+						-- both sides of the deal." — the shipped comment.
+						deal:Validate();
+					end
+				end
+				DiplomacyManager.RequestSession(pid, subject, "MAKE_DEAL");
+			end);
+		else
+			ok = pcall(function()
+				local params = {};
+				params[PlayerOperations.PARAM_PLAYER_ONE] = pid;
+				params[PlayerOperations.PARAM_PLAYER_TWO] = subject;
+				UI.RequestPlayerOperation(pid, PlayerOperations.DIPLOMACY_MAKE_PEACE, params);
+			end);
+		end
+		if ok then peaceAsked[subject] = turn; end
+		emit("peace_request", {
+			turn = turn, target = subject,
+			major = major and true or false, threw = not ok,
+		});
+		return ok, ok and "peace_asked" or "throw";
+	end
+
 	-- ★★★★★ CIVVIS'S OWN POLICY, GOVERNMENT AND PANTHEON CHOICES.
 	--
 	-- These had NO arm at all: CIVVIS issued `SlotPolicy` on every turn from t80 to
@@ -5662,7 +6017,27 @@ local function applyOrder(player, pid, row, turn)
 		if target == nil then return false, "no_slot_for_" .. resolved; end
 		local addList = {};
 		addList[target] = row2.Hash;
-		local ok = pcall(function() culture:RequestPolicyChanges({}, addList); end);
+		-- ★★★★★ THE SLOT MUST BE CLEARED IN THE SAME REQUEST, EVEN WHEN EMPTY.
+		-- Copied from the shipped GovernmentScreen.lua OnConfirmPolicies (:1560),
+		-- which puts EVERY slot it writes into clearList first, with the comment
+		-- "removals done first, otherwise swapping may fail ... the engine will
+		-- think a policy is still active in its slot". This arm sent an empty
+		-- clearList, and run civvis-20260801T221459Z (Netherlands) measured the
+		-- result: from the Oligarchy switch (~t57) to t250 exactly ONE card
+		-- stayed slotted while slots grew to 6 and 551 policy orders counted
+		-- `applied` — accepted by pcall, discarded by the engine.
+		local ok = pcall(function()
+			culture:RequestPolicyChanges({ target }, addList);
+		end);
+		-- The policy layer had ZERO provenance events, so an accepted-but-
+		-- discarded request was invisible for 140 turns. Name slot and card;
+		-- the next turn's `state.policies` export is the verdict on whether it
+		-- stuck (a same-tick read-back cannot be trusted — the request is
+		-- processed by the game core, not synchronously by this context).
+		emit("policy_request", {
+			turn = turn, slot = target, policy = resolved,
+			cleared = true, threw = not ok,
+		});
 		return ok, ok and resolved or "throw";
 	end
 
@@ -5859,7 +6234,16 @@ local function applyOrder(player, pid, row, turn)
 		-- run civvis-20260730T111537Z: 9 refusals in 10 turns, all of them this.
 		-- The built-in ladder reads `GameInfo.Types[name]` for exactly this reason.
 		local row2, resolved = resolveType(GameInfo.Types, verb);
-		if row2 == nil then return false, "unknown_" .. verb; end
+		if row2 == nil then
+			-- See `probeDistrictRepair`: a repair ask names a project the game
+			-- does not have; measure what the engine would offer, then refuse
+			-- exactly as before.
+			local wanted = string.match(tostring(verb), "^PROJECT_REPAIR_(.+)$");
+			if wanted ~= nil and wanted ~= "OUTER_DEFENSES" then
+				probeDistrictRepair(city, "DISTRICT_" .. wanted, verb, turn);
+			end
+			return false, "unknown_" .. verb;
+		end
 		verb = resolved;
 		civvisBuild[tonumber(subject) or -1] = resolved;
 		local params = buildParams(row2, city, x, y);
@@ -5883,6 +6267,29 @@ local function applyOrder(player, pid, row, turn)
 		end, 0);
 		if current ~= 0 and row2.Hash ~= nil and current == row2.Hash then
 			return true, "already_building";
+		end
+		-- Ask the same start-now predicate as Firaxis's production panel before
+		-- crediting this order. A successful `pcall` only proves that Lua did not
+		-- throw; the live Library loop showed that the engine can reject the build
+		-- while the bridge reports it applied on every turn.
+		local canOk, canStart, results = pcall(function()
+			return city:GetBuildQueue():CanProduce(row2.Hash, false, true);
+		end);
+		if not canOk or canStart ~= true then
+			local cityId = tonumber(subject) or -1;
+			local refused = refusedByCity[cityId];
+			if refused == nil or refused.turn ~= turn then
+				refused = { turn = turn };
+				refusedByCity[cityId] = refused;
+			end
+			refused[verb] = true;
+			emit("civvis_build_unplayable", {
+				turn = turn,
+				city = cityId,
+				item = tostring(verb),
+				reasons = productionFailureReasons(results),
+			});
+			return false, canOk and ("cannot_start_" .. verb) or "can_produce_throw";
 		end
 		local ok = pcall(function()
 			CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
@@ -5947,9 +6354,23 @@ local function applyOrder(player, pid, row, turn)
 		local formationForCost = nil;
 		if row2.Kind == "KIND_UNIT" then
 			params[CityCommandTypes.PARAM_UNIT_TYPE] = row2.Hash;
+			-- STANDARD is needed by GetPurchaseCost, but it must not be sent as a
+			-- military command parameter for civilian units. Civilization VI rejects
+			-- Settlers and Builders carrying it even when the city and treasury are
+			-- otherwise valid. Corps and Armies are the only explicit formations.
 			local formation = tonumber(x) or 0;
 			formationForCost = MilitaryFormationTypes.STANDARD_MILITARY_FORMATION;
-			if formation == 1 then
+			local unitRow = try(function() return GameInfo.Units[resolved]; end);
+			local militaryFormation = unitRow ~= nil
+				and ((unitRow.Combat or 0) > 0
+				     or (unitRow.RangedCombat or 0) > 0
+				     or (unitRow.Bombard or 0) > 0
+				     or (unitRow.AntiAirCombat or 0) > 0);
+			if formation == 0 and militaryFormation then
+				-- Preserve the host's explicit standard formation for combat units;
+				-- civilian and support units deliberately take the parameter-free path.
+				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
+			elseif formation == 1 then
 				formationForCost = MilitaryFormationTypes.CORPS_MILITARY_FORMATION;
 				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
 			elseif formation == 2 then
@@ -6335,9 +6756,31 @@ local function applyOrder(player, pid, row, turn)
 			--
 			-- Same cure as the settler loop: record the ground, let CIVVIS's own
 			-- planner route around it. See `Game::blocked_improvement_sites`.
+			-- ⚠⚠ NAME THE TILE THE ORDER ASKED FOR, NOT THE ONE THE BUILDER IS ON.
+			--
+			-- `x`/`y` above carry the ORDER's target and only fall back to the unit's
+			-- own tile. Reporting `unit:GetX()` here therefore named the wrong ground
+			-- whenever the builder had not reached the target — and a builder that
+			-- cannot reach its target is exactly the case this feedback exists for.
+			--
+			-- What it recorded instead was wherever the builder was stuck, usually the
+			-- capital's own centre. `Game::valid_improvements` already returns nothing
+			-- for a tile with a city on it, so the entry changed no decision, the real
+			-- tile stayed unblocked, and CIVVIS re-derived the same target from the
+			-- same board forever.
+			--
+			-- Measured on run civvis-20260802T041527Z: 286 `improve_refused`, of which
+			-- 118 + 84 + 59 + 23 + 13 name the SAME tile (63,11) — the capital centre —
+			-- across three builders, for a whole 250-turn game. Runs that expanded
+			-- refuse each tile once or twice and move on, which is what the feedback
+			-- looks like when it lands on the right ground.
+			--
+			-- ⚠ The automation rung above can move the builder before this line runs,
+			-- so `unit:GetX()` is not even reliably where the refusal happened.
 			emit("improve_refused", { turn = turn, unit = subject,
 			                          want = wanted or "IMPROVE",
-			                          x = unit:GetX(), y = unit:GetY() });
+			                          x = params[UnitOperationTypes.PARAM_X],
+			                          y = params[UnitOperationTypes.PARAM_Y] });
 			return false, wanted or "IMPROVE";
 		end
 		-- ★★★ SEND THE TRADER SOMEWHERE. Untranslated until now, so a trader stood
@@ -6400,6 +6843,138 @@ local function applyOrder(player, pid, row, turn)
 	end
 
 	return false, "unknown_kind_" .. kind;
+end
+
+-- ★★★★ GREAT PEOPLE MUST BE SPENT, NOT PARKED.
+--
+-- Measured on run civvis-20260801T224944Z: five Great People — three Writers and
+-- an Artist stacked on the capital's own centre, a Merchant one district over —
+-- each standing on ONE plot from the turn it was earned to the turn limit
+-- (t70→t251, full movement every sighting). Nothing in either half of the loop
+-- could act: CIVVIS's mirror drops `UNIT_GREAT_*` by design (its model banks a
+-- Great Person's effect at recruit — `Action::RecruitGreatPerson` applies
+-- `named_great_person_effect` with no walking unit), and this agent had zero
+-- great-person code, so the units fell through every ladder to a skip.
+--
+-- ⚠ BE HONEST ABOUT WHAT THIS IS: walking to a legal plot and pressing Activate
+-- is an actuation formality of Civilization VI — the same class as
+-- FOUND_CITY-before-MOVE_TO — because the decision (acquire this Great Person)
+-- was already taken upstream. The legal plots are the ENGINE's own answer
+-- (`GetActivationHighlightPlots`, the call the shipped SelectedUnit.lua shades
+-- the map with), so this cannot invent a target the game would refuse, and the
+-- engine is asked (`CanStartCommand`) before Activate is claimed. Counted apart
+-- from `applied` (`gp_activated` / `gp_moving` / `gp_idle`), so telemetry never
+-- presents it as CIVVIS's work.
+local gpPending = {};      -- unit id -> {x, y} last reported walk target
+local gpIdleReported = {}; -- unit id -> turn the last `idle` event was emitted
+local gpApiMissing = false;
+
+local function greatPersonOf(unit)
+	return try(function()
+		local gp = unit:GetGreatPerson();
+		if gp ~= nil and gp:IsGreatPerson() then return gp; end
+		return nil;
+	end, nil);
+end
+
+local function gpName(gp)
+	local individual = try(function()
+		local row = GameInfo.GreatPersonIndividuals[gp:GetIndividual()];
+		return row and row.GreatPersonIndividualType or nil;
+	end, nil);
+	local class = try(function()
+		local row = GameInfo.GreatPersonClasses[gp:GetClass()];
+		return row and row.GreatPersonClassType or nil;
+	end, nil);
+	return individual or "GP_INDIVIDUAL_UNKNOWN", class or "GP_CLASS_UNKNOWN";
+end
+
+-- Drive one Great Person toward being used. Returns "activated" | "moving" |
+-- "idle", or nil when the unit is not a Great Person this code should touch.
+local function orderGreatPerson(unit, id, turn)
+	local gp = greatPersonOf(unit);
+	if gp == nil then
+		-- ⚠ Distinguish "not a Great Person" from "the accessor is missing in
+		-- this context" — the `revealed_api` lesson. Emitted once per run.
+		if not gpApiMissing then
+			local name = unitTypeName(unit) or "";
+			if name:find("^UNIT_GREAT_") ~= nil then
+				gpApiMissing = true;
+				emit("gp", { turn = turn, unit = id, action = "api_missing",
+					kind_name = name });
+			end
+		end
+		return nil;
+	end
+	local individual, class = gpName(gp);
+	-- ⚠ A Prophet's activation opens the religion chooser, a modal this harness
+	-- does not answer yet — a stalled run loses more than an unspent Prophet.
+	-- Deferred, visibly, until that screen has a handler.
+	if class == "GREAT_PERSON_CLASS_PROPHET" then
+		if gpIdleReported[id] == nil then
+			gpIdleReported[id] = turn;
+			emit("gp", { turn = turn, unit = id, individual = individual,
+				class = class, action = "deferred_prophet" });
+		end
+		return "idle";
+	end
+	-- 1. If the engine will take Activate here and now, press it.
+	if commandUnit(unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]) then
+		gpPending[id] = nil;
+		emit("gp", { turn = turn, unit = id, individual = individual,
+			class = class, action = "activated",
+			x = try(function() return unit:GetX(); end, -1),
+			y = try(function() return unit:GetY(); end, -1) });
+		return "activated";
+	end
+	-- 2. Otherwise walk toward the nearest plot where activation is legal.
+	local plots = try(function() return gp:GetActivationHighlightPlots(); end, nil);
+	if type(plots) == "table" and #plots > 0 then
+		local ux = try(function() return unit:GetX(); end, nil);
+		local uy = try(function() return unit:GetY(); end, nil);
+		local bestX, bestY, bestD = nil, nil, nil;
+		for _, idx in ipairs(plots) do
+			local plot = try(function() return Map.GetPlotByIndex(idx); end, nil);
+			if plot ~= nil and ux ~= nil then
+				local px, py = plot:GetX(), plot:GetY();
+				local d = try(function()
+					return Map.GetPlotDistance(ux, uy, px, py);
+				end, 9999);
+				if bestD == nil or d < bestD then bestX, bestY, bestD = px, py, d; end
+			end
+		end
+		if bestX ~= nil then
+			local params = {};
+			params[UnitOperationTypes.PARAM_X] = bestX;
+			params[UnitOperationTypes.PARAM_Y] = bestY;
+			if operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+				-- Report a walk target once, not every step of the walk. A
+				-- refused MOVE_TO (e.g. a sibling Great Person holds the plot)
+				-- falls through to `idle` and retries next turn.
+				local pend = gpPending[id];
+				if pend == nil or pend.x ~= bestX or pend.y ~= bestY then
+					emit("gp", { turn = turn, unit = id, individual = individual,
+						class = class, action = "moving", x = bestX, y = bestY,
+						dist = bestD });
+				end
+				gpPending[id] = { x = bestX, y = bestY };
+				return "moving";
+			end
+		end
+	end
+	-- 3. Nowhere legal to activate — no empty Great Work slot, no qualifying
+	-- district built yet, or the one legal plot is occupied. A real constraint,
+	-- reported sparsely; the unit stays put and is retried every turn.
+	gpPending[id] = nil;
+	local before = gpIdleReported[id];
+	if before == nil or (turn - before) >= 25 then
+		gpIdleReported[id] = turn;
+		emit("gp", { turn = turn, unit = id, individual = individual,
+			class = class, action = "idle",
+			x = try(function() return unit:GetX(); end, -1),
+			y = try(function() return unit:GetY(); end, -1) });
+	end
+	return "idle";
 end
 
 -- ⚠ EMIT THE NUMERATOR AND THE DENOMINATOR. Four of this project's defects were
@@ -6518,6 +7093,24 @@ local function applyOrders(player, pid, turn, rows)
 		if not ordered[index] then runOrder(index, row); end
 	end
 
+	-- Great People go first, before the explore handoff: they cannot explore,
+	-- and CIVVIS cannot mention them — the mirror drops `UNIT_GREAT_*` by
+	-- design. See `orderGreatPerson` for what this is and is not.
+	local gpActivated, gpMoving, gpIdle = 0, 0, 0;
+	local gpHandled = {};
+	if cfg.GreatPeopleUse ~= false then
+		eachUnit(player, function(unit)
+			local id = try(function() return unit:GetID(); end, -1);
+			if id == -1 then return; end
+			local acted = orderGreatPerson(unit, id, turn);
+			if acted == nil then return; end
+			gpHandled[id] = true;
+			if acted == "activated" then gpActivated = gpActivated + 1;
+			elseif acted == "moving" then gpMoving = gpMoving + 1;
+			else gpIdle = gpIdle + 1; end
+		end);
+	end
+
 	-- ★★★★ UNITS CIVVIS DID NOT MENTION GO TO THE GAME'S OWN EXPLORE AUTOMATION.
 	--
 	-- ⚠ BE HONEST ABOUT WHAT THIS IS: it is a policy, and therefore a decision. It is
@@ -6542,7 +7135,7 @@ local function applyOrders(player, pid, turn, rows)
 		end
 		eachUnit(player, function(unit)
 			local id = try(function() return unit:GetID(); end, -1);
-			if id == -1 or mentioned[id] then return; end
+			if id == -1 or mentioned[id] or gpHandled[id] then return; end
 			local name = unitTypeName(unit);
 			-- Civilians cannot explore, and a settler that wanders is a settler that
 			-- never founds — this project has already paid for both.
@@ -6563,6 +7156,11 @@ local function applyOrders(player, pid, turn, rows)
 		applied = applied, refused = refused, by = byKind, refusals = whyNot,
 		-- Not part of `applied`: these are units CIVVIS said nothing about.
 		explored = explored,
+		-- Also not part of `applied`: Great People driven to their own use —
+		-- an actuation formality, not a CIVVIS decision. See `orderGreatPerson`.
+		gp_activated = gpActivated,
+		gp_moving = gpMoving,
+		gp_idle = gpIdle,
 		-- Orders the engine ACCEPTED that left the unit farther from where it was
 		-- sent. Counted apart from `refused` on purpose: a refusal is the bridge
 		-- working and being told no; this is the bridge reporting success for
@@ -6574,11 +7172,13 @@ local function applyOrders(player, pid, turn, rows)
 		-- because "no gold" is the first hypothesis and the cheapest to eliminate.
 		upgrade_tried = upgradeTried,
 		upgrade_blocked = upgradeBlocked,
+		-- See `upgradeUnit`: the engine's own FAILURE_REASONS per blocked type.
+		upgrade_blocked_why = upgradeBlockedWhy,
 		upgrade_gold = try(function()
 			return math.floor(player:GetTreasury():GetGoldBalance());
 		end, -1),
 	});
-	upgradeTried, upgradeBlocked = 0, {};
+	upgradeTried, upgradeBlocked, upgradeBlockedWhy = 0, {}, {};
 
 	-- ⚠⚠ A CIVVIS TURN MUST STILL EMIT A `turn` RECORD. The full one lives at the
 	-- end of `playTurn`, which no longer runs when CIVVIS is deciding — so run

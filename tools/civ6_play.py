@@ -19,6 +19,7 @@ from __future__ import annotations
 import argparse
 import atexit
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -84,6 +85,31 @@ LADDER = [
 
 def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def hold_macos_awake() -> bool:
+    """Keep an active live run awake even when the console is locked.
+
+    The assertion is tied to this process, so macOS releases it automatically
+    on normal exit, interruption, or a crash. It prevents idle display/system
+    sleep; a MacBook's hardware lid-close sleep still pauses execution unless
+    macOS is already in a supported clamshell configuration, and the run then
+    resumes from its persisted files after wake.
+    """
+    if sys.platform != "darwin":
+        return False
+    try:
+        subprocess.Popen(
+            ["/usr/bin/caffeinate", "-dims", "-w", str(os.getpid())],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+    except OSError as exc:
+        print(f"[session] could not hold macOS awake: {exc}", file=sys.stderr)
+        return False
+    return True
 
 
 def load_settle_plan(path: str | None) -> list[dict] | None:
@@ -232,6 +258,10 @@ def build_config(args: argparse.Namespace) -> dict:
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,
+        # Walk earned Great People to a legal activation plot and press Activate.
+        # An actuation formality (CIVVIS banks the effect at recruit and its
+        # mirror drops the walking unit); counted separately as gp_* fields.
+        "GreatPeopleUse": args.great_people,
         # ⚠ Polling, not spinning. A `DB.Query` per tick pinned the game at 139% CPU
         # and starved the log flush that carries the board out, deadlocking the loop
         # on turn 2 of run civvis-20260730T110209Z. These are all counted in POLLS.
@@ -463,14 +493,22 @@ def place_game(side: str = "left", fraction: float = 0.5,
     menu = 33  # the menu bar; a window placed at y=0 hides behind it
     width = max(640, int(screen_w * fraction))
     height = max(480, int((screen_h - menu) * max(0.1, min(1.0, vfraction))))
-    x = 0 if side == "left" else screen_w - width
+    # "bottomright" anchors the window to the screen's bottom-right corner —
+    # the operator's 2026-08-01 layout: CIVVIS holds the upper left at 2/3 of
+    # the diagonal, the real game the LOWER right at the same, overlapping in
+    # the middle with the game in front where they cross. The top-anchored
+    # sides keep their old meaning exactly.
+    if side == "bottomright":
+        x, y = screen_w - width, screen_h - height
+    else:
+        x, y = (0 if side == "left" else screen_w - width), menu
     script = (
         'tell application "System Events" to tell '
         '(first process whose name contains "Civ6") to tell window 1\n'
         f'  set size to {{{width}, {height}}}\n'
         # Aspyr constrains the existing origin while applying the smaller size.
         # Position last or a requested upper quadrant lands at the bottom.
-        f'  set position to {{{x}, {menu}}}\n'
+        f'  set position to {{{x}, {y}}}\n'
         'end tell')
     subprocess.run(["osascript", "-e", script], capture_output=True)
 
@@ -1140,6 +1178,12 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     # should have opened. No submenu means the menu was not up yet, which is a
     # reason to wait, not a reason to give up: an earlier run bailed with "no
     # game window found" while the game was still showing the 2K logo.
+    # Consecutive attempts that saw neither a menu nor a submenu. Three in a
+    # row means "stuck on a full screen" (the Additional Content screen shows
+    # ≤1 row to BOTH readers — indistinguishable from a menu that has not
+    # loaded yet), not "still booting"; the BACK click is empty artwork on a
+    # genuinely unready menu, so a false strike costs nothing.
+    blind_strikes = 0
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
         focus_game(GAME_SIDE, GAME_FRACTION)
         time.sleep(2.0)
@@ -1155,29 +1199,88 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         click_at(int(x + w * 0.15), int(y + h * 0.85))
         time.sleep(1.5)
 
-        # The menu shifts vertically with the render height. At 480 points the
-        # old 0.455 ratio landed just above Single Player (its observed center
-        # is 0.471), so click the row CIVVIS can actually read.
-        menu = run_dir / f"menu-attempt{attempt}.png"
-        screenshot(menu)
-        target = _observed_label_point(menu, "Create Game", bounds)
-        menu_point = _main_menu_point(menu, bounds)
-        if target is None and menu_point is None:
-            print(f"attempt {attempt}: main menu is not ready yet", file=sys.stderr)
+        # ★ Read the TOP-LEVEL menu off the screen before aiming. The 2026-08
+        # "Civ VII" promo banner shifted the whole column ~0.11 of the window
+        # DOWN, so the fixed fraction clicked empty artwork ABOVE the menu —
+        # sixteen attempts of nothing, a whole batch dead on arrival. The
+        # first row is "Single Player" on this build (Continue lives inside
+        # the submenu as "Resume"). The fixed fraction stays as the fallback
+        # when the read fails, so a vision-less host behaves exactly as before.
+        menushot = run_dir / f"menu-attempt{attempt}.png"
+        screenshot(menushot)
+        menu_point = _main_menu_point(menushot, bounds)
+        toprows = vision.menu_rows(menushot, bounds) if vision.available() else []
+        sp_y = MENU["single_player"][1]
+        pitch = 0.029
+        if menu_point is not None:
+            sp_y = (menu_point[1] - y) / h
+            if len(toprows) >= 2:
+                pitch = toprows[1] - toprows[0]
+            print(f"attempt {attempt}: Single Player label read at {menu_point}",
+                  file=sys.stderr)
+        elif len(toprows) >= 4:
+            sp_y = toprows[0]
+            pitch = toprows[1] - toprows[0]
+            menu_point = (int(x + w * MENU["single_player"][0]),
+                          int(y + h * sp_y))
+            print(f"attempt {attempt}: menu read at {sp_y:.3f} "
+                  f"(pitch {pitch:.3f}, {len(toprows)} rows)", file=sys.stderr)
+        else:
+            print(f"attempt {attempt}: top menu not readable "
+                  f"({len(toprows)} rows) -- refusing a blind menu click",
+                  file=sys.stderr)
+            blind_strikes += 1
+            if blind_strikes >= 3:
+                print("three blind attempts -- assuming a stuck full screen "
+                      "and clicking BACK", file=sys.stderr)
+                click_at(int(x + w * 0.723), int(y + h * 0.177))
+                blind_strikes = 0
+                time.sleep(3.0)
+            else:
+                time.sleep(20.0)
+            continue
+        click_at(*menu_point)
+        time.sleep(2.5)
+        # Read the submenu rather than assume its shape. Which entries it has
+        # depends on whether there is a save and a game to resume, so where
+        # "Create Game" lands moves between runs. The crop follows the read
+        # menu position for the same reason the aim does.
+        submenu = run_dir / f"submenu-attempt{attempt}.png"
+        screenshot(submenu)
+        target = _observed_label_point(submenu, "Create Game", bounds)
+        rows = (vision.submenu_rows(submenu, bounds, near=sp_y, pitch=pitch)
+                if vision.available() else [])
+        if target is None and len(rows) < 3:
+            blind_strikes = blind_strikes + 1 if len(toprows) < 4 else 0
+            print(f"attempt {attempt}: no submenu ({len(rows)} rows) -- "
+                  f"the menu is not ready yet (blind strike {blind_strikes})",
+                  file=sys.stderr)
             if not env.game_pids():
                 print("the game exited while starting", file=sys.stderr)
                 return False
-            time.sleep(20.0)
+            if blind_strikes >= 3:
+                print("three blind attempts -- assuming a stuck full screen "
+                      "and clicking BACK", file=sys.stderr)
+                click_at(int(x + w * 0.723), int(y + h * 0.177))
+                blind_strikes = 0
+                time.sleep(3.0)
+            else:
+                time.sleep(20.0)
             continue
-        if target is None:
-            click_at(*menu_point)
-            time.sleep(2.5)
-            # Read Create Game itself. The old band detector reports zero rows
-            # in the required half-height window even while this label is
-            # plainly visible, and the entry moves when Resume Game is present.
-            submenu = run_dir / f"submenu-attempt{attempt}.png"
-            screenshot(submenu)
-            target = _observed_label_point(submenu, "Create Game", bounds)
+        blind_strikes = 0
+        if len(rows) > 6:
+            # A full-screen LIST -- the Additional Content screen a mis-aimed
+            # click can walk into -- not a menu submenu. Its exit is the BACK
+            # button at the top right; Escape does nothing there (measured
+            # 2026-08-01 on the live screen). The same click is empty artwork
+            # on the plain menu, so a false positive is a no-op.
+            print(f"attempt {attempt}: {len(rows)} rows is a list screen, not "
+                  "a submenu -- clicking BACK", file=sys.stderr)
+            click_at(int(x + w * 0.723), int(y + h * 0.177))
+            time.sleep(2.0)
+            continue
+        if target is None and len(rows) >= 3:
+            target = (int(x + w * SUBMENU_X), int(y + h * rows[-3]))
         if target is None:
             print(f"attempt {attempt}: Create Game is not visible yet",
                   file=sys.stderr)
@@ -1492,6 +1595,7 @@ def play(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
+    hold_macos_awake()
     wait_for_unlocked_session()
     if not gamelock.acquire(args.tag, wait_s=args.lock_wait):
         foreign = gamelock.foreign_run(args.tag)
@@ -1831,7 +1935,9 @@ def _play(args: argparse.Namespace) -> int:
     # the contention note — so it is a flag, not a constant.
     reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                           each_poll=keep_foreground, poll_s=poll_s,
-                          stall_s=args.stall_seconds, pause_when=console_locked)
+                          stall_s=args.stall_seconds,
+                          frozen_s=args.frozen_seconds,
+                          pause_when=console_locked)
     # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
     # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
     # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
@@ -1875,6 +1981,7 @@ def _play(args: argparse.Namespace) -> int:
         reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                               each_poll=keep_foreground, poll_s=poll_s,
                               stall_s=args.stall_seconds,
+                              frozen_s=args.frozen_seconds,
                               pause_when=console_locked)
         if not reason.startswith("stalled"):
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
@@ -1976,7 +2083,7 @@ def main(argv: list[str] | None = None) -> int:
     # The game must stay frontmost to get frames, which makes it unwatchable if
     # it also owns the whole screen. Half is enough for the agent and leaves the
     # other half for a terminal.
-    ap.add_argument("--window-side", choices=["left", "right", "none"],
+    ap.add_argument("--window-side", choices=["left", "right", "bottomright", "none"],
                     default="left")
     ap.add_argument("--window-frac", type=float, default=0.5)
     # Taking a walled capital needs a real army, not a garrison. Four units is
@@ -2010,6 +2117,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-explore-unassigned", dest="explore_unassigned",
                     action="store_false", default=True,
                     help="leave units CIVVIS did not order standing still")
+    ap.add_argument("--no-great-people", dest="great_people",
+                    action="store_false", default=True,
+                    help="leave earned Great People standing instead of "
+                         "walking them to a legal plot and activating them")
     ap.add_argument("--no-automate-stuck-builders", dest="automate_stuck_builders",
                     action="store_false", default=True,
                     help="leave a builder idle when CIVVIS's improvement is refused")
@@ -2024,6 +2135,18 @@ def main(argv: list[str] | None = None) -> int:
     # being clicks landing on a live game.
     ap.add_argument("--stall-seconds", type=float, default=420.0,
                     help="give up on a run that has emitted nothing for this long")
+    # ⚠ A DIFFERENT DEATH FROM `--stall-seconds`, and now the common one. That flag
+    # watches for SILENCE; this one watches for a turn that stops advancing while
+    # events keep arriving. Run civvis-20260802T033552Z wedged on the World Congress
+    # at turn 209 with `events.jsonl` still growing every poll, so the silence
+    # watchdog could never fire and the attempt sat until a human looked at it.
+    #
+    # 480s rather than the 420s of its sibling: a real turn can legitimately take a
+    # while late in a large game (rival AI turns, a long animation), and this one
+    # kills a run that is still emitting, so it must be the more patient of the two.
+    ap.add_argument("--frozen-seconds", type=float, default=480.0,
+                    help="give up on a run whose TURN has not advanced for this "
+                         "long, even though it is still emitting events")
     ap.add_argument("--civvis-decides", action="store_true", default=False,
                     help="CIVVIS makes every decision; the mod only actuates")
     ap.add_argument("--civvis-bin", default=None,

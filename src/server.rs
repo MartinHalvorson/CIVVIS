@@ -128,6 +128,12 @@ pub struct Params {
     /// snapshot: a run that seats from it must not rewrite it. Point this at
     /// a runtime copy and the table moves with every game played.
     pub league_record: bool,
+    /// Optional match-machine coverage target. When set, this unretired
+    /// strategy owns seat zero for the game; the other seats keep the normal
+    /// rank-weighted exhibition selection. It is deliberately separate from
+    /// world settings so rotating targets cannot trigger a spectator restart
+    /// or alter tournament rules.
+    pub force_strategy: Option<String>,
 }
 
 pub struct Session {
@@ -304,7 +310,7 @@ impl ChronicleSnapshot {
                     .get(building)
                     .is_some_and(|spec| spec.buildable)
                 {
-                    buildings.insert((city.id, building.clone()), city.owner);
+                    buildings.insert((city.id, *building), city.owner);
                 }
             }
             for wonder in city.wonders.keys() {
@@ -413,7 +419,7 @@ fn completed_buildings(game: &Game) -> BTreeSet<Name> {
         .filter(|building| {
             game.rules
                 .buildings
-                .get(*building)
+                .get(building)
                 .is_some_and(|spec| spec.buildable)
         })
         .cloned()
@@ -544,7 +550,7 @@ fn chronicle_world_events(
         .collect();
     new_buildings.sort_by_key(|((city, building), _)| (*city, building.as_str()));
     for ((city_id, building), owner) in new_buildings {
-        if chronicle.buildings.insert(building.clone()) {
+        if chronicle.buildings.insert(*building) {
             let city = after.cities.get(city_id).map(|city| city.name.as_str());
             events.push(json!({
                 "type": "building_first", "player": owner,
@@ -1503,6 +1509,7 @@ impl Session {
         game: &Game,
         league: Option<&crate::league::League>,
         seat_from_roster: bool,
+        force_strategy: Option<&str>,
     ) -> (Vec<Box<dyn Ai + Send>>, Vec<Option<usize>>) {
         let mut seat_strategy: Vec<Option<usize>> = vec![None; game.players.len()];
         if let Some(l) = league {
@@ -1532,8 +1539,30 @@ impl Session {
             } else if let Some(default_entrant) =
                 l.strategies.iter().position(|s| s.name == "advanced")
             {
-                for id in majors {
-                    seat_strategy[id] = Some(default_entrant);
+                for id in &majors {
+                    seat_strategy[*id] = Some(default_entrant);
+                }
+            }
+            // The match machine rotates every unretired strategy through a
+            // dedicated seat. This includes an entrant marked `league_only`:
+            // it is still a valid rated strategy, and an explicit coverage
+            // request is the operator's admission decision for this game.
+            // Keep all other seats on the ordinary sampler and swap rather
+            // than duplicate the target when it was already selected.
+            if let Some(name) = force_strategy {
+                if let Some(target) = l.strategies.iter().position(|strategy| {
+                    strategy.name == name && !strategy.retired && !strategy.human
+                }) {
+                    if let Some(seat) = majors.first().copied() {
+                        if let Some(existing) = seat_strategy
+                            .iter()
+                            .position(|strategy| *strategy == Some(target))
+                        {
+                            seat_strategy.swap(seat, existing);
+                        } else {
+                            seat_strategy[seat] = Some(target);
+                        }
+                    }
                 }
             }
         }
@@ -1689,7 +1718,12 @@ impl Session {
         // no league strategy is seated. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
         let (mut league, seat_from_roster) = Self::load_params_league(&params);
-        let (mut ais, mut seat_strategy) = Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        let (mut ais, mut seat_strategy) = Self::ai_fleet(
+            &game,
+            league.as_ref(),
+            seat_from_roster,
+            params.force_strategy.as_deref(),
+        );
         // Only a watched table records its reasoning. Everywhere else the
         // journal is off and every `think!` is one `Option` test.
         let journal = if params.spectate {
@@ -1769,8 +1803,12 @@ impl Session {
             != simulation_settings(&params))
         .then_some(requested_next);
         let (mut league, seat_from_roster) = Self::load_params_league(&params);
-        let (mut ais, mut seat_strategy) =
-            Self::ai_fleet(&game, league.as_ref(), seat_from_roster);
+        let (mut ais, mut seat_strategy) = Self::ai_fleet(
+            &game,
+            league.as_ref(),
+            seat_from_roster,
+            params.force_strategy.as_deref(),
+        );
         // A save carries the world, not what anyone was thinking while they
         // played it. The restored table starts a fresh record from the turn it
         // resumes.
@@ -3040,7 +3078,7 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.civs = civs
             .iter()
             .filter_map(|civ| civ.as_str())
-            .filter(|civ| rules.civs.contains_key(*civ))
+            .filter(|civ| rules.civs.contains_key(civ))
             .map(str::to_string)
             .collect();
     }
@@ -3613,6 +3651,33 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let session = sh.session.lock().unwrap();
             let save = serde_json::to_value(&session.game).unwrap();
             respond_json(stream, &save);
+        }
+        // The district adjacency calculator over the live game: every
+        // buildable district for a city's civilization, every legal plot,
+        // what each would earn there and the ledger saying why — foundations
+        // counted as the districts they will become. A planning read for
+        // spectator tools and the Civ 6 bridge's site advisor; read-only.
+        // `?city=<id>` narrows to one city, the default is every city.
+        ("GET", "/adjacency") => {
+            let session = sh.session.lock().unwrap();
+            let only: Option<u32> = query_value(&request_target, "city")
+                .and_then(|city| city.parse().ok());
+            let cities: Vec<Value> = session
+                .game
+                .cities
+                .iter()
+                .filter(|(cid, _)| only.is_none_or(|wanted| wanted == **cid))
+                .map(|(cid, city)| {
+                    json!({
+                        "id": cid,
+                        "name": city.name,
+                        "owner": city.owner,
+                        "forecasts": session.game.district_adjacency_calculator(*cid),
+                    })
+                })
+                .collect();
+            drop(session);
+            respond_json(stream, &json!({"cities": cities}));
         }
         // The saves this process can see, newest turn first.
         // Where a unit would step next on its way somewhere far. `path_to`
@@ -4923,6 +4988,63 @@ mod tests {
         port
     }
 
+    /// The adjacency calculator rides the server so planning tools can ask a
+    /// live game where districts belong. One city on request, every city by
+    /// default, and every site carries the ledger that explains its figure.
+    #[test]
+    fn adjacency_calculator_is_served_per_city() {
+        let port = exhibition(20_260_801);
+        let deadline = Instant::now() + Duration::from_secs(60);
+        let city = loop {
+            assert!(Instant::now() < deadline, "no capital was ever founded");
+            let state: Value =
+                serde_json::from_str(&http_get(port, "/state").expect("state")).unwrap();
+            if let Some(city) = state["cities"].as_array().and_then(|cities| cities.first()) {
+                break city["id"].as_u64().unwrap();
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        };
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause the exhibition");
+
+        let body = http_get(port, &format!("/adjacency?city={city}")).expect("adjacency");
+        let parsed: Value = serde_json::from_str(&body).expect("adjacency is JSON");
+        let cities = parsed["cities"].as_array().expect("cities array");
+        assert_eq!(cities.len(), 1, "?city narrows the document to one city");
+        assert_eq!(cities[0]["id"].as_u64(), Some(city));
+        let forecasts = cities[0]["forecasts"].as_array().expect("forecasts");
+        assert!(!forecasts.is_empty(), "a capital has districts to plan");
+        for forecast in forecasts {
+            assert!(forecast["district"].is_string());
+            assert!(forecast["family"].is_string());
+            for site in forecast["sites"].as_array().expect("sites") {
+                assert!(site["pos"].is_array());
+                assert!(site["yields"].is_object());
+                let mut ledger = 0.0;
+                for source in site["sources"].as_array().expect("ledger") {
+                    for yield_key in ["food", "production", "gold", "science", "culture", "faith"]
+                    {
+                        ledger += source["yields"][yield_key].as_f64().unwrap_or(0.0);
+                    }
+                }
+                let mut total = 0.0;
+                for yield_key in ["food", "production", "gold", "science", "culture", "faith"] {
+                    total += site["yields"][yield_key].as_f64().unwrap_or(0.0);
+                }
+                assert!(
+                    (ledger - total).abs() < 1e-9,
+                    "served ledger must add up to the served yields"
+                );
+            }
+        }
+
+        let all: Value =
+            serde_json::from_str(&http_get(port, "/adjacency").expect("all cities")).unwrap();
+        assert!(
+            !all["cities"].as_array().expect("cities").is_empty(),
+            "the default document covers the world's cities"
+        );
+    }
+
     #[test]
     fn runtime_identity_is_a_small_successor_probe() {
         let port = exhibition(20_260_726);
@@ -5125,7 +5247,7 @@ mod tests {
         let same = tile_mark(&tile);
         assert_eq!(same, tile_mark(&tile.clone()), "the same tile, twice");
 
-        let mut changed = |mutate: &dyn Fn(&mut Value)| {
+        let changed = |mutate: &dyn Fn(&mut Value)| {
             let mut other = tile.clone();
             mutate(&mut other);
             assert_ne!(tile_mark(&other), same, "unnoticed change: {other}");
@@ -5997,6 +6119,7 @@ mod tests {
             supervised: false,
             league_dir: None,
             league_record: false,
+            force_strategy: None,
         }
     }
 
@@ -7080,7 +7203,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
         assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(154, 50 + rows * 28);"));
         assert!(EMBEDDED_INDEX
-            .contains("const requestedWidth = 820 + Math.max(0, rows - 1) * 100;"));
+            .contains("const requestedWidth = 854 + Math.max(0, rows - 1) * 100;"));
         assert!(EMBEDDED_INDEX.contains(
             "mapArea.style.setProperty(\"--player-hud-width\", `${requestedWidth}px`);"
         ));
@@ -7117,7 +7240,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
         assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
         // A masthead row is one line: civilization carries the capital action,
-        // followed by the explicit watch action, identity and ten values.
+        // followed by the explicit watch action, identity and twelve values.
         // Watch-as deliberately has no column heading; the button carries its
         // own visible label.
         assert!(EMBEDDED_INDEX.contains(
@@ -7127,11 +7250,11 @@ mod tests {
         // The values claim their width first and the identity block flexes, so a
         // narrow masthead ellipsizes a name rather than running two figures
         // together. A percentage identity column with a 300px floor never
-        // yielded, which left the ten values 27px each at 1600px.
+        // yielded, which left the twelve values 27px each at 1600px.
         //
         // Every data column is now a share rather than a pixel count, and each
         // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 7 identity columns totalling 11.387 against 10 value
+        // inside it — 7 identity columns totalling 11.387 against 12 value
         // columns of 1. That identity is not decoration: it is what lets the
         // bar between the two blocks move width across itself, and it is the
         // ratio the table uses at every width. Changing one number here without
@@ -7146,18 +7269,25 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
-             calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);"
+             calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);"
         ));
+        assert!(EMBEDDED_INDEX
+            .contains("--hud-stat-tracks: repeat(12, minmax(var(--hud-stat-min), 1fr));"));
         // The floors stay in the stylesheet so the width breakpoints can lower
         // them; the shares belong to the viewer. A breakpoint that rewrote a
         // share would undo a dragged column on the next window resize, so no
         // media rule may set either track list or either enclosing track.
         assert!(EMBEDDED_INDEX.contains(
-            "--hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 76px;"
+            "--hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;"
         ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
-            "the figure floor is declared once and holds at every width: four \
-             digits need the same room on a laptop as on a wall");
+            "the Elo floor is declared once and holds at every width: a full \
+             score needs the same room on a laptop as on a wall");
+        assert!(EMBEDDED_INDEX.contains("const HUD_ELO_MIN_FLOOR = 60;"));
+        assert!(EMBEDDED_INDEX.contains("function syncPlayerHudEloFloor()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "hud.style.setProperty(\"--hud-ident-num-min\", floor);"
+        ), "a rating longer than the signed five-digit floor raises its shared track");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-odds-min:").count(), 1,
             "and so does the two-category odds cell's own floor");
         assert!(EMBEDDED_INDEX.contains(
@@ -7182,15 +7312,64 @@ mod tests {
         // reason a dragged column moves the figures under it as well as its
         // own head.
         assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-stat-tracks);").count(), 2,
-            "the value heads and the value cells are the same ten tracks");
+            "the value heads and the value cells are the same twelve tracks");
+        assert!(EMBEDDED_INDEX.contains(
+            "--hud-stat-tracks: repeat(12, minmax(var(--hud-stat-min), 1fr));"
+        ), "the initial style has the same twelve stat tracks before JavaScript synchronizes them");
+        assert!(EMBEDDED_INDEX.contains(
+            "calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);"
+        ), "the static stat-track floor covers every stat and its gutters");
         assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
             "the identity heads and the identity cells are the same tracks");
+        // All three render-time lists must stay in one reading order: the
+        // column model lays out and drags the cells, the heading names them,
+        // and playerHudStats supplies their figures. Total population comes
+        // from the player payload, while food comes from the existing public
+        // yield payload rather than a separate request.
+        fn assert_hud_stat_order(source: &str, section: &str) {
+            let expected = [
+                "cities", "population", "food", "production", "science", "culture", "faith", "gold",
+                "military", "wonders", "suzerain", "score",
+            ];
+            let mut cursor = 0;
+            for key in expected {
+                let needle = format!("\"{key}\"");
+                let offset = source[cursor..]
+                    .find(&needle)
+                    .unwrap_or_else(|| panic!("{section} is missing the {key} statistic"));
+                cursor += offset + needle.len();
+            }
+        }
+        let stat_columns = EMBEDDED_INDEX
+            .split_once("const PLAYER_HUD_COLUMNS = [")
+            .expect("player HUD column model")
+            .1
+            .split_once("];\n// One bar per seam")
+            .expect("end of player HUD column model")
+            .0;
+        assert_hud_stat_order(stat_columns, "player HUD column model");
+        let stat_figures = EMBEDDED_INDEX
+            .split_once("function playerHudStats(player, rank) {")
+            .expect("player HUD stat figures")
+            .1
+            .split_once("// Rebuilding the ribbon")
+            .expect("end of player HUD stat figures")
+            .0;
+        assert_hud_stat_order(stat_figures, "player HUD stat figures");
+        let stat_headers = EMBEDDED_INDEX
+            .split_once(r#"<span class="diplomacy-stat-head">` +"#)
+            .expect("player HUD stat headings")
+            .1
+            .split_once(".map(([kind, label, title])")
+            .expect("end of player HUD stat headings")
+            .0;
+        assert_hud_stat_order(stat_headers, "player HUD stat headings");
         // Player, ELO, the Start/Now pair, AGE and PLAN are drawn inside one button spanning
         // five of those tracks, so that button divides itself with `subgrid` — the
         // same tracks, not a copy of their ratios. A copy is what shipped
         // before, and it came apart in both directions a copy can: it carried
         // `minmax(0, …)` where the heads carry the 30px label floor and the
-        // 38px figure floor, so on a 1280px screen the ELO head stood at 38px
+        // 60px figure floor, so on a 1280px screen the ELO head stood at 60px
         // over a 27.5px figure and every "1703" rendered as "1…"; and it never
         // heard about a drag, so moving the ELO/odds bar 26px at 1920px moved
         // the head 21px and left the figures where they were.
@@ -7219,7 +7398,7 @@ mod tests {
         // `clip`, not `ellipsis`: the fitter compares integral scrollWidth with
         // integral clientWidth while the browser applies text-overflow on any
         // sub-pixel overflow, so ellipsis spends a character on a head that
-        // renders whole. Measured at 1600px: ELO in its 38px column.
+        // renders whole. Measured at 1600px: ELO in its 60px column.
         assert!(EMBEDDED_INDEX.contains(
             "border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;"
         ));
@@ -9500,12 +9679,10 @@ mod tests {
         assert!(refused["started"].is_null());
     }
 
-    /// War, peace and denouncement have been in `legal_actions(0)` since v0.6
-    /// with nothing on the page that would send one, which closed the
-    /// domination path to a person while leaving it open to every agent. The
-    /// diplomacy screen is where those live now, and it must keep covering
-    /// them — including for city-states, or a war with one can be started and
-    /// never ended.
+    /// Diplomacy needs a complete player-facing action surface. The screen
+    /// must retain both war/peace (including city-states) and every major-to-
+    /// major relationship action, or a mechanic the engine and AI can use is
+    /// still unavailable to a human player.
     #[test]
     fn browser_lets_the_player_conduct_diplomacy() {
         for piece in [
@@ -9526,6 +9703,12 @@ mod tests {
             "make_peace",
             "denounce",
             "propose_deal",
+            "send_delegation",
+            "send_embassy",
+            "propose_defensive_pact",
+            "propose_joint_war",
+            "request_promise",
+            "demand_gold",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("byPlayer(\"{action}\")")),
@@ -9617,19 +9800,16 @@ mod tests {
             .expect("a map has somewhere out of reach");
         assert!(session.game.path_to(unit, far).is_none());
 
-        match session.game.route_step(unit, far, 0) {
-            Some(step) => {
-                assert_ne!(step, start, "a route step must leave where it started");
-                assert_eq!(
-                    session.game.wdist(start, step),
-                    1,
-                    "a route step is one tile, validated by the caller's Move"
-                );
-            }
-            // An island start can legitimately have no land route; the client
-            // treats that the same way — the order ends rather than retrying.
-            None => {}
+        if let Some(step) = session.game.route_step(unit, far, 0) {
+            assert_ne!(step, start, "a route step must leave where it started");
+            assert_eq!(
+                session.game.wdist(start, step),
+                1,
+                "a route step is one tile, validated by the caller's Move"
+            );
         }
+        // An island start can legitimately have no land route; the client treats that
+        // the same way — the order ends rather than retrying.
 
         // A refused step must not end the journey: a unit with one movement
         // point cannot enter a two-cost forest, and next turn it can. The
@@ -9801,6 +9981,54 @@ mod tests {
         let before = session.game.turn;
         assert_eq!(session.autoplay(3), 3);
         assert_eq!(session.game.turn, before + 3);
+    }
+
+    #[test]
+    fn an_explicit_coverage_target_can_include_a_live_excluded_strategy() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-server-coverage-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let dir = dir.to_str().unwrap().to_string();
+        let _ = std::fs::remove_dir_all(&dir);
+        let entrant = |name: &str| {
+            crate::league::Strategy::new(
+                name,
+                crate::league::StrategyKind::Builtin {
+                    ai: name.to_string(),
+                },
+                0,
+            )
+        };
+        let mut excluded = entrant("strategic");
+        assert!(excluded.exclude_from_live("coverage test", "the test ends"));
+        crate::league::save_league(
+            &dir,
+            &crate::league::League {
+                round: 2,
+                strategies: vec![entrant("advanced"), entrant("basic"), excluded],
+                calibration: Default::default(),
+            },
+        );
+
+        let mut params = current();
+        params.num_players = 4;
+        params.spectate = true;
+        params.league_dir = Some(dir.clone());
+        params.force_strategy = Some("strategic".to_string());
+        let session = Session::new(params);
+        let target = session
+            .league
+            .as_ref()
+            .unwrap()
+            .strategies
+            .iter()
+            .position(|strategy| strategy.name == "strategic")
+            .unwrap();
+        assert_eq!(session.seat_strategy[0], Some(target));
+        assert_eq!(session.seat_entry(0).unwrap().name, "strategic");
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     /// Sitting down to play registers a *new* player.
@@ -11016,11 +11244,9 @@ pub fn serve_with_game(
     // fine behind the stall. Each connection gets its own thread; the session
     // mutex still serialises the state itself, but only for as long as the
     // snapshot takes, not for the serialisation and the socket write too.
-    for stream in listener.incoming() {
-        if let Ok(mut s) = stream {
-            let shared = shared.clone();
-            std::thread::spawn(move || handle(&mut s, &shared));
-        }
+    for mut s in listener.incoming().flatten() {
+        let shared = shared.clone();
+        std::thread::spawn(move || handle(&mut s, &shared));
     }
 }
 

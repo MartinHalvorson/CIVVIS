@@ -261,8 +261,8 @@ fn main() {
     println!();
     println!("prefix stability (the shipped default is K=8):");
     println!(
-        "  {:>5}  {:<13} {:>10} {:>10}  {}",
-        "games", "leader", "edge #2", "paired SE", "ranking"
+        "  {:>5}  {:<13} {:>10} {:>10}  ranking",
+        "games", "leader", "edge #2", "paired SE"
     );
     for count in prefixes {
         let order = ranked(&results, count, Objective::NoWinBonus, players);

@@ -44,6 +44,19 @@ use civvis::ai::Weights;
 use civvis::evolve::{fitness_observations, EvoCfg};
 use civvis::strategic::{Doctrine, ReviewPath, StrategicAi};
 
+/// Fixed game and parallelism settings shared by the probe's audit modes.
+#[derive(Clone, Copy)]
+struct ProbeConfig {
+    players: usize,
+    maps: usize,
+    warmup: u32,
+    seed0: u64,
+    jobs: usize,
+    width: i32,
+    height: i32,
+    turns: u32,
+}
+
 /// What the rollouts would have answered at a position a prior answered
 /// instead, and which prior it was.
 struct PriorAudit {
@@ -193,6 +206,16 @@ fn main() {
     let width = number(&args, "--width", 24) as i32;
     let height = number(&args, "--height", 16) as i32;
     let turns = number(&args, "--turns", 200) as u32;
+    let config = ProbeConfig {
+        players,
+        maps,
+        warmup,
+        seed0,
+        jobs,
+        width,
+        height,
+        turns,
+    };
 
     // Audit mode: sample the positions a prior answers instead of the search,
     // and ask what the search would have said there.
@@ -255,29 +278,23 @@ fn main() {
 
     if flag(&args, "--genome") {
         let replicas = number(&args, "--replicas", 5);
-        audit_genome(
-            players, maps, warmup, seed0, jobs, width, height, turns, replicas,
-        );
+        audit_genome(config, replicas);
         return;
     }
 
     if flag(&args, "--outcome") {
         let replicas = number(&args, "--replicas", 1);
-        audit_outcome(
-            players, maps, warmup, seed0, jobs, width, height, turns, replicas,
-        );
+        audit_outcome(config, replicas);
         return;
     }
 
     if flag(&args, "--production") {
-        audit_production(players, maps, warmup, seed0, jobs, width, height, turns);
+        audit_production(config);
         return;
     }
 
     if flag(&args, "--priors") {
-        audit_priors(
-            players, maps, warmup, seed0, jobs, width, height, turns,
-        );
+        audit_priors(config);
         return;
     }
 
@@ -313,14 +330,14 @@ fn main() {
             if game.winner.is_some() {
                 break;
             }
-            for pid in 0..game.players.len() {
+            for (pid, rival) in rivals.iter_mut().enumerate().take(game.players.len()) {
                 if game.winner.is_some() {
                     break;
                 }
                 if pid == 0 {
                     agent.take_turn(&mut game, pid);
                 } else {
-                    rivals[pid].take_turn(&mut game, pid);
+                    rival.take_turn(&mut game, pid);
                 }
                 if game.winner.is_none() && game.current == pid {
                     let _ = game.apply(pid, &Action::EndTurn);
@@ -436,16 +453,17 @@ fn main() {
 }
 
 
-fn audit_priors(
-    players: usize,
-    maps: usize,
-    warmup: u32,
-    seed0: u64,
-    jobs: usize,
-    width: i32,
-    height: i32,
-    turns: u32,
-) {
+fn audit_priors(config: ProbeConfig) {
+    let ProbeConfig {
+        players,
+        maps,
+        warmup,
+        seed0,
+        jobs,
+        width,
+        height,
+        turns,
+    } = config;
     let results = parallel::map(maps, jobs, move |index| {
         let seed = seed0 + index as u64;
         let mut game = Game::new(players, width, height, seed, turns, 0);
@@ -455,14 +473,14 @@ fn audit_priors(
             if game.winner.is_some() {
                 break;
             }
-            for pid in 0..game.players.len() {
+            for (pid, rival) in rivals.iter_mut().enumerate().take(game.players.len()) {
                 if game.winner.is_some() {
                     break;
                 }
                 if pid == 0 {
                     agent.take_turn(&mut game, pid);
                 } else {
-                    rivals[pid].take_turn(&mut game, pid);
+                    rival.take_turn(&mut game, pid);
                 }
                 if game.winner.is_none() && game.current == pid {
                     let _ = game.apply(pid, &Action::EndTurn);
@@ -545,18 +563,13 @@ fn audit_priors(
         audits.len(),
         100.0 * disagreements.len() as f64 / audits.len() as f64
     );
-    let mut shown = 0;
-    for audit in &disagreements {
-        if shown >= 8 {
-            break;
-        }
+    for audit in disagreements.iter().take(8) {
         println!(
             "    {:<22} prior chose {:<11} search would choose {}",
             path_name(audit.path),
             lane_name(audit.prior),
             lane_name(audit.searched)
         );
-        shown += 1;
     }
 
     // Who actually decides this agent's lanes. A prior always names one; the
@@ -607,16 +620,17 @@ fn audit_priors(
 }
 
 
-fn audit_production(
-    players: usize,
-    maps: usize,
-    warmup: u32,
-    seed0: u64,
-    jobs: usize,
-    width: i32,
-    height: i32,
-    turns: u32,
-) {
+fn audit_production(config: ProbeConfig) {
+    let ProbeConfig {
+        players,
+        maps,
+        warmup,
+        seed0,
+        jobs,
+        width,
+        height,
+        turns,
+    } = config;
     struct CityReading {
         candidates: usize,
         spread: f64,
@@ -632,11 +646,11 @@ fn audit_production(
             if game.winner.is_some() {
                 break;
             }
-            for pid in 0..game.players.len() {
+            for (pid, agent) in fleet.iter_mut().enumerate().take(game.players.len()) {
                 if game.winner.is_some() {
                     break;
                 }
-                fleet[pid].take_turn(&mut game, pid);
+                agent.take_turn(&mut game, pid);
                 if game.winner.is_none() && game.current == pid {
                     let _ = game.apply(pid, &Action::EndTurn);
                 }
@@ -754,21 +768,19 @@ fn opponent_pool(index: usize) -> Box<dyn Ai> {
     }
 }
 
-fn audit_outcome(
-    players: usize,
-    maps: usize,
-    warmup: u32,
-    seed0: u64,
-    jobs: usize,
-    width: i32,
-    height: i32,
-    turns: u32,
-    replicas: usize,
-) {
+fn audit_outcome(config: ProbeConfig, replicas: usize) {
+    let ProbeConfig {
+        players,
+        maps,
+        warmup,
+        seed0,
+        jobs,
+        width,
+        height,
+        turns,
+    } = config;
     struct Decision {
         candidates: usize,
-        /// Candidates whose continuation this seat won.
-        wins: usize,
         /// The proxy's pick also won its continuation.
         proxy_pick_won: bool,
         /// Proxy pick and outcome pick are the same item.
@@ -790,11 +802,11 @@ fn audit_outcome(
             if game.winner.is_some() {
                 break;
             }
-            for pid in 0..game.players.len() {
+            for (pid, agent) in fleet.iter_mut().enumerate().take(game.players.len()) {
                 if game.winner.is_some() {
                     break;
                 }
-                fleet[pid].take_turn(&mut game, pid);
+                agent.take_turn(&mut game, pid);
                 if game.winner.is_none() && game.current == pid {
                     let _ = game.apply(pid, &Action::EndTurn);
                 }
@@ -882,7 +894,6 @@ fn audit_outcome(
             let high = rates.iter().copied().fold(f64::NEG_INFINITY, f64::max);
             out.push(Decision {
                 candidates: labelled.len(),
-                wins,
                 proxy_pick_won: proxy_pick.2,
                 agrees: outcome_pick.is_none_or(|(name, _, _)| *name == proxy_pick.0),
                 discriminates: wins > 0 && wins < labelled.len(),
@@ -983,17 +994,17 @@ fn audit_outcome(
 }
 
 
-fn audit_genome(
-    players: usize,
-    maps: usize,
-    warmup: u32,
-    seed0: u64,
-    jobs: usize,
-    width: i32,
-    height: i32,
-    turns: u32,
-    replicas: usize,
-) {
+fn audit_genome(config: ProbeConfig, replicas: usize) {
+    let ProbeConfig {
+        players,
+        maps,
+        warmup,
+        seed0,
+        jobs,
+        width,
+        height,
+        turns,
+    } = config;
     let results = parallel::map(maps, jobs, move |index| {
         let seed = seed0 + index as u64;
         let mut game = Game::new(players, width, height, seed, turns, 0);
@@ -1002,11 +1013,11 @@ fn audit_genome(
             if game.winner.is_some() {
                 break;
             }
-            for pid in 0..game.players.len() {
+            for (pid, agent) in fleet.iter_mut().enumerate().take(game.players.len()) {
                 if game.winner.is_some() {
                     break;
                 }
-                fleet[pid].take_turn(&mut game, pid);
+                agent.take_turn(&mut game, pid);
                 if game.winner.is_none() && game.current == pid {
                     let _ = game.apply(pid, &Action::EndTurn);
                 }

@@ -46,7 +46,6 @@ import urllib.request
 RIG = os.environ.get(
     "CIVVIS_RIG", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-
 def default_binary() -> str:
     """Find a local CIVVIS executable without assuming one operator's home."""
     configured = os.environ.get("CIVVIS_BIN")
@@ -261,6 +260,81 @@ def transform_river_masks(source_edges, events, top):
                 holder["rv"] |= reflected_bit
 
 
+def remap_river_masks(events, top):
+    """A vertical reflection must MOVE two of the three river flags between plots.
+
+    Civilization VI stores a river on three of a plot's six edges: `rv` bit 1 is
+    `IsWOfRiver` (river on the plot's EAST edge), bit 2 `IsNWOfRiver` (SOUTH-EAST
+    edge), bit 4 `IsNEOfRiver` (SOUTH-WEST edge). The reconstruction applies that
+    table to whatever coordinates it is handed. `flip_north_up` reflects the
+    plots about a row centre, and an E edge survives that on the same plot — but
+    a SE edge lands as a NE edge, and the flag vocabulary has no "river on my NE
+    edge" bit. The segment is still expressible, on the OTHER plot sharing it:
+    what was this plot's south-east segment is, after the flip, the flipped
+    SE-neighbour's south-west one.
+
+    Measured before this pass existed: 58 of 108 live river segments — every
+    diagonal one — were served on the vertically mirrored edge (run
+    civvis-20260801T184324Z, turn-80 export against /state on 8610).
+
+    Gather form, in PRE-flip coordinates (odd-r offset, y grows north, east-west
+    wrap), writing each plot's mask in place so `flip_north_up` can then move
+    the plots and the composition puts every segment back where the game put it:
+
+        new bit1(P) = old bit1(P)
+        new bit2(P) = old bit4(NE(P))    NE(x,y) = (x + (y&1),     y + 1)
+        new bit4(P) = old bit2(NW(P))    NW(x,y) = (x - 1 + (y&1), y + 1)
+
+    Returns the number of segments nothing can carry after the flip FOR THE
+    NEWEST EXPORT TURN — the board the mirror actually shows: a diagonal flag
+    whose gathering plot is not in the export (the fog frontier), or an E
+    segment lying wholly in the one polar row the reflection drops. Earlier
+    exports are remapped identically but not counted, because summing losses
+    over every historical fog frontier reads as a hole in the visible board
+    (141 "lost" on a board missing 4). Bounded, counted, and logged by the
+    caller — never silent.
+    """
+    lost_by_turn = {}
+    by_turn = {}
+    for event in events:
+        if isinstance(event, dict) and event.get("kind") == "tiles":
+            by_turn.setdefault(event.get("turn"), []).append(event)
+    for turn, chunks in by_turn.items():
+        lost = lost_by_turn.setdefault(turn, 0)
+        width = next((c["width"] for c in chunks if isinstance(c.get("width"), int)), 0)
+        if width <= 0:
+            continue
+        plots = {}
+        for c in chunks:
+            for p in c.get("plots", []):
+                if isinstance(p, dict) and isinstance(p.get("x"), int) \
+                        and isinstance(p.get("y"), int):
+                    plots[(p["x"], p["y"])] = p
+        old = {xy: (p.get("rv") or 0) for xy, p in plots.items()}
+        if not any(old.values()):
+            continue
+        for (x, y), p in plots.items():
+            par = y & 1
+            ne = old.get(((x + par) % width, y + 1), 0)
+            nw = old.get(((x - 1 + par) % width, y + 1), 0)
+            new = (old[(x, y)] & 1) | (2 if ne & 4 else 0) | (4 if nw & 2 else 0)
+            if new or "rv" in p:
+                p["rv"] = new
+        for (x, y), rv in old.items():
+            par = y & 1
+            if y > top:
+                # The row the reflection drops: its E segments leave with it; its
+                # diagonal flags are gathered by the surviving row below.
+                lost += 1 if rv & 1 else 0
+                continue
+            if rv & 2 and ((x + par) % width, y - 1) not in plots:
+                lost += 1
+            if rv & 4 and ((x - 1 + par) % width, y - 1) not in plots:
+                lost += 1
+        lost_by_turn[turn] = lost
+    return lost_by_turn[max(lost_by_turn)] if lost_by_turn else 0
+
+
 def stage_events(lines, height):
     """`--mirror` wants a directory holding events.jsonl; give it a clean copy.
 
@@ -269,25 +343,23 @@ def stage_events(lines, height):
     """
     os.makedirs(STAGE, exist_ok=True)
     top, dropped = mirror_axis(height), []
-    events, source_edges = [], []
+    events = []
     for chunk in lines:
         try:
-            event = json.loads(chunk)
+            events.append(json.loads(chunk))
         except Exception:
             continue
-        if event.get("kind") == "tiles":
-            turn = int(event.get("turn") or 0)
-            for plot in event.get("plots") or []:
-                mask = int(plot.get("rv") or 0)
-                if mask:
-                    source_edges.append((turn, plot.get("x"), plot.get("y"), mask))
+    lost = remap_river_masks(events, top)
+    if lost:
+        log(f"{lost} river segment(s) lost by the north-up reflection "
+            f"(no exported plot can carry them on the flipped board)")
+    out = []
+    for event in events:
         flipped = flip_north_up(event, top, dropped)
         if flipped is not None:
             if flipped.get("kind") == "tiles":
                 flipped["height"] = top + 1
-            events.append(flipped)
-    transform_river_masks(source_edges, events, top)
-    out = [json.dumps(event).encode() for event in events]
+            out.append(json.dumps(flipped).encode())
     if dropped:
         log(f"{len(dropped)} board object(s) on row {top + 1} dropped by the north-up "
             f"reflection (that row has no same-parity partner)")
@@ -463,6 +535,9 @@ def mirror_on_screen():
 def ensure_on_screen(misses):
     """Put the mirror back on the display if it has been closed.
 
+    Leave placement and sizing to the operator. The follower owns the mirror's
+    availability, not the desktop layout.
+
     Deliberately does NOT `activate` Chrome. Civilization VI runs its turn loop
     off frame-tied events and macOS starves a background app of frames, so
     stealing the foreground every few seconds would stop the very game this
@@ -478,7 +553,6 @@ def ensure_on_screen(misses):
     chrome(f'''tell application "Google Chrome"
       make new window
       set URL of active tab of window 1 to "{MIRROR_URL}"
-      set bounds of window 1 to {MIRROR_BOUNDS}
     end tell''')
     return 0
 

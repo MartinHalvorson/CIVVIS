@@ -663,7 +663,12 @@
   .diplomacy-card:hover { transform: none; border-color: #718b81; background: linear-gradient(100deg, #0e1b17f7, #1a302af2); }
   .diplomacy-card.allied { border-color: #4f9488; box-shadow: inset 3px 0 #6bc0ae, inset 0 1px #fff1; }
   .diplomacy-card.friend { border-color: #708d62; box-shadow: inset 3px 0 #9dbb7d, inset 0 1px #fff1; }
-  .diplomacy-card.at-war { border-color: #a65450; box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1; }
+  .diplomacy-card.at-war {
+    /* Keep the row geometry stable, but move the red border 30% toward the
+       danger color so wars stand out sooner in the standings scan. */
+    border-color: color-mix(in srgb, #a65450 70%, var(--danger));
+    box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1;
+  }
   .diplomacy-card.dead { opacity: .42; filter: grayscale(.75); }
   /* The civilization name itself is the empire/capital map link. Watching
      through that civilization's fog remains a separate action beside the
@@ -714,8 +719,7 @@
      number, so it is the same figure in the same cell — only unfilled, the
      way an unearned thing should look. Opacity and nothing else: a marker
      character would widen the narrowest column in the table, and italics
-     would push a four-digit rating into the ellipsis this cell already
-     carries. */
+     would compete with the protected width reserved for the full score. */
   .diplomacy-elo-value.provisional { opacity: 0.62; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   /* Start and Now are two numeric categories on matching tracks. The narrow
@@ -765,6 +769,7 @@
   .ribbon-stat:nth-child(-n+5) { border-top-color: transparent; }
   .ribbon-stat b { display: block; overflow: hidden; font-size: var(--type-secondary); line-height: 1.05; text-overflow: ellipsis; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .ribbon-stat em { display: block; margin-top: 2px; color: #82958e; font-size: var(--type-micro); font-style: normal; font-weight: 850; letter-spacing: .02em; line-height: 1; }
+  .ribbon-stat.food { --stat-color: #8fd6a4; }
   .ribbon-stat.production { --stat-color: #e9ad74; }
   .ribbon-stat.science { --stat-color: var(--blue); }
   .ribbon-stat.culture { --stat-color: var(--violet); }
@@ -772,13 +777,14 @@
   .ribbon-stat.gold { --stat-color: #e8c64c; }
   .ribbon-stat.military { --stat-color: #f2a09b; }
   .ribbon-stat.cities { --stat-color: #d6c49b; }
+  .ribbon-stat.population { --stat-color: #d8a36d; }
   .ribbon-stat.suzerain { --stat-color: #8dd6b1; }
   .ribbon-stat.wonders { --stat-color: #e9d88e; }
   .ribbon-stat.score { --stat-color: var(--gold-bright); }
   .ribbon-stat b { color: var(--stat-color); }
   /* Leading a category is a quiet wash behind the figure, not a boxed chip.
-     With ten categories and one leader each, a 70% border plus an inset glow
-     put nine bright rectangles on the table at once and they read as the
+     With twelve categories and one leader each, a 70% border plus an inset glow
+     put eleven bright rectangles on the table at once and they read as the
      subject rather than as an annotation on it. */
   .ribbon-stat.category-leader {
     border: 0; border-radius: 5px;
@@ -2396,7 +2402,7 @@
        beside it up here — not at --hud-rail-width, which is the wider
        reservation the minimap needs down in the corner. Measuring the seam
        against the rail left 192px of empty map between the two panels at
-       1600px and squeezed the ten value columns to 27px each, narrower than a
+       1600px and squeezed the twelve value columns to 27px each, narrower than a
        four-digit figure. */
     width: min(var(--player-hud-width, 100%),
       calc(100% - var(--victory-hud-width) - 20px));
@@ -2405,7 +2411,7 @@
        At 68px the button's own text overflowed its content box by a pixel and
        Chrome clipped the final "s" — a control labelled "Watch a". */
     --hud-watch-column: 74px;
-    /* The ten value columns claim their width first and the identity block is
+    /* The twelve value columns claim their width first and the identity block is
        the flexible one, because a clipped name still reads and a clipped number
        lies. The old arrangement was the other way round — identity held
        minmax(300px, 42%) and the numbers took the remainder — so the figures
@@ -2425,16 +2431,18 @@
        of the columns inside it, which is what lets one bar move width out of
        the last identity column and into the first value column. */
     /* The label floor narrows with the screen; the figure floors do not. Elo is
-       four digits and 38px is what that needs whatever size the window is — a
-       label that gives up width ellipsizes and keeps its tooltip, where a figure
-       that gives up width becomes a smaller number that is simply wrong. The
-       odds cell carries two separately aligned figures and the arrow between
-       them, so it stands on a wider floor of its own: 76px keeps the longer
-       START label and both numeric tracks whole at the fitter's 9px floor. Each
-       breakpoint below moves the label floor only, and keeps
-       5 labels + 2 figure cells adding up to what the identity block claims at
-       that width. */
-    --hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 76px;
+       a signed score, not a four-digit display: 60px keeps five digits, a
+       possible minus sign, the cell inset and its divider whole at the fitter's
+       13px ceiling. `syncPlayerHudEloFloor()` raises that floor before layout
+       when a live rating needs more. A label that gives up width ellipsizes and
+       keeps its tooltip, where a figure that gives up width becomes a smaller
+       number that is simply wrong. The odds cell carries two separately aligned
+       figures and the arrow between them, so it stands on a wider floor of its
+       own: 76px keeps the longer START label and both numeric tracks whole at
+       the fitter's 9px floor. Each breakpoint below moves the label floor only,
+       and keeps 5 labels + 2 figure cells adding up to what the identity block
+       claims at that width. */
+    --hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;
     /* How much of the flexible width the identity block asks for relative to
        the values, over and above the sum of its own columns. A wide panel can
        afford whole names; a narrow one gives the identity up first, because a
@@ -2443,9 +2451,9 @@
     --hud-identity-column: minmax(
       calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)
            + var(--hud-ident-odds-min)), 11.387fr);
-    /* Ten cells and the nine gutters between them. */
+    /* Twelve cells and the eleven gutters between them. */
     --hud-stats-column: minmax(
-      calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), 10fr);
+      calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);
     --hud-column-gap: 6px;
     /* Civilization, leader, player, age and the plan are labels, and their
        cells ellipsize. Elo and the odds pair are figures on the taller floors:
@@ -2461,7 +2469,7 @@
       minmax(var(--hud-ident-odds-min), 1.3fr)
       minmax(var(--hud-ident-min), 1.3fr)
       minmax(var(--hud-ident-min), 2.035fr);
-    --hud-stat-tracks: repeat(10, minmax(var(--hud-stat-min), 1fr));
+    --hud-stat-tracks: repeat(12, minmax(var(--hud-stat-min), 1fr));
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
     display: grid; grid-template-columns: 164px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr);
@@ -2519,7 +2527,7 @@
      which are integers, while the browser applies text-overflow on any
      sub-pixel overflow at all — so a head the fitter has correctly settled at
      its exact width overflows by a third of a pixel, and `ellipsis` spends a
-     whole character saying so. Measured at 1600px: ELO in its 38px column
+     whole character saying so. Measured at 1600px: ELO in its 60px column
      renders whole under `clip` and as "EL…" under `ellipsis`. Every head is
      short enough to stand at its own floor, and each carries a title. */
   .diplomacy-identity-head > span {
@@ -2622,7 +2630,7 @@
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
   /* One line, four regions: the lock, identity with its adjacent Watch-as
-     action, then the ten values. Civilization itself now carries the former
+     action, then the twelve values. Civilization itself now carries the former
      Empire/capital action. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
@@ -2685,10 +2693,10 @@
      the shares here are `1 : .55 : .55 : .7 : 1.1`, which is the same proportion
      the heading uses, and the columns still came apart in two ways that a
      reading of the stylesheet does not show.
-     - **Floors.** The heads carry the 30px label floor and the 38px figure
+     - **Floors.** The heads carry the 30px label floor and the 60px figure
        floor; a copy carrying `minmax(0, …)` keeps shrinking after the heads
        have stopped. Measured on a 1280px screen: the ELO head stood at its
-       38px floor over a 27.5px figure, and the value under the WIN% head was
+       60px floor over a 27.5px figure, and the value under the WIN% head was
        11.5px to the left of it.
      - **The seam bars.** A drag rewrites `--hud-identity-tracks`, which is
        the heading's list *and* this block's parent — but a copy of the old
@@ -2744,7 +2752,7 @@
     border-left: 0; border-top: 0;
   }
   /* A truncated name still reads; a truncated number lies. The identity column
-     is allowed to ellipsize and gives up width first, so four digits stay whole
+     is allowed to ellipsize and gives up width first, so every Elo score stays whole
      down to a narrow desktop. */
   /* A flat number on a dark panel is easier to read than a glowing one. The
      8px currentColor bloom this used to carry haloed every figure in its own
@@ -2930,7 +2938,7 @@
      sit below the base #playerhud and #maparea rules: they carry the same
      specificity, so above them they would simply lose — which is exactly how
      the identity column once kept its full 300px on a 1100px screen and
-     squeezed the ten value columns into 64px. The masthead gives up the
+     squeezed the twelve value columns into 64px. The masthead gives up the
      identity first — it ellipsizes and keeps its tooltip — so that every value
      stays whole, and the rail narrows alongside it. */
   /* Each step narrows the per-identity-column floor and the per-value floor
@@ -2962,7 +2970,7 @@
     }
     #maparea { --hud-rail-width: clamp(240px, 20vw, 300px); }
   }
-  /* Ten value columns, a turn plate and a standing rail stop fitting side by
+  /* Twelve value columns, a turn plate and a standing rail stop fitting side by
      side around here. */
   @media (max-width: 1300px) {
     #playerhud {
@@ -3001,7 +3009,7 @@
     }
   }
   @media (max-width: 1100px) {
-    /* Seven identity columns plus ten value columns need the map's full width at
+    /* Seven identity columns plus twelve value columns need the map's full width at
        this point. The instruments stack as bands across the top, with the
        tracker's paths in columns because there is no height left to stack them. */
     #map-controls-dock { right: 0; }
@@ -3085,13 +3093,13 @@
   #playerhud[data-type-size="compact"] > .player-standings:focus-visible {
     outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px;
   }
-  /* Ten complete numeric columns have a real minimum width. When a custom or
+  /* Twelve complete numeric columns have a real minimum width. When a custom or
      phone-sized box cannot supply it, keep a readable type floor and scroll the
      table inside its own panel instead of crushing or spilling its cells.
-     705px keeps 201px of identity, ten 32px values with 2px gutters, and the
+     773px keeps 201px of identity, twelve 32px values with 2px gutters, and the
      lock, widened watch action and padding comfortably separated. */
   #playerhud[data-type-size="compact"] .ribbon-stat-heading,
-  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 705px; }
+  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 773px; }
   #playerhud[data-type-size="roomy"] {
     grid-template-columns: 168px minmax(0, 1fr);
     --hud-ident-min: 61px; --hud-column-gap: 7px;
@@ -3711,7 +3719,7 @@
         <div class="brand-title-row">
           <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
           <nav class="brand-links" aria-label="CIVVIS links">
-            <a href="https://www.youtube.com/@MartinHalvorson" target="_blank" rel="noopener noreferrer" aria-label="Martin Halvorson on YouTube" title="CIVVIS on YouTube">
+            <a href="https://www.youtube.com/@civvis" target="_blank" rel="noopener noreferrer" aria-label="CIVVIS on YouTube" title="CIVVIS on YouTube">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.5 6.19a3.02 3.02 0 0 0-2.12-2.14C19.5 3.54 12 3.54 12 3.54s-7.5 0-9.38.51A3.02 3.02 0 0 0 .5 6.19C0 8.08 0 12 0 12s0 3.92.5 5.81a3.02 3.02 0 0 0 2.12 2.14c1.88.51 9.38.51 9.38.51s7.5 0 9.38-.51a3.02 3.02 0 0 0 2.12-2.14C24 15.92 24 12 24 12s0-3.92-.5-5.81ZM9.55 15.57V8.43L15.82 12l-6.27 3.57Z"/></svg>
             </a>
             <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noopener noreferrer" aria-label="CIVVIS on GitHub" title="CIVVIS on GitHub">
@@ -6282,7 +6290,7 @@ function bindMapAreaEditor() {
 // sees the rail instead of three panels pinned where they no longer belong.
 const HUD_LAYOUT_STORAGE_KEY = "civvis-hud-layout-v3";
 const HUD_WIDGETS = {
-  // A player row is one line: the turn plate, an identity and ten fixed metric
+  // A player row is one line: the turn plate, an identity and twelve fixed metric
   // columns side by side, which is why the standings want the map's width and
   // very little of its height. They are capped below two-fifths of that height
   // however they are sized — by the player count, by a dragged edge, or by a
@@ -6315,14 +6323,19 @@ const HUD_RESIZE_EDGES = [
 //    open a gap at the end of the row, or make the table start scrolling.
 //    All but one of the bars therefore move their own two columns and nothing
 //    else. The final bar is between the identity block and the
-//    ten values, and moving it moves width between those two blocks — so the
+//    twelve values, and moving it moves width between those two blocks — so the
 //    columns inside each one take up the slack in their own proportion, which
 //    is what "give the numbers more room" has to mean.
 //
 // The floors are the other half of the contract and stay in the stylesheet,
 // where the width breakpoints can lower them together: a column may be dragged
-// down to its floor and no further, so four digits stay four digits.
+// down to its floor and no further, so an Elo score never loses digits.
 const HUD_COLUMN_STORAGE_KEY = "civvis-hud-columns-v1";
+// This is the CSS floor for a signed five-digit rating. A live value can be
+// longer, so syncPlayerHudEloFloor() measures it at the ELO type ceiling and
+// raises the same floor before the shared grid tracks are laid out.
+const HUD_ELO_MIN_FLOOR = 60;
+const HUD_ELO_MAX_TYPE_SIZE = 13;
 // Reading order, left to right. `min` names the custom property carrying this
 // column's floor, and `head` is its index among the heading cells of the block
 // it sits in — which is how a column is *measured* during a drag rather than
@@ -6341,13 +6354,14 @@ const PLAYER_HUD_COLUMNS = [
   {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-odds-min", width:1.3},
   {key:"age", label:"Age", block:"identity", head:6, min:"--hud-ident-min", width:1.3},
   {key:"plan", label:"Plan", block:"identity", head:7, min:"--hud-ident-min", width:2.035},
-  ...[["production", "Production"], ["science", "Science"], ["culture", "Culture"],
-      ["faith", "Faith"], ["gold", "Gold"], ["military", "Military"], ["cities", "Cities"],
-      ["suzerain", "Suzerainty"], ["wonders", "Wonders"], ["score", "Score"]]
+  ...[["cities", "Cities"], ["population", "Population"], ["food", "Food"], ["production", "Production"],
+      ["science", "Science"], ["culture", "Culture"], ["faith", "Faith"],
+      ["gold", "Gold"], ["military", "Military"], ["wonders", "Wonders"],
+      ["suzerain", "Suzerainty"], ["score", "Score"]]
     .map(([key, label], head) => ({key, label, block:"stats", head, min:"--hud-stat-min", width:1})),
 ];
 // One bar per seam between two adjacent data columns, including the seam where
-// the identity block hands over to the ten values.
+// the identity block hands over to the twelve values.
 const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1).map((left, index) =>
   ({left, right:PLAYER_HUD_COLUMNS[index + 1], index}));
 const playerHudColumnWidths = new Map(PLAYER_HUD_COLUMNS.map(c => [c.key, c.width]));
@@ -6410,7 +6424,7 @@ function syncPlayerHudColumns(placeGrips = true) {
     stats.map(track).join(" "),
     `minmax(calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) ` +
       `+ var(--hud-ident-odds-min)), ${total(identity).toFixed(4)}fr)`,
-    `minmax(calc(var(--hud-stat-min) * 10 + var(--hud-stat-gap) * 9), ` +
+    `minmax(calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), ` +
       `${total(stats).toFixed(4)}fr)`,
   ];
   if (tracks.join("|") !== playerHudColumnCss) {
@@ -6422,6 +6436,48 @@ function syncPlayerHudColumns(placeGrips = true) {
     scheduleResponsiveType(hud);
   }
   if (placeGrips) syncPlayerHudColumnGrips();
+}
+
+// The ELO track is one shared column, so its floor has to cover the widest
+// score the table is showing. Measure at the text fitter's maximum rather than
+// at its current fitted size: a wider panel must never let a score grow back
+// into an ellipsis. The field's own inset and divider live inside its grid
+// track, and therefore belong in the floor too.
+function syncPlayerHudEloFloor() {
+  const hud = document.getElementById("playerhud");
+  const scores = [...(hud?.querySelectorAll(".diplomacy-elo-value") || [])];
+  if (!hud || !scores.length) return;
+  const probe = document.createElement("span");
+  probe.style.cssText = "position:fixed; visibility:hidden; inset:auto; display:inline-block; " +
+    "width:max-content; min-width:max-content; max-width:none; overflow:visible; " +
+    "white-space:nowrap; pointer-events:none; line-height:1;";
+  document.body.append(probe);
+  let minimum = HUD_ELO_MIN_FLOOR;
+  for (const score of scores) {
+    const style = getComputedStyle(score);
+    probe.style.fontFamily = style.fontFamily;
+    probe.style.fontWeight = style.fontWeight;
+    probe.style.fontStyle = style.fontStyle;
+    probe.style.fontStretch = style.fontStretch;
+    probe.style.fontVariant = style.fontVariant;
+    probe.style.fontKerning = style.fontKerning;
+    probe.style.fontOpticalSizing = style.fontOpticalSizing;
+    probe.style.fontVariantNumeric = style.fontVariantNumeric;
+    probe.style.letterSpacing = style.letterSpacing;
+    probe.style.fontSize = `${HUD_ELO_MAX_TYPE_SIZE}px`;
+    probe.textContent = score.textContent;
+    const fieldStyle = getComputedStyle(score.parentElement);
+    const inset = (parseFloat(fieldStyle.paddingLeft) || 0) +
+      (parseFloat(fieldStyle.paddingRight) || 0) +
+      (parseFloat(fieldStyle.borderLeftWidth) || 0) +
+      (parseFloat(fieldStyle.borderRightWidth) || 0);
+    minimum = Math.max(minimum, Math.ceil(probe.getBoundingClientRect().width + inset + 1));
+  }
+  probe.remove();
+  const floor = `${minimum}px`;
+  if (hud.style.getPropertyValue("--hud-ident-num-min") === floor) return;
+  hud.style.setProperty("--hud-ident-num-min", floor);
+  syncPlayerHudColumns(false);
 }
 
 function playerHudHeadingCells(heading) {
@@ -6673,7 +6729,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-civ", min:9, max:13},
   {selector:"#playerhud .diplomacy-leader-name", min:9, max:13},
   {selector:"#playerhud .diplomacy-player", min:9, max:13},
-  {selector:"#playerhud .diplomacy-elo-value", min:9, max:13},
+  {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-expected-value", min:9, max:13},
   {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
   {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
@@ -15531,9 +15587,9 @@ function strategicUnitFill(scale = cam.scale) {
   return STRATEGIC_UNIT_FILL_OUT +
     (STRATEGIC_UNIT_FILL_IN - STRATEGIC_UNIT_FILL_OUT) * at;
 }
-// The outer edge of a command token is the useful radius of a hex. A stack
-// packs several such circles into that same disk; retaining this as a separate
-// value means an outline never makes the layout quietly cross a tile boundary.
+// The outer edge of a singleton command token is the useful radius of a hex.
+// Stack sizes and offsets are expressed from this same reference radius, which
+// keeps their intentional overlap and overflow proportional at every zoom.
 function strategicUnitOuterRadius(hexInradius) {
   return Math.max(0, hexInradius * strategicUnitFill());
 }
@@ -15546,7 +15602,7 @@ function strategicUnitRadius(hexInradius, outlineWidth = 0) {
 function flatStrategicUnitInradius() {
   // A rotated, vertically projected hex can only promise its shortest
   // center-to-edge span. This is the exact lower bound for every bearing, so a
-  // circular token never crosses a neighboring cell.
+  // singleton circular token never crosses a neighboring cell.
   return S * SQ3 / 2 * Math.min(1, YS);
 }
 
@@ -15554,12 +15610,18 @@ function flatStrategicUnitInradius() {
 //
 // A tile may legitimately hold a military unit, civilian, support unit, and
 // more. The command map used to draw every one at its centre, leaving only the
-// last icon visible. Slots below describe equal circles packed inside a unit
-// disk: `x` and `y` are centre offsets in disk radii, and `r` is each token's
-// outer radius in the same units. A singleton therefore remains exactly the
-// authored size, while a pair sits side-by-side and a trio is a triangle.
+// last icon visible. Stacks keep most of the authored token size and trade a
+// little overlap plus a little tile overflow for legibility: `x` and `y` are
+// centre offsets in singleton radii, and `r` is the token radius in those same
+// units. A singleton remains exactly the authored size, while every member of
+// a stack is 80% of it and keeps a stable seat in the group.
 const UNIT_STACK_SLOT_CACHE = new Map();
 const UNIT_STACK_SINGLE_SLOT = Object.freeze({x:0, y:0, r:1});
+const UNIT_STACK_TOKEN_SCALE = 0.80;
+// Source layouts put neighbouring centres two units apart. Bringing that down
+// to .9 singleton radii leaves a deliberate overlap between 80%-size tokens,
+// but enough offset for both pictograms and owner colours to remain distinct.
+const UNIT_STACK_CENTER_SEPARATION = 0.90;
 
 function unitStackCircleContains(circle, point) {
   const dx = point.x - circle.x, dy = point.y - circle.y;
@@ -15606,13 +15668,10 @@ function unitStackMinimumEnclosingCircle(points) {
 }
 function unitStackSlotsFromPoints(points) {
   const circle = unitStackMinimumEnclosingCircle(points);
-  // Every source point is one token-radius from its nearest neighbour. Adding
-  // one to the enclosing circle is exactly the space needed to keep each
-  // token's complete outline inside the tile's safe disk.
-  const span = Math.max(1e-7, circle.r + 1);
-  return points.map(point => ({x:(point.x - circle.x) / span,
-                               y:(point.y - circle.y) / span,
-                               r:1 / span}));
+  const offsetScale = UNIT_STACK_CENTER_SEPARATION / 2;
+  return points.map(point => ({x:(point.x - circle.x) * offsetScale,
+                               y:(point.y - circle.y) * offsetScale,
+                               r:UNIT_STACK_TOKEN_SCALE}));
 }
 function unitStackRingSlots(count, withCentre = false) {
   const ringCount = count - (withCentre ? 1 : 0);
@@ -15630,8 +15689,8 @@ function unitStackRingSlots(count, withCentre = false) {
 }
 function unitStackLatticeSlots(count) {
   // A compact hexagonal lattice is the fallback for unusually large stacks.
-  // It is denser than extending one enormous ring, yet every neighbouring pair
-  // remains exactly two token radii apart.
+  // It is denser than extending one enormous ring, while the source points
+  // retain the same two-unit neighbour spacing as the ring layouts.
   const reach = Math.ceil(Math.sqrt(count)) + 2;
   const points = [];
   for (let q = -reach; q <= reach; q++) for (let r = -reach; r <= reach; r++) {
@@ -15675,10 +15734,12 @@ function unitStackSlots(count) {
   if (count >= 4) candidates.push(unitStackRingSlots(count, true));
   candidates.push(unitStackLatticeSlots(count));
   // Prefer the clean symmetric ring whenever it is effectively tied with a
-  // lattice. The lattice earns its less regular silhouette only when it can
-  // make every icon meaningfully larger.
+  // lattice. All stacked icons now share the same 80% size, so the lattice
+  // earns its less regular silhouette only when it makes the group tighter.
+  const layoutRadius = layout => layout.reduce((reach, slot) =>
+    Math.max(reach, Math.hypot(slot.x, slot.y) + slot.r), 0);
   const slots = candidates.reduce((best, candidate) =>
-    candidate[0].r > best[0].r + 1e-7 ? candidate : best);
+    layoutRadius(candidate) < layoutRadius(best) - 1e-7 ? candidate : best);
   UNIT_STACK_SLOT_CACHE.set(count, slots);
   return slots;
 }
@@ -15712,8 +15773,9 @@ function strategicUnitStackPlacement(slots, unit, hexInradius, outlineWidth = 0)
   return {
     x:outerRadius * slot.x,
     y:outerRadius * slot.y,
+    stacked:slot !== UNIT_STACK_SINGLE_SLOT,
     // Keep the singleton on the pre-stack size path exactly; stacked tokens
-    // receive the same outline allowance after their packing scale is applied.
+    // receive the same outline allowance after their 80% scale is applied.
     r:slot === UNIT_STACK_SINGLE_SLOT
       ? strategicUnitRadius(hexInradius, outlineWidth)
       : Math.max(0, outerRadius * slot.r - outlineWidth / 2)
@@ -21401,14 +21463,16 @@ function drawPlanetMap() {
     const r = commandToken
       ? stack.r
       : Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
-    // A singleton stays centred; a stack takes its own compact, non-overlapping
-    // seat in the same cell. Each token is still clipped to that real face.
+    // A singleton stays centred; a stack takes stable, gently overlapping
+    // seats around it. Let stacked tokens cross the individual face edge a
+    // little instead of cutting their already-reduced silhouettes flat.
     const ux = cell.center.x + (stack?.x || 0), uy = cell.center.y + (stack?.y || 0);
     const civilian = CIVILIAN_UNITS.has(unit.type);
     const tokenInk = unitTokenInk(unit.owner);
     cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : tokenInk;
     cx.lineWidth = outline;
-    if (commandToken) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
+    const commandTokenClip = commandToken && !stack.stacked;
+    if (commandTokenClip) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
     if (commandToken) strategicUnitTokenPath(civilian, ux, uy, r);
     else { cx.beginPath(); cx.arc(ux, uy, r, 0, 7); }
     cx.fill(); cx.stroke();
@@ -21416,8 +21480,8 @@ function drawPlanetMap() {
       drawUnitPictogram(unit.embarked ? "galley" : unit.type, ux, uy,
                         r * 1.48, tokenInk);
       drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
-      cx.restore();
     }
+    if (commandTokenClip) cx.restore();
   }
   for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
@@ -22087,15 +22151,21 @@ function draw() {
                       11 + eh * 3, 2.6 + eh * 0.8);
       }
     } else if (t.hills && !beau) {
-      // Centred, and low: two half-circles stood up like croquet hoops and
-      // fought every other mark the tile carries for the middle of the face.
-      // At two fifths of the height they are swells in the ground — the same
-      // width, so hill country still reads as hill country from across the
-      // map, but nothing has to be drawn around them.
+      // Broad enough and tall enough to survive strategic survey zoom. Scale
+      // both the lobes and their spacing so the whole paired silhouette grows
+      // 20% wider, rather than merely making the two strokes overlap more.
+      const hillWidth = 1.2, hillHeight = 2.6 * 1.4;
+      // Woods and rainforest occupy the hill's upper half. Drop only those
+      // hills by their new height: the new crest then starts at the old
+      // baseline, leaving both the landform and its trees legible.
+      const woodedHill = t.feature === "forest" || t.feature === "jungle";
+      const hillBaseY = y + 3 + (woodedHill ? hillHeight : 0);
       cx.strokeStyle = "#00000066"; cx.lineWidth = 2.4;
       cx.beginPath();
-      cx.ellipse(x - 7, y + 3, 6.5, 2.6, 0, Math.PI, 0);
-      cx.ellipse(x + 6, y + 3, 6.5, 2.6, 0, Math.PI, 0);
+      cx.ellipse(x - 7 * hillWidth, hillBaseY,
+                 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
+      cx.ellipse(x + 6 * hillWidth, hillBaseY,
+                 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
       cx.stroke();
     }
     if (t.terrain === "desert" && !t.feature && beau) {
@@ -22745,11 +22815,10 @@ function draw() {
       : null;
     if (stack) { x += stack.x; y += stack.y; }
     const rr = beau ? 10.5 : stack.r;
-    // A moving unit is deliberately between its two cells; every stationary
-    // strategic unit is clipped to the exact hex it occupies. This also keeps
-    // an icon's longest weapon, health strip, promotion pips, and selection
-    // cue from escaping the cell at any map bearing.
-    const strategicTokenClip = !beau && !moving;
+    // Stacked command tokens may cross a tile edge slightly. Their stable
+    // overlap is more legible than clipping each reduced token back to the hex;
+    // singleton sizing and moving-unit behavior remain unchanged.
+    const strategicTokenClip = !beau && !moving && !stack.stacked;
     if (strategicTokenClip) { cx.save(); hexPath(tileX, tileY); cx.clip(); }
     if (beau) {
       drawCinematicSubjectMarker(u, x, y, now);
@@ -22793,9 +22862,9 @@ function draw() {
     }
     // Flat strategic tokens always carry their health state. The strip is
     // built from the same hex-relative radius as the token and seated in its
-    // lower interior, so it becomes larger on screen with zoom but never
-    // crosses the boundary of the unit's assigned tile. Painted figures keep
-    // their existing, damage-only bar above the model.
+    // lower interior, so it becomes larger on screen with zoom without adding
+    // more overflow than the token itself. Painted figures keep their existing,
+    // damage-only bar above the model.
     if (!beau) {
       drawStrategicUnitHealth(x, y, rr, u.hp, now);
     } else if (u.hp < 100) {
@@ -22845,8 +22914,8 @@ function draw() {
     if (sel && sel.id === u.id) {
       cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.4;
       cx.setLineDash([5, 4]);
-      // The strategic selection cue lives inside its token rather than growing
-      // beyond the hex boundary at survey zoom.
+      // The strategic selection cue lives inside its token rather than adding
+      // another ring outside the stack footprint at survey zoom.
       const selectionRadius = beau ? ur + 6 * us : Math.max(0, rr - 1.2);
       cx.beginPath(); cx.arc(x, y, selectionRadius, 0, 7); cx.stroke();
       cx.setLineDash([]);
@@ -24185,15 +24254,17 @@ function playerHudStats(player, rank) {
   const y = player.yields || {};
   const goldPerTurn = Number.isFinite(+player.gold_per_turn) ? +player.gold_per_turn : +(y.gold || 0);
   return [
+    ["cities", "CITY", player.cities, `Cities controlled: ${exactStat(player.cities)}`],
+    ["population", "POP", player.population, `Total population: ${exactStat(player.population)}`],
+    ["food", "FOOD", y.food, `Food: ${exactStat(y.food)} per turn`],
     ["production", "PROD", y.production, `Production: ${exactStat(y.production)} per turn`],
     ["science", "SCI", y.science, `Science: ${exactStat(y.science)} per turn`],
     ["culture", "CUL", y.culture, `Culture: ${exactStat(y.culture)} per turn`],
     ["faith", "FPT", y.faith, `Faith: ${exactStat(y.faith)} per turn · ${exactStat(player.faith)} banked`, foundedReligionMarker(player)],
     ["gold", "GPT", goldPerTurn, `Net Gold: ${exactStat(goldPerTurn)} per turn · ${exactStat(player.gold)} banked`],
     ["military", "MIL", player.military, `Military strength: ${exactStat(player.military)}`],
-    ["cities", "CITY", player.cities, `Cities controlled: ${exactStat(player.cities)}`],
-    ["suzerain", "SUZ", player.suzerain_count, `City-states under suzerainty: ${exactStat(player.suzerain_count)}`],
     ["wonders", "WNDR", player.wonder_count, `World wonders controlled: ${exactStat(player.wonder_count)}`],
+    ["suzerain", "SUZ", player.suzerain_count, `City-states under suzerainty: ${exactStat(player.suzerain_count)}`],
     ["score", "SCORE", player.score, `Score: ${exactStat(player.score)} · rank ${rank}`],
   ];
 }
@@ -24232,7 +24303,7 @@ function drawPlayerHud() {
   const repeatedCivs = repeatedCivNames(majors);
   seedOwnSeatLock(seats);
   const lockedKeys = lockedSeats();
-  // One line per row across the masthead — who this is and their ten values
+  // One line per row across the masthead — who this is and their twelve values
   // side by side — so a row is only as tall as its medallion: 26px, plus the
   // 2px gap under it. The fixed 50px is the heading, the column heads, the
   // gaps and the panel's padding; the floor keeps the turn plate's age, count,
@@ -24244,7 +24315,7 @@ function drawPlayerHud() {
   // that one-row scorecard across the whole map. Each additional known player
   // buys the table another 100px until the available masthead width caps it.
   // Twelve-player spectator mode consequently reaches the full masthead.
-  const requestedWidth = 820 + Math.max(0, rows - 1) * 100;
+  const requestedWidth = 854 + Math.max(0, rows - 1) * 100;
   const mapArea = document.getElementById("maparea");
   if (!HUD_LAYOUT.players) {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
@@ -24287,11 +24358,12 @@ function drawPlayerHud() {
     `<span title="Civilization age">AGE</span>` +
     `<span title="AI active strategy">PLAN</span></span>` +
     `<span class="diplomacy-stat-head">` +
-    [["production", "PROD", "Production per turn"], ["science", "SCI", "Science per turn"],
+    [["cities", "CITY", "Cities controlled"], ["population", "POP", "Total population"], ["food", "FOOD", "Food per turn"],
+      ["production", "PROD", "Production per turn"], ["science", "SCI", "Science per turn"],
       ["culture", "CUL", "Culture per turn"], ["faith", "FPT", "Faith per turn"],
       ["gold", "GPT", "Net Gold per turn"], ["military", "MIL", "Military strength"],
-      ["cities", "CITY", "Cities controlled"], ["suzerain", "SUZ", "City-states under suzerainty"],
-      ["wonders", "WNDR", "World wonders controlled"], ["score", "SCORE", "Score"]]
+      ["wonders", "WNDR", "World wonders controlled"], ["suzerain", "SUZ", "City-states under suzerainty"],
+      ["score", "SCORE", "Score"]]
       .map(([kind, label, title]) => `<span class="${kind}" title="${title}">${label}</span>`).join("") + `</span>` +
     // The bars stand on the seams of the heading they are laid over, and are
     // rebuilt with it so that a repaint can never orphan one.
@@ -24379,7 +24451,7 @@ function drawPlayerHud() {
         ? `${eloValue} ELO${eloProvisional ? ` (${provisionalNote})` : ""}`
         : "Unrated";
       // The column heading already supplies the unit, so keep its cells to the
-      // rating itself. This makes a four-digit ELO fit without truncation, so
+      // rating itself. The protected ELO track keeps the full score visible, so
       // a provisional one is marked by its class rather than by a character
       // that would push the value over the column's width.
       const playerElo = eloKnown ? `${eloValue}` : "—";
@@ -24477,6 +24549,7 @@ function drawPlayerHud() {
   }
   hudHtml = html;
   hud.innerHTML = html;
+  syncPlayerHudEloFloor();
   const playerRibbon = hud.querySelector(".diplomacy-ribbon");
   if (playerRibbon) playerRibbon.scrollTop = playerScroll;
   // innerHTML replaced the elements the observer was watching.
@@ -25472,10 +25545,10 @@ function drawEmpire() {
 // -------------------------------------------------------- diplomacy screen
 // Quick Deals compares every trade the rivals would accept. This is the other
 // half of Civ 6's diplomacy: the standing relationship with each leader, what
-// their agenda wants, and the four things you can do about it that are not a
-// trade — declare war, sue for peace, denounce, and offer a pact.
+// their agenda wants, and the relationship choices that are not a trade —
+// missions, promises, pacts, joint wars, demands, war, peace and denouncing.
 //
-// Until now none of those four reached the player at all. `declare_war`,
+// The original four did not reach the player at all. `declare_war`,
 // `make_peace` and `denounce` have been in `legal_actions(0)` since v0.6 with
 // nothing anywhere on the page that would send one, which closed the
 // domination path to a person while leaving it open to every agent.
@@ -25513,6 +25586,13 @@ function dealWords(action) {
   if (action.peace) parts.push("peace");
   if (action.friendship) parts.push("a declaration of friendship");
   if (action.alliance) parts.push(`a ${titleCase(action.alliance)} alliance`);
+  if (action.defensive_pact) parts.push("a Defensive Pact");
+  if (action.joint_war_target !== undefined && action.joint_war_target !== null) {
+    const target = state.players[action.joint_war_target] || {};
+    parts.push(`a Joint War against ${target.civ || "a rival"}`);
+  }
+  if (action.promise) parts.push(`a promise of ${titleCase(action.promise)}`);
+  if (action.demand) parts.push("a Gold demand");
   if (action.open_borders) parts.push("open borders");
   if (action.give_gold > 0) parts.push(`${Math.round(action.give_gold)} Gold from you`);
   if (action.request_gold > 0) parts.push(`${Math.round(action.request_gold)} Gold from them`);
@@ -25534,6 +25614,12 @@ function drawDiplomacy() {
   const peace = byPlayer("make_peace");
   const denounce = byPlayer("denounce");
   const proposals = byPlayer("propose_deal");
+  const delegations = byPlayer("send_delegation");
+  const embassies = byPlayer("send_embassy");
+  const defensivePacts = byPlayer("propose_defensive_pact");
+  const jointWars = byPlayer("propose_joint_war");
+  const promises = byPlayer("request_promise");
+  const demands = byPlayer("demand_gold");
   const replies = state.legal_actions.filter(a =>
     a.type === "accept_deal" || a.type === "reject_deal");
 
@@ -25573,15 +25659,40 @@ function drawDiplomacy() {
     .sort((first, second) => Number(first.is_minor) - Number(second.is_minor))
     .map(player => {
       const atWar = player.at_war_with_me;
-      const opinion = Math.round(player.opinion_of_me);
-      const stance = atWar ? "war" : player.allied || player.friend ? "friend" : "";
+      const opinion = Math.round(player.relationship_opinion_of_me ?? player.opinion_of_me ?? 0);
+      const relationship = player.their_relationship || player.relationship || "neutral";
+      const stance = atWar ? "war" : player.allied || player.friend ? "friend" : relationship;
       const stanceWord = atWar ? "At war"
         : player.teammate ? "Teammate"
         : player.allied ? `${titleCase(player.alliance || "")} ally`
         : player.friend ? "Friend"
         : player.is_minor ? (player.suzerain === 0 ? "Your suzerainty" : "Independent")
+        : relationship === "denounced" ? "Denounced"
+        : relationship === "declared_friend" ? "Friend"
+        : relationship === "friendly" ? "Friendly"
+        : relationship === "unfriendly" ? "Unfriendly"
         : opinionWord(opinion);
       const actions = []
+        .concat((delegations.get(player.id) || []).map(action =>
+          diploButton(action, "✉ Send Delegation", "",
+            "Pay 10 Gold to establish a delegation and gain one visibility level")))
+        .concat((embassies.get(player.id) || []).map(action =>
+          diploButton(action, "🏛 Establish Embassy", "",
+            "Pay 25 Gold to replace your delegation with a Resident Embassy")))
+        .concat((defensivePacts.get(player.id) || []).map(action =>
+          diploButton(action, "🛡 Propose Defensive Pact", "",
+            "An ally may accept a 30-turn pact that brings them into a defensive war")))
+        .concat((jointWars.get(player.id) || []).map(action => {
+          const target = state.players[action.target] || {};
+          return diploButton(action, `⚔ Joint War vs ${target.civ || "rival"}`, "danger",
+            "If accepted, both signatories declare on the named target for 30 turns");
+        }))
+        .concat((promises.get(player.id) || []).map(action =>
+          diploButton(action, `⌁ Request ${titleCase(action.promise)} promise`, "",
+            "A refusal or breach creates grievances and can support a Retribution War")))
+        .concat((demands.get(player.id) || []).map(action =>
+          diploButton(action, `💰 Demand ${Math.round(action.gold)} Gold`, "",
+            "They may reject the demand; refusing creates grievances")))
         .concat((peace.get(player.id) || []).map(action =>
           diploButton(action, "🕊 Make peace", "primary", "End the war on the current terms")))
         .concat((proposals.get(player.id) || []).map(action =>
@@ -25598,6 +25709,7 @@ function drawDiplomacy() {
             "Say publicly what you think of them. A war declared after this is not a surprise war")));
       const meter = (label, value, tone = "") =>
         `<div class="leader-meter"><span>${label}</span><b class="${tone}">${value}</b></div>`;
+      const missionName = mission => mission ? titleCase(mission.kind || "delegation") : "none";
       // A city-state has no leader, no agenda and no opinion of anyone. Its
       // relationship is envoys and suzerainty, so say that instead of six
       // meters that all read zero.
@@ -25613,6 +25725,11 @@ function drawDiplomacy() {
             player.grievances_against_me > 0 ? "bad" : "") +
           meter("Your grievances", Math.round(player.my_grievances),
             player.my_grievances > 0 ? "good" : "") +
+          meter("Their stance", titleCase(relationship)) +
+          meter("Your mission", missionName(player.mission_to_them || player.delegation_to_them)) +
+          meter("Their mission", missionName(player.mission_to_me || player.delegation_to_me)) +
+          meter("Defensive Pact", player.defensive_pact ? `until ${player.defensive_pact}` : "none") +
+          meter("Visibility", Math.round(player.diplomatic_visibility || 0)) +
           meter("Borders", (player.open_borders_to_me ? "open to you" : "closed to you") +
             (player.my_open_borders_to_them ? " · open to them" : "")) +
           meter("Cities", player.cities) +

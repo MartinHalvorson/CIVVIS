@@ -737,8 +737,11 @@ impl RatingModel for EloModel {
 /// Written out here rather than reused so the baseline cannot silently
 /// change under the comparison; `glicko2_matches_glickman_paper_example`
 /// pins it to the published worked example.
+type Glicko2State = (f64, f64, f64);
+type Glicko2Result = (Glicko2State, f64, f64);
+
 pub struct Glicko2Model {
-    state: BTreeMap<String, (f64, f64, f64)>,
+    state: BTreeMap<String, Glicko2State>,
     tau: f64,
 }
 
@@ -752,7 +755,7 @@ impl Default for Glicko2Model {
 }
 
 impl Glicko2Model {
-    fn get(&self, name: &str) -> (f64, f64, f64) {
+    fn get(&self, name: &str) -> Glicko2State {
         self.state
             .get(name)
             .copied()
@@ -766,7 +769,7 @@ impl Glicko2Model {
     }
     /// Glicko-2 update for one player against `results` of
     /// `(opponent, score, weight)`.
-    fn rate(p: (f64, f64, f64), results: &[((f64, f64, f64), f64, f64)], tau: f64) -> (f64, f64, f64) {
+    fn rate(p: Glicko2State, results: &[Glicko2Result], tau: f64) -> Glicko2State {
         let (mu, phi, sigma) = (
             (p.0 - BASE_ELO) / ELO_PER_LOGIT,
             p.1 / ELO_PER_LOGIT,
@@ -856,7 +859,7 @@ impl RatingModel for Glicko2Model {
         if n < 2 {
             return;
         }
-        let mut results: BTreeMap<String, Vec<((f64, f64, f64), f64, f64)>> = BTreeMap::new();
+        let mut results: BTreeMap<String, Vec<Glicko2Result>> = BTreeMap::new();
         for i in 0..n {
             for j in (i + 1)..n {
                 let (a, b) = (&m.seats[i], &m.seats[j]);

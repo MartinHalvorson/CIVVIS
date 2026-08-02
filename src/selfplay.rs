@@ -16,11 +16,14 @@
 //! - `labels.f32` — `samples × 3`: win label (1/0), turn fraction, and
 //!   the source game index (split train/val BY GAME, never by sample:
 //!   snapshots from one game are highly correlated)
+//!
 //! `--scalar-only` leaves the large plane/global files empty and exports only
 //! grouped scalar rows plus labels, making large value-model runs inexpensive.
+//!
 //! `--counterfactual` instead exports unresolved endpoints from Strategic's
 //! adaptive and victory-lane rollouts, labels each by continuing that exact
 //! branch to the winner, and keeps all branches grouped by their source game.
+//!
 //! It requires `--ai strategic_score` so data generation cannot accidentally
 //! feed a learned evaluator back into its own labels. Passing `--scalar-only`
 //! keeps broad calibration inexpensive; omitting it exports the
@@ -186,7 +189,7 @@ fn play_one(cfg: &SelfPlayCfg, game_index: usize) -> PlayedGame {
                     pending.push(PendingSample {
                         planes,
                         globals,
-                        scalars: features_for(&cfg, &g, player),
+                        scalars: features_for(cfg, &g, player),
                         pid: player,
                         fraction,
                         won: None,

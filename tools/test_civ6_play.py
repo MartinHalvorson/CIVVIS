@@ -29,6 +29,20 @@ def args(**changes):
 
 
 class Civ6PlayTest(unittest.TestCase):
+    def test_live_run_holds_macos_awake_for_its_process_lifetime(self) -> None:
+        with patch.object(civ6_play.sys, "platform", "darwin"), \
+             patch.object(civ6_play.os, "getpid", return_value=4321), \
+             patch.object(civ6_play.subprocess, "Popen") as popen:
+            self.assertTrue(civ6_play.hold_macos_awake())
+
+        popen.assert_called_once_with(
+            ["/usr/bin/caffeinate", "-dims", "-w", "4321"],
+            stdin=civ6_play.subprocess.DEVNULL,
+            stdout=civ6_play.subprocess.DEVNULL,
+            stderr=civ6_play.subprocess.DEVNULL,
+            close_fds=True,
+        )
+
     def test_place_game_sizes_before_positioning_the_upper_quadrant(self) -> None:
         with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
              patch.object(civ6_play.subprocess, "run") as run:
@@ -60,6 +74,7 @@ class Civ6PlayTest(unittest.TestCase):
 
     def test_play_waits_for_unlock_then_launches(self) -> None:
         with patch.object(civ6_play.vision, "available", return_value=True), \
+             patch.object(civ6_play, "hold_macos_awake") as hold_awake, \
              patch.object(civ6_play, "screen_locked",
                           side_effect=[True, True, False]), \
              patch.object(civ6_play.time, "sleep") as sleep, \
@@ -70,6 +85,7 @@ class Civ6PlayTest(unittest.TestCase):
             result = civ6_play.play(args(tag="unlock-test", lock_wait=0.0))
 
         self.assertEqual(result, 0)
+        hold_awake.assert_called_once_with()
         sleep.assert_called_once_with(2.0)
         acquire.assert_called_once_with("unlock-test", wait_s=0.0)
         run.assert_called_once()

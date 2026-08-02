@@ -2,7 +2,6 @@
 //! 3/civic, 5/city, 2/district (4 unique), 1/building, 1/Citizen,
 //! 5/Great Person, 10 founding a religion + 2 per foreign follower city,
 //! 2/technology, 15/wonder, plus Era Score.
-use crate::name::Name;
 use super::{Action, Game};
 
 fn one_city_game() -> (Game, u32) {
@@ -65,14 +64,14 @@ fn wonders_score_fifteen_and_unique_districts_score_double() {
         .districts
         .iter()
         .find(|(_, spec)| spec.unique_to.is_none())
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| *name)
         .unwrap();
     let unique = game
         .rules
         .districts
         .iter()
         .find(|(_, spec)| spec.unique_to.is_some())
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| *name)
         .unwrap();
     let after_wonder = game.score(0);
     game.cities

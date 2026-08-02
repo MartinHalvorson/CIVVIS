@@ -138,7 +138,30 @@ fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
         Item::Building { building } => Some(format!("BUILDING_{}", upper(building))),
         Item::District { district, .. } => Some(format!("DISTRICT_{}", upper(district))),
         Item::Wonder { wonder, .. } => Some(format!("BUILDING_{}", upper(wonder))),
-        Item::Project { project } => Some(format!("PROJECT_{}", upper(project))),
+        // ⚠ CIVVIS'S DISTRICT PROJECTS ARE NOT NAMED LIKE CIVILIZATION VI'S, and the
+        // mechanical uppercase below produced names the game has never heard of.
+        //
+        // `campus_research_grants` became `PROJECT_CAMPUS_RESEARCH_GRANTS`, which
+        // appears in ZERO shipped Assets — live run `civvis-20260801T145302Z`
+        // refused it as `unknown_PROJECT_CAMPUS_RESEARCH_GRANTS` ten times. Firaxis
+        // names every district project `PROJECT_ENHANCE_DISTRICT_<DISTRICT>`; CIVVIS
+        // names each one after what it DOES. All seven were silently unbuildable.
+        Item::Project { project } => Some(match project.as_str() {
+            "campus_research_grants" => "PROJECT_ENHANCE_DISTRICT_CAMPUS".to_string(),
+            "commercial_hub_investment" => {
+                "PROJECT_ENHANCE_DISTRICT_COMMERCIAL_HUB".to_string()
+            }
+            "encampment_training" => "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT".to_string(),
+            "harbor_shipping" => "PROJECT_ENHANCE_DISTRICT_HARBOR".to_string(),
+            "holy_site_prayers" => "PROJECT_ENHANCE_DISTRICT_HOLY_SITE".to_string(),
+            "industrial_zone_logistics" => {
+                "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE".to_string()
+            }
+            "theater_square_festival" => "PROJECT_ENHANCE_DISTRICT_THEATER".to_string(),
+            // The rest ARE mechanical: `build_nuclear_device` really is
+            // `PROJECT_BUILD_NUCLEAR_DEVICE`. Only the district projects diverge.
+            _ => format!("PROJECT_{}", upper(project)),
+        }),
         _ => None,
     }
 }
@@ -527,9 +550,21 @@ fn decide(
                 // or city this bridge could not map back to Civilization VI. Those are
                 // completely different repairs.
                 let why = match action {
-                    Action::MoveTo { unit, .. }
-                    | Action::Move { unit, .. }
-                    | Action::Attack { unit, .. }
+                    Action::MoveTo { unit, to } | Action::Move { unit, to } => {
+                        if mirror_state
+                            .game
+                            .units
+                            .get(unit)
+                            .is_some_and(|unit| unit.pos == *to)
+                        {
+                            "self_tile_move"
+                        } else if rebuilt_unit_missing(mirror_state, *unit) {
+                            "unit_not_mapped"
+                        } else {
+                            "unit_action_untranslated"
+                        }
+                    }
+                    Action::Attack { unit, .. }
                     | Action::Ranged { unit, .. }
                     | Action::FoundCity { unit }
                     | Action::Fortify { unit }
@@ -606,6 +641,31 @@ fn decide(
                         });
                         note_bits.push(format!("war_from_plan={}", rival.player));
                     }
+                }
+            }
+        }
+        // ★ PEACE RIDES THE REPORT, NOT THE LOG — and unlike the retracted
+        // war-from-plan above this is NOT the bridge upgrading a preference:
+        // the planner DECIDED to offer (it journals "Offering peace" and
+        // applies `ProposeDeal { peace: true }`). What declines is CIVVIS's
+        // internal MODEL of the rival — winning, so the deal never reaches the
+        // applied-action log — but on a mirrored game that answer belongs to
+        // the real Civilization VI rival. Run civvis-20260801T221459Z: 106
+        // offer decisions from t118, zero orders, the losing war unexitable.
+        for seat in &report.peace_offers {
+            if let Some(rival) = state.rivals.get(seat.saturating_sub(1)) {
+                let subject = rival.player as i64;
+                let already = orders
+                    .iter()
+                    .any(|o| o.kind == "peace" && o.subject == Some(subject));
+                if rival.at_war && !already {
+                    orders.push(Order {
+                        kind: "peace",
+                        subject: Some(subject),
+                        verb: Some("MAKE_PEACE".to_string()),
+                        pos: None,
+                    });
+                    note_bits.push(format!("peace_from_plan={}", rival.player));
                 }
             }
         }
@@ -785,6 +845,31 @@ fn translate(
     let civ6_of = &mirror_state.civ6_of;
     match action {
         Action::MoveTo { unit, to } | Action::Move { unit, to } => {
+            // ★★★★ A MOVE ONTO THE TILE THE UNIT IS ALREADY STANDING ON IS A NO-OP
+            // THE ENGINE ALWAYS REFUSES, and it costs the unit its turn.
+            //
+            // Measured on run civvis-20260802T030910Z, 84 turns: **18 of 21
+            // `move_refused` events had `from_x,from_y` identical to `x,y`** — the
+            // destination WAS the origin. Seven different units, so it is not one
+            // stuck unit; the mod dutifully recorded each refusal with
+            // `dest_impassable: false` on ordinary grass, plains and tundra, which
+            // is why the terrain fields never explained them.
+            //
+            // ⚠ COUNTED, NOT SILENTLY DROPPED. If the AI meant "hold", emitting
+            // nothing is exactly right and the unit stays put either way. If it
+            // meant to go somewhere and computed its own tile, that is a real
+            // planning defect and swallowing the order would hide it — so this
+            // lands in `skipped`, the same map every other refusal reason uses,
+            // and shows up in the run's notes as `self_tile_move=N`.
+            //
+            // Compared in AXIAL, on CIVVIS's own board, so no coordinate conversion
+            // sits between the two values being tested. `axial_to_offset` still runs
+            // afterwards for the orders that survive.
+            if let Some(here) = mirror_state.game.units.get(unit).map(|u| u.pos) {
+                if (here.0, here.1) == (to.0, to.1) {
+                    return None;
+                }
+            }
             civ6_of.get(unit).map(|civ6| Order {
                 kind: "unit",
                 subject: Some(*civ6),
@@ -976,6 +1061,39 @@ fn translate(
                 .get(player.saturating_sub(1))
                 .map(|r| r.player as i64),
             verb: Some("DECLARE".to_string()),
+            pos: None,
+        }),
+        // ★★★★★ PEACE, WHICH HAD NO ARM AT ALL. A losing war could never be
+        // exited: run civvis-20260801T221459Z spent 93 turns emitting MakePeace
+        // — "Offering peace" in why.log every turn from t118 to the end — while
+        // every one fell through to the skipped tally and the harness fought
+        // on. Same seat-mapping as the war arm above; the Lua side gates on
+        // IsAtWarWith and answers with the shipped deal shape.
+        Action::MakePeace { player } => Some(Order {
+            kind: "peace",
+            subject: state
+                .rivals
+                .get(player.saturating_sub(1))
+                .map(|r| r.player as i64),
+            verb: Some("MAKE_PEACE".to_string()),
+            pos: None,
+        }),
+        // ⚠ THE PLANNER'S ACTUAL PEACE VEHICLE IS A DEAL, NOT MakePeace.
+        // `advanced.rs` deliberately proposes `ProposeDeal { peace: true, .. }`
+        // so the recipient's valuation answers, instead of the engine's direct
+        // MakePeace (which let a defender end a war the conqueror valued) —
+        // the replay of civvis-20260801T221459Z journals "Offering peace" 106
+        // times and every one was a ProposeDeal falling into the `deal` skip
+        // tally. Both variants funnel to the one Civilization VI peace order;
+        // a non-peace deal (open borders, friendship, gold) still has no
+        // counterpart and stays skipped.
+        Action::ProposeDeal { player, peace: true, .. } => Some(Order {
+            kind: "peace",
+            subject: state
+                .rivals
+                .get(player.saturating_sub(1))
+                .map(|r| r.player as i64),
+            verb: Some("MAKE_PEACE".to_string()),
             pos: None,
         }),
         Action::Research { tech, .. } => Some(Order {

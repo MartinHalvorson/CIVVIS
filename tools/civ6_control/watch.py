@@ -139,7 +139,7 @@ class EventLogBridge:
 
 def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
            stop_when=None, each_poll=None, stall_s: float | None = 600.0,
-           pause_when=None) -> str:
+           frozen_s: float | None = None, pause_when=None) -> str:
     """Pump events to ``on_event`` until ``stop_when`` says so or time runs out.
 
     Returns a short reason string. The game exiting is reported as its own
@@ -152,6 +152,16 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
     to frames -- so a browser window taking focus stops the game dead. That
     looked exactly like a machine under load, and cost a run that sat on turn
     15 for ten minutes with nothing wrong in any log.
+
+    ``stall_s`` and ``frozen_s`` are two DIFFERENT deaths and both are needed:
+
+    * ``stall_s``  -- nothing emitted at all. The game crashed, exited to menu,
+      or the mod stopped running.
+    * ``frozen_s`` -- events keep arriving but the TURN NUMBER stops moving.
+      The game is wedged on a screen the controller cannot answer while the
+      harness happily polls it forever.
+
+    The second is now the common one, and until it existed nothing could see it.
     """
     # ``monotonic`` is backed by mach_absolute_time on macOS, so closed-lid
     # sleep does not spend the run budget.  A locked-but-awake session does
@@ -160,6 +170,9 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
     now = time.monotonic()
     deadline = now + timeout_s
     last_event = now
+    # Silence is not the only way a run dies. A wedged popup can keep emitting
+    # state from one turn forever, so track actual turn progress separately.
+    last_turn, last_turn_at = None, now
     last_poll = now
     was_paused = False
     while True:
@@ -169,6 +182,8 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
             paused_for = now - last_poll
             deadline += paused_for
             last_event += paused_for
+            if last_turn is not None:
+                last_turn_at += paused_for
         last_poll = now
         was_paused = paused
         # Check only after refunding a paused interval.  Otherwise a session
@@ -179,6 +194,9 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
         for event in tail.poll():
             on_event(event)
             last_event = time.monotonic()
+            turn = event.get("turn") if isinstance(event, dict) else None
+            if isinstance(turn, int) and (last_turn is None or turn > last_turn):
+                last_turn, last_turn_at = turn, last_event
             if stop_when is not None and stop_when(event):
                 return "stopped"
         if not env.game_pids():
@@ -195,6 +213,14 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
             continue
         if stall_s is not None and time.monotonic() - last_event > stall_s:
             return f"stalled: no event for {stall_s:.0f}s"
+        # ⚠ Only once a turn has actually been SEEN. Setup emits no turn at all, and
+        # treating "no turn yet" as a frozen turn would kill every run before it
+        # started — the same class of mistake as the popup clearer's own
+        # "no turn recorded yet; this is setup" guard.
+        if (frozen_s is not None and last_turn is not None
+                and time.monotonic() - last_turn_at > frozen_s):
+            return (f"stalled: turn {last_turn} has not advanced for "
+                    f"{frozen_s:.0f}s while events kept arriving")
         if each_poll is not None:
             each_poll()
         time.sleep(poll_s)

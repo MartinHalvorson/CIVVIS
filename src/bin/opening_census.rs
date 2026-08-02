@@ -68,6 +68,9 @@ use civvis::game::{Action, Game, GameOptions, Item};
 use civvis::rules::Yields;
 use civvis::parallel;
 
+type TilePosition = (i32, i32);
+type SettlerTrace = (u32, TilePosition, TilePosition, u32);
+
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
         .position(|arg| arg == flag)
@@ -145,17 +148,17 @@ struct Seat {
     settler_idle_turns: u32,
     settler_moved_turns: u32,
     /// Last seen position of this seat's first settler, to see movement.
-    last_settler_pos: Option<(i32, i32)>,
+    last_settler_pos: Option<TilePosition>,
     /// Per-settler trace, keyed by unit id while the unit lives: spawn turn,
     /// spawn tile, last tile, tiles actually stepped. §13 showed transit is
     /// what gates the founding cadence but could not say whether the sites
     /// are far, the terrain slow, or the settler re-targeting; the ratio of
     /// steps to straight-line distance separates the third from the first two.
-    live_settlers: BTreeMap<u32, (u32, (i32, i32), (i32, i32), u32)>,
+    live_settlers: BTreeMap<u32, SettlerTrace>,
     /// Target this settler was marching to when last seen, and how many times
     /// that target changed over its life. §14 left exactly one question: bad
     /// path, or changing destination?
-    settler_aim: BTreeMap<u32, (i32, i32)>,
+    settler_aim: BTreeMap<u32, TilePosition>,
     aim_changes: u32,
     aim_samples: u32,
     aim_lost: u32,
@@ -265,11 +268,11 @@ fn opening_of(
         if game.winner.is_some() {
             break;
         }
-        for pid in 0..game.players.len() {
+        for (pid, agent) in fleet.iter_mut().enumerate().take(game.players.len()) {
             if game.winner.is_some() {
                 break;
             }
-            fleet[pid].take_turn(&mut game, pid);
+            agent.take_turn(&mut game, pid);
             if game.winner.is_none() && game.current == pid {
                 let _ = game.apply(pid, &Action::EndTurn);
             }
@@ -349,7 +352,7 @@ fn swap_probe(args: &[String]) {
 
     let mut total_distinct = 0usize;
     let mut identical_maps = 0usize;
-    println!("\n{:<6} {:>8}  {}", "map", "distinct", "openings seen");
+    println!("\n{:<6} {:>8}  openings seen", "map", "distinct");
     for (index, openings) in rows.iter().enumerate() {
         let distinct: BTreeSet<&str> = openings.iter().map(|(_, seq)| seq.as_str()).collect();
         total_distinct += distinct.len();
@@ -463,11 +466,11 @@ fn main() {
             if game.winner.is_some() {
                 break;
             }
-            for pid in 0..game.players.len() {
+            for (pid, agent) in fleet.iter_mut().enumerate().take(game.players.len()) {
                 if game.winner.is_some() {
                     break;
                 }
-                fleet[pid].take_turn(&mut game, pid);
+                agent.take_turn(&mut game, pid);
                 // Movement must be read before EndTurn, which refreshes it.
                 let settler_moves: Vec<(u32, f64, (i32, i32))> = game
                     .units
@@ -534,12 +537,12 @@ fn main() {
                 let aims_now: Vec<(u32, Option<(i32, i32)>)> = settlers_now
                     .iter()
                     .map(|(id, _)| {
-                        (*id, fleet[pid].settler_target(*id).map(|p| (p.0, p.1)))
+                        (*id, agent.settler_target(*id).map(|p| (p.0, p.1)))
                     })
                     .collect();
                 let fleet_aim_missing: BTreeSet<u32> = settlers_now
                     .iter()
-                    .filter(|(id, _)| fleet[pid].settler_target(*id).is_none())
+                    .filter(|(id, _)| agent.settler_target(*id).is_none())
                     .map(|(id, _)| *id)
                     .collect();
                 let building = game.cities.values().any(|c| {
@@ -815,8 +818,8 @@ fn main() {
     // ---- 2. per-civilization -------------------------------------------
     println!("\nper civilization, ranked by terminal score share");
     println!(
-        "{:<14} {:>5} {:>8} {:>6} {:>17} {:>6} {:>7} {:>6}  {}",
-        "civ", "seats", "distinct", "modal", "score share", "win%", "2ndcity", "cities", "opening"
+        "{:<14} {:>5} {:>8} {:>6} {:>17} {:>6} {:>7} {:>6}  opening",
+        "civ", "seats", "distinct", "modal", "score share", "win%", "2ndcity", "cities"
     );
     // Collect first so the table can be ranked by outcome rather than by name.
     let mut civ_rows: Vec<(f64, String)> = Vec::new();
@@ -1000,7 +1003,7 @@ fn main() {
     // many cities are already producing, and a seat spends most of its
     // shortfall watching a settler walk rather than building another.
     println!("\ncity founding cadence (turn the seat first held N cities)");
-    println!("{:>3}  {:>7} {:>16}  {}", "N", "seats", "mean turn", "gap");
+    println!("{:>3}  {:>7} {:>16}  gap", "N", "seats", "mean turn");
     let mut previous: Option<f64> = None;
     for step in 0..5usize {
         let turns_at: Vec<f64> = seats
@@ -1049,12 +1052,6 @@ fn main() {
         // Food consumption is two per population in Civilization VI, so the
         // surplus -- not the gross yield -- is what actually grows the city.
         let eaten = 2.0 * pops.iter().sum::<f64>() / pops.len().max(1) as f64;
-        // "At cap" means the housing headroom is under one population, i.e.
-        // growth is housing-bound rather than food-bound.
-        let capped = rows
-            .iter()
-            .filter(|(_, pop, h, ..)| (*pop as f64) >= *h - 1.0)
-            .count();
         let (pop_mean, pop_se) = mean_se(&pops);
         let (house_mean, house_se) = mean_se(&house);
         let (food_mean, food_se) = mean_se(&food);
@@ -1204,8 +1201,8 @@ fn main() {
          sequence means an early death and would rank survival instead"
     );
     println!(
-        "{:<6} {:>6} {:>16} {:>7}  {}",
-        "seats", "wins", "score share", "win%", "opening"
+        "{:<6} {:>6} {:>16} {:>7}  opening",
+        "seats", "wins", "score share", "win%"
     );
     let counts = tally(
         seats

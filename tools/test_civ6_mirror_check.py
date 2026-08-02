@@ -16,6 +16,20 @@ import civ6_mirror_check  # noqa: E402
 
 
 class MirrorCheckTest(unittest.TestCase):
+    def test_terminal_frame_is_an_exact_completed_archive_boundary(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            events = Path(temporary) / "events.jsonl"
+            events.write_text(
+                json.dumps({"kind": "turn", "turn": 250}) + "\n"
+                + json.dumps({"kind": "state", "turn": 251}) + "\n"
+                + json.dumps({"kind": "victory", "turn": 251}) + "\n"
+            )
+            _, playable_turn = civ6_mirror_check.load_export(temporary)
+            terminal_turn = civ6_mirror_check.latest_terminal_turn(temporary)
+
+        self.assertEqual(playable_turn, 250)
+        self.assertEqual(terminal_turn, 251)
+
     def test_live_runtime_rejects_a_game_with_a_stale_missing_controller(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             events = Path(temporary) / "events.jsonl"

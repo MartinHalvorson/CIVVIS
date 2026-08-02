@@ -96,9 +96,21 @@ def launcher_window() -> tuple[int, int, int, int] | None:
 
 
 def click(x: int, y: int) -> None:
-    macos_input.move(x, y)
+    """Move, then press and HOLD, then release.
+
+    ★★★★★ `cliclick c:` SENDS DOWN AND UP IN THE SAME INSTANT and the LaunchPad's
+    PLAY button does not act on it. `civ6_play.py:click_at` learned this on
+    2026-07-31 against a leader-dialogue button and carries the note; this file was
+    never given the fix, so every launch clicked PLAY and nothing happened.
+
+    Measured 2026-08-01: the LaunchPad sat with its window up, `press_play` reported
+    "clicked PLAY, waiting for the game core...", and the core never came up in 420s.
+    The same coordinates clicked by hand with `dd:`/`du:` started it in under twenty
+    seconds.
+    """
+    macos_input.move(x, y, check=True)
     time.sleep(0.35)
-    macos_input.click(x, y)
+    macos_input.click(x, y, hold_s=0.25, check=True)
 
 
 def press_play(timeout_s: float = 90.0) -> bool:
