@@ -319,12 +319,12 @@ mod tests {
             let visible = ObsTensor::plane_index("visible");
             for pos in g.map.tiles.keys() {
                 if t.at(explored, *pos) == 0.0 {
-                    for plane in 0..PLANES.len() {
+                    for (plane, plane_name) in PLANES.iter().enumerate() {
                         assert_eq!(
                             t.at(plane, *pos),
                             0.0,
                             "unexplored {pos:?} leaks plane {}",
-                            PLANES[plane]
+                            plane_name
                         );
                     }
                 }

@@ -291,7 +291,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // Whether the unit has been left behind by the ruleset is worth
             // showing even when the upgrade itself is out of reach this turn.
             if u.owner == pid || omniscient {
-                v["obsolete"] = json!(g.unit_is_obsolete(u.owner, &u.kind));
+                v["obsolete"] = json!(g.unit_is_obsolete(u.owner, u.kind));
             }
             v
         })
@@ -1249,7 +1249,7 @@ fn tile_json(
     // A district still in the production queue reports what its site would pay
     // today — the figure a player is actually deciding on.
     let planned = planned
-        .filter(|district| tile.district.is_none() && g.rules.districts.contains_key(*district))
+        .filter(|district| tile.district.is_none() && g.rules.districts.contains_key(district))
         .map(|district| {
             json!({
                 "district": district,

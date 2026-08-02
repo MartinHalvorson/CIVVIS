@@ -5791,11 +5791,12 @@ mod searching_anchor_tests {
 
     /// The committed roster is an existing league, so changing only
     /// `seed_league` would leave every deployment on its old search-free
-    /// population. Search is a new identity at the ordinary Glicko prior. It
-    /// remains offline-only until its viewer-facing cost is measured at the
-    /// current production profile.
+    /// population. Search is a distinct anchor identity. The live match
+    /// machine may now exercise every unretired strategy, so a snapshot can
+    /// legitimately contain rating evidence for this anchor; this test keeps
+    /// the identity and admission invariants without assuming zero games.
     #[test]
-    fn the_shipped_roster_admits_search_as_an_unrated_anchor() {
+    fn the_shipped_roster_retains_search_as_an_anchor() {
         let league = shipped_league().expect("the committed roster parses");
         let strategic = league
             .strategies
@@ -5815,11 +5816,9 @@ mod searching_anchor_tests {
         assert!(!strategic.retired);
         assert!(strategic.league_only);
         assert_eq!(strategic.username, "DeepThought");
-        assert_eq!(strategic.rating, BASE_RATING);
         assert_ne!(strategic.rating, advanced.rating);
-        assert_eq!(strategic.rd, BASE_RD);
-        assert_eq!((strategic.games, strategic.wins), (0, 0));
-        assert!(strategic.leader_elo.is_empty());
+        assert!(strategic.rating.is_finite() && strategic.rd.is_finite());
+        assert!(strategic.wins <= strategic.games);
     }
 
     /// League simulations already use `elo::builtin_ai`; the exhibition has
