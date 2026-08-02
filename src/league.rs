@@ -5796,7 +5796,7 @@ mod searching_anchor_tests {
     /// legitimately contain rating evidence for this anchor; this test keeps
     /// the identity and admission invariants without assuming zero games.
     #[test]
-    fn the_shipped_roster_admits_search_as_an_unrated_anchor() {
+    fn the_shipped_roster_retains_search_as_an_anchor() {
         let league = shipped_league().expect("the committed roster parses");
         let strategic = league
             .strategies
