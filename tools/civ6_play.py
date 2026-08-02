@@ -627,9 +627,80 @@ def _setup_option_label(value: str) -> str:
     return label.replace("_", " ").title()
 
 
+# The heading Civilization VI renders directly above each setup dropdown.  These
+# are what a row is identified BY; see `_setup_current_value`.
+SETUP_HEADINGS = {
+    "difficulty": "Choose Game Difficulty",
+    "speed": "Choose Game Speed",
+    "map_type": "Choose Map Type",
+    "map_size": "Choose Map Size",
+}
+
+# Fallback only, for a panel whose headings did not survive OCR.  ⚠ These bands
+# OVERLAP each other and cannot separate the rows on their own -- that is the whole
+# reason they are no longer the primary mechanism.
+SETUP_BANDS = {
+    "difficulty": (0.20, 0.38),
+    "speed": (0.24, 0.44),
+    "map_type": (0.28, 0.50),
+    "map_size": (0.34, 0.56),
+}
+
+# The values occupy the narrow central setup column.  Rejects an identical word from
+# the news artwork or another desktop window.
+SETUP_COLUMN = (0.38, 0.62)
+
+
+def _setup_rows(observations: list[dict], bounds: tuple[int, int, int, int],
+                screen: tuple[int, int]) -> dict[str, int]:
+    """Screen y of each setup heading that is legible in this shot."""
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    rows: dict[str, int] = {}
+    for observation in observations:
+        text = str(observation.get("text", ""))
+        for name, heading in SETUP_HEADINGS.items():
+            if name in rows or not _menu_label_matches(text, heading):
+                continue
+            point = _observation_point(observation)
+            if point is None:
+                continue
+            px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+            if x <= px <= x + w and y <= py <= y + h:
+                rows[name] = py
+    return rows
+
+
 def _setup_current_value(path: Path, bounds: tuple[int, int, int, int],
                          name: str) -> tuple[str, tuple[int, int]] | None:
-    """Read a closed setup dropdown's value and exact screen position."""
+    """Read a closed setup dropdown's value and exact screen position.
+
+    ★★★★★ THE ROW IS IDENTIFIED BY ITS HEADING, NOT BY WHERE IT SITS.
+
+    This used to pick the first option-shaped word inside a fixed vertical band, and
+    the bands OVERLAP -- `map_size` spanned 0.34-0.56 while `speed` spanned
+    0.24-0.44.  That is only survivable while no value is legal for two rows, and
+    "Standard" is legal for both.  Measured on a live Create Game screen
+    (`civvis-20260802T131519Z`, game window 864x528 logical points), three matches
+    fell inside the map-size band at once:
+
+        Standard    ry=0.377   <- the GAME SPEED row, and the one that won
+        Continents  ry=0.432   <- the MAP TYPE row, skipped: not a map size
+        Small       ry=0.487   <- the actual MAP SIZE row, never reached
+
+    So `map_size` read `MAPSIZE_STANDARD` off a screen that plainly said Small.
+    `set_dropdown` then clicked the speed row to "fix" it, never read Small back, and
+    gave up with "refusing to start an unverified game" -- on a game that was already
+    configured exactly as asked.  Every attempt in every batch on 2026-08-02 died
+    this way: 0 games from 4 ledger rows, while the ledger's own screenshots show a
+    correct panel.  ⚠ The instrument was wrong; the game was right.  A wider band or
+    a nudged constant would have moved the collision, not removed it.
+
+    Firaxis renders a heading directly above each dropdown, so a row can be named
+    instead of located: find "Choose Map Size", then take the option between it and
+    whichever heading comes next.  That survives the panel reflowing, the window
+    being resized, and two rows sharing a value -- none of which a constant can.
+    """
     screen = desktop_size()
     if screen is None:
         return None
@@ -641,15 +712,9 @@ def _setup_current_value(path: Path, bounds: tuple[int, int, int, int],
     }
     observations = macos_ocr.recognize(path)
     observations.extend(_menu_crop_ocr(path, bounds))
-    vertical_bands = {
-        "difficulty": (0.20, 0.38),
-        "speed": (0.24, 0.44),
-        "map_type": (0.28, 0.50),
-        # "Standard" is both a speed and a map size.  The map-size row is
-        # always below the speed row even when the panel reflows vertically.
-        "map_size": (0.34, 0.56),
-    }
-    top, bottom = vertical_bands[name]
+
+    left, right = SETUP_COLUMN
+    candidates: list[tuple[int, str, tuple[int, int]]] = []
     for observation in observations:
         option = allowed.get(_normalized_label(str(observation.get("text", ""))))
         if option is None:
@@ -658,11 +723,37 @@ def _setup_current_value(path: Path, bounds: tuple[int, int, int, int],
         if point is None:
             continue
         px, py = int(point[0] * screen_w), int(point[1] * screen_h)
-        rx, ry = (px - x) / w, (py - y) / h
-        # The values occupy the narrow central setup column.  This rejects an
-        # identical word from the news artwork or another desktop window.
-        if 0.38 <= rx <= 0.62 and top <= ry <= bottom:
-            return option, (px, py)
+        if not left <= (px - x) / w <= right:
+            continue
+        candidates.append((py, option, (px, py)))
+    if not candidates:
+        return None
+    candidates.sort()
+
+    rows = _setup_rows(observations, bounds, screen)
+    heading_y = rows.get(name)
+    if heading_y is not None:
+        # The row owns the strip between its own heading and the next one down.
+        below = [row_y for row_y in rows.values() if row_y > heading_y]
+        limit = min(below) if below else None
+        for py, option, point in candidates:
+            if py <= heading_y:
+                continue
+            if limit is not None and py >= limit:
+                break
+            return option, point
+        # The heading was legible and nothing sits under it. Say nothing rather than
+        # fall through to the bands: the caller retries and then refuses, which is
+        # the correct outcome, and a band guess here is exactly the wrong answer that
+        # cost every game above.
+        return None
+
+    # No heading survived OCR. Fall back to the historical band, which is better than
+    # nothing on a panel this reader cannot otherwise locate at all.
+    top, bottom = SETUP_BANDS[name]
+    for py, option, point in candidates:
+        if top <= (py - y) / h <= bottom:
+            return option, point
     return None
 
 

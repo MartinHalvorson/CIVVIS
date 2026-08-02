@@ -446,5 +446,89 @@ class Civ6PlayTest(unittest.TestCase):
         )
 
 
+class SetupRowReadbackTest(unittest.TestCase):
+    """The Create Game panel, at the geometry that broke every batch on 2026-08-02.
+
+    Screen 1728x1117 logical points, game window (864, 46, 864, 528) -- Civilization
+    VI running windowed in a screen corner rather than filling it.  Every row sits in
+    the central column at x=1296, and the rows are only ~29 points apart, so the
+    historical vertical bands (map_size 0.34-0.56, speed 0.24-0.44) overlap and both
+    contain the speed row.  Taken from run civvis-20260802T131519Z.
+    """
+
+    SCREEN = (1728, 1117)
+    BOUNDS = (864, 46, 864, 528)
+
+    @staticmethod
+    def _row(text: str, y: int) -> dict:
+        # Centre the observation on (1296, y) in logical points, expressed the way
+        # macos_ocr reports: normalized fractions of the whole screen.
+        return {
+            "text": text,
+            "x": 1296 / 1728 - 0.02, "width": 0.04,
+            "y": y / 1117 - 0.005, "height": 0.01,
+        }
+
+    def _panel(self) -> list[dict]:
+        return [
+            self._row("Choose Game Difficulty", 205),
+            self._row("Settler", 216),
+            self._row("Choose Game Speed", 234),
+            self._row("Standard", 245),
+            self._row("Choose Map Type", 263),
+            self._row("Continents", 274),
+            self._row("Choose Map Size", 292),
+            self._row("Small", 303),
+        ]
+
+    def _read(self, name: str, observations: list[dict]):
+        with patch.object(civ6_play, "desktop_size", return_value=self.SCREEN), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=observations), \
+             patch.object(civ6_play, "_menu_crop_ocr", return_value=[]):
+            return civ6_play._setup_current_value(
+                Path("setup.png"), self.BOUNDS, name
+            )
+
+    def test_map_size_does_not_read_the_game_speed_row(self) -> None:
+        """The regression itself.
+
+        "Standard" is a legal value for BOTH speed and map size, and the speed row
+        is the first one an overlapping band reaches.  Reading it as the map size
+        made `set_dropdown` click the speed dropdown to correct a map size that was
+        already correct, never read Small back, and refuse to start the game --
+        4 ledger rows, 0 games, on a panel that said Small the whole time.
+        """
+        value = self._read("map_size", self._panel())
+        self.assertIsNotNone(value)
+        self.assertEqual(value[0], "MAPSIZE_SMALL")
+        # And the POINT matters as much as the name: `set_dropdown` clicks whatever
+        # this returns, so a right answer at the speed row's coordinates would still
+        # open the wrong list.  Map size sits at y=303, speed at y=245.
+        self.assertAlmostEqual(value[1][1], 303, delta=2)
+        self.assertEqual(value[1][0], 1296)
+
+    def test_every_row_reads_its_own_value(self) -> None:
+        panel = self._panel()
+        self.assertEqual(self._read("difficulty", panel)[0], "DIFFICULTY_SETTLER")
+        self.assertEqual(self._read("speed", panel)[0], "GAMESPEED_STANDARD")
+        self.assertEqual(self._read("map_size", panel)[0], "MAPSIZE_SMALL")
+
+    def test_a_row_whose_value_is_missing_does_not_borrow_the_next_row(self) -> None:
+        """Silence beats the wrong answer.
+
+        With no value under "Choose Map Size" the reader must say nothing, so the
+        caller retries and then refuses.  Returning the row below -- or a band guess
+        -- is how a game gets started on settings nobody asked for.
+        """
+        panel = [row for row in self._panel() if row["text"] != "Small"]
+        self.assertIsNone(self._read("map_size", panel))
+
+    def test_bands_still_answer_when_no_heading_survives_ocr(self) -> None:
+        """The fallback keeps a headingless panel readable rather than blind."""
+        headings = set(civ6_play.SETUP_HEADINGS.values())
+        panel = [row for row in self._panel() if row["text"] not in headings]
+        self.assertEqual(self._read("difficulty", panel)[0], "DIFFICULTY_SETTLER")
+
+
 if __name__ == "__main__":
     unittest.main()
