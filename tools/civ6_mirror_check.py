@@ -60,11 +60,16 @@ Each of these is a real bug I nearly reported, caught only by looking again:
    the board is the SEATED view. The check was asking the board to hold units the
    seat cannot see. It is now gated on `visible`, and the decider's own
    `dropped_units` -- which recorded no hostile dropped -- was what disproved it.
-7. RIVALS and PUBLIC paired the Nth met rival with CIVVIS seat N. The export
-   carries the real seat in `rival["player"]` and Civilization VI does not hand
-   them out in met-order, so a correctly-seated board read as an off-by-one
-   mirror bug and every rival's military read `CIVVIS=0`. Pair by the seat the
-   export names.
+7. RIVALS and PUBLIC were re-indexed to `rival["player"]` (#878) on the belief
+   that met-order pairing was an off-by-one. IT WAS NOT: mirror.rs compacts
+   rivals into seats 1..n in export order and says so. The re-index left two
+   tests in this file red on main -- Python tests are not covered by cargo-test
+   -- and it SILENCED a real disagreement (Egypt at CIVVIS seat 1 where the
+   export's first rival was Netherlands). Reverted. ⚠ THE LESSON IS THE
+   DANGEROUS DIRECTION: the first six entries here were checks that cried wolf,
+   and the reflex they build is to distrust the check. This one was the check
+   being RIGHT. When a check disagrees with the board, read the mirror's own
+   contract before re-indexing the ruler.
 
 ⚠ The board served on :8610 is follow.py's FLIPPED staged copy:
 `board_axial = offset_to_axial(x, TOP - y)`. The flip constant is discovered here
@@ -143,7 +148,69 @@ def live_runtime_problems(run, process_text=None, now=None, max_age=120.0):
         problems.append("the CIVVIS decision worker is absent")
     if game_running and age > max_age:
         problems.append(f"the Firaxis export is {age:.0f}s stale")
+    problems.extend(stale_rig_problems(lines))
     return problems
+
+
+# The deployed binary that RENDERS the board this file compares against. It is not
+# a git checkout and nothing rebuilds it.
+RIG_BINARY = str(Path.home() / "civvis-civ6-mirror" / "civvis")
+
+
+def stale_rig_problems(process_lines, rig=RIG_BINARY):
+    """Is the board being SERVED built by older code than the board being DECIDED?
+
+    ⚠⚠ THE LINE ABOVE USED TO SAY "export and CIVVIS worker are current" HAVING
+    CHECKED ONLY THAT THE WORKER PROCESS EXISTS. Presence is not currency, and the
+    difference cost a whole diagnosis.
+
+    Measured 2026-08-02. `/Users/martin/civvis-civ6-mirror/civvis` — a DEPLOYED
+    binary, not a git checkout, that nothing rebuilds — was dated Aug 1 02:52 while
+    the decider's binary was minutes old. `follow.py` stages into that rig and
+    `civvis play --serve` renders it, so both the CIVVIS window and every check in
+    this file were reading a DAY-OLD reconstruction of a current game. CONTROL
+    reported OK throughout.
+
+    One rebuild moved four whole axes from failing to passing:
+
+        BEFORE  setup, tiles, knowledge, city-states, public facts, city facts, unit facts
+        AFTER   tiles, knowledge, unit facts
+
+    including `SETUP ⚠ speed Civ6=online CIVVIS=standard`, which I was one step
+    from chasing as a code defect. That one matters on its own: Online costs are
+    HALF of Standard, so a reconstruction running Standard prices every build and
+    every tech wrong.
+
+    The decider's binary is named on the brain's own command line (`--bin`), so the
+    comparison needs no configuration — it asks the running system what it is using.
+    """
+    wanted = None
+    for line in process_lines:
+        if "civ6_brain.py" not in line or "--bin" not in line:
+            continue
+        parts = line.split()
+        if "--bin" in parts:
+            index = parts.index("--bin")
+            if index + 1 < len(parts):
+                wanted = parts[index + 1]
+                break
+    if wanted is None:
+        return []
+    try:
+        rig_at = os.path.getmtime(rig)
+        decider_at = os.path.getmtime(wanted)
+    except OSError:
+        # ⚠ Absent is not stale. A rig that is not there at all is a different
+        # failure and belongs to whoever starts the server.
+        return []
+    if rig_at >= decider_at:
+        return []
+    behind = (decider_at - rig_at) / 3600.0
+    return [
+        f"the served board is built by a rig binary {behind:.1f}h older than the "
+        f"decider's — rebuild it (cargo build --release --bin civvis), then restart "
+        f"follow.py AND the server, because a running one keeps its inode"
+    ]
 
 
 def axial(x, y):
@@ -188,27 +255,24 @@ def rival_identity_mismatches(state, board):
     """Compare each exported rival with the compact CIVVIS seat that owns it."""
     players = {player.get("id"): player for player in board.get("players") or []}
     mismatches = []
-    # ⚠⚠ PAIR BY THE SEAT THE EXPORT NAMES, NOT BY LIST POSITION.
+    # ⚠⚠ COMPACTED SEATS, BY LIST POSITION — and I broke this once by "fixing" it.
     #
-    # `enumerate(rivals, start=1)` assumed the Nth met rival occupies CIVVIS seat
-    # N. It does not: the export carries the real seat in `rival["player"]`, and
-    # Civilization VI does not hand them out in met-order. Measured 2026-08-02 —
-    # the export named Netherlands `player: 2` and Khmer `player: 5`, CIVVIS had
-    # correctly seated Netherlands at 2, and this function reported
+    # mirror.rs says it outright: "Rival entities are deliberately compacted into
+    # seats 1..n in export order; `rival.player` is the original Firaxis id and is
+    # used only when translating". So the Nth exported rival IS CIVVIS seat N, and
+    # `enumerate(rivals, start=1)` is correct.
     #
-    #     seat 1 Civ6=netherlands CIVVIS=egypt; seat 2 Civ6=khmer CIVVIS=netherlands
+    # #878 changed this to pair by `rival["player"]` on the strength of one live
+    # run where the two happened to coincide. That did two bad things: it left two
+    # tests in this file failing on main (Python tests are not covered by
+    # cargo-test, so CI stayed green), and — much worse — it SILENCED A REAL
+    # DEFECT. The run that motivated it genuinely had Egypt at CIVVIS seat 1 while
+    # the export's first rival was Netherlands. That is exactly the disagreement
+    # this axis exists to report, and I turned it off by changing the ruler.
     #
-    # which reads exactly like an off-by-one in the MIRROR and is an off-by-one in
-    # the CHECK. The same indexing in `public_fact_mismatches` is why every rival's
-    # military read `CIVVIS=0` against Civ 6's 239 and 366: it was reading a seat
-    # those rivals do not occupy.
-    #
-    # ⚠ A checker that cries wolf on every run buries the defects it exists to
-    # find. That is the fifth and sixth entry in this file's own list.
-    for rival in state.get("rivals") or []:
-        seat = rival.get("player")
-        if seat is None:
-            continue
+    # ⚠ If the two conventions ever genuinely diverge, fix the MIRROR or say so
+    # here — do not quietly re-index the check until it agrees.
+    for seat, rival in enumerate(state.get("rivals") or [], start=1):
         player = players.get(seat, {})
         expected_civ = civ6_id(rival.get("civ"), "CIVILIZATION_")
         expected_leader = civ6_id(rival.get("leader"), "LEADER_")
@@ -229,13 +293,9 @@ def rival_identity_mismatches(state, board):
 def public_fact_mismatches(state, board):
     """Compare diplomacy-ribbon facts and the viewed empire's live economy."""
     players = {player.get("id"): player for player in board.get("players") or []}
-    # ⚠ Same pairing rule as `rival_identity_mismatches` — by the seat the export
-    # names, never by list position. See the note there.
-    expected = [(0, state)] + [
-        (rival.get("player"), rival)
-        for rival in state.get("rivals") or []
-        if rival.get("player") is not None
-    ]
+    # Same compacted-seat rule as `rival_identity_mismatches`. See the note there,
+    # including why re-indexing this to `rival["player"]` was a mistake.
+    expected = [(0, state)] + list(enumerate(state.get("rivals") or [], start=1))
     mismatches = []
     for seat, source in expected:
         player = players.get(seat, {})
@@ -511,22 +571,64 @@ def unit_fact_mismatches(state, board, top):
                 )
             continue
 
+        # ⚠⚠ AN UNFORTIFIED UNIT HAS NO FORTIFY_TURNS TO DISAGREE ABOUT, and
+        # comparing the two sides' "none" sentinels made this axis fail on EVERY
+        # unit of EVERY run.
+        #
+        # Civilization VI exports -1 for a unit that is not fortified; CIVVIS
+        # stores 0. Both mean the same thing, and the field only carries meaning
+        # when `fortified` is true — which is already the neighbouring element of
+        # this key. Measured 2026-08-02: `UNITDATA` listed every warrior, scout,
+        # builder and trader on the board as `fortify_turns Civ6=[-1] CIVVIS=[0]`,
+        # including units that cannot meaningfully fortify at all.
+        #
+        # A check that fires on every unit says nothing, and it buries the ones
+        # that mean something — this file already carries seven entries about
+        # exactly that. So the turn count is normalised to 0 whenever the unit is
+        # not fortified, on both sides, leaving a real difference in a FORTIFIED
+        # unit's count fully visible.
+        def fortify_pair(fortified, turns):
+            if not fortified:
+                return False, 0
+            value = int(turns) if isinstance(turns, (int, float)) and turns >= 0 else 0
+            return True, max(0, min(2, value))
+
+        # ⚠ AND THE SAME SHAPE ONE FIELD OVER. Civilization VI exports `hp: -1`
+        # for a unit whose health it is not telling us — a fogged rival, mostly —
+        # while CIVVIS plants it at full. Comparing "unknown" against "assumed
+        # full" produced `hp Civ6=[-1] CIVVIS=[100]` on every such unit. An
+        # unknown is not a disagreement; it is an absence of evidence, and a check
+        # cannot fail on evidence it was never given.
+        #
+        # ⚠ Our OWN units always carry a real hp, so this loses nothing that
+        # matters: it silences the rivals the export declines to describe and
+        # leaves every genuine health difference visible.
+        exported_hp = [
+            source.get("hp") for source in sources
+            if isinstance(source.get("hp"), (int, float)) and source.get("hp") > 0
+        ]
+        hp_known = len(exported_hp) == len(sources)
+
         def source_key(source):
             hp = source.get("hp")
-            turns = source.get("fortify_turns")
+            fortified, turns = fortify_pair(
+                bool(source.get("fortified")), source.get("fortify_turns")
+            )
             return (
-                int(hp + 0.5) if isinstance(hp, (int, float)) and hp > 0 else -1,
-                bool(source.get("fortified")),
-                max(0, min(2, int(turns)))
-                if isinstance(turns, (int, float)) and turns >= 0 else -1,
+                int(hp + 0.5) if hp_known and isinstance(hp, (int, float)) else -1,
+                fortified,
+                turns,
             )
 
         def board_key(unit):
+            fortified, turns = fortify_pair(
+                bool(unit.get("fortified")), unit.get("fortify_turns")
+            )
             return (
-                int(unit.get("hp")) if isinstance(unit.get("hp"), (int, float)) else -1,
-                bool(unit.get("fortified")),
-                int(unit.get("fortify_turns"))
-                if isinstance(unit.get("fortify_turns"), (int, float)) else -1,
+                int(unit.get("hp"))
+                if hp_known and isinstance(unit.get("hp"), (int, float)) else -1,
+                fortified,
+                turns,
             )
 
         wanted = sorted(source_key(source) for source in sources)
@@ -763,7 +865,8 @@ def main(argv=None):
             problems.append("control")
             print("CONTROL  ⚠ " + "; ".join(runtime))
         else:
-            print("CONTROL  live game, export and CIVVIS worker are current   OK")
+            print("CONTROL  live game, fresh export, worker present, rig binary "
+                  "not behind the decider   OK")
     # The viewer can publish a staged board a fraction of a second before follow.py
     # appends the corresponding host event. Never compare that future board with the
     # previous export: one ordinary unit move then looks exactly like a dropped unit.

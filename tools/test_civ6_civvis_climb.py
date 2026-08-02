@@ -391,3 +391,52 @@ class WedgedAttempt(unittest.TestCase):
         why, signalled = self._run([1, 2, 3], frozen_s=600.0)
         self.assertNotEqual(why, "frozen")
         self.assertIsNone(signalled)
+
+
+class SettingsDealt(unittest.TestCase):
+    """★★★★★ A row dealt something other than what was asked must say so.
+
+    `is_win` refuses to count a VICTORY at the wrong rung. That check only ever
+    fires on a win, so every losing row — all of them, so far — was written with
+    `difficulty_asked: DIFFICULTY_SETTLER` beside a seat that said otherwise, and
+    nothing said a word.
+
+    Measured 2026-08-02: 25 consecutive runs dealt DIFFICULTY_SETTLER and the
+    26th dealt DIFFICULTY_PRINCE on identical setup code. Rare, not chronic —
+    which is why it has to be RECORDED rather than watched for.
+    """
+
+    @staticmethod
+    def _mismatch(asked, dealt):
+        """The comparison the climb performs, in the same shape."""
+        return {
+            field: {"asked": a, "dealt": dealt.get(key)}
+            for field, key, a in (
+                ("difficulty", "difficulty", asked["difficulty"]),
+                ("map_size", "size", asked["map_size"]),
+                ("speed", "speed", asked["speed"]),
+            )
+            if dealt.get(key) is not None and dealt.get(key) != a
+        }
+
+    ASKED = {"difficulty": "DIFFICULTY_SETTLER", "map_size": "MAPSIZE_SMALL",
+             "speed": "GAMESPEED_ONLINE"}
+
+    def test_the_rung_the_game_actually_dealt_is_recorded(self):
+        dealt = {"difficulty": "DIFFICULTY_PRINCE", "size": "MAPSIZE_SMALL",
+                 "speed": "GAMESPEED_ONLINE"}
+        found = self._mismatch(self.ASKED, dealt)
+        self.assertIn("difficulty", found)
+        self.assertEqual(found["difficulty"]["dealt"], "DIFFICULTY_PRINCE")
+        self.assertNotIn("map_size", found, "settings that matched must stay quiet")
+
+    def test_a_matching_game_records_nothing(self):
+        """⚠ A field that always fires says nothing. Silence is the healthy case."""
+        dealt = {"difficulty": "DIFFICULTY_SETTLER", "size": "MAPSIZE_SMALL",
+                 "speed": "GAMESPEED_ONLINE"}
+        self.assertEqual(self._mismatch(self.ASKED, dealt), {})
+
+    def test_a_seat_that_could_not_be_read_is_not_a_mismatch(self):
+        """⚠ Absent is not wrong. An old export naming nothing must not be
+        reported as the game having dealt the wrong rung."""
+        self.assertEqual(self._mismatch(self.ASKED, {}), {})

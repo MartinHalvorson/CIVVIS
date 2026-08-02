@@ -10,6 +10,8 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -52,6 +54,47 @@ fn process_identity() -> u32 {
     #[cfg(not(target_arch = "wasm32"))]
     {
         std::process::id()
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+static LAUNCHED_COMMIT: OnceLock<Option<String>> = OnceLock::new();
+
+#[cfg(not(target_arch = "wasm32"))]
+fn promoted_binary_commit(name: &str) -> Option<String> {
+    let commit = name.strip_prefix("civvis-")?;
+    (commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .then(|| commit.to_owned())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn launched_commit() -> Option<String> {
+    std::env::var("CIVVIS_COMMIT")
+        .ok()
+        .filter(|commit| !commit.is_empty())
+        .or_else(|| {
+            let executable = std::env::current_exe().ok()?;
+            let name = executable.file_name()?.to_str()?;
+            promoted_binary_commit(name)
+        })
+}
+
+/// The revision of the code a supervisor selected for this process.
+///
+/// This deliberately reads the launch environment or promoted executable name
+/// instead of `option_env!`: a compile-time revision would force a complete
+/// optimized rebuild even when the source code itself has not changed.
+pub(crate) fn runtime_commit(fallback: &str) -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        fallback.to_owned()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        LAUNCHED_COMMIT
+            .get_or_init(launched_commit)
+            .clone()
+            .unwrap_or_else(|| fallback.to_owned())
     }
 }
 
@@ -2299,7 +2342,7 @@ impl Session {
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
             o["server_instance"] = json!(process_identity());
-            o["server_commit"] = json!(option_env!("CIVVIS_COMMIT").unwrap_or("unknown"));
+            o["server_commit"] = json!(runtime_commit("unknown"));
             return o;
         }
         let mut o = observation(&self.game, 0);
@@ -2318,7 +2361,7 @@ impl Session {
         o["victory_conditions"] = json!(self.game.victory_conditions);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
         o["server_instance"] = json!(process_identity());
-        o["server_commit"] = json!(option_env!("CIVVIS_COMMIT").unwrap_or("unknown"));
+        o["server_commit"] = json!(runtime_commit("unknown"));
         o
     }
 
@@ -3477,7 +3520,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 &json!({
                     "server_instance": process_identity(),
                     "seed": sh.current_seed.load(Ordering::Relaxed),
-                    "commit": option_env!("CIVVIS_COMMIT").unwrap_or("unknown"),
+                    "commit": runtime_commit("unknown"),
                     // The supervisor's only view of a restart used to be
                     // `/state`, which is exactly what a long AI turn makes
                     // unavailable. This probe takes no lock the simulation
@@ -3623,9 +3666,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // happens between games, so a running server is always
                     // somewhat behind origin/main and there was no way to see
                     // by how much - "is it running old code" could only be
-                    // guessed at from file timestamps. The build stamps this
-                    // in; an unstamped build reports unknown.
-                    "commit": option_env!("CIVVIS_COMMIT").unwrap_or("unknown"),
+                    // guessed at from file timestamps. The supervisor passes
+                    // it when it launches the promoted binary; an unstamped
+                    // build reports unknown.
+                    "commit": runtime_commit("unknown"),
                 }),
             );
         }
@@ -5071,6 +5115,18 @@ mod tests {
             runtime_body.len() * 10 < state_body.len(),
             "the identity probe should not resemble a full observation"
         );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn promoted_binary_name_carries_the_runtime_revision() {
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(
+            super::promoted_binary_commit(&format!("civvis-{commit}")),
+            Some(commit.to_owned())
+        );
+        assert_eq!(super::promoted_binary_commit("civvis-brief"), None);
+        assert_eq!(super::promoted_binary_commit("civvis-zzzz"), None);
     }
 
     /// A result has to arrive with the window it promises, and that window has

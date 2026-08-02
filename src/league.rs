@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use crate::ai::{run_game, AdvancedAi, Ai, VictoryTarget, Weights};
 use crate::game::{default_speed, Game, GameOptions};
 use crate::rng::Rng;
+use crate::server::runtime_commit;
 use crate::setup::MapSize;
 
 /// Glicko-2 works on an internal scale; ratings are stored and shown on the
@@ -646,7 +647,7 @@ fn work_engine() -> String {
     format!(
         "civvis-{}-{}-league-work-{WORK_SCHEMA_VERSION}",
         env!("CARGO_PKG_VERSION"),
-        option_env!("CIVVIS_COMMIT").unwrap_or("development")
+        runtime_commit("development")
     )
 }
 
