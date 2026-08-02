@@ -15586,9 +15586,9 @@ function strategicUnitFill(scale = cam.scale) {
   return STRATEGIC_UNIT_FILL_OUT +
     (STRATEGIC_UNIT_FILL_IN - STRATEGIC_UNIT_FILL_OUT) * at;
 }
-// The outer edge of a command token is the useful radius of a hex. A stack
-// packs several such circles into that same disk; retaining this as a separate
-// value means an outline never makes the layout quietly cross a tile boundary.
+// The outer edge of a singleton command token is the useful radius of a hex.
+// Stack sizes and offsets are expressed from this same reference radius, which
+// keeps their intentional overlap and overflow proportional at every zoom.
 function strategicUnitOuterRadius(hexInradius) {
   return Math.max(0, hexInradius * strategicUnitFill());
 }
@@ -15601,7 +15601,7 @@ function strategicUnitRadius(hexInradius, outlineWidth = 0) {
 function flatStrategicUnitInradius() {
   // A rotated, vertically projected hex can only promise its shortest
   // center-to-edge span. This is the exact lower bound for every bearing, so a
-  // circular token never crosses a neighboring cell.
+  // singleton circular token never crosses a neighboring cell.
   return S * SQ3 / 2 * Math.min(1, YS);
 }
 
@@ -15609,12 +15609,18 @@ function flatStrategicUnitInradius() {
 //
 // A tile may legitimately hold a military unit, civilian, support unit, and
 // more. The command map used to draw every one at its centre, leaving only the
-// last icon visible. Slots below describe equal circles packed inside a unit
-// disk: `x` and `y` are centre offsets in disk radii, and `r` is each token's
-// outer radius in the same units. A singleton therefore remains exactly the
-// authored size, while a pair sits side-by-side and a trio is a triangle.
+// last icon visible. Stacks keep most of the authored token size and trade a
+// little overlap plus a little tile overflow for legibility: `x` and `y` are
+// centre offsets in singleton radii, and `r` is the token radius in those same
+// units. A singleton remains exactly the authored size, while every member of
+// a stack is 80% of it and keeps a stable seat in the group.
 const UNIT_STACK_SLOT_CACHE = new Map();
 const UNIT_STACK_SINGLE_SLOT = Object.freeze({x:0, y:0, r:1});
+const UNIT_STACK_TOKEN_SCALE = 0.80;
+// Source layouts put neighbouring centres two units apart. Bringing that down
+// to .9 singleton radii leaves a deliberate overlap between 80%-size tokens,
+// but enough offset for both pictograms and owner colours to remain distinct.
+const UNIT_STACK_CENTER_SEPARATION = 0.90;
 
 function unitStackCircleContains(circle, point) {
   const dx = point.x - circle.x, dy = point.y - circle.y;
@@ -15661,13 +15667,10 @@ function unitStackMinimumEnclosingCircle(points) {
 }
 function unitStackSlotsFromPoints(points) {
   const circle = unitStackMinimumEnclosingCircle(points);
-  // Every source point is one token-radius from its nearest neighbour. Adding
-  // one to the enclosing circle is exactly the space needed to keep each
-  // token's complete outline inside the tile's safe disk.
-  const span = Math.max(1e-7, circle.r + 1);
-  return points.map(point => ({x:(point.x - circle.x) / span,
-                               y:(point.y - circle.y) / span,
-                               r:1 / span}));
+  const offsetScale = UNIT_STACK_CENTER_SEPARATION / 2;
+  return points.map(point => ({x:(point.x - circle.x) * offsetScale,
+                               y:(point.y - circle.y) * offsetScale,
+                               r:UNIT_STACK_TOKEN_SCALE}));
 }
 function unitStackRingSlots(count, withCentre = false) {
   const ringCount = count - (withCentre ? 1 : 0);
@@ -15685,8 +15688,8 @@ function unitStackRingSlots(count, withCentre = false) {
 }
 function unitStackLatticeSlots(count) {
   // A compact hexagonal lattice is the fallback for unusually large stacks.
-  // It is denser than extending one enormous ring, yet every neighbouring pair
-  // remains exactly two token radii apart.
+  // It is denser than extending one enormous ring, while the source points
+  // retain the same two-unit neighbour spacing as the ring layouts.
   const reach = Math.ceil(Math.sqrt(count)) + 2;
   const points = [];
   for (let q = -reach; q <= reach; q++) for (let r = -reach; r <= reach; r++) {
@@ -15730,10 +15733,12 @@ function unitStackSlots(count) {
   if (count >= 4) candidates.push(unitStackRingSlots(count, true));
   candidates.push(unitStackLatticeSlots(count));
   // Prefer the clean symmetric ring whenever it is effectively tied with a
-  // lattice. The lattice earns its less regular silhouette only when it can
-  // make every icon meaningfully larger.
+  // lattice. All stacked icons now share the same 80% size, so the lattice
+  // earns its less regular silhouette only when it makes the group tighter.
+  const layoutRadius = layout => layout.reduce((reach, slot) =>
+    Math.max(reach, Math.hypot(slot.x, slot.y) + slot.r), 0);
   const slots = candidates.reduce((best, candidate) =>
-    candidate[0].r > best[0].r + 1e-7 ? candidate : best);
+    layoutRadius(candidate) < layoutRadius(best) - 1e-7 ? candidate : best);
   UNIT_STACK_SLOT_CACHE.set(count, slots);
   return slots;
 }
@@ -15767,8 +15772,9 @@ function strategicUnitStackPlacement(slots, unit, hexInradius, outlineWidth = 0)
   return {
     x:outerRadius * slot.x,
     y:outerRadius * slot.y,
+    stacked:slot !== UNIT_STACK_SINGLE_SLOT,
     // Keep the singleton on the pre-stack size path exactly; stacked tokens
-    // receive the same outline allowance after their packing scale is applied.
+    // receive the same outline allowance after their 80% scale is applied.
     r:slot === UNIT_STACK_SINGLE_SLOT
       ? strategicUnitRadius(hexInradius, outlineWidth)
       : Math.max(0, outerRadius * slot.r - outlineWidth / 2)
@@ -21456,14 +21462,16 @@ function drawPlanetMap() {
     const r = commandToken
       ? stack.r
       : Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
-    // A singleton stays centred; a stack takes its own compact, non-overlapping
-    // seat in the same cell. Each token is still clipped to that real face.
+    // A singleton stays centred; a stack takes stable, gently overlapping
+    // seats around it. Let stacked tokens cross the individual face edge a
+    // little instead of cutting their already-reduced silhouettes flat.
     const ux = cell.center.x + (stack?.x || 0), uy = cell.center.y + (stack?.y || 0);
     const civilian = CIVILIAN_UNITS.has(unit.type);
     const tokenInk = unitTokenInk(unit.owner);
     cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : tokenInk;
     cx.lineWidth = outline;
-    if (commandToken) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
+    const commandTokenClip = commandToken && !stack.stacked;
+    if (commandTokenClip) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
     if (commandToken) strategicUnitTokenPath(civilian, ux, uy, r);
     else { cx.beginPath(); cx.arc(ux, uy, r, 0, 7); }
     cx.fill(); cx.stroke();
@@ -21471,8 +21479,8 @@ function drawPlanetMap() {
       drawUnitPictogram(unit.embarked ? "galley" : unit.type, ux, uy,
                         r * 1.48, tokenInk);
       drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
-      cx.restore();
     }
+    if (commandTokenClip) cx.restore();
   }
   for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
@@ -22806,11 +22814,10 @@ function draw() {
       : null;
     if (stack) { x += stack.x; y += stack.y; }
     const rr = beau ? 10.5 : stack.r;
-    // A moving unit is deliberately between its two cells; every stationary
-    // strategic unit is clipped to the exact hex it occupies. This also keeps
-    // an icon's longest weapon, health strip, promotion pips, and selection
-    // cue from escaping the cell at any map bearing.
-    const strategicTokenClip = !beau && !moving;
+    // Stacked command tokens may cross a tile edge slightly. Their stable
+    // overlap is more legible than clipping each reduced token back to the hex;
+    // singleton sizing and moving-unit behavior remain unchanged.
+    const strategicTokenClip = !beau && !moving && !stack.stacked;
     if (strategicTokenClip) { cx.save(); hexPath(tileX, tileY); cx.clip(); }
     if (beau) {
       drawCinematicSubjectMarker(u, x, y, now);
@@ -22854,9 +22861,9 @@ function draw() {
     }
     // Flat strategic tokens always carry their health state. The strip is
     // built from the same hex-relative radius as the token and seated in its
-    // lower interior, so it becomes larger on screen with zoom but never
-    // crosses the boundary of the unit's assigned tile. Painted figures keep
-    // their existing, damage-only bar above the model.
+    // lower interior, so it becomes larger on screen with zoom without adding
+    // more overflow than the token itself. Painted figures keep their existing,
+    // damage-only bar above the model.
     if (!beau) {
       drawStrategicUnitHealth(x, y, rr, u.hp, now);
     } else if (u.hp < 100) {
@@ -22906,8 +22913,8 @@ function draw() {
     if (sel && sel.id === u.id) {
       cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.4;
       cx.setLineDash([5, 4]);
-      // The strategic selection cue lives inside its token rather than growing
-      // beyond the hex boundary at survey zoom.
+      // The strategic selection cue lives inside its token rather than adding
+      // another ring outside the stack footprint at survey zoom.
       const selectionRadius = beau ? ur + 6 * us : Math.max(0, rr - 1.2);
       cx.beginPath(); cx.arc(x, y, selectionRadius, 0, 7); cx.stroke();
       cx.setLineDash([]);
