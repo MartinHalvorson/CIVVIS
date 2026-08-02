@@ -225,7 +225,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// 18/20 Advanced wins, 119.2 average turns, and identical terminal tables.
 /// This is another compatibility re-pin, not an Elo protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9345_f046_0991_864e;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf9f0_591b_c144_55da;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

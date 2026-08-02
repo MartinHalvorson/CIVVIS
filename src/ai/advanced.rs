@@ -14050,6 +14050,22 @@ impl AdvancedAi {
                 self.settler_blocked_turns.remove(&settler);
                 think!(self.journal(), Expansion, Detail, "Escort opening the route";
                        "the Settler formation advances toward {target:?}"; target);
+            } else if !moved {
+                *self.settler_blocked_turns.entry(settler).or_insert(0) += 1;
+                let stalls = self.settler_stalls.entry(settler).or_insert(0);
+                *stalls += 1;
+                if *stalls >= SETTLER_STALL_LIMIT {
+                    self.settler_avoid
+                        .insert(settler, (target, g.turn + g.standard_duration(8)));
+                    self.settler_targets.remove(&settler);
+                    self.settler_stalls.remove(&settler);
+                    think!(self.journal(), Expansion, Decision, "Escort abandoning a blocked route";
+                           "the formation will reconsider {target:?} after a cooldown"; target);
+                    return Some(
+                        g.apply(pid, &Action::UnlinkUnits { unit: uid }).is_ok()
+                            || self.base.fortify_or_stop(g, pid, uid),
+                    );
+                }
             }
             return Some(moved || self.base.fortify_or_stop(g, pid, uid));
         }
@@ -23497,6 +23513,30 @@ mod tests {
         assert!(game.wdist(game.units[&settler].pos, target) < before);
         assert!(!ai.settler_stalls.contains_key(&settler));
         assert!(!ai.settler_blocked_turns.contains_key(&settler));
+
+        let trapped = game.units[&settler].pos;
+        assert!(game.wdist(trapped, target) > 1);
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("mountain");
+        }
+        game.map.tiles.get_mut(&trapped).unwrap().terrain = crate::name!("plains");
+        game.map.tiles.get_mut(&target).unwrap().terrain = crate::name!("plains");
+        for _ in 0..SETTLER_STALL_LIMIT {
+            for unit in [settler, escort] {
+                let unit = game.units.get_mut(&unit).unwrap();
+                unit.moves_left = 4.0;
+                unit.acted = false;
+                unit.fortified = false;
+            }
+            assert!(ai
+                .settler_escort_step(&mut game, 0, escort, &plan)
+                .is_some());
+            game.turn += 1;
+        }
+        assert!(!ai.settler_targets.contains_key(&settler));
+        assert_eq!(ai.settler_avoid.get(&settler).map(|(pos, _)| *pos), Some(target));
+        assert_eq!(game.units[&settler].linked_to, None);
+        assert_eq!(game.units[&escort].linked_to, None);
     }
 
     #[test]
