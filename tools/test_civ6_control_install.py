@@ -122,6 +122,11 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("district:IsComplete()", exporter)
         self.assertIn("complete = districtComplete[", exporter)
 
+    def test_district_pillage_uses_firaxis_city_district_api(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        self.assertIn("cityDistricts:IsPillaged(dtype, plotIndex)", source)
+        self.assertNotIn("plot:IsDistrictPillaged()", source)
+
     def test_production_resumes_placed_district_without_replacing_its_plot(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         builder = source.split("local function buildParams", 1)[1].split(
