@@ -56,6 +56,70 @@ class DeciderProtocolTest(unittest.TestCase):
 
 
 class Civ6BrainTest(unittest.TestCase):
+    def test_new_government_progression_is_not_blocked(self) -> None:
+        seen: set[str] = set()
+        rows = [("government", None, "GOVERNMENT_CLASSICAL_REPUBLIC", None, None)]
+
+        guarded, blocked = civ6_brain.guard_government_orders(
+            {"government": "GOVERNMENT_CHIEFDOM"}, rows, seen
+        )
+
+        self.assertEqual(guarded, rows)
+        self.assertEqual(blocked, [])
+        self.assertEqual(seen, {"GOVERNMENT_CHIEFDOM"})
+
+    def test_return_to_an_observed_government_is_blocked(self) -> None:
+        seen = {
+            "GOVERNMENT_MONARCHY",
+            "GOVERNMENT_THEOCRACY",
+            "GOVERNMENT_MERCHANT_REPUBLIC",
+        }
+        rows = [
+            ("research", None, "TECH_INDUSTRIALIZATION", None, None),
+            ("government", None, "GOVERNMENT_MONARCHY", None, None),
+        ]
+
+        guarded, blocked = civ6_brain.guard_government_orders(
+            {"government": "GOVERNMENT_MERCHANT_REPUBLIC"}, rows, seen
+        )
+
+        self.assertEqual(
+            guarded,
+            [("research", None, "TECH_INDUSTRIALIZATION", None, None)],
+        )
+        self.assertEqual(
+            blocked,
+            ["GOVERNMENT_MONARCHY: return to a previously used government"],
+        )
+
+    def test_anarchy_does_not_restart_the_previous_government(self) -> None:
+        seen = {"GOVERNMENT_MERCHANT_REPUBLIC"}
+        rows = [
+            ("government", None, "GOVERNMENT_MERCHANT_REPUBLIC", None, None),
+            ("unit", 7, "MOVE_TO", 3, 4),
+        ]
+
+        guarded, blocked = civ6_brain.guard_government_orders(
+            {"government": None, "policy_slots": 0}, rows, seen
+        )
+
+        self.assertEqual(guarded, [("unit", 7, "MOVE_TO", 3, 4)])
+        self.assertEqual(
+            blocked,
+            ["GOVERNMENT_MERCHANT_REPUBLIC: government transition in progress"],
+        )
+
+    def test_opening_government_choice_remains_available(self) -> None:
+        seen: set[str] = set()
+        rows = [("government", None, "GOVERNMENT_CHIEFDOM", None, None)]
+
+        guarded, blocked = civ6_brain.guard_government_orders(
+            {"government": None, "policy_slots": 0}, rows, seen
+        )
+
+        self.assertEqual(guarded, rows)
+        self.assertEqual(blocked, [])
+
     def test_resume_checkpoint_contains_only_ready_turns_for_this_run(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             conn = civ6_brain.connect(Path(temporary) / "orders.sqlite")
