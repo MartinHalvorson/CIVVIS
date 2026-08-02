@@ -1471,8 +1471,9 @@ fn main() {
             // control mod exports only revealed plots, so what appears here is
             // what the seat has earned and nothing more.
             //
-            // ⚠ Unrevealed ground arrives as ocean — see `mirror::rebuild_game`
-            // for why that is the least misleading filler and where it is wrong.
+            // Unrevealed ground remains explicit `unknown` terrain underneath
+            // the fog; see `mirror::rebuild_game` for the separate traversable
+            // frontier prior used by the live decider.
             let mirrored: Option<Game> = args
                 .iter()
                 .position(|value| value == "--mirror")
