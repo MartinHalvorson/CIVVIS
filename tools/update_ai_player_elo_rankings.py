@@ -1,12 +1,11 @@
 #!/usr/bin/env python3
-"""Generate CIVVIS's complete root-level AI player Elo ranking.
+"""Generate CIVVIS's current, evidence-backed AI strategy ranking.
 
-``data/league/league.json`` is the committed, reproducible Glicko-2 league
-snapshot.  Every observed ``(player strategy, civilization, leader)`` rating
-in that ledger belongs in the ranking, including ratings held by a retired
-strategy.  Strategies without a leader/civilization record are listed
-separately with their global rating instead of being assigned a made-up pair
-rating.
+``data/league/league.json`` is the committed, reproducible league snapshot.
+The public ranking includes only strategies currently eligible for live games
+and orders them by the league's conservative outright-win objective at the
+requested table size.  Historical exact leader/civilization ratings remain in
+the source ledger; they are not promoted into a misleading current leaderboard.
 
 Examples:
     python3 tools/update_ai_player_elo_rankings.py
@@ -31,6 +30,8 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_LEAGUE = Path("data/league/league.json")
 DEFAULT_OUTPUT = Path("AI_PLAYER_ELO_RANKINGS.md")
+DEFAULT_TABLE_SIZE = 8
+SELECTION_Z = 1.96
 
 
 class RankingError(ValueError):
@@ -38,32 +39,30 @@ class RankingError(ValueError):
 
 
 @dataclass(frozen=True)
-class PairRating:
-    """One exact strategy/civilization/leader rating from the league ledger."""
+class CurrentStrategyRank:
+    """One live-eligible strategy with evidence at the requested table size."""
 
     player: str
     strategy: str
-    civilization: str
-    leader: str
+    role: str
     elo: float
     rd: float
     games: int
     wins: int
-    status: str
+    win_bound: float
     last_played: str | None
 
 
 @dataclass(frozen=True)
-class StrategyWithoutPairRating:
-    """A roster strategy that has not yet played an exact leader/civ pairing."""
+class StrategyWithoutTableEvidence:
+    """A live-eligible strategy that has not played the requested table size."""
 
     player: str
     strategy: str
+    role: str
     elo: float
     rd: float
-    games: int
-    wins: int
-    status: str
+    last_played: str | None
 
 
 def load_object(path: Path) -> dict[str, Any]:
@@ -123,16 +122,6 @@ def flag(value: Any, description: str) -> bool:
     return value
 
 
-def status_label(*, retired: bool, human: bool) -> str:
-    if human and retired:
-        return "human / retired"
-    if human:
-        return "human"
-    if retired:
-        return "retired"
-    return "active"
-
-
 def display_player(raw_player: Any, strategy: str, description: str) -> str:
     """Use a strategy ID when a legacy league record lacks a display player."""
     if raw_player is None or raw_player == "":
@@ -140,19 +129,88 @@ def display_player(raw_player: Any, strategy: str, description: str) -> str:
     return nonempty_text(raw_player, description)
 
 
+def strategy_role(value: Any, description: str) -> str:
+    if not isinstance(value, dict) or len(value) != 1:
+        raise RankingError(f"{description} is not a recognized strategy kind")
+    if "Builtin" in value:
+        builtin = value["Builtin"]
+        if not isinstance(builtin, dict):
+            raise RankingError(f"{description} Builtin value is not an object")
+        ai = nonempty_text(builtin.get("ai"), f"{description} builtin AI")
+        return f"builtin {ai}"
+    if "Advanced" in value:
+        advanced = value["Advanced"]
+        if not isinstance(advanced, dict):
+            raise RankingError(f"{description} Advanced value is not an object")
+        target = advanced.get("target")
+        if target is None:
+            return "generalist"
+        return f"{nonempty_text(target, f'{description} target')} specialist"
+    raise RankingError(f"{description} is not a recognized strategy kind")
+
+
+def win_confidence(wins: int, games: int, *, upper: bool = False) -> float:
+    """Mirror the league's Wilson confidence bound on outright table wins."""
+    if games == 0:
+        return 1.0 if upper else 0.0
+    n = float(games)
+    p = wins / n
+    z2 = SELECTION_Z * SELECTION_Z
+    centre = p + z2 / (2.0 * n)
+    margin = SELECTION_Z * math.sqrt(
+        p * (1.0 - p) / n + z2 / (4.0 * n * n)
+    )
+    return min(
+        1.0,
+        max(0.0, (centre + (margin if upper else -margin)) / (1.0 + z2 / n)),
+    )
+
+
+def latest_played(value: Any, description: str) -> str | None:
+    if not isinstance(value, dict):
+        raise RankingError(f"{description} leader_elo is not an object")
+    dates: list[str] = []
+    for raw_leader, civilizations in value.items():
+        leader = nonempty_text(raw_leader, f"{description} leader key")
+        if not isinstance(civilizations, dict):
+            raise RankingError(f"{description} ratings for {leader!r} are not an object")
+        for raw_civilization, raw_rating in civilizations.items():
+            civilization = nonempty_text(
+                raw_civilization, f"{description} civilization key for {leader!r}"
+            )
+            if not isinstance(raw_rating, dict):
+                raise RankingError(
+                    f"{description} {leader}/{civilization} rating is not an object"
+                )
+            played = optional_iso_date(
+                raw_rating.get("last_played"),
+                f"{description} {leader}/{civilization} last_played",
+            )
+            if played is not None:
+                dates.append(played)
+    return max(dates, default=None)
+
+
 def extract_rankings(
-    league: dict[str, Any],
-) -> tuple[int, list[PairRating], list[StrategyWithoutPairRating]]:
-    """Validate and return every exact pair rating plus uncovered strategies."""
+    league: dict[str, Any], table_size: int = DEFAULT_TABLE_SIZE
+) -> tuple[
+    int,
+    list[CurrentStrategyRank],
+    list[StrategyWithoutTableEvidence],
+    int,
+]:
+    """Return only current live strategies, ranked on exact table-size evidence."""
+    if table_size < 2:
+        raise RankingError("table size must be at least 2")
     round_number = nonnegative_integer(league.get("round"), "league round")
     strategies = league.get("strategies")
     if not isinstance(strategies, list):
         raise RankingError("league strategies is not a list")
 
-    rows: list[PairRating] = []
-    without_pair_ratings: list[StrategyWithoutPairRating] = []
+    rows: list[CurrentStrategyRank] = []
+    without_table_evidence: list[StrategyWithoutTableEvidence] = []
     strategy_names: set[str] = set()
-    identities: set[tuple[str, str, str]] = set()
+    excluded = 0
 
     for index, raw_strategy in enumerate(strategies):
         if not isinstance(raw_strategy, dict):
@@ -166,7 +224,10 @@ def extract_rankings(
         )
         retired = flag(raw_strategy.get("retired"), f"league strategy {strategy!r} retired")
         human = flag(raw_strategy.get("human"), f"league strategy {strategy!r} human")
-        status = status_label(retired=retired, human=human)
+        league_only = flag(
+            raw_strategy.get("league_only"), f"league strategy {strategy!r} league_only"
+        )
+        role = strategy_role(raw_strategy.get("kind"), f"league strategy {strategy!r} kind")
         global_elo = finite_number(
             raw_strategy.get("rating"), f"league strategy {strategy!r} global rating"
         )
@@ -181,102 +242,79 @@ def extract_rankings(
         )
         if global_wins > global_games:
             raise RankingError(f"league strategy {strategy!r} has more global wins than games")
+        last_played = latest_played(
+            raw_strategy.get("leader_elo", {}), f"league strategy {strategy!r}"
+        )
+        if retired or human or league_only:
+            excluded += 1
+            continue
 
-        leader_elos = raw_strategy.get("leader_elo", {})
-        if not isinstance(leader_elos, dict):
-            raise RankingError(f"league strategy {strategy!r} has invalid leader_elo")
-        row_count = 0
-        for raw_leader, civilizations in leader_elos.items():
-            leader = nonempty_text(raw_leader, f"league strategy {strategy!r} leader key")
-            if not isinstance(civilizations, dict):
-                raise RankingError(
-                    f"league strategy {strategy!r} has invalid ratings for leader {leader!r}"
-                )
-            for raw_civilization, raw_rating in civilizations.items():
-                civilization = nonempty_text(
-                    raw_civilization,
-                    f"league strategy {strategy!r} civilization key for {leader!r}",
-                )
-                if not isinstance(raw_rating, dict):
-                    raise RankingError(
-                        f"league strategy {strategy!r} has invalid {leader}/{civilization} rating"
-                    )
-                games = nonnegative_integer(
-                    raw_rating.get("games"),
-                    f"{strategy!r} {leader}/{civilization} games",
-                )
-                wins = nonnegative_integer(
-                    raw_rating.get("wins"),
-                    f"{strategy!r} {leader}/{civilization} wins",
-                )
-                if games < 1:
-                    raise RankingError(
-                        f"{strategy!r} {leader}/{civilization} has a pair rating without a game"
-                    )
-                if wins > games:
-                    raise RankingError(
-                        f"{strategy!r} {leader}/{civilization} has more wins than games"
-                    )
-                identity = (strategy, leader, civilization)
-                if identity in identities:
-                    raise RankingError(
-                        f"league has duplicate pair rating for {strategy!r} {leader}/{civilization}"
-                    )
-                identities.add(identity)
-                rows.append(
-                    PairRating(
-                        player=player,
-                        strategy=strategy,
-                        civilization=civilization,
-                        leader=leader,
-                        elo=finite_number(
-                            raw_rating.get("rating"),
-                            f"{strategy!r} {leader}/{civilization} rating",
-                        ),
-                        rd=finite_number(
-                            raw_rating.get("rd"),
-                            f"{strategy!r} {leader}/{civilization} RD",
-                            minimum=0.0,
-                        ),
-                        games=games,
-                        wins=wins,
-                        status=status,
-                        last_played=optional_iso_date(
-                            raw_rating.get("last_played"),
-                            f"{strategy!r} {leader}/{civilization} last_played",
-                        ),
-                    )
-                )
-                row_count += 1
-        if row_count == 0:
-            without_pair_ratings.append(
-                StrategyWithoutPairRating(
+        by_table_size = raw_strategy.get("wins_by_table_size", {})
+        if not isinstance(by_table_size, dict):
+            raise RankingError(f"league strategy {strategy!r} wins_by_table_size is not an object")
+        raw_evidence = by_table_size.get(str(table_size), by_table_size.get(table_size))
+        if raw_evidence is None:
+            without_table_evidence.append(
+                StrategyWithoutTableEvidence(
                     player=player,
                     strategy=strategy,
+                    role=role,
                     elo=global_elo,
                     rd=global_rd,
-                    games=global_games,
-                    wins=global_wins,
-                    status=status,
+                    last_played=last_played,
                 )
             )
+            continue
+        if not isinstance(raw_evidence, dict):
+            raise RankingError(
+                f"league strategy {strategy!r} {table_size}-player evidence is not an object"
+            )
+        games = nonnegative_integer(
+            raw_evidence.get("games"),
+            f"league strategy {strategy!r} {table_size}-player games",
+        )
+        wins = nonnegative_integer(
+            raw_evidence.get("wins"),
+            f"league strategy {strategy!r} {table_size}-player wins",
+        )
+        if games < 1:
+            raise RankingError(
+                f"league strategy {strategy!r} has {table_size}-player evidence without a game"
+            )
+        if wins > games:
+            raise RankingError(
+                f"league strategy {strategy!r} has more {table_size}-player wins than games"
+            )
+        rows.append(
+            CurrentStrategyRank(
+                player=player,
+                strategy=strategy,
+                role=role,
+                elo=global_elo,
+                rd=global_rd,
+                games=games,
+                wins=wins,
+                win_bound=win_confidence(wins, games),
+                last_played=last_played,
+            )
+        )
 
-    if not rows:
-        raise RankingError(f"league round {round_number} has no leader/civilization ratings")
+    if not rows and not without_table_evidence:
+        raise RankingError(f"league round {round_number} has no live-eligible strategies")
 
     rows.sort(
         key=lambda row: (
+            -row.win_bound,
+            -(row.elo - SELECTION_Z * row.rd),
             -row.elo,
             row.player.casefold(),
             row.strategy.casefold(),
-            row.civilization.casefold(),
-            row.leader.casefold(),
         )
     )
-    without_pair_ratings.sort(
+    without_table_evidence.sort(
         key=lambda row: (-row.elo, row.player.casefold(), row.strategy.casefold())
     )
-    return round_number, rows, without_pair_ratings
+    return round_number, rows, without_table_evidence, excluded
 
 
 def markdown_text(value: str) -> str:
@@ -301,35 +339,40 @@ def display_source(path: Path) -> str:
 
 def render_document(
     round_number: int,
-    rows: list[PairRating],
-    without_pair_ratings: list[StrategyWithoutPairRating],
+    rows: list[CurrentStrategyRank],
+    without_table_evidence: list[StrategyWithoutTableEvidence],
+    excluded: int,
     source: Path,
+    table_size: int = DEFAULT_TABLE_SIZE,
 ) -> str:
-    rated_strategies = len({row.strategy for row in rows})
-    total_strategies = rated_strategies + len(without_pair_ratings)
+    current = len(rows) + len(without_table_evidence)
     lines = [
-        "# AI Player Elo Rankings",
+        "# Current AI Strategy Rankings",
         "",
         textwrap.fill(
             f"League round **{round_number}**, generated from `{display_source(source)}`. "
-            f"This complete table contains every one of the **{len(rows)}** recorded "
-            "leader/civilization-specific Glicko-2 ratings. It includes active, retired, "
-            "and human strategies whenever a rating record exists, and is sorted by exact "
-            "pair Elo descending.",
+            f"This table contains the **{current}** strategies currently eligible for live "
+            f"games and ranks their exact **{table_size}-player** evidence. Retired, human, "
+            f"and offline-only entries are omitted ({excluded} roster entr"
+            f"{'y' if excluded == 1 else 'ies'} at this round), and historical "
+            "leader/civilization rows are not carried into the public leaderboard.",
             width=88,
         ),
         "",
         textwrap.fill(
-            f"The league roster has **{total_strategies}** named strategies; "
-            f"**{rated_strategies}** have at least one exact pair rating. The remaining "
-            f"**{len(without_pair_ratings)}** are listed separately with their global rating "
-            "because CIVVIS has not yet recorded an Elo for a specific civilization/leader pair.",
+            f"Rank is the lower {SELECTION_Z:g}σ Wilson bound on outright wins, the same "
+            "conservative objective the league uses for table-size-aware selection. "
+            "Placement Elo is retained only as matchmaking context; it does not decide this "
+            "order. Confidence intervals can overlap, so rank 1 is the current selection "
+            "leader rather than a claim that every alternative is statistically separated.",
             width=88,
         ),
         "",
         textwrap.fill(
-            "Last played is the UTC date of the most recent game credited to that exact "
-            "player/civilization/leader rating.",
+            "Last played is the latest retained UTC date for the strategy. Exact "
+            "leader/civilization evidence remains reproducible in the league snapshot; CIVVIS "
+            "publishes a pair recommendation only where conservative win evidence actually "
+            "separates it from every rival, as documented in the README.",
             width=88,
         ),
         "",
@@ -339,47 +382,46 @@ def render_document(
         "",
         "Use `--check` to verify that this generated file is current.",
         "",
-        "| Rank | Elo | Player (strategy) — civilization — leader | RD | Games | Wins | Status | Last played |",
-        "|---:|---:|---|---:|---:|---:|---|---|",
+        f"| Rank | Player (strategy) | Role | {table_size}p wins/games | Conservative win bound | Placement Elo | RD | Last played |",
+        "|---:|---|---|---:|---:|---:|---:|---|",
     ]
     for rank, row in enumerate(rows, start=1):
-        identity = (
-            f"{player_strategy_label(row.player, row.strategy)} — "
-            f"{markdown_text(row.civilization)} — {markdown_text(row.leader)}"
-        )
         lines.append(
-            f"| {rank} | {row.elo:.1f} | {identity} | ±{row.rd:.1f} | "
-            f"{row.games} | {row.wins} | {row.status} | {row.last_played or '—'} |"
+            f"| {rank} | {player_strategy_label(row.player, row.strategy)} | "
+            f"{markdown_text(row.role)} | {row.wins}/{row.games} | "
+            f"{100.0 * row.win_bound:.1f}% | {row.elo:.1f} | ±{row.rd:.1f} | "
+            f"{row.last_played or '—'} |"
         )
 
     lines.extend(
         [
             "",
-            "## Strategies without a civilization/leader Elo",
+            f"## Current strategies without {table_size}-player evidence",
             "",
         ]
     )
-    if without_pair_ratings:
+    if without_table_evidence:
         lines.extend(
             [
                 textwrap.fill(
-                    "These roster strategies have no `leader_elo` entries. Their global "
-                    "Glicko-2 rating is shown in descending order, but it is deliberately not "
-                    "mixed into the exact civilization/leader ranking above.",
+                    f"These strategies remain eligible, but have no retained {table_size}-player "
+                    "win record. Their placement rating is shown for identification only; they "
+                    "are deliberately not mixed into the evidence-backed ranking above.",
                     width=88,
                 ),
                 "",
-                "| Global Elo | Player (strategy) | RD | Games | Wins | Status |",
-                "|---:|---|---:|---:|---:|---|",
+                "| Player (strategy) | Role | Placement Elo | RD | Last played |",
+                "|---|---|---:|---:|---|",
             ]
         )
-        for row in without_pair_ratings:
+        for row in without_table_evidence:
             lines.append(
-                f"| {row.elo:.1f} | {player_strategy_label(row.player, row.strategy)} | "
-                f"±{row.rd:.1f} | {row.games} | {row.wins} | {row.status} |"
+                f"| {player_strategy_label(row.player, row.strategy)} | "
+                f"{markdown_text(row.role)} | {row.elo:.1f} | ±{row.rd:.1f} | "
+                f"{row.last_played or '—'} |"
             )
     else:
-        lines.append("Every roster strategy has at least one civilization/leader rating.")
+        lines.append(f"Every current strategy has retained {table_size}-player evidence.")
     return "\n".join(lines) + "\n"
 
 
@@ -407,6 +449,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=str(DEFAULT_OUTPUT),
         help="Markdown artifact to write or check (repo-relative)",
     )
+    parser.add_argument(
+        "--players",
+        type=int,
+        default=DEFAULT_TABLE_SIZE,
+        help=f"table size whose current win evidence is ranked (default: {DEFAULT_TABLE_SIZE})",
+    )
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
         "--check", action="store_true", help="fail if the artifact is stale"
@@ -422,8 +470,17 @@ def main(argv: list[str] | None = None) -> int:
     try:
         league_path = repo_path(args.league)
         output_path = repo_path(args.output)
-        round_number, rows, without_pair_ratings = extract_rankings(load_object(league_path))
-        expected = render_document(round_number, rows, without_pair_ratings, league_path)
+        round_number, rows, without_table_evidence, excluded = extract_rankings(
+            load_object(league_path), args.players
+        )
+        expected = render_document(
+            round_number,
+            rows,
+            without_table_evidence,
+            excluded,
+            league_path,
+            args.players,
+        )
         if args.stdout:
             print(expected, end="")
             return 0
@@ -436,14 +493,14 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 return 1
             print(
-                f"{output_path} is current for all {len(rows)} player/civilization/leader "
-                f"ratings at league round {round_number}"
+                f"{output_path} is current for {len(rows)} evidence-backed "
+                f"{args.players}-player strategies at league round {round_number}"
             )
             return 0
         output_path.write_text(expected, encoding="utf-8")
         print(
-            f"updated {output_path} with {len(rows)} player/civilization/leader ratings "
-            f"from league round {round_number}"
+            f"updated {output_path} with {len(rows)} evidence-backed "
+            f"{args.players}-player strategies from league round {round_number}"
         )
         return 0
     except RankingError as error:

@@ -17,7 +17,7 @@ Quick demo:
 <!-- BEGIN CIV6 LEADER STRATEGY RANKING -->
 ## Which strategy suits which civilization, where the evidence says so
 
-League round **2712**, over the canonical 50-civilization Civ VI roster. A pair is
+League round **4002**, over the canonical 50-civilization Civ VI roster. A pair is
 listed only when the leading strategy's conservative outright-win bound clears the
 optimistic bound of every rival — the same lower-1.96σ Wilson bound the league itself
 selects parents, retirement and live seating on. **0 of 50 pairs meet that bar.** The
@@ -41,56 +41,56 @@ report who has been seated, not what suits the civilization.
 
 | Civilization | Leader | Candidates | Games | Leading strategy | Its record |
 |---|---|---:|---:|---|---:|
-| Egypt | Cleopatra | 34 | 1066 | `g28-28` | 22/88 |
-| Greece | Pericles | 34 | 1052 | `g28-28` | 17/77 |
-| China | Qin Shi Huang | 35 | 1030 | `g4-10` | 22/49 |
-| Rome | Trajan | 36 | 1011 | `g4-10` | 21/44 |
-| Mongolia | Genghis Khan | 10 | 446 | `advanced_evolved` | 10/60 |
-| India | Gandhi | 9 | 445 | `g44-41` | 11/52 |
-| Canada | Wilfrid Laurier | 10 | 444 | `g48-44` | 8/51 |
-| Portugal | João III | 9 | 442 | `g48-44` | 8/44 |
-| Indonesia | Gitarja | 9 | 439 | `g28-28` | 9/42 |
-| Ottomans | Suleiman | 9 | 438 | `advanced_evolved` | 11/43 |
-| Persia | Cyrus | 10 | 436 | `g28-28` | 6/52 |
-| Ethiopia | Menelik II | 9 | 434 | `advanced_evolved` | 9/65 |
-| Germany | Frederick Barbarossa | 10 | 432 | `advanced` | 8/40 |
-| Sweden | Kristina | 9 | 432 | `g28-28` | 14/66 |
-| Inca | Pachacuti | 9 | 430 | `g20-21` | 18/71 |
-| Nubia | Amanitore | 10 | 429 | `g48-43` | 6/51 |
-| Mapuche | Lautaro | 9 | 427 | `g28-28` | 11/54 |
-| Brazil | Pedro II | 9 | 426 | `g48-44` | 11/62 |
-| Aztec | Montezuma | 9 | 425 | `g20-21` | 12/47 |
-| Japan | Hojo Tokimune | 9 | 425 | `g28-28` | 9/44 |
-| Georgia | Tamar | 9 | 422 | `g44-41` | 11/59 |
-| Arabia | Saladin | 10 | 421 | `advanced_evolved` | 9/54 |
-| Zulu | Shaka | 10 | 421 | `g24-26` | 2/5 |
-| Gaul | Ambiorix | 9 | 418 | `advanced` | 9/54 |
-| Mali | Mansa Musa | 9 | 418 | `advanced_v1` | 7/36 |
-| Netherlands | Wilhelmina | 9 | 417 | `g56-50` | 6/36 |
-| America | Abraham Lincoln | 9 | 415 | `g44-41` | 9/61 |
-| France | Catherine de Medici | 9 | 415 | `g28-28` | 13/60 |
-| Korea | Seondeok | 10 | 415 | `advanced_v1` | 8/26 |
-| Russia | Peter | 9 | 415 | `advanced` | 11/44 |
-| Scotland | Robert the Bruce | 9 | 414 | `advanced_evolved` | 11/49 |
-| Byzantium | Basil II | 10 | 413 | `g20-21` | 12/57 |
-| Australia | John Curtin | 9 | 412 | `g48-43` | 10/40 |
-| Khmer | Jayavarman VII | 9 | 410 | `g28-28` | 13/58 |
-| Maya | Lady Six Sky | 10 | 409 | `advanced_evolved` | 15/52 |
-| Poland | Jadwiga | 9 | 409 | `g44-41` | 11/49 |
-| Sumeria | Gilgamesh | 9 | 406 | `g48-43` | 11/60 |
-| Vietnam | Ba Trieu | 10 | 405 | `g24-26` | 3/5 |
-| Babylon | Hammurabi | 9 | 404 | `g28-28` | 9/47 |
-| Macedon | Alexander | 9 | 401 | `advanced_evolved` | 9/53 |
-| Phoenicia | Dido | 9 | 401 | `advanced_evolved` | 8/43 |
-| Scythia | Tomyris | 9 | 401 | `g20-21` | 7/46 |
-| Hungary | Matthias Corvinus | 9 | 399 | `g44-41` | 8/57 |
-| Kongo | Mvemba a Nzinga | 9 | 399 | `advanced_evolved` | 9/46 |
-| Cree | Poundmaker | 9 | 398 | `g48-43` | 10/39 |
-| England | Victoria | 9 | 397 | `g28-28` | 10/50 |
-| Maori | Kupe | 10 | 397 | `g56-50` | 9/31 |
-| Gran Colombia | Simón Bolívar | 10 | 393 | `g24-26` | 2/6 |
-| Spain | Philip II | 9 | 372 | `advanced` | 8/38 |
-| Norway | Harald Hardrada | 10 | 371 | `g24-26` | 2/5 |
+| Egypt | Cleopatra | 36 | 1281 | `advanced_v1` | 18/77 |
+| Greece | Pericles | 36 | 1247 | `g28-28` | 19/93 |
+| China | Qin Shi Huang | 35 | 1231 | `g4-10` | 22/49 |
+| Rome | Trajan | 36 | 1206 | `g4-10` | 21/44 |
+| Canada | Wilfrid Laurier | 11 | 648 | `g28-28` | 15/68 |
+| Mongolia | Genghis Khan | 11 | 642 | `advanced_evolved` | 13/84 |
+| Sweden | Kristina | 12 | 641 | `g24-26` | 5/16 |
+| Inca | Pachacuti | 11 | 637 | `g20-21` | 21/93 |
+| Brazil | Pedro II | 11 | 632 | `g20-21` | 14/80 |
+| India | Gandhi | 11 | 625 | `g48-43` | 17/101 |
+| Japan | Hojo Tokimune | 11 | 623 | `g28-28` | 11/65 |
+| Persia | Cyrus | 11 | 623 | `g24-26` | 5/26 |
+| Maya | Lady Six Sky | 11 | 622 | `g24-26` | 13/26 |
+| Aztec | Montezuma | 12 | 621 | `advanced_evolved` | 13/58 |
+| Nubia | Amanitore | 11 | 620 | `advanced_evolved` | 6/72 |
+| Ottomans | Suleiman | 11 | 620 | `advanced_evolved` | 15/69 |
+| Portugal | João III | 11 | 618 | `g24-26` | 5/24 |
+| Georgia | Tamar | 11 | 616 | `g44-41` | 12/77 |
+| Zulu | Shaka | 11 | 616 | `g44-39` | 3/11 |
+| America | Abraham Lincoln | 11 | 615 | `advanced` | 12/72 |
+| France | Catherine de Medici | 12 | 615 | `g28-28` | 17/82 |
+| Indonesia | Gitarja | 11 | 614 | `g24-26` | 6/19 |
+| Mapuche | Lautaro | 10 | 611 | `g28-28` | 15/71 |
+| Sumeria | Gilgamesh | 11 | 611 | `g28-28` | 11/67 |
+| Babylon | Hammurabi | 11 | 610 | `g28-28` | 14/65 |
+| Korea | Seondeok | 11 | 610 | `advanced_v1` | 9/28 |
+| Ethiopia | Menelik II | 11 | 609 | `advanced_evolved` | 12/86 |
+| Khmer | Jayavarman VII | 11 | 609 | `g28-28` | 16/76 |
+| Byzantium | Basil II | 11 | 608 | `g24-26` | 9/30 |
+| Scotland | Robert the Bruce | 11 | 608 | `g24-26` | 9/26 |
+| Australia | John Curtin | 11 | 606 | `g48-43` | 16/64 |
+| Vietnam | Ba Trieu | 12 | 606 | `g24-26` | 12/27 |
+| Arabia | Saladin | 11 | 605 | `advanced_evolved` | 14/83 |
+| Kongo | Mvemba a Nzinga | 11 | 605 | `g24-26` | 7/24 |
+| Gaul | Ambiorix | 11 | 603 | `advanced_evolved` | 17/82 |
+| Germany | Frederick Barbarossa | 11 | 597 | `g44-41` | 14/72 |
+| Mali | Mansa Musa | 11 | 596 | `g24-26` | 4/14 |
+| Poland | Jadwiga | 12 | 595 | `g20-21` | 17/81 |
+| Russia | Peter | 11 | 595 | `g24-26` | 5/11 |
+| Netherlands | Wilhelmina | 11 | 594 | `g44-39` | 2/7 |
+| Scythia | Tomyris | 11 | 594 | `g20-21` | 12/74 |
+| Phoenicia | Dido | 11 | 589 | `advanced_evolved` | 15/71 |
+| Gran Colombia | Simón Bolívar | 11 | 587 | `g44-39` | 4/12 |
+| Macedon | Alexander | 11 | 586 | `advanced_evolved` | 11/72 |
+| Hungary | Matthias Corvinus | 11 | 584 | `g28-28` | 6/49 |
+| Maori | Kupe | 11 | 580 | `g56-50` | 10/34 |
+| England | Victoria | 11 | 579 | `g28-28` | 14/72 |
+| Cree | Poundmaker | 11 | 570 | `advanced_evolved` | 17/72 |
+| Spain | Philip II | 11 | 554 | `advanced` | 9/49 |
+| Norway | Harald Hardrada | 11 | 552 | `g28-28` | 15/79 |
 
 A strategy needs at least 5 games with that exact pair to qualify. The league's Glicko
 rating is deliberately not shown: it orders matchmaking, not strength, and ranking on it
