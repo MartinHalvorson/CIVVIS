@@ -13,7 +13,7 @@ apart from the asset paths a subdirectory forces.
 ```
 civvis.ai            forwards to youtube.com/@civvis
 civvis.ai/home       the landing page, linking the three below
-civvis.ai/beta       the published build, behind a password
+civvis.ai/beta       the published build, open to anyone
 civvis.ai/download   the native binaries, from the latest GitHub release
 ```
 
@@ -224,44 +224,46 @@ unwanted, at the cost of the URL being the one asked for.
 
 ### The mail on this domain
 
-`civvis.ai` is **not** a bare parked domain. It is currently publishing:
+`civvis.ai` currently publishes Namecheap's free email-forwarding records:
 
 ```
 MX   10 eforward1.registrar-servers.com.  (and eforward2-5)
 TXT  "v=spf1 include:spf.efwd.registrar-servers.com ~all"
 ```
 
-That is Namecheap's free email forwarding, and Namecheap ties that service to
-*their* nameservers. Moving the zone to Cloudflare will very likely stop it
+Namecheap ties that service to *their* nameservers, so moving the zone stops it
 working even though Cloudflare's scan copies the records across faithfully — the
-records will be right and the service behind them will not answer.
+records will be right and the service behind them will not answer. **Nothing is
+received at any `@civvis.ai` address** (checked with Martin, 2026-08-01), so
+this costs nothing and the records can simply be dropped.
 
-If anything is actually being received at an `@civvis.ai` address, replace it
-with **Cloudflare Email Routing** (free, in the same dashboard, under Email) and
-point the address at whatever inbox should have it. It is a better service than
-the one being replaced, and it is configured in the place the DNS now lives. Do
-this in the same sitting as the nameserver change, not afterwards.
+If that ever changes, the replacement is **Cloudflare Email Routing** — free,
+in the same dashboard under Email, and configured in the place the DNS now
+lives.
 
-### 3. The password
+### 3. The beta is open
 
-It is `2008`, and it lives in `beta/_worker.js` as the fallback. To change it
-without a deploy, set **`BETA_PASSWORD`** in the Pages project's environment
-variables (Production *and* Preview).
+`/beta` asks for nothing. It was behind a shared password while it was a thing
+not meant to be found; it is now the thing the channel points people at.
 
-The gate is a `_worker.js` rather than the more obvious Pages `functions/`
+Setting **`BETA_PASSWORD`** in the Pages project's environment variables
+(Production *and* Preview) closes it again with no deploy. There is
+deliberately **no fallback password in the code**: the old one was a literal in
+this public repository, which is not a password but a speed bump with a
+published height. Either the environment names a secret or there is no gate.
+
+Everything under `/beta` is still sent `X-Robots-Tag: noindex`. Open to anyone
+following a link is not the same as wanting an unfinished build to be the first
+search result for the project's name.
+
+The routing is a `_worker.js` rather than the more obvious Pages `functions/`
 directory, and that is not a style choice. `functions/` is resolved against the
 **working directory wrangler runs in**, not the directory being deployed: run
-the deploy from one level up and the gate is quietly left behind, the upload
-succeeds, the site works, and the beta is wide open with nothing anywhere to
-say so. That happened here once. A `_worker.js` lives *inside* the deployed
-directory and cannot be separated from it — and `verify.py` now opens the door
-and walks through it rather than trusting that it exists.
-
-The gate is deliberately soft: one shared password, no accounts, a cookie good
-for a week. It keeps the build from being stumbled upon, and the pages behind it
-are sent `X-Robots-Tag: noindex`. It is not access control, and the repository
-is public, so nothing behind it should be anything that would matter if it got
-out.
+the deploy from one level up and the whole file is quietly left behind, the
+upload succeeds, and the site looks like it works. That happened here once. A
+`_worker.js` lives *inside* the deployed directory and cannot be separated from
+it — and both checks now ask the routing rather than trusting it, including
+that `BETA_PASSWORD` has not been left set by accident.
 
 ### 4. The channel
 

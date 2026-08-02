@@ -173,7 +173,24 @@ export default {
 
     if (!url.pathname.startsWith("/beta")) return asset(request, env, false);
 
-    const password = env.BETA_PASSWORD || "2008";
+    // The beta is open.
+    //
+    // It was behind a shared password while it was a thing not meant to be
+    // found. It is now the thing the channel points people at, so the door is
+    // only there if somebody puts it there: set `BETA_PASSWORD` in the Pages
+    // environment and it closes again, with no deploy.
+    //
+    // There is deliberately **no fallback password**. The old one was a
+    // literal in this file, in a public repository, which is not a password —
+    // it is a speed bump with a published height. Either the environment
+    // names a secret or there is no gate, and both of those are honest.
+    //
+    // What stays either way is `X-Robots-Tag: noindex` on everything under
+    // /beta: open to anyone following a link is not the same as wanting an
+    // unfinished build to be the first search result for the project's name.
+    const password = env.BETA_PASSWORD;
+    if (!password) return asset(request, env, true);
+
     const expected = await token(password);
 
     if (sameToken(cookieValue(request, COOKIE), expected)) {

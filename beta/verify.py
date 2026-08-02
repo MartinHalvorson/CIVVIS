@@ -282,14 +282,21 @@ class Devtools:
 
 
 def check_gate(dist: pathlib.Path) -> list[str]:
-    """Prove the published directory actually challenges for the password.
+    """Prove the published directory routes the way it is meant to.
 
-    This exists because the gate has already been lost once, silently. Written
-    as a Pages `functions/` directory it was resolved against the *working
-    directory* rather than the directory being deployed, so a deploy from one
-    level up uploaded a perfectly working, completely open beta. Nothing failed;
-    there was simply no door. So the door is opened and walked through here
-    rather than assumed to be there.
+    Everything the site does before a file is served lives in `_worker.js`, and
+    that file has already been lost once, silently: written as a Pages
+    `functions/` directory it was resolved against the *working directory*
+    rather than the directory being deployed, so a deploy from one level up
+    uploaded a site with no routing at all. Nothing failed. So the routing is
+    asked rather than assumed, against the real runtime under wrangler.
+
+    What it asserts changed when the beta was opened. It used to prove the
+    door was shut; it now proves it is *open*, which is the property that
+    matters when a channel is pointing people at it — a stray `BETA_PASSWORD`
+    left in the Pages environment would be just as invisible, and just as
+    wrong, as the missing door was. `beta/worker_test.py` covers the same
+    ground plus the password path without needing Node.
     """
     port = free_port()
     log = tempfile.NamedTemporaryFile(prefix="wrangler-", suffix=".log", delete=False)
@@ -350,44 +357,24 @@ def check_gate(dist: pathlib.Path) -> list[str]:
         if b"releases/latest/download/" not in get("/download/").read():
             problems.append("/download/ is not serving the downloads page")
 
-        # The beta is not.
-        closed = get("/beta/").read()
-        if b"shim.js" in closed:
-            problems.append("/beta/ served the viewer without asking for the password")
-        if b"Beta build" not in closed:
-            problems.append("/beta/ did not serve the password page")
+        # And so is the beta. A `BETA_PASSWORD` left in the Pages environment
+        # would put a door back in front of everyone the channel sends here,
+        # and would look exactly like a working site from every other angle.
+        beta = get("/beta/").read()
+        if b"Beta build" in beta and b"shim.js" not in beta:
+            problems.append("/beta/ is asking for a password; is BETA_PASSWORD set?")
+        elif b"shim.js" not in beta:
+            problems.append("/beta/ is not serving the viewer")
 
-        # The engine itself is behind the same door, not just the page.
-        if b"asm" in get("/beta/civvis.wasm").read()[:8]:
-            problems.append("/beta/civvis.wasm is downloadable without the password")
-
-        # A wrong password is refused.
-        wrong = urllib.request.Request(
-            base + "/beta/", data=b"password=0000", method="POST"
-        )
-        try:
-            urllib.request.urlopen(wrong, timeout=15)
-            problems.append("a wrong password was accepted")
-        except urllib.error.HTTPError as refused:
-            if refused.code != 401:
-                problems.append(f"a wrong password answered HTTP {refused.code}, wanted 401")
-
-        # The right one is not, and hands back a cookie that opens the door.
-        opener = urllib.request.build_opener(NoRedirect())
-        right = urllib.request.Request(
-            base + "/beta/", data=b"password=2008", method="POST"
-        )
-        try:
-            answer = opener.open(right, timeout=15)
-            code, cookie = answer.code, answer.headers.get("Set-Cookie")
-        except urllib.error.HTTPError as refused:
-            code, cookie = refused.code, refused.headers.get("Set-Cookie")
-        if code != 303 or not cookie:
-            problems.append(f"the password answered HTTP {code} with cookie {cookie!r}")
-        else:
-            opened = get("/beta/", cookie=cookie.split(";")[0]).read()
-            if b"shim.js" not in opened:
-                problems.append("the password did not open /beta/")
+        # The engine reaches the page as a module, not as an HTML apology.
+        module = get("/beta/civvis.wasm")
+        if module.read(4) != b"\x00asm":
+            problems.append("/beta/civvis.wasm is not being served as a WebAssembly module")
+        if module.headers.get("Content-Type") != "application/wasm":
+            problems.append(
+                "/beta/civvis.wasm is served as "
+                f"{module.headers.get('Content-Type')!r}; instantiateStreaming refuses it"
+            )
         return problems
     finally:
         dev.terminate()
@@ -419,7 +406,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--no-gate",
         action="store_true",
-        help="skip the password check (it needs wrangler, and takes half a minute)",
+        help="skip the routing check (it needs npx wrangler, and takes half a minute; "
+             "beta/worker_test.py covers the same ground with only Chrome)",
     )
     args = parser.parse_args(argv)
 
@@ -474,14 +462,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"    {len(linked)} downloads linked (no release.yml here to check them against)")
 
     if not args.no_gate:
-        print("==> opening the password gate on the exact directory to be deployed")
+        print("==> routing the exact directory to be deployed, under wrangler")
         gate_problems = check_gate(dist)
         for problem in gate_problems:
             print(f"    {problem}", file=sys.stderr)
         if gate_problems:
-            print("\nFAILED: the beta would be published unprotected", file=sys.stderr)
+            print("\nFAILED: the site would not route correctly", file=sys.stderr)
             return 1
-        print("    /beta asks for the password; the password opens it")
+        print("    / forwards to the channel; /home, /download and /beta are all open")
 
     if not pathlib.Path(args.chrome).exists():
         print(f"    no Chrome at {args.chrome}; skipping the browser check", file=sys.stderr)

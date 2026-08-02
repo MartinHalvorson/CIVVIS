@@ -159,7 +159,9 @@ def main(argv: list[str] | None = None) -> int:
     here = pathlib.Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--chrome", default=find_chrome())
-    parser.add_argument("--password", default="2008", help="the fallback in _worker.js")
+    # There is no password in `_worker.js` any more; this is one made up here
+    # purely to prove that setting BETA_PASSWORD still closes the door.
+    parser.add_argument("--password", default="not-the-real-one")
     args = parser.parse_args(argv)
 
     if not pathlib.Path(args.chrome).exists():
@@ -252,19 +254,42 @@ def main(argv: list[str] | None = None) -> int:
             f"got {download['status']}",
         )
 
-        print("==> the beta is not")
-        closed = hit(path="/beta/")
-        check(problems, "/beta/ asks for the password", "Beta build" in closed["body"], f"got {closed['body'][:60]!r}")
-        check(problems, "/beta/ does not serve the viewer", "asset:" not in closed["body"])
-        module = hit(path="/beta/civvis.wasm")
-        check(problems, "the engine is behind the same door", "asset:" not in module["body"])
+        print("==> so is the beta, which is the point of publishing it")
+        beta = hit(path="/beta/")
+        check(problems, "/beta/ serves the viewer to anyone", beta["body"].strip() == "asset:/beta/",
+              f"got {beta['status']} {beta['body'][:60]!r}")
+        check(problems, "/beta/ asks for no password", "Beta build" not in beta["body"])
+        # Open to anyone following a link is not the same as wanting an
+        # unfinished build to be the first search result for the project.
+        check(problems, "the beta is not indexed", beta["robots"] == "noindex", f"got {beta['robots']!r}")
 
-        wrong = hit(path="/beta/", method="POST", body={"password": "0000"})
+        module = hit(path="/beta/civvis.wasm")
+        # instantiateStreaming refuses anything else.
+        check(problems, "the module is served as application/wasm",
+              module["contentType"] == "application/wasm", f"got {module['contentType']!r}")
+        check(problems, "the module is revalidated rather than trusted",
+              "must-revalidate" in (module["cacheControl"] or ""), f"got {module['cacheControl']!r}")
+        atlas = hit(path="/beta/assets/terrain-atlas.webp")
+        check(problems, "atlases are cached", "max-age=86400" in (atlas["cacheControl"] or ""),
+              f"got {atlas['cacheControl']!r}")
+
+        # The door still exists; it is just not shut unless somebody shuts it.
+        # This is checked because an unused capability is one that has quietly
+        # stopped working, and the day it is wanted is not the day to find out.
+        print("==> BETA_PASSWORD closes it again")
+        gated = {"BETA_PASSWORD": args.password}
+        closed = hit(path="/beta/", env=gated)
+        check(problems, "a set password shuts the door", "Beta build" in closed["body"],
+              f"got {closed['body'][:60]!r}")
+        check(problems, "a shut door serves no viewer", "asset:" not in closed["body"])
+        check(problems, "a shut door hides the engine too",
+              "asset:" not in hit(path="/beta/civvis.wasm", env=gated)["body"])
+
+        wrong = hit(path="/beta/", method="POST", body={"password": "0000"}, env=gated)
         check(problems, "a wrong password is refused", wrong["status"] == 401, f"got {wrong['status']}")
         check(problems, "a wrong password sets no cookie", not wrong["setCookie"])
 
-        print("==> the password opens it")
-        right = hit(path="/beta/", method="POST", body={"password": args.password})
+        right = hit(path="/beta/", method="POST", body={"password": args.password}, env=gated)
         check(problems, "the password is accepted", right["status"] == 303, f"got {right['status']}")
         cookie = (right["setCookie"] or "").split(";")[0]
         check(problems, "the cookie is HttpOnly and Secure",
@@ -272,23 +297,10 @@ def main(argv: list[str] | None = None) -> int:
         # What the cookie carries has to be proof of the password, never the
         # password: it is readable by anything that can read the response.
         check(problems, "the cookie is not the password itself", args.password not in cookie, f"got {cookie!r}")
-
-        opened = hit(path="/beta/", cookie=cookie)
-        check(problems, "the cookie opens /beta/", opened["body"].strip() == "asset:/beta/",
-              f"got {opened['body'][:60]!r}")
-        check(problems, "what is behind the door is not indexed", opened["robots"] == "noindex")
-        wasm = hit(path="/beta/civvis.wasm", cookie=cookie)
-        # instantiateStreaming refuses anything else.
-        check(problems, "the module is served as application/wasm", wasm["contentType"] == "application/wasm",
-              f"got {wasm['contentType']!r}")
-        check(problems, "the module is revalidated rather than trusted",
-              "must-revalidate" in (wasm["cacheControl"] or ""), f"got {wasm['cacheControl']!r}")
-        atlas = hit(path="/beta/assets/terrain-atlas.webp", cookie=cookie)
-        check(problems, "atlases are cached", "max-age=86400" in (atlas["cacheControl"] or ""),
-              f"got {atlas['cacheControl']!r}")
-
-        forged = hit(path="/beta/", cookie="civvis_beta=" + "0" * 64)
-        check(problems, "a forged cookie does not open it", "asset:" not in forged["body"])
+        check(problems, "the cookie opens it",
+              hit(path="/beta/", cookie=cookie, env=gated)["body"].strip() == "asset:/beta/")
+        check(problems, "a forged cookie does not",
+              "asset:" not in hit(path="/beta/", cookie="civvis_beta=" + "0" * 64, env=gated)["body"])
     finally:
         chrome.terminate()
         try:
