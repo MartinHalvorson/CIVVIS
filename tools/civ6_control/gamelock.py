@@ -92,11 +92,11 @@ def foreign_run(tag: str) -> str | None:
 
 def acquire(tag: str, wait_s: float = 0.0, poll_s: float = 15.0) -> bool:
     """Take the lock, optionally waiting. False when someone else holds it."""
-    deadline = time.time() + wait_s
+    deadline = time.monotonic() + wait_s
     while True:
         foreign = foreign_run(tag)
         if foreign is not None:
-            if time.time() >= deadline:
+            if time.monotonic() >= deadline:
                 return False
             time.sleep(poll_s)
             continue
@@ -109,7 +109,7 @@ def acquire(tag: str, wait_s: float = 0.0, poll_s: float = 15.0) -> bool:
                 # out a lock nobody is using.
                 release(force=True)
                 continue
-            if time.time() >= deadline:
+            if time.monotonic() >= deadline:
                 return False
             time.sleep(poll_s)
             continue

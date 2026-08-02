@@ -65,18 +65,7 @@ def stop(timeout_s: float = 45.0) -> bool:
     The game rewrites its options and its mod database while exiting, so a
     relaunch that overlaps the exit silently runs the previous configuration.
     """
-    if not env.game_pids():
-        return True
-    subprocess.run(["pkill", "-f", "Civ6_Exe"], check=False)
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
-        if not env.game_pids():
-            time.sleep(1.5)
-            return True
-        time.sleep(0.5)
-    subprocess.run(["pkill", "-9", "-f", "Civ6_Exe"], check=False)
-    time.sleep(3.0)
-    return not env.game_pids()
+    return env.quit_game(timeout_s)
 
 
 def clear_run_logs() -> None:
@@ -114,8 +103,10 @@ def wait_for_main_menu(timeout_s: float = 420.0, poll_s: float = 3.0) -> bool:
     means a crash fails fast instead of waiting out the whole timeout.
     """
     log = env.logs_dir() / "Modding.log"
-    deadline = time.time() + timeout_s
-    while time.time() < deadline:
+    # mach_absolute_time (Python's monotonic clock on macOS) pauses with the
+    # machine, so a closed lid cannot consume the whole launch allowance.
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
         if log.is_file() and "Discovered" in log.read_text(errors="replace"):
             return True
         if not env.game_pids():

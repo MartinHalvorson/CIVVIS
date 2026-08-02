@@ -321,8 +321,20 @@ pub struct ImprovementSpec {
     pub requires_hills: bool,
     #[serde(default)]
     pub hills_or_resource: bool,
+    /// The plot must be Hills unless it qualifies through a valid feature.
+    /// Ethiopia's Rock-Hewn Church uses this for its Volcanic Soil route.
+    #[serde(default)]
+    pub hills_or_feature: bool,
     #[serde(default)]
     pub requires_flat: bool,
+    /// Resource classes at least one adjacent plot must carry. Firaxis's
+    /// `RequiresAdjacentBonusOrLuxury` uses both classes for the Mekewap.
+    #[serde(default)]
+    pub requires_adjacent_resource_classes: Vec<String>,
+    /// Firaxis `SameAdjacentValid`; false for improvements such as Sphinxes,
+    /// Ski Resorts, City Parks, and Rock-Hewn Churches.
+    #[serde(default = "default_true")]
+    pub same_adjacent_valid: bool,
     #[serde(default)]
     pub unique_to: Option<String>,
     #[serde(default)]
@@ -2598,15 +2610,14 @@ mod tests {
     }
 
     #[test]
-    fn widening_replaces_does_not_move_the_ruleset_fingerprint() {
-        // ⚠ THE FINGERPRINT IS THE ELO LEDGER'S BINDING. `from_values` hashes the raw
-        // JSON, so a schema change cannot move it while the data is untouched — which
-        // is the whole reason this PR is separable from the data rows that follow.
-        // If this ever fails, the split was not as inert as it claims.
+    fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
+        // The fingerprint is the Elo ledger's binding. Firaxis-exact unique units,
+        // including the Shield Bearer, Oromo Cavalry, Pairidaeza, and Armagh's
+        // Monastery found by live replay, are real simulation changes; older ledgers
+        // retain their original fingerprint.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:3423bd46da2b8cd7",
-            "reading `replaces` as a list must not change what the data hashes to"
+            "fnv1a64:d9602d2bcdabd481"
         );
     }
 
@@ -3018,6 +3029,7 @@ mod tests {
             ("slinger", "archer"),
             ("archer", "crossbowman"),
             ("crossbowman", "field_cannon"),
+            ("keshig", "field_cannon"),
             ("field_cannon", "machine_gun"),
             ("spearman", "pikeman"),
             ("pikeman", "pike_and_shot"),
@@ -3025,6 +3037,7 @@ mod tests {
             ("at_crew", "modern_at"),
             ("horseman", "courser"),
             ("courser", "cavalry"),
+            ("oromo_cavalry", "cavalry"),
             ("cavalry", "helicopter"),
             ("heavy_chariot", "knight"),
             ("knight", "cuirassier"),
@@ -3052,12 +3065,14 @@ mod tests {
             ("fighter", "jet_fighter"),
             ("bomber", "jet_bomber"),
             ("legion", "man_at_arms"),
+            ("kongo_shield_bearer", "man_at_arms"),
             ("hoplite", "pikeman"),
             ("eagle_warrior", "swordsman"),
             ("war_cart", "knight"),
             ("pitati_archer", "crossbowman"),
             ("maryannu_chariot_archer", "crossbowman"),
             ("saka_horse_archer", "crossbowman"),
+            ("winged_hussar", "tank"),
             ("crouching_tiger", "field_cannon"),
         ]
         .into_iter()
@@ -3096,11 +3111,11 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 83);
+        assert_eq!(rules.units.len(), 87);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
-        assert_eq!(rules.improvements.len(), 36);
+        assert_eq!(rules.improvements.len(), 45);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
         // 118 civic-unlocked cards plus the seven Dark Age cards, which no

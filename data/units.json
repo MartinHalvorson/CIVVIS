@@ -458,6 +458,27 @@
     "upgrade_to": "man_at_arms",
     "obsolete_tech": "replaceable_parts"
   },
+  "kongo_shield_bearer": {
+    "class": "military",
+    "cost": 110,
+    "maintenance": 2,
+    "moves": 2,
+    "strength": 38,
+    "tech": "iron_working",
+    "requires_resource": "iron",
+    "resource_cost": 5,
+    "unique_to": "Kongo",
+    "replaces": "swordsman",
+    "promotion_class": "melee",
+    "zone_of_control": true,
+    "upgrade_to": "man_at_arms",
+    "obsolete_tech": "replaceable_parts",
+    "effects": {
+      "defend_ranged": 10,
+      "see_through_woods": 1,
+      "woods_move_cost": 1
+    }
+  },
   "hoplite": {
     "class": "military",
     "cost": 65,
@@ -541,6 +562,46 @@
     "upgrade_to": "crossbowman",
     "obsolete_tech": "ballistics"
   },
+  "keshig": {
+    "class": "military",
+    "cost": 160,
+    "maintenance": 3,
+    "moves": 4,
+    "strength": 35,
+    "ranged_strength": 45,
+    "range": 2,
+    "tech": "stirrups",
+    "requires_resource": "horses",
+    "resource_cost": 10,
+    "unique_to": "Mongolia",
+    "cavalry": true,
+    "promotion_class": "ranged",
+    "upgrade_to": "field_cannon",
+    "obsolete_tech": "advanced_ballistics",
+    "effects": {
+      "escort_mobility": 1
+    }
+  },
+  "winged_hussar": {
+    "class": "military",
+    "cost": 330,
+    "maintenance": 5,
+    "moves": 4,
+    "strength": 64,
+    "civic": "mercantilism",
+    "requires_resource": "iron",
+    "resource_cost": 10,
+    "unique_to": "Poland",
+    "replaces": "cuirassier",
+    "cavalry": true,
+    "promotion_class": "heavy_cavalry",
+    "zone_of_control": true,
+    "upgrade_to": "tank",
+    "obsolete_tech": "combustion",
+    "effects": {
+      "force_retreat": 1
+    }
+  },
   "crouching_tiger": {
     "class": "military",
     "cost": 140,
@@ -573,6 +634,27 @@
     "tech": "castles", "requires_resource": "horses", "resource_cost": 20, "cavalry": true, "promotion_class": "light_cavalry", "zone_of_control": true,
     "upgrade_to": "cavalry",
     "obsolete_tech": "synthetic_materials"
+  },
+  "oromo_cavalry": {
+    "class": "military",
+    "cost": 200,
+    "maintenance": 3,
+    "moves": 5,
+    "strength": 48,
+    "sight": 3,
+    "tech": "castles",
+    "requires_resource": "horses",
+    "resource_cost": 10,
+    "unique_to": "Ethiopia",
+    "replaces": "courser",
+    "cavalry": true,
+    "promotion_class": "light_cavalry",
+    "zone_of_control": true,
+    "upgrade_to": "cavalry",
+    "obsolete_tech": "synthetic_materials",
+    "effects": {
+      "hills_move_cost": 1
+    }
   },
   "skirmisher": {
     "class": "military", "cost": 150, "maintenance": 2, "moves": 3, "strength": 20,

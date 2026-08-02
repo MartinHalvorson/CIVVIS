@@ -380,6 +380,8 @@ def load_database(install: Path) -> Database:
 # naming choices, not rules divergences, so the audit resolves them.
 ALIASES = {
     "the_wheel": "wheel",
+    # Firaxis's internal district type predates the final Civilopedia name.
+    "theater": "theater_square",
     # Wonders CIVVIS names in the order the Civilopedia does. Without these
     # three the audit silently compares nothing for them.
     "halicarnassus_mausoleum": "mausoleum_at_halicarnassus",
@@ -395,6 +397,8 @@ ALIASES = {
     "nubian_pitati": "pitati_archer",
     "egyptian_chariot_archer": "maryannu_chariot_archer",
     "scythian_horse_archer": "saka_horse_archer",
+    "mongolian_keshig": "keshig",
+    "polish_hussar": "winged_hussar",
     "chinese_crouching_tiger": "crouching_tiger",
     "antiair_gun": "anti_air_gun",
     # Warrior Monk promotions carry a MONK_ prefix in the shipped table, and
