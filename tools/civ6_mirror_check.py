@@ -522,7 +522,7 @@ def city_fact_mismatches(state, board, top):
     return mismatches
 
 
-def visible_exported_units(state, board):
+def visible_exported_units(state, board, top):
     """Yield every currently visible unit with its compact CIVVIS owner seat."""
     yield from ((board.get("view_player", 0), unit)
                 for unit in state.get("units") or [])
@@ -530,7 +530,17 @@ def visible_exported_units(state, board):
         yield from ((seat, unit) for unit in rival.get("units") or [])
     for minor in mirrored_minor_sources(state):
         yield from ((None, unit) for unit in minor.get("units") or [])
-    yield from ((None, unit) for unit in state.get("hostiles") or [])
+    # Unlike the actor rosters above, `hostiles` is the planner's threat list and
+    # is deliberately not fog-gated in the Firaxis export. The seated board must
+    # never reveal those private contacts, so only compare hostiles standing on a
+    # tile the viewer can currently see. The dedicated HOSTILES check below uses
+    # the same boundary.
+    visible = {tuple(pos) for pos in board.get("visible") or []}
+    yield from (
+        (None, unit)
+        for unit in state.get("hostiles") or []
+        if axial(unit.get("x", 0), top - unit.get("y", 0)) in visible
+    )
 
 
 def unmodelled_great_person(kind):
@@ -550,7 +560,7 @@ def unit_fact_mismatches(state, board, top):
     for unit in board.get("units") or []:
         by_pos.setdefault(tuple(unit.get("pos") or []), []).append(unit)
     source_groups = {}
-    for owner, source in visible_exported_units(state, board):
+    for owner, source in visible_exported_units(state, board, top):
         pos = axial(source.get("x", 0), top - source.get("y", 0))
         raw_kind = civ6_id(exported_unit_kind(source), "UNIT_")
         kind = IDENTIFIER_ALIASES.get(raw_kind, raw_kind)

@@ -232,8 +232,21 @@ class MirrorCheckTest(unittest.TestCase):
         board = {"view_player": 0, "units": [{
             "owner": 4, "type": "warrior", "pos": [1, 5],
             "hp": 79, "fortified": False, "fortify_turns": 0,
-        }]}
+        }], "visible": [[1, 5]]}
         self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
+    def test_hidden_hostile_is_not_compared_to_the_seated_board(self) -> None:
+        state = {"hostiles": [{
+            "type": "UNIT_SWORDSMAN", "player": 63, "x": 3, "y": 5,
+            "hp": 83, "fortified": False, "fortify_turns": 0,
+        }]}
+        board = {"view_player": 0, "units": [], "visible": [[0, 0]]}
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
+        board["visible"] = [[1, 5]]
+        mismatches = civ6_mirror_check.unit_fact_mismatches(state, board, 10)
+        self.assertEqual(len(mismatches), 1)
+        self.assertIn("UNIT_SWORDSMAN@(1, 5) count Civ6=1 CIVVIS=0", mismatches[0])
 
     def test_barbarian_horse_archer_uses_the_modelled_saka_unit(self) -> None:
         state = {"hostiles": [{
@@ -244,7 +257,7 @@ class MirrorCheckTest(unittest.TestCase):
         board = {"view_player": 0, "units": [{
             "owner": 4, "type": "saka_horse_archer", "pos": [1, 5],
             "hp": 79, "fortified": False, "fortify_turns": 0,
-        }]}
+        }], "visible": [[1, 5]]}
         self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
 
     def test_stacked_same_type_units_match_as_a_multiset(self) -> None:
