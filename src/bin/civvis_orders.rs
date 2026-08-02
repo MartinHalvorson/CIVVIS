@@ -432,12 +432,73 @@ fn remove_active_route_traders_from_plan(
     mirror_state.prune_active_trade_route_traders(planned_game);
 }
 
+/// Release the production queue of any city building something CIVVIS did not
+/// choose, so it decides afresh instead of adopting the mod's pick as its own.
+///
+/// ⚠⚠ THIS IS WHY THE LADDER STILL BUILDS 72% OF EVERYTHING. Measured on run
+/// `civvis-20260802T064240Z`, applied orders over 144 turns:
+///
+/// ```text
+/// unit 395    civic 144    research 144    produce 22    policy 16
+/// ```
+///
+/// Research and civic go out every single turn. Production goes out on **19 turns
+/// of 144 — 13%**. CIVVIS's build orders are not being refused any more (`no_params`
+/// is gone from the refusal ledger entirely); it is **not issuing them**.
+///
+/// The loop: `rebuild_from_state` seeds each city's queue from Civilization VI's
+/// `producing`, `--fresh-board` reruns that every turn, and CIVVIS produces only for
+/// a city whose queue it believes is empty. So when `driveProduction` answers
+/// `ENDTURN_BLOCKING_PRODUCTION` from its own ladder, the next turn hands CIVVIS that
+/// choice as work in progress, CIVVIS says nothing, the item completes, the queue
+/// empties, and the ladder picks again. CIVVIS never gets a word in.
+///
+/// ⚠ The seeding itself is correct and must stay — without it CIVVIS re-chooses from
+/// scratch every turn and alternates Builder / Monument / Campus, which is the defect
+/// the seed was added to fix. What was missing is that it cannot tell CIVVIS's own
+/// plan from the ladder's.
+///
+/// ⚠ Applied to the THROWAWAY planning board, not the authoritative mirror, so the
+/// board shown to the next decision stays the last exported Civ VI state.
+///
+/// **Self-limiting by construction.** The override only fires while the game is
+/// building something CIVVIS did not order; once its choice takes, `producing`
+/// matches and the queue is seeded normally again. A choice the host keeps refusing
+/// is already routed around by `blocked_production`, which `sync` refreshes.
+fn release_foreign_production(
+    planned_game: &mut civvis::game::Game,
+    cid_of: &std::collections::BTreeMap<i64, u32>,
+    state: &civvis::mirror::StateSnapshot,
+    ours: &std::collections::BTreeMap<i64, String>,
+) -> usize {
+    let mut released = 0;
+    for city in &state.cities {
+        let Some(producing) = city.producing.as_deref() else {
+            continue;
+        };
+        if ours.get(&city.id).map(String::as_str) == Some(producing) {
+            continue;
+        }
+        let Some(cid) = cid_of.get(&city.id).copied() else {
+            continue;
+        };
+        if let Some(built) = planned_game.cities.get_mut(&cid) {
+            if !built.queue.is_empty() {
+                built.queue.clear();
+                released += 1;
+            }
+        }
+    }
+    released
+}
+
 fn decide(
     mirror_state: &mut civvis::mirror::LiveMirror,
     ai: &mut civvis::ai::AdvancedAi,
     snapshot: &civvis::mirror::Snapshot,
     state: &civvis::mirror::StateSnapshot,
     war_from_plan: bool,
+    ours: &mut std::collections::BTreeMap<i64, String>,
 ) -> String {
     // Only the live bridge has Firaxis's non-walking Trader representation.
     // Enable its narrow route-start adapter before the AI simulates its turn;
@@ -457,6 +518,8 @@ fn decide(
     // trader from this throwaway planning board, otherwise a spare-capacity turn
     // can send the same real unit a second `TRADE_ROUTE` request.
     remove_active_route_traders_from_plan(&mut planned_game, mirror_state);
+    let released =
+        release_foreign_production(&mut planned_game, &mirror_state.cid_of, state, ours);
     let before = planned_game.log.len();
     // ⚠ MEASURE LEGALITY BEFORE THE TURN IS TAKEN. Asking afterwards reported
     // `all_legal = 0` — the enumeration short-circuits once the seat has acted — which
@@ -541,7 +604,17 @@ fn decide(
         }
         let order = translate(action, mirror_state, state);
         match order {
-            Some(value) => orders.push(value),
+            Some(value) => {
+                // Remember what WE asked each city for, so next turn's override can
+                // tell our own plan from the ladder's. Keyed on the Civilization VI
+                // city id, which `translate` has already resolved.
+                if value.kind == "produce" {
+                    if let (Some(civ6), Some(name)) = (value.subject, value.verb.clone()) {
+                        ours.insert(civ6, name);
+                    }
+                }
+                orders.push(value)
+            }
             None => {
                 if skipped_examples.len() < 12 {
                     skipped_examples.push(format!("{action:?}"));
@@ -601,6 +674,13 @@ fn decide(
         note_bits.push(format!(
             "great_people_without_activation_target={great_people_without_target}"
         ));
+    }
+
+    // An override nothing reports does not exist. `released` is how many cities were
+    // handed back to CIVVIS this turn; if it stays high all game, CIVVIS's choices are
+    // not taking and the refusal ledger is the place to look.
+    if released > 0 {
+        note_bits.push(format!("released={released}"));
     }
 
     let plan = ai.plan_report();
@@ -1632,7 +1712,10 @@ fn main() {
         let mut live = civvis::mirror::LiveMirror::new(
             &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
         );
-        let reply = decide(&mut live, &mut ai, &snapshot, &state, war_from_plan);
+        // One-shot: there is no next turn to be self-limiting against, so this starts
+        // empty and every foreign choice is released once.
+        let mut ours = std::collections::BTreeMap::new();
+        let reply = decide(&mut live, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
         // debug in. Replaying one recorded turn is the fast loop — seconds, no game,
         // no lock — and it was the one path that could not say why it chose anything.
@@ -1658,6 +1741,11 @@ fn main() {
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
     let mut live: Option<civvis::mirror::LiveMirror> = None;
+    // What CIVVIS itself last asked each city to build, by Civilization VI city id.
+    // Lives out here rather than on the mirror because `--fresh-board` rebuilds the
+    // mirror every turn and this must survive that, exactly like the unit memory
+    // carried through `remap_unit_memory` below. See `release_foreign_production`.
+    let mut ours: std::collections::BTreeMap<i64, String> = std::collections::BTreeMap::new();
     let mut explain_cursor: u64 = 0;
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
@@ -1723,7 +1811,7 @@ fn main() {
                         }
                         None => ai.forget_unit_memory(),
                     }
-                    let reply = decide(&mut board, &mut ai, &snapshot, &state, war_from_plan);
+                    let reply = decide(&mut board, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
                     live = Some(board);
                     reply
                 } else {
@@ -1732,7 +1820,7 @@ fn main() {
                         let mut fresh = civvis::mirror::LiveMirror::new(
                             &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
                         );
-                        let reply = decide(&mut fresh, &mut ai, &snapshot, &state, war_from_plan);
+                        let reply = decide(&mut fresh, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
                         live = Some(fresh);
                         reply
                     }
@@ -1753,9 +1841,9 @@ fn main() {
                                 _ => civvis::ai::AdvancedAi::targeting(
                                     civvis::ai::VictoryTarget::Domination),
                             };
-                            decide(existing, &mut throwaway, &snapshot, &state, war_from_plan)
+                            decide(existing, &mut throwaway, &snapshot, &state, war_from_plan, &mut ours)
                         } else {
-                            decide(existing, &mut ai, &snapshot, &state, war_from_plan)
+                            decide(existing, &mut ai, &snapshot, &state, war_from_plan, &mut ours)
                         }
                     }
                 }
@@ -1863,6 +1951,109 @@ mod tests {
         Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGreatPerson,
         StateGovernor, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
     };
+
+    /// One land patch is enough: the override reads cities, not terrain.
+    fn production_board() -> (Snapshot, StateSnapshot) {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 1,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            // `Plot` carries serde defaults for everything but the coordinates, so
+            // deserializing is cheaper than naming a dozen fields the test does not
+            // care about — and it cannot drift as new ones are added.
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| (x, y)))
+                .map(|(x, y)| {
+                    serde_json::from_value::<Plot>(serde_json::json!({
+                        "x": x, "y": y, "t": "TERRAIN_GRASS"
+                    }))
+                    .expect("a plot with serde defaults deserializes")
+                })
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 1,
+            cities: vec![StateCity {
+                id: 7,
+                name: "Ottawa".to_string(),
+                x: 4,
+                y: 4,
+                pop: 4,
+                producing: Some("UNIT_WARRIOR".to_string()),
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        (snapshot, state)
+    }
+
+    /// ⚠⚠ The defect: the mod ladder answers `ENDTURN_BLOCKING_PRODUCTION`, the next
+    /// rebuild seeds that choice into CIVVIS's queue as work in progress, and CIVVIS —
+    /// which only produces for a city whose queue is empty — says nothing. Measured at
+    /// 13% of turns carrying a produce order against 100% carrying research and civic.
+    #[test]
+    fn a_build_civvis_did_not_choose_is_handed_back_to_it() {
+        let (snapshot, state) = production_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = *mirror.cid_of.get(&7).expect("the exported city is mirrored");
+        let mut planned = mirror.game.clone();
+        assert!(
+            !planned.cities[&cid].queue.is_empty(),
+            "precondition: the rebuild seeds the queue from `producing`"
+        );
+
+        // Nothing recorded for this city, so the warrior is the ladder's pick.
+        let ours = std::collections::BTreeMap::new();
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            1
+        );
+        assert!(
+            planned.cities[&cid].queue.is_empty(),
+            "a choice CIVVIS did not make must not read as its own plan"
+        );
+        assert!(
+            !mirror.game.cities[&cid].queue.is_empty(),
+            "and the authoritative mirror must be left as the last exported state"
+        );
+    }
+
+    /// The other half, and what keeps this from re-creating the thrash the queue
+    /// seeding was added to fix: once CIVVIS's own choice is what the city is
+    /// building, the seed stands and it is left alone.
+    #[test]
+    fn civvis_own_choice_is_left_alone_so_the_override_is_self_limiting() {
+        let (snapshot, state) = production_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = *mirror.cid_of.get(&7).expect("the exported city is mirrored");
+        let mut planned = mirror.game.clone();
+
+        let mut ours = std::collections::BTreeMap::new();
+        ours.insert(7_i64, "UNIT_WARRIOR".to_string());
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            0
+        );
+        assert!(
+            !planned.cities[&cid].queue.is_empty(),
+            "work in progress CIVVIS asked for must survive, or it re-chooses every turn"
+        );
+    }
+
+    /// A city building nothing has nothing to hand back, and must not be counted.
+    #[test]
+    fn an_idle_city_is_not_reported_as_released() {
+        let (snapshot, mut state) = production_board();
+        state.cities[0].producing = None;
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let mut planned = mirror.game.clone();
+        let ours = std::collections::BTreeMap::new();
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            0
+        );
+    }
 
     #[test]
     fn great_people_activate_or_move_to_the_nearest_firaxis_valid_plot() {
@@ -2396,6 +2587,7 @@ mod tests {
             &snapshot,
             &state,
             false,
+            &mut Default::default(),
         ))
         .expect("the decision is JSON");
 
@@ -2528,7 +2720,7 @@ mod tests {
         let before = serde_json::to_value(&mirror.game).expect("mirror game serializes");
         let mut ai = civvis::ai::AdvancedAi::new();
 
-        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false);
+        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &mut Default::default());
 
         assert!(reply.contains("\"turn\":4"));
         assert_eq!(
@@ -2592,7 +2784,7 @@ mod tests {
         }));
 
         let mut ai = civvis::ai::AdvancedAi::new();
-        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false);
+        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &mut Default::default());
 
         assert!(
             reply.contains("\"verb\":\"TRADE_ROUTE\"") && reply.contains("\"subject\":42"),
