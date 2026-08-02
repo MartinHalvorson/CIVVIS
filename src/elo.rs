@@ -864,20 +864,15 @@ impl EloPool {
             entry.1 = entry.1.saturating_add(rating.games);
         }
         for (player, (weighted, games)) in accumulated {
-            if !overall.contains_key(&player) {
-                overall.insert(
-                    player,
-                    Rating {
-                        elo: if games > 0 {
-                            weighted / f64::from(games)
-                        } else {
-                            stored.base_rating
-                        },
-                        games: 0,
-                        wins: 0,
-                    },
-                );
-            }
+            overall.entry(player).or_insert_with(|| Rating {
+                elo: if games > 0 {
+                    weighted / f64::from(games)
+                } else {
+                    stored.base_rating
+                },
+                games: 0,
+                wins: 0,
+            });
         }
         let games = if stored.schema_version == ELO_SCHEMA_VERSION {
             stored.games
@@ -1474,14 +1469,18 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // mechanisms, so using its ordinary constructors here would collapse
         // a control into the treatment it is meant to diagnose.
         "advanced_policy_live_control" => {
-            let mut weights = Weights::default();
-            weights.policy_deck = crate::ai::PolicyDeck::Live;
+            let weights = Weights {
+                policy_deck: crate::ai::PolicyDeck::Live,
+                ..Weights::default()
+            };
             Box::new(AdvancedAi::pre_policy_envoy_with_weights(weights))
         }
         "advanced_envoy_policy" => {
-            let mut weights = Weights::default();
-            weights.policy_deck = crate::ai::PolicyDeck::Live;
-            weights.pol_influence = 4.0;
+            let weights = Weights {
+                policy_deck: crate::ai::PolicyDeck::Live,
+                pol_influence: 4.0,
+                ..Weights::default()
+            };
             Box::new(AdvancedAi::pre_policy_envoy_with_weights(weights))
         }
         "advanced_envoy_infrastructure" => {
@@ -1500,9 +1499,11 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(ai)
         }
         "advanced_envoy_economy" => {
-            let mut weights = Weights::default();
-            weights.policy_deck = crate::ai::PolicyDeck::Live;
-            weights.pol_influence = 4.0;
+            let weights = Weights {
+                policy_deck: crate::ai::PolicyDeck::Live,
+                pol_influence: 4.0,
+                ..Weights::default()
+            };
             let mut ai = AdvancedAi::pre_policy_envoy_with_weights(weights);
             ai.envoy_infrastructure = true;
             Box::new(ai)
@@ -1520,7 +1521,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_evolved_commitment" => {
             let mut ai = crate::evolve::load_champion("evolved")
                 .map(AdvancedAi::with_weights)
-                .unwrap_or_else(AdvancedAi::new);
+                .unwrap_or_default();
             ai.strategic_commitment = true;
             Box::new(ai)
         }
@@ -1912,14 +1913,14 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_evolved_blind" => {
             let mut ai = crate::evolve::load_champion("evolved")
                 .map(AdvancedAi::with_weights)
-                .unwrap_or_else(AdvancedAi::new);
+                .unwrap_or_default();
             ai.deny_leaders = false;
             Box::new(ai)
         }
         "advanced_evolved" => Box::new(
             crate::evolve::load_champion("evolved")
                 .map(AdvancedAi::with_weights)
-                .unwrap_or_else(AdvancedAi::new),
+                .unwrap_or_default(),
         ),
         // The Dedication chooser that ranks the offer by what each Dedication
         // would have paid over the era just ended. **A recorded negative
