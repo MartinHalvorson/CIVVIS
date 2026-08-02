@@ -8583,6 +8583,76 @@ mod tests {
     }
 
     #[test]
+    fn browser_draws_one_perimeter_around_each_natural_wonder_footprint() {
+        let continuation = EMBEDDED_INDEX
+            .split("function naturalWonderContinues")
+            .nth(1)
+            .and_then(|tail| tail.split("const NATURAL_WONDER_ATLAS").next())
+            .expect("natural wonder adjacency rule");
+        assert!(continuation.contains("neighbor.feature === tile.feature"));
+
+        let flat = EMBEDDED_INDEX
+            .split("function drawNaturalWonderPerimeters")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawTileYields").next())
+            .expect("flat natural wonder perimeter renderer");
+        assert!(flat.contains("if (naturalWonderContinues(tile, neighbor)) continue;"));
+        assert!(flat.contains("EDGE_CORNERS[side]"));
+
+        let planet = EMBEDDED_INDEX
+            .split("function drawPlanetNaturalWonderPerimeters")
+            .nth(1)
+            .and_then(|tail| tail.split("function planetFeatureGlyph").next())
+            .expect("planet natural wonder perimeter renderer");
+        assert!(planet.contains("TMAP.get(cell.nbrs[side])"));
+        assert!(planet.contains("if (naturalWonderContinues(tile, neighbor)) continue;"));
+
+        let mini = EMBEDDED_INDEX
+            .split("function drawMiniNaturalWonderPerimeters")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawMini()").next())
+            .expect("flat minimap natural wonder perimeter renderer");
+        assert!(mini.contains("if (naturalWonderContinues(tile, neighbor)) continue;"));
+
+        let planet_mini = EMBEDDED_INDEX
+            .split("function drawPlanetMiniNaturalWonderPerimeters")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetMini()").next())
+            .expect("planet minimap natural wonder perimeter renderer");
+        assert!(planet_mini.contains("TMAP.get(cell.nbrs[side])"));
+        assert!(planet_mini.contains(
+            "if (naturalWonderContinues(tile, neighbor)) continue;"
+        ));
+
+        assert_eq!(
+            EMBEDDED_INDEX.matches("drawNaturalWonderPerimeters(tiles);").count(),
+            1,
+            "the flat map must paint the landmark perimeter exactly once"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("drawPlanetNaturalWonderPerimeters(cells);")
+                .count(),
+            1,
+            "the planet map must paint the landmark perimeter exactly once"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("drawMiniNaturalWonderPerimeters(tiles, layout);")
+                .count(),
+            1,
+            "the flat minimap must paint the landmark perimeter exactly once"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("drawPlanetMiniNaturalWonderPerimeters(cells);")
+                .count(),
+            1,
+            "the planet minimap must paint the landmark perimeter exactly once"
+        );
+    }
+
+    #[test]
     fn painted_planet_blends_terrain_without_revealing_the_hex_mesh() {
         let underpaint = EMBEDDED_INDEX
             .split("function planetTerrainUnderpaint")

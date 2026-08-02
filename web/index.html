@@ -4331,6 +4331,15 @@ function isNaturalWonder(feature) {
   return !!(RULES && RULES.features && RULES.features[feature]
             && RULES.features[feature].natural_wonder);
 }
+// A footprint continues only through the same named Natural Wonder. This is
+// deliberately stricter than "another wonder": two different landmarks that
+// happen to touch still keep the line that distinguishes them, while every
+// shared edge inside Great Barrier Reef, Pantanal, and the other multi-tile
+// wonders disappears.
+function naturalWonderContinues(tile, neighbor) {
+  return !!(tile && neighbor && isNaturalWonder(tile.feature)
+            && neighbor.feature === tile.feature);
+}
 const NATURAL_WONDER_ATLAS = new Image();
 let NATURAL_WONDER_ATLAS_READY = false;
 NATURAL_WONDER_ATLAS.onload = () => { NATURAL_WONDER_ATLAS_READY = true; if (state) draw(); };
@@ -12012,6 +12021,41 @@ function buildNaturalWonderPlacements(tiles) {
   return placements;
 }
 
+// Natural Wonders are landmarks at every zoom, so their footprint gets its
+// own engraved gold edge. Build that edge from exposed *sides*, not outlined
+// tiles: a two- or three-tile wonder then has one perimeter and no honeycomb
+// through its middle.
+function drawNaturalWonderPerimeters(tiles) {
+  const segments = [];
+  for (const tile of tiles) {
+    if (!isNaturalWonder(tile.feature)) continue;
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    for (let side = 0; side < 6; side++) {
+      const neighbor = nbrTile(tile.pos, DIRS[side]);
+      if (naturalWonderContinues(tile, neighbor)) continue;
+      const [first, second] = EDGE_CORNERS[side];
+      segments.push([...corner(x, y, S, first), ...corner(x, y, S, second)]);
+    }
+  }
+  if (!segments.length) return;
+  const weight = MODE.painted ? 1 : UI_K();
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [color, width, alpha] of [
+    ["#201707", 6.2 * weight, .86],
+    ["#d7a928", 3.6 * weight, .98],
+    ["#fff0a6", 1.15 * weight, .96],
+  ]) {
+    cx.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+    cx.strokeStyle = color; cx.lineWidth = width; cx.globalAlpha = alpha; cx.stroke();
+  }
+  cx.restore();
+}
+
 // ---------------------------------------------------------------- tile yields
 //
 // Civ 6 never writes a number on a tile. It lays down one small icon per point
@@ -16923,6 +16967,45 @@ function drawPlanetFrontiers(cells) {
   cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
 }
 
+// The globe has pentagons as well as hexagons, so its Natural Wonder outline
+// follows each projected cell's real sides. As on the flat board, a side shared
+// with the same named wonder is interior and never enters the stroke network.
+function drawPlanetNaturalWonderPerimeters(cells) {
+  const byWeight = new Map();
+  for (const entry of cells) {
+    const {tile, cell, points} = entry;
+    if (!cell || !isNaturalWonder(tile.feature)) continue;
+    const inradius = planetCellInradius(entry);
+    const weight = Math.max(.35, Math.min(1.25,
+      Math.round(4 * inradius / PLANET_LANE_TILE) / 4));
+    let segments = byWeight.get(weight);
+    if (!segments) { segments = []; byWeight.set(weight, segments); }
+    for (let side = 0; side < points.length; side++) {
+      const neighbor = TMAP.get(cell.nbrs[side]);
+      if (naturalWonderContinues(tile, neighbor)) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      segments.push([a.x, a.y, b.x, b.y]);
+    }
+  }
+  if (!byWeight.size) return;
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [color, width, alpha] of [
+    ["#201707", 6.2, .86], ["#d7a928", 3.6, .98], ["#fff0a6", 1.15, .96],
+  ]) {
+    cx.strokeStyle = color; cx.globalAlpha = alpha;
+    for (const [weight, segments] of byWeight) {
+      cx.lineWidth = width * weight;
+      cx.beginPath();
+      for (const [ax, ay, bx, by] of segments) {
+        cx.moveTo(ax, ay); cx.lineTo(bx, by);
+      }
+      cx.stroke();
+    }
+  }
+  cx.restore();
+}
+
 function planetFeatureGlyph(tile) {
   if (tile.terrain === "mountain") return "▲";
   if (tile.feature === "forest") return "♠";
@@ -21375,6 +21458,7 @@ function drawPlanetMap() {
   if (mapLens === "settler") drawPlanetSettlerLens(cells);
   else if (mapLens === "empire") drawEmpireDetailsPlanet(cells);
   else if (mapLens) drawThematicLensPlanet(cells);
+  if (radius >= SKY_MARKERS) drawPlanetNaturalWonderPerimeters(cells);
   // Cities and armies are drawn at a floor size so they stay clickable, and a
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
@@ -22284,6 +22368,7 @@ function draw() {
     drawEmpireDetailsFlat(tiles);
   } else if (mapLens === "settler") drawSettlerLensFlat(tiles);
   else if (mapLens) drawThematicLensFlat(tiles);
+  drawNaturalWonderPerimeters(tiles);
   // --- raids in the making. A barbarian camp that finds a city goes on alert
   // and starts throwing raiders at it, and the wire has said so all along —
   // which camp, which city, and for how long — while the map drew a tent
@@ -23504,6 +23589,28 @@ function planetMiniScale(width, height) {
   return knowsGlobe() ? Math.min(width, height) * .44
                       : Math.hypot(width, height) / 2 / CHART_LIMIT;
 }
+function drawPlanetMiniNaturalWonderPerimeters(cells) {
+  const segments = [];
+  for (const {tile, cell, points} of cells) {
+    if (!cell || !isNaturalWonder(tile.feature)) continue;
+    for (let side = 0; side < points.length; side++) {
+      const neighbor = TMAP.get(cell.nbrs[side]);
+      if (naturalWonderContinues(tile, neighbor)) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      segments.push([a.x, a.y, b.x, b.y]);
+    }
+  }
+  if (!segments.length) return;
+  mx2.save(); mx2.lineCap = "round"; mx2.lineJoin = "round";
+  for (const [color, width] of [["#201707", 2.5], ["#f0c94e", 1.15]]) {
+    mx2.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      mx2.moveTo(ax, ay); mx2.lineTo(bx, by);
+    }
+    mx2.strokeStyle = color; mx2.lineWidth = width; mx2.stroke();
+  }
+  mx2.restore();
+}
 function drawPlanetMini() {
   if (!planetReady()) return planetMap();
   const {width, height} = syncMiniCanvas();
@@ -23533,6 +23640,7 @@ function drawPlanetMini() {
       mx2.globalAlpha = 1;
     }
   }
+  drawPlanetMiniNaturalWonderPerimeters(cells);
   if (!camera.chart) {
     mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
     mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.stroke();
@@ -23648,6 +23756,34 @@ function miniHexPath(x, y, size) {
   }
   mx2.closePath();
 }
+function miniHexCorner(x, y, size, cornerIndex) {
+  const angle = Math.PI / 180 * (60 * cornerIndex - 30);
+  return [x + size * Math.cos(angle), y + size * Math.sin(angle)];
+}
+function drawMiniNaturalWonderPerimeters(tiles, layout) {
+  const segments = [];
+  for (const tile of tiles) {
+    if (!isNaturalWonder(tile.feature)) continue;
+    const [x, y] = miniHexCenter(tile.pos, layout);
+    for (let side = 0; side < 6; side++) {
+      const neighbor = nbrTile(tile.pos, DIRS[side]);
+      if (naturalWonderContinues(tile, neighbor)) continue;
+      const [first, second] = EDGE_CORNERS[side];
+      segments.push([...miniHexCorner(x, y, layout.size, first),
+                     ...miniHexCorner(x, y, layout.size, second)]);
+    }
+  }
+  if (!segments.length) return;
+  mx2.save(); mx2.lineCap = "round"; mx2.lineJoin = "round";
+  for (const [color, width] of [["#201707", 2.5], ["#f0c94e", 1.15]]) {
+    mx2.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      mx2.moveTo(ax, ay); mx2.lineTo(bx, by);
+    }
+    mx2.strokeStyle = color; mx2.lineWidth = width; mx2.stroke();
+  }
+  mx2.restore();
+}
 function drawMini() {
   if (!state) return;
   if (drawPlanetMini()) return;
@@ -23692,6 +23828,7 @@ function drawMini() {
     miniHexPath(x, y, layout.size + 0.12); mx2.fill();
   }
   mx2.globalAlpha = 1;
+  drawMiniNaturalWonderPerimeters(tiles, layout);
   for (const c of state.cities) {
     const [x, y] = miniHexCenter(c.pos, layout);
     const cityState = ownerIsCityState(c.owner);
