@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -407,3 +408,54 @@ class MirrorCheckTest(unittest.TestCase):
             civ6_mirror_check.leaked_hidden_resources([(board, plot)], state),
             ["niter@4,5"],
         )
+
+
+def test_a_rig_binary_older_than_the_decider_is_reported():
+    """★★★★★ Presence is not currency.
+
+    CONTROL used to say "export and CIVVIS worker are current" having checked only
+    that the worker PROCESS exists. On 2026-08-02 the deployed rig binary was a day
+    older than the decider's, so the CIVVIS window and every check in this file were
+    reading a day-old reconstruction of a current game — and CONTROL reported OK.
+    Rebuilding it moved four axes from failing to passing.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        rig = os.path.join(tmp, "civvis")
+        decider = os.path.join(tmp, "civvis_orders")
+        open(rig, "w").close()
+        os.utime(rig, (1_000_000, 1_000_000))
+        open(decider, "w").close()
+        os.utime(decider, (1_000_000 + 7200, 1_000_000 + 7200))
+        lines = [f"python3 tools/civ6_brain.py --run-dir /x --bin {decider} --victory score"]
+        found = civ6_mirror_check.stale_rig_problems(lines, rig=rig)
+        assert found, "a rig two hours behind the decider must be reported"
+        assert "2.0h older" in found[0], found[0]
+
+
+def test_a_current_rig_is_silent():
+    """⚠ A check that always fires says nothing."""
+    with tempfile.TemporaryDirectory() as tmp:
+        rig = os.path.join(tmp, "civvis")
+        decider = os.path.join(tmp, "civvis_orders")
+        open(decider, "w").close()
+        os.utime(decider, (1_000_000, 1_000_000))
+        open(rig, "w").close()
+        os.utime(rig, (1_000_000 + 60, 1_000_000 + 60))
+        lines = [f"python3 tools/civ6_brain.py --run-dir /x --bin {decider}"]
+        assert civ6_mirror_check.stale_rig_problems(lines, rig=rig) == []
+
+
+def test_no_brain_means_nothing_to_compare_against():
+    """⚠ With no decider named there is no claim to make, and inventing one would
+    fail every archive replay."""
+    assert civ6_mirror_check.stale_rig_problems(["python3 something_else.py"]) == []
+
+
+def test_an_absent_rig_is_not_reported_as_stale():
+    """⚠ Absent is not stale. A missing rig is a different failure and belongs to
+    whoever starts the server."""
+    with tempfile.TemporaryDirectory() as tmp:
+        decider = os.path.join(tmp, "civvis_orders")
+        open(decider, "w").close()
+        lines = [f"python3 tools/civ6_brain.py --bin {decider}"]
+        assert civ6_mirror_check.stale_rig_problems(lines, rig=os.path.join(tmp, "nope")) == []
