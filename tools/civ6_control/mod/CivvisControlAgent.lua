@@ -4581,6 +4581,55 @@ local function exportState(player, pid, turn)
 	-- ⚠ Only units on plots this seat can SEE, the same rule the rival export uses.
 	-- A barbarian camp in the fog is not information a human has.
 	local hostiles = {};
+	-- ★★★★★ FREE CITIES ARE HOSTILE AND WERE IN NO LIST AT ALL.
+	--
+	-- `hostiles` walked ONLY `GetAliveBarbarianIDs()`. Majors arrive in `rivals`,
+	-- city-states in `minors` — and the Free Cities player is in NONE of the three.
+	-- Measured on run civvis-20260802T064240Z: every hostile entry in the whole run,
+	-- all 1454 of them, carried `player: 63`. Player 62 never appeared.
+	--
+	-- That is not a cosmetic gap. It is how the empire died:
+	--   t129  five cities
+	--   t131-t145  four of them lost, every one naming `falls_to: 62`
+	--   t130  every rival still `at_war: false`; hostiles showed SEVEN units,
+	--         two of them settlers and one a builder
+	--   t125  "Researching education | worth 19, ahead of military tactics at 5"
+	-- Mecca flipped to Free Cities at loyalty 1.6, and the Free City's units then
+	-- took Medina, Sana'a and Hattin — all three still at loyalty 99-100, so they
+	-- were CONQUERED, not disloyal. CIVVIS could not see the army that took them,
+	-- so it kept valuing military tactics at 5 while its empire was dismantled.
+	--
+	-- ⚠ `IsFreeCities` is guarded exactly as the shipped UI guards it —
+	-- GlobalResourcePopup.lua writes `if pPlayer.IsFreeCities and
+	-- pPlayer:IsFreeCities()` with the comment "Not avail in base game". A build
+	-- without the method must fall through, not error.
+	local function addUnitsOf(bid)
+		local other = Players[bid];
+		if other == nil then return; end
+		pcall(function()
+			for _, unit in other:GetUnits():Members() do
+				local ux, uy = unit:GetX(), unit:GetY();
+				if plotRevealed(pid, ux, uy) then
+					hostiles[#hostiles + 1] = {
+						x = ux, y = uy, player = bid,
+						type = try(function()
+							return GameInfo.Units[unit:GetUnitType()].UnitType;
+						end, "?"),
+					};
+				end
+			end
+		end);
+	end
+	pcall(function()
+		local everyone = try(function() return PlayerManager.GetAliveIDs(); end, {}) or {};
+		for _, oid in ipairs(everyone) do
+			local other = Players[oid];
+			local free = other ~= nil and try(function()
+				return other.IsFreeCities ~= nil and other:IsFreeCities() == true;
+			end, false);
+			if free == true then addUnitsOf(oid); end
+		end
+	end);
 	pcall(function()
 		local ids = try(function() return PlayerManager.GetAliveBarbarianIDs(); end, {}) or {};
 		for _, bid in ipairs(ids) do
