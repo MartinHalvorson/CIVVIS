@@ -94,7 +94,26 @@ const SETTLE_LAG: u32 = 3;
 /// and the population the settler cost, not where it has become good.
 const SETTLE_PAYBACK: u32 = 15;
 
+/// A new city has to become more than a map pin. Forecast the first four
+/// citizens because they decide whether it reaches a useful population in time
+/// to pay back the Settler, and because later tiles are too speculative to
+/// justify sending a civilian across the map.
+const SETTLEMENT_FORECAST_POPULATION: usize = 4;
+const SETTLEMENT_FORECAST_HORIZON: u32 = 40;
+const SETTLEMENT_FORECAST_BEAM: usize = 12;
+const SETTLEMENT_SECOND_RING_DELAY: u32 = 5;
 
+/// Before Shipbuilding a land Settler may widen its local eight-tile search,
+/// but may not turn a compact expansion problem into a march across the map.
+const SETTLER_LAND_FALLBACK_RADIUS: i32 = 12;
+const SETTLER_GLOBAL_PREMIUM: f64 = 10.0;
+const SETTLER_EXTRA_TRAVEL_PRICE: f64 = 2.5;
+
+/// A Settler walking farther than this, or one that has already been stopped,
+/// gets a land escort when the empire can spare one.
+const SETTLER_ESCORT_DISTANCE: i32 = 4;
+const SETTLER_REPLACEMENT_BLOCKED_TURNS: u32 = 3;
+const SETTLER_ESCORT_SEARCH_RADIUS: i32 = 8;
 
 /// The per-tile discount `settle_sites` already applies inside the search
 /// radius. Named here because a census that scores siting against raw
@@ -118,6 +137,32 @@ const ENVOY_PRODUCTION_VALUE: f64 = 170.0;
 /// expensive city-local menus without paying for a snapshot per pool thread;
 /// wider workers remain available to the larger unit and visibility frontiers.
 const PURCHASE_MENU_MAX_WORKERS: usize = 3;
+
+#[derive(Clone, Copy, Debug)]
+struct SettlementWorkTile {
+    pos: Pos,
+    ring: i32,
+    yields: Yields,
+    resource_value: f64,
+}
+
+#[derive(Clone, Debug, Default)]
+struct SettlementGrowthForecast {
+    score: f64,
+    worked: Vec<SettlementWorkTile>,
+    turns_to_four: Option<f64>,
+    reached_population: usize,
+}
+
+#[derive(Clone, Debug)]
+struct SettlementForecastState {
+    selected: Vec<usize>,
+    total: Yields,
+    elapsed: f64,
+    accumulated: f64,
+    reached_population: usize,
+    reached_four_at: Option<f64>,
+}
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum GrandStrategy {
@@ -875,6 +920,14 @@ pub struct AdvancedAi {
     /// Consecutive turns each settler has failed to make progress, when
     /// `settler_commit` is on. Reset whenever `settler_closest` improves.
     settler_stalls: BTreeMap<u32, u32>,
+    /// Total unresolved delay for each Settler. Unlike `settler_stalls`, this
+    /// survives a target change so a stranded civilian stops monopolizing the
+    /// empire-wide in-flight allowance and attracts an escort.
+    settler_blocked_turns: BTreeMap<u32, u32>,
+    /// The last site a Settler abandoned after repeated failed steps, and the
+    /// turn on which it may be reconsidered. Without this cooldown, clearing a
+    /// target simply reselects the same top-ranked tile one turn later.
+    settler_avoid: BTreeMap<u32, (Pos, u32)>,
     /// The target each settler is committed to and the closest it has come to
     /// it. A dodge around a hostile is a legal move but not progress, so the
     /// stall counter is driven from this rather than from whether the unit
@@ -1438,6 +1491,7 @@ impl AdvancedAi {
         ai.envoy_infrastructure = true;
         ai.envoy_priority = true;
         ai.adjacency_site_planning = true;
+        ai.settler_commit = true;
         ai
     }
 
@@ -1469,6 +1523,10 @@ impl AdvancedAi {
     pub fn forget_unit_memory(&mut self) {
         self.base.forget_unit_memory();
         self.settler_targets.clear();
+        self.settler_stalls.clear();
+        self.settler_blocked_turns.clear();
+        self.settler_avoid.clear();
+        self.settler_closest.clear();
         self.builder_targets.clear();
         self.force_groups.clear();
         self.force_groups_dirty = true;
@@ -1490,6 +1548,16 @@ impl AdvancedAi {
             .settler_stalls
             .iter()
             .filter_map(|(uid, stalls)| map.get(uid).map(|new| (*new, *stalls)))
+            .collect();
+        self.settler_blocked_turns = self
+            .settler_blocked_turns
+            .iter()
+            .filter_map(|(uid, turns)| map.get(uid).map(|new| (*new, *turns)))
+            .collect();
+        self.settler_avoid = self
+            .settler_avoid
+            .iter()
+            .filter_map(|(uid, value)| map.get(uid).map(|new| (*new, *value)))
             .collect();
         self.settler_closest = self
             .settler_closest
@@ -1552,6 +1620,8 @@ impl AdvancedAi {
             food_first: 0.0,
             settler_commit: false,
             settler_stalls: BTreeMap::new(),
+            settler_blocked_turns: BTreeMap::new(),
+            settler_avoid: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             parallel_settlers: false,
             expansion_pays_back: false,
@@ -9614,6 +9684,30 @@ impl AdvancedAi {
         g.apply(pid, &Action::Produce { city, item }).is_ok()
     }
 
+    fn settler_in_flight_allowed(
+        &self,
+        desired_cities: usize,
+        city_count: usize,
+        settlers: usize,
+    ) -> usize {
+        if self.parallel_settlers {
+            return desired_cities.saturating_sub(city_count).max(1);
+        }
+        let stalled_expansion = self.settlement_safety
+            && self
+                .settler_blocked_turns
+                .values()
+                .any(|turns| *turns >= SETTLER_REPLACEMENT_BLOCKED_TURNS);
+        if stalled_expansion && city_count + settlers < desired_cities {
+            // A Settler whose route is repeatedly denied no longer owns the
+            // empire's entire expansion pipeline. The city target remains the
+            // hard cap, so this opens only the next genuinely missing seat.
+            2
+        } else {
+            1
+        }
+    }
+
     fn production_value(
         &self,
         g: &Game,
@@ -9651,8 +9745,7 @@ impl AdvancedAi {
                 let site = self.best_settle_site(g, pid, city.pos, 11).or_else(|| {
                     g.players[pid]
                         .techs
-                        
-.contains(&crate::name!("shipbuilding"))
+                        .contains(&crate::name!("shipbuilding"))
                         .then(|| {
                             self.best_settle_site(g, pid, city.pos, g.map.width + g.map.height)
                         })
@@ -9663,11 +9756,11 @@ impl AdvancedAi {
                 // on. The clause above already caps cities-plus-settlers at
                 // the target, so `parallel_settlers` widens the *rate* and
                 // never the total: a seat two cities short may walk two.
-                let in_flight_allowed = if self.parallel_settlers {
-                    plan.desired_cities.saturating_sub(city_count).max(1)
-                } else {
-                    1
-                };
+                let in_flight_allowed = self.settler_in_flight_allowed(
+                    plan.desired_cities,
+                    city_count,
+                    counts.settlers,
+                );
                 if city_count + counts.settlers < plan.desired_cities
                     && counts.settlers < in_flight_allowed
                     && city.pop >= 2
@@ -10509,6 +10602,238 @@ impl AdvancedAi {
         completion_discount * raw / (7.0 + turns.max(1.0))
     }
 
+    fn settlement_base_housing(g: &Game, pos: Pos) -> f64 {
+        let fresh = g.map.tiles[&pos].has_river()
+            || g.nbrs(pos).iter().any(|neighbor| {
+                g.map.get(*neighbor).is_some_and(|tile| {
+                    tile.terrain == "lake" || tile.feature.as_deref() == Some("oasis")
+                })
+            });
+        let coastal = g.nbrs(pos).iter().any(|neighbor| {
+            g.map
+                .get(*neighbor)
+                .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"))
+        });
+        if fresh {
+            5.0
+        } else if coastal {
+            3.0
+        } else {
+            2.0
+        }
+    }
+
+    fn settlement_housing_growth_mult(headroom: f64) -> f64 {
+        if headroom >= 2.0 {
+            1.0
+        } else if headroom >= 1.0 {
+            0.5
+        } else if headroom > -4.0 {
+            0.25
+        } else {
+            0.0
+        }
+    }
+
+    fn settlement_output_value(total: Yields, population: usize) -> f64 {
+        let surplus = total.food - 2.0 * population as f64;
+        total.production * 2.6
+            + total.gold * 0.75
+            + total.science * 1.35
+            + total.culture * 1.35
+            + total.faith * 0.5
+            + surplus.max(0.0) * 2.8
+            - (-surplus).max(0.0) * 8.0
+            // Population itself supplies science/culture and district capacity.
+            // Faster growth therefore has value even when the worked yields tie.
+            + population as f64 * 1.1
+    }
+
+    fn settlement_forecast_rank(state: &SettlementForecastState, horizon: f64) -> f64 {
+        let remaining = (horizon - state.elapsed).max(0.0);
+        state.accumulated
+            + remaining
+                * Self::settlement_output_value(state.total, state.reached_population.max(1))
+                * 1.05
+            + state.reached_population as f64 * 12.0
+    }
+
+    /// Forecast which four plots a new city can actually work while growing.
+    ///
+    /// The old score summed all nineteen plots in two rings, then added the three
+    /// best Food values. That treats a population-one settlement as if it works an
+    /// entire district immediately and double-counts its center. This model follows
+    /// the real bottleneck instead: the free center plus the first, second, third,
+    /// and fourth citizen jobs, chosen from the first two rings. First-ring plots
+    /// are available immediately; ring two enters only after a short border-growth
+    /// delay. Food pays consumption and the engine's exact growth thresholds and
+    /// housing bands decide when later jobs begin contributing.
+    fn settlement_growth_forecast(
+        &self,
+        g: &Game,
+        _pid: usize,
+        pos: Pos,
+    ) -> SettlementGrowthForecast {
+        let mut center = g.rules.tile_yields(&g.map.tiles[&pos]);
+        center.food = center.food.max(2.0);
+        center.production = center.production.max(1.0);
+
+        let mut candidates = Vec::new();
+        for work in g.wdisk(pos, 2) {
+            if work == pos {
+                continue;
+            }
+            let Some(tile) = g.map.get(work) else {
+                continue;
+            };
+            if tile.owner_city.is_some()
+                || !g.rules.is_passable(tile)
+                || tile.district.is_some()
+                || tile.district_foundation.is_some()
+                || tile.wonder.is_some()
+                || tile.improvement.as_deref().is_some_and(|improvement| {
+                    g.rules.improvements[improvement]
+                        .effects
+                        .get("unworkable")
+                        .copied()
+                        .unwrap_or(0.0)
+                        > 0.0
+                })
+            {
+                continue;
+            }
+            let resource_value = tile.resource.as_ref().map_or(0.0, |resource| {
+                match g.rules.resources[resource].class.as_str() {
+                    "luxury" => 5.0,
+                    "strategic" => 4.0,
+                    _ => 1.5,
+                }
+            });
+            candidates.push(SettlementWorkTile {
+                pos: work,
+                ring: g.wdist(pos, work),
+                yields: g.rules.tile_yields(tile),
+                resource_value,
+            });
+        }
+        candidates.sort_by_key(|tile| (tile.ring, tile.pos));
+        if candidates.is_empty() {
+            return SettlementGrowthForecast {
+                score: Self::settlement_output_value(center, 1) - 20.0,
+                reached_population: 1,
+                ..SettlementGrowthForecast::default()
+            };
+        }
+
+        let horizon = g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64;
+        let ring_two_at = g.standard_duration(SETTLEMENT_SECOND_RING_DELAY) as f64;
+        let housing = Self::settlement_base_housing(g, pos);
+        let mut beam = vec![SettlementForecastState {
+            selected: Vec::new(),
+            total: center,
+            elapsed: 0.0,
+            accumulated: 0.0,
+            reached_population: 0,
+            reached_four_at: None,
+        }];
+        let mut terminal = Vec::new();
+
+        for population in 1..=SETTLEMENT_FORECAST_POPULATION {
+            let mut next = Vec::new();
+            for state in beam.drain(..) {
+                if state.elapsed >= horizon - 1e-9 {
+                    terminal.push(state);
+                    continue;
+                }
+                for (index, tile) in candidates.iter().enumerate() {
+                    if state.selected.contains(&index)
+                        || (tile.ring == 2 && state.elapsed + 1e-9 < ring_two_at)
+                    {
+                        continue;
+                    }
+                    let mut branch = state.clone();
+                    branch.selected.push(index);
+                    branch.total.add(tile.yields);
+                    branch.reached_population = population;
+                    let output = Self::settlement_output_value(branch.total, population);
+
+                    if population == SETTLEMENT_FORECAST_POPULATION {
+                        branch.reached_four_at = Some(branch.elapsed);
+                        branch.accumulated += (horizon - branch.elapsed).max(0.0) * output;
+                        branch.elapsed = horizon;
+                        terminal.push(branch);
+                        continue;
+                    }
+
+                    let surplus = branch.total.food - 2.0 * population as f64;
+                    let growth_rate = surplus.max(0.0)
+                        * Self::settlement_housing_growth_mult(housing - population as f64);
+                    let remaining = (horizon - branch.elapsed).max(0.0);
+                    let growth_turns = if growth_rate > 1e-9 {
+                        g.growth_cost(population as i32) / growth_rate
+                    } else {
+                        f64::INFINITY
+                    };
+                    let duration = growth_turns.min(remaining);
+                    branch.accumulated += duration * output;
+                    branch.elapsed += duration;
+                    if growth_turns <= remaining + 1e-9 {
+                        next.push(branch);
+                    } else {
+                        terminal.push(branch);
+                    }
+                }
+            }
+            next.sort_by(|left, right| {
+                Self::settlement_forecast_rank(right, horizon)
+                    .total_cmp(&Self::settlement_forecast_rank(left, horizon))
+                    .then_with(|| left.selected.cmp(&right.selected))
+            });
+            next.truncate(SETTLEMENT_FORECAST_BEAM);
+            beam = next;
+            if beam.is_empty() {
+                break;
+            }
+        }
+        for mut state in beam {
+            let output =
+                Self::settlement_output_value(state.total, state.reached_population.max(1));
+            state.accumulated += (horizon - state.elapsed).max(0.0) * output;
+            state.elapsed = horizon;
+            terminal.push(state);
+        }
+        let Some(best) = terminal.into_iter().max_by(|left, right| {
+            left.accumulated
+                .total_cmp(&right.accumulated)
+                .then_with(|| right.selected.cmp(&left.selected))
+        }) else {
+            return SettlementGrowthForecast::default();
+        };
+        let worked = best
+            .selected
+            .iter()
+            .map(|index| candidates[*index])
+            .collect::<Vec<_>>();
+        let resource_value = worked
+            .iter()
+            .enumerate()
+            .map(|(index, tile)| tile.resource_value * (1.0 - index as f64 * 0.14))
+            .sum::<f64>();
+        let reached_population = best.reached_population.max(1);
+        let growth_failure = SETTLEMENT_FORECAST_POPULATION.saturating_sub(reached_population);
+        SettlementGrowthForecast {
+            // Convert the forty-turn output integral back to the scale used by
+            // `settle_sites`, then make failure to reach useful population explicit.
+            score: best.accumulated / horizon.max(1.0) * 5.0
+                + resource_value
+                + reached_population as f64 * 3.0
+                - growth_failure as f64 * 12.0,
+            worked,
+            turns_to_four: best.reached_four_at,
+            reached_population,
+        }
+    }
+
     /// Price the future district economy through the engine's canonical
     /// adjacency calculator. The calculator treats the proposed center as a
     /// city and counts planned foundations, while this wrapper keeps the
@@ -10598,62 +10923,28 @@ impl AdvancedAi {
         self.settle_value_visible(g, pid, pos, &visible)
     }
 
-    fn settle_value_visible(
-        &self,
-        g: &Game,
-        pid: usize,
-        pos: Pos,
-        visible: &TileBits,
-    ) -> f64 {
-        let tile = &g.map.tiles[&pos];
-        let mut value = 0.0;
-        let mut early_food = Vec::new();
-        for p in g.wdisk(pos, 2) {
-            let Some(t) = g.map.get(p) else { continue };
-            if t.owner_city.is_some() && p != pos {
-                continue;
-            }
-            let y = g.rules.tile_yields(t);
-            let ring = g.wdist(pos, p);
-            let ring_discount = if ring <= 1 { 1.0 } else { 0.45 };
-            if ring <= 1 {
-                early_food.push(y.food);
-            }
-            value += ring_discount
-                * (y.food * if ring <= 1 { 2.6 } else { 1.1 }
-                    + y.production * if ring <= 1 { 2.5 } else { 1.0 }
-                    + y.gold * 0.7
-                    + y.science * 1.2
-                    + y.culture * 1.2
-                    + y.faith * 0.4);
-            if let Some(resource) = &t.resource {
-                value += match g.rules.resources[resource].class.as_str() {
-                    "luxury" => 5.0,
-                    "strategic" => 4.0,
-                    _ => 1.5,
-                } * ring_discount;
-            }
-        }
-        early_food.sort_by(|a, b| b.total_cmp(a));
-        value += early_food.into_iter().take(3).sum::<f64>() * 1.8;
-
-        let fresh = tile.has_river()
-            || g.nbrs(pos).iter().any(|p| {
-                g.map
-                    .get(*p)
-                    .is_some_and(|t| t.feature.as_deref() == Some("oasis"))
-            });
-        let coastal = g
-            .nbrs(pos)
+    fn settle_value_visible(&self, g: &Game, pid: usize, pos: Pos, visible: &TileBits) -> f64 {
+        let forecast = self.settlement_growth_forecast(g, pid, pos);
+        let housing = Self::settlement_base_housing(g, pos);
+        let horizon = g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64;
+        let growth_readiness = forecast.turns_to_four.map_or_else(
+            || {
+                -4.0
+                    * SETTLEMENT_FORECAST_POPULATION
+                        .saturating_sub(forecast.reached_population) as f64
+            },
+            |turns| 8.0 * (1.0 - turns / horizon.max(1.0)).max(0.0),
+        );
+        let dependable_jobs = forecast
+            .worked
             .iter()
-            .any(|p| g.map.get(*p).is_some_and(|t| g.rules.is_water(t)));
-        value += if fresh {
-            18.0
-        } else if coastal {
-            7.0
-        } else {
-            -6.0
-        };
+            .take(SETTLEMENT_FORECAST_POPULATION)
+            .filter(|tile| tile.yields.food >= 2.0 || tile.yields.production >= 2.0)
+            .count() as f64;
+        let mut value = forecast.score
+            + (housing - 2.0) * 4.0
+            + growth_readiness
+            + dependable_jobs * 0.75;
         value += self.settlement_adjacency_value(g, pid, pos);
 
         let enemy_distance = g
@@ -11203,15 +11494,20 @@ impl AdvancedAi {
         self.settle_sites(g, pid, from, radius).into_iter().next()
     }
 
-    fn best_reachable_settle_site(
+    fn best_reachable_settle_site_except(
         &self,
         g: &Game,
         pid: usize,
         uid: u32,
         radius: i32,
+        avoid: Option<Pos>,
     ) -> Option<(Pos, f64)> {
         let from = g.units[&uid].pos;
-        let candidates = self.settle_sites(g, pid, from, radius);
+        let candidates = self
+            .settle_sites(g, pid, from, radius)
+            .into_iter()
+            .filter(|(position, _)| Some(*position) != avoid)
+            .collect::<Vec<_>>();
         if !self.settlement_safety {
             return BasicAi::first_reachable_settle_site(g, uid, &candidates);
         }
@@ -11237,8 +11533,64 @@ impl AdvancedAi {
         routed.into_iter().next()
     }
 
+    fn best_settler_target(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        local_radius: i32,
+        avoid: Option<Pos>,
+    ) -> Option<(Pos, f64)> {
+        let local = self.best_reachable_settle_site_except(g, pid, uid, local_radius, avoid);
+        if !self.settlement_safety {
+            let global = self.best_reachable_settle_site_except(
+                g,
+                pid,
+                uid,
+                g.map.width + g.map.height,
+                avoid,
+            );
+            return match (local, global) {
+                (Some(local), Some(global)) if global.1 > local.1 + 5.0 => Some(global),
+                (Some(local), _) => Some(local),
+                (None, global) => global,
+            };
+        }
+        let global_radius = if g.players[pid].techs.contains(&crate::name!("shipbuilding")) {
+            g.map.width + g.map.height
+        } else {
+            SETTLER_LAND_FALLBACK_RADIUS.max(local_radius)
+        };
+        if global_radius <= local_radius {
+            return local;
+        }
+        let global = self.best_reachable_settle_site_except(g, pid, uid, global_radius, avoid);
+        match (local, global) {
+            (Some(local), Some(global)) if global.0 != local.0 => {
+                let from = g.units[&uid].pos;
+                let extra = (g.wdist(from, global.0) - g.wdist(from, local.0)).max(0) as f64;
+                let premium = SETTLER_GLOBAL_PREMIUM + extra * SETTLER_EXTRA_TRAVEL_PRICE;
+                if global.1 > local.1 + premium {
+                    Some(global)
+                } else {
+                    Some(local)
+                }
+            }
+            (Some(local), _) => Some(local),
+            (None, global) => global,
+        }
+    }
+
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let current = g.units[&uid].pos;
+        if self
+            .settler_avoid
+            .get(&uid)
+            .is_some_and(|(_, until)| *until <= g.turn)
+        {
+            self.settler_avoid.remove(&uid);
+        }
+        let avoid = self.settler_avoid.get(&uid).map(|(position, _)| *position);
         // Search only the immediate neighborhood for the capital. The target
         // is fixed after the first assessment, preventing a rolling optimum
         // from leading the settler across the map for many compounding turns.
@@ -11264,7 +11616,7 @@ impl AdvancedAi {
             }
             let target = cached.or_else(|| {
                 let current_value = self.settle_value(g, pid, current);
-                let local = self.best_reachable_settle_site(g, pid, uid, 2);
+                let local = self.best_reachable_settle_site_except(g, pid, uid, 2, avoid);
                 let target = if g.can_found_city(uid) {
                     Some(
                         local
@@ -11275,7 +11627,17 @@ impl AdvancedAi {
                 } else {
                     local
                         .or_else(|| {
-                            self.best_reachable_settle_site(g, pid, uid, g.map.width + g.map.height)
+                            if self.settlement_safety {
+                                self.best_settler_target(g, pid, uid, 8, avoid)
+                            } else {
+                                self.best_reachable_settle_site_except(
+                                    g,
+                                    pid,
+                                    uid,
+                                    g.map.width + g.map.height,
+                                    avoid,
+                                )
+                            }
                         })
                         .or_else(|| {
                             self.base.best_reachable_settle_site(
@@ -11312,7 +11674,20 @@ impl AdvancedAi {
                        self.settle_value(g, pid, target),
                        self.settle_value(g, pid, current); target);
                 let moved = self.settler_step_toward_safe(g, pid, uid, target);
-                if !moved {
+                if moved {
+                    self.settler_stalls.remove(&uid);
+                    self.settler_blocked_turns.remove(&uid);
+                } else if self.settler_commit {
+                    *self.settler_blocked_turns.entry(uid).or_insert(0) += 1;
+                    let stalls = self.settler_stalls.entry(uid).or_insert(0);
+                    *stalls += 1;
+                    if *stalls >= SETTLER_STALL_LIMIT {
+                        self.settler_avoid
+                            .insert(uid, (target, g.turn + g.standard_duration(8)));
+                        self.settler_targets.remove(&uid);
+                        self.settler_stalls.remove(&uid);
+                    }
+                } else {
                     self.settler_targets.remove(&uid);
                 }
                 return moved;
@@ -11330,6 +11705,7 @@ impl AdvancedAi {
                 && tile
                     .owner_city
                     .is_none_or(|cid| g.cities[&cid].owner == pid)
+                && Some(*target) != avoid
                 // A momentarily unavailable route is not a bad site. Under
                 // `settler_commit` the stall counter decides when to give up,
                 // not a single blocked turn.
@@ -11341,22 +11717,11 @@ impl AdvancedAi {
                         <= SETTLER_STEP_RISK_LIMIT)
         });
         let target = valid_target.or_else(|| {
-            let local = self.best_reachable_settle_site(g, pid, uid, 8);
-            let global = self.best_reachable_settle_site(
-                g,
-                pid,
-                uid,
-                g.map.width + g.map.height,
-            );
-            match (local, global) {
-                (Some(local), Some(global)) if global.1 > local.1 + 5.0 => Some(global),
-                (Some(local), _) => Some(local),
-                (None, global) => global,
-            }
-            .map(|(pos, _)| {
-                self.settler_targets.insert(uid, pos);
-                pos
-            })
+            self.best_settler_target(g, pid, uid, 8, avoid)
+                .map(|(pos, _)| {
+                    self.settler_targets.insert(uid, pos);
+                    pos
+                })
         });
         let Some(target) = target else {
             return self.base.settler_step(g, pid, uid);
@@ -11376,6 +11741,16 @@ impl AdvancedAi {
                    g.player_city_ids(pid).len(),
                    self.plan.as_ref().map_or(0, |plan| plan.desired_cities); current);
             return g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
+        }
+        if g.units[&uid].linked_to.is_some_and(|peer| {
+            g.units.get(&peer).is_some_and(|escort| {
+                g.rules.units[escort.kind].class == "military"
+                    && g.rules.units[escort.kind].domain.as_deref() != Some("sea")
+            })
+        }) {
+            think!(self.journal(), Expansion, Detail, "Settler advancing with its escort";
+                   "{} tiles remain to {target:?}", g.wdist(current, target); target);
+            return true;
         }
         if let Some(escort) = g.units[&uid].linked_to.filter(|peer| {
             g.units.get(peer).is_some_and(|escort| {
@@ -11424,10 +11799,14 @@ impl AdvancedAi {
         if advanced {
             self.settler_closest.insert(uid, (target, distance));
             self.settler_stalls.remove(&uid);
+            self.settler_blocked_turns.remove(&uid);
         } else {
+            *self.settler_blocked_turns.entry(uid).or_insert(0) += 1;
             let stalls = self.settler_stalls.entry(uid).or_insert(0);
             *stalls += 1;
             if *stalls >= SETTLER_STALL_LIMIT {
+                self.settler_avoid
+                    .insert(uid, (target, g.turn + g.standard_duration(8)));
                 self.settler_targets.remove(&uid);
                 self.settler_stalls.remove(&uid);
                 self.settler_closest.remove(&uid);
@@ -13678,6 +14057,162 @@ impl AdvancedAi {
         true
     }
 
+    /// Assign exactly one nearby land unit to a Settler and let that unit lead
+    /// the formation. Settlers act before military units, so an unescorted
+    /// civilian first records its target (or its obstruction) and the chosen
+    /// escort can then close the gap in the same turn. Once linked, only the
+    /// military leader issues movement orders and both pieces move together.
+    fn settler_escort_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<bool> {
+        if !self.settlement_safety {
+            return None;
+        }
+        let unit = g.units.get(&uid)?.clone();
+        let spec = &g.rules.units[unit.kind];
+        if spec.class != "military" || matches!(spec.domain.as_deref(), Some("sea" | "air")) {
+            return None;
+        }
+
+        if let Some(settler) = unit.linked_to.filter(|peer| {
+            g.units
+                .get(peer)
+                .is_some_and(|peer| peer.owner == pid && peer.kind == "settler")
+        }) {
+            let Some(target) = self.settler_targets.get(&settler).copied() else {
+                return Some(g.apply(pid, &Action::UnlinkUnits { unit: uid }).is_ok());
+            };
+            let before = g.units[&uid].pos;
+            let moved = before != target && self.base.step_toward(g, pid, uid, target);
+            if moved && g.units.get(&uid).is_some_and(|escort| escort.pos != before) {
+                self.settler_stalls.remove(&settler);
+                self.settler_blocked_turns.remove(&settler);
+                think!(self.journal(), Expansion, Detail, "Escort opening the route";
+                       "the Settler formation advances toward {target:?}"; target);
+            } else if !moved {
+                *self.settler_blocked_turns.entry(settler).or_insert(0) += 1;
+                let stalls = self.settler_stalls.entry(settler).or_insert(0);
+                *stalls += 1;
+                if *stalls >= SETTLER_STALL_LIMIT {
+                    self.settler_avoid
+                        .insert(settler, (target, g.turn + g.standard_duration(8)));
+                    self.settler_targets.remove(&settler);
+                    self.settler_stalls.remove(&settler);
+                    think!(self.journal(), Expansion, Decision, "Escort abandoning a blocked route";
+                           "the formation will reconsider {target:?} after a cooldown"; target);
+                    return Some(
+                        g.apply(pid, &Action::UnlinkUnits { unit: uid }).is_ok()
+                            || self.base.fortify_or_stop(g, pid, uid),
+                    );
+                }
+            }
+            return Some(moved || self.base.fortify_or_stop(g, pid, uid));
+        }
+        if unit.linked_to.is_some() || unit.moves_left <= 0.0 {
+            return None;
+        }
+
+        let holds_threatened_city = |candidate: u32| {
+            plan.threatened_city.is_some_and(|city| {
+                g.cities
+                    .get(&city)
+                    .is_some_and(|city| g.wdist(g.units[&candidate].pos, city.pos) <= 3)
+            })
+        };
+        let eligible_escort = |candidate: u32| {
+            let candidate = &g.units[&candidate];
+            let candidate_spec = &g.rules.units[candidate.kind];
+            candidate.owner == pid
+                && candidate.linked_to.is_none()
+                && candidate.moves_left > 0.0
+                && candidate_spec.class == "military"
+                && !matches!(candidate_spec.domain.as_deref(), Some("sea" | "air"))
+                && !holds_threatened_city(candidate.id)
+        };
+
+        let mut settlers: Vec<u32> = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter(|settler| {
+                let civilian = &g.units[settler];
+                let Some(target) = self.settler_targets.get(settler) else {
+                    return false;
+                };
+                civilian.kind == "settler"
+                    && civilian.linked_to.is_none()
+                    && g.map
+                        .get(civilian.pos)
+                        .is_some_and(|tile| !g.rules.is_water(tile))
+                    && (g.wdist(civilian.pos, *target) >= SETTLER_ESCORT_DISTANCE
+                        || self
+                            .settler_blocked_turns
+                            .get(settler)
+                            .copied()
+                            .unwrap_or(0)
+                            > 0)
+            })
+            .collect();
+        settlers.sort_by_key(|settler| (g.wdist(g.units[settler].pos, unit.pos), *settler));
+
+        for settler in settlers {
+            let settler_pos = g.units[&settler].pos;
+            let designated = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .filter(|candidate| {
+                    eligible_escort(*candidate)
+                        && g.wdist(g.units[candidate].pos, settler_pos)
+                            <= SETTLER_ESCORT_SEARCH_RADIUS
+                })
+                .min_by_key(|candidate| {
+                    let candidate_unit = &g.units[candidate];
+                    let candidate_spec = &g.rules.units[candidate_unit.kind];
+                    (
+                        g.wdist(candidate_unit.pos, settler_pos),
+                        candidate_spec.siege,
+                        candidate_spec.has_ranged_attack(),
+                        std::cmp::Reverse(g.unit_strength(candidate_unit, true) as i64),
+                        *candidate,
+                    )
+                });
+            if designated != Some(uid) {
+                continue;
+            }
+            if unit.pos == settler_pos {
+                return Some(
+                    g.apply(
+                        pid,
+                        &Action::LinkUnits {
+                            unit: uid,
+                            with: settler,
+                        },
+                    )
+                    .is_ok(),
+                );
+            }
+            let moved = self.base.step_toward(g, pid, uid, settler_pos);
+            if moved
+                && g.units
+                    .get(&uid)
+                    .is_some_and(|escort| escort.pos == settler_pos)
+            {
+                let _ = g.apply(
+                    pid,
+                    &Action::LinkUnits {
+                        unit: uid,
+                        with: settler,
+                    },
+                );
+            }
+            return Some(moved);
+        }
+        None
+    }
+
     #[cfg(test)]
     fn advanced_military_step(
         &mut self,
@@ -13745,6 +14280,9 @@ impl AdvancedAi {
             );
             let acted = g.apply(pid, &action).is_ok();
             self.force_groups_dirty |= acted && changes_force_picture;
+            return acted;
+        }
+        if let Some(acted) = self.settler_escort_step(g, pid, uid, plan) {
             return acted;
         }
         if let Some(action) = self.base.doctrine_action(g, pid, uid) {
@@ -14191,6 +14729,55 @@ impl AdvancedAi {
                     let unit = &g.units[unit];
                     (
                         !g.rules.units[unit.kind].has_ranged_attack(),
+                        g.unit_strength(unit, true) as i64,
+                        std::cmp::Reverse(unit.id),
+                    )
+                });
+            if let Some(unit) = escort {
+                let _ = g.apply(pid, &Action::LinkUnits { unit, with });
+            }
+        }
+
+        let land_settlers: Vec<u32> = if self.settlement_safety {
+            g.player_unit_ids(pid)
+                .into_iter()
+                .filter(|uid| {
+                    let unit = &g.units[uid];
+                    let Some(target) = self.settler_targets.get(uid) else {
+                        return false;
+                    };
+                    unit.kind == "settler"
+                        && unit.linked_to.is_none()
+                        && g.map
+                            .get(unit.pos)
+                            .is_some_and(|tile| !g.rules.is_water(tile))
+                        && (g.wdist(unit.pos, *target) >= SETTLER_ESCORT_DISTANCE
+                            || self.settler_blocked_turns.get(uid).copied().unwrap_or(0) > 0)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        for with in land_settlers {
+            let pos = g.units[&with].pos;
+            let escort = g
+                .units_at(pos)
+                .into_iter()
+                .filter(|unit| {
+                    let unit = &g.units[unit];
+                    let spec = &g.rules.units[unit.kind];
+                    unit.owner == pid
+                        && unit.linked_to.is_none()
+                        && unit.moves_left > 0.0
+                        && spec.class == "military"
+                        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                })
+                .max_by_key(|unit| {
+                    let unit = &g.units[unit];
+                    let spec = &g.rules.units[unit.kind];
+                    (
+                        !spec.siege,
+                        !spec.has_ranged_attack(),
                         g.unit_strength(unit, true) as i64,
                         std::cmp::Reverse(unit.id),
                     )
@@ -14735,6 +15322,12 @@ impl AdvancedAi {
             cursor = end;
         }
         self.settler_targets
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_stalls
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_blocked_turns
+            .retain(|uid, _| g.units.contains_key(uid));
+        self.settler_avoid
             .retain(|uid, _| g.units.contains_key(uid));
         self.settler_closest
             .retain(|uid, _| g.units.contains_key(uid));
@@ -15901,6 +16494,7 @@ mod tests {
             .tiles
             .keys()
             .copied()
+            .filter(|pos| g.wdisk(*pos, 2).len() == 19)
             .max_by_key(|pos| (g.wdist(source, *pos), *pos))
             .unwrap();
         assert!(g.wdist(source, target) > 8);
@@ -15915,7 +16509,14 @@ mod tests {
             tile.owner_city = None;
         }
         g.map.tiles.get_mut(&source).unwrap().terrain = crate::name!("plains");
-        g.map.tiles.get_mut(&target).unwrap().terrain = crate::name!("grassland");
+        g.map.tiles.get_mut(&target).unwrap().terrain = crate::name!("plains");
+        for position in g.nbrs(target) {
+            let Some(tile) = g.map.tiles.get_mut(&position) else {
+                continue;
+            };
+            tile.terrain = crate::name!("grassland");
+            tile.resource = Some(crate::name!("citrus"));
+        }
         g.apply(
             0,
             &Action::FoundCity {
@@ -16001,7 +16602,9 @@ mod tests {
         let settler = g.spawn_test_unit("settler", 0, source);
         let mut ai = AdvancedAi::new();
         assert!(ai.advanced_settler_step(&mut g, 0, settler));
-        assert_eq!(ai.settler_targets.get(&settler), Some(&target));
+        let chosen = ai.settler_targets[&settler];
+        assert!(g.wdist(chosen, target) <= 1, "the target stays on the useful island");
+        assert!(g.wdist(source, chosen) > 8, "the colony remains strategic");
         assert!(g
             .map
             .get(g.units[&settler].pos)
@@ -17714,6 +18317,141 @@ mod tests {
             "future campus adjacency should survive into the founding score: \
              with={with_mountain}, without={without_mountain}"
         );
+    }
+
+    fn settlement_forecast_fixture(seed: u64) -> (Game, Pos, Vec<Pos>, Vec<Pos>) {
+        let mut game = Game::new_full(1, 24, 16, seed, 120, 0, false);
+        let center = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|position| {
+                game.wdisk(*position, 2).len() == 19
+                    && game.map.get(*position).is_some_and(|tile| {
+                        !game.rules.is_water(tile) && game.rules.is_passable(tile)
+                    })
+            })
+            .expect("forecast fixture has an interior land tile");
+        for position in game.wdisk(center, 2) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("desert");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.pillaged = false;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            tile.owner_city = None;
+            tile.river_edges = [false; 6];
+        }
+        let mut first = game.nbrs(center).to_vec();
+        first.sort_unstable();
+        let mut second = game
+            .wdisk(center, 2)
+            .into_iter()
+            .filter(|position| game.wdist(center, *position) == 2)
+            .collect::<Vec<_>>();
+        second.sort_unstable();
+        (game, center, first, second)
+    }
+
+    fn shape_forecast_tile(
+        game: &mut Game,
+        position: Pos,
+        terrain: &str,
+        hills: bool,
+        resource: Option<&str>,
+    ) {
+        let tile = game.map.tiles.get_mut(&position).unwrap();
+        tile.terrain = Name::new(terrain);
+        tile.hills = hills;
+        tile.resource = resource.map(Name::new);
+    }
+
+    #[test]
+    fn settlement_forecast_values_the_actual_first_four_jobs_across_both_rings() {
+        let (mut game, center, first, second) = settlement_forecast_fixture(8_116);
+        shape_forecast_tile(&mut game, first[0], "grassland", false, Some("rice"));
+        shape_forecast_tile(&mut game, first[1], "plains", true, None);
+        shape_forecast_tile(&mut game, second[0], "grassland", false, Some("horses"));
+        shape_forecast_tile(&mut game, second[1], "grassland", true, None);
+        assert!(game.map.set_river_edge(center, first[5], true));
+
+        let forecast = AdvancedAi::new().settlement_growth_forecast(&game, 0, center);
+        assert_eq!(forecast.reached_population, 4);
+        assert_eq!(forecast.worked.len(), 4);
+        assert_eq!(forecast.worked[0].pos, first[0]);
+        assert_eq!(forecast.worked[0].ring, 1);
+        assert!(forecast.worked.iter().any(|tile| tile.ring == 2));
+        assert!(
+            forecast.turns_to_four.is_some_and(|turns| turns < 30.0),
+            "the four useful jobs should grow the city promptly: {forecast:?}"
+        );
+    }
+
+    #[test]
+    fn settlement_forecast_prefers_four_sustainable_jobs_to_one_spike() {
+        let (mut spike, center, first, second) = settlement_forecast_fixture(8_117);
+        let mut broad = spike.clone();
+        shape_forecast_tile(&mut spike, first[0], "grassland", false, Some("rice"));
+        for position in [first[0], first[1], second[0], second[1]] {
+            shape_forecast_tile(&mut broad, position, "grassland", true, None);
+        }
+        assert!(spike.map.set_river_edge(center, first[5], true));
+        assert!(broad.map.set_river_edge(center, first[5], true));
+
+        let ai = AdvancedAi::new();
+        let spike = ai.settlement_growth_forecast(&spike, 0, center);
+        let broad = ai.settlement_growth_forecast(&broad, 0, center);
+        assert!(spike.reached_population < 4, "one tile should stall: {spike:?}");
+        assert_eq!(broad.reached_population, 4, "four jobs should mature: {broad:?}");
+        assert!(
+            broad.score > spike.score,
+            "a useful four-pop city should outrank a one-tile mirage: broad={broad:?}, spike={spike:?}"
+        );
+    }
+
+    #[test]
+    fn settlement_forecast_delays_second_ring_jobs_and_models_water_housing() {
+        let (mut game, center, first, second) = settlement_forecast_fixture(8_118);
+        shape_forecast_tile(&mut game, first[0], "grassland", false, None);
+        shape_forecast_tile(&mut game, second[0], "grassland", false, Some("citrus"));
+        let forecast = AdvancedAi::new().settlement_growth_forecast(&game, 0, center);
+        assert_eq!(
+            forecast.worked.first().map(|tile| tile.pos),
+            Some(first[0]),
+            "the rich second-ring tile is not owned for the first citizen"
+        );
+        assert_eq!(AdvancedAi::settlement_base_housing(&game, center), 2.0);
+
+        let mut coast = game.clone();
+        shape_forecast_tile(&mut coast, first[5], "coast", false, None);
+        assert_eq!(AdvancedAi::settlement_base_housing(&coast, center), 3.0);
+
+        let mut fresh = game;
+        assert!(fresh.map.set_river_edge(center, first[5], true));
+        assert_eq!(AdvancedAi::settlement_base_housing(&fresh, center), 5.0);
+    }
+
+    #[test]
+    fn a_repeatedly_blocked_settler_releases_only_the_next_missing_slot() {
+        let mut ai = AdvancedAi::new();
+        ai.settler_blocked_turns.insert(41, 2);
+        assert_eq!(ai.settler_in_flight_allowed(3, 1, 1), 1);
+        ai.settler_blocked_turns.insert(41, 3);
+        assert_eq!(ai.settler_in_flight_allowed(3, 1, 1), 2);
+        assert_eq!(
+            ai.settler_in_flight_allowed(2, 1, 1),
+            1,
+            "a Settler already covers the final missing city"
+        );
+
+        let mut legacy = AdvancedAi::legacy();
+        legacy.settler_blocked_turns.insert(41, 99);
+        assert_eq!(legacy.settler_in_flight_allowed(4, 1, 1), 1);
     }
 
     #[test]
@@ -22804,6 +23542,101 @@ mod tests {
         AdvancedAi::new().advanced_formations(&mut g, 0);
         assert_eq!(g.units[&escort].linked_to, Some(support));
         assert_eq!(g.units[&support].linked_to, Some(escort));
+    }
+
+    #[test]
+    fn blocked_land_settler_links_to_one_escort_and_the_escort_leads() {
+        let mut game = Game::new_full(1, 24, 16, 8_119, 120, 0, false);
+        let founding_settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|uid| game.units[uid].kind == "settler")
+            .unwrap();
+        let source = game.units[&founding_settler].pos;
+        game.apply(
+            0,
+            &Action::FoundCity {
+                unit: founding_settler,
+            },
+        )
+        .unwrap();
+        for unit in game.player_unit_ids(0) {
+            game.remove_unit(unit);
+        }
+        for position in game.wdisk(source, SETTLER_ESCORT_SEARCH_RADIUS) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            game.players[0].explored.insert(position);
+        }
+        let target = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| {
+                game.wdist(source, *position) >= SETTLER_ESCORT_DISTANCE
+                    && game.wdist(source, *position) <= SETTLER_ESCORT_SEARCH_RADIUS
+                    && game.map.get(*position).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .next()
+            .expect("fixture has a reachable expansion target");
+        let settler = game.spawn_test_unit("settler", 0, source);
+        let escort = game.spawn_test_unit("warrior", 0, source);
+        let mut ai = AdvancedAi::new();
+        ai.settler_targets.insert(settler, target);
+        ai.settler_stalls.insert(settler, 2);
+        ai.settler_blocked_turns.insert(settler, 3);
+
+        ai.advanced_formations(&mut game, 0);
+        assert_eq!(game.units[&settler].linked_to, Some(escort));
+        assert_eq!(game.units[&escort].linked_to, Some(settler));
+
+        let before = game.wdist(source, target);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Science,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        assert_eq!(ai.settler_escort_step(&mut game, 0, escort, &plan), Some(true));
+        assert_eq!(game.units[&settler].pos, game.units[&escort].pos);
+        assert!(game.wdist(game.units[&settler].pos, target) < before);
+        assert!(!ai.settler_stalls.contains_key(&settler));
+        assert!(!ai.settler_blocked_turns.contains_key(&settler));
+
+        let trapped = game.units[&settler].pos;
+        assert!(game.wdist(trapped, target) > 1);
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("mountain");
+        }
+        game.map.tiles.get_mut(&trapped).unwrap().terrain = crate::name!("plains");
+        game.map.tiles.get_mut(&target).unwrap().terrain = crate::name!("plains");
+        for _ in 0..SETTLER_STALL_LIMIT {
+            for unit in [settler, escort] {
+                let unit = game.units.get_mut(&unit).unwrap();
+                unit.moves_left = 4.0;
+                unit.acted = false;
+                unit.fortified = false;
+            }
+            assert!(ai
+                .settler_escort_step(&mut game, 0, escort, &plan)
+                .is_some());
+            game.turn += 1;
+        }
+        assert!(!ai.settler_targets.contains_key(&settler));
+        assert_eq!(ai.settler_avoid.get(&settler).map(|(pos, _)| *pos), Some(target));
+        assert_eq!(game.units[&settler].linked_to, None);
+        assert_eq!(game.units[&escort].linked_to, None);
     }
 
     #[test]

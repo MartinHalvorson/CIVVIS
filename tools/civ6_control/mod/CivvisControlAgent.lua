@@ -5514,10 +5514,32 @@ local function applyOrder(player, pid, row, turn)
 		local row2, resolved = resolveType(GameInfo.Types, verb);
 		if row2 == nil then return false, "unknown_" .. verb; end
 		local params = {};
+		local formationForCost = nil;
 		if row2.Kind == "KIND_UNIT" then
 			params[CityCommandTypes.PARAM_UNIT_TYPE] = row2.Hash;
-			params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] =
-				MilitaryFormationTypes.STANDARD_MILITARY_FORMATION;
+			-- STANDARD is needed by GetPurchaseCost, but it must not be sent as a
+			-- military command parameter for civilian units. Civilization VI rejects
+			-- Settlers and Builders carrying it even when the city and treasury are
+			-- otherwise valid. Corps and Armies are the only explicit formations.
+			local formation = tonumber(x) or 0;
+			formationForCost = MilitaryFormationTypes.STANDARD_MILITARY_FORMATION;
+			local unitRow = try(function() return GameInfo.Units[resolved]; end);
+			local militaryFormation = unitRow ~= nil
+				and ((unitRow.Combat or 0) > 0
+				     or (unitRow.RangedCombat or 0) > 0
+				     or (unitRow.Bombard or 0) > 0
+				     or (unitRow.AntiAirCombat or 0) > 0);
+			if formation == 0 and militaryFormation then
+				-- Preserve the host's explicit standard formation for combat units;
+				-- civilian and support units deliberately take the parameter-free path.
+				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
+			elseif formation == 1 then
+				formationForCost = MilitaryFormationTypes.CORPS_MILITARY_FORMATION;
+				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
+			elseif formation == 2 then
+				formationForCost = MilitaryFormationTypes.ARMY_MILITARY_FORMATION;
+				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
+			end
 		elseif row2.Kind == "KIND_BUILDING" then
 			params[CityCommandTypes.PARAM_BUILDING_TYPE] = row2.Hash;
 		elseif row2.Kind == "KIND_DISTRICT" then
@@ -5541,12 +5563,40 @@ local function applyOrder(player, pid, row, turn)
 		-- `decline_settlers = counts.settlers > 0` and refuses to BUILD one. Every turn.
 		-- That is the phantom-settler failure returning through a different door, and it
 		-- is why that run held ONE city to turn 238.
-		local canBuy = false;
-		local okCan = pcall(function()
-			canBuy = CityManager.CanStartCommand(city, CityCommandTypes.PURCHASE,
-			                                    params, true) == true;
+		local canBuy, results = false, nil;
+		local okCan, hostCan, hostResults = pcall(function()
+			return CityManager.CanStartCommand(city, CityCommandTypes.PURCHASE,
+			                                   params, true);
 		end);
-		if not (okCan and canBuy) then return false, "cannot_buy_" .. resolved; end
+		if okCan then canBuy, results = hostCan == true, hostResults; end
+		if not canBuy then
+			local reasons = {};
+			pcall(function()
+				local failureReasons = results ~= nil
+					and results[CityCommandResults.FAILURE_REASONS] or nil;
+				if failureReasons ~= nil then
+					for _, key in ipairs(failureReasons) do
+						reasons[#reasons + 1] = {
+							key = tostring(key),
+							text = try(function() return Locale.Lookup(key); end, tostring(key)),
+						};
+					end
+				end
+			end);
+			local cost = try(function()
+				if row2.Kind == "KIND_UNIT" then
+					return city:GetGold():GetPurchaseCost(gold, row2.Hash, formationForCost);
+				end
+				return city:GetGold():GetPurchaseCost(gold, row2.Hash);
+			end, -1);
+			emit("purchase_refused", {
+				turn = turn, city = subject, item = verb,
+				balance = try(function() return player:GetTreasury():GetGoldBalance(); end, -1),
+				cost = cost, checked = okCan, has_results = results ~= nil,
+				reasons = reasons,
+			});
+			return false, "cannot_buy_" .. resolved;
+		end
 		local ok = pcall(function()
 			CityManager.RequestCommand(city, CityCommandTypes.PURCHASE, params);
 		end);
