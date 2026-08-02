@@ -504,8 +504,9 @@ class MatchMachineTests(unittest.TestCase):
 
             with mock.patch.object(machine, "game_port", return_value=8870), mock.patch.object(
                 machine.subprocess, "Popen", return_value=process
-            ):
+            ) as launch:
                 subject.launch(visible=True)
+            self.assertEqual(launch.call_args.kwargs["env"]["CIVVIS_COMMIT"], "abc123")
             subject.games[0].last_status = {
                 "turn": 435,
                 "winner": 1,
@@ -538,6 +539,32 @@ class MatchMachineTests(unittest.TestCase):
             self.assertEqual(events[1][1]["winner_placement"], "a@Trajan@Rome@0")
             self.assertEqual(subject.completed, 1)
             self.assertEqual(subject.failed, 0)
+
+    def test_compile_build_excludes_inherited_commit_from_cargo(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            built = source / "target" / "release" / "civvis"
+            built.parent.mkdir(parents=True)
+            built.write_text("binary", encoding="utf-8")
+
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.source = source
+            subject.runtime = root / "runtime"
+            subject.args = SimpleNamespace(build_jobs=1, build_timeout=30)
+            subject.event = mock.Mock()
+            complete = subprocess.CompletedProcess([], 0, "")
+
+            with mock.patch.dict(
+                machine.os.environ, {"CIVVIS_COMMIT": "inherited"}, clear=False
+            ), mock.patch.object(
+                machine, "command", side_effect=[complete, complete, complete]
+            ) as run:
+                promoted = subject.compile_build("current-head")
+
+            cargo_call = next(call for call in run.call_args_list if call.args[0] == "cargo")
+            self.assertNotIn("CIVVIS_COMMIT", cargo_call.kwargs["env"])
+            self.assertTrue(promoted.exists())
 
     def test_visible_successor_reuses_process_and_records_both_lifecycle_events(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
