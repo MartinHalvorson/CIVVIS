@@ -296,6 +296,85 @@ class MatchMachineTests(unittest.TestCase):
         self.assertIsNone(subject.build_future)
         self.assertIsNone(subject.build_revision)
 
+    def test_long_work_pauses_and_resumes_as_host_pressure_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=70, poll=1)
+            subject.deadline = machine.time.monotonic() + 60
+            subject.stopping = False
+            # A HEAD build must get a recovery slot even when the game
+            # governor has shed part of the fleet. Requiring every game to
+            # resume first can starve promotion under steady moderate load.
+            subject.games = [SimpleNamespace(paused=True)]
+            subject.watched_terminal_closed = mock.Mock(return_value=False)
+            subject.event = mock.Mock()
+            process = mock.Mock(pid=1234, returncode=0)
+            process.poll.side_effect = [None, None, 0]
+            samples = [
+                machine.Resources(60, 20, 12, 0, False),
+                machine.Resources(20, 20, 12, 0, False),
+            ]
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ) as launch, mock.patch.object(
+                machine, "resources", side_effect=samples
+            ), mock.patch.object(
+                machine, "set_paused", return_value=True
+            ) as pause, mock.patch.object(machine.time, "sleep"):
+                result = subject.resource_capped_command(
+                    "cargo",
+                    "build",
+                    cwd=root,
+                    env=None,
+                    timeout=30,
+                    purpose="build",
+                    log_path=root / "build.log",
+                )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(
+                pause.call_args_list,
+                [mock.call(process, True), mock.call(process, False)],
+            )
+            self.assertEqual(
+                [call.args[0] for call in subject.event.call_args_list],
+                ["work_paused_for_resources", "work_resumed"],
+            )
+            self.assertTrue(launch.call_args.kwargs["start_new_session"])
+
+    def test_terminal_close_cancels_resource_capped_work(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=70, poll=1)
+            subject.deadline = machine.time.monotonic() + 60
+            subject.stopping = False
+            subject.watched_terminal_closed = mock.Mock(return_value=True)
+            subject.stop_for_terminal_close = mock.Mock()
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ), mock.patch.object(machine, "stop_process") as stop:
+                result = subject.resource_capped_command(
+                    "cargo",
+                    "build",
+                    cwd=root,
+                    env=None,
+                    timeout=30,
+                    purpose="build",
+                    log_path=root / "build.log",
+                )
+
+            self.assertIsNone(result)
+            subject.stop_for_terminal_close.assert_called_once_with()
+            stop.assert_called_once_with(process, timeout=2)
+
     def test_refresh_ranking_uses_a_runtime_snapshot_while_source_can_build(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -590,11 +669,14 @@ class MatchMachineTests(unittest.TestCase):
             with mock.patch.dict(
                 machine.os.environ, {"CIVVIS_COMMIT": "inherited"}, clear=False
             ), mock.patch.object(
-                machine, "command", side_effect=[complete, complete, complete]
+                machine, "command", return_value=complete
+            ), mock.patch.object(
+                subject, "resource_capped_command", side_effect=[complete, complete]
             ) as run:
                 promoted = subject.compile_build("current-head")
 
-            cargo_call = next(call for call in run.call_args_list if call.args[0] == "cargo")
+            cargo_call = run.call_args_list[0]
+            self.assertEqual(cargo_call.args[0], "cargo")
             self.assertNotIn("CIVVIS_COMMIT", cargo_call.kwargs["env"])
             self.assertTrue(promoted.exists())
 
