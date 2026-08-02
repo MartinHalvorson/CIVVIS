@@ -594,17 +594,41 @@ fn translate(
                 verb: None,
                 pos: Some(civvis::hex::axial_to_offset(pos.0, pos.1)),
             }),
+        // ⚠⚠ CARRY THE TILE. `Action::Improve` names only a unit and an improvement,
+        // because in CIVVIS a builder improves the tile it stands on — so `pos: None`
+        // read as faithful. It is not, because the two boards do not agree on where
+        // the builder stands.
+        //
+        // `take_turn` walks CIVVIS's builder onto the tile it wants to improve and
+        // then improves it, all inside one turn. Civilization VI's builder has not
+        // made that move yet. The mod's `params[PARAM_X] = x or unit:GetX()` then
+        // falls back to the REAL tile, improves the wrong ground, and is refused.
+        //
+        // Measured on run `civvis-20260802T064240Z` at t200: the real builder 393220
+        // stands at civ6 (67,19), the journal reads "Building a farm at (59,19)
+        // [civ6 (68,19)]", and the emitted order was
+        // `IMPROVE:IMPROVEMENT_FARM x:null y:null`. One tile out, refused every turn —
+        // **59 repeats of that single (unit, improvement, tile)** in one game, and the
+        // largest `improve_refused` class in the corpus.
+        //
+        // Naming the tile also makes the refusal feedback work: a refusal now records
+        // the ground CIVVIS chose, which `blocked_improvement_sites` can route around.
+        // Supplying `x`/`y` is the path the mod already prefers, and Civilization VI
+        // routes the builder there itself.
         Action::Improve { unit, improvement } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
             subject: Some(*civ6),
-            verb: Some("IMPROVE".to_string()),
-            pos: None,
-        })
-        .map(|mut order| {
             // The improvement name rides in `verb` alongside the operation, because the
             // order row has no spare column; the mod splits them.
-            order.verb = Some(format!("IMPROVE:IMPROVEMENT_{}", improvement.as_str().to_ascii_uppercase()));
-            order
+            verb: Some(format!(
+                "IMPROVE:IMPROVEMENT_{}",
+                improvement.as_str().to_ascii_uppercase()
+            )),
+            pos: mirror_state
+                .game
+                .units
+                .get(unit)
+                .map(|built| civvis::hex::axial_to_offset(built.pos.0, built.pos.1)),
         }),
         Action::Fortify { unit } => civ6_of.get(unit).map(|civ6| Order {
             kind: "unit",
@@ -1301,5 +1325,73 @@ fn action_label(action: &Action) -> &'static str {
         Action::Trade { .. } => "trade",
         Action::CongressVote { .. } => "congress",
         _ => "other",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use civvis::mirror::{Snapshot, StateSnapshot, StateUnit, TilesChunk};
+
+    /// ⚠⚠ The improve order used to carry no tile, so the mod fell back to
+    /// `unit:GetX()` — the tile the REAL builder stands on, which is not the tile
+    /// CIVVIS walked its own builder to inside `take_turn`. One tile out, refused
+    /// every turn: 59 repeats of one (unit, improvement, tile) on run
+    /// `civvis-20260802T064240Z`, the largest `improve_refused` class in the corpus.
+    #[test]
+    fn the_improve_order_names_the_tile_civvis_chose() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 1,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| (x, y)))
+                .map(|(x, y)| {
+                    serde_json::from_value(serde_json::json!({
+                        "x": x, "y": y, "t": "TERRAIN_GRASS"
+                    }))
+                    .expect("a plot with serde defaults deserializes")
+                })
+                .collect(),
+        }]);
+        let mut state = StateSnapshot {
+            turn: 1,
+            ..StateSnapshot::default()
+        };
+        state.units.push(StateUnit {
+            id: 4242,
+            kind: "UNIT_BUILDER".to_string(),
+            x: 3,
+            y: 4,
+            ..StateUnit::default()
+        });
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let uid = *mirror
+            .uid_of
+            .get(&4242)
+            .expect("the exported builder is mirrored");
+
+        let mut skipped = std::collections::BTreeMap::new();
+        let order = translate(
+            &Action::Improve {
+                unit: uid,
+                improvement: civvis::name::Name::new("farm"),
+            },
+            &mirror,
+            &state,
+            &mut skipped,
+        )
+        .expect("a mapped builder translates");
+
+        assert_eq!(order.verb.as_deref(), Some("IMPROVE:IMPROVEMENT_FARM"));
+        let built = mirror.game.units[&uid].pos;
+        assert_eq!(
+            order.pos,
+            Some(civvis::hex::axial_to_offset(built.0, built.1)),
+            "the order must name the tile CIVVIS's own builder stands on, not leave \
+             the mod to guess from the real one"
+        );
+        assert_eq!(order.pos, Some((3, 4)), "and it round-trips to the export's tile");
     }
 }
