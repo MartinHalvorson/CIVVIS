@@ -66,6 +66,10 @@ const WORKER_DISCOVERY_MILLIS: u64 = 250;
 const MANAGED_ROSTER_MARKER: &str = ".civvis-managed-roster";
 
 /// How a seat materializes an `Ai`.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the bounded persisted roster intentionally keeps a genome movable by value; boxing it would add allocation and indirection to its archive path"
+)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StrategyKind {
     /// One of `elo::BUILTIN_AIS`.
@@ -1083,7 +1087,7 @@ fn ensure_usernames(league: &mut League) {
                     .name
                     .bytes()
                     .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
-                        (h ^ b as u64).wrapping_mul(0x1_0000_0001_b3)
+                        (h ^ b as u64).wrapping_mul(0x0100_0000_01b3)
                     });
                 let pool = username_pool(lane_of(&league.strategies[i].kind).as_deref());
                 pool[Rng::new(seed).below(pool.len())].to_string()
@@ -1467,7 +1471,7 @@ fn validate_manifest(manifest: &RoundManifest, league: &League) -> io::Result<()
         }
     }
     let players = manifest.config.players_per_game;
-    if manifest.jobs.len() % players != 0 {
+    if !manifest.jobs.len().is_multiple_of(players) {
         return Err(io::Error::new(
             ErrorKind::InvalidData,
             "manifest ends with a partial mirror series",
@@ -2404,16 +2408,16 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
         rating.vol = updated.sigma;
     }
     let empty = Vec::new();
-    for i in 0..league.strategies.len() {
-        if league.strategies[i].retired {
+    for (i, (strategy, previous)) in league.strategies.iter_mut().zip(pre).enumerate() {
+        if strategy.retired {
             continue;
         }
         let played = results.get(&i);
         if played.is_none() && !age_idle {
             continue;
         }
-        let updated = rate(pre[i], played.unwrap_or(&empty));
-        apply_internal(&mut league.strategies[i], updated);
+        let updated = rate(previous, played.unwrap_or(&empty));
+        apply_internal(strategy, updated);
     }
 }
 
@@ -2933,7 +2937,7 @@ pub fn make_send_ai(kind: &StrategyKind, seed: u64) -> Box<dyn Ai + Send> {
             "advanced_evolved" | "evolved" => Box::new(
                 crate::evolve::load_champion("evolved")
                     .map(AdvancedAi::with_weights)
-                    .unwrap_or_else(AdvancedAi::new),
+                    .unwrap_or_default(),
             ),
             "strategic" => Box::new(crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -3740,7 +3744,7 @@ mod tests {
         assert!(egypt.rating < BASE_RATING && egypt.games == 1 && egypt.wins == 0);
         assert_eq!(rome.last_played.as_deref(), Some("2026-07-23"));
         assert_eq!(egypt.last_played.as_deref(), Some("2026-07-23"));
-        assert!(league.strategies[0].leader_elo.get("Cleopatra").is_none());
+        assert!(!league.strategies[0].leader_elo.contains_key("Cleopatra"));
     }
 
     #[test]
@@ -4510,11 +4514,11 @@ mod tests {
         // (wins, games, lower, upper)
         let golden: [(u32, u32, f64, f64); 6] = [
             (0, 5, 0.0, 0.434_491_494_752_081_04),
-            (1, 6, 0.030_052_585_871_730_285, 0.563_509_436_563_646_05),
-            (3, 27, 0.038_519_647_894_987_241, 0.280_581_825_439_729_48),
-            (161, 314, 0.457_633_149_634_529_78, 0.567_536_620_464_790_14),
-            (230, 625, 0.331_104_141_281_536_26, 0.406_508_637_516_812_99),
-            (8, 43, 0.097_416_355_801_059_812, 0.326_172_932_353_059_61),
+            (1, 6, 0.030_052_585_871_730_285, 0.563_509_436_563_646),
+            (3, 27, 0.038_519_647_894_987_24, 0.280_581_825_439_729_5),
+            (161, 314, 0.457_633_149_634_529_8, 0.567_536_620_464_790_1),
+            (230, 625, 0.331_104_141_281_536_26, 0.406_508_637_516_813),
+            (8, 43, 0.097_416_355_801_059_81, 0.326_172_932_353_059_6),
         ];
         for (wins, games, lower, upper) in golden {
             let rating = CivRating {
