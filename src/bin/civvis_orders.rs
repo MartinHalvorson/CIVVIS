@@ -1224,9 +1224,14 @@ fn main() {
                     .owner_city
                     .and_then(|cid| game.cities.get(&cid))
                     .map(|city| city.owner as i64);
+                let foundation = tile
+                    .district_foundation
+                    .as_ref()
+                    .map(|placed| format!("\"{}\"", placed.district.as_str()))
+                    .unwrap_or_else(|| "null".to_string());
                 plots.push(format!(
                     "{{\"x\":{},\"y\":{},\"t\":\"{}\",\"h\":{},\"w\":{},\"f\":{},\"r\":{},\
-                     \"im\":{},\"own\":{},\"res\":{}}}",
+                     \"im\":{},\"d\":{},\"df\":{},\"wo\":{},\"p\":{},\"own\":{},\"res\":{}}}",
                     x,
                     y,
                     tile.terrain.as_str(),
@@ -1235,6 +1240,10 @@ fn main() {
                     field(&tile.feature),
                     field(&tile.resource),
                     field(&tile.improvement),
+                    field(&tile.district),
+                    foundation,
+                    field(&tile.wonder),
+                    tile.pillaged,
                     owner.map(|o| o == 0).unwrap_or(false),
                     resolved,
                 ));
@@ -1685,6 +1694,7 @@ mod tests {
                     x: 7,
                     y: 6,
                     pillaged: false,
+                    complete: true,
                 }],
                 ..StateCity::default()
             }],

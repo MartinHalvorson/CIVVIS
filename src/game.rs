@@ -16256,6 +16256,15 @@ impl Game {
         self.observed_city_max_wall_hp.clear();
         for tile in self.map.tiles.values_mut() {
             tile.owner_city = None;
+            let had_infrastructure = tile.district.is_some()
+                || tile.district_foundation.is_some()
+                || tile.wonder.is_some();
+            tile.district = None;
+            tile.district_foundation = None;
+            tile.wonder = None;
+            if had_infrastructure {
+                tile.pillaged = false;
+            }
         }
         for player in self.players.iter_mut() {
             player.remembered_cities.clear();
@@ -16276,10 +16285,28 @@ impl Game {
     /// A later observed owner can place it again in the same synchronization pass.
     pub(crate) fn mirror_remove_city(&mut self, cid: u32) {
         let Some(city) = self.cities.remove(&cid) else { return };
+        let mut infrastructure: BTreeSet<Pos> = city
+            .districts
+            .iter()
+            .map(|(_, position)| *position)
+            .chain(city.wonders.values().copied())
+            .collect();
+        infrastructure.extend(city.queue.iter().filter_map(|item| match item {
+            Item::District { pos, .. } | Item::Wonder { pos, .. } => Some(*pos),
+            _ => None,
+        }));
         self.city_by_pos.remove(&city.pos);
         for tile in self.map.tiles.values_mut() {
             if tile.owner_city == Some(cid) {
                 tile.owner_city = None;
+            }
+        }
+        for position in infrastructure {
+            if let Some(tile) = self.map.tiles.get_mut(&position) {
+                tile.district = None;
+                tile.district_foundation = None;
+                tile.wonder = None;
+                tile.pillaged = false;
             }
         }
         self.observed_city_loyalty_per_turn.remove(&cid);

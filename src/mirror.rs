@@ -1786,7 +1786,7 @@ mod tests {
     fn a_completed_wonder_keeps_its_type_and_plot() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 40, width: 8, height: 8, chunk: 1,
-            plots: vec![plot(3, 3, "TERRAIN_GRASS"), plot(4, 3, "TERRAIN_DESERT")],
+            plots: vec![plot(3, 3, "TERRAIN_GRASS"), plot(4, 3, "TERRAIN_GRASS")],
         }]);
         let mut state = StateSnapshot { turn: 40, ..StateSnapshot::default() };
         state.cities.push(StateCity {
@@ -1801,10 +1801,25 @@ mod tests {
         });
         let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
         let city = recon.game.cities.values().find(|city| city.owner == 0).unwrap();
+        let city_id = city.id;
         assert_eq!(
             city.wonders.get(&Name::new("pyramids")),
             Some(&crate::hex::offset_to_axial(4, 3))
         );
+        let wonder_pos = crate::hex::offset_to_axial(4, 3);
+        assert_eq!(
+            recon.game.map.tiles[&wonder_pos].wonder.as_deref(),
+            Some("pyramids"),
+            "the tile representation must agree with the city's wonder map"
+        );
+        assert!(recon.game.valid_improvements(0, wonder_pos).is_empty(),
+            "a Builder must not target a completed wonder");
+        let mut bare = recon.game.clone();
+        let tile = bare.map.tiles.get_mut(&wonder_pos).unwrap();
+        tile.wonder = None;
+        tile.owner_city = Some(city_id);
+        assert!(!bare.valid_improvements(0, wonder_pos).is_empty(),
+            "the fixture must otherwise be improvable, or the rejection proves nothing");
         assert!(
             !recon.unmapped.iter().any(|entry| entry.contains("PYRAMIDS")),
             "a modeled wonder is neither an unknown building nor missing its plot: {:?}",
@@ -2078,6 +2093,11 @@ mod tests {
     /// re-order what it already had.
     #[test]
     fn the_districts_a_city_has_built_reach_the_board() {
+        let historical: StateDistrict = serde_json::from_value(serde_json::json!({
+            "type": "DISTRICT_CAMPUS", "x": 5, "y": 6, "pillaged": false
+        })).unwrap();
+        assert!(historical.complete,
+            "pre-completion-bit event streams keep their historical completed semantics");
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 30,
             width: 20,
@@ -2106,12 +2126,14 @@ mod tests {
                     x: 5,
                     y: 5,
                     pillaged: false,
+                    complete: true,
                 },
                 StateDistrict {
                     kind: "DISTRICT_CAMPUS".to_string(),
                     x: 5,
                     y: 6,
-                    pillaged: false,
+                    pillaged: true,
+                    complete: true,
                 },
             ],
             ..StateCity::default()
@@ -2124,6 +2146,7 @@ mod tests {
             .values()
             .find(|c| c.owner == 0)
             .expect("the seat's city must be on the board");
+        let city_id = city.id;
 
         assert_eq!(
             city.districts.get(&Name::new("campus")).copied(),
@@ -2137,6 +2160,66 @@ mod tests {
             !city.districts.contains_key(&Name::new("city_center")),
             "the city centre stays implicit, as it is in an ordinary CIVVIS game"
         );
+
+        let campus = crate::hex::offset_to_axial(5, 6);
+        let campus_tile = &recon.game.map.tiles[&campus];
+        assert_eq!(campus_tile.district.as_deref(), Some("campus"));
+        assert!(campus_tile.pillaged, "district pillage state must reach its tile");
+        assert!(recon.game.valid_improvements(0, campus).is_empty(),
+            "a completed district must never be offered to a Builder");
+        let mut bare = recon.game.clone();
+        let tile = bare.map.tiles.get_mut(&campus).unwrap();
+        tile.district = None;
+        tile.pillaged = false;
+        tile.owner_city = Some(city_id);
+        assert!(!bare.valid_improvements(0, campus).is_empty(),
+            "the fixture must otherwise be improvable, or the rejection proves nothing");
+
+        // Incremental sync must preserve the distinction between a placed
+        // foundation and a completed district.
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        state.turn += 1;
+        state.cities[0].producing = Some("DISTRICT_HOLY_SITE".to_string());
+        state.cities[0].districts.push(StateDistrict {
+            kind: "DISTRICT_HOLY_SITE".to_string(),
+            x: 6,
+            y: 6,
+            pillaged: false,
+            complete: false,
+        });
+        mirror.sync(&snapshot, &state, 0);
+        let holy_site = crate::hex::offset_to_axial(6, 6);
+        let tile = &mirror.game.map.tiles[&holy_site];
+        assert!(tile.district.is_none());
+        assert_eq!(tile.district_foundation.as_ref()
+            .map(|foundation| foundation.district.as_str()), Some("holy_site"));
+        assert!(!mirror.game.cities[&mirror.cid_of[&1]].districts
+            .contains_key(Name::new("holy_site")));
+        assert!(mirror.game.valid_improvements(0, holy_site).is_empty());
+
+        state.turn += 1;
+        state.cities[0].producing = None;
+        state.cities[0].districts[2].complete = true;
+        mirror.sync(&snapshot, &state, 0);
+        let tile = &mirror.game.map.tiles[&holy_site];
+        assert_eq!(tile.district.as_deref(), Some("holy_site"));
+        assert!(tile.district_foundation.is_none());
+        assert!(mirror.game.cities[&mirror.cid_of[&1]].districts
+            .contains_key(Name::new("holy_site")));
+
+        // An omitted fog/public roster is unknown, not evidence that permanent
+        // infrastructure vanished.
+        state.turn += 1;
+        state.cities[0].districts.clear();
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.map.tiles[&campus].district.as_deref(), Some("campus"));
+        assert_eq!(mirror.game.map.tiles[&holy_site].district.as_deref(), Some("holy_site"));
+
+        state.turn += 1;
+        state.cities.clear();
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror.game.map.tiles[&campus].district.is_none());
+        assert!(mirror.game.map.tiles[&holy_site].district.is_none());
     }
 
     /// ★★★★★ A walled city Civilization VI reports as UNDAMAGED must not read as razed.
@@ -2218,13 +2301,24 @@ mod tests {
     fn city_capture_reconciles_both_rosters_and_ownership() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 20, width: 10, height: 10, chunk: 1,
-            plots: vec![plot(3, 3, "TERRAIN_GRASS"), plot(6, 3, "TERRAIN_GRASS")],
+            plots: vec![
+                plot(3, 3, "TERRAIN_GRASS"),
+                plot(4, 3, "TERRAIN_GRASS"),
+                plot(6, 3, "TERRAIN_GRASS"),
+            ],
         }]);
         let city = |id, name: &str, x| StateCity {
             id, name: name.to_string(), x, y: 3, pop: 5, ..StateCity::default()
         };
         let mut state = StateSnapshot { turn: 20, ..StateSnapshot::default() };
         state.cities.push(city(10, "Home", 3));
+        state.cities[0].districts.push(StateDistrict {
+            kind: "DISTRICT_CAMPUS".to_string(),
+            x: 4,
+            y: 3,
+            pillaged: false,
+            complete: true,
+        });
         state.rivals.push(StateRival {
             player: 3, civ: "CIVILIZATION_ROME".to_string(),
             cities: vec![city(20, "Rome", 6)], ..StateRival::default()
@@ -2243,6 +2337,10 @@ mod tests {
         assert_eq!(mirror.cid_of.get(&20), Some(&ours));
         assert!(!mirror.cid_of.contains_key(&10));
         assert_eq!(mirror.game.player_city_ids(0), vec![ours]);
+        let campus = crate::hex::offset_to_axial(4, 3);
+        assert_eq!(mirror.game.map.tiles[&campus].district.as_deref(), Some("campus"));
+        assert!(mirror.game.cities[&theirs].districts.contains_key(Name::new("campus")),
+            "a public rival record omits infrastructure; capture must preserve what was known");
     }
 
     #[test]
@@ -2369,6 +2467,7 @@ mod tests {
                         x: 4 + i as i32 % 3,
                         y: 4,
                         pillaged: false,
+                        complete: true,
                     })
                     .collect(),
                 ..StateCity::default()
@@ -3676,7 +3775,7 @@ where
 
 /// One district a city has placed, in OFFSET coordinates like everything the
 /// export sends.
-#[derive(Clone, Debug, Default, serde::Deserialize)]
+#[derive(Clone, Debug, serde::Deserialize)]
 pub struct StateDistrict {
     /// The Civilization VI type name, e.g. `DISTRICT_CAMPUS`.
     #[serde(default, rename = "type")]
@@ -3687,6 +3786,26 @@ pub struct StateDistrict {
     pub y: i32,
     #[serde(default)]
     pub pillaged: bool,
+    /// False while Firaxis has placed the district but construction is unfinished.
+    /// Historical events lack this field and treated every placement as complete.
+    #[serde(default = "district_complete_default")]
+    pub complete: bool,
+}
+
+fn district_complete_default() -> bool {
+    true
+}
+
+impl Default for StateDistrict {
+    fn default() -> Self {
+        Self {
+            kind: String::new(),
+            x: 0,
+            y: 0,
+            pillaged: false,
+            complete: true,
+        }
+    }
 }
 
 /// One completed world wonder and the plot Firaxis built it on.
@@ -4524,7 +4643,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "loyalty_per_turn", "falls_to", "x", "y", "pop", "capital", "defense",
         "damage", "max_damage", "wall_damage", "max_wall_damage", "loyalty",
     ];
-    const DISTRICT: &[&str] = &["type", "x", "y", "pillaged"];
+    const DISTRICT: &[&str] = &["type", "x", "y", "pillaged", "complete"];
     const WONDER: &[&str] = &["type", "x", "y"];
     const UNIT: &[&str] = &[
         "id", "kind", "type", "x", "y", "hp", "combat", "ranged", "player", "moves",
@@ -5531,6 +5650,179 @@ fn apply_city_religion(live: &mut crate::game::City, state: &StateCity) {
     }
 }
 
+/// Apply a city's districts and wonders to both representations CIVVIS uses.
+/// City collections drive yields; tile fields drive placement and Builder legality.
+fn apply_observed_city_infrastructure(
+    game: &mut crate::game::Game,
+    cid: u32,
+    state: &StateCity,
+    unmapped: &mut Vec<String>,
+) {
+    // Rival/public city records do not carry this private roster, and the own-city
+    // exporter also leaves both fields absent when Firaxis refuses the plot query.
+    // A living Civ VI city cannot lose a completed district or wonder, so an empty
+    // observation is not authority to erase remembered infrastructure.
+    if state.districts.is_empty() && state.wonders.is_empty() {
+        for civ6 in &state.buildings {
+            if civvis_node_name(&game.rules.buildings, civ6, "BUILDING_").is_none()
+                && civvis_node_name(&game.rules.wonders, civ6, "BUILDING_").is_some()
+            {
+                let issue = format!("{civ6}:wonder_missing_plot");
+                if !unmapped.contains(&issue) {
+                    unmapped.push(issue);
+                }
+            }
+        }
+        return;
+    }
+    let Some(city) = game.cities.get(&cid) else { return };
+    let owner = city.owner;
+    let old_districts: Vec<(crate::name::Name, crate::Pos)> = city
+        .districts
+        .iter()
+        .map(|(name, pos)| (name.clone(), *pos))
+        .collect();
+    let old_wonders: Vec<(crate::name::Name, crate::Pos)> = city
+        .wonders
+        .iter()
+        .map(|(name, pos)| (name.clone(), *pos))
+        .collect();
+    let old_foundations: Vec<(crate::name::Name, crate::Pos)> = city
+        .queue
+        .iter()
+        .filter_map(|item| match item {
+            crate::game::Item::District { district, pos } => Some((district.clone(), *pos)),
+            _ => None,
+        })
+        .collect();
+
+    // Clear only markers this city previously supplied. owner_city can change
+    // during capture reconciliation, so it cannot identify infrastructure safely.
+    for (name, pos) in old_districts {
+        if let Some(tile) = game.map.tiles.get_mut(&pos) {
+            if tile.district.as_ref() == Some(&name) {
+                tile.district = None;
+                tile.pillaged = false;
+            }
+        }
+    }
+    for (name, pos) in old_foundations {
+        if let Some(tile) = game.map.tiles.get_mut(&pos) {
+            if tile.district_foundation.as_ref()
+                .is_some_and(|foundation| foundation.district == name)
+            {
+                tile.district_foundation = None;
+            }
+        }
+    }
+    for (name, pos) in old_wonders {
+        if let Some(tile) = game.map.tiles.get_mut(&pos) {
+            if tile.wonder.as_ref() == Some(&name) {
+                tile.wonder = None;
+            }
+        }
+    }
+
+    let remember_issue = |unmapped: &mut Vec<String>, issue: String| {
+        if !unmapped.contains(&issue) {
+            unmapped.push(issue);
+        }
+    };
+    let mut completed = Vec::new();
+    let mut foundations = Vec::new();
+    for district in &state.districts {
+        if district.kind.eq_ignore_ascii_case("DISTRICT_CITY_CENTER")
+            || district.kind.eq_ignore_ascii_case("DISTRICT_WONDER")
+        {
+            continue;
+        }
+        let Some(name) = civvis_node_name(&game.rules.districts, &district.kind, "DISTRICT_")
+        else {
+            remember_issue(unmapped, format!("{}:district", district.kind));
+            continue;
+        };
+        let pos = crate::hex::offset_to_axial(district.x, district.y);
+        if !game.map.tiles.contains_key(&pos) {
+            remember_issue(unmapped, format!(
+                "{}@{},{}:district_plot_missing", district.kind, district.x, district.y
+            ));
+            continue;
+        }
+        let observed = (crate::name::Name::new(&name), pos, district.pillaged);
+        if district.complete {
+            completed.push(observed);
+        } else {
+            foundations.push(observed);
+        }
+    }
+
+    let mut wonders = Vec::new();
+    for wonder in &state.wonders {
+        let Some(name) = civvis_node_name(&game.rules.wonders, &wonder.kind, "BUILDING_") else {
+            remember_issue(unmapped, format!("{}:wonder", wonder.kind));
+            continue;
+        };
+        let pos = crate::hex::offset_to_axial(wonder.x, wonder.y);
+        if !game.map.tiles.contains_key(&pos) {
+            remember_issue(unmapped, format!(
+                "{}@{},{}:wonder_plot_missing", wonder.kind, wonder.x, wonder.y
+            ));
+            continue;
+        }
+        wonders.push((crate::name::Name::new(&name), pos));
+    }
+    for civ6 in &state.buildings {
+        if civvis_node_name(&game.rules.buildings, civ6, "BUILDING_").is_none() {
+            if let Some(name) = civvis_node_name(&game.rules.wonders, civ6, "BUILDING_") {
+                if !wonders.iter().any(|(wonder, _)| wonder == &name) {
+                    remember_issue(unmapped, format!("{civ6}:wonder_missing_plot"));
+                }
+            }
+        }
+    }
+
+    if let Some(city) = game.cities.get_mut(&cid) {
+        city.districts.clear();
+        city.wonders.clear();
+        for (name, pos, _) in &completed {
+            city.districts.insert(name.clone(), *pos);
+        }
+        for (name, pos) in &wonders {
+            city.wonders.insert(name.clone(), *pos);
+        }
+    }
+
+    for (name, pos, pillaged) in completed {
+        let tile = game.map.tiles.get_mut(&pos).unwrap();
+        tile.improvement = None;
+        tile.district = Some(name);
+        tile.district_foundation = None;
+        tile.wonder = None;
+        tile.pillaged = pillaged;
+    }
+    for (name, pos, _) in foundations {
+        let item = crate::game::Item::District { district: name.clone(), pos };
+        let cost = game.item_cost_for_city(owner, cid, &item);
+        let tile = game.map.tiles.get_mut(&pos).unwrap();
+        tile.improvement = None;
+        tile.district = None;
+        tile.district_foundation = Some(crate::world::DistrictFoundation {
+            district: name,
+            cost,
+        });
+        tile.wonder = None;
+        tile.pillaged = false;
+    }
+    for (name, pos) in wonders {
+        let tile = game.map.tiles.get_mut(&pos).unwrap();
+        tile.improvement = None;
+        tile.district = None;
+        tile.district_foundation = None;
+        tile.wonder = Some(name);
+        tile.pillaged = false;
+    }
+}
+
 /// Apply the two health bars Firaxis exposes on a city banner.
 fn apply_city_health(game: &mut crate::game::Game, cid: u32, state: &StateCity) {
     if state.damage.is_finite()
@@ -5992,68 +6284,8 @@ pub fn rebuild_from_state(
                         }
                     }
                 }
-                for wonder in &city.wonders {
-                    match civvis_node_name(&game.rules.wonders, &wonder.kind, "BUILDING_") {
-                        Some(name) => {
-                            built.wonders.insert(
-                                crate::name::Name::new(&name),
-                                crate::hex::offset_to_axial(wonder.x, wonder.y),
-                            );
-                        }
-                        None => unmapped.push(format!("{}:wonder", wonder.kind)),
-                    }
-                }
-                for civ6 in &city.buildings {
-                    // An ordinary building may also be an unambiguous prefix of a
-                    // wonder (`university` -> `university_of_sankore`). Classification
-                    // already succeeded against the building table above, so only
-                    // consult wonders when it did not.
-                    if civvis_node_name(&game.rules.buildings, civ6, "BUILDING_").is_none() {
-                        if let Some(name) =
-                            civvis_node_name(&game.rules.wonders, civ6, "BUILDING_")
-                        {
-                            if !built.wonders.contains_key(&crate::name::Name::new(&name)) {
-                                unmapped.push(format!("{civ6}:wonder_missing_plot"));
-                            }
-                        }
-                    }
-                }
-                // ★★★★★ THE DISTRICTS A CITY HAS ALREADY BUILT. Exported since the
-                // districts fix, and NEVER APPLIED — `StateDistrict` was defined,
-                // carried on `StateCity`, handed to `civvis_production_item` to locate
-                // a production plot, and used in tests. Nothing ever wrote it onto a
-                // city, so `grep '\.districts\.insert' src/mirror.rs` found nothing.
-                //
-                // So every Campus, Holy Site and Commercial Hub Civilization VI had
-                // built was invisible: the city read as bare ground. That is the same
-                // shape as the improvements gap — a mirror showing an undeveloped
-                // empire, so CIVVIS re-orders the development it already has — and it
-                // is why a run could log 60 `DISTRICT_GOVERNMENT` orders against a
-                // capital that was building one the whole time.
-                //
-                // ⚠ `city_center` is deliberately skipped: `found_city_for` gives a
-                // native CIVVIS city `Districts::default()`, so the centre is implicit
-                // and inserting it would put a district there that CIVVIS's own games
-                // never have. Checked before writing this, not assumed.
-                for district in &city.districts {
-                    if district.kind.eq_ignore_ascii_case("DISTRICT_CITY_CENTER")
-                        || district.kind.eq_ignore_ascii_case("DISTRICT_WONDER")
-                    {
-                        continue;
-                    }
-                    match civvis_node_name(&game.rules.districts, &district.kind, "DISTRICT_") {
-                        Some(name) => {
-                            let pos = crate::hex::offset_to_axial(district.x, district.y);
-                            built
-                                .districts
-                                .insert(crate::name::Name::new(&name), pos);
-                        }
-                        // Counted, never guessed at — a district the ruleset cannot
-                        // name is one CIVVIS cannot reason about.
-                        None => unmapped.push(format!("{}:district", district.kind)),
-                    }
-                }
             }
+            apply_observed_city_infrastructure(&mut game, cid, city, &mut unmapped);
         }
     }
 
@@ -6188,6 +6420,7 @@ pub fn rebuild_from_state(
                 if city.id > 0 {
                     known_city_ids.insert(city.id, cid);
                 }
+                apply_observed_city_infrastructure(&mut game, cid, city, &mut unmapped);
                 placed_rival_cities += 1;
             }
         }
@@ -6237,6 +6470,7 @@ pub fn rebuild_from_state(
                 if city.id > 0 {
                     known_city_ids.insert(city.id, cid);
                 }
+                apply_observed_city_infrastructure(&mut game, cid, city, &mut unmapped);
                 placed_rival_cities += 1;
             }
         }
@@ -6940,6 +7174,13 @@ impl LiveMirror {
         // territory, production, score and every military objective at once.
         let own_host_ids: std::collections::BTreeSet<i64> =
             state.cities.iter().map(|city| city.id).collect();
+        let foreign_city_positions: std::collections::BTreeSet<(i32, i32)> = state
+            .rivals
+            .iter()
+            .flat_map(|rival| rival.cities.iter())
+            .chain(state.minors.iter().flat_map(|minor| minor.cities.iter()))
+            .map(|city| (city.x, city.y))
+            .collect();
         let gone: Vec<(i64, u32)> = self
             .cid_of
             .iter()
@@ -6952,7 +7193,15 @@ impl LiveMirror {
             }
             self.cid_of.remove(&host);
             self.known_city_ids.retain(|_, known| *known != cid);
-            self.game.mirror_remove_city(cid);
+            let captured = self.game.cities.get(&cid).is_some_and(|city| {
+                foreign_city_positions.contains(&crate::hex::axial_to_offset(
+                    city.pos.0,
+                    city.pos.1,
+                ))
+            });
+            if !captured {
+                self.game.mirror_remove_city(cid);
+            }
         }
         // A rival city captured by us already occupies its plot. Adopt that exact
         // city rather than refusing to place our newly observed one on an occupied
@@ -7007,6 +7256,14 @@ impl LiveMirror {
                     city.producing.as_deref(),
                     &city.districts,
                 );
+                // This must run before replacing `live.queue`: the old queue is the
+                // only exact identity of an abandoned district foundation.
+                apply_observed_city_infrastructure(
+                    &mut self.game,
+                    *cid,
+                    city,
+                    &mut self.unmapped,
+                );
                 if let Some(live) = self.game.cities.get_mut(cid) {
                     if city.pop > 0 {
                         live.pop = city.pop;
@@ -7044,77 +7301,6 @@ impl LiveMirror {
                             if !self.unmapped.contains(&issue) {
                                 self.unmapped.push(issue);
                             }
-                        }
-                    }
-                    live.wonders.clear();
-                    for wonder in &city.wonders {
-                        match civvis_node_name(
-                            &self.game.rules.wonders, &wonder.kind, "BUILDING_"
-                        ) {
-                            Some(name) => {
-                                live.wonders.insert(
-                                    crate::name::Name::new(&name),
-                                    crate::hex::offset_to_axial(wonder.x, wonder.y),
-                                );
-                            }
-                            None => {
-                                let issue = format!("{}:wonder", wonder.kind);
-                                if !self.unmapped.contains(&issue) {
-                                    self.unmapped.push(issue);
-                                }
-                            }
-                        }
-                    }
-                    for civ6 in &city.buildings {
-                        if civvis_node_name(
-                            &self.game.rules.buildings, civ6, "BUILDING_"
-                        ).is_none() {
-                            if let Some(name) = civvis_node_name(
-                                &self.game.rules.wonders, civ6, "BUILDING_"
-                            ) {
-                                if !live.wonders.contains_key(&crate::name::Name::new(&name)) {
-                                    let issue = format!("{civ6}:wonder_missing_plot");
-                                    if !self.unmapped.contains(&issue) {
-                                        self.unmapped.push(issue);
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    // ★★★★★ THE DISTRICTS A CITY HAS ALREADY BUILT. Exported since the
-                    // districts fix, and NEVER APPLIED — `StateDistrict` was defined,
-                    // carried on `StateCity`, handed to `civvis_production_item` to locate
-                    // a production plot, and used in tests. Nothing ever wrote it onto a
-                    // city, so `grep '\.districts\.insert' src/mirror.rs` found nothing.
-                    //
-                    // So every Campus, Holy Site and Commercial Hub Civilization VI had
-                    // built was invisible: the city read as bare ground. That is the same
-                    // shape as the improvements gap — a mirror showing an undeveloped
-                    // empire, so CIVVIS re-orders the development it already has — and it
-                    // is why a run could log 60 `DISTRICT_GOVERNMENT` orders against a
-                    // capital that was building one the whole time.
-                    //
-                    // ⚠ `city_center` is deliberately skipped: `found_city_for` gives a
-                    // native CIVVIS city `Districts::default()`, so the centre is implicit
-                    // and inserting it would put a district there that CIVVIS's own games
-                    // never have. Checked before writing this, not assumed.
-                    live.districts.clear();
-                    for district in &city.districts {
-                        if district.kind.eq_ignore_ascii_case("DISTRICT_CITY_CENTER")
-                            || district.kind.eq_ignore_ascii_case("DISTRICT_WONDER")
-                        {
-                            continue;
-                        }
-                        match civvis_node_name(&self.game.rules.districts, &district.kind, "DISTRICT_") {
-                            Some(name) => {
-                                let pos = crate::hex::offset_to_axial(district.x, district.y);
-                                live
-                                        .districts
-                                        .insert(crate::name::Name::new(&name), pos);
-                            }
-                            // Counted, never guessed at — a district the ruleset cannot
-                            // name is one CIVVIS cannot reason about.
-                            None => self.unmapped.push(format!("{}:district", district.kind)),
                         }
                     }
                 }
@@ -7257,29 +7443,31 @@ impl LiveMirror {
                     continue;
                 }
                 let pos = crate::hex::offset_to_axial(city.x, city.y);
-                if let Some(cid) = self.game.city_at(pos) {
+                let cid = if let Some(cid) = self.game.city_at(pos) {
                     self.cid_of.retain(|_, mapped| *mapped != cid);
                     if city.id > 0 {
                         self.known_city_ids.insert(city.id, cid);
                     }
                     self.game.mirror_set_city_owner(cid, owner);
                     self.rival_cities.insert((city.x, city.y));
-                    continue;
-                }
-                let water = self
-                    .game
-                    .map
-                    .get(pos)
-                    .map(|tile| self.game.rules.is_water(tile))
-                    .unwrap_or(true);
-                if water || self.game.city_at(pos).is_some() {
-                    continue;
-                }
-                let cid = self.game.place_city(owner, pos, banner(city));
-                if city.id > 0 {
-                    self.known_city_ids.insert(city.id, cid);
-                }
-                self.rival_cities.insert((city.x, city.y));
+                    cid
+                } else {
+                    let water = self.game.map.get(pos)
+                        .map(|tile| self.game.rules.is_water(tile))
+                        .unwrap_or(true);
+                    if water {
+                        continue;
+                    }
+                    let cid = self.game.place_city(owner, pos, banner(city));
+                    if city.id > 0 {
+                        self.known_city_ids.insert(city.id, cid);
+                    }
+                    self.rival_cities.insert((city.x, city.y));
+                    cid
+                };
+                apply_observed_city_infrastructure(
+                    &mut self.game, cid, city, &mut self.unmapped,
+                );
             }
             for unit in &rival.units {
                 let Some(name) = resolved_civvis_unit_name(&self.game.rules, &unit.kind) else {
@@ -7345,19 +7533,28 @@ impl LiveMirror {
                     continue;
                 }
                 let pos = crate::hex::offset_to_axial(city.x, city.y);
-                if let Some(cid) = self.game.city_at(pos) {
+                let cid = if let Some(cid) = self.game.city_at(pos) {
                     self.cid_of.retain(|_, mapped| *mapped != cid);
                     if city.id > 0 {
                         self.known_city_ids.insert(city.id, cid);
                     }
                     self.game.mirror_set_city_owner(cid, owner);
                     self.rival_cities.insert((city.x, city.y));
+                    Some(cid)
                 } else if self.game.map.get(pos).is_some() {
                     let cid = self.game.place_city(owner, pos, banner(city));
                     if city.id > 0 {
                         self.known_city_ids.insert(city.id, cid);
                     }
                     self.rival_cities.insert((city.x, city.y));
+                    Some(cid)
+                } else {
+                    None
+                };
+                if let Some(cid) = cid {
+                    apply_observed_city_infrastructure(
+                        &mut self.game, cid, city, &mut self.unmapped,
+                    );
                 }
             }
             for unit in &minor.units {
@@ -7465,6 +7662,7 @@ mod host_fact_tests {
                 x: 12,
                 y: 7,
                 pillaged: false,
+                complete: false,
             }],
         );
         match campus {
@@ -7485,6 +7683,7 @@ mod host_fact_tests {
                 x: 3,
                 y: 4,
                 pillaged: false,
+                complete: false,
             }],
         )
         .is_none());

@@ -15,6 +15,17 @@ from civ6_control import install  # noqa: E402
 
 
 class ProtectedInstallTest(unittest.TestCase):
+    def test_district_export_distinguishes_foundations_from_completed_districts(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        exporter = source.split("-- ★★★★★ AND WHAT IT HAS DISTRICTED", 1)[1].split(
+            "-- ★★★★★ WHOSE RELIGION", 1
+        )[0]
+
+        self.assertIn("district:GetX()", exporter)
+        self.assertIn("district:GetY()", exporter)
+        self.assertIn("district:IsComplete()", exporter)
+        self.assertIn("complete = districtComplete[", exporter)
+
     def test_controller_uses_real_project_and_great_person_command_ids(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         self.assertNotIn('"PROJECT_CAMPUS_RESEARCH_GRANT"', source)

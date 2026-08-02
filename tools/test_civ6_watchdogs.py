@@ -111,5 +111,74 @@ class ReachVerdictTest(unittest.TestCase):
         self.assertTrue(any("EMPIRE NEVER REACHED" in verdict for verdict in verdicts))
 
 
+class InfrastructureMirrorTest(unittest.TestCase):
+    def test_audit_resolves_truncated_district_and_firaxis_wonder_names(self) -> None:
+        self.assertEqual(
+            civ6_watchdogs.model_infrastructure_name(
+                "DISTRICT_GOVERNMENT", "DISTRICT_",
+                civ6_watchdogs.MODELLED_DISTRICTS,
+            ),
+            "government_plaza",
+        )
+        self.assertEqual(
+            civ6_watchdogs.model_infrastructure_name(
+                "BUILDING_STATUE_LIBERTY", "BUILDING_",
+                civ6_watchdogs.MODELLED_WONDERS,
+            ),
+            "statue_of_liberty",
+        )
+
+    def test_city_roster_distinguishes_completed_foundation_and_wonder_plots(self) -> None:
+        events = [{
+            "kind": "state",
+            "turn": 40,
+            "cities": [{
+                "districts": [
+                    {"type": "DISTRICT_CAMPUS", "x": 4, "y": 5,
+                     "pillaged": True},
+                    {"type": "DISTRICT_HOLY_SITE", "x": 5, "y": 5,
+                     "pillaged": False, "complete": False},
+                    {"type": "DISTRICT_CITY_CENTER", "x": 3, "y": 5},
+                    {"type": "DISTRICT_WONDER", "x": 6, "y": 5},
+                ],
+                "wonders": [{"type": "BUILDING_PYRAMIDS", "x": 6, "y": 5}],
+            }],
+        }]
+
+        expected = civ6_watchdogs.expected_infrastructure(events)
+
+        self.assertEqual(expected[(4, 5)], {
+            "district": "campus", "foundation": None,
+            "wonder": None, "pillaged": True,
+        })
+        self.assertEqual(expected[(5, 5)], {
+            "district": None, "foundation": "holy_site",
+            "wonder": None, "pillaged": False,
+        })
+        self.assertEqual(expected[(6, 5)], {
+            "district": None, "foundation": None,
+            "wonder": "pyramids", "pillaged": False,
+        })
+        self.assertNotIn((3, 5), expected)
+
+    def test_one_missing_district_is_loud_even_when_tile_agreement_exceeds_threshold(self) -> None:
+        report = {
+            "mirror": {
+                "agree": 168,
+                "compared": 168,
+                "agree_fraction": 1.0,
+                "missing_in_mirror": 0,
+                "infrastructure_agree": 3,
+                "infrastructure_compared": 4,
+                "infrastructure_disagree_by_field": {"district": 1},
+                "infrastructure_examples": {},
+            }
+        }
+
+        verdicts = civ6_watchdogs.verdicts(report, 0.35, 0.98)
+
+        self.assertTrue(any("INFRASTRUCTURE DISAGREES" in verdict for verdict in verdicts))
+
+
 if __name__ == "__main__":
     unittest.main()

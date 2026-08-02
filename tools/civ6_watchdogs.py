@@ -380,6 +380,42 @@ def _modelled_improvements() -> set[str]:
 MODELLED_IMPROVEMENTS = _modelled_improvements()
 
 
+def _model_names(filename: str) -> set[str]:
+    try:
+        return set(json.loads((HERE.parent / "data" / filename).read_text()))
+    except (OSError, ValueError):
+        return set()
+
+
+MODELLED_DISTRICTS = _model_names("districts.json")
+MODELLED_WONDERS = _model_names("wonders.json")
+WONDER_ALIASES = {
+    "halicarnassus_mausoleum": "mausoleum_at_halicarnassus",
+    "statue_liberty": "statue_of_liberty",
+    "university_sankore": "university_of_sankore",
+}
+
+
+def model_infrastructure_name(civ6: str, prefix: str, names: set[str]) -> str:
+    """Independently resolve the same strict exact/article/unique-prefix contract."""
+    base = civ6.removeprefix(prefix).lower()
+    if prefix == "BUILDING_":
+        alias = WONDER_ALIASES.get(base)
+        if alias in names:
+            return alias
+    if base in names:
+        return base
+    without_article = base.removeprefix("the_")
+    if without_article in names:
+        return without_article
+    matches = [name for name in names if name.startswith(base + "_")]
+    if len(matches) == 1:
+        return matches[0]
+    # Deliberately cannot equal any actual ruleset name, so an unmodelled Firaxis
+    # district is loud instead of being treated as correctly absent.
+    return f"@unmapped:{civ6}"
+
+
 def production_health(events: list[dict], builder_per_city: float = 0.8) -> dict:
     """Did production keep working as the empire and the eras grew.
 
@@ -517,6 +553,49 @@ def expected(plot: dict, vocab: dict) -> dict:
 COMPARED = ("t", "h", "w", "f", "r", "im", "own")
 
 
+def expected_infrastructure(events: list[dict]) -> dict[tuple[int, int], dict]:
+    """District/wonder occupancy from the newest authoritative city roster."""
+    state = None
+    best_turn = -1
+    for event in events:
+        if event.get("kind") != "state":
+            continue
+        turn = int(event.get("turn") or 0)
+        if turn >= best_turn:
+            state, best_turn = event, turn
+    if state is None:
+        return {}
+
+    cities = list(state.get("cities") or [])
+    for actor in list(state.get("rivals") or []) + list(state.get("minors") or []):
+        cities.extend(actor.get("cities") or [])
+    expected: dict[tuple[int, int], dict] = {}
+    for city in cities:
+        for district in city.get("districts") or []:
+            kind = str(district.get("type") or "").upper()
+            if kind in ("DISTRICT_CITY_CENTER", "DISTRICT_WONDER"):
+                continue
+            key = (district.get("x"), district.get("y"))
+            complete = district.get("complete", True)
+            name = model_infrastructure_name(kind, "DISTRICT_", MODELLED_DISTRICTS)
+            expected[key] = {
+                "district": name if complete else None,
+                "foundation": name if not complete else None,
+                "wonder": None,
+                "pillaged": bool(district.get("pillaged")) if complete else False,
+            }
+        for wonder in city.get("wonders") or []:
+            key = (wonder.get("x"), wonder.get("y"))
+            kind = str(wonder.get("type") or "").upper()
+            expected[key] = {
+                "district": None,
+                "foundation": None,
+                "wonder": model_infrastructure_name(kind, "BUILDING_", MODELLED_WONDERS),
+                "pillaged": False,
+            }
+    return expected
+
+
 def latest_tiles(events: list[dict]) -> dict[tuple[int, int], dict]:
     """The most recent export of every plot, merged across chunks and re-exports.
 
@@ -585,6 +664,49 @@ def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
                          "expected": a, "mirror": b})
         if not bad:
             agree += 1
+
+    expected_infra = expected_infrastructure(events)
+    infrastructure_fields = Counter()
+    infrastructure_examples: dict[str, list] = defaultdict(list)
+    infrastructure_agree = 0
+    # Public rival city records omit infrastructure. Compare every authoritative
+    # current record, but do not call remembered rival districts "ghosts" merely
+    # because the latest fog-limited roster cannot repeat them.
+    infrastructure_keys = set(expected_infra)
+    for key in infrastructure_keys:
+        got = mirrored.get(key) or {}
+        want = expected_infra.get(key) or {
+            "district": None,
+            "foundation": None,
+            "wonder": None,
+            "pillaged": False,
+        }
+        actual = {
+            "district": got.get("d"),
+            "foundation": got.get("df"),
+            "wonder": got.get("wo"),
+            "pillaged": bool(got.get("p")),
+        }
+        bad = []
+        for field in ("district", "foundation", "wonder"):
+            if want[field] != actual[field]:
+                bad.append(field)
+        if want["district"] is not None and want["pillaged"] != actual["pillaged"]:
+            bad.append("district_pillaged")
+        if bad:
+            for field in bad:
+                infrastructure_fields[field] += 1
+                if len(infrastructure_examples[field]) < 3:
+                    infrastructure_examples[field].append({
+                        "xy": key, "expected": want, "mirror": actual,
+                        "mirror_types": {
+                            "district": got.get("d"),
+                            "foundation": got.get("df"),
+                            "wonder": got.get("wo"),
+                        },
+                    })
+        else:
+            infrastructure_agree += 1
     return {
         "exported_plots": len(exported),
         "mirrored_plots": len(mirrored),
@@ -598,6 +720,10 @@ def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
         "unmodelled_improvements": dict(unmodelled_improvements.most_common(8)),
         "disagree_by_field": dict(disagree.most_common()),
         "examples": {k: v for k, v in examples.items()},
+        "infrastructure_compared": len(infrastructure_keys),
+        "infrastructure_agree": infrastructure_agree,
+        "infrastructure_disagree_by_field": dict(infrastructure_fields.most_common()),
+        "infrastructure_examples": dict(infrastructure_examples),
     }
 
 
@@ -700,6 +826,14 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
                 f"MIRROR DISAGREES: only {mirror['agree']}/{mirror['compared']} "
                 f"({af:.1%}) of plots match tile for tile; "
                 f"{mirror.get('disagree_by_field')}")
+        if mirror.get("infrastructure_disagree_by_field"):
+            out.append(
+                "MIRROR INFRASTRUCTURE DISAGREES: "
+                f"{mirror['infrastructure_agree']}/"
+                f"{mirror['infrastructure_compared']} district/foundation/wonder "
+                "plots agree; "
+                f"{mirror['infrastructure_disagree_by_field']} "
+                f"{mirror.get('infrastructure_examples')}")
     return out
 
 
@@ -788,6 +922,9 @@ def main() -> int:
                       f"({mirror['agree_fraction']})  missing {mirror['missing_in_mirror']}"
                       f"  frontier {mirror['extra_in_mirror_frontier']}  "
                       f"{mirror['disagree_by_field']}")
+                print(f"    infrastructure: {mirror['infrastructure_agree']}/"
+                      f"{mirror['infrastructure_compared']}  "
+                      f"{mirror['infrastructure_disagree_by_field']}")
                 if mirror.get("unresolved_terrain"):
                     print(f"    unresolved terrain names: {mirror['unresolved_terrain']}")
                 if mirror.get("unmodelled_improvements"):

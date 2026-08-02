@@ -4029,6 +4029,22 @@ local function exportState(player, pid, turn)
 		-- distinguishable from "this city has none" -- the same rule as `built`.
 		local placed = nil;
 		local wonders = nil;
+		-- Plot:GetDistrictType gives us placement, but not whether that placement
+		-- is a finished district or a foundation still under construction.  Keep
+		-- the collection's authoritative completion bit keyed by plot so the
+		-- mirror does not grant yields early or erase an occupied foundation.
+		local districtComplete = {};
+		local cityDistricts = try(function() return city:GetDistricts(); end);
+		if cityDistricts ~= nil then
+			for _, district in cityDistricts:Members() do
+				local dx = try(function() return district:GetX(); end, -1);
+				local dy = try(function() return district:GetY(); end, -1);
+				if dx ~= nil and dy ~= nil and dx >= 0 and dy >= 0 then
+					districtComplete[tostring(dx) .. "," .. tostring(dy)] =
+						try(function() return district:IsComplete(); end, nil);
+				end
+			end
+		end
 		local ownedPlots = try(function()
 			return Map.GetCityPlots():GetPurchasedPlots(city);
 		end);
@@ -4047,6 +4063,9 @@ local function exportState(player, pid, turn)
 								x = try(function() return plot:GetX(); end, -1),
 								y = try(function() return plot:GetY(); end, -1),
 								pillaged = try(function() return plot:IsDistrictPillaged(); end, false),
+								complete = districtComplete[
+									tostring(try(function() return plot:GetX(); end, -1)) .. "," ..
+									tostring(try(function() return plot:GetY(); end, -1))],
 							};
 						end
 					end
