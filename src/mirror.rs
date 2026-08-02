@@ -1367,6 +1367,64 @@ mod tests {
     /// Measured on live run `civvis-20260801T040700Z`: Montréal founded turn 26, gone
     /// by turn 42, loyalty 100 throughout and at war with nobody it had met — so
     /// neither revolt nor a rival took it, and `hostiles` was non-empty in the export.
+    /// ⚠⚠ `gold_per_turn` gates the whole bankruptcy response and the bridge
+    /// never wrote it, so `economic_recovery` was unreachable in every real
+    /// game. A treasury pinned at zero is the case that matters: Civilization VI
+    /// clamps the balance there and disbands units to pay, so differencing alone
+    /// reports a healthy zero exactly when the empire is broke.
+    #[test]
+    fn an_empty_treasury_reports_insolvency_rather_than_a_flat_balance() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 1,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 1,
+            gold: 120,
+            ..StateSnapshot::default()
+        };
+        let mut mirror = LiveMirror::new(&snapshot, &state, 1, 1, 500, 0);
+
+        // The first sample cannot be differenced against anything.
+        state.turn = 2;
+        state.gold = 108;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(
+            mirror.game.players[0].gold_per_turn, -12.0,
+            "a falling treasury is negative net income"
+        );
+
+        state.turn = 3;
+        state.gold = 130;
+        mirror.sync(&snapshot, &state, 0);
+        assert_eq!(mirror.game.players[0].gold_per_turn, 22.0);
+
+        // The defect: broke, and staying broke. The delta is zero and the old
+        // reading would have called that solvent.
+        state.turn = 4;
+        state.gold = 0;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror.game.players[0].gold_per_turn < -0.5);
+        state.turn = 5;
+        state.gold = 0;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(
+            mirror.game.players[0].gold_per_turn < -0.5,
+            "a treasury pinned at zero is insolvency, not thrift — this is the \
+             reading that makes economic_recovery reachable at all"
+        );
+
+        // A gap of unknown length is not a rate. Leave the last reading alone
+        // rather than inventing one across a resync.
+        state.turn = 40;
+        state.gold = 400;
+        mirror.sync(&snapshot, &state, 0);
+        assert!(mirror.game.players[0].gold_per_turn < -0.5);
+    }
+
     /// A seat that cannot see barbarians cannot garrison against them.
     #[test]
     fn a_barbarian_that_appears_after_construction_reaches_the_board() {
@@ -5319,6 +5377,11 @@ pub struct LiveMirror {
     /// unit that will stand still, and nothing else in the telemetry can say so.
     pub dropped_units: Vec<String>,
     pub turns_synced: u32,
+    /// The turn and treasury of the previous sync, so net income can be derived.
+    /// See [`LiveMirror::mirror_net_income`] — the export carries the treasury
+    /// BALANCE and no rate at all, and `gold_per_turn` is what CIVVIS's
+    /// bankruptcy response reads.
+    last_treasury: Option<(u32, f64)>,
 }
 
 /// A unit's full movement allowance from the ruleset.
@@ -5388,6 +5451,51 @@ impl LiveMirror {
             unmapped: rebuilt.unmapped,
             dropped_units: rebuilt.dropped_units,
             turns_synced: 1,
+            // Seed the baseline here so the very first sync can be differenced.
+            // A resync rebuilds through this constructor too, which is exactly
+            // when the previous baseline has become meaningless.
+            last_treasury: match state.gold >= 0 {
+                true => Some((state.turn.max(1), state.gold as f64)),
+                false => None,
+            },
+        }
+    }
+
+    /// Net gold per turn, derived from the treasury balance because the export
+    /// carries no rate.
+    ///
+    /// ⚠⚠ `gold_per_turn` gates CIVVIS's whole bankruptcy response — the
+    /// `economic_recovery` branch of `BasicAi::product_for` requires
+    /// `gold_per_turn < -0.5` — and **nothing in the bridge has ever written
+    /// it**. Outside a mirrored game it is computed by CIVVIS's own economy;
+    /// inside one it holds whatever that simulation last produced over a board
+    /// whose maintenance rules are not Civilization VI's. So the recovery has
+    /// been unreachable in every real game.
+    ///
+    /// Measured on run `civvis-20260802T044726Z`: the treasury reached zero on
+    /// t85 and stayed there for 56 turns while the seat produced seven heavy
+    /// chariots, three battering rams, two archers and a trebuchet. Cities went
+    /// 3 → 2 → 1 and the score finished 143 against a best rival's 613.
+    ///
+    /// ⚠ **A treasury pinned at zero is insolvency, not thrift, and the first
+    /// difference reads ZERO exactly then** — Civilization VI clamps the balance
+    /// at zero and disbands units to pay the bill, so the delta cannot go
+    /// negative once the empire is already broke. An empty treasury that is not
+    /// refilling is therefore reported as negative outright.
+    ///
+    /// Only consecutive turns are differenced. A resync, a replayed turn or a
+    /// gap leaves the previous value alone rather than inventing a rate from a
+    /// span of unknown length.
+    fn mirror_net_income(&mut self, turn: u32, gold: f64) -> Option<f64> {
+        let previous = self.last_treasury.replace((turn, gold));
+        let (last_turn, last_gold) = previous?;
+        if turn != last_turn + 1 {
+            return None;
+        }
+        let delta = gold - last_gold;
+        match gold <= 0.0 {
+            true => Some(delta.min(-1.0)),
+            false => Some(delta),
         }
     }
 
@@ -5442,6 +5550,9 @@ impl LiveMirror {
         self.game.turn = state.turn.max(1);
         if state.gold >= 0 {
             self.game.players[0].gold = state.gold as f64;
+            if let Some(net) = self.mirror_net_income(self.game.turn, state.gold as f64) {
+                self.game.players[0].gold_per_turn = net;
+            }
         }
         for civ6 in &state.techs {
             if let Some(name) = civvis_node_name(&self.game.rules.techs, civ6, "TECH_") {
