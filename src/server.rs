@@ -1535,6 +1535,23 @@ impl Shared {
     }
 }
 
+/// Derive the next unattended-world seed without leaving JavaScript's exact
+/// integer range.
+///
+/// Spectator pages return the seed in `world=` when acknowledging a painted
+/// frame. JSON parses an integer above 2^53 - 1 as a rounded JavaScript
+/// `Number`, so a full-width successor seed can never match the server's u64
+/// and the opening frame remains gated. The low 53 bits of this full-period
+/// LCG are themselves a full-period sequence, retaining deterministic variety
+/// while keeping the browser/server identity round-trip exact.
+const MAX_EXACT_JAVASCRIPT_INTEGER: u64 = (1_u64 << 53) - 1;
+
+fn automatic_successor_seed(seed: u64) -> u64 {
+    seed.wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407)
+        & MAX_EXACT_JAVASCRIPT_INTEGER
+}
+
 impl Session {
     /// Seat AIs plus each seat's league identity. With a roster to seat from,
     /// each major gets a rank-weighted sample from the top three proven winners
@@ -1978,11 +1995,7 @@ impl Session {
     /// setup control that must never wait on the simulation, so it lives
     /// beside the session rather than inside it.
     fn start_automatic_next_game(&mut self, queued: Option<Params>) {
-        let next_seed = self
-            .params
-            .seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
+        let next_seed = automatic_successor_seed(self.params.seed);
         let mut params = queued.unwrap_or_else(|| self.params.clone());
         params.seed = next_seed;
         *self = Session::new(params);
@@ -4237,13 +4250,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        chronicle_world_events, final_countdown_ms, held_frame, new_game_params, query_value,
-        request_path, save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot,
-        ChronicleState, FrameDelivery, Params,
+        automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
+        new_game_params, query_value, request_path, save_path, seat_delay_ms, strategy_roster,
+        tile_mark, ChronicleSnapshot, ChronicleState, FrameDelivery, Params,
         Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_CIV6_UNIT_FLAGS,
         EMBEDDED_INDEX, RESULT_COUNTDOWN_MS,
         EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL,
-        VIEWER_ACTIVE,
+        MAX_EXACT_JAVASCRIPT_INTEGER, VIEWER_ACTIVE,
     };
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
@@ -8842,6 +8855,23 @@ mod tests {
         drop(session);
         // The queue is spent: the world after this one is this one's settings.
         assert!(decorated_state(&shared)["next_game_settings"].is_null());
+    }
+
+    #[test]
+    fn automatic_successor_seed_round_trips_exactly_through_javascript() {
+        // This is the predecessor from the live failure. Its old full-width
+        // successor was 7_959_629_191_918_103_844, which JavaScript rounded
+        // before returning it in the painted-frame acknowledgement.
+        let predecessor: u64 = 1_785_694_281;
+        let old_full_width = predecessor
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        assert!(old_full_width > MAX_EXACT_JAVASCRIPT_INTEGER);
+
+        let successor = automatic_successor_seed(predecessor);
+        assert_eq!(successor, old_full_width & MAX_EXACT_JAVASCRIPT_INTEGER);
+        assert!(successor <= MAX_EXACT_JAVASCRIPT_INTEGER);
+        assert_eq!(successor as f64 as u64, successor);
     }
 
     /// The setup panel writes on every `change`, and `startNewSimulation`
