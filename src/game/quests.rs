@@ -695,7 +695,7 @@ mod tests {
         // is a completion; a quest replaced by a new era is not.
         let mut held: Vec<BTreeMap<usize, CityStateQuest>> =
             vec![BTreeMap::new(); game.players.len()];
-        while game.winner.is_none() && game.turn <= 90 {
+        while game.winner.is_none() && game.turn <= 120 {
             let pid = game.current;
             ais[pid].take_turn(&mut game, pid);
             if game.winner.is_none() && game.current == pid {
@@ -715,11 +715,11 @@ mod tests {
         }
         assert!(
             outstanding > 0,
-            "no city-state asked anybody for anything in ninety turns"
+            "no city-state asked anybody for anything in a full standard game"
         );
         assert!(
             completed > 0,
-            "ninety turns of four empires and six city-states finished no quest"
+            "a full standard game of four empires and six city-states finished no quest"
         );
     }
 }

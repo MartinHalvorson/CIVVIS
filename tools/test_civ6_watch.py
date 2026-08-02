@@ -8,9 +8,11 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+from civ6_control import watch  # noqa: E402
 from civ6_control.watch import EventLogBridge, PREFIX  # noqa: E402
 
 
@@ -61,3 +63,29 @@ class EventLogBridgeTest(unittest.TestCase):
                  (root / "run" / "events.jsonl").read_text().splitlines()],
                 [event],
             )
+
+
+class FollowTest(unittest.TestCase):
+    def test_locked_interval_does_not_consume_timeout(self) -> None:
+        class Tail:
+            def __init__(self) -> None:
+                self.polls = 0
+
+            def poll(self) -> list[dict]:
+                self.polls += 1
+                return [{"kind": "done"}] if self.polls == 3 else []
+
+        seen: list[dict] = []
+        with patch.object(watch.time, "monotonic",
+                          side_effect=[0.0, 0.0, 2.0, 4.0, 4.0]), \
+             patch.object(watch.time, "sleep") as sleep, \
+             patch.object(watch.env, "game_pids", return_value=[123]):
+            reason = watch.follow(
+                Tail(), 1.0, seen.append, poll_s=0.25,
+                stop_when=lambda event: event["kind"] == "done",
+                pause_when=iter([True, True, False]).__next__,
+            )
+
+        self.assertEqual(reason, "stopped")
+        self.assertEqual(seen, [{"kind": "done"}])
+        self.assertEqual(sleep.call_count, 2)

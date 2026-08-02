@@ -186,7 +186,7 @@ class InfrastructureMirrorTest(unittest.TestCase):
                 "x": 62, "y": 16,
                 "yields": {"food": 8, "production": 7, "gold": 6,
                            "science": 5, "culture": 4, "faith": 3},
-                "worked": [{"x": 61, "y": 16}],
+                "worked": [{"x": 62, "y": 16}, {"x": 61, "y": 16}],
                 "specialists": ["DISTRICT_THEATER"],
                 "production_progress": 12.5,
                 "great_works": [{"object": "GREATWORKOBJECT_WRITING"}],
@@ -243,6 +243,7 @@ class InfrastructureMirrorTest(unittest.TestCase):
                 "type": "GOVERNOR_THE_DEFENDER", "x": 62, "y": 16,
                 "established": True, "neutralized_turns": 0,
                 "promotions": [
+                    "GOVERNOR_PROMOTION_REDOUBT",
                     "GOVERNOR_PROMOTION_GARRISON_COMMANDER",
                     "GOVERNOR_PROMOTION_DEFENSE_LOGISTICS",
                 ],

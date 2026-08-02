@@ -600,6 +600,30 @@
   "unbuildable": true,
   "unit_pillageable": false
  },
+ "pairidaeza": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "civic": "early_empire",
+  "unique_to": "Persia",
+  "same_adjacent_valid": false,
+  "yields": {
+   "culture": 1,
+   "gold": 2
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains"
+  ],
+  "effects": {
+   "adjacent_city_center_gold": 1,
+   "adjacent_commercial_hub_gold": 1,
+   "adjacent_holy_site_culture": 1,
+   "adjacent_theater_square_culture": 1,
+   "culture_after_diplomatic_service": 1,
+   "adjacent_appeal": 1
+  }
+ },
  "sphinx": {
   "plunder_type": "faith",
   "plunder_amount": 25,

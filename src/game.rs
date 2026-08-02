@@ -6126,6 +6126,62 @@ mod governor_runtime_tests {
     }
 
     #[test]
+    fn pairidaeza_matches_firaxis_identity_adjacency_progression_and_tourism() {
+        let mut game = Game::new_full(1, 24, 16, 91_977, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let centre = game.cities[&city].pos;
+        let garden = game.nbrs(centre)[0];
+        let neighbors: Vec<Pos> = game.nbrs(garden).into_iter().collect();
+        let holy = neighbors.iter().copied().find(|at| *at != centre).unwrap();
+        let appeal_target = neighbors
+            .iter()
+            .copied()
+            .find(|at| *at != centre && *at != holy)
+            .unwrap();
+        for position in std::iter::once(garden).chain(neighbors.iter().copied()) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+            if !game.cities[&city].owned_tiles.contains(&position) {
+                game.cities.get_mut(&city).unwrap().owned_tiles.push(position);
+            }
+        }
+        game.map.tiles.get_mut(&holy).unwrap().district = Some(crate::name!("holy_site"));
+        game.players[0].civics.insert(crate::name!("early_empire"));
+
+        assert!(!game
+            .valid_improvements(0, garden)
+            .contains(&crate::name!("pairidaeza")));
+        game.players[0].civ = "Persia".to_string();
+        assert!(game
+            .valid_improvements(0, garden)
+            .contains(&crate::name!("pairidaeza")));
+
+        let bare = game.player_tile_yields(0, garden, &game.map.tiles[&garden]);
+        let appeal = game.tile_appeal(appeal_target);
+        game.map.tiles.get_mut(&garden).unwrap().improvement = Some(crate::name!("pairidaeza"));
+        let early = game.player_tile_yields(0, garden, &game.map.tiles[&garden]);
+        assert_eq!(early.gold - bare.gold, 3.0, "2 base plus 1 beside the city centre");
+        assert_eq!(early.culture - bare.culture, 2.0, "1 base plus 1 beside a Holy Site");
+        assert_eq!(game.tile_appeal(appeal_target), appeal + 1);
+
+        game.players[0].civics.insert(crate::name!("diplomatic_service"));
+        let late = game.player_tile_yields(0, garden, &game.map.tiles[&garden]);
+        assert_eq!(late.culture - early.culture, 1.0);
+        let before_flight = game.tourism_by_tile(0).get(&garden).copied().unwrap_or(0.0);
+        game.players[0].techs.insert(crate::name!("flight"));
+        let after_flight = game.tourism_by_tile(0).get(&garden).copied().unwrap_or(0.0);
+        assert_eq!(after_flight - before_flight, late.culture - bare.culture);
+    }
+
+    #[test]
     fn cahokia_mound_matches_firaxis_suzerain_placement_and_progression() {
         let mut game = Game::new_full(2, 24, 16, 91_975, 200, 0, false);
         let city = found_capital(&mut game, 0);
@@ -32975,6 +33031,47 @@ impl Game {
                 } else {
                     yields.food += (adjacent_farms / 2.0).floor()
                         * self.tree_effect(pid, "farm_pair_adjacency_food");
+                }
+            }
+            Some("pairidaeza") => {
+                let effects = &self.rules.improvements["pairidaeza"].effects;
+                for neighbor in self.nbrs(pos) {
+                    let adjacent = &self.map.tiles[&neighbor];
+                    if self.city_at(neighbor).is_some() {
+                        yields.gold += effects
+                            .get("adjacent_city_center_gold")
+                            .copied()
+                            .unwrap_or(0.0);
+                    }
+                    if let Some(district) = adjacent.district {
+                        if self.district_is_family(district, crate::name!("commercial_hub")) {
+                            yields.gold += effects
+                                .get("adjacent_commercial_hub_gold")
+                                .copied()
+                                .unwrap_or(0.0);
+                        } else if self.district_is_family(district, crate::name!("holy_site")) {
+                            yields.culture += effects
+                                .get("adjacent_holy_site_culture")
+                                .copied()
+                                .unwrap_or(0.0);
+                        } else if self
+                            .district_is_family(district, crate::name!("theater_square"))
+                        {
+                            yields.culture += effects
+                                .get("adjacent_theater_square_culture")
+                                .copied()
+                                .unwrap_or(0.0);
+                        }
+                    }
+                }
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("diplomatic_service"))
+                {
+                    yields.culture += effects
+                        .get("culture_after_diplomatic_service")
+                        .copied()
+                        .unwrap_or(0.0);
                 }
             }
             Some("sphinx") => {

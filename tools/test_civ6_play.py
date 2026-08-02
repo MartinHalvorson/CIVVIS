@@ -58,16 +58,33 @@ class Civ6PlayTest(unittest.TestCase):
         ):
             self.assertFalse(civ6_play.screen_locked())
 
-    def test_play_refuses_to_launch_while_console_is_locked(self) -> None:
+    def test_play_waits_for_unlock_then_launches(self) -> None:
         with patch.object(civ6_play.vision, "available", return_value=True), \
-             patch.object(civ6_play, "screen_locked", return_value=True), \
-             patch.object(civ6_play.gamelock, "acquire") as acquire, \
-             patch.object(civ6_play, "_play") as run:
-            result = civ6_play.play(args())
+             patch.object(civ6_play, "screen_locked",
+                          side_effect=[True, True, False]), \
+             patch.object(civ6_play.time, "sleep") as sleep, \
+             patch.object(civ6_play.gamelock, "acquire", return_value=True) as acquire, \
+             patch.object(civ6_play.gamelock, "release") as release, \
+             patch.object(civ6_play.launcher, "stop") as stop, \
+             patch.object(civ6_play, "_play", return_value=0) as run:
+            result = civ6_play.play(args(tag="unlock-test", lock_wait=0.0))
 
-        self.assertEqual(result, 7)
-        acquire.assert_not_called()
-        run.assert_not_called()
+        self.assertEqual(result, 0)
+        sleep.assert_called_once_with(2.0)
+        acquire.assert_called_once_with("unlock-test", wait_s=0.0)
+        run.assert_called_once()
+        stop.assert_called_once()
+        release.assert_called_once()
+
+    def test_world_congress_fallback_clicks_the_shipped_close_control(self) -> None:
+        with patch.object(civ6_play, "focus_game") as focus, \
+             patch.object(civ6_play, "game_window", return_value=(756, 33, 756, 480)), \
+             patch.object(civ6_play, "click_at") as click:
+            dismissed = civ6_play.dismiss_world_congress_between_turns()
+
+        self.assertTrue(dismissed)
+        focus.assert_called_once_with(civ6_play.GAME_SIDE, civ6_play.GAME_FRACTION)
+        click.assert_called_once_with(1506, 66)
 
     def test_civvis_decision_mode_always_enables_state_export(self) -> None:
         self.assertTrue(civ6_play.state_export_enabled(
@@ -147,7 +164,11 @@ class Civ6PlayTest(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as temporary, \
              patch.object(civ6_play, "screenshot"), \
-             patch.object(civ6_play, "list_opened", return_value=True), \
+             patch.object(civ6_play, "_leader_picker_open", return_value=True), \
+             patch.object(
+                 civ6_play, "_setup_current_leader",
+                 return_value=("Random Leader", (1134, 140)),
+             ), \
              patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
              patch.object(civ6_play.macos_ocr, "recognize", side_effect=observations), \
              patch.object(civ6_play.macos_input, "move"), \
@@ -166,6 +187,36 @@ class Civ6PlayTest(unittest.TestCase):
             for invocation in scroll.call_args_list[1:]
         ))
         self.assertEqual(click.call_count, 2)
+
+    def test_leader_picker_open_requires_a_visible_roster_name(self) -> None:
+        observations = [
+            {"text": "Random Leader"},
+            {"text": "Alexander"},
+        ]
+        with patch.object(civ6_play, "_leader_ocr", return_value=observations):
+            self.assertTrue(civ6_play._leader_picker_open(
+                Path("picker.png"), (756, 33, 756, 480)
+            ))
+
+        with patch.object(
+            civ6_play, "_leader_ocr", return_value=[{"text": "Random Leader"}]
+        ):
+            self.assertFalse(civ6_play._leader_picker_open(
+                Path("picker.png"), (756, 33, 756, 480)
+            ))
+
+    def test_setup_leader_readback_uses_the_rendered_random_leader_row(self) -> None:
+        observation = {
+            "text": "Random Leader", "x": 0.74, "y": 0.14,
+            "width": 0.02, "height": 0.01,
+        }
+        bounds = (756, 33, 756, 480)
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=[]), \
+             patch.object(civ6_play, "_menu_crop_ocr", return_value=[observation]):
+            current = civ6_play._setup_current_leader(Path("setup.png"), bounds)
+
+        self.assertEqual(current, ("Random Leader", (1134, 142)))
 
     def test_leader_ocr_maps_the_upscaled_crop_back_to_the_desktop(self) -> None:
         from PIL import Image
@@ -232,6 +283,22 @@ class Civ6PlayTest(unittest.TestCase):
 
         self.assertEqual(point, (1111, 255))
 
+    def test_main_menu_click_tolerates_live_missing_vision_glyphs(self) -> None:
+        observation = {
+            "text": "Single Plave", "x": 0.72, "y": 0.255,
+            "width": 0.03, "height": 0.01,
+        }
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=[observation]):
+            point = civ6_play._main_menu_point(
+                Path("menu.png"), (756, 33, 756, 480)
+            )
+
+        self.assertEqual(point, (1111, 255))
+
+    def test_main_menu_click_rejects_a_different_long_label(self) -> None:
+        self.assertFalse(civ6_play._menu_label_matches("Multiplayer", "Single Player"))
+
     def test_create_game_click_uses_its_visible_label(self) -> None:
         observations = [
             {"text": "Resume Game", "x": 0.75, "y": 0.28,
@@ -246,6 +313,42 @@ class Civ6PlayTest(unittest.TestCase):
             )
 
         self.assertEqual(point, (1156, 309))
+
+    def test_create_game_click_retries_with_enlarged_menu_crop(self) -> None:
+        observation = {
+            "text": "Create Game", "x": 0.75, "y": 0.31,
+            "width": 0.03, "height": 0.01,
+        }
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=[]), \
+             patch.object(civ6_play, "_menu_crop_ocr", return_value=[observation]) as crop:
+            point = civ6_play._observed_label_point(
+                Path("submenu.png"), "Create Game", (756, 33, 756, 480)
+            )
+
+        self.assertEqual(point, (1156, 309))
+        crop.assert_called_once_with(Path("submenu.png"), (756, 33, 756, 480))
+
+    def test_setup_value_readback_distinguishes_standard_speed_from_map_size(self) -> None:
+        observations = [
+            {"text": "Standard", "x": 0.74, "y": 0.185,
+             "width": 0.02, "height": 0.01},
+            {"text": "Small", "x": 0.74, "y": 0.225,
+             "width": 0.02, "height": 0.01},
+        ]
+        bounds = (756, 33, 756, 480)
+        with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=[]), \
+             patch.object(civ6_play, "_menu_crop_ocr", return_value=observations):
+            speed = civ6_play._setup_current_value(
+                Path("setup.png"), bounds, "speed"
+            )
+            size = civ6_play._setup_current_value(
+                Path("setup.png"), bounds, "map_size"
+            )
+
+        self.assertEqual(speed[0], "GAMESPEED_STANDARD")
+        self.assertEqual(size[0], "MAPSIZE_SMALL")
 
     def test_saved_game_bootstrap_uses_named_row_and_lower_action_button(self) -> None:
         bounds = (756, 33, 756, 480)

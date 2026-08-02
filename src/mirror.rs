@@ -325,6 +325,20 @@ mod tests {
     }
 
     #[test]
+    fn persias_pairidaeza_crosses_as_a_real_improvement() {
+        let mut site = plot(3, 4, "TERRAIN_GRASS");
+        site.im = Some("IMPROVEMENT_PAIRIDAEZA".to_string());
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 1, width: 8, height: 8, chunk: 1, plots: vec![site],
+        }]);
+        let game = rebuild_game(&snapshot, 2, 1);
+        assert_eq!(
+            game.map.get(crate::hex::offset_to_axial(3, 4)).unwrap().improvement,
+            Some(crate::name!("pairidaeza"))
+        );
+    }
+
+    #[test]
     fn historical_snapshot_does_not_read_tiles_from_a_future_turn() {
         let dir = std::env::temp_dir().join(format!(
             "civvis-mirror-time-boundary-{}",
@@ -393,6 +407,24 @@ mod tests {
             .as_deref(),
             Some("oromo_cavalry"),
             "the rival unit observed on fixed22 must reach the mirror board"
+        );
+        assert_eq!(
+            resolved_civvis_unit_name(
+                &crate::rules::Rules::embedded(),
+                "UNIT_SCOTTISH_HIGHLANDER"
+            )
+            .as_deref(),
+            Some("ranger"),
+            "Firaxis declares the Highlander as Scotland's Ranger replacement"
+        );
+        assert_eq!(
+            resolved_civvis_unit_name(
+                &crate::rules::Rules::embedded(),
+                "UNIT_KOREAN_HWACHA"
+            )
+            .as_deref(),
+            Some("field_cannon"),
+            "Firaxis declares the Hwacha as Korea's Field Cannon replacement"
         );
         assert_eq!(
             civvis_unit_name_unqualified("UNIT_GREAT_GENERAL"),
@@ -1102,12 +1134,13 @@ mod tests {
                 "wonders":[{"type":"BUILDING_PYRAMIDS","x":1,"y":3}]
             }],
             "units":[{"id":4,"kind":"UNIT_WARRIOR","x":2,"y":3,"combat":20,
-                      "ranged":0,"player":0}],
+                      "ranged":0,"player":0,"formation_count":2}],
             "future_empire_fact":true
         }"#;
         let state = state_from_json(raw).expect("the state remains usable");
         assert_eq!(state.cities[0].producing_hash, Some(123));
         assert_eq!(state.units[0].combat, 20.0);
+        assert_eq!(state.units[0].formation_count, 2);
         assert_eq!(
             state.schema_gaps,
             vec![
@@ -1199,6 +1232,12 @@ mod tests {
             recon.game.players[3].civ, "Scythia",
             "Firaxis player id 3 is translation metadata, not the CIVVIS entity owner"
         );
+    }
+
+    #[test]
+    fn firaxis_babylon_pack_suffix_is_not_a_second_civilization() {
+        assert_eq!(civvis_civ_name("CIVILIZATION_BABYLON_STK"), Some("Babylon"));
+        assert_eq!(civvis_civ_name("CIVILIZATION_OTTOMAN"), Some("Ottomans"));
     }
 
     #[test]
@@ -1488,6 +1527,114 @@ mod tests {
         assert_eq!(loaded.city_citizen_plan(cid).worked_tiles, plan.worked_tiles);
         assert_eq!(loaded.city_yields(cid), host_yields);
         assert_eq!(loaded.players[0].counters["great_work:writing"], 1);
+    }
+
+    #[test]
+    fn observed_worker_swap_overrides_the_nearest_city_guess() {
+        let mut first_center = plot(2, 2, "TERRAIN_PLAINS");
+        first_center.o = 0;
+        let mut second_center = plot(6, 2, "TERRAIN_PLAINS");
+        second_center.o = 0;
+        let mut swapped = plot(3, 2, "TERRAIN_GRASS");
+        swapped.o = 0;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 70,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![first_center, second_center, swapped],
+        }]);
+        let state = StateSnapshot {
+            turn: 70,
+            cities: vec![
+                StateCity {
+                    id: 1, name: "Rome".to_string(), x: 2, y: 2, pop: 2,
+                    worked: Some(vec![]),
+                    ..StateCity::default()
+                },
+                StateCity {
+                    id: 2, name: "Lugdunum".to_string(), x: 6, y: 2, pop: 2,
+                    worked: Some(vec![StateWorkedPlot { x: 3, y: 2 }]),
+                    ..StateCity::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let first = recon.game.city_at(crate::hex::offset_to_axial(2, 2)).unwrap();
+        let second = recon.game.city_at(crate::hex::offset_to_axial(6, 2)).unwrap();
+        let worked = crate::hex::offset_to_axial(3, 2);
+
+        assert_eq!(recon.game.city_citizen_plan(second).worked_tiles, vec![worked]);
+        assert_eq!(recon.game.map.tiles[&worked].owner_city, Some(second));
+        assert!(!recon.game.cities[&first].owned_tiles.contains(&worked));
+        assert!(recon.game.cities[&second].owned_tiles.contains(&worked));
+    }
+
+    #[test]
+    fn firaxis_city_center_is_implicit_and_palace_yields_are_counted_once() {
+        let mut center = plot(5, 4, "TERRAIN_PLAINS");
+        center.o = 0;
+        let mut worked = plot(6, 4, "TERRAIN_GRASS");
+        worked.o = 0;
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 3,
+            width: 10,
+            height: 10,
+            chunk: 1,
+            plots: vec![center, worked],
+        }]);
+        let state = StateSnapshot {
+            turn: 3,
+            seat: Seat {
+                civ: "CIVILIZATION_CHINA".to_string(),
+                leader: "LEADER_QIN_SHI_HUANG".to_string(),
+                ..Seat::default()
+            },
+            cities: vec![StateCity {
+                id: 10,
+                name: "Xi'an".to_string(),
+                x: 5,
+                y: 4,
+                pop: 1,
+                capital: true,
+                buildings: vec!["BUILDING_PALACE".to_string()],
+                worked: Some(vec![
+                    StateWorkedPlot { x: 5, y: 4 },
+                    StateWorkedPlot { x: 6, y: 4 },
+                ]),
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let recon = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let cid = recon.game.player_city_ids(0)[0];
+        assert_eq!(
+            recon.game.city_citizen_plan(cid).worked_tiles,
+            vec![crate::hex::offset_to_axial(6, 4)],
+            "Firaxis's explicit city centre is not a second citizen assignment"
+        );
+        assert!(
+            !recon.unmapped.contains(&"Xi'an:worked_plot".to_string()),
+            "the host's normal GetWorkedPlots shape must be accepted"
+        );
+        assert!(
+            !recon.game.cities[&cid]
+                .buildings
+                .contains(&crate::name!("palace")),
+            "the intrinsic Palace must not also enter the ordinary building list"
+        );
+        let mut without_explicit_palace = state;
+        without_explicit_palace.cities[0].buildings.clear();
+        let control = rebuild_from_state(&snapshot, &without_explicit_palace, 2, 1, 250, 0);
+        let control_city = control.game.player_city_ids(0)[0];
+        assert_eq!(
+            recon.game.city_yields_model(cid),
+            control.game.city_yields_model(control_city),
+            "Firaxis's explicit Palace row must not add a second copy of its yields"
+        );
     }
 
     #[test]
@@ -4119,6 +4266,11 @@ pub struct StateUnit {
     pub fortified: bool,
     #[serde(default)]
     pub fortify_turns: i32,
+    /// Number of members in Firaxis's escort/support formation. The stock Unit
+    /// Panel exposes this value, and it distinguishes two units sharing a plot from
+    /// two units that move as one formation.
+    #[serde(default)]
+    pub formation_count: i32,
     /// Firaxis represents a Great Person as a physical unit and exposes the exact
     /// plots on which that named individual can activate. CIVVIS applies Great
     /// Person effects immediately, so the live bridge uses these host-validated
@@ -4649,6 +4801,14 @@ fn apply_governor_state(
         };
         let mut promotions = std::collections::BTreeSet::new();
         for host_promotion in &observed.promotions {
+            if civ6_governor_base_promotion(name) == Some(host_promotion.as_str()) {
+                // Firaxis includes the Governor's appointment/base ability in
+                // GetPromotions(). CIVVIS stores that ability on GovernorSpec,
+                // outside GovernorState.promotions, so importing it would either
+                // duplicate its effects or falsely report a known host fact as
+                // unmapped.
+                continue;
+            }
             match civvis_governor_promotion(host_promotion) {
                 Some(promotion) if spec.promotions.contains_key(promotion) => {
                     promotions.insert(promotion.to_string());
@@ -4773,14 +4933,17 @@ fn civvis_map_script(civ6: &str) -> Option<MapScript> {
 /// Returns `None` when Civilization VI names a civilization CIVVIS does not have,
 /// which is deliberate: a wrong-but-plausible name is worse than an obvious gap,
 /// because it silently reintroduces exactly the mismatch this function exists to
-/// remove. Of the Civ 6 roster only the Ottomans currently miss, and they miss on
-/// spelling (`Ottomans`), which the plural retry below catches.
+/// remove. Firaxis's Babylon pack retains an internal `_STK` suffix, and the
+/// Ottomans differ only by CIVVIS's plural spelling; both exact normalizations
+/// are handled below before the roster is consulted.
 pub fn civvis_civ_name(civ6: &str) -> Option<&'static str> {
-    let bare = civ6
+    let id = civ6
         .trim()
         .strip_prefix("CIVILIZATION_")
-        .unwrap_or(civ6.trim())
-        .replace('_', " ");
+        .unwrap_or(civ6.trim());
+    // `CIVILIZATION_BABYLON_STK` is the shipping Babylon civilization id;
+    // STK is Firaxis's pack/implementation suffix, not part of its identity.
+    let bare = id.strip_suffix("_STK").unwrap_or(id).replace('_', " ");
     if bare.is_empty() || bare == "?" {
         return None;
     }
@@ -4845,6 +5008,16 @@ const GOVERNOR_PROMOTION_TYPES: &[(&str, &str)] = &[
     ("vertical_integration", "GOVERNOR_PROMOTION_RESOURCE_MANAGER_VERTICAL_INTEGRATION"),
 ];
 
+const GOVERNOR_BASE_PROMOTION_TYPES: &[(&str, &str)] = &[
+    ("amani", "GOVERNOR_PROMOTION_AMBASSADOR_MESSENGER"),
+    ("liang", "GOVERNOR_PROMOTION_BUILDER_GUILDMASTER"),
+    ("moksha", "GOVERNOR_PROMOTION_CARDINAL_BISHOP"),
+    ("victor", "GOVERNOR_PROMOTION_REDOUBT"),
+    ("pingala", "GOVERNOR_PROMOTION_EDUCATOR_LIBRARIAN"),
+    ("reyna", "GOVERNOR_PROMOTION_MERCHANT_LAND_ACQUISITION"),
+    ("magnus", "GOVERNOR_PROMOTION_RESOURCE_MANAGER_GROUNDBREAKER"),
+];
+
 /// Translate Firaxis's stable Governor type id into CIVVIS's rules key.
 pub fn civvis_governor_name(civ6: &str) -> Option<&'static str> {
     let civ6 = civ6.trim();
@@ -4871,6 +5044,15 @@ pub fn civvis_governor_promotion(civ6: &str) -> Option<&'static str> {
 /// Translate a CIVVIS promotion key into the exact Firaxis database type.
 pub fn civ6_governor_promotion(civvis: &str) -> Option<&'static str> {
     GOVERNOR_PROMOTION_TYPES
+        .iter()
+        .find_map(|(ours, host)| (*ours == civvis).then_some(*host))
+}
+
+/// Firaxis exposes each Governor's intrinsic appointment ability through the
+/// promotion API even though it costs no separate title. CIVVIS keeps the same
+/// effects directly on the Governor specification rather than in its promotion set.
+pub fn civ6_governor_base_promotion(civvis: &str) -> Option<&'static str> {
+    GOVERNOR_BASE_PROMOTION_TYPES
         .iter()
         .find_map(|(ours, host)| (*ours == civvis).then_some(*host))
 }
@@ -5019,7 +5201,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     const YIELDS: &[&str] = &["food", "production", "gold", "science", "culture", "faith"];
     const UNIT: &[&str] = &[
         "id", "kind", "type", "x", "y", "hp", "combat", "ranged", "player", "moves",
-        "fortified", "fortify_turns", "great_person",
+        "fortified", "fortify_turns", "formation_count", "great_person",
     ];
     const ROUTE: &[&str] = &[
         "trader", "origin", "destination", "destination_player", "origin_x", "origin_y",
@@ -5304,6 +5486,11 @@ fn civvis_unit_name(civ6: &str) -> String {
         // Firaxis retained Poland's implementation id after the unit's display
         // name became Winged Hussar.
         "polish_hussar" => "winged_hussar".to_string(),
+        // CIVVIS does not yet carry these unique unit specifications. Firaxis's
+        // own UnitReplaces table names their exact stock role, which is preferable
+        // to deleting a visible hostile from the board entirely.
+        "scottish_highlander" => "ranger".to_string(),
+        "korean_hwacha" => "field_cannon".to_string(),
         _ => base,
     }
 }
@@ -6312,13 +6499,40 @@ fn apply_observed_city_economy(
             let positions = worked
                 .iter()
                 .map(|plot| crate::hex::offset_to_axial(plot.x, plot.y))
+                // Firaxis includes the city centre in GetWorkedPlots(), but
+                // CIVVIS accounts for it separately before assigning citizens.
+                // Treating that implicit plot as a citizen assignment rejected
+                // the whole authoritative list and silently restored CIVVIS's
+                // own governor instead.
+                .filter(|worked_pos| *worked_pos != pos)
                 .collect::<Vec<_>>();
             let all_valid = positions.iter().all(|worked_pos| {
-                *worked_pos != pos
-                    && game.map.get(*worked_pos).is_some()
-                    && game.cities[&cid].owned_tiles.contains(worked_pos)
+                game.map.get(*worked_pos).is_some() && game.city_at(*worked_pos).is_none()
             });
             if all_valid {
+                // Firaxis lets the player swap an empire tile between nearby
+                // cities. The tile export carries only player ownership, so the
+                // initial mirror assigns it to a nearby city heuristically. A
+                // current worked-plot record is stronger evidence: move that
+                // tile to the city actually working it before preserving the
+                // citizen plan. Without this, Lugdunum's real (58,25) was owned
+                // by neighboring Rome in the mirror and the entire observed
+                // list was discarded for CIVVIS's freshly optimized substitute.
+                for &worked_pos in &positions {
+                    let previous = game.map.tiles[&worked_pos].owner_city;
+                    if previous == Some(cid) {
+                        continue;
+                    }
+                    if let Some(previous) = previous {
+                        if let Some(city) = game.cities.get_mut(&previous) {
+                            city.owned_tiles.retain(|tile| *tile != worked_pos);
+                        }
+                    }
+                    if !game.cities[&cid].owned_tiles.contains(&worked_pos) {
+                        game.cities.get_mut(&cid).unwrap().owned_tiles.push(worked_pos);
+                    }
+                    game.map.tiles.get_mut(&worked_pos).unwrap().owner_city = Some(cid);
+                }
                 game.observed_city_worked_tiles.insert(cid, positions);
             } else {
                 let issue = format!("{}:worked_plot", observed.name);
@@ -6805,6 +7019,12 @@ pub fn rebuild_from_state(
                 // permanently, because every rebuild hits it again.
                 for civ6 in &city.buildings {
                     match civvis_node_name(&game.rules.buildings, civ6, "BUILDING_") {
+                        // CIVVIS models the Palace as an intrinsic property of the
+                        // current capital and adds its yields in city_yields_inner.
+                        // Importing Firaxis's explicit BUILDING_PALACE row into the
+                        // ordinary building list charged it a second time: the live
+                        // Rome capital read 5.0 science against Firaxis's 2.5.
+                        Some(name) if name == "palace" => {}
                         Some(name) => {
                             let named = crate::name::Name::new(&name);
                             if !built.buildings.contains(&named) {
@@ -6919,6 +7139,41 @@ pub fn rebuild_from_state(
         if let Some(uid) = plant_unit(&mut game, 0, unit, &mut unmapped, &mut dropped) {
             unit_ids.insert(uid, unit.id);
             placed_units += 1;
+        }
+    }
+
+    // Firaxis exposes formation membership as a count rather than a partner id. Its
+    // stacking rules make the partner unambiguous for the two-member formations
+    // CIVVIS creates: both members are on the same plot and report count > 1. Carry
+    // that observed state into the fresh mirror so the agent moves the escort next
+    // turn instead of issuing LinkUnits forever.
+    let uid_of_host = unit_ids
+        .iter()
+        .map(|(uid, host)| (*host, *uid))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    for (index, first) in state.units.iter().enumerate() {
+        if first.formation_count <= 1 {
+            continue;
+        }
+        let Some(&first_uid) = uid_of_host.get(&first.id) else {
+            continue;
+        };
+        if game.units[&first_uid].linked_to.is_some() {
+            continue;
+        }
+        let partner = state.units[index + 1..].iter().find_map(|second| {
+            if second.formation_count <= 1 || (second.x, second.y) != (first.x, first.y) {
+                return None;
+            }
+            let &second_uid = uid_of_host.get(&second.id)?;
+            game.units[&second_uid]
+                .linked_to
+                .is_none()
+                .then_some(second_uid)
+        });
+        if let Some(second_uid) = partner {
+            game.units.get_mut(&first_uid).unwrap().linked_to = Some(second_uid);
+            game.units.get_mut(&second_uid).unwrap().linked_to = Some(first_uid);
         }
     }
 
@@ -8275,6 +8530,7 @@ mod host_fact_tests {
                     turns_on_site: 20,
                     turns_to_establish: 3,
                     promotions: vec![
+                        "GOVERNOR_PROMOTION_REDOUBT".to_string(),
                         "GOVERNOR_PROMOTION_GARRISON_COMMANDER".to_string(),
                         "GOVERNOR_PROMOTION_DEFENSE_LOGISTICS".to_string(),
                     ],
@@ -8283,6 +8539,16 @@ mod host_fact_tests {
                 StateGovernor {
                     kind: "GOVERNOR_THE_RESOURCE_MANAGER".to_string(),
                     city: -1,
+                    promotions: vec![
+                        "GOVERNOR_PROMOTION_RESOURCE_MANAGER_GROUNDBREAKER".to_string(),
+                        "GOVERNOR_PROMOTION_RESOURCE_MANAGER_SURPLUS_LOGISTICS".to_string(),
+                    ],
+                    ..StateGovernor::default()
+                },
+                StateGovernor {
+                    kind: "GOVERNOR_THE_EDUCATOR".to_string(),
+                    city: -1,
+                    promotions: vec!["GOVERNOR_PROMOTION_EDUCATOR_LIBRARIAN".to_string()],
                     ..StateGovernor::default()
                 },
             ]),
@@ -8307,7 +8573,16 @@ mod host_fact_tests {
         assert!(victor.city.is_some());
         assert!(victor.promotions.contains("garrison_commander"));
         assert!(victor.promotions.contains("defense_logistics"));
-        assert!(player.governor_roster.contains_key("magnus"));
+        let magnus = &player.governor_roster["magnus"];
+        assert_eq!(
+            magnus.promotions.iter().cloned().collect::<Vec<_>>(),
+            vec!["surplus_logistics".to_string()]
+        );
+        assert!(player.governor_roster["pingala"].promotions.is_empty());
+        assert!(rebuilt
+            .unmapped
+            .iter()
+            .all(|issue| !issue.ends_with(":governor_promotion")));
         assert_eq!(player.governor_titles_spent, 4);
         assert_eq!(rebuilt.game.governor_titles(0), 4);
         assert_eq!(rebuilt.game.governor_titles_available(0), 0);
@@ -8318,6 +8593,55 @@ mod host_fact_tests {
                 | crate::game::Action::ReassignGovernor { .. }
                 | crate::game::Action::PromoteGovernor { .. }
         )));
+    }
+
+    #[test]
+    fn firaxis_escort_formation_survives_the_fresh_board_rebuild() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 93,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let state = StateSnapshot {
+            turn: 93,
+            units: vec![
+                StateUnit {
+                    id: 501,
+                    kind: "UNIT_SETTLER".to_string(),
+                    x: 3,
+                    y: 3,
+                    hp: 100.0,
+                    formation_count: 2,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 502,
+                    kind: "UNIT_WARRIOR".to_string(),
+                    x: 3,
+                    y: 3,
+                    hp: 100.0,
+                    formation_count: 2,
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let uid_for = |host| {
+            rebuilt
+                .unit_ids
+                .iter()
+                .find_map(|(uid, observed)| (*observed == host).then_some(*uid))
+                .expect("host unit crosses into the mirror")
+        };
+        let settler = uid_for(501);
+        let warrior = uid_for(502);
+
+        assert_eq!(rebuilt.game.units[&settler].linked_to, Some(warrior));
+        assert_eq!(rebuilt.game.units[&warrior].linked_to, Some(settler));
     }
 
     #[test]

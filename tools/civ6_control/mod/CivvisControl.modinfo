@@ -151,6 +151,16 @@
 				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
 			</Properties>
 		</ReplaceUIScript>
+		<!-- A special-session notification (including a military emergency)
+		     opens WorldCongressPopup itself, not the intro or between-turns
+		     contexts.  Leaving this context out meant the map could remain
+		     covered until the operator pressed Pass by hand. -->
+		<ReplaceUIScript id="CivvisControlAutoCloseWorldCongressPopup">
+			<Properties>
+				<LuaContext>WorldCongressPopup</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 		<ReplaceUIScript id="CivvisControlAutoCloseWorldCongressBetweenTurns">
 			<Properties>
 				<LuaContext>WorldCongressBetweenTurns</LuaContext>

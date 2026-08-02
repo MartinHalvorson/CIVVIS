@@ -68,6 +68,17 @@ from pathlib import Path
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 HERE = Path(__file__).resolve().parent
 GREAT_PERSON_UNIQUE_TYPES = {"UNIT_COMANDANTE_GENERAL"}
+GOVERNOR_BASE_PROMOTIONS = {
+    "GOVERNOR_THE_AMBASSADOR": "GOVERNOR_PROMOTION_AMBASSADOR_MESSENGER",
+    "GOVERNOR_THE_BUILDER": "GOVERNOR_PROMOTION_BUILDER_GUILDMASTER",
+    "GOVERNOR_THE_CARDINAL": "GOVERNOR_PROMOTION_CARDINAL_BISHOP",
+    "GOVERNOR_THE_DEFENDER": "GOVERNOR_PROMOTION_REDOUBT",
+    "GOVERNOR_THE_EDUCATOR": "GOVERNOR_PROMOTION_EDUCATOR_LIBRARIAN",
+    "GOVERNOR_THE_MERCHANT": "GOVERNOR_PROMOTION_MERCHANT_LAND_ACQUISITION",
+    "GOVERNOR_THE_RESOURCE_MANAGER": (
+        "GOVERNOR_PROMOTION_RESOURCE_MANAGER_GROUNDBREAKER"
+    ),
+}
 
 
 def is_bridge_managed_great_person(unit: dict) -> bool:
@@ -661,7 +672,13 @@ def city_economy_agreement(events: list[dict], dump: dict) -> dict:
                 if a is not None and model is not None:
                     max_model_drift = max(max_model_drift, abs(float(a) - float(model)))
             if want.get("worked") is not None:
-                a = {(plot.get("x"), plot.get("y")) for plot in want.get("worked") or []}
+                # GetWorkedPlots includes the city centre; CIVVIS accounts for
+                # that tile intrinsically and dumps only citizen assignments.
+                a = {
+                    (plot.get("x"), plot.get("y"))
+                    for plot in want.get("worked") or []
+                    if (plot.get("x"), plot.get("y")) != key
+                }
                 b = {(plot.get("x"), plot.get("y")) for plot in got.get("worked") or []}
                 if a != b:
                     bad.append("worked")
@@ -776,9 +793,12 @@ def governor_agreement(events: list[dict], dump: dict) -> dict:
                 actual_governor.get("neutralized")
             ):
                 bad.append("neutralized")
-            if set(expected_governor.get("promotions") or []) != set(
-                actual_governor.get("promotions") or []
-            ):
+            expected_promotions = set(expected_governor.get("promotions") or [])
+            # Firaxis includes the free appointment ability in GetPromotions;
+            # CIVVIS represents it on the Governor specification, not as one of
+            # the five separately purchased promotions.
+            expected_promotions.discard(GOVERNOR_BASE_PROMOTIONS.get(governor_type))
+            if expected_promotions != set(actual_governor.get("promotions") or []):
                 bad.append("promotions")
         if bad:
             for field in bad:

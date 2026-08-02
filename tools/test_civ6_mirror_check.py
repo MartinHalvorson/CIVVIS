@@ -51,6 +51,7 @@ class MirrorCheckTest(unittest.TestCase):
 
     def test_roster_aliases_do_not_hide_a_real_setup_mismatch(self) -> None:
         self.assertTrue(civ6_mirror_check.civ_id_matches("ottoman", "ottomans"))
+        self.assertTrue(civ6_mirror_check.civ_id_matches("babylon_stk", "babylon"))
         self.assertTrue(civ6_mirror_check.leader_id_matches("suleiman_alt", "suleiman"))
         self.assertFalse(civ6_mirror_check.civ_id_matches("ottoman", "rome"))
         self.assertFalse(civ6_mirror_check.leader_id_matches("suleiman_alt", "saladin"))
@@ -114,6 +115,7 @@ class MirrorCheckTest(unittest.TestCase):
             "districts": [
                 {"type": "DISTRICT_CITY_CENTER"}, {"type": "DISTRICT_CAMPUS"},
                 {"type": "DISTRICT_WONDER"},
+                {"type": "DISTRICT_THEATER", "complete": False},
             ],
         }]}
         board = {"cities": [{
@@ -121,7 +123,7 @@ class MirrorCheckTest(unittest.TestCase):
             "loyalty": 100.0, "loyalty_per_turn": 10.3, "defense": 40.0,
             "hp": 150, "wall_hp": 60, "wall_max": 100,
             "religion": "Orthodoxy",
-            "buildings": ["monument", "palace", "medieval_walls"],
+            "buildings": ["monument", "medieval_walls"],
             "wonders": {"pyramids": [15, 9]},
             "districts": {"campus": [15, 8]},
         }]}
@@ -181,6 +183,18 @@ class MirrorCheckTest(unittest.TestCase):
         })
         self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
 
+    def test_unmodelled_unique_unit_uses_firaxis_replacement_role(self) -> None:
+        state = {"rivals": [{"units": [{
+            "kind": "UNIT_SCOTTISH_HIGHLANDER", "x": 3, "y": 5,
+            "hp": 72, "fortified": False, "fortify_turns": 0,
+        }]}]}
+        board = {"view_player": 0, "units": [{
+            "owner": 1, "type": "ranger", "pos": [1, 5],
+            "hp": 72, "fortified": False, "fortify_turns": 0,
+        }]}
+
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
     def test_hostile_type_field_is_checked_as_a_real_unit_kind(self) -> None:
         state = {"hostiles": [{
             "type": "UNIT_WARRIOR", "player": 63, "x": 3, "y": 5,
@@ -188,6 +202,18 @@ class MirrorCheckTest(unittest.TestCase):
         }]}
         board = {"view_player": 0, "units": [{
             "owner": 4, "type": "warrior", "pos": [1, 5],
+            "hp": 79, "fortified": False, "fortify_turns": 0,
+        }]}
+        self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])
+
+    def test_barbarian_horse_archer_uses_the_modelled_saka_unit(self) -> None:
+        state = {"hostiles": [{
+            "type": "UNIT_BARBARIAN_HORSE_ARCHER", "player": 63,
+            "x": 3, "y": 5, "hp": 79, "fortified": False,
+            "fortify_turns": 0,
+        }]}
+        board = {"view_player": 0, "units": [{
+            "owner": 4, "type": "saka_horse_archer", "pos": [1, 5],
             "hp": 79, "fortified": False, "fortify_turns": 0,
         }]}
         self.assertEqual(civ6_mirror_check.unit_fact_mismatches(state, board, 10), [])

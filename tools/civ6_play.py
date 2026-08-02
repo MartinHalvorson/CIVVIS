@@ -395,6 +395,21 @@ def screen_locked() -> bool:
     return 'CGSSessionScreenIsLocked"=Yes' in result.stdout
 
 
+def wait_for_unlocked_session(poll_s: float = 2.0) -> None:
+    """Wait at the macOS authentication boundary instead of aborting the run.
+
+    GUI scripting cannot operate the protected lock screen.  Waiting here keeps
+    the requested run alive without trying to bypass that boundary, and lets a
+    launch requested while locked continue as soon as the operator unlocks.
+    """
+    if not screen_locked():
+        return
+    print("[session] macOS is locked; waiting to continue after unlock", flush=True)
+    while screen_locked():
+        time.sleep(poll_s)
+    print("[session] macOS unlocked; continuing", flush=True)
+
+
 # Which half of the screen the game gets. Set from --window-side/--window-frac
 # in main; module-level so the focus helpers do not need threading through every
 # call site.
@@ -565,71 +580,105 @@ def list_opened(before: Path, after: Path, rect: tuple[int, int, int, int]) -> b
     return changed > 0.10 * (diff.size[0] * diff.size[1])
 
 
+def _setup_option_label(value: str) -> str:
+    """Return the English value Firaxis renders in a setup dropdown."""
+    label = value.removesuffix(".lua")
+    for prefix in ("DIFFICULTY_", "GAMESPEED_", "MAPSIZE_"):
+        label = label.removeprefix(prefix)
+    return label.replace("_", " ").title()
+
+
+def _setup_current_value(path: Path, bounds: tuple[int, int, int, int],
+                         name: str) -> tuple[str, tuple[int, int]] | None:
+    """Read a closed setup dropdown's value and exact screen position."""
+    screen = desktop_size()
+    if screen is None:
+        return None
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    allowed = {
+        _normalized_label(_setup_option_label(option)): option
+        for option in OPTIONS[name]
+    }
+    observations = macos_ocr.recognize(path)
+    observations.extend(_menu_crop_ocr(path, bounds))
+    vertical_bands = {
+        "difficulty": (0.20, 0.38),
+        "speed": (0.24, 0.44),
+        "map_type": (0.28, 0.50),
+        # "Standard" is both a speed and a map size.  The map-size row is
+        # always below the speed row even when the panel reflows vertically.
+        "map_size": (0.34, 0.56),
+    }
+    top, bottom = vertical_bands[name]
+    for observation in observations:
+        option = allowed.get(_normalized_label(str(observation.get("text", ""))))
+        if option is None:
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+        rx, ry = (px - x) / w, (py - y) / h
+        # The values occupy the narrow central setup column.  This rejects an
+        # identical word from the news artwork or another desktop window.
+        if 0.38 <= rx <= 0.62 and top <= ry <= bottom:
+            return option, (px, py)
+    return None
+
+
 def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
                  run_dir: Path | None = None) -> bool:
-    """Open one Create Game dropdown and pick a value by its position in the list.
+    """Select and read back one visible Create Game dropdown value.
 
-    ★★★★★ **THE SECOND CLICK USED TO GO OUT BLIND, AND ON A SMALL MAP IT LANDED ON
-    THE DRAMATIC AGES TOGGLE.**
-
-    This function used to click the box, sleep, and click the option without ever
-    checking that a list had appeared — the comment on `configure_and_start` said so
-    outright, on the reasoning that the agent's readback from inside the game catches
-    a wrong setting. It does. What it cannot undo is a click that changed something
-    *else*, and there is something else directly underneath:
-
-    ```
-    MAPSIZE_SMALL is option index 2
-      fy = 0.4841 + 0.02174 + 2*0.018637 = 0.5431
-    GAME MODES row 1, measured on screen
-      fy = 0.5433 at 1728x1084, 0.5498 at the harness's own 864x542
-    ```
-
-    and `SETUP_X = 0.500` is icon 3 of that row, whose tooltip is *"Players in Dark
-    Ages will have a portion of their empire immediately fall into Free Cities"* —
-    Dramatic Ages. Verified by experiment, not by arithmetic: one held click there
-    put a checkmark in the box, a second cleared it, and a difference of the two
-    screenshots over the whole GAME MODES block changed in exactly that one square.
-
-    ⚠ The collision belongs to **Small**, and Small is the tournament requirement.
-    Duel is option 0 (fy 0.5058) and never reached the row, so every earlier run was
-    safe and #701 — which moved the launchers to `MAPSIZE_SMALL` to make the game
-    tournament-shaped — is what aimed the click at the toggle.
-
-    The failure mode that gets it there is ordinary: a click on the closed box does
-    not always open the list (the first click on an unfocused window only hovers),
-    and then the option click has nothing above the modes row to land on.
-
-    **So the list is now verified, retried once, and — if it still will not open —
-    NOT clicked.** Leaving the setting at its default is strictly better than
-    clicking blind: a wrong difficulty or map size is reported by the `seat` event
-    and refused, while a toggled game mode arms a whole run of the wrong game.
-    Returns False when it gave up, so the caller can say so.
+    The setup panel reflowed in a live 756x480 window: the rendered Prince box
+    was at y=167 while the old measured ratio clicked y=202.  A pixel-difference
+    test correctly said the list had not opened, but retrying the same stale
+    coordinate could never recover.  Read the current value, click that exact
+    rendered row, then read and click the requested option from the opened list.
+    No option position is assumed, and success requires a final OCR readback.
     """
     if value not in OPTIONS[name]:
         return False
-    x, y, w, h = bounds
-    box = DROPDOWN[name]
-    index = OPTIONS[name].index(value)
-    rect = option_strip(bounds, name)
     shots = run_dir if run_dir is not None else Path(tempfile.gettempdir())
     before = shots / f"dropdown-{name}-closed.png"
     after = shots / f"dropdown-{name}-open.png"
+    verified = shots / f"dropdown-{name}-selected.png"
 
     for attempt in (1, 2):
         screenshot(before)
-        click_at(int(x + w * SETUP_X), int(y + h * box))
+        current = _setup_current_value(before, bounds, name)
+        if current is None:
+            print(f"[setup] {name}: current value was not readable (attempt {attempt})",
+                  flush=True)
+            continue
+        current_value, current_point = current
+        if current_value == value:
+            print(f"[setup] {name}: already verified {_setup_option_label(value)}",
+                  flush=True)
+            return True
+
+        click_at(*current_point)
         time.sleep(1.2)
         screenshot(after)
-        if list_opened(before, after, rect):
-            click_at(int(x + w * SETUP_X),
-                     int(y + h * (box + OPTION_FIRST + index * OPTION_STEP)))
-            time.sleep(1.2)
+        target = _observed_label_point(after, _setup_option_label(value), bounds)
+        if target is None:
+            print(f"[setup] {name}: requested option was not visible (attempt {attempt})",
+                  flush=True)
+            continue
+
+        click_at(*target)
+        time.sleep(1.2)
+        screenshot(verified)
+        selected = _setup_current_value(verified, bounds, name)
+        if selected is not None and selected[0] == value:
+            print(f"[setup] {name}: selected and verified {_setup_option_label(value)}",
+                  flush=True)
             return True
-        print(f"[setup] {name}: list did not open (attempt {attempt})", flush=True)
-    # ⚠ Deliberately no click. See the docstring: the blind click is the defect.
-    print(f"[setup] {name}: LEAVING AT DEFAULT rather than clicking blind — "
-          f"a stray click here toggles a game mode", flush=True)
+        print(f"[setup] {name}: selection did not read back (attempt {attempt})",
+              flush=True)
+
+    print(f"[setup] {name}: refusing to click an unverified coordinate", flush=True)
     return False
 
 
@@ -639,14 +688,31 @@ def _normalized_label(value: str) -> str:
 
 
 def _menu_label_matches(observed: str, wanted: str) -> bool:
-    """Tolerate one OCR glyph error in a long, otherwise exact menu label."""
+    """Tolerate a small OCR edit distance in a long menu label.
+
+    In the required 756-point-wide game quadrant Vision has returned both
+    ``Single Plaver`` (one substitution) and ``Single Plave`` (a substitution
+    plus a missing final glyph) for ``Single Player``.  Menu labels remain
+    constrained to the game window, so two edits in a ten-character label are
+    conservative enough to recover the visible row without a coordinate guess.
+    """
     observed = _normalized_label(observed)
     wanted = _normalized_label(wanted)
     if observed == wanted:
         return True
-    if len(observed) != len(wanted) or len(wanted) < 8:
+    if len(wanted) < 10 or abs(len(observed) - len(wanted)) > 2:
         return False
-    return sum(left != right for left, right in zip(observed, wanted)) == 1
+    previous = list(range(len(wanted) + 1))
+    for row, left in enumerate(observed, 1):
+        current = [row]
+        for column, right in enumerate(wanted, 1):
+            current.append(min(
+                current[-1] + 1,
+                previous[column] + 1,
+                previous[column - 1] + (left != right),
+            ))
+        previous = current
+    return previous[-1] <= 2
 
 
 def leader_display_name(leader: str) -> str:
@@ -663,6 +729,40 @@ def leader_display_name(leader: str) -> str:
     return leader.removeprefix("LEADER_").replace("_", " ").title()
 
 
+def _setup_current_leader(path: Path, bounds: tuple[int, int, int, int]
+                          ) -> tuple[str, tuple[int, int]] | None:
+    """Read the current civilization-picker value and its screen position."""
+    screen = desktop_size()
+    if screen is None:
+        return None
+    labels = {"randomleader": "Random Leader"}
+    try:
+        roster = json.loads((REPO_ROOT / "data" / "civs.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        roster = {}
+    for civilization in roster.values() if isinstance(roster, dict) else ():
+        label = civilization.get("leader") if isinstance(civilization, dict) else None
+        if isinstance(label, str):
+            labels[_normalized_label(label)] = label
+
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    observations = macos_ocr.recognize(path)
+    observations.extend(_menu_crop_ocr(path, bounds))
+    for observation in observations:
+        label = labels.get(_normalized_label(str(observation.get("text", ""))))
+        if label is None:
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+        rx, ry = (px - x) / w, (py - y) / h
+        if 0.38 <= rx <= 0.62 and 0.12 <= ry <= 0.34:
+            return label, (px, py)
+    return None
+
+
 def _observation_point(observation: dict) -> tuple[float, float] | None:
     try:
         return (
@@ -671,6 +771,55 @@ def _observation_point(observation: dict) -> tuple[float, float] | None:
         )
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def _menu_crop_ocr(path: Path, bounds: tuple[int, int, int, int]) -> list[dict]:
+    """Read the small main-menu columns from an enlarged crop.
+
+    At 756x480 Vision can read the main row inconsistently and omit every
+    Single Player submenu row from a full desktop capture.  The pixels are
+    present: cropping the two menu columns and enlarging them is the same
+    recovery already required by the DLC-dependent leader picker below.
+    Returned boxes are mapped back to full-desktop normalized coordinates.
+    """
+    try:
+        from PIL import Image
+
+        screen = desktop_size()
+        if screen is None:
+            return []
+        image = Image.open(path)
+        screen_w, screen_h = screen
+        x, y, w, h = bounds
+        scale_x, scale_y = image.width / screen_w, image.height / screen_h
+        rect = (
+            int((x + w * 0.18) * scale_x),
+            int((y + h * 0.22) * scale_y),
+            int((x + w * 0.82) * scale_x),
+            int((y + h * 0.72) * scale_y),
+        )
+        crop = image.crop(rect)
+        crop = crop.resize((crop.width * 4, crop.height * 4))
+        crop_path = path.with_name(path.stem + "-menu-crop.png")
+        crop.save(crop_path)
+        observations = macos_ocr.recognize(crop_path)
+    except (OSError, ValueError):
+        return []
+
+    left, crop_top, right, crop_bottom = rect
+    crop_w, crop_h = right - left, crop_bottom - crop_top
+    mapped = []
+    for observation in observations:
+        item = dict(observation)
+        try:
+            item["x"] = (left + float(observation["x"]) * crop_w) / image.width
+            item["y"] = (crop_top + float(observation["y"]) * crop_h) / image.height
+            item["width"] = float(observation["width"]) * crop_w / image.width
+            item["height"] = float(observation["height"]) * crop_h / image.height
+        except (KeyError, TypeError, ValueError):
+            continue
+        mapped.append(item)
+    return mapped
 
 
 def _leader_observation(observations: list[dict], label: str,
@@ -746,6 +895,23 @@ def _leader_ocr(path: Path, bounds: tuple[int, int, int, int],
     return mapped
 
 
+def _leader_picker_open(path: Path, bounds: tuple[int, int, int, int]) -> bool:
+    """Prove the picker is open by reading a real roster entry from it."""
+    try:
+        roster = json.loads((REPO_ROOT / "data" / "civs.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        roster = {}
+    names = {
+        _normalized_label(civilization.get("leader", ""))
+        for civilization in roster.values() if isinstance(civilization, dict)
+    }
+    names.discard("")
+    return any(
+        _normalized_label(str(observation.get("text", ""))) in names
+        for observation in _leader_ocr(path, bounds, top=0.15, bottom=0.80)
+    )
+
+
 def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | None,
                             run_dir: Path) -> bool:
     """Select and visually verify a leader from Firaxis's DLC-dependent list."""
@@ -753,22 +919,24 @@ def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | Non
         return True
     label = leader_display_name(leader)
     x, y, w, h = bounds
-    picker_y = DROPDOWN["difficulty"] - LEADER_PICKER_OFFSET
     closed_shot = run_dir / "leader-picker-closed.png"
     open_shot = run_dir / "leader-picker-open.png"
-    picker_rect = (
-        int((x + w * 0.40) * 2),
-        int((y + h * 0.30) * 2),
-        int((x + w * 0.62) * 2),
-        int((y + h * 0.76) * 2),
-    )
 
     for attempt in (1, 2):
         screenshot(closed_shot)
-        click_at(int(x + w * SETUP_X), int(y + h * picker_y))
+        current = _setup_current_leader(closed_shot, bounds)
+        if current is None:
+            print(f"[setup] leader value was not readable (attempt {attempt})",
+                  flush=True)
+            continue
+        current_label, current_point = current
+        if _normalized_label(current_label) == _normalized_label(label):
+            print(f"[setup] leader: already verified {label} ({leader})", flush=True)
+            return True
+        click_at(*current_point)
         time.sleep(1.2)
         screenshot(open_shot)
-        if list_opened(closed_shot, open_shot, picker_rect):
+        if _leader_picker_open(open_shot, bounds):
             break
         print(f"[setup] leader list did not open (attempt {attempt})", flush=True)
     else:
@@ -834,16 +1002,22 @@ def _observed_label_points(path: Path, label: str,
         return []
     screen_w, screen_h = screen
     x, y, w, h = bounds
-    points = []
-    for observation in macos_ocr.recognize(path):
-        if not _menu_label_matches(str(observation.get("text", "")), label):
-            continue
-        point = _observation_point(observation)
-        if point is None:
-            continue
-        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
-        if x <= px <= x + w and y <= py <= y + h:
-            points.append((px, py))
+    def collect(observations: list[dict]) -> list[tuple[int, int]]:
+        found = []
+        for observation in observations:
+            if not _menu_label_matches(str(observation.get("text", "")), label):
+                continue
+            point = _observation_point(observation)
+            if point is None:
+                continue
+            px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+            if x <= px <= x + w and y <= py <= y + h:
+                found.append((px, py))
+        return found
+
+    points = collect(macos_ocr.recognize(path))
+    if not points:
+        points = collect(_menu_crop_ocr(path, bounds))
     return points
 
 
@@ -945,8 +1119,8 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     anything at all is the proof that a game exists.
     """
     def started(seconds: float) -> bool:
-        deadline = time.time() + seconds
-        while time.time() < deadline:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
             saw = False
             for event in tail.poll():
                 on_event(event)
@@ -1048,8 +1222,8 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
     select, so this never guesses which row happens to be first.
     """
     def started(seconds: float) -> bool:
-        deadline = time.time() + seconds
-        while time.time() < deadline:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
             saw = False
             for event in tail.poll():
                 on_event(event)
@@ -1240,7 +1414,7 @@ def dismiss_leader_dialogue(clicks: int = 6) -> bool:
     # at that spot the five extra clicks do nothing, and when one is, the statement it
     # opens is somewhere else by the time the next click lands. Walking the whole
     # column once per pass advances a chain one link per pass, which is what a person
-    # does. Same number of clicks, and the sweep now finishes in about 23s of a 240s
+    # does. Same number of clicks, and the sweep now finishes in about 6s of a 240s
     # stall budget instead of 46s.
     passes = max(1, clicks // 2)
     for attempt in range(passes):
@@ -1248,7 +1422,7 @@ def dismiss_leader_dialogue(clicks: int = 6) -> bool:
         for name, fx, fy in targets:
             x, y = int(wx + ww * fx), int(wy + wh * fy)
             click_at(x, y)
-            time.sleep(0.4)
+            time.sleep(0.1)
     return True
 
 
@@ -1270,6 +1444,21 @@ def press_escape(times: int = 2) -> bool:
     return ok
 
 
+def dismiss_world_congress_between_turns() -> bool:
+    """Click the shipped close control on the between-turns Congress screen."""
+    focus_game(GAME_SIDE, GAME_FRACTION)
+    bounds = game_window()
+    if bounds is None:
+        return False
+    wx, wy, ww, wh = bounds
+    # Measured against the stock Gathering Storm context: its close button is
+    # inset six points from the right and seven percent of the window height
+    # below the title-bar origin. This is window-relative so the mandated
+    # upper-right layout and a different Retina scale do not change the target.
+    click_at(wx + ww - 6, wy + int(wh * 0.07))
+    return True
+
+
 def play(args: argparse.Namespace) -> int:
     # One run at a time against this installation. Two harnesses share one mod
     # directory, one log and one process; the second one's install lands in the
@@ -1281,12 +1470,7 @@ def play(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    if screen_locked():
-        print(
-            "macOS session is locked; unlock it before launching Civilization VI",
-            file=sys.stderr,
-        )
-        return 7
+    wait_for_unlocked_session()
     if not gamelock.acquire(args.tag, wait_s=args.lock_wait):
         foreign = gamelock.foreign_run(args.tag)
         print(f"another run holds the game: {foreign or gamelock.describe()}",
@@ -1407,7 +1591,7 @@ def _play(args: argparse.Namespace) -> int:
     tail = watch.LogTail()
     state = {
         "hosted": False, "seat": None, "turn": -1, "score": -1,
-        "outcome": None, "last_progress": time.time(), "configured": False,
+        "outcome": None, "last_progress": time.monotonic(), "configured": False,
         "modes": None, "mode_mismatch": False,
     }
 
@@ -1463,7 +1647,7 @@ def _play(args: argparse.Namespace) -> int:
         elif kind == "turn":
             state["turn"] = event.get("turn", -1)
             state["score"] = event.get("score", -1)
-            state["last_progress"] = time.time()
+            state["last_progress"] = time.monotonic()
             if state["turn"] % args.report_every == 0:
                 actions = event.get("actions") or {}
                 summary = " ".join(f"{k}={v}" for k, v in sorted(actions.items()))
@@ -1478,19 +1662,19 @@ def _play(args: argparse.Namespace) -> int:
         elif kind == "autoclose_stuck":
             # ⚠ THE SHIM HAS GIVEN UP, so press the key a person would.
             #
-            # `autoclose_stuck` means twenty close attempts failed and the screen
-            # called ClearUpdate, so it will never try again — the screen is up
-            # for the rest of the game. Run settler-20260730T021107Z halted at
-            # turn 121 on one, with four cities and a score of 126, the best of
-            # the session.
+            # `autoclose_stuck` means twenty close attempts failed. Photograph the
+            # exact variant before clicking: dialogue geometry has changed several
+            # times, and without the frame a miss cannot be repaired honestly.
             #
             # A leader conversation needs a dialogue option CHOSEN; everything
             # else on this list just needs dismissing. Escape was tried for the
             # conversation case and does nothing at all on it — verified by hand
             # against a live stuck screen — so the two get different treatment.
             screen = event.get("screen")
+            shot = run_dir / f"autoclose-stuck-turn-{state['turn']}.png"
+            screenshot(shot)
             print(f"[autoclose_stuck] {screen} gave up after "
-                  f"{event.get('attempts')} attempts")
+                  f"{event.get('attempts')} attempts; photographed to {shot}")
             # ⚠⚠ ESCAPE WITH NOTHING TO CLOSE OPENS THE PAUSE MENU, AND THAT KILLS THE
             # RUN. Photographed at the moment of a stall (run civvis-20260730T181327Z,
             # turn 69, three healthy cities at loyalty 100): Civilization VI showing
@@ -1512,6 +1696,9 @@ def _play(args: argparse.Namespace) -> int:
             if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):
                 ok = dismiss_leader_dialogue()
                 how = "dialogue clicks"
+            elif screen == "WorldCongressBetweenTurns":
+                ok = dismiss_world_congress_between_turns()
+                how = "World Congress close control"
             elif screen in BLOCKING:
                 ok = press_escape()
                 how = "escape"
@@ -1576,9 +1763,22 @@ def _play(args: argparse.Namespace) -> int:
     # frames, and the turn loop runs off game-core events, so the run stops
     # without a single log line saying why.
     last_focus = [0.0]
+    session_was_locked = [False]
+
+    def console_locked() -> bool:
+        locked = screen_locked()
+        if locked and not session_was_locked[0]:
+            print("[session] macOS locked; GUI upkeep paused while the live "
+                  "event/decision loop continues", flush=True)
+        elif not locked and session_was_locked[0]:
+            print("[session] macOS unlocked; refocusing Firaxis and continuing",
+                  flush=True)
+            last_focus[0] = 0.0
+        session_was_locked[0] = locked
+        return locked
 
     def keep_foreground() -> None:
-        now = time.time()
+        now = time.monotonic()
         if now - last_focus[0] < args.focus_every:
             return
         last_focus[0] = now
@@ -1602,7 +1802,7 @@ def _play(args: argparse.Namespace) -> int:
     # the contention note — so it is a flag, not a constant.
     reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                           each_poll=keep_foreground, poll_s=poll_s,
-                          stall_s=args.stall_seconds)
+                          stall_s=args.stall_seconds, pause_when=console_locked)
     # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
     # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
     # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
@@ -1645,7 +1845,8 @@ def _play(args: argparse.Namespace) -> int:
         dismiss_leader_dialogue()
         reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                               each_poll=keep_foreground, poll_s=poll_s,
-                              stall_s=args.stall_seconds)
+                              stall_s=args.stall_seconds,
+                              pause_when=console_locked)
         if not reason.startswith("stalled"):
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0

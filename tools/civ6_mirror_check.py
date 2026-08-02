@@ -72,6 +72,15 @@ MIRRORED_IMPROVEMENTS = set(json.loads(
 MIRRORED_WONDERS = set(json.loads(
     (Path(__file__).resolve().parent.parent / "data" / "wonders.json").read_text()
 ))
+UNIT_MODEL_FALLBACKS = {
+    # Firaxis's barbarian Horse Archer shares the modeled Saka role; the host
+    # implementation prefix is removed before this table is consulted.
+    "horse_archer": "saka_horse_archer",
+    # Exact stock roles from Firaxis's UnitReplaces table. CIVVIS does not yet
+    # carry these unique specifications, but it must not erase the visible unit.
+    "scottish_highlander": "ranger",
+    "korean_hwacha": "field_cannon",
+}
 RESOURCE_RULES = json.loads(
     (Path(__file__).resolve().parent.parent / "data" / "resources.json").read_text()
 )
@@ -133,7 +142,7 @@ def civ6_map_script(value):
 
 def civ_id_matches(civ6, civvis):
     """Compare roster ids after the bridge's singular/plural normalization."""
-    civ6 = str(civ6 or "").lower()
+    civ6 = str(civ6 or "").lower().removesuffix("_stk")
     civvis = str(civvis or "").lower()
     return civ6 == civvis or civ6.rstrip("s") == civvis.rstrip("s")
 
@@ -345,7 +354,9 @@ def city_fact_mismatches(state, board, top):
             for value in source.get("buildings") or []
             for name in [civ6_id(value, "BUILDING_")]
         }
-        want_buildings = exported_buildings - MIRRORED_WONDERS
+        # CIVVIS models the Palace intrinsically on the current capital; keeping
+        # it in the ordinary building collection would add its yields twice.
+        want_buildings = exported_buildings - MIRRORED_WONDERS - {"palace"}
         got_buildings = {str(value).lower() for value in city.get("buildings") or []}
         if want_buildings != got_buildings:
             mismatches.append(
@@ -380,6 +391,10 @@ def city_fact_mismatches(state, board, top):
             # pseudo-district too reports a duplicate representation as missing.
             if civ6_id(district.get("type"), "DISTRICT_")
             not in {"city_center", "wonder"}
+            # An in-progress district is a foundation, not yet an entry in the
+            # city's completed-district table. Its location and queue are
+            # mirrored separately; comparing it here invents a missing district.
+            and district.get("complete", True)
         }
         got_districts = {str(value).lower() for value in (city.get("districts") or {})}
         if want_districts != got_districts:
@@ -424,6 +439,11 @@ def unit_fact_mismatches(state, board, top):
         kind = IDENTIFIER_ALIASES.get(raw_kind, raw_kind)
         if kind.startswith("barbarian_"):
             kind = kind.removeprefix("barbarian_")
+        # Apply aliases after removing Firaxis's barbarian implementation
+        # prefix too: BARBARIAN_HORSE_ARCHER is the same modelled Saka horse
+        # archer as SCYTHIAN_HORSE_ARCHER, not an absent `horse_archer` type.
+        kind = IDENTIFIER_ALIASES.get(kind, kind)
+        kind = UNIT_MODEL_FALLBACKS.get(kind, kind)
         source_groups.setdefault((owner, pos, kind), []).append(source)
 
     mismatches = []
@@ -663,18 +683,34 @@ def main(argv=None):
             print("CONTROL  ⚠ " + "; ".join(runtime))
         else:
             print("CONTROL  live game, export and CIVVIS worker are current   OK")
-    board = json.load(urllib.request.urlopen(f"http://127.0.0.1:{PORT}/state", timeout=30))
-    state = latest_state(run, upto=board["turn"])
-    # ⚠ Board first, then bound the export to the board's turn. The other order
-    # measures the game's progress against a stale snapshot and calls it a defect.
-    _, game_turn = load_export(run)
+    # The viewer can publish a staged board a fraction of a second before follow.py
+    # appends the corresponding host event. Never compare that future board with the
+    # previous export: one ordinary unit move then looks exactly like a dropped unit.
+    board = state = None
+    game_turn = -1
+    for _ in range(20):
+        board = json.load(
+            urllib.request.urlopen(f"http://127.0.0.1:{PORT}/state", timeout=30)
+        )
+        _, game_turn = load_export(run)
+        state = latest_state(run, upto=board["turn"])
+        state_turn = int((state or {}).get("turn") or -1)
+        if game_turn >= board["turn"] and state_turn == board["turn"]:
+            break
+        time.sleep(0.1)
+    assert board is not None
+    state_turn = int((state or {}).get("turn") or -1)
+    if game_turn < board["turn"] or state_turn != board["turn"]:
+        print(f"run   {os.path.basename(run)}")
+        print(f"turn  game {game_turn}   board {board['turn']}   state {state_turn}   ⚠ DRIFT")
+        print("\nDISAGREEMENTS: no exact host frame exists for the published board")
+        return 1
     plots, _ = load_export(run, upto=board["turn"])
     tiles = {tuple(t["pos"]): t for t in board["map"]["tiles"]}
     visible = {tuple(v) for v in board["visible"]}
 
     print(f"run   {os.path.basename(run)}")
-    print(f"turn  game {game_turn}   board {board['turn']}"
-          f"   {'OK' if abs(game_turn - board['turn']) <= 1 else '⚠ DRIFT'}")
+    print(f"turn  game {game_turn}   board {board['turn']}   state {state_turn}   OK")
 
     # --- lobby setup -------------------------------------------------------
     # The seat event is emitted once rather than copied into each state patch.

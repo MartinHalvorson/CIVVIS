@@ -68,6 +68,13 @@ pcall(function() NAME = ContextPtr:GetID() or "unknown"; end);
 -- Now that this context knows its own name, the era screens can get their
 -- shorter clock. This must stay below `local NAME`.
 if ERA_SCREENS[NAME] then SECONDS = ERA_SECONDS; end
+-- Leader/deal views are interactive overlays rather than readable completion
+-- cards. When one refuses its first exit path we need to reach the later response
+-- rungs promptly; twenty one-second probes left a real leader screen up for twenty
+-- seconds before the desktop fallback even began.
+if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView" then
+	SECONDS = math.min(SECONDS, tonumber(cfg.DialogueSeconds) or 0.25);
+end
 if SECONDS < 0 then SECONDS = 0; end
 
 local RUN = tostring(cfg.RunTag or "unset");
@@ -124,6 +131,7 @@ local function haveScreen()
 	return type(OnClose) == "function"
 		or type(Close) == "function"
 		or type(OnContinue) == "function"
+		or type(OnPass) == "function"             -- WorldCongressPopup emergency proposal
 		or type(OnClosePopup) == "function"
 		or type(OnHideScreen) == "function"        -- GreatWorkShowcase
 		or type(OnButton1) == "function"           -- ChooseArtifact
@@ -191,6 +199,15 @@ local function endScreen(attempt)
 		end
 		if type(OnClosePopup) == "function" then OnClosePopup(); return true; end
 		return false;
+	end
+	-- A military-emergency proposal is raised by WorldCongressPopup itself,
+	-- not WorldCongressIntro or WorldCongressBetweenTurns.  Its shipped Pass
+	-- button calls OnPass: ClosePopup alone hides the panel but leaves the
+	-- special-session notification pending, so the same screen can immediately
+	-- return.  Use the complete Firaxis path a person pressing Pass would use.
+	if NAME == "WorldCongressPopup" and type(OnPass) == "function" then
+		OnPass();
+		return true;
 	end
 	if NAME == "EraReviewPopup" and type(OnContinue) == "function" then
 		OnContinue();
@@ -325,12 +342,13 @@ local function endScreen(attempt)
 		OnButton1();
 		return true;
 	end
-	-- The between-turns congress screen holds an EVENT LOCK, so closing it is not
-	-- cosmetic: until the lock is released the game will not proceed. Releasing it
-	-- is what the shipped Continue button does.
+	-- The between-turns congress screen must be HIDDEN, not merely unlocked.
+	-- `ReleaseEventLock` lets the event playback continue but leaves the modal
+	-- context over the map. The shipped Escape key and its close button both call
+	-- `OnHide`, which releases the lock and dequeues the popup in one operation.
 	if NAME == "WorldCongressBetweenTurns"
-			and type(ReleaseEventLock) == "function" then
-		ReleaseEventLock();
+			and type(OnHide) == "function" then
+		OnHide();
 		return true;
 	end
 	if type(OnClose) == "function" then OnClose(); return true; end

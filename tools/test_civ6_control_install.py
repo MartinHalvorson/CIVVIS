@@ -35,8 +35,48 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('kind == "purchase_faith" and "YIELD_FAITH" or "YIELD_GOLD"', source)
         self.assertIn("MilitaryFormationTypes.CORPS_MILITARY_FORMATION", source)
         self.assertIn("MilitaryFormationTypes.ARMY_MILITARY_FORMATION", source)
+        self.assertIn(
+            "formationForCost = MilitaryFormationTypes.STANDARD_MILITARY_FORMATION",
+            source,
+        )
+        self.assertNotIn(
+            "params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] =\n"
+            "\t\t\t\t\tMilitaryFormationTypes.STANDARD_MILITARY_FORMATION",
+            source,
+        )
         self.assertIn("params[CityOperationTypes.PARAM_X] = x", source)
         self.assertIn("params[CityOperationTypes.PARAM_Y] = y", source)
+        self.assertIn("results[CityCommandResults.FAILURE_REASONS]", source)
+        self.assertIn("reasons = reasons", source)
+
+    def test_military_emergency_popup_uses_firaxis_pass_path(self) -> None:
+        modinfo = (install.MOD_SOURCE / "CivvisControl.modinfo").read_text()
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+
+        self.assertIn(
+            '<LuaContext>WorldCongressPopup</LuaContext>',
+            modinfo,
+        )
+        self.assertIn('NAME == "WorldCongressPopup"', closer)
+        self.assertIn('type(OnPass) == "function"', closer)
+        self.assertIn("OnPass();", closer)
+
+    def test_between_turns_congress_uses_the_complete_firaxis_hide_path(self) -> None:
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+        congress = closer.split('NAME == "WorldCongressBetweenTurns"', 1)[1].split(
+            "return true;", 1
+        )[0]
+
+        self.assertIn('type(OnHide) == "function"', congress)
+        self.assertIn("OnHide();", congress)
+        self.assertNotIn("ReleaseEventLock();", congress)
+
+    def test_diplomacy_popups_escalate_on_the_quick_clock(self) -> None:
+        closer = (install.MOD_SOURCE / "CivvisControlAutoClose.lua").read_text()
+
+        self.assertIn('NAME == "DiplomacyActionView"', closer)
+        self.assertIn('NAME == "DiplomacyDealView"', closer)
+        self.assertIn("tonumber(cfg.DialogueSeconds) or 0.25", closer)
 
     def test_governors_export_exact_state_and_use_stock_operation_indices(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
@@ -76,12 +116,70 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("district:IsComplete()", exporter)
         self.assertIn("complete = districtComplete[", exporter)
 
+    def test_production_resumes_placed_district_without_replacing_its_plot(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        builder = source.split("local function buildParams", 1)[1].split(
+            "-- What each city was last told to build", 1
+        )[0]
+
+        self.assertIn("city:GetBuildQueue():HasBeenPlaced(row.Hash)", builder)
+        self.assertIn("if not alreadyPlaced then", builder)
+        self.assertIn("if not alreadyPlaced and where == nil then", builder)
+
     def test_controller_uses_real_project_and_great_person_command_ids(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         self.assertNotIn('"PROJECT_CAMPUS_RESEARCH_GRANT"', source)
         self.assertIn('"PROJECT_ENHANCE_DISTRICT_CAMPUS"', source)
         self.assertIn('"UNITCOMMAND_ACTIVATE_GREAT_PERSON"', source)
         self.assertIn("GetActivationHighlightPlots()", source)
+
+    def test_controller_maps_every_civvis_project_to_its_firaxis_type(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        aliases = {
+            "PROJECT_CAMPUS_RESEARCH_GRANTS": "PROJECT_ENHANCE_DISTRICT_CAMPUS",
+            "PROJECT_HOLY_SITE_PRAYERS": "PROJECT_ENHANCE_DISTRICT_HOLY_SITE",
+            "PROJECT_COMMERCIAL_HUB_INVESTMENT": (
+                "PROJECT_ENHANCE_DISTRICT_COMMERCIAL_HUB"
+            ),
+            "PROJECT_HARBOR_SHIPPING": "PROJECT_ENHANCE_DISTRICT_HARBOR",
+            "PROJECT_ENCAMPMENT_TRAINING": "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT",
+            "PROJECT_INDUSTRIAL_ZONE_LOGISTICS": (
+                "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE"
+            ),
+            "PROJECT_THEATER_SQUARE_FESTIVAL": "PROJECT_ENHANCE_DISTRICT_THEATER",
+        }
+        for civvis_type, firaxis_type in aliases.items():
+            self.assertIn(f'{civvis_type} = "{firaxis_type}"', source)
+
+        produce = source.split('if kind == "produce" then', 1)[1].split(
+            'if kind == "purchase" or kind == "purchase_faith" then', 1
+        )[0]
+        alias_at = produce.index("CIVVIS_PROJECT_TYPES[verb]")
+        resolve_at = produce.index("resolveType(GameInfo.Types, verb)")
+        self.assertLess(alias_at, resolve_at)
+
+    def test_controller_maps_government_building_names_to_firaxis_types(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        aliases = {
+            "BUILDING_AUDIENCE_CHAMBER": "BUILDING_GOV_TALL",
+            "BUILDING_ANCESTRAL_HALL": "BUILDING_GOV_WIDE",
+            "BUILDING_WARLORDS_THRONE": "BUILDING_GOV_CONQUEST",
+            "BUILDING_FOREIGN_MINISTRY": "BUILDING_GOV_CITYSTATES",
+            "BUILDING_INTELLIGENCE_AGENCY": "BUILDING_GOV_SPIES",
+            "BUILDING_GRAND_MASTERS_CHAPEL": "BUILDING_GOV_FAITH",
+            "BUILDING_WAR_DEPARTMENT": "BUILDING_GOV_MILITARY",
+            "BUILDING_NATIONAL_HISTORY_MUSEUM": "BUILDING_GOV_CULTURE",
+            "BUILDING_ROYAL_SOCIETY": "BUILDING_GOV_SCIENCE",
+        }
+        for civvis_type, firaxis_type in aliases.items():
+            self.assertIn(f'{civvis_type} = "{firaxis_type}"', source)
+
+        produce = source.split('if kind == "produce" then', 1)[1].split(
+            'if kind == "purchase" or kind == "purchase_faith" then', 1
+        )[0]
+        alias_at = produce.index("CIVVIS_GOVERNMENT_BUILDING_TYPES[verb]")
+        resolve_at = produce.index("resolveType(GameInfo.Types, verb)")
+        self.assertLess(alias_at, resolve_at)
 
     def test_parameterless_unit_commands_match_firaxis_unit_panel_signature(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
@@ -92,6 +190,21 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("CanStartCommand(unit, hash, false, true)", helper)
         self.assertIn("RequestCommand(unit, hash);", helper)
         self.assertNotIn("params", helper)
+
+    def test_unit_formation_bridge_uses_firaxis_unit_panel_signature(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        exporter = source.split("local units = {};", 1)[1].split("-- Rivals:", 1)[0]
+        handler = source.split('if verb == "ENTER_FORMATION" then', 1)[1].split(
+            'if verb == "EXIT_FORMATION" then', 1
+        )[0]
+
+        self.assertIn("unit:GetFormationUnitCount()", exporter)
+        self.assertIn('CMD["UNITCOMMAND_ENTER_FORMATION"]', source)
+        self.assertIn('CMD["UNITCOMMAND_EXIT_FORMATION"]', source)
+        self.assertIn("params[UnitCommandTypes.PARAM_UNIT_PLAYER] = x", handler)
+        self.assertIn("params[UnitCommandTypes.PARAM_UNIT_ID] = y", handler)
+        self.assertIn("UnitManager.CanStartCommand(unit, hash, params)", handler)
+        self.assertIn("UnitManager.RequestCommand(unit, hash, params)", handler)
 
     def test_religion_bridge_uses_firaxis_player_operations_and_exports_its_gate(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()

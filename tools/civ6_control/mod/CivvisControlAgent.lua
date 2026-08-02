@@ -170,7 +170,8 @@ local function resolveActions()
 	for _, name in ipairs({
 		"UNITCOMMAND_AUTOMATE", "UNITCOMMAND_PROMOTE", "UNITCOMMAND_WAKE",
 		"UNITCOMMAND_UPGRADE", "UNITCOMMAND_DELETE",
-		"UNITCOMMAND_ACTIVATE_GREAT_PERSON",
+		"UNITCOMMAND_ACTIVATE_GREAT_PERSON", "UNITCOMMAND_ENTER_FORMATION",
+		"UNITCOMMAND_EXIT_FORMATION",
 	}) do
 		CMD[name] = cmdHash(name);
 	end
@@ -2880,7 +2881,10 @@ local function buildParams(row, city, requestedX, requestedY)
 	elseif row.Kind == "KIND_BUILDING" then
 		params[CityOperationTypes.PARAM_BUILDING_TYPE] = row.Hash;
 		local building = GameInfo.Buildings[row.Type];
-		if building ~= nil and building.IsWonder then
+		local alreadyPlaced = try(function()
+			return city:GetBuildQueue():HasBeenPlaced(row.Hash);
+		end, false);
+		if building ~= nil and building.IsWonder and not alreadyPlaced then
 			local where = productionPlot(city,
 				CityOperationTypes.PARAM_BUILDING_TYPE, row.Hash,
 				requestedX, requestedY);
@@ -2897,10 +2901,22 @@ local function buildParams(row, city, requestedX, requestedY)
 		end
 	elseif row.Kind == "KIND_DISTRICT" then
 		params[CityOperationTypes.PARAM_DISTRICT_TYPE] = row.Hash;
-		local where = productionPlot(city,
-			CityOperationTypes.PARAM_DISTRICT_TYPE, row.Hash,
-			requestedX, requestedY);
-		if where == nil then
+		-- The shipped ProductionPanel's ZoneDistrict path asks
+		-- BuildQueue:HasBeenPlaced first.  A founded-but-incomplete district is
+		-- resumed with only its type and insert mode; it is deliberately absent
+		-- from GetOperationTargets because its plot is no longer a legal *new*
+		-- placement. Probing anyway refused every attempt to resume that work as
+		-- `no_params_DISTRICT_*` (live turns 58 and 73 of run 004000).
+		local alreadyPlaced = try(function()
+			return city:GetBuildQueue():HasBeenPlaced(row.Hash);
+		end, false);
+		local where = nil;
+		if not alreadyPlaced then
+			where = productionPlot(city,
+				CityOperationTypes.PARAM_DISTRICT_TYPE, row.Hash,
+				requestedX, requestedY);
+		end
+		if not alreadyPlaced and where == nil then
 			-- ★★★★ NAME THE DISTRICT AND THE CITY. This used to send
 			-- `row.DistrictType`, which does not exist on a `GameInfo.Types` row, so
 			-- every one of these arrived as a bare hash -- 39 of them on run
@@ -2923,8 +2939,10 @@ local function buildParams(row, city, requestedX, requestedY)
 			});
 			return nil;
 		end
-		params[CityOperationTypes.PARAM_X] = where.x;
-		params[CityOperationTypes.PARAM_Y] = where.y;
+		if where ~= nil then
+			params[CityOperationTypes.PARAM_X] = where.x;
+			params[CityOperationTypes.PARAM_Y] = where.y;
+		end
 	elseif row.Kind == "KIND_PROJECT" then
 		params[CityOperationTypes.PARAM_PROJECT_TYPE] = row.Hash;
 	else
@@ -4326,6 +4344,12 @@ local function exportState(player, pid, turn)
 				return (unit:GetFortifyTurns() or 0) > 0;
 			end, false),
 			fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+			-- The count is the public formation state used by the stock Unit Panel.
+			-- Without it, a successfully escorted Settler is reconstructed as two
+			-- loose units and CIVVIS asks to link them again on every turn.
+			formation_count = try(function()
+				return unit:GetFormationUnitCount();
+			end, 1),
 			great_person = greatPerson,
 		};
 	end);
@@ -5289,6 +5313,36 @@ end
 -- place that can ask the shipped database whether a name exists. The alternative
 -- spelling is tried and the name that actually resolved is reported, so a future
 -- mismatch shows up as a named miss instead of a silent default.
+--
+-- CIVVIS deliberately uses stable, human-readable project IDs, while Firaxis names
+-- every repeatable district project `PROJECT_ENHANCE_DISTRICT_*`. These are semantic
+-- renames rather than spelling variations, so `resolveType` cannot discover them by
+-- trimming. Keep the vocabulary bridge at the game boundary with the other Civ 6
+-- naming adaptations.
+local CIVVIS_PROJECT_TYPES = {
+	PROJECT_CAMPUS_RESEARCH_GRANTS = "PROJECT_ENHANCE_DISTRICT_CAMPUS",
+	PROJECT_HOLY_SITE_PRAYERS = "PROJECT_ENHANCE_DISTRICT_HOLY_SITE",
+	PROJECT_COMMERCIAL_HUB_INVESTMENT = "PROJECT_ENHANCE_DISTRICT_COMMERCIAL_HUB",
+	PROJECT_HARBOR_SHIPPING = "PROJECT_ENHANCE_DISTRICT_HARBOR",
+	PROJECT_ENCAMPMENT_TRAINING = "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT",
+	PROJECT_INDUSTRIAL_ZONE_LOGISTICS = "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE",
+	PROJECT_THEATER_SQUARE_FESTIVAL = "PROJECT_ENHANCE_DISTRICT_THEATER",
+};
+
+-- The Government Plaza building names exposed to players are likewise aliases;
+-- Firaxis's database retains implementation names describing the intended playstyle.
+local CIVVIS_GOVERNMENT_BUILDING_TYPES = {
+	BUILDING_AUDIENCE_CHAMBER = "BUILDING_GOV_TALL",
+	BUILDING_ANCESTRAL_HALL = "BUILDING_GOV_WIDE",
+	BUILDING_WARLORDS_THRONE = "BUILDING_GOV_CONQUEST",
+	BUILDING_FOREIGN_MINISTRY = "BUILDING_GOV_CITYSTATES",
+	BUILDING_INTELLIGENCE_AGENCY = "BUILDING_GOV_SPIES",
+	BUILDING_GRAND_MASTERS_CHAPEL = "BUILDING_GOV_FAITH",
+	BUILDING_WAR_DEPARTMENT = "BUILDING_GOV_MILITARY",
+	BUILDING_NATIONAL_HISTORY_MUSEUM = "BUILDING_GOV_CULTURE",
+	BUILDING_ROYAL_SOCIETY = "BUILDING_GOV_SCIENCE",
+};
+
 local function resolveType(table_, name)
 	if name == nil or name == "" then return nil, "empty"; end
 	if table_[name] ~= nil then return table_[name], name; end
@@ -5781,6 +5835,9 @@ local function applyOrder(player, pid, row, turn)
 	if kind == "produce" then
 		local city = liveCity(player, subject);
 		if city == nil then return false, "no_city"; end
+		verb = CIVVIS_PROJECT_TYPES[verb]
+			or CIVVIS_GOVERNMENT_BUILDING_TYPES[verb]
+			or verb;
 		-- ★★★★★ REMEMBER WHAT CIVVIS ASKED THIS CITY TO BUILD.
 		--
 		-- `ENDTURN_BLOCKING_PRODUCTION` fires when a city finishes something, which is
@@ -5887,18 +5944,17 @@ local function applyOrder(player, pid, row, turn)
 		local row2, resolved = resolveType(GameInfo.Types, verb);
 		if row2 == nil then return false, "unknown_" .. verb; end
 		local params = {};
+		local formationForCost = nil;
 		if row2.Kind == "KIND_UNIT" then
 			params[CityCommandTypes.PARAM_UNIT_TYPE] = row2.Hash;
 			local formation = tonumber(x) or 0;
+			formationForCost = MilitaryFormationTypes.STANDARD_MILITARY_FORMATION;
 			if formation == 1 then
-				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] =
-					MilitaryFormationTypes.CORPS_MILITARY_FORMATION;
+				formationForCost = MilitaryFormationTypes.CORPS_MILITARY_FORMATION;
+				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
 			elseif formation == 2 then
-				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] =
-					MilitaryFormationTypes.ARMY_MILITARY_FORMATION;
-			else
-				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] =
-					MilitaryFormationTypes.STANDARD_MILITARY_FORMATION;
+				formationForCost = MilitaryFormationTypes.ARMY_MILITARY_FORMATION;
+				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
 			end
 		elseif row2.Kind == "KIND_BUILDING" then
 			params[CityCommandTypes.PARAM_BUILDING_TYPE] = row2.Hash;
@@ -5937,11 +5993,23 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		if okCan then canBuy, results = hostCan == true, hostResults; end
 		if not canBuy then
+			local reasons = {};
+			pcall(function()
+				local failureReasons = results ~= nil
+					and results[CityCommandResults.FAILURE_REASONS] or nil;
+				if failureReasons ~= nil then
+					for _, key in ipairs(failureReasons) do
+						reasons[#reasons + 1] = {
+							key = tostring(key),
+							text = try(function() return Locale.Lookup(key); end, tostring(key)),
+						};
+					end
+				end
+			end);
 			local cost = try(function()
 				if row2.Kind == "KIND_UNIT" then
 					return city:GetGold():GetPurchaseCost(
-						currency, row2.Hash,
-						params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE]);
+						currency, row2.Hash, formationForCost);
 				end
 				return city:GetGold():GetPurchaseCost(currency, row2.Hash);
 			end, -1);
@@ -5955,6 +6023,7 @@ local function applyOrder(player, pid, row, turn)
 					return player:GetTreasury():GetGoldBalance();
 				end, -1),
 				cost = cost, checked = okCan, has_results = results ~= nil,
+				reasons = reasons,
 			});
 			return false, "cannot_buy_" .. resolved;
 		end
@@ -5981,6 +6050,29 @@ local function applyOrder(player, pid, row, turn)
 				});
 			end
 			return activated, verb;
+		end
+		if verb == "ENTER_FORMATION" then
+			-- `x`/`y` carry the target owner/id for this non-positional command.
+			-- This is the exact stock UnitPanel.lua signature.
+			if x == nil or y == nil then return false, "no_formation_target"; end
+			local target = liveUnit(x, y);
+			if target == nil then return false, "formation_target_gone"; end
+			local params = {};
+			params[UnitCommandTypes.PARAM_UNIT_PLAYER] = x;
+			params[UnitCommandTypes.PARAM_UNIT_ID] = y;
+			local hash = CMD["UNITCOMMAND_ENTER_FORMATION"];
+			if hash == nil then return false, "no_enter_formation_command"; end
+			local okCan, can = pcall(function()
+				return UnitManager.CanStartCommand(unit, hash, params);
+			end);
+			if not (okCan and can == true) then return false, "cannot_enter_formation"; end
+			local ok = pcall(function()
+				UnitManager.RequestCommand(unit, hash, params);
+			end);
+			return ok, ok and verb or "throw";
+		end
+		if verb == "EXIT_FORMATION" then
+			return commandUnit(unit, CMD["UNITCOMMAND_EXIT_FORMATION"]), verb;
 		end
 		-- FOUND_CITY, MOVE_TO and RANGE_ATTACK are the three that decide a game.
 		-- ⚠ There is NO attack operation on this build — the resolved list is only

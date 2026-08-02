@@ -813,6 +813,21 @@ fn translate(
             verb: Some("FOUND_CITY".to_string()),
             pos: None,
         }),
+        Action::LinkUnits { unit, with } => civ6_of.get(unit).and_then(|civ6| {
+            civ6_of.get(with).map(|target| Order {
+                kind: "unit",
+                subject: Some(*civ6),
+                verb: Some("ENTER_FORMATION".to_string()),
+                // This command is not positional: x/y are target owner/unit id.
+                pos: Some((state.seat.local_player as i32, *target as i32)),
+            })
+        }),
+        Action::UnlinkUnits { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("EXIT_FORMATION".to_string()),
+            pos: None,
+        }),
         // ★★★ A TRADER THAT CANNOT BE GIVEN A ROUTE IS PRODUCTION AND GOLD SPENT ON A
         // UNIT THAT WILL NEVER ACT. `Action::TradeRoute` was on the untranslatable
         // list, so every trader CIVVIS built stood where it was made for the rest of
@@ -2011,6 +2026,72 @@ mod tests {
             district.pos,
             Some(civvis::hex::axial_to_offset(pos.0, pos.1))
         );
+    }
+
+    #[test]
+    fn link_and_unlink_orders_preserve_both_firaxis_unit_ids() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 92,
+            seat: civvis::mirror::Seat {
+                local_player: 7,
+                ..civvis::mirror::Seat::default()
+            },
+            units: vec![
+                StateUnit {
+                    id: 501,
+                    kind: "UNIT_SETTLER".to_string(),
+                    x: 6,
+                    y: 6,
+                    hp: 100.0,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 502,
+                    kind: "UNIT_WARRIOR".to_string(),
+                    x: 6,
+                    y: 6,
+                    hp: 100.0,
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+        let settler = mirror.uid_of[&501];
+        let escort = mirror.uid_of[&502];
+
+        let link = translate(
+            &Action::LinkUnits {
+                unit: settler,
+                with: escort,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("formation order crosses");
+        assert_eq!(link.kind, "unit");
+        assert_eq!(link.subject, Some(501));
+        assert_eq!(link.verb.as_deref(), Some("ENTER_FORMATION"));
+        assert_eq!(link.pos, Some((7, 502)));
+
+        let unlink = translate(
+            &Action::UnlinkUnits { unit: settler },
+            &mirror,
+            &state,
+        )
+        .expect("formation exit crosses");
+        assert_eq!(unlink.subject, Some(501));
+        assert_eq!(unlink.verb.as_deref(), Some("EXIT_FORMATION"));
+        assert_eq!(unlink.pos, None);
     }
 
     #[test]

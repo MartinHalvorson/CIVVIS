@@ -126,9 +126,9 @@ class EventLogBridge:
     def follow(self, timeout_s: float, *, poll_s: float = 0.5,
                on_write=None) -> int:
         """Relay events for ``timeout_s`` seconds and return the copied count."""
-        deadline = time.time() + timeout_s
+        deadline = time.monotonic() + timeout_s
         copied = 0
-        while time.time() < deadline:
+        while time.monotonic() < deadline:
             wrote = self.pump()
             copied += wrote
             if wrote and on_write is not None:
@@ -138,7 +138,8 @@ class EventLogBridge:
 
 
 def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
-           stop_when=None, each_poll=None, stall_s: float | None = 600.0) -> str:
+           stop_when=None, each_poll=None, stall_s: float | None = 600.0,
+           pause_when=None) -> str:
     """Pump events to ``on_event`` until ``stop_when`` says so or time runs out.
 
     Returns a short reason string. The game exiting is reported as its own
@@ -152,12 +153,32 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
     looked exactly like a machine under load, and cost a run that sat on turn
     15 for ten minutes with nothing wrong in any log.
     """
-    deadline = time.time() + timeout_s
-    last_event = time.time()
-    while time.time() < deadline:
+    # ``monotonic`` is backed by mach_absolute_time on macOS, so closed-lid
+    # sleep does not spend the run budget.  A locked-but-awake session does
+    # advance that clock; pause_when explicitly refunds those intervals while
+    # continuing to relay game events to the decision worker.
+    now = time.monotonic()
+    deadline = now + timeout_s
+    last_event = now
+    last_poll = now
+    was_paused = False
+    while True:
+        now = time.monotonic()
+        paused = bool(pause_when is not None and pause_when())
+        if paused or was_paused:
+            paused_for = now - last_poll
+            deadline += paused_for
+            last_event += paused_for
+        last_poll = now
+        was_paused = paused
+        # Check only after refunding a paused interval.  Otherwise a session
+        # locked longer than the remaining budget would fall out of the loop
+        # before it got a chance to observe the unlock and restore that time.
+        if not paused and now >= deadline:
+            return "timeout"
         for event in tail.poll():
             on_event(event)
-            last_event = time.time()
+            last_event = time.monotonic()
             if stop_when is not None and stop_when(event):
                 return "stopped"
         if not env.game_pids():
@@ -169,12 +190,14 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
         # still non-empty so this loop waited another twenty-six minutes and
         # would have burned the whole timeout. A live process is not a live
         # game, and a stalled attempt costs the next one its slot.
-        if stall_s is not None and time.time() - last_event > stall_s:
+        if paused:
+            time.sleep(poll_s)
+            continue
+        if stall_s is not None and time.monotonic() - last_event > stall_s:
             return f"stalled: no event for {stall_s:.0f}s"
         if each_poll is not None:
             each_poll()
         time.sleep(poll_s)
-    return "timeout"
 
 
 if __name__ == "__main__":
