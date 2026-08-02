@@ -4434,7 +4434,19 @@ local function exportState(player, pid, turn)
 								type = info.DistrictType,
 								x = px,
 								y = py,
-								pillaged = try(function() return plot:IsDistrictPillaged(); end, false),
+								-- ★★★★★ ASK THE CITY DISTRICTS COLLECTION, AS FIRAXIS DOES.
+								--
+								-- `Plot:IsDistrictPillaged()` is not the stock UI API. It
+								-- throws on this build, `try` converted that to `false`, and
+								-- every damaged district was exported as healthy. Live turn
+								-- 112 then showed Ostia's Campus as `pillaged=false` while
+								-- `CanProduce` refused its Library with "The required district
+								-- is damaged." The shipped PlotToolTip and MapSearchPanel both
+								-- call `cityDistricts:IsPillaged(type, plotId)`.
+								pillaged = try(function()
+									return cityDistricts ~= nil
+										and cityDistricts:IsPillaged(dtype, plotIndex);
+								end, false),
 								complete = districtComplete[
 									tostring(try(function() return plot:GetX(); end, -1)) .. "," ..
 									tostring(try(function() return plot:GetY(); end, -1))],

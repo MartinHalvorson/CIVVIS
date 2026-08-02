@@ -167,6 +167,30 @@ fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
     }
 }
 
+/// Resolve a live production item that needs board context.
+///
+/// Firaxis repairs a pillaged district by building that already-placed district
+/// type again. CIVVIS names the repair operation and its plot, so recover the
+/// district type from the authoritative mirrored tile instead of inventing a
+/// `PROJECT_REPAIR_*` id that does not exist in the shipped database.
+fn civ6_live_build_name(
+    item: &civvis::game::Item,
+    game: &civvis::game::Game,
+) -> Option<String> {
+    use civvis::game::Item;
+    match item {
+        Item::Repair { repair, pos } if repair == "district" => game
+            .map
+            .get(*pos)
+            .and_then(|tile| tile.district.as_ref())
+            .map(|district| format!("DISTRICT_{}", district.as_str().to_ascii_uppercase())),
+        Item::Repair { repair, .. } => {
+            Some(format!("BUILDING_{}", repair.as_str().to_ascii_uppercase()))
+        }
+        _ => civ6_build_name(item),
+    }
+}
+
 /// Preserve the plot CIVVIS selected for placeable production.
 ///
 /// District and wonder placement is part of the decision, not an implementation
@@ -1351,7 +1375,7 @@ fn translate(
         Action::Produce { city, item } => {
             mirror_state.cid_of.iter().find(|(_, cid)| **cid == *city).and_then(
                 |(civ6, _)| {
-                    civ6_build_name(item).map(|name| Order {
+                    civ6_live_build_name(item, &mirror_state.game).map(|name| Order {
                         kind: "produce",
                         subject: Some(*civ6),
                         verb: Some(name),
@@ -2643,6 +2667,61 @@ mod tests {
             district.pos,
             Some(civvis::hex::axial_to_offset(pos.0, pos.1))
         );
+    }
+
+    #[test]
+    fn pillaged_district_repair_reuses_the_firaxis_district_type() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 112,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 112,
+            cities: vec![StateCity {
+                id: 77,
+                name: "Ostia".to_string(),
+                x: 6,
+                y: 6,
+                pop: 4,
+                capital: true,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_CAMPUS".to_string(),
+                    x: 7,
+                    y: 6,
+                    pillaged: true,
+                    complete: true,
+                }],
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+        let city = mirror.game.player_city_ids(0)[0];
+        let pos = civvis::hex::offset_to_axial(7, 6);
+        assert!(mirror.game.map.tiles[&pos].pillaged);
+
+        let order = translate(
+            &Action::Produce {
+                city,
+                item: civvis::game::Item::Repair {
+                    repair: civvis::name!("district"),
+                    pos,
+                },
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a CIVVIS district repair must reach Firaxis");
+
+        assert_eq!(order.kind, "produce");
+        assert_eq!(order.subject, Some(77));
+        assert_eq!(order.verb.as_deref(), Some("DISTRICT_CAMPUS"));
+        assert_eq!(order.pos, None);
     }
 
     #[test]
