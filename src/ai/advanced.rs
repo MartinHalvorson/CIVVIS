@@ -1680,6 +1680,12 @@ impl AdvancedAi {
         self.live_trader_route_adapter = true;
     }
 
+    /// Enforce Firaxis's city-majority rule for live religious purchases.
+    /// Native tournament games leave this disabled.
+    pub fn enable_live_religious_purchase_guard(&mut self) {
+        self.base.live_religious_purchase_guard = true;
+    }
+
     /// Redirect an existing agent at a new explicit victory target without
     /// discarding campaign memory; the strategic plan re-assesses on the
     /// next turn. Used by the rollout-driven `StrategicAi`.
