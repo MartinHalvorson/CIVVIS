@@ -3973,6 +3973,79 @@ mod tests {
     }
 
     #[test]
+    fn a_settler_does_not_found_a_city_that_population_pressure_will_erase() {
+        // Geometry reproduces the live failure at a smaller offset: the doomed
+        // site is eight tiles from our population-six city and six from the rival's,
+        // while the control site is four from us and twelve from them.
+        let snapshot = open_grass_board(40);
+        let city = |id, name: &str, x, y| StateCity {
+            id, name: name.to_string(), x, y, pop: 6, ..StateCity::default()
+        };
+        let mut state = StateSnapshot { turn: 45, ..StateSnapshot::default() };
+        let mut rome = city(1, "Rome", 30, 2);
+        rome.pop = 9;
+        rome.capital = true;
+        state.cities.extend([rome, city(2, "Ostia", 18, 10)]);
+        state.rivals.push(StateRival {
+            player: 3, civ: "CIVILIZATION_SCOTLAND".to_string(),
+            cities: vec![city(3, "Stirling", 14, 13)], ..StateRival::default()
+        });
+        state.units.extend([
+            StateUnit {
+                id: 10, kind: "UNIT_SETTLER".to_string(), x: 10, y: 10,
+                ..StateUnit::default()
+            },
+            StateUnit {
+                id: 11, kind: "UNIT_SETTLER".to_string(), x: 16, y: 6,
+                ..StateUnit::default()
+            },
+        ]);
+
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let doomed = crate::hex::offset_to_axial(10, 10);
+        let supported = crate::hex::offset_to_axial(16, 6);
+        let supported_settler = recon.unit_ids.iter()
+            .find_map(|(unit, civ6)| (*civ6 == 11).then_some(*unit))
+            .expect("the supported Settler must cross the mirror");
+        let doomed_settler = recon.unit_ids.iter()
+            .find_map(|(unit, civ6)| (*civ6 == 10).then_some(*unit))
+            .expect("the doomed Settler must cross the mirror");
+        let stirling = recon.known_city_ids[&3];
+        assert_eq!(recon.placed_rival_cities, 1);
+        assert_eq!(recon.game.wdist(doomed, recon.game.cities[&stirling].pos), 6);
+        let stirling_owner = recon.game.cities[&stirling].owner;
+        assert_ne!(stirling_owner, 0);
+        assert!(!recon.game.players[stirling_owner].is_minor);
+        assert!(!recon.game.players[stirling_owner].is_barbarian);
+        assert_eq!(recon.game.cities[&stirling].pop, 6);
+        assert!(!recon.game.same_team(0, stirling_owner));
+        assert!(recon.game.wdist(
+            doomed, recon.game.cities[&recon.known_city_ids[&1]].pos
+        ) > 9);
+        let mut forecast = recon.game.clone();
+        forecast.blocked_city_sites.remove(&doomed);
+        assert!(forecast.can_found_city(doomed_settler));
+        let forecast_city = forecast.found_city_for(0, doomed, None);
+        let forecast_loyalty = forecast.city_loyalty_per_turn(&forecast.cities[&forecast_city]);
+        assert_eq!(recon.game.wdist(
+            doomed, recon.game.cities[&recon.known_city_ids[&2]].pos
+        ), 8);
+        assert!(
+            recon.game.blocked_city_sites.contains(&doomed),
+            "a city forecast at {forecast_loyalty:+.1} Loyalty/turn with stronger visible \
+             foreign pressure must not consume the Settler"
+        );
+        assert!(
+            !recon.game.blocked_city_sites.contains(&supported),
+            "the filter must preserve a nearby domestically supported alternative"
+        );
+        assert!(
+            recon.game.can_found_city(supported_settler),
+            "the safe control site must remain immediately settleable"
+        );
+    }
+
+    #[test]
     fn a_seated_but_cityless_minors_ground_is_still_blocked() {
         // Borders are visible before centres are: a city-state's territory can
         // arrive while its city is still under fog. A seat we can NAME but that
@@ -7868,6 +7941,15 @@ fn apply_observed_host_metrics(
         let Some(cid) = game.city_at(pos) else {
             continue;
         };
+        // Population drives Loyalty pressure in a nine-tile radius. The own-city
+        // rebuild copied it earlier, but visible rival and city-state cities stayed
+        // at `place_city`'s population-one default. In the live Cumae failure that
+        // made population-six Stirling exert one sixth of the pressure Firaxis was
+        // applying, so a forecast built on this otherwise exact board was safe only
+        // because the most important input had been dropped.
+        if observed.pop > 0 {
+            game.cities.get_mut(&cid).unwrap().pop = observed.pop;
+        }
         apply_city_health(game, cid, observed);
         if observed.loyalty_per_turn.is_finite() {
             game.observed_city_loyalty_per_turn
@@ -8631,6 +8713,7 @@ pub fn rebuild_from_state(
     ));
     apply_governor_state(&mut game, state, &mut unmapped);
     apply_observed_host_metrics(&mut game, state, &mut unmapped);
+    block_loyalty_doomed_settler_sites(&mut game);
 
     // Districts the host has refused to place, mapped onto CIVVIS's cities. Done here
     // because it needs `city_ids`, which is only complete once every city is planted.
@@ -8789,6 +8872,42 @@ fn apply_territory(
             if !new.owned_tiles.contains(&pos) {
                 new.owned_tiles.push(pos);
             }
+        }
+    }
+}
+
+/// Refuse a founding plot whose modeled population pressure will erase the city
+/// before it can repay its Settler.
+///
+/// This is deliberately limited to a live Settler's current plot. Forecasting every
+/// revealed tile would clone the complete game hundreds of times per Firaxis turn;
+/// checking the one or two plots on which founding is immediately possible is cheap
+/// and still stops the irreversible action. Once blocked, AdvancedAI drops that site
+/// through the same `blocked_city_sites` channel used for host refusals and chooses a
+/// different destination.
+///
+/// The threshold describes an emergency rather than a merely imperfect frontier:
+/// -8 per turn exhausts a full Loyalty bar in at most thirteen turns. Live run
+/// `live-head-rome-20260802T164220Z` planted Cumae beside Stirling at -22 per turn on
+/// turn 45; it revolted on turn 53, erasing the third city and the Settler investment.
+/// Use the engine's complete Loyalty calculation on a speculative city instead of
+/// maintaining a second approximation of population, age, capital, policy, religion,
+/// amenity, starvation, and governor effects here.
+fn block_loyalty_doomed_settler_sites(game: &mut crate::game::Game) {
+    const DOOMED_LOYALTY_PER_TURN: f64 = -8.0;
+
+    let sites: Vec<crate::Pos> = game
+        .player_unit_ids(0)
+        .into_iter()
+        .filter(|unit| game.units[unit].kind == "settler" && game.can_found_city(*unit))
+        .map(|unit| game.units[&unit].pos)
+        .collect();
+    for site in sites {
+        let mut forecast = game.clone();
+        let city = forecast.found_city_for(0, site, None);
+        let loyalty = forecast.city_loyalty_per_turn(&forecast.cities[&city]);
+        if loyalty <= DOOMED_LOYALTY_PER_TURN {
+            game.blocked_city_sites.insert(site);
         }
     }
 }
@@ -9788,6 +9907,7 @@ impl LiveMirror {
         apply_city_memory(&mut self.game);
         apply_governor_state(&mut self.game, state, &mut self.unmapped);
         apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
+        block_loyalty_doomed_settler_sites(&mut self.game);
     }
 }
 
