@@ -22142,15 +22142,21 @@ function draw() {
                       11 + eh * 3, 2.6 + eh * 0.8);
       }
     } else if (t.hills && !beau) {
-      // Centred, and low: two half-circles stood up like croquet hoops and
-      // fought every other mark the tile carries for the middle of the face.
-      // At two fifths of the height they are swells in the ground — the same
-      // width, so hill country still reads as hill country from across the
-      // map, but nothing has to be drawn around them.
+      // Broad enough and tall enough to survive strategic survey zoom. Scale
+      // both the lobes and their spacing so the whole paired silhouette grows
+      // 20% wider, rather than merely making the two strokes overlap more.
+      const hillWidth = 1.2, hillHeight = 2.6 * 1.4;
+      // Woods and rainforest occupy the hill's upper half. Drop only those
+      // hills by their new height: the new crest then starts at the old
+      // baseline, leaving both the landform and its trees legible.
+      const woodedHill = t.feature === "forest" || t.feature === "jungle";
+      const hillBaseY = y + 3 + (woodedHill ? hillHeight : 0);
       cx.strokeStyle = "#00000066"; cx.lineWidth = 2.4;
       cx.beginPath();
-      cx.ellipse(x - 7, y + 3, 6.5, 2.6, 0, Math.PI, 0);
-      cx.ellipse(x + 6, y + 3, 6.5, 2.6, 0, Math.PI, 0);
+      cx.ellipse(x - 7 * hillWidth, hillBaseY,
+                 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
+      cx.ellipse(x + 6 * hillWidth, hillBaseY,
+                 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
       cx.stroke();
     }
     if (t.terrain === "desert" && !t.feature && beau) {
