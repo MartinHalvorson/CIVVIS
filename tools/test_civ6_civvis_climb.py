@@ -325,3 +325,69 @@ class CodeStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WedgedAttempt(unittest.TestCase):
+    """★★★★★ An attempt whose harness is blocked must be killed FROM OUTSIDE.
+
+    `civ6_play --frozen-seconds` watches the turn from inside its own poll loop.
+    On 2026-08-02 that did not save run civvis-20260802T064240Z: it wedged at
+    turn 206 on `WorldCongressBetweenTurns` for over ten minutes with the flag
+    armed, and never fired — no rescue line, no summary.json, so `follow` had
+    not returned. Replaying that run's events shows the in-loop logic WOULD have
+    fired, so it was right and simply never ran.
+
+    ⚠ The mod appends to events.jsonl from inside the GAME. A growing file proves
+    the game is alive, not the harness. Only another process can see that.
+    """
+
+    class _Play:
+        """A subprocess that never exits until it is signalled."""
+
+        def __init__(self):
+            self.signalled = None
+            self._dead = False
+
+        def wait(self, timeout=None):
+            if self._dead:
+                return 0
+            raise climb.subprocess.TimeoutExpired("play", timeout or 0)
+
+        def send_signal(self, sig):
+            self.signalled = sig
+            self._dead = True
+
+        def kill(self):
+            self._dead = True
+
+    def _run(self, turns, frozen_s):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "run").mkdir()
+            events = root / "run" / "events.jsonl"
+            events.write_text("".join(
+                json.dumps({"kind": "turn", "turn": t}) + "\n" for t in turns))
+            original = climb.RUN_ROOT
+            climb.RUN_ROOT = root
+            try:
+                play = self._Play()
+                why = climb.wait_watching_the_turn(play, "run", 3.0, frozen_s)
+                return why, play.signalled
+            finally:
+                climb.RUN_ROOT = original
+
+    def test_a_frozen_turn_is_killed_from_outside(self):
+        why, signalled = self._run([1, 2, 206], frozen_s=0.0)
+        self.assertEqual(why, "frozen", "a stuck turn must end the attempt")
+        self.assertEqual(signalled, climb.signal.SIGTERM)
+
+    def test_setup_has_no_turn_and_must_not_be_killed(self):
+        """⚠ Killing every attempt before it starts is the failure this must not have."""
+        why, signalled = self._run([], frozen_s=0.0)
+        self.assertNotEqual(why, "frozen", "no turn seen yet is not a frozen turn")
+        self.assertIsNone(signalled)
+
+    def test_a_patient_setting_lets_a_slow_attempt_live(self):
+        why, signalled = self._run([1, 2, 3], frozen_s=600.0)
+        self.assertNotEqual(why, "frozen")
+        self.assertIsNone(signalled)
