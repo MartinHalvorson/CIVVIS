@@ -231,6 +231,19 @@ class MatchMachineTests(unittest.TestCase):
         self.assertEqual(machine.parse_top_cpu(report), 29.5)
         self.assertIsNone(machine.parse_top_cpu("not top"))
 
+    def test_cpu_sampling_timeout_fails_closed_without_crashing_the_machine(self):
+        with mock.patch.object(machine.sys, "platform", "darwin"), mock.patch.object(
+            machine,
+            "command",
+            side_effect=subprocess.TimeoutExpired(["top"], 4),
+        ):
+            self.assertIsNone(machine.cpu_percent())
+
+        missing_cpu = machine.Resources(None, 20, 12, 0, False)
+        self.assertTrue(missing_cpu.overloaded(70))
+        self.assertFalse(missing_cpu.comfortably_below(70))
+        self.assertEqual(machine.resource_action(missing_cpu, 70), "shed_all")
+
     def test_resource_ceiling_is_hard_and_resume_has_headroom(self):
         safe = machine.Resources(59.0, 20.0, 12.0, 0.0, False)
         edge = machine.Resources(70.0, 20.0, 12.0, 0.0, False)
@@ -321,16 +334,23 @@ class MatchMachineTests(unittest.TestCase):
                     "placements": "a@Trajan@Rome@0|b@Cleopatra@Egypt@1",
                 },
             ):
-                subject.finish(subject.games[0], failed=False, reason="winner recorded")
+                subject.finish(
+                    subject.games[0],
+                    failed=True,
+                    reason="match machine stopped before result",
+                )
 
             self.assertEqual(events[0][0], "game_started")
             self.assertEqual(events[0][1]["game_kind"], "visible")
             self.assertEqual(events[1][0], "game_completed")
             self.assertEqual(events[1][1]["game_kind"], "visible")
+            self.assertEqual(events[1][1]["reason"], "rated result recorded before process stopped")
             self.assertEqual(events[1][1]["turn"], "423")
             self.assertEqual(events[1][1]["victory"], "science")
             self.assertIsNone(events[1][1]["winner"])
             self.assertEqual(events[1][1]["winner_placement"], "a@Trajan@Rome@0")
+            self.assertEqual(subject.completed, 1)
+            self.assertEqual(subject.failed, 0)
 
     def test_visible_successor_reuses_process_and_records_both_lifecycle_events(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
