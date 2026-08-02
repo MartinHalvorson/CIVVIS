@@ -11847,38 +11847,27 @@ function drawFeatureEffects(t, x, y) {
 }
 
 // Strategic terrain marks are tiny map symbols, not reduced illustrations.
-// A marsh therefore gets the two facts a player needs at a glance: shallow
-// water and reeds. Keep the clump low so it cannot be mistaken for Woods.
+// Marsh uses a shallow inverse-hill silhouette: a broad, low W that reads as
+// wet ground without competing with units, yields, or improvements.
 function drawStrategicMarsh(x, y) {
   cx.save();
   cx.lineCap = "round"; cx.lineJoin = "round";
-
-  // One broken ripple is enough to seat the plants in water without painting
-  // a blue pond over the terrain underneath.
-  cx.strokeStyle = "#4c91a0"; cx.lineWidth = 1.55;
+  cx.fillStyle = "#86cddd";
+  cx.strokeStyle = "#285f79";
+  cx.lineWidth = 1.8;
   cx.beginPath();
-  cx.moveTo(x - 15, y + 7);
-  cx.quadraticCurveTo(x - 8, y + 3.5, x - 2, y + 7);
-  cx.moveTo(x + 3, y + 7);
-  cx.quadraticCurveTo(x + 9, y + 4, x + 15, y + 7);
-  cx.stroke();
-
-  // Three uneven stems and their spare blades form one unmistakable reed bed.
-  // The warm seed heads keep the symbol legible over grassland, plains, and
-  // tundra without adding an outline or a filled badge.
-  const reeds = [[-8, 8, -9, -5], [0, 9, 1, -9], [8, 8, 7, -3]];
-  cx.strokeStyle = "#245b40"; cx.lineWidth = 1.8;
-  cx.beginPath();
-  for (const [bx, by, tx, ty] of reeds) {
-    cx.moveTo(x + bx, y + by); cx.quadraticCurveTo(x + bx, y, x + tx, y + ty);
-    cx.moveTo(x + bx, y + 3); cx.lineTo(x + bx - 4, y - 1);
-    cx.moveTo(x + bx, y + 1); cx.lineTo(x + bx + 4, y - 3);
-  }
-  cx.stroke();
-  cx.fillStyle = "#6b5630";
-  for (const [, , tx, ty] of reeds) {
-    cx.beginPath(); cx.ellipse(x + tx, y + ty - 1.8, 1.55, 3.1, -.12, 0, 7); cx.fill();
-  }
+  cx.moveTo(x - 15, y - 7);
+  cx.bezierCurveTo(x - 13, y - 1, x - 12, y + 5, x - 7, y + 5);
+  cx.bezierCurveTo(x - 3.5, y + 5, x - 3, y - 1, x, y - 1);
+  cx.bezierCurveTo(x + 3, y - 1, x + 3.5, y + 5, x + 7, y + 5);
+  cx.bezierCurveTo(x + 12, y + 5, x + 13, y - 1, x + 15, y - 7);
+  cx.lineTo(x + 15, y - 2);
+  cx.bezierCurveTo(x + 12.5, y + 5, x + 11, y + 8, x + 7, y + 8);
+  cx.bezierCurveTo(x + 3.5, y + 8, x + 3, y + 2, x, y + 2);
+  cx.bezierCurveTo(x - 3, y + 2, x - 3.5, y + 8, x - 7, y + 8);
+  cx.bezierCurveTo(x - 11, y + 8, x - 12.5, y + 5, x - 15, y - 2);
+  cx.closePath();
+  cx.fill(); cx.stroke();
   cx.restore();
 }
 
