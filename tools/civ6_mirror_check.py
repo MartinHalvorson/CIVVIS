@@ -509,22 +509,64 @@ def unit_fact_mismatches(state, board, top):
                 )
             continue
 
+        # ⚠⚠ AN UNFORTIFIED UNIT HAS NO FORTIFY_TURNS TO DISAGREE ABOUT, and
+        # comparing the two sides' "none" sentinels made this axis fail on EVERY
+        # unit of EVERY run.
+        #
+        # Civilization VI exports -1 for a unit that is not fortified; CIVVIS
+        # stores 0. Both mean the same thing, and the field only carries meaning
+        # when `fortified` is true — which is already the neighbouring element of
+        # this key. Measured 2026-08-02: `UNITDATA` listed every warrior, scout,
+        # builder and trader on the board as `fortify_turns Civ6=[-1] CIVVIS=[0]`,
+        # including units that cannot meaningfully fortify at all.
+        #
+        # A check that fires on every unit says nothing, and it buries the ones
+        # that mean something — this file already carries seven entries about
+        # exactly that. So the turn count is normalised to 0 whenever the unit is
+        # not fortified, on both sides, leaving a real difference in a FORTIFIED
+        # unit's count fully visible.
+        def fortify_pair(fortified, turns):
+            if not fortified:
+                return False, 0
+            value = int(turns) if isinstance(turns, (int, float)) and turns >= 0 else 0
+            return True, max(0, min(2, value))
+
+        # ⚠ AND THE SAME SHAPE ONE FIELD OVER. Civilization VI exports `hp: -1`
+        # for a unit whose health it is not telling us — a fogged rival, mostly —
+        # while CIVVIS plants it at full. Comparing "unknown" against "assumed
+        # full" produced `hp Civ6=[-1] CIVVIS=[100]` on every such unit. An
+        # unknown is not a disagreement; it is an absence of evidence, and a check
+        # cannot fail on evidence it was never given.
+        #
+        # ⚠ Our OWN units always carry a real hp, so this loses nothing that
+        # matters: it silences the rivals the export declines to describe and
+        # leaves every genuine health difference visible.
+        exported_hp = [
+            source.get("hp") for source in sources
+            if isinstance(source.get("hp"), (int, float)) and source.get("hp") > 0
+        ]
+        hp_known = len(exported_hp) == len(sources)
+
         def source_key(source):
             hp = source.get("hp")
-            turns = source.get("fortify_turns")
+            fortified, turns = fortify_pair(
+                bool(source.get("fortified")), source.get("fortify_turns")
+            )
             return (
-                int(hp + 0.5) if isinstance(hp, (int, float)) and hp > 0 else -1,
-                bool(source.get("fortified")),
-                max(0, min(2, int(turns)))
-                if isinstance(turns, (int, float)) and turns >= 0 else -1,
+                int(hp + 0.5) if hp_known and isinstance(hp, (int, float)) else -1,
+                fortified,
+                turns,
             )
 
         def board_key(unit):
+            fortified, turns = fortify_pair(
+                bool(unit.get("fortified")), unit.get("fortify_turns")
+            )
             return (
-                int(unit.get("hp")) if isinstance(unit.get("hp"), (int, float)) else -1,
-                bool(unit.get("fortified")),
-                int(unit.get("fortify_turns"))
-                if isinstance(unit.get("fortify_turns"), (int, float)) else -1,
+                int(unit.get("hp"))
+                if hp_known and isinstance(unit.get("hp"), (int, float)) else -1,
+                fortified,
+                turns,
             )
 
         wanted = sorted(source_key(source) for source in sources)
