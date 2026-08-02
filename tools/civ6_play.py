@@ -1148,7 +1148,8 @@ def _play(args: argparse.Namespace) -> int:
     # the contention note — so it is a flag, not a constant.
     reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                           each_poll=keep_foreground, poll_s=poll_s,
-                          stall_s=args.stall_seconds)
+                          stall_s=args.stall_seconds,
+                          frozen_s=args.frozen_seconds)
     # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
     # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
     # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
@@ -1191,7 +1192,8 @@ def _play(args: argparse.Namespace) -> int:
         dismiss_leader_dialogue()
         reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                               each_poll=keep_foreground, poll_s=poll_s,
-                              stall_s=args.stall_seconds)
+                              stall_s=args.stall_seconds,
+                              frozen_s=args.frozen_seconds)
         if not reason.startswith("stalled"):
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
@@ -1335,6 +1337,18 @@ def main(argv: list[str] | None = None) -> int:
     # being clicks landing on a live game.
     ap.add_argument("--stall-seconds", type=float, default=420.0,
                     help="give up on a run that has emitted nothing for this long")
+    # ⚠ A DIFFERENT DEATH FROM `--stall-seconds`, and now the common one. That flag
+    # watches for SILENCE; this one watches for a turn that stops advancing while
+    # events keep arriving. Run civvis-20260802T033552Z wedged on the World Congress
+    # at turn 209 with `events.jsonl` still growing every poll, so the silence
+    # watchdog could never fire and the attempt sat until a human looked at it.
+    #
+    # 480s rather than the 420s of its sibling: a real turn can legitimately take a
+    # while late in a large game (rival AI turns, a long animation), and this one
+    # kills a run that is still emitting, so it must be the more patient of the two.
+    ap.add_argument("--frozen-seconds", type=float, default=480.0,
+                    help="give up on a run whose TURN has not advanced for this "
+                         "long, even though it is still emitting events")
     ap.add_argument("--civvis-decides", action="store_true", default=False,
                     help="CIVVIS makes every decision; the mod only actuates")
     ap.add_argument("--governor-appoint", action="store_true", default=False,
