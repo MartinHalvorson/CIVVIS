@@ -91,6 +91,13 @@ class MatchMachineTests(unittest.TestCase):
         self.assertEqual((standard.speed, standard.turns), ("standard", 500))
         self.assertEqual(online.visible_pace, 0)
 
+    def test_cli_accepts_a_timezone_aware_absolute_deadline(self):
+        args = machine.parse_args(
+            ["--watch-pid", "1", "--deadline-utc", "2026-08-02T15:50:48Z"]
+        )
+
+        self.assertEqual(args.deadline_utc.isoformat(), "2026-08-02T15:50:48+00:00")
+
     def test_first_visible_game_opens_browser_and_replacements_reuse_tab(self):
         visible = machine.game_command(Path("civvis"), Path("league"), 1, 2, visible=True)
         replacement = machine.game_command(
@@ -199,6 +206,80 @@ class MatchMachineTests(unittest.TestCase):
                 machine.Resources(41, 20, 12, 0, False), cpu_reservation=25
             )
         )
+
+    def test_terminal_watcher_compares_the_original_process_identity(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(watch_pid=42)
+        subject.watch_identity = "started-at"
+
+        with mock.patch.object(machine, "process_is_same", return_value=True):
+            self.assertFalse(subject.watched_terminal_closed())
+        with mock.patch.object(machine, "process_is_same", return_value=False):
+            self.assertTrue(subject.watched_terminal_closed())
+
+    def test_capacity_wait_returns_cleanly_when_the_watched_terminal_closes(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(watch_pid=42, resource_log_interval=60, poll=1)
+        subject.watch_identity = "started-at"
+        subject.deadline = machine.time.monotonic() + 60
+        subject.stopping = False
+        subject.event = mock.Mock()
+        subject.watched_terminal_closed = mock.Mock(return_value=True)
+
+        self.assertIsNone(subject.wait_for_capacity("initial build"))
+
+        self.assertTrue(subject.stopping)
+        subject.event.assert_called_once_with("terminal_closed", watch_pid=42)
+
+    def test_closed_terminal_before_initial_build_cleans_up_without_starting_work(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(duration=60, watch_pid=42, headless=6, limit=70)
+        subject.stopping = False
+        subject.games = []
+        subject.caffeinate = None
+        subject.build_future = None
+        subject.build_executor = mock.Mock()
+        subject.completed = 0
+        subject.failed = 0
+        subject.event = mock.Mock()
+        subject.keep_awake = mock.Mock()
+        subject.ensure_source = mock.Mock()
+        subject.refresh_ranking = mock.Mock()
+        subject.persist = mock.Mock()
+        subject.watched_terminal_closed = mock.Mock(return_value=True)
+
+        self.assertEqual(subject.run(), 0)
+
+        subject.keep_awake.assert_not_called()
+        subject.ensure_source.assert_not_called()
+        subject.build_executor.shutdown.assert_called_once_with(wait=True)
+        subject.event.assert_any_call("terminal_closed", watch_pid=42)
+
+    def test_expired_window_before_initial_build_cleans_up_without_starting_work(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(duration=60, watch_pid=42, headless=6, limit=70)
+        subject.deadline = 10.0
+        subject.stopping = False
+        subject.games = []
+        subject.caffeinate = None
+        subject.build_future = None
+        subject.build_executor = mock.Mock()
+        subject.completed = 0
+        subject.failed = 0
+        subject.event = mock.Mock()
+        subject.keep_awake = mock.Mock()
+        subject.ensure_source = mock.Mock()
+        subject.refresh_ranking = mock.Mock()
+        subject.persist = mock.Mock()
+        subject.watched_terminal_closed = mock.Mock(return_value=False)
+
+        with mock.patch.object(machine.time, "monotonic", return_value=10.0):
+            self.assertEqual(subject.run(), 0)
+
+        subject.keep_awake.assert_not_called()
+        subject.ensure_source.assert_not_called()
+        subject.build_executor.shutdown.assert_called_once_with(wait=True)
+        subject.event.assert_any_call("operator_window_ended", purpose="startup")
 
     def test_completed_background_build_is_activated_on_operator_thread(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
