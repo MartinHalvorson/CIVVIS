@@ -269,14 +269,14 @@ impl Net {
             let (fan_in, fan_out) = (self.sizes[layer], self.sizes[layer + 1]);
             let input = &acts[layer];
             let mut out = vec![0.0f32; fan_out];
-            for o in 0..fan_out {
+            for (o, output) in out.iter_mut().enumerate().take(fan_out) {
                 let mut sum = self.biases[layer][o];
-                for i in 0..fan_in {
-                    sum += input[i] * self.weights[layer][i * fan_out + o];
+                for (i, &value) in input.iter().enumerate().take(fan_in) {
+                    sum += value * self.weights[layer][i * fan_out + o];
                 }
                 // Linear on the output layer: this is a ranking score, and a
                 // squashed one would flatten the softmax that reads it.
-                out[o] = if layer < 2 { sum.max(0.0) } else { sum };
+                *output = if layer < 2 { sum.max(0.0) } else { sum };
             }
             acts.push(out);
         }
@@ -290,8 +290,7 @@ impl Net {
             let (fan_in, fan_out) = (self.sizes[layer], self.sizes[layer + 1]);
             let input = &acts[layer];
             let mut next = vec![0.0f32; fan_in];
-            for o in 0..fan_out {
-                let d = delta[o];
+            for (o, &d) in delta.iter().enumerate().take(fan_out) {
                 if d == 0.0 {
                     continue;
                 }
