@@ -6043,7 +6043,7 @@ fn civvis_node_name<T>(
             "gov_military" => Some("war_department"),
             _ => None,
         };
-        if let Some(alias) = alias.filter(|alias| table.contains_key(*alias)) {
+        if let Some(alias) = alias.filter(|alias| table.contains_key(alias)) {
             return Some(alias.to_string());
         }
     }
@@ -7134,18 +7134,18 @@ fn apply_observed_city_infrastructure(
     let old_districts: Vec<(crate::name::Name, crate::Pos)> = city
         .districts
         .iter()
-        .map(|(name, pos)| (name.clone(), *pos))
+        .map(|(name, pos)| (*name, *pos))
         .collect();
     let old_wonders: Vec<(crate::name::Name, crate::Pos)> = city
         .wonders
         .iter()
-        .map(|(name, pos)| (name.clone(), *pos))
+        .map(|(name, pos)| (*name, *pos))
         .collect();
     let old_foundations: Vec<(crate::name::Name, crate::Pos)> = city
         .queue
         .iter()
         .filter_map(|item| match item {
-            crate::game::Item::District { district, pos } => Some((district.clone(), *pos)),
+            crate::game::Item::District { district, pos } => Some((*district, *pos)),
             _ => None,
         })
         .collect();
@@ -7239,10 +7239,10 @@ fn apply_observed_city_infrastructure(
         city.districts.clear();
         city.wonders.clear();
         for (name, pos, _) in &completed {
-            city.districts.insert(name.clone(), *pos);
+            city.districts.insert(*name, *pos);
         }
         for (name, pos) in &wonders {
-            city.wonders.insert(name.clone(), *pos);
+            city.wonders.insert(*name, *pos);
         }
     }
 
@@ -7255,7 +7255,7 @@ fn apply_observed_city_infrastructure(
         tile.pillaged = pillaged;
     }
     for (name, pos, _) in foundations {
-        let item = crate::game::Item::District { district: name.clone(), pos };
+        let item = crate::game::Item::District { district: name, pos };
         let cost = game.item_cost_for_city(owner, cid, &item);
         let tile = game.map.tiles.get_mut(&pos).unwrap();
         tile.improvement = None;
