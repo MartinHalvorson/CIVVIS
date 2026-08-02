@@ -353,19 +353,23 @@ class MatchMachineTests(unittest.TestCase):
 
     def test_activate_build_snapshots_the_ranking_updater_before_refreshing(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(sync_interval=300)
         subject.pending_revision = "new-head"
+        subject.next_sync = 1.0
         subject.cache_ranking_updater = mock.Mock()
         subject.initialize_league = mock.Mock()
         subject.refresh_ranking = mock.Mock()
         subject.event = mock.Mock()
 
         promoted = Path("/tmp/civvis-new")
-        subject.activate_build("new-head", promoted)
+        with mock.patch.object(machine.time, "monotonic", return_value=100.0):
+            subject.activate_build("new-head", promoted)
 
         subject.cache_ranking_updater.assert_called_once_with()
         subject.initialize_league.assert_called_once_with()
         subject.refresh_ranking.assert_called_once_with()
         self.assertIsNone(subject.pending_revision)
+        self.assertEqual(subject.next_sync, 400.0)
 
     def test_fill_slots_resumes_paused_work_before_admitting_a_new_game(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
