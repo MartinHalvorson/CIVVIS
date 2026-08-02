@@ -307,7 +307,10 @@ def check_gate(dist: pathlib.Path) -> list[str]:
             if dev.poll() is not None:
                 return [f"wrangler exited before serving anything (see {log.name})"]
             try:
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2).read()
+                # `/home`, not `/`: the root is a redirect to YouTube, and
+                # `urlopen` follows redirects, so probing it would make this
+                # loop's readiness depend on reaching youtube.com.
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/home", timeout=2).read()
                 ready = True
             except Exception:
                 time.sleep(1)
@@ -323,9 +326,29 @@ def check_gate(dist: pathlib.Path) -> list[str]:
                 request.add_header("Cookie", cookie)
             return urllib.request.urlopen(request, timeout=15)
 
-        # The landing page is public.
-        if b"Watch on YouTube" not in get("/").read():
-            problems.append("the landing page is not being served at /")
+        # The domain forwards to the channel. This is the one thing on the
+        # site that only exists as edge logic, so it is checked the same way
+        # the password is: by asking, not by reading `_worker.js` and
+        # believing it.
+        blind = urllib.request.build_opener(NoRedirect)
+        try:
+            blind.open(base + "/", timeout=15)
+            problems.append("/ served a page instead of forwarding to the channel")
+        except urllib.error.HTTPError as forwarded:
+            if forwarded.code not in (301, 302, 303, 307, 308):
+                problems.append(f"/ answered HTTP {forwarded.code} rather than a redirect")
+            elif "youtube.com/@civvis" not in (forwarded.headers.get("Location") or ""):
+                problems.append(f"/ forwards to {forwarded.headers.get('Location')!r}, not the channel")
+            elif forwarded.code == 301:
+                problems.append("/ forwards permanently; a 301 here is cached for ever")
+
+        # The landing page is public, one door in.
+        if b"Watch on YouTube" not in get("/home").read():
+            problems.append("the landing page is not being served at /home")
+
+        # So is the downloads page.
+        if b"releases/latest/download/" not in get("/download/").read():
+            problems.append("/download/ is not serving the downloads page")
 
         # The beta is not.
         closed = get("/beta/").read()

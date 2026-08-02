@@ -36,8 +36,10 @@ again — neither needs a deploy.
 | `beta/landing.html` | `civvis.ai/home`. |
 | `beta/download.html` | `civvis.ai/download`. Links `releases/latest/download/<asset>`, so it never needs republishing when a release is cut. |
 | `.github/workflows/release.yml` | Builds those assets for Windows, macOS (both architectures) and Linux on a `v*` tag. |
+| `.github/workflows/publish-site.yml` | Builds, checks and deploys the whole thing from CI, so publishing needs a decision rather than a particular laptop. |
 | `beta/publish.sh` | Assembles `beta/dist/` from a named revision. |
 | `beta/verify.py` | Opens the assembled bundle in a real browser, watches it play, and walks through the password door. |
+| `beta/worker_test.py` | Calls `_worker.js` directly — the forward, the password, the headers — needing only Chrome. |
 | `beta/serve.sh` | Serves `beta/dist/` locally the way a static host would. |
 
 Nothing under `web/` is edited to suit the web build, and none of `src/wasm.rs`
@@ -79,14 +81,37 @@ you are guessing about.
 
 ## Cutting a build
 
-Every few days, when `main` is in a state worth showing:
+Every few days, when `main` is in a state worth showing: **Actions →
+publish-site → Run workflow**, on the revision you want. It installs the
+toolchain, assembles the bundle, runs both checks and deploys, and it uploads
+the bundle as an artifact whether or not the deploy runs. Unticking *deploy*
+makes it a dry run.
+
+Publishing stays manual on purpose. The gates prove a build is not broken; they
+cannot tell whether a whole game is worth watching, and that is the actual
+question.
+
+By hand, which is the same sequence:
 
 ```bash
 ./beta/publish.sh --commit <sha>   # build the bundle from a pinned revision
-./beta/verify.py                   # prove it plays and that the door is shut
+./beta/worker_test.py              # prove the forward and the door behave
+./beta/verify.py                   # prove it plays, and walk through the door
 ./beta/serve.sh                    # optional: look at it yourself
 npx wrangler pages deploy beta/dist --project-name civvis
 ```
+
+`worker_test.py` exists because `_worker.js` is the only part of the site a
+static server never runs, so opening the bundle in a browser proves nothing
+about it — and it is the part holding both the password and the domain's
+whole purpose. `verify.py`'s `check_gate` covers the same ground against the
+real runtime, but it needs `npx wrangler` and therefore Node; a machine
+without Node skipped the check entirely and said so in one line nobody reads.
+`worker_test.py` needs only Chrome: it imports the module and calls it, with
+`env.ASSETS` stubbed to report which file *would* have been served. The one
+place a browser is not the Workers runtime — `Cookie` and `Set-Cookie` are
+forbidden header names on the web and get dropped — is handled in the harness,
+and documented there.
 
 Measured on this Mac, the published engine answers `/runtime` (which builds the
 world) in about 120 ms, a whole `/state` document in about 95 ms, and a turn in
@@ -132,9 +157,10 @@ is the atlases themselves rather than anything this directory does.
 
 1. It is on `origin/main` and its CI run is green.
 2. `cargo test --profile ci` passes at that revision.
-3. `./beta/publish.sh --commit <sha>` completes.
-4. `./beta/verify.py` reports `this build plays`.
-5. A whole game is worth watching — the check above proves it runs, not that it
+3. `./beta/publish.sh --commit <sha>` completes, inside the size budget.
+4. `./beta/worker_test.py` reports `the site routes correctly`.
+5. `./beta/verify.py` reports `this build plays`.
+6. A whole game is worth watching — the checks above prove it runs, not that it
    is good. That judgement is the point of publishing every few days rather
    than every commit.
 
@@ -158,6 +184,18 @@ wrangler pages deploy beta/dist --project-name civvis
 ```
 
 That already gives a working URL at `civvis.pages.dev`.
+
+Then, so nobody has to do that again, two repository secrets under **Settings →
+Secrets and variables → Actions**:
+
+| Secret | Where it comes from |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | My Profile → API Tokens → Create Token → **Edit Cloudflare Workers** template, scoped to this account. Pages deploys use the Workers permission. |
+| `CLOUDFLARE_ACCOUNT_ID` | The right-hand column of the account's overview page, or `wrangler whoami`. |
+
+`publish-site.yml` runs without them — it builds, checks, and keeps the bundle
+as an artifact — and fails with a clear message if asked to deploy while they
+are missing, rather than appearing to publish and doing nothing.
 
 ### 2. The domain
 
