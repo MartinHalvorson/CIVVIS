@@ -296,6 +296,77 @@ class MatchMachineTests(unittest.TestCase):
         self.assertIsNone(subject.build_future)
         self.assertIsNone(subject.build_revision)
 
+    def test_refresh_ranking_uses_a_runtime_snapshot_while_source_can_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            runtime = root / "runtime"
+            league = runtime / "league"
+            source_tools = source / "tools"
+            source_tools.mkdir(parents=True)
+            league.mkdir(parents=True)
+            (league / "league.json").write_text("{}", encoding="utf-8")
+            source_script = source_tools / "update_ai_player_elo_rankings.py"
+            source_script.write_text("source", encoding="utf-8")
+            runtime.mkdir(exist_ok=True)
+            cached_script = runtime / "update_ai_player_elo_rankings.py"
+            cached_script.write_text("cached", encoding="utf-8")
+
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.source = source
+            subject.runtime = runtime
+            subject.league = league
+            subject.ranking = runtime / "AI_PLAYER_ELO_RANKINGS.md"
+            subject.ranking_updater = cached_script
+            subject.event = mock.Mock()
+
+            completed = SimpleNamespace(returncode=0, stdout="")
+            with mock.patch.object(machine, "command", return_value=completed) as run:
+                subject.refresh_ranking()
+
+            self.assertEqual(run.call_args.args[1], str(cached_script))
+            self.assertEqual(run.call_args.kwargs["cwd"], runtime)
+            subject.event.assert_not_called()
+
+    def test_cache_ranking_updater_snapshots_the_post_build_source_script(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            runtime = root / "runtime"
+            source_script = source / "tools" / "update_ai_player_elo_rankings.py"
+            source_script.parent.mkdir(parents=True)
+            source_script.write_text("post-build updater", encoding="utf-8")
+            runtime.mkdir()
+
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.source = source
+            subject.runtime = runtime
+            subject.ranking_updater = runtime / "update_ai_player_elo_rankings.py"
+            subject.event = mock.Mock()
+
+            subject.cache_ranking_updater()
+
+            self.assertEqual(
+                subject.ranking_updater.read_text(encoding="utf-8"), "post-build updater"
+            )
+            subject.event.assert_not_called()
+
+    def test_activate_build_snapshots_the_ranking_updater_before_refreshing(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.pending_revision = "new-head"
+        subject.cache_ranking_updater = mock.Mock()
+        subject.initialize_league = mock.Mock()
+        subject.refresh_ranking = mock.Mock()
+        subject.event = mock.Mock()
+
+        promoted = Path("/tmp/civvis-new")
+        subject.activate_build("new-head", promoted)
+
+        subject.cache_ranking_updater.assert_called_once_with()
+        subject.initialize_league.assert_called_once_with()
+        subject.refresh_ranking.assert_called_once_with()
+        self.assertIsNone(subject.pending_revision)
+
     def test_fill_slots_resumes_paused_work_before_admitting_a_new_game(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
         subject.pending_revision = None

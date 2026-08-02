@@ -402,6 +402,10 @@ class MatchMachine:
         self.resource_log = self.runtime / "resources.jsonl"
         self.state_path = self.runtime / "state.json"
         self.ranking = self.runtime / "AI_PLAYER_ELO_RANKINGS.md"
+        # Builds reset ``self.source`` in a background worker. Keep the
+        # self-contained ranking updater in the runtime so completed games can
+        # refresh their durable Elo view while a newer HEAD is compiling.
+        self.ranking_updater = self.runtime / "update_ai_player_elo_rankings.py"
         self.runtime.mkdir(parents=True, exist_ok=True)
         self.logs.mkdir(parents=True, exist_ok=True)
         self.games: list[GameProcess] = []
@@ -676,6 +680,7 @@ class MatchMachine:
         self.current_revision = revision
         if self.pending_revision == revision:
             self.pending_revision = None
+        self.cache_ranking_updater()
         self.initialize_league()
         self.refresh_ranking()
         self.event("build_ready", revision=revision, binary=str(promoted))
@@ -705,8 +710,22 @@ class MatchMachine:
             self.build_future = None
             self.build_revision = None
 
+    def cache_ranking_updater(self) -> None:
+        """Snapshot the self-contained ranking script after a source reset."""
+        source_script = self.source / "tools" / "update_ai_player_elo_rankings.py"
+        if not source_script.exists():
+            return
+        temporary = self.ranking_updater.with_suffix(".tmp")
+        try:
+            shutil.copy2(source_script, temporary)
+            os.replace(temporary, self.ranking_updater)
+        except OSError as error:
+            temporary.unlink(missing_ok=True)
+            self.event("ranking_updater_cache_failed", error=str(error))
+
     def refresh_ranking(self) -> None:
-        script = self.source / "tools" / "update_ai_player_elo_rankings.py"
+        source_script = self.source / "tools" / "update_ai_player_elo_rankings.py"
+        script = self.ranking_updater if self.ranking_updater.exists() else source_script
         if not script.exists() or not (self.league / "league.json").exists():
             return
         result = command(
@@ -714,7 +733,7 @@ class MatchMachine:
             str(script),
             "--league", str(self.league / "league.json"),
             "--output", str(self.ranking),
-            cwd=self.source,
+            cwd=self.runtime,
             timeout=60,
         )
         if result.returncode != 0:
