@@ -251,8 +251,7 @@ def remap_river_masks(events, top):
     for turn, chunks in by_turn.items():
         lost = 0
         width = next((c["width"] for c in chunks if isinstance(c.get("width"), int)), 0)
-        if width <= 0:
-            continue
+        wrap = (lambda x: x % width) if width > 0 else (lambda x: x)
         plots = {}
         for c in chunks:
             for p in c.get("plots", []):
@@ -270,7 +269,7 @@ def remap_river_masks(events, top):
                     continue
                 delta = directions[direction]
                 end = axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])
-                end = (end[0] % width, end[1])
+                end = (wrap(end[0]), end[1])
                 key = tuple(sorted((start, end)))
                 carriers = segments.setdefault(key, [])
                 if start not in carriers:
@@ -295,12 +294,12 @@ def remap_river_masks(events, top):
             carrier = available[0]
             other = endpoints[1] if endpoints[0] == carrier else endpoints[0]
             reflected_carrier = (carrier[0], top - carrier[1])
-            reflected_other = (other[0] % width, top - other[1])
+            reflected_other = (wrap(other[0]), top - other[1])
             axial = offset_to_axial(*reflected_carrier)
             direction = next((
                 index for index, delta in enumerate(directions)
                 if (
-                    axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])[0] % width,
+                    wrap(axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])[0]),
                     axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])[1],
                 ) == reflected_other
             ), None)
