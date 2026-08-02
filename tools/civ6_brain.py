@@ -143,6 +143,48 @@ def filter_orders(rows: list[tuple], skip_kinds: set[str], skip_verbs: set[str],
     return out
 
 
+def guard_government_orders(state: dict, rows: list[tuple],
+                            seen_governments: set[str]) -> tuple[list[tuple], list[str]]:
+    """Keep a rebuilt mirror from repeatedly putting the live empire in anarchy.
+
+    The decider's board is fresh each turn, so it cannot remember which Firaxis
+    governments this seat has already used.  Firaxis can: returning to an earlier
+    government costs anarchy.  The missing history produced a measured live loop:
+    Merchant Republic -> an old government -> no current government -> request
+    Merchant Republic again, every three turns.  Science and Culture were both zero
+    for the final 101 turns of that game.
+
+    The append-only state stream gives the brain the missing history.  A government
+    not seen before is still a normal progression and remains legal.  A different
+    government already seen in this game is a return switch, so drop it.  Once a
+    previously governed seat reports no current government, it is already in the
+    transition; drop every government request until Firaxis reports one again rather
+    than restarting or redirecting that transition.  The opening choice is preserved:
+    an empty current government is allowed while no government has ever been seen.
+    """
+    current_value = state.get("government")
+    current = str(current_value).strip() if current_value is not None else ""
+    if current:
+        seen_governments.add(current)
+
+    kept: list[tuple] = []
+    blocked: list[str] = []
+    for row in rows:
+        kind, _subject, verb, _x, _y = row
+        if kind != "government":
+            kept.append(row)
+            continue
+        target = str(verb or "").strip()
+        if not current and seen_governments:
+            blocked.append(f"{target or '(unknown)'}: government transition in progress")
+            continue
+        if current and target and target != current and target in seen_governments:
+            blocked.append(f"{target}: return to a previously used government")
+            continue
+        kept.append(row)
+    return kept, blocked
+
+
 def seat_civ(run_dir: Path) -> str | None:
     """The civilization Civilization VI dealt this seat, as the league names it.
 
@@ -524,6 +566,10 @@ def main() -> int:
     if served:
         print(f"[brain] resuming after {len(served)} completed turn(s); "
               f"latest={max(served)}", flush=True)
+    # Reconstructed by replaying every state in the append-only journal, including
+    # already-served turns.  That makes a restarted brain retain the Firaxis history
+    # the fresh-board decider necessarily loses.
+    seen_governments: set[str] = set()
     while time.time() < deadline:
         if not events.exists():
             time.sleep(0.5)
@@ -544,6 +590,9 @@ def main() -> int:
                 continue
             if event.get("kind") != "state":
                 continue
+            current_government = event.get("government")
+            if current_government is not None and str(current_government).strip():
+                seen_governments.add(str(current_government).strip())
             turn = int(event.get("turn", -1))
             if turn < 0 or turn in served:
                 continue
@@ -568,6 +617,14 @@ def main() -> int:
                     record_note(run_dir, turn, note)
             else:
                 rows = civvis_orders(binary, run_dir, turn, args.victory, strategy, seat_civ)
+            rows, government_blocks = guard_government_orders(
+                event, rows, seen_governments
+            )
+            if government_blocks:
+                detail = "; ".join(government_blocks)
+                print(f"[brain] turn {turn}: blocked government order(s): {detail}",
+                      flush=True)
+                record_note(run_dir, turn, f"live government guard: {detail}")
             before = len(rows)
             rows = filter_orders(rows, skip_kinds, skip_verbs, args.one_order_per_unit)
             if len(rows) != before:
