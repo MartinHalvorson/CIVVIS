@@ -33,7 +33,7 @@
 //! `ValueNet::load` is a single cwd-relative read. A translation table that
 //! silently comes back empty would put the simulator on ground that does not
 //! exist, which is a worse failure than any of those.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Deserialize;
 
@@ -1311,13 +1311,21 @@ mod tests {
                 "wonders":[{"type":"BUILDING_PYRAMIDS","x":1,"y":3}]
             }],
             "units":[{"id":4,"kind":"UNIT_WARRIOR","x":2,"y":3,"combat":20,
-                      "ranged":0,"player":0,"formation_count":2}],
+                      "ranged":0,"player":0,"formation_count":2,"xp":19,"level":2,
+                      "promotions":["PROMOTION_BATTLECRY"],"build_charges":0,
+                      "spread_charges":0}],
             "future_empire_fact":true
         }"#;
         let state = state_from_json(raw).expect("the state remains usable");
         assert_eq!(state.cities[0].producing_hash, Some(123));
         assert_eq!(state.units[0].combat, 20.0);
         assert_eq!(state.units[0].formation_count, 2);
+        assert_eq!(state.units[0].xp, Some(19));
+        assert_eq!(state.units[0].level, Some(2));
+        assert_eq!(
+            state.units[0].promotions.as_deref(),
+            Some(["PROMOTION_BATTLECRY".to_string()].as_slice())
+        );
         assert_eq!(
             state.schema_gaps,
             vec![
@@ -3740,6 +3748,70 @@ mod tests {
     }
 
     #[test]
+    fn live_units_keep_firaxis_charges_promotions_experience_and_religion() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 93,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS")],
+        }]);
+        let state = StateSnapshot {
+            turn: 93,
+            units: vec![StateUnit {
+                id: 91,
+                kind: "UNIT_APOSTLE".to_string(),
+                x: 5,
+                y: 5,
+                xp: Some(37),
+                level: Some(2),
+                promotions: Some(vec!["PROMOTION_TRANSLATOR".to_string()]),
+                build_charges: Some(0),
+                spread_charges: Some(2),
+                religion: Some("RELIGION_CATHOLICISM".to_string()),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let apostle = mirror
+            .game
+            .units
+            .values()
+            .find(|unit| unit.owner == 0)
+            .expect("the Apostle is mirrored");
+        assert_eq!(apostle.xp, 37);
+        assert_eq!(apostle.level, 2);
+        assert_eq!(apostle.charges, 2);
+        assert_eq!(apostle.religion.as_deref(), Some("Catholicism"));
+        assert_eq!(
+            apostle
+                .promotions
+                .iter()
+                .map(|promotion| (*promotion).as_str())
+                .collect::<Vec<_>>(),
+            vec!["translator"]
+        );
+    }
+
+    #[test]
+    fn firaxis_promotion_prefix_aliases_land_on_modelled_nodes() {
+        assert_eq!(
+            civvis_unit_promotion_name("PROMOTION_MONK_COBRA_STRIKE"),
+            "cobra_strike"
+        );
+        assert_eq!(
+            civvis_unit_promotion_name("PROMOTION_SUPER_CARRIER"),
+            "supercarrier"
+        );
+        assert_eq!(
+            civvis_unit_promotion_name("PROMOTION_SURF_ROCK"),
+            "surf_band"
+        );
+    }
+
+    #[test]
     fn a_hostile_lands_on_the_barbarian_seat_and_not_on_dormant_free_cities() {
         // ⚠ The roster has TWO players carrying `is_barbarian`, and only one of them
         // is alive. Measured on run `civvis-20260731T172058Z`: all nine barbarians
@@ -4986,6 +5058,23 @@ pub struct StateUnit {
     /// Movement points left, as Civilization VI reports them this turn.
     #[serde(default = "unknown_strength")]
     pub moves: f64,
+    /// Exact host experience and promotion state. Option distinguishes an older
+    /// archive that never exported the facts from a level-one unit with none.
+    #[serde(default)]
+    pub xp: Option<i64>,
+    #[serde(default)]
+    pub level: Option<i32>,
+    #[serde(default)]
+    pub promotions: Option<Vec<String>>,
+    /// Civilization VI separates builder and religious charges. CIVVIS has one
+    /// typed charge counter, so the mirror selects the applicable observed pool.
+    #[serde(default)]
+    pub build_charges: Option<i32>,
+    #[serde(default)]
+    pub spread_charges: Option<i32>,
+    /// The religion physically carried by a religious unit, by Firaxis type name.
+    #[serde(default)]
+    pub religion: Option<String>,
     /// Already fortified. Civilization VI REFUSES `FORTIFY` on a unit that is, so a
     /// board that did not carry this re-ordered it every turn — 28 refusals in run
     /// 233331Z, exactly one per turn from t196 on.
@@ -5927,7 +6016,8 @@ const CITY_KEYS: &[&str] = &[
 
 const UNIT_KEYS: &[&str] = &[
     "id", "kind", "type", "base", "class", "x", "y", "hp", "combat", "ranged",
-    "player", "moves", "fortified", "fortify_turns", "formation_count", "great_person",
+    "player", "moves", "xp", "level", "promotions", "build_charges", "spread_charges",
+    "religion", "fortified", "fortify_turns", "formation_count", "great_person",
 ];
 
 /// The field names `state_schema_gaps` will accept for one struct, extracted from
@@ -7457,9 +7547,95 @@ fn apply_city_health(game: &mut crate::game::Game, cid: u32, state: &StateCity) 
     }
 }
 
-fn apply_unit_observation(live: &mut crate::game::Unit, state: &StateUnit) {
+#[derive(Default)]
+struct ObservedUnitProgress {
+    promotions: Option<BTreeSet<Name>>,
+    religion: Option<String>,
+}
+
+fn civvis_unit_promotion_name(civ6: &str) -> String {
+    let bare = civ6.strip_prefix("PROMOTION_").unwrap_or(civ6);
+    let lower = bare.to_ascii_lowercase();
+    if let Some(monk) = lower.strip_prefix("monk_") {
+        return monk.to_string();
+    }
+    match lower.as_str() {
+        "super_carrier" => "supercarrier".to_string(),
+        "goes_to" => "goes_to_11".to_string(),
+        "pop" => "pop_star".to_string(),
+        "surf_rock" => "surf_band".to_string(),
+        _ => lower,
+    }
+}
+
+fn observed_unit_progress(
+    rules: &crate::rules::Rules,
+    state: &StateUnit,
+    unmapped: &mut Vec<String>,
+) -> ObservedUnitProgress {
+    let promotions = state.promotions.as_ref().map(|host| {
+        host.iter()
+            .filter_map(|civ6| {
+                let name = civvis_unit_promotion_name(civ6);
+                if rules.promotions.contains_key(&name) {
+                    Some(Name::new(&name))
+                } else {
+                    let issue = format!("{civ6}:unit_promotion");
+                    if !unmapped.contains(&issue) {
+                        unmapped.push(issue);
+                    }
+                    None
+                }
+            })
+            .collect()
+    });
+    let religion = match state.religion.as_deref() {
+        Some(civ6) => match civvis_religion_name(civ6) {
+            Some(name) => Some(name),
+            None => {
+                let issue = format!("{civ6}:unit_religion");
+                if !unmapped.contains(&issue) {
+                    unmapped.push(issue);
+                }
+                None
+            }
+        },
+        None => None,
+    };
+    ObservedUnitProgress {
+        promotions,
+        religion,
+    }
+}
+
+fn apply_unit_observation(
+    live: &mut crate::game::Unit,
+    state: &StateUnit,
+    progress: ObservedUnitProgress,
+) {
     if state.hp.is_finite() && state.hp > 0.0 {
         live.hp = (state.hp.round() as i32).clamp(1, 100);
+    }
+    if let Some(xp) = state.xp.filter(|xp| *xp >= 0) {
+        live.xp = xp;
+    }
+    if let Some(level) = state.level.filter(|level| *level >= 1) {
+        live.level = level;
+    }
+    if let Some(promotions) = progress.promotions {
+        live.promotions = promotions;
+    }
+    if let Some(religion) = progress.religion {
+        live.religion = Some(religion);
+    }
+    let observed_charges = state
+        .build_charges
+        .into_iter()
+        .chain(state.spread_charges)
+        .filter(|charges| *charges > 0)
+        .max();
+    if let Some(charges) = observed_charges {
+        live.charges = charges;
     }
     live.fortified = state.fortified;
     live.fortify_turns = state.fortify_turns.clamp(0, 2);
@@ -8221,8 +8397,9 @@ pub fn rebuild_from_state(
         }
         // Carry damage across: a unit at 30 hp is a unit CIVVIS should pull out,
         // and defaulting it to full health is how an army gets thrown away.
+        let progress = observed_unit_progress(&game.rules, u, unmapped);
         if let Some(unit) = game.units.get_mut(&uid) {
-            apply_unit_observation(unit, u);
+            apply_unit_observation(unit, u, progress);
         }
         Some(uid)
     };
@@ -9052,8 +9229,13 @@ impl LiveMirror {
                     if self.game.units[&uid].pos != pos {
                         self.game.relocate(uid, pos);
                     }
+                    let progress = observed_unit_progress(
+                        &self.game.rules,
+                        unit,
+                        &mut self.unmapped,
+                    );
                     if let Some(live) = self.game.units.get_mut(&uid) {
-                        apply_unit_observation(live, unit);
+                        apply_unit_observation(live, unit, progress);
                         // ★★★★★ REFRESH THE TURN FROM REALITY, DO NOT SIMULATE IT.
                         //
                         // `take_turn` spends a unit's movement, and on a persistent
@@ -9333,8 +9515,13 @@ impl LiveMirror {
                     continue;
                 }
                 let uid = self.game.spawn_unit(&name, barb, pos);
+                let progress = observed_unit_progress(
+                    &self.game.rules,
+                    unit,
+                    &mut self.unmapped,
+                );
                 if let Some(live) = self.game.units.get_mut(&uid) {
-                    apply_unit_observation(live, unit);
+                    apply_unit_observation(live, unit, progress);
                     self.hostile_units.push(uid);
                 }
             }
@@ -9455,8 +9642,13 @@ impl LiveMirror {
                     continue;
                 }
                 let uid = self.game.spawn_unit(&name, owner, pos);
+                let progress = observed_unit_progress(
+                    &self.game.rules,
+                    unit,
+                    &mut self.unmapped,
+                );
                 if let Some(live) = self.game.units.get_mut(&uid) {
-                    apply_unit_observation(live, unit);
+                    apply_unit_observation(live, unit, progress);
                     self.rival_units.push(uid);
                 }
             }
@@ -9543,8 +9735,13 @@ impl LiveMirror {
                     && !self.game.units.values().any(|live| live.pos == pos)
                 {
                     let uid = self.game.spawn_unit(&name, owner, pos);
+                    let progress = observed_unit_progress(
+                        &self.game.rules,
+                        unit,
+                        &mut self.unmapped,
+                    );
                     if let Some(live) = self.game.units.get_mut(&uid) {
-                        apply_unit_observation(live, unit);
+                        apply_unit_observation(live, unit, progress);
                         self.rival_units.push(uid);
                     }
                 }

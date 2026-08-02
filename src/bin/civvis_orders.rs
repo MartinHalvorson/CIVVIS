@@ -21,9 +21,10 @@
 //! ⚠ THE RECONSTRUCTION IS PARTIAL, and the partiality has a direction. Terrain,
 //! both empires' remembered cities, own units, visible hostile units, research,
 //! government, development, treasury and public aggregate strength cross over.
-//! Unit promotions remain an explicit modeling gap. Firaxis's physical Great Person units
-//! are bridged through its own activation verdict and legal activation plots, matching
-//! CIVVIS's immediate-effect semantics without reproducing those rules here. An
+//! Unit promotions, religious spread charges, and the religion a unit carries cross
+//! through the live mirror. Firaxis's physical Great Person units are bridged through
+//! its own activation verdict and legal activation plots, matching CIVVIS's
+//! immediate-effect semantics without reproducing those rules here. An
 //! untranslatable order or entity is refused or counted rather than guessed, so
 //! partiality stays visible in the run ledger.
 //!
@@ -186,6 +187,24 @@ fn civ6_tech_name(civvis: &str) -> String {
 
 fn civ6_civic_name(civvis: &str) -> String {
     format!("CIVIC_{}", civvis.to_ascii_uppercase())
+}
+
+/// CIVVIS mostly uses Firaxis promotion identifiers without their prefix. Keep the
+/// few deliberate vocabulary contractions explicit in both directions rather than
+/// asking Lua to guess from localized display names.
+fn civ6_unit_promotion_name(civvis: &str) -> String {
+    let suffix = match civvis {
+        "cobra_strike" | "dancing_crane" | "disciples" | "exploding_palms" | "shadow_strike"
+        | "sweeping_wind" | "twilight_veil" => {
+            format!("MONK_{}", civvis.to_ascii_uppercase())
+        }
+        "supercarrier" => "SUPER_CARRIER".to_string(),
+        "goes_to_11" => "GOES_TO".to_string(),
+        "pop_star" => "POP".to_string(),
+        "surf_band" => "SURF_ROCK".to_string(),
+        other => other.to_ascii_uppercase(),
+    };
+    format!("PROMOTION_{suffix}")
 }
 
 struct Order {
@@ -1197,6 +1216,21 @@ fn translate(
             kind: "unit",
             subject: Some(*civ6),
             verb: Some("UPGRADE".to_string()),
+            pos: None,
+        }),
+        Action::Promote { unit, promotion } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some(format!(
+                "PROMOTE:{}",
+                civ6_unit_promotion_name(promotion.as_str())
+            )),
+            pos: None,
+        }),
+        Action::Spread { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("SPREAD_RELIGION".to_string()),
             pos: None,
         }),
         // ⚠⚠ A CASUS-BELLI WAR IS STILL A WAR, AND THIS DROPPED IT ON THE FLOOR.
@@ -2352,6 +2386,65 @@ mod tests {
 
         assert!(orders.is_empty());
         assert_eq!(waiting, 1);
+    }
+
+    #[test]
+    fn religious_promotions_and_spreads_reach_firaxis_unit_orders() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 93,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![grass(5, 5)],
+        }]);
+        let state = StateSnapshot {
+            turn: 93,
+            units: vec![StateUnit {
+                id: 91,
+                kind: "UNIT_APOSTLE".to_string(),
+                x: 5,
+                y: 5,
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let unit = *mirror.uid_of.get(&91).expect("the Apostle is mirrored");
+
+        let promotion = translate(
+            &Action::Promote {
+                unit,
+                promotion: civvis::name!("translator"),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("the promotion crosses");
+        assert_eq!(promotion.kind, "unit");
+        assert_eq!(promotion.subject, Some(91));
+        assert_eq!(
+            promotion.verb.as_deref(),
+            Some("PROMOTE:PROMOTION_TRANSLATOR")
+        );
+
+        let spread =
+            translate(&Action::Spread { unit }, &mirror, &state).expect("the spread crosses");
+        assert_eq!(spread.kind, "unit");
+        assert_eq!(spread.subject, Some(91));
+        assert_eq!(spread.verb.as_deref(), Some("SPREAD_RELIGION"));
+    }
+
+    #[test]
+    fn contracted_promotion_names_expand_to_the_firaxis_database_ids() {
+        assert_eq!(
+            civ6_unit_promotion_name("cobra_strike"),
+            "PROMOTION_MONK_COBRA_STRIKE"
+        );
+        assert_eq!(
+            civ6_unit_promotion_name("supercarrier"),
+            "PROMOTION_SUPER_CARRIER"
+        );
+        assert_eq!(civ6_unit_promotion_name("surf_band"), "PROMOTION_SURF_ROCK");
     }
 
     #[test]
