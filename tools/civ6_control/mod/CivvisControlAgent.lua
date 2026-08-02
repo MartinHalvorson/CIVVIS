@@ -160,7 +160,8 @@ local CMD = {};
 
 local function resolveActions()
 	for _, name in ipairs({
-		"UNITOPERATION_FOUND_CITY", "UNITOPERATION_MOVE_TO",
+		"UNITOPERATION_FOUND_CITY", "UNITOPERATION_FOUND_RELIGION",
+		"UNITOPERATION_MOVE_TO",
 		"UNITOPERATION_FORTIFY", "UNITOPERATION_ALERT",
 		"UNITOPERATION_SKIP_TURN", "UNITOPERATION_SLEEP",
 		"UNITOPERATION_HEAL", "UNITOPERATION_AUTOMATE_EXPLORE",
@@ -173,7 +174,8 @@ local function resolveActions()
 	for _, name in ipairs({
 		"UNITCOMMAND_AUTOMATE", "UNITCOMMAND_PROMOTE", "UNITCOMMAND_WAKE",
 		"UNITCOMMAND_UPGRADE", "UNITCOMMAND_DELETE",
-		"UNITCOMMAND_ACTIVATE_GREAT_PERSON",
+		"UNITCOMMAND_ACTIVATE_GREAT_PERSON", "UNITCOMMAND_ENTER_FORMATION",
+		"UNITCOMMAND_EXIT_FORMATION",
 	}) do
 		CMD[name] = cmdHash(name);
 	end
@@ -362,6 +364,12 @@ local function survey()
 			diplomatic = try(function() return Game.IsVictoryEnabled("VICTORY_DIPLOMATIC"); end, nil),
 		},
 		players = try(function() return #PlayerManager.GetAliveMajorIDs(); end, -1),
+		-- Reserve every configured city-state seat in the persistent mirror. The
+		-- `minors` state list contains only actors already met, so sizing from that
+		-- list on turn 1 leaves nowhere to put a city-state discovered later.
+		city_states = try(function()
+			return GameConfiguration.GetValue("CITY_STATE_COUNT");
+		end, 0),
 		-- Left behind by the setup context; see CivvisControlSetup.lua. Absent
 		-- means this game was started some other way -- by a person clicking
 		-- Play Now, say -- so its settings are the game's defaults and not the
@@ -476,6 +484,14 @@ local function applyConfiguration()
 	if cfg.MapScript then MapConfiguration.SetScript(cfg.MapScript); updatePlayerCounts(); end
 	if cfg.MapSize then MapConfiguration.SetMapSize(cfg.MapSize); updatePlayerCounts(); end
 	local seated = seatHuman(cfg.HumanPlayers or 1);
+	-- The FrontEnd setup context has the same assignment, but this in-game rehost
+	-- is the path that actually runs on this build. Omitting it made every other
+	-- requested setting exact while silently leaving the civilization random.
+	if cfg.Leader then
+		for _, id in ipairs(GameConfiguration.GetHumanPlayerIDs()) do
+			PlayerConfigurations[id]:SetLeaderTypeName(cfg.Leader);
+		end
+	end
 	if cfg.Difficulty then GameConfiguration.SetHandicapType(cfg.Difficulty); end
 	if cfg.GameSpeed then GameConfiguration.SetGameSpeedType(cfg.GameSpeed); end
 	if cfg.StartEra then GameConfiguration.SetStartEra(cfg.StartEra); end
@@ -513,6 +529,10 @@ local function rehost()
 			try(function() return MapConfiguration.GetMapSize(); end)) or "?",
 		speed = typeName(GameInfo.GameSpeeds,
 			try(function() return GameConfiguration.GetGameSpeedType(); end)) or "?",
+		leader = try(function()
+			local ids = GameConfiguration.GetHumanPlayerIDs();
+			return ids[1] and PlayerConfigurations[ids[1]]:GetLeaderTypeName() or nil;
+		end),
 		max_turns = try(function() return GameConfiguration.GetMaxTurns(); end, -1),
 		humans = try(function() return GameConfiguration.GetHumanPlayerCount(); end, -1),
 	});
@@ -739,12 +759,26 @@ end
 -- it a fix is what four attempts at the production ladder cost.
 local function cityDefence(x, y)
 	local plot = try(function() return Map.GetPlot(x, y); end);
-	if plot == nil then return nil, nil; end
+	if plot == nil then return nil, nil, nil, nil, nil; end
 	local district = try(function() return CityManager.GetDistrictAt(plot); end);
-	if district == nil then return nil, nil; end
+	if district == nil then return nil, nil, nil, nil, nil; end
 	local strength = try(function() return district:GetDefenseStrength(); end);
-	local damage = try(function() return district:GetDefenseDamage(); end);
-	return strength, damage;
+	-- These are the exact calls used by Firaxis's CityBannerManager.lua. There is
+	-- no `GetDefenseDamage()` accessor: calling it through `try` omitted `damage`
+	-- from every state event and made the mirror assume every wall was pristine.
+	local damage = try(function()
+		return district:GetDamage(DefenseTypes.DISTRICT_GARRISON);
+	end);
+	local maxDamage = try(function()
+		return district:GetMaxDamage(DefenseTypes.DISTRICT_GARRISON);
+	end);
+	local wallDamage = try(function()
+		return district:GetDamage(DefenseTypes.DISTRICT_OUTER);
+	end);
+	local maxWallDamage = try(function()
+		return district:GetMaxDamage(DefenseTypes.DISTRICT_OUTER);
+	end);
+	return strength, damage, maxDamage, wallDamage, maxWallDamage;
 end
 
 -- ★★★★★ Loyalty, the mechanism that has been quietly destroying the empire.
@@ -813,15 +847,19 @@ end
 
 -- Same discipline as `operate`: ask whether the command can start before
 -- claiming it was given. `pcall` only reports that the call did not raise.
-local function commandUnit(unit, hash, params)
+--
+-- These commands are parameterless. Firaxis's shipped UnitPanel.lua checks
+-- them with `(unit, hash, false, true)` and requests them with exactly two
+-- arguments. Supplying `{}` as a third RequestCommand argument made the call
+-- return without throwing but left Great Writers alive and upgrades undone.
+local function commandUnit(unit, hash)
 	if hash == nil then return false; end
-	params = params or {};
 	local ok, can = pcall(function()
-		return UnitManager.CanStartCommand(unit, hash, nil, params);
+		return UnitManager.CanStartCommand(unit, hash, false, true);
 	end);
 	if not (ok and can == true) then return false; end
 	return pcall(function()
-		UnitManager.RequestCommand(unit, hash, params);
+		UnitManager.RequestCommand(unit, hash);
 	end);
 end
 
@@ -2923,9 +2961,7 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 		-- ⚠ `item`, not `kind`: `emit` claims `kind`, `ctx` and `run`, and a payload
 		-- field named `kind` is overwritten before the line is written. That already
 		-- cost this file one blind instrument.
-		-- A direct produce order already emits this event before the blocker runs.
-		-- Do not double-count it when the same turn's fallback sees the memo.
-		if reasons ~= nil and #reasons > 0 then
+		if not refused[wanted] and reasons ~= nil and #reasons > 0 then
 			emit("civvis_build_unplayable", {
 				turn = turn,
 				city = try(function() return city:GetID(); end, -1),
@@ -2963,15 +2999,16 @@ end
 -- ⚠ Returns nil rather than guessing a plot. An illegal plot is another silent
 -- no-op, and a district we cannot place should fall through to the ladder so the
 -- city builds something real this turn.
-local function districtPlot(city, hash)
+local function productionPlot(city, param, hash, requestedX, requestedY)
 	local probe = {};
-	probe[CityOperationTypes.PARAM_DISTRICT_TYPE] = hash;
+	probe[param] = hash;
 	local results = try(function()
 		return CityManager.GetOperationTargets(city, CityOperationTypes.BUILD, probe);
 	end);
 	if results == nil then return nil; end
 	local plots = results[CityOperationResults.PLOTS];
 	if plots == nil then return nil; end
+	local first = nil;
 	-- Taken by iteration, not `plots[1]`: the shipped UI counts these with
 	-- `table.count`, so the result is not promised to be a dense array.
 	for _, plotIndex in pairs(plots) do
@@ -2979,10 +3016,19 @@ local function districtPlot(city, hash)
 		if plot ~= nil then
 			local px = try(function() return plot:GetX(); end, -1);
 			local py = try(function() return plot:GetY(); end, -1);
-			if px >= 0 and py >= 0 then return { x = px, y = py }; end
+			if px >= 0 and py >= 0 then
+				if requestedX ~= nil and requestedY ~= nil
+						and px == requestedX and py == requestedY then
+					return { x = px, y = py };
+				end
+				if first == nil then first = { x = px, y = py }; end
+			end
 		end
 	end
-	return nil;
+	-- A direct CIVVIS order names a plot. Substituting another legal plot would
+	-- actuate a different decision; only the emergency ladder may take the first.
+	if requestedX ~= nil or requestedY ~= nil then return nil; end
+	return first;
 end
 
 -- ★ A PROBE, NOT A MAPPING — the measurement that decides whether repair can ship.
@@ -3067,7 +3113,7 @@ local function cityNextReligion(city)
 	return row ~= nil and row.ReligionType or nil;
 end
 
-local function buildParams(row, city)
+local function buildParams(row, city, requestedX, requestedY)
 	local params = {};
 	-- ⚠ WITHOUT AN INSERT MODE THE GAME REJECTS EVERY BUILD.
 	--
@@ -3089,10 +3135,43 @@ local function buildParams(row, city)
 		params[CityOperationTypes.PARAM_UNIT_TYPE] = row.Hash;
 	elseif row.Kind == "KIND_BUILDING" then
 		params[CityOperationTypes.PARAM_BUILDING_TYPE] = row.Hash;
+		local building = GameInfo.Buildings[row.Type];
+		local alreadyPlaced = try(function()
+			return city:GetBuildQueue():HasBeenPlaced(row.Hash);
+		end, false);
+		if building ~= nil and building.IsWonder and not alreadyPlaced then
+			local where = productionPlot(city,
+				CityOperationTypes.PARAM_BUILDING_TYPE, row.Hash,
+				requestedX, requestedY);
+			if where == nil then
+				emit("build_no_plot", {
+					city = try(function() return city:GetID(); end, -1),
+					building = row.Type or tostring(row.Hash),
+					x = requestedX, y = requestedY,
+				});
+				return nil;
+			end
+			params[CityOperationTypes.PARAM_X] = where.x;
+			params[CityOperationTypes.PARAM_Y] = where.y;
+		end
 	elseif row.Kind == "KIND_DISTRICT" then
 		params[CityOperationTypes.PARAM_DISTRICT_TYPE] = row.Hash;
-		local where = districtPlot(city, row.Hash);
-		if where == nil then
+		-- The shipped ProductionPanel's ZoneDistrict path asks
+		-- BuildQueue:HasBeenPlaced first.  A founded-but-incomplete district is
+		-- resumed with only its type and insert mode; it is deliberately absent
+		-- from GetOperationTargets because its plot is no longer a legal *new*
+		-- placement. Probing anyway refused every attempt to resume that work as
+		-- `no_params_DISTRICT_*` (live turns 58 and 73 of run 004000).
+		local alreadyPlaced = try(function()
+			return city:GetBuildQueue():HasBeenPlaced(row.Hash);
+		end, false);
+		local where = nil;
+		if not alreadyPlaced then
+			where = productionPlot(city,
+				CityOperationTypes.PARAM_DISTRICT_TYPE, row.Hash,
+				requestedX, requestedY);
+		end
+		if not alreadyPlaced and where == nil then
 			-- ★★★★ NAME THE DISTRICT AND THE CITY. This used to send
 			-- `row.DistrictType`, which does not exist on a `GameInfo.Types` row, so
 			-- every one of these arrived as a bare hash -- 39 of them on run
@@ -3111,11 +3190,14 @@ local function buildParams(row, city)
 			emit("build_no_plot", {
 				city = try(function() return city:GetID(); end, -1),
 				district = row.Type or tostring(row.Hash),
+				x = requestedX, y = requestedY,
 			});
 			return nil;
 		end
-		params[CityOperationTypes.PARAM_X] = where.x;
-		params[CityOperationTypes.PARAM_Y] = where.y;
+		if where ~= nil then
+			params[CityOperationTypes.PARAM_X] = where.x;
+			params[CityOperationTypes.PARAM_Y] = where.y;
+		end
 	elseif row.Kind == "KIND_PROJECT" then
 		params[CityOperationTypes.PARAM_PROJECT_TYPE] = row.Hash;
 	else
@@ -3211,27 +3293,43 @@ local function driveProduction(player, turn, force)
 			-- `autoclose` events because THIS FILE never loaded. The autoclose
 			-- context lives in a separate file and kept working, which is what
 			-- made it look like a stalled game rather than a broken script.
-			local name, row, why = chooseProduction(city, counts, #cities, turn, refused);
-			if row ~= nil then
-				local params = buildParams(row, city);
-				if params ~= nil then
-					local ok = pcall(function()
-						CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
-					end);
-					if ok then
-						issued = issued + 1;
-						lastBuild[cityId] = { turn = turn, item = name };
-						if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
-						elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
-						elseif name == "UNIT_SCOUT" then counts.scout = counts.scout + 1;
-						elseif row.Kind == "KIND_UNIT" then counts.military = counts.military + 1;
+			local rejected = {};
+			for item, value in pairs(refused or {}) do
+				if value == true then rejected[item] = true; end
+			end
+			local searching = true;
+			while searching do
+				local name, row, why = chooseProduction(
+					city, counts, #cities, turn, rejected);
+				if row == nil then
+					searching = false;
+				else
+					local params = buildParams(row, city);
+					if params == nil then
+						-- CanProduce allows a district whose placement query has no
+						-- legal plot. Reject it for this sweep and ask the ladder for
+						-- its next genuine candidate instead of blocking every turn.
+						rejected[name] = true;
+					else
+						local ok = pcall(function()
+							CityManager.RequestOperation(city, CityOperationTypes.BUILD, params);
+						end);
+						if ok then
+							issued = issued + 1;
+							lastBuild[cityId] = { turn = turn, item = name };
+							if name == "UNIT_SETTLER" then counts.settler = counts.settler + 1;
+							elseif name == "UNIT_BUILDER" then counts.builder = counts.builder + 1;
+							elseif name == "UNIT_SCOUT" then counts.scout = counts.scout + 1;
+							elseif row.Kind == "KIND_UNIT" then counts.military = counts.military + 1;
+							end
 						end
+						emit("build", {
+							turn = turn,
+							city = try(function() return Locale.Lookup(city:GetName()); end, "?"),
+							item = name, reason = why, applied = ok,
+						});
+						searching = false;
 					end
-					emit("build", {
-						turn = turn,
-						city = try(function() return Locale.Lookup(city:GetName()); end, "?"),
-						item = name, reason = why, applied = ok,
-					});
 				end
 			end
 		end
@@ -3422,16 +3520,19 @@ local GOVERNOR_ORDER = {
 -- a Civilization VI API has cost this project three failed fixes today, so the
 -- assignment we made is the assignment we remember.
 local governorPost = {};
+-- CIVVIS appoints and posts a Governor as one semantic action. Firaxis's stock UI
+-- first submits APPOINT_GOVERNOR and waits for GovernorAppointed before it opens the
+-- assignment flow, so retain that target across the asynchronous engine boundary.
+local pendingGovernorAssignments = {};
 
 local function chooseGovernor(player, pid)
-	-- ⚠⚠ OFF BY DEFAULT: THIS FUNCTION SEGFAULTS THE GAME CORE. See the
-	-- `ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT` entry in `SOFT_BLOCKERS` for the
-	-- three-run, byte-identical-stack evidence. Belt-and-braces with the skip list:
-	-- a blocker route added later must not silently re-arm a known crash.
+	-- OFF BY DEFAULT: CIVVIS owns Governor strategy. This legacy blocker fallback
+	-- remains independently gated so a later config cannot silently add a second AI.
 	if not (cfg.GovernorAppoint or cfg.GovernorAssign) then return nil; end
 	-- ⚠ Enum members first. `params[nil] = x` throws "table index is nil".
 	local govParam = try(function() return PlayerOperations.PARAM_GOVERNOR_TYPE; end);
 	local cityParam = try(function() return PlayerOperations.PARAM_CITY_DEST; end);
+	local playerParam = try(function() return PlayerOperations.PARAM_PLAYER_ONE; end);
 	local appointOp = try(function() return PlayerOperations.APPOINT_GOVERNOR; end);
 	local assignOp = try(function() return PlayerOperations.ASSIGN_GOVERNOR; end);
 	if govParam == nil or appointOp == nil then return nil; end
@@ -3453,7 +3554,9 @@ local function chooseGovernor(player, pid)
 				end, false);
 				if not held and possible then
 					local params = {};
-					params[govParam] = row.Hash;
+					-- The stock GovernorPanel operation contract takes the row INDEX.
+					-- This used to send Hash and produced the repeatable Game Core crash.
+					params[govParam] = row.Index;
 					local ok = pcall(function()
 						UI.RequestPlayerOperation(pid, appointOp, params);
 					end);
@@ -3490,7 +3593,7 @@ local function chooseGovernor(player, pid)
 	local posted = nil;
 	-- Gated independently of the appointment: two mutations, two flags, so whichever
 	-- one faults can be identified without re-running both.
-	if cfg.GovernorAssign and assignOp ~= nil and cityParam ~= nil then
+	if cfg.GovernorAssign and assignOp ~= nil and cityParam ~= nil and playerParam ~= nil then
 		local taken = {};
 		for _, where in pairs(governorPost) do taken[where] = true; end
 		local target, targetRank = nil, nil;
@@ -3527,7 +3630,8 @@ local function chooseGovernor(player, pid)
 				if row ~= nil and governorPost[wanted] == nil
 						and try(function() return governors:HasGovernor(row.Hash); end, false) then
 					local params = {};
-					params[govParam] = row.Hash;
+					params[govParam] = row.Index;
+					params[playerParam] = pid;
 					params[cityParam] = target;
 					local ok = pcall(function()
 						UI.RequestPlayerOperation(pid, assignOp, params);
@@ -3928,8 +4032,8 @@ local SOFT_BLOCKERS = {
 	ENDTURN_BLOCKING_GOVERNOR_PROMOTION = true,
 	ENDTURN_BLOCKING_GOVERNOR_IDLE = true,
 	ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY = true,
-	-- ⚠⚠⚠ GOVERNOR_APPOINTMENT JOINS ITS SIBLINGS, AND THIS ONE IS MEASURED.
-	-- Answering it with `chooseGovernor` CRASHES THE GAME CORE. Three runs, three
+	-- ⚠⚠⚠ GOVERNOR_APPOINTMENT JOINS ITS SIBLINGS, AND THIS ONE WAS MEASURED.
+	-- Answering it with the old `chooseGovernor` CRASHED THE GAME CORE. Three runs, three
 	-- different maps and civilizations, all with CIVVIS deciding:
 	--     civvis-…T111953Z  t38      civvis-…T112719Z  t37      civvis-…T113303Z  t37
 	-- Every one died with EXC_BAD_ACCESS at KERN_INVALID_ADDRESS 0x18 on the
@@ -3937,7 +4041,10 @@ local SOFT_BLOCKERS = {
 	-- three: GameCore_XP2.dll +746148, +745916, +2560108, +2565576, +2567456,
 	-- +546828. In each run the very last event written is the turn record with
 	-- `blocker: ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT, answered: null` — the game
-	-- dies in the answer, before the answer can be reported.
+	-- died in the answer, before the answer could be reported. Comparing against
+	-- Firaxis's shipped GovernorPanel later found the cause: the fallback supplied a
+	-- Governor Hash where the operation requires its row Index, and assignment omitted
+	-- PARAM_PLAYER_ONE. Both parameters are corrected above and in the CIVVIS actuator.
 	--
 	-- ⚠ WHY THIS NEVER SHOWED UP BEFORE: the prompt has to be RAISED first, and it
 	-- is raised by holding a governor title. The long heuristic runs
@@ -3948,11 +4055,9 @@ local SOFT_BLOCKERS = {
 	-- for the t44-47 cluster this project recorded as unexplained and wrongly
 	-- attributed to envoys: same thread, same null offset, different prompt.
 	--
-	-- ⚠ THIS COSTS SOMETHING REAL. A governor is +8 loyalty and 56% of runs past
-	-- t60 lose a city to revolt, so this is not a free skip — it is the lesser of
-	-- two failures, exactly as with `GIVE_INFLUENCE_TOKEN`. `GovernorAppoint` and
-	-- `GovernorAssign` re-enable the two mutations SEPARATELY. Do not turn both on
-	-- at once: that is precisely what made the envoy crash un-attributable.
+	-- This blocker remains soft because CIVVIS now spends and actuates the title from
+	-- the exported roster. `GovernorAppoint` and `GovernorAssign` re-enable only the
+	-- legacy heuristic fallback and should stay off in a CIVVIS-decided run.
 	ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT = true,
 	-- ⚠⚠ GIVE_INFLUENCE_TOKEN IS BACK HERE, AND THE REASON MATTERS. Answering it
 	-- with `chooseEnvoy` CRASHES THE GAME CORE. On one fixed seed (425255), same
@@ -3995,6 +4100,26 @@ local CIVVIS_OWNED_BLOCKERS = {
 -- diagnosable: the log says which blocker recurred, not merely that one did.
 local function answerBlocker(player, pid, blocker, turn)
 	local name = blockerName(blocker);
+	-- A CIVVIS pass is a complete decision for the mirrored state it received.
+	-- Firaxis can finish production or research later in the same turn and raise
+	-- another prompt, but answering that prompt with the hand-written ladder
+	-- gives control to a second AI. That is how a completed wall repair silently
+	-- became a Builder in every city. End the turn and let the next fresh export
+	-- ask CIVVIS what belongs in the now-empty queue.
+	if cfg.CivvisDecides and CIVVIS_OWNED_BLOCKERS[name]
+			and (awaiting.source == "civvis" or awaiting.source == "civvis_stale") then
+		return "civvis_complete";
+	end
+
+	-- While the current CIVVIS answer is still in flight, decline to answer a
+	-- decision it owns. Returning nil leaves the blocker up and the loop retries
+	-- after the orders database has had a chance to receive the reply.
+	if cfg.CivvisDecides and awaiting.source == "pending"
+			and CIVVIS_OWNED_BLOCKERS[name]
+			and spend("civvis_wait_" .. name, cfg.MaxCivvisWaitPasses or 12) then
+		return nil;
+	end
+
 	-- ⚠⚠ THE HONEST DENOMINATOR FOR "CIVVIS IS DECIDING". Even on a turn CIVVIS
 	-- answered, the game's own end-turn prompts route back into the hand-written
 	-- passes below — `chooseResearch`, `driveProduction`, `orderUnits` — because a
@@ -4029,32 +4154,6 @@ local function answerBlocker(player, pid, blocker, turn)
 		residualAnswers[name] = (residualAnswers[name] or 0) + 1;
 		residualAnswers[name .. "@" .. tostring(awaiting.source)] =
 			(residualAnswers[name .. "@" .. tostring(awaiting.source)] or 0) + 1;
-	end
-	-- ★★★★★ WAIT FOR CIVVIS BEFORE ANSWERING A DECISION IT IS ABOUT TO MAKE.
-	--
-	-- These blockers fire from the game-core event loop, which runs BEFORE
-	-- `settleTurn` has CIVVIS's reply. The heuristic therefore answered first, every
-	-- time, and CIVVIS's own choice arrived to find the decision already taken.
-	--
-	-- Measured on run 233331Z. On 37 turns the heuristic named a tech or civic, and
-	-- on every one of them CIVVIS sent its own research/civic order the same turn.
-	-- They DISAGREED: at t11, t16 and t22 the heuristic answered `TECH_POTTERY`
-	-- while CIVVIS wanted `TECH_ASTROLOGY`. Pottery completed at **t24**; Astrology
-	-- not until **t59**. The heuristic's pick is what the game actually researched,
-	-- on a run reported as 100% CIVVIS.
-	--
-	-- So: while CIVVIS's answer is still outstanding, decline to answer. Returning
-	-- nil leaves the blocker up and the loop retries, which is exactly the pause
-	-- needed for the handshake to land. The fallback below still runs once CIVVIS
-	-- has answered, failed, or gone stale -- a blocker that is never answered would
-	-- hang the turn forever, which is worse than a heuristic answer.
-	--
-	-- ⚠ Only the decisions CIVVIS actually issues orders for. Blockers it has no
-	-- opinion on must still be answered immediately or the turn cannot end.
-	if cfg.CivvisDecides and awaiting.source == "pending"
-			and CIVVIS_OWNED_BLOCKERS[name]
-			and spend("civvis_wait_" .. name, cfg.MaxCivvisWaitPasses or 12) then
-		return nil;
 	end
 	-- Every answer below walks a GameInfo table, so each is budgeted. Answering
 	-- twice in a turn is the useful case -- the first attempt can be refused
@@ -4165,7 +4264,36 @@ local function exportState(player, pid, turn)
 	if cfg.ExportState ~= true then return; end
 
 	local cities = {};
+	-- Firaxis leaves a Trader unit on the map while it travels, so its position
+	-- alone cannot say whether it is available for a new route.  Export the
+	-- authoritative route records from the same API the stock Trade Overview
+	-- uses.  CIVVIS needs both endpoint ids for capacity/yields and the unit id
+	-- to keep the active Trader out of the next planning pass.
+	local tradeRoutes = {};
 	eachCity(player, function(city)
+		local outgoing = try(function()
+			return city:GetTrade():GetOutgoingRoutes();
+		end, {});
+		for _, route in ipairs(outgoing or {}) do
+			local originID = try(function() return route.OriginCityID; end,
+				try(function() return city:GetID(); end, -1));
+			local destinationPlayer = try(function() return route.DestinationCityPlayer; end, -1);
+			local destinationID = try(function() return route.DestinationCityID; end, -1);
+			local destination = try(function()
+				local destinationOwner = Players[destinationPlayer];
+				return destinationOwner and destinationOwner:GetCities():FindID(destinationID);
+			end, nil);
+			tradeRoutes[#tradeRoutes + 1] = {
+				trader = try(function() return route.TraderUnitID; end, -1),
+				origin = originID,
+				destination = destinationID,
+				destination_player = destinationPlayer,
+				origin_x = try(function() return city:GetX(); end, -1),
+				origin_y = try(function() return city:GetY(); end, -1),
+				destination_x = try(function() return destination and destination:GetX(); end, -1),
+				destination_y = try(function() return destination and destination:GetY(); end, -1),
+			};
+		end
 		local queue = try(function()
 			local q = city:GetBuildQueue();
 			return q and q:GetCurrentProductionTypeHash() or 0;
@@ -4175,7 +4303,7 @@ local function exportState(player, pid, turn)
 		local loyalNow, loyalRate, loyalFallsTo = cityLoyalty(city);
 		-- Same discipline: one resolve of the hash to its kind, two engine reads.
 		local prodProgress, prodCost = productionProgress(city, queue);
-		local defStrength, defDamage = cityDefence(
+		local defStrength, defDamage, defMax, wallDamage, wallMax = cityDefence(
 			try(function() return city:GetX(); end, -1),
 			try(function() return city:GetY(); end, -1));
 		-- What this city has ALREADY built. Same reason as `im` in the tiles export: a
@@ -4215,31 +4343,140 @@ local function exportState(player, pid, turn)
 		-- this build. Left nil when the plots cannot be read, so "could not ask" stays
 		-- distinguishable from "this city has none" -- the same rule as `built`.
 		local placed = nil;
+		local wonders = nil;
+		-- Plot:GetDistrictType gives us placement, but not whether that placement
+		-- is a finished district or a foundation still under construction.  Keep
+		-- the collection's authoritative completion bit keyed by plot so the
+		-- mirror does not grant yields early or erase an occupied foundation.
+		local districtComplete = {};
+		local cityDistricts = try(function() return city:GetDistricts(); end);
+		if cityDistricts ~= nil then
+			for _, district in cityDistricts:Members() do
+				local dx = try(function() return district:GetX(); end, -1);
+				local dy = try(function() return district:GetY(); end, -1);
+				if dx ~= nil and dy ~= nil and dx >= 0 and dy >= 0 then
+					districtComplete[tostring(dx) .. "," .. tostring(dy)] =
+						try(function() return district:IsComplete(); end, nil);
+				end
+			end
+		end
 		local ownedPlots = try(function()
 			return Map.GetCityPlots():GetPurchasedPlots(city);
 		end);
+		local worked = nil;
+		local specialists = nil;
 		if ownedPlots ~= nil then
 			placed = {};
+			wonders = {};
+			worked = {};
+			specialists = {};
+			local citizens = try(function() return city:GetCitizens(); end);
 			for _, plotIndex in ipairs(ownedPlots) do
 				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
 				if plot ~= nil then
+					local px = try(function() return plot:GetX(); end, -1);
+					local py = try(function() return plot:GetY(); end, -1);
+					if citizens ~= nil and try(function()
+						return citizens:IsPlotWorked(px, py);
+					end, false) then
+						worked[#worked + 1] = { x = px, y = py };
+					end
 					local dtype = try(function() return plot:GetDistrictType(); end, -1);
 					if dtype ~= nil and dtype >= 0 then
 						local info = GameInfo.Districts[dtype];
 						if info ~= nil then
+							local workers = try(function() return plot:GetWorkerCount(); end, 0) or 0;
+							if info.DistrictType ~= "DISTRICT_CITY_CENTER"
+								and info.DistrictType ~= "DISTRICT_WONDER" then
+								for _ = 1, workers do
+									specialists[#specialists + 1] = info.DistrictType;
+								end
+							end
 							placed[#placed + 1] = {
 								type = info.DistrictType,
+								x = px,
+								y = py,
+								pillaged = try(function() return plot:IsDistrictPillaged(); end, false),
+								complete = districtComplete[
+									tostring(try(function() return plot:GetX(); end, -1)) .. "," ..
+									tostring(try(function() return plot:GetY(); end, -1))],
+							};
+						end
+					end
+					-- World wonders are Building rows attached to their own map plot.
+					-- `built` above proves ownership but cannot preserve placement, and
+					-- putting every wonder on the City Center changes adjacency rules.
+					local wonderType = try(function() return plot:GetWonderType(); end, -1);
+					if wonderType ~= nil and wonderType >= 0 and
+						try(function() return plot:IsWonderComplete(); end, false) then
+						local wonder = GameInfo.Buildings[wonderType];
+						if wonder ~= nil then
+							wonders[#wonders + 1] = {
+								type = wonder.BuildingType,
 								x = try(function() return plot:GetX(); end, -1),
 								y = try(function() return plot:GetY(); end, -1),
-								pillaged = try(function() return plot:IsDistrictPillaged(); end, false),
 							};
 						end
 					end
 				end
 			end
 		end
+		-- Great People disappear after activation, but their Great Works are permanent
+		-- state.  Export the occupied slots exactly so the next reconstruction does
+		-- not forget the yield, Tourism, theming identity, or consumed slot.
+		local greatWorks = nil;
+		if blds ~= nil then
+			greatWorks = {};
+			for buildingInfo in GameInfo.Buildings() do
+				if try(function() return blds:HasBuilding(buildingInfo.Index); end, false) then
+					local slots = try(function()
+						return blds:GetNumGreatWorkSlots(buildingInfo.Index);
+					end, 0) or 0;
+					for slot = 0, slots - 1 do
+						local workIndex = try(function()
+							return blds:GetGreatWorkInSlot(buildingInfo.Index, slot);
+						end, -1);
+						if workIndex ~= nil and workIndex >= 0 then
+							local workType = try(function()
+								return blds:GetGreatWorkTypeFromIndex(workIndex);
+							end, -1);
+							local info = workType ~= nil and workType >= 0
+								and GameInfo.GreatWorks[workType] or nil;
+							local instance = try(function()
+								return Game.GetGreatWorkDataFromIndex(workIndex);
+							end);
+							if info ~= nil then
+								greatWorks[#greatWorks + 1] = {
+									type = info.GreatWorkType,
+									object = info.GreatWorkObjectType,
+									era = info.EraType,
+									creator = instance and instance.CreatorName or "",
+									building = buildingInfo.BuildingType,
+									slot = slot,
+								};
+							end
+						end
+					end
+				end
+			end
+		end
+		local exactYields = try(function()
+			return {
+				food = city:GetYield(YieldTypes.FOOD),
+				production = city:GetYield(YieldTypes.PRODUCTION),
+				gold = city:GetYield(YieldTypes.GOLD),
+				science = city:GetYield(YieldTypes.SCIENCE),
+				culture = city:GetYield(YieldTypes.CULTURE),
+				faith = city:GetYield(YieldTypes.FAITH),
+			};
+		end);
 		cities[#cities + 1] = {
 			districts = placed,
+			wonders = wonders,
+			worked = worked,
+			specialists = specialists,
+			great_works = greatWorks,
+			yields = exactYields,
 			-- ★★★★★ WHOSE RELIGION THIS CITY FOLLOWS, AND WHAT IS CONVERTING IT.
 			--
 			-- `religion` was **null on all 26,954 city records ever exported**, the
@@ -4327,6 +4564,9 @@ local function exportState(player, pid, turn)
 			-- project's history on every city on the board.
 			defense = defStrength,
 			damage = defDamage,
+			max_damage = defMax,
+			wall_damage = wallDamage,
+			max_wall_damage = wallMax,
 			-- ⚠ THE FIELD WHOSE ABSENCE HID THE BIGGEST DEFECT IN THE PROJECT.
 			-- 45 runs of telemetry recorded cities peaking and then declining with
 			-- no cause attached, because loyalty was never exported. `falls_to` is
@@ -4341,6 +4581,46 @@ local function exportState(player, pid, turn)
 	eachUnit(player, function(unit)
 		local name = unitTypeName(unit);
 		local row = GameInfo.Units[name];
+		-- Great People are immediate effects in CIVVIS, but physical units in
+		-- Firaxis.  Export the engine's exact activation targets so the bridge can
+		-- perform that same effect without guessing which district or plot is legal.
+		local greatPerson = nil;
+		local gp = try(function() return unit:GetGreatPerson(); end);
+		if gp ~= nil and try(function() return gp:IsGreatPerson(); end, false) then
+			local activationPlots = {};
+			for _, plotIndex in ipairs(try(function()
+				return gp:GetActivationHighlightPlots();
+			end, {}) or {}) do
+				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+				if plot ~= nil then
+					local px = try(function() return plot:GetX(); end, -1);
+					local py = try(function() return plot:GetY(); end, -1);
+					if px >= 0 and py >= 0 then
+						activationPlots[#activationPlots + 1] = {
+							x = px, y = py,
+							distance = try(function()
+								return Map.GetPlotDistance(unit:GetX(), unit:GetY(), px, py);
+							end, 9999),
+						};
+					end
+				end
+			end
+			local individual = try(function() return gp:GetIndividual(); end, -1);
+			local class = try(function() return gp:GetClass(); end, -1);
+			local individualRow = GameInfo.GreatPersonIndividuals[individual];
+			local classRow = GameInfo.GreatPersonClasses[class];
+			greatPerson = {
+				individual = individualRow ~= nil
+					and individualRow.GreatPersonIndividualType or nil,
+				class = classRow ~= nil and classRow.GreatPersonClassType or nil,
+				charges = try(function() return gp:GetActionCharges(); end, 0),
+				can_activate = try(function()
+					return UnitManager.CanStartCommand(
+						unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"], nil, {});
+				end, false),
+				activation_plots = activationPlots,
+			};
+		end
 		units[#units + 1] = {
 			id = try(function() return unit:GetID(); end, -1),
 			kind = name,
@@ -4368,6 +4648,14 @@ local function exportState(player, pid, turn)
 			fortified = try(function()
 				return (unit:GetFortifyTurns() or 0) > 0;
 			end, false),
+			fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+			-- The count is the public formation state used by the stock Unit Panel.
+			-- Without it, a successfully escorted Settler is reconstructed as two
+			-- loose units and CIVVIS asks to link them again on every turn.
+			formation_count = try(function()
+				return unit:GetFormationUnitCount();
+			end, 1),
+			great_person = greatPerson,
 		};
 	end);
 
@@ -4400,17 +4688,23 @@ local function exportState(player, pid, turn)
 						-- = 12` was measured against WALLED cities late in a game;
 						-- an unwalled capital at turn 40 is a different problem and
 						-- only defence strength tells them apart.
-						local theirDef, theirDmg = cityDefence(cx, cy);
+						local theirDef, theirDmg, theirMax, theirWallDmg, theirWallMax =
+							cityDefence(cx, cy);
 						theirCities[#theirCities + 1] = {
+							id = try(function() return city:GetID(); end, -1),
 							x = cx, y = cy,
 							name = try(function()
 								return Locale.Lookup(city:GetName());
 							end, ""),
+							pop = try(function() return city:GetPopulation(); end, -1),
 							capital = try(function() return city:IsCapital(); end, false),
 							-- Defence is on the city banner when the city is
 							-- visible, so this is information a human has.
 							defense = theirDef,
 							damage = theirDmg,
+							max_damage = theirMax,
+							wall_damage = theirWallDmg,
+							max_wall_damage = theirWallMax,
 						};
 					end
 				end
@@ -4453,8 +4747,13 @@ local function exportState(player, pid, turn)
 								base = unitBaseType(name),
 								class = unitClass(name),
 								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
+								moves = try(function() return unit:GetMovesRemaining(); end, -1),
 								combat = row ~= nil and (row.Combat or 0) or 0,
 								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
+								fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+								fortified = try(function()
+									return (unit:GetFortifyTurns() or 0) > 0;
+								end, false),
 							};
 						end
 					end);
@@ -4499,48 +4798,86 @@ local function exportState(player, pid, turn)
 		end
 	end
 
-	-- ★★★★ CITY-STATES, the same way and for the same reason as `hostiles`:
-	-- `rivals` is built from `GetAliveMajorIDs`, so a minor's cities could never
-	-- cross — and a city the mirror does not hold is a spacing rule that cannot
-	-- fire. Every early `found_refused` (`can_start=false,no_reasons`) on run
-	-- civvis-20260801T224944Z sat 2-3 tiles from a city-state city this export
-	-- never mentioned, and the sister run turned 13 settlers into 2 cities
-	-- aiming at ground Civilization VI refuses. Cities only, no units: settle
-	-- legality is about ground, and each city is gated on its plot being
-	-- revealed, so this hands the seat nothing it has not seen.
+	-- Met city-states are first-class public actors. Treating their territory as
+	-- merely "cannot settle here" hid Kabul's city, army, Envoys and Suzerain from
+	-- both the mirror and the planner even while its banner was on screen.
 	local minors = {};
-	for _, otherId in ipairs(try(function() return PlayerManager.GetAliveMinorIDs(); end, {})) do
-		if otherId ~= pid and diplomacy ~= nil
-				and try(function() return diplomacy:HasMet(otherId); end, false) then
-			local other = Players[otherId];
-			local theirCities = {};
+	for _, minor in ipairs(try(function() return PlayerManager.GetAliveMinors(); end, {})) do
+		pcall(function()
+			local mid = minor:GetID();
+			if diplomacy == nil or not diplomacy:HasMet(mid) then return; end
+			local civilization = try(function()
+				return PlayerConfigurations[mid]:GetCivilizationTypeName();
+			end, "");
+			local theirCities, theirUnits = {}, {};
 			pcall(function()
-				for _, city in other:GetCities():Members() do
-					local cx = city:GetX();
-					local cy = city:GetY();
+				for _, city in minor:GetCities():Members() do
+					local cx, cy = city:GetX(), city:GetY();
 					if plotRevealed(pid, cx, cy) then
-						local theirDef, theirDmg = cityDefence(cx, cy);
+						local strength, damage, maxDamage, wallDamage, maxWallDamage =
+							cityDefence(cx, cy);
 						theirCities[#theirCities + 1] = {
+							id = try(function() return city:GetID(); end, -1),
 							x = cx, y = cy,
-							name = try(function()
-								return Locale.Lookup(city:GetName());
-							end, ""),
+							name = try(function() return Locale.Lookup(city:GetName()); end, ""),
+							pop = try(function() return city:GetPopulation(); end, -1),
 							capital = try(function() return city:IsCapital(); end, false),
-							defense = theirDef,
-							damage = theirDmg,
+							defense = strength, damage = damage,
+							max_damage = maxDamage,
+							wall_damage = wallDamage,
+							max_wall_damage = maxWallDamage,
 						};
 					end
 				end
 			end);
+			pcall(function()
+				for _, unit in minor:GetUnits():Members() do
+					pcall(function()
+						local ux, uy = unit:GetX(), unit:GetY();
+						if PlayersVisibility[pid]:IsVisible(ux, uy) then
+							local name = unitTypeName(unit);
+							local row = GameInfo.Units[name];
+							theirUnits[#theirUnits + 1] = {
+								x = ux, y = uy, kind = name,
+								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
+								moves = try(function() return unit:GetMovesRemaining(); end, -1),
+								combat = row ~= nil and (row.Combat or 0) or 0,
+								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
+								fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+								fortified = try(function()
+									return (unit:GetFortifyTurns() or 0) > 0;
+								end, false),
+							};
+						end
+					end);
+				end
+			end);
+			-- `GetAliveMinors()` includes the aggregate Free Cities player from
+			-- turn 1 even though it is dormant. Publishing that empty placeholder
+			-- used to zip it onto CIVVIS's first generated city-state and turn Kabul
+			-- into an enemy. Keep it only once there is an actor to mirror.
+			if civilization == "CIVILIZATION_BARBARIAN" then return; end
+			if civilization == "CIVILIZATION_FREE_CITIES"
+				and #theirCities == 0 and #theirUnits == 0 then return; end
+			local influence = try(function() return minor:GetInfluence(); end);
 			minors[#minors + 1] = {
-				player = otherId,
-				civ = try(function()
-					return PlayerConfigurations[otherId]:GetCivilizationTypeName();
-				end, ""),
-				at_war = try(function() return diplomacy:IsAtWarWith(otherId); end, false),
-				cities = theirCities,
+				player = mid,
+				civ = civilization,
+				at_war = try(function() return diplomacy:IsAtWarWith(mid); end, false),
+				score = try(function() return minor:GetScore(); end, -1),
+				military = try(function() return minor:GetStats():GetMilitaryStrength(); end, -1),
+				envoys = influence ~= nil and try(function()
+					return influence:GetTokensReceived(pid);
+				end, 0) or 0,
+				most_envoys = influence ~= nil and try(function()
+					return influence:GetMostTokensReceived();
+				end, 0) or 0,
+				suzerain = influence ~= nil and try(function()
+					return influence:GetSuzerain();
+				end, -1) or -1,
+				cities = theirCities, units = theirUnits,
 			};
-		end
+		end);
 	end
 
 	-- ★★★ WITHOUT THESE, CIVVIS DECIDES IN THE ANCIENT ERA FOREVER. The
@@ -4549,8 +4886,10 @@ local function exportState(player, pid, turn)
 	-- advice for turn 5, worthless at turn 190 against Pikemen. What a seat knows
 	-- is half of what it can decide.
 	--
-	-- ⚠ Completed only. `CanResearch` would describe what is reachable, which is a
-	-- different question and would let CIVVIS build from a tree it does not have.
+	-- ⚠ The completed lists are deliberately different from what is merely
+	-- reachable: `CanResearch` would let CIVVIS build from a tree it does not
+	-- have.  The active node and its progress are separate facts, needed so a
+	-- persistent reconstruction does not forget an in-flight choice each turn.
 	local techs, civics = {}, {};
 	local ptechs = try(function() return player:GetTechs(); end);
 	if ptechs ~= nil then
@@ -4560,11 +4899,37 @@ local function exportState(player, pid, turn)
 			end
 		end
 	end
+	local research, research_progress;
+	if ptechs ~= nil then
+		local index = try(function() return ptechs:GetResearchingTech(); end, -1);
+		if index ~= nil and index >= 0 then
+			local row = GameInfo.Technologies[index];
+			if row ~= nil then
+				research = row.TechnologyType;
+				research_progress = try(function()
+					return ptechs:GetResearchProgress(index);
+				end, 0) or 0;
+			end
+		end
+	end
 	local pculture = try(function() return player:GetCulture(); end);
 	if pculture ~= nil then
 		for row in GameInfo.Civics() do
 			if try(function() return pculture:HasCivic(row.Index); end, false) then
 				civics[#civics + 1] = row.CivicType;
+			end
+		end
+	end
+	local civic, civic_progress;
+	if pculture ~= nil then
+		local index = try(function() return pculture:GetProgressingCivic(); end, -1);
+		if index ~= nil and index >= 0 then
+			local row = GameInfo.Civics[index];
+			if row ~= nil then
+				civic = row.CivicType;
+				civic_progress = try(function()
+					return pculture:GetCulturalProgress(index);
+				end, 0) or 0;
 			end
 		end
 	end
@@ -4581,6 +4946,55 @@ local function exportState(player, pid, turn)
 	-- ⚠ Only units on plots this seat can SEE, the same rule the rival export uses.
 	-- A barbarian camp in the fog is not information a human has.
 	local hostiles = {};
+	-- ★★★★★ FREE CITIES ARE HOSTILE AND WERE IN NO LIST AT ALL.
+	--
+	-- `hostiles` walked ONLY `GetAliveBarbarianIDs()`. Majors arrive in `rivals`,
+	-- city-states in `minors` — and the Free Cities player is in NONE of the three.
+	-- Measured on run civvis-20260802T064240Z: every hostile entry in the whole run,
+	-- all 1454 of them, carried `player: 63`. Player 62 never appeared.
+	--
+	-- That is not a cosmetic gap. It is how the empire died:
+	--   t129  five cities
+	--   t131-t145  four of them lost, every one naming `falls_to: 62`
+	--   t130  every rival still `at_war: false`; hostiles showed SEVEN units,
+	--         two of them settlers and one a builder
+	--   t125  "Researching education | worth 19, ahead of military tactics at 5"
+	-- Mecca flipped to Free Cities at loyalty 1.6, and the Free City's units then
+	-- took Medina, Sana'a and Hattin — all three still at loyalty 99-100, so they
+	-- were CONQUERED, not disloyal. CIVVIS could not see the army that took them,
+	-- so it kept valuing military tactics at 5 while its empire was dismantled.
+	--
+	-- ⚠ `IsFreeCities` is guarded exactly as the shipped UI guards it —
+	-- GlobalResourcePopup.lua writes `if pPlayer.IsFreeCities and
+	-- pPlayer:IsFreeCities()` with the comment "Not avail in base game". A build
+	-- without the method must fall through, not error.
+	local function addUnitsOf(bid)
+		local other = Players[bid];
+		if other == nil then return; end
+		pcall(function()
+			for _, unit in other:GetUnits():Members() do
+				local ux, uy = unit:GetX(), unit:GetY();
+				if plotRevealed(pid, ux, uy) then
+					hostiles[#hostiles + 1] = {
+						x = ux, y = uy, player = bid,
+						type = try(function()
+							return GameInfo.Units[unit:GetUnitType()].UnitType;
+						end, "?"),
+					};
+				end
+			end
+		end);
+	end
+	pcall(function()
+		local everyone = try(function() return PlayerManager.GetAliveIDs(); end, {}) or {};
+		for _, oid in ipairs(everyone) do
+			local other = Players[oid];
+			local free = other ~= nil and try(function()
+				return other.IsFreeCities ~= nil and other:IsFreeCities() == true;
+			end, false);
+			if free == true then addUnitsOf(oid); end
+		end
+	end);
 	pcall(function()
 		local ids = try(function() return PlayerManager.GetAliveBarbarianIDs(); end, {}) or {};
 		for _, bid in ipairs(ids) do
@@ -4589,12 +5003,22 @@ local function exportState(player, pid, turn)
 				pcall(function()
 					for _, unit in barb:GetUnits():Members() do
 						local ux, uy = unit:GetX(), unit:GetY();
-						if plotRevealed(pid, ux, uy) then
+						if PlayersVisibility[pid]:IsVisible(ux, uy) then
+							local name = try(function()
+								return GameInfo.Units[unit:GetUnitType()].UnitType;
+							end, "?");
+							local row = GameInfo.Units[name];
 							hostiles[#hostiles + 1] = {
 								x = ux, y = uy, player = bid,
-								type = try(function()
-									return GameInfo.Units[unit:GetUnitType()].UnitType;
-								end, "?"),
+								type = name,
+								hp = 100 - (try(function() return unit:GetDamage(); end, 0) or 0),
+								moves = try(function() return unit:GetMovesRemaining(); end, -1),
+								combat = row ~= nil and (row.Combat or 0) or 0,
+								ranged = row ~= nil and (row.RangedCombat or 0) or 0,
+								fortify_turns = try(function() return unit:GetFortifyTurns(); end, 0),
+								fortified = try(function()
+									return (unit:GetFortifyTurns() or 0) > 0;
+								end, false),
 							};
 						end
 					end
@@ -4630,6 +5054,42 @@ local function exportState(player, pid, turn)
 		local row = GameInfo.Beliefs[index];
 		return row ~= nil and row.BeliefType or nil;
 	end);
+	-- A Great Prophet is not a generic Great Person activation. Founding a
+	-- religion is a player operation whose belief choices CIVVIS must make, so
+	-- export both the decision gate and the worldwide availability facts.
+	local playerReligion = try(function() return player:GetReligion(); end);
+	local religionCreated = playerReligion ~= nil and
+		try(function() return playerReligion:GetReligionTypeCreated(); end, -1) or -1;
+	local prophet_pending = religionCreated < 0 and playerReligion ~= nil and
+		try(function() return playerReligion:HasReligiousFoundingUnit(); end, false) or false;
+	local founded_religion = nil;
+	local founded_religions = {};
+	local religion_beliefs = {};
+	local taken_religion_beliefs = {};
+	local allReligions = try(function() return Game.GetReligion():GetReligions(); end, {}) or {};
+	for _, religion in ipairs(allReligions) do
+		local religionRow = GameInfo.Religions[religion.Religion];
+		local isPantheon = religionRow ~= nil and
+			(religionRow.Pantheon == true or religionRow.Pantheon == 1);
+		if religionRow ~= nil and not isPantheon then
+			founded_religions[#founded_religions + 1] = religionRow.ReligionType;
+			if religion.Founder == pid then
+				founded_religion = religionRow.ReligionType;
+			end
+			for _, beliefIndex in ipairs(religion.Beliefs or {}) do
+				local beliefRow = GameInfo.Beliefs[beliefIndex];
+				if beliefRow ~= nil then
+					taken_religion_beliefs[#taken_religion_beliefs + 1] = beliefRow.BeliefType;
+					if religion.Founder == pid then
+						religion_beliefs[#religion_beliefs + 1] = beliefRow.BeliefType;
+					end
+				end
+			end
+		end
+	end
+	table.sort(founded_religions);
+	table.sort(religion_beliefs);
+	table.sort(taken_religion_beliefs);
 	-- ★★★★ THE POLICY CARDS ALREADY SLOTTED, and how many slots exist at all.
 	--
 	-- The third instance of one shape tonight, after the government and the pantheon:
@@ -4655,49 +5115,83 @@ local function exportState(player, pid, turn)
 			end
 		end
 	end
+
+	-- Governor Titles, appointments, promotions and assignments are authoritative
+	-- host state. Completed Civics cannot reconstruct them: districts also grant
+	-- titles, a title may be unspent, and appointments are player choices. Omitting
+	-- this roster made CIVVIS appoint Victor and Magnus again on every replayed frame.
+	local governor_points, governor_points_spent, governor_roster = nil, nil, nil;
+	local governors = try(function() return player:GetGovernors(); end);
+	if governors ~= nil then
+		governor_points = try(function() return governors:GetGovernorPoints(); end);
+		governor_points_spent = try(function() return governors:GetGovernorPointsSpent(); end);
+		-- `GetGovernorList` returns two values. The generic `try` helper deliberately
+		-- retains only one, so preserve the shipped API's full return tuple here.
+		local okList, hasGovernors, appointed = pcall(function()
+			return governors:GetGovernorList();
+		end);
+		if okList and type(appointed) == "table" then
+			governor_roster = {};
+			for _, governor in ipairs(appointed) do
+				pcall(function()
+					local definition = GameInfo.Governors[governor:GetType()];
+					if definition == nil then return; end
+					local promotions = {};
+					for promotionSet in GameInfo.GovernorPromotionSets() do
+						if promotionSet.GovernorType == definition.GovernorType
+								and not (promotionSet.BaseAbility == true
+									or promotionSet.BaseAbility == 1) then
+							local promotion = GameInfo.GovernorPromotions[
+								promotionSet.GovernorPromotion];
+							if promotion ~= nil and try(function()
+								return governor:HasPromotion(promotion.Hash);
+							end, false) then
+								promotions[#promotions + 1] = promotion.GovernorPromotionType;
+							end
+						end
+					end
+					table.sort(promotions);
+					local city = try(function() return governor:GetAssignedCity(); end);
+					governor_roster[#governor_roster + 1] = {
+						type = definition.GovernorType,
+						city = city ~= nil and try(function() return city:GetID(); end, -1) or -1,
+						city_player = city ~= nil and try(function() return city:GetOwner(); end, -1) or -1,
+						x = city ~= nil and try(function() return city:GetX(); end, -1) or -1,
+						y = city ~= nil and try(function() return city:GetY(); end, -1) or -1,
+						established = try(function() return governor:IsEstablished(); end, false),
+						turns_on_site = try(function() return governor:GetTurnsOnSite(); end, 0),
+						turns_to_establish = try(function()
+							return governor:GetTurnsToEstablish();
+						end, 0),
+						neutralized_turns = try(function()
+							return governor:GetNeutralizedTurns();
+						end, 0),
+						promotions = promotions,
+					};
+				end);
+			end
+			table.sort(governor_roster, function(a, b)
+				return tostring(a.type) < tostring(b.type);
+			end);
+		end
+	end
 	emit("state", {
 		turn = turn,
 		techs = techs,
 		civics = civics,
+		research = research,
+		research_progress = research_progress,
+		civic = civic,
+		civic_progress = civic_progress,
 		government = government,
 		pantheon = pantheon,
+		founded_religion = founded_religion,
+		founded_religions = founded_religions,
+		religion_beliefs = religion_beliefs,
+		taken_religion_beliefs = taken_religion_beliefs,
+		prophet_pending = prophet_pending,
 		policies = policies,
 		policy_slots = policy_slots,
-		-- ★★★★ THE TRADE ROUTES ALREADY RUNNING, without which CIVVIS believes its
-		-- whole trade capacity is free.
-		--
-		-- `Game::active_routes` counts `game.routes`, the mirror never populated it, so
-		-- it read 0 on every turn. Base capacity from Foreign Trade is ONE, so with a
-		-- single trader already on a route CIVVIS believed one slot was free when none
-		-- was — and `playable()` uses `CanProduce(hash, false, true)`, the engine's
-		-- can-it-START test, so the refusal DISCARDS the decision and the ladder chooses
-		-- instead. `UNIT_TRADER` is 81% of everything CIVVIS asks to produce.
-		--
-		-- ⚠ COPIED FROM `TradeSupport.lua`, NOT GUESSED. `GetOutgoingRoutes` is a CITY
-		-- method (`Cache_Lua_ICityTrade`), not a player one — `player:GetTrade()` would
-		-- have returned nil through `try` and exported nothing, silently. Firaxis walks
-		-- `GetCities():Members()` and reads `route.OriginCityID` / `DestinationCityID` /
-		-- `OriginCityPlayer` / `DestinationCityPlayer`, so those are the field names.
-		trade_routes = (function()
-			local out = {};
-			local cities = try(function() return player:GetCities(); end);
-			if cities == nil then return out; end
-			for _, city in cities:Members() do
-				local routes = try(function()
-					return city:GetTrade():GetOutgoingRoutes();
-				end);
-				for _, route in ipairs(routes or {}) do
-					out[#out + 1] = {
-						origin_player = route.OriginCityPlayer,
-						origin_city = route.OriginCityID,
-						dest_player = route.DestinationCityPlayer,
-						dest_city = route.DestinationCityID,
-						trader = route.TraderUnitID,
-					};
-				end
-			end
-			return out;
-		end)(),
 		hostiles = hostiles,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		faith = try(function() return math.floor(player:GetReligion():GetFaithBalance()); end, -1),
@@ -4706,8 +5200,15 @@ local function exportState(player, pid, turn)
 		score = try(function() return player:GetScore(); end, -1),
 		-- Ours, on the same scale as each rival's, so a comparison is possible at all.
 		military = try(function() return player:GetStats():GetMilitaryStrength(); end, -1),
+		governor_points = governor_points,
+		governor_points_spent = governor_points_spent,
+		governors = governor_roster,
+		trade_capacity = try(function()
+			return player:GetTrade():GetOutgoingRouteCapacity();
+		end, -1),
 		cities = cities,
 		units = units,
+		trade_routes = tradeRoutes,
 		rivals = rivals,
 		minors = minors,
 	});
@@ -4757,21 +5258,62 @@ end
 -- chance. Meanwhile 132 of 513 revealed plots really were fresh water.
 --
 -- Civilization VI stores a river on three of a plot's six edges — W, NW and NE.
--- The other three edges are the same segments seen from the neighbouring plots,
--- so exporting these three for every revealed plot carries the whole network,
--- minus edges whose other side we have not revealed. That omission is honest:
--- it is exactly the part of the river the seat has not seen.
+-- The other three edges are the same segments held by neighbouring plots. Read
+-- those neighbours too: the segment itself is visible from this revealed tile,
+-- even when the terrain across it has not been revealed.
 --
 -- Sent as one small bitmask rather than three booleans to keep this loop's per
 -- plot cost down — it already runs over every plot on the map.
 local RIVER_W, RIVER_NW, RIVER_NE = 1, 2, 4;
+local RIVER_E, RIVER_SE, RIVER_SW = 8, 16, 32;
 
 local function riverMask(plot)
 	local mask = 0;
 	if try(function() return plot:IsWOfRiver(); end, false) then mask = mask + RIVER_W; end
 	if try(function() return plot:IsNWOfRiver(); end, false) then mask = mask + RIVER_NW; end
 	if try(function() return plot:IsNEOfRiver(); end, false) then mask = mask + RIVER_NE; end
+	-- The engine stores the other three edges on the neighbouring plot. Querying
+	-- those flags reveals no hidden terrain: all three segments are visibly on
+	-- this revealed plot. Without them a boundary tile can report `ri=true` and
+	-- `rv=0`, so the reconstructed board necessarily loses a known river.
+	local x, y = plot:GetX(), plot:GetY();
+	local west = try(function()
+		return Map.GetAdjacentPlot(x, y, DirectionTypes.DIRECTION_WEST);
+	end);
+	local northwest = try(function()
+		return Map.GetAdjacentPlot(x, y, DirectionTypes.DIRECTION_NORTHWEST);
+	end);
+	local northeast = try(function()
+		return Map.GetAdjacentPlot(x, y, DirectionTypes.DIRECTION_NORTHEAST);
+	end);
+	if west ~= nil and try(function() return west:IsWOfRiver(); end, false) then
+		mask = mask + RIVER_E;
+	end
+	if northwest ~= nil and try(function() return northwest:IsNWOfRiver(); end, false) then
+		mask = mask + RIVER_SE;
+	end
+	if northeast ~= nil and try(function() return northeast:IsNEOfRiver(); end, false) then
+		mask = mask + RIVER_SW;
+	end
 	return mask;
+end
+
+-- Return a resource only when this seat has unlocked its reveal technology.
+-- `plot:GetResourceType()` exposes the map's underlying resource even when the
+-- normal UI still shows bare ground. Exporting that value let the planner use
+-- Niter, Coal, Oil and Antiquity Sites before the player could know they exist.
+local function visibleResourceName(player, plot)
+	local index = try(function() return plot:GetResourceType(); end, -1);
+	if index == nil or index < 0 then return nil; end
+	return try(function()
+		local row = GameInfo.Resources[index];
+		local resources = player:GetResources();
+		if row == nil or resources == nil
+			or not resources:IsResourceVisible(row.Hash) then
+			return nil;
+		end
+		return row.ResourceType;
+	end);
 end
 
 local function exportTiles(player, pid, turn)
@@ -4825,8 +5367,7 @@ local function exportTiles(player, pid, turn)
 						             try(function() return plot:GetTerrainType(); end, -1)),
 						f = typeName("Features", "FeatureType",
 						             try(function() return plot:GetFeatureType(); end, -1)),
-						r = typeName("Resources", "ResourceType",
-						             try(function() return plot:GetResourceType(); end, -1)),
+						r = visibleResourceName(player, plot),
 						o = try(function() return plot:GetOwner(); end, -1),
 						w = try(function() return plot:IsWater(); end, false),
 						i = try(function() return plot:IsImpassable(); end, false),
@@ -5128,6 +5669,36 @@ end
 -- place that can ask the shipped database whether a name exists. The alternative
 -- spelling is tried and the name that actually resolved is reported, so a future
 -- mismatch shows up as a named miss instead of a silent default.
+--
+-- CIVVIS deliberately uses stable, human-readable project IDs, while Firaxis names
+-- every repeatable district project `PROJECT_ENHANCE_DISTRICT_*`. These are semantic
+-- renames rather than spelling variations, so `resolveType` cannot discover them by
+-- trimming. Keep the vocabulary bridge at the game boundary with the other Civ 6
+-- naming adaptations.
+local CIVVIS_PROJECT_TYPES = {
+	PROJECT_CAMPUS_RESEARCH_GRANTS = "PROJECT_ENHANCE_DISTRICT_CAMPUS",
+	PROJECT_HOLY_SITE_PRAYERS = "PROJECT_ENHANCE_DISTRICT_HOLY_SITE",
+	PROJECT_COMMERCIAL_HUB_INVESTMENT = "PROJECT_ENHANCE_DISTRICT_COMMERCIAL_HUB",
+	PROJECT_HARBOR_SHIPPING = "PROJECT_ENHANCE_DISTRICT_HARBOR",
+	PROJECT_ENCAMPMENT_TRAINING = "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT",
+	PROJECT_INDUSTRIAL_ZONE_LOGISTICS = "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE",
+	PROJECT_THEATER_SQUARE_FESTIVAL = "PROJECT_ENHANCE_DISTRICT_THEATER",
+};
+
+-- The Government Plaza building names exposed to players are likewise aliases;
+-- Firaxis's database retains implementation names describing the intended playstyle.
+local CIVVIS_GOVERNMENT_BUILDING_TYPES = {
+	BUILDING_AUDIENCE_CHAMBER = "BUILDING_GOV_TALL",
+	BUILDING_ANCESTRAL_HALL = "BUILDING_GOV_WIDE",
+	BUILDING_WARLORDS_THRONE = "BUILDING_GOV_CONQUEST",
+	BUILDING_FOREIGN_MINISTRY = "BUILDING_GOV_CITYSTATES",
+	BUILDING_INTELLIGENCE_AGENCY = "BUILDING_GOV_SPIES",
+	BUILDING_GRAND_MASTERS_CHAPEL = "BUILDING_GOV_FAITH",
+	BUILDING_WAR_DEPARTMENT = "BUILDING_GOV_MILITARY",
+	BUILDING_NATIONAL_HISTORY_MUSEUM = "BUILDING_GOV_CULTURE",
+	BUILDING_ROYAL_SOCIETY = "BUILDING_GOV_SCIENCE",
+};
+
 local function resolveType(table_, name)
 	if name == nil or name == "" then return nil, "empty"; end
 	if table_[name] ~= nil then return table_[name], name; end
@@ -5164,11 +5735,113 @@ local function liveCity(player, id)
 	return try(function() return player:GetCities():FindID(id); end);
 end
 
+local function requestGovernorAssignment(pid, governorIndex, cityOwner, cityID)
+	if governorIndex == nil or cityOwner == nil or cityID == nil or cityID < 0 then
+		return false;
+	end
+	local city = try(function() return CityManager.GetCity(cityOwner, cityID); end);
+	if city == nil then return false; end
+	local params = {};
+	params[PlayerOperations.PARAM_GOVERNOR_TYPE] = governorIndex;
+	-- Gathering Storm's assignment chooser sends the owner explicitly. City ids
+	-- collide across players, so omitting this can post Amani to the wrong city.
+	params[PlayerOperations.PARAM_PLAYER_ONE] = cityOwner;
+	params[PlayerOperations.PARAM_CITY_DEST] = cityID;
+	return pcall(function()
+		UI.RequestPlayerOperation(pid, PlayerOperations.ASSIGN_GOVERNOR, params);
+	end);
+end
+
+local function onGovernorAppointed(playerID, governorID)
+	local pending = pendingGovernorAssignments[playerID];
+	if pending == nil or pending.governor ~= governorID then return; end
+	pendingGovernorAssignments[playerID] = nil;
+	local ok = requestGovernorAssignment(
+		playerID, governorID, pending.city_player, pending.city);
+	emit("governor_assignment", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		player = playerID, governor = governorID,
+		city_player = pending.city_player, city = pending.city, applied = ok,
+	});
+end
+
 local function applyOrder(player, pid, row, turn)
 	local kind = tostring(row.kind or "");
 	local verb = tostring(row.verb or "");
 	local subject = tonumber(row.subject) or -1;
 	local x, y = tonumber(row.x), tonumber(row.y);
+
+	if kind == "governor_appoint" or kind == "governor_assign" then
+		local governor, resolved = resolveType(GameInfo.Governors, verb);
+		if governor == nil then return false, "unknown_" .. verb; end
+		local governors = try(function() return player:GetGovernors(); end);
+		if governors == nil then return false, "no_governors"; end
+		local cityOwner = x ~= nil and x or pid;
+		if try(function() return CityManager.GetCity(cityOwner, subject); end) == nil then
+			return false, "governor_city_missing";
+		end
+		local held = try(function() return governors:HasGovernor(governor.Hash); end, false);
+		if kind == "governor_assign" or held then
+			if not held then return false, "governor_not_appointed"; end
+			local appointed = try(function() return governors:GetGovernor(governor.Hash); end);
+			if appointed ~= nil and try(function()
+				return appointed:GetNeutralizedTurns();
+			end, 0) > 0 then
+				return false, "governor_neutralized";
+			end
+			local ok = requestGovernorAssignment(
+				pid, governor.Index, cityOwner, subject);
+			return ok, ok and resolved or "governor_assign_throw";
+		end
+		if not try(function() return governors:CanAppoint(); end, false) then
+			return false, "no_governor_title";
+		end
+		if not try(function()
+			return governors:CanEverAppointGovernor(governor.Hash);
+		end, false) then
+			return false, "governor_not_appointable";
+		end
+		pendingGovernorAssignments[pid] = {
+			governor = governor.Index, city_player = cityOwner, city = subject,
+		};
+		local params = {};
+		-- The shipped GovernorPanel sends row INDEXES in operation parameters.
+		-- The disabled legacy path sent Hash here, which is the root cause of its
+		-- repeatable game-core crash.
+		params[PlayerOperations.PARAM_GOVERNOR_TYPE] = governor.Index;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, PlayerOperations.APPOINT_GOVERNOR, params);
+		end);
+		if not ok then pendingGovernorAssignments[pid] = nil; end
+		return ok, ok and resolved or "governor_appoint_throw";
+	end
+
+	if kind == "governor_promote" then
+		local comma = string.find(verb, ",", 1, true);
+		if comma == nil then return false, "governor_promotion_malformed"; end
+		local governorType = string.sub(verb, 1, comma - 1);
+		local promotionType = string.sub(verb, comma + 1);
+		local governor, governorName = resolveType(GameInfo.Governors, governorType);
+		local promotion, promotionName = resolveType(
+			GameInfo.GovernorPromotions, promotionType);
+		if governor == nil then return false, "unknown_" .. governorType; end
+		if promotion == nil then return false, "unknown_" .. promotionType; end
+		local governors = try(function() return player:GetGovernors(); end);
+		if governors == nil then return false, "no_governors"; end
+		if not try(function()
+			return governors:CanEarnPromotion(governor.Hash, promotion.Hash);
+		end, false) then
+			return false, "governor_promotion_unavailable";
+		end
+		local params = {};
+		params[PlayerOperations.PARAM_GOVERNOR_TYPE] = governor.Index;
+		params[PlayerOperations.PARAM_GOVERNOR_PROMOTION_TYPE] = promotion.Index;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, PlayerOperations.PROMOTE_GOVERNOR, params);
+		end);
+		return ok, ok and (governorName .. ":" .. promotionName)
+			or "governor_promote_throw";
+	end
 
 	if kind == "war" then
 		local diplomacy = try(function() return player:GetDiplomacy(); end);
@@ -5311,6 +5984,76 @@ local function applyOrder(player, pid, row, turn)
 	--
 	-- Policy cards are not marginal here -- already measured as mattering
 	-- (p=0.0023).
+	if kind == "policy_deck" then
+		local culture = try(function() return player:GetCulture(); end);
+		if culture == nil then return false, "no_culture"; end
+		local desired, seen = {}, {};
+		for requested in string.gmatch(verb, "[^,]+") do
+			local card, resolved = resolveType(GameInfo.Policies, requested);
+			if card == nil then return false, "unknown_" .. requested; end
+			if try(function() return culture:IsPolicyObsolete(card.Hash); end, false) then
+				return false, "obsolete_" .. resolved;
+			end
+			if not try(function() return culture:IsPolicyUnlocked(card.Hash); end, false) then
+				return false, "locked_" .. resolved;
+			end
+			if not seen[card.Index] then
+				desired[#desired + 1] = card;
+				seen[card.Index] = true;
+			end
+		end
+
+		local slots = try(function() return culture:GetNumPolicySlots(); end, 0) or 0;
+		if #desired > slots then return false, "policy_deck_too_large"; end
+		local slotNames = {};
+		for i = 0, slots - 1 do
+			slotNames[i] = try(function()
+				local slotId = culture:GetSlotType(i);
+				return GameInfo.GovernmentSlots[slotId].GovernmentSlotType;
+			end);
+		end
+
+		-- Seat constrained cards first. A typed card may fall back to a Wildcard
+		-- slot, while a Wildcard-only card cannot fall back to a typed slot.
+		local addList, used, pending = {}, {}, {};
+		local function seat(card, slotType)
+			for i = 0, slots - 1 do
+				if not used[i] and slotNames[i] == slotType then
+					addList[i] = card.Hash;
+					used[i] = true;
+					return true;
+				end
+			end
+			return false;
+		end
+		for _, card in ipairs(desired) do
+			if card.GovernmentSlotType == "SLOT_WILDCARD" then
+				if not seat(card, "SLOT_WILDCARD") then
+					return false, "policy_deck_does_not_fit";
+				end
+			else
+				pending[#pending + 1] = card;
+			end
+		end
+		local wildcard = {};
+		for _, card in ipairs(pending) do
+			if not seat(card, card.GovernmentSlotType) then
+				wildcard[#wildcard + 1] = card;
+			end
+		end
+		for _, card in ipairs(wildcard) do
+			if not seat(card, "SLOT_WILDCARD") then
+				return false, "policy_deck_does_not_fit";
+			end
+		end
+
+		local clearList = {};
+		for i = 0, slots - 1 do clearList[#clearList + 1] = i; end
+		local ok = pcall(function()
+			culture:RequestPolicyChanges(clearList, addList);
+		end);
+		return ok, ok and "policy_deck" or "throw";
+	end
 	if kind == "policy" then
 		local culture = try(function() return player:GetCulture(); end);
 		if culture == nil then return false, "no_culture"; end
@@ -5416,6 +6159,96 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and resolved or "throw";
 	end
 
+	if kind == "religion" then
+		local requested = {};
+		for beliefType in string.gmatch(verb, "[^,]+") do
+			requested[#requested + 1] = beliefType;
+		end
+		if #requested ~= 2 then return false, "religion_needs_two_beliefs"; end
+		local follower, followerName = resolveType(GameInfo.Beliefs, requested[1]);
+		local founder, founderName = resolveType(GameInfo.Beliefs, requested[2]);
+		if follower == nil then return false, "unknown_" .. requested[1]; end
+		if founder == nil then return false, "unknown_" .. requested[2]; end
+
+		local playerReligion = try(function() return player:GetReligion(); end);
+		if playerReligion == nil then return false, "no_religion_api"; end
+		if try(function() return playerReligion:GetReligionTypeCreated(); end, -1) >= 0 then
+			return false, "religion_already_founded";
+		end
+		if not try(function() return playerReligion:HasReligiousFoundingUnit(); end, false) then
+			return false, "no_great_prophet";
+		end
+		local gameReligion = try(function() return Game.GetReligion(); end);
+		if gameReligion == nil then return false, "no_game_religion"; end
+		if try(function() return gameReligion:IsInSomeReligion(follower.Index); end, true) then
+			return false, "taken_" .. followerName;
+		end
+		if try(function() return gameReligion:IsInSomeReligion(founder.Index); end, true) then
+			return false, "taken_" .. founderName;
+		end
+
+		local used = {};
+		for _, existing in ipairs(try(function() return gameReligion:GetReligions(); end, {}) or {}) do
+			used[existing.Religion] = true;
+		end
+		local religion = nil;
+		for row in GameInfo.Religions() do
+			local isPantheon = row.Pantheon == true or row.Pantheon == 1;
+			local needsName = row.RequiresCustomName == true or row.RequiresCustomName == 1;
+			if not isPantheon and not needsName and not used[row.Index] then
+				religion = row;
+				break;
+			end
+		end
+		if religion == nil then return false, "no_religion_type"; end
+
+		local prophet = nil;
+		for _, unit in player:GetUnits():Members() do
+			local unitRow = GameInfo.Units[try(function() return unit:GetType(); end, -1)];
+			if unitRow ~= nil and unitRow.UnitType == "UNIT_GREAT_PROPHET" then
+				prophet = unit;
+				break;
+			end
+		end
+		if prophet == nil then return false, "no_great_prophet_unit"; end
+		local foundOperation = GameInfo.UnitOperations["UNITOPERATION_FOUND_RELIGION"];
+		if foundOperation == nil then return false, "no_found_religion_operation"; end
+		local okCanOperate, canOperate = pcall(function()
+			return UnitManager.CanStartOperation(prophet, foundOperation.Hash, nil, false,
+				OperationResultsTypes.NO_TARGETS);
+		end);
+		if not (okCanOperate and canOperate == true) then
+			return false, "cannot_found_religion_here";
+		end
+
+		-- Reproduce the full human path. UnitPanel first starts the Prophet-specific
+		-- operation that opens religion selection; ReligionScreen then founds the
+		-- named religion and attaches the two selected beliefs. Omitting the first
+		-- request creates the religion but leaves its Prophet occupying the Holy Site.
+		local okOperation = pcall(function()
+			UnitManager.RequestOperation(prophet, foundOperation.Hash);
+		end);
+		local found = {};
+		found[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
+		found[PlayerOperations.PARAM_RELIGION_TYPE] = religion.Hash;
+		local okFound = pcall(function()
+			UI.RequestPlayerOperation(pid, PlayerOperations.FOUND_RELIGION, found);
+		end);
+		local function addBelief(row)
+			local params = {};
+			params[PlayerOperations.PARAM_BELIEF_TYPE] = row.Hash;
+			params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
+			return pcall(function()
+				UI.RequestPlayerOperation(pid, PlayerOperations.ADD_BELIEF, params);
+			end);
+		end
+		local okFollower = addBelief(follower);
+		local okFounder = addBelief(founder);
+		local ok = okOperation and okFound and okFollower and okFounder;
+		return ok, ok and (religion.ReligionType .. ":" .. followerName .. ":" .. founderName)
+			or "throw";
+	end
+
 	if kind == "research" or kind == "civic" then
 		local isTech = kind == "research";
 		local table_ = isTech and GameInfo.Technologies or GameInfo.Civics;
@@ -5446,6 +6279,9 @@ local function applyOrder(player, pid, row, turn)
 	if kind == "produce" then
 		local city = liveCity(player, subject);
 		if city == nil then return false, "no_city"; end
+		verb = CIVVIS_PROJECT_TYPES[verb]
+			or CIVVIS_GOVERNMENT_BUILDING_TYPES[verb]
+			or verb;
 		-- ★★★★★ REMEMBER WHAT CIVVIS ASKED THIS CITY TO BUILD.
 		--
 		-- `ENDTURN_BLOCKING_PRODUCTION` fires when a city finishes something, which is
@@ -5479,7 +6315,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		verb = resolved;
 		civvisBuild[tonumber(subject) or -1] = resolved;
-		local params = buildParams(row2, city);
+		local params = buildParams(row2, city, x, y);
 		-- ⚠ The verb goes in the reason. `refusals` is aggregated by reason string, so
 		-- a bare "no_params" collapses every distinct failure into one anonymous
 		-- number -- which is exactly how 100 of them went unexplained.
@@ -5530,14 +6366,17 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and verb or "throw";
 	end
 
-	-- ★★★★ BUY. CIVVIS spends gold and the seat sat on hundreds of it: 122 `Buy` and
-	-- 224 `BuyBuilding` actions dropped in one 81-turn stretch. Worse than the waste,
+	-- ★★★★ BUY. CIVVIS spends Gold or Faith and the seat sat on hundreds of it. The old
+	-- tally reported 122 `Buy` and 224 `BuyBuilding` skips in one 81-turn stretch,
+	-- including the since-fixed 2x diagnostic count. Worse than the waste,
 	-- a purchase CIVVIS makes in its model and the bridge discards leaves it believing
 	-- it owns a unit that does not exist — the same phantom that stopped it building
 	-- settlers for a whole game.
 	--
 	-- Pattern copied from the shipped `ProductionPanel.lua`: a PURCHASE **command**,
 	-- not a BUILD operation, with the item hash and the yield to pay from.
+	-- The order kind carries that yield explicitly; hardcoding Gold discarded every
+	-- Faith purchase even though Firaxis uses the same command for both currencies.
 	-- ★★★★★ BUYING GROUND FOR A CITY.
 	--
 	-- `BuyPlot` had no arm at all: `civvis_orders` counted it in the `skipped` tally
@@ -5575,7 +6414,7 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and "bought_plot" or "throw";
 	end
 
-	if kind == "purchase" then
+	if kind == "purchase" or kind == "purchase_faith" then
 		local city = liveCity(player, subject);
 		if city == nil then return false, "no_city"; end
 		local row2, resolved = resolveType(GameInfo.Types, verb);
@@ -5611,13 +6450,17 @@ local function applyOrder(player, pid, row, turn)
 			params[CityCommandTypes.PARAM_BUILDING_TYPE] = row2.Hash;
 		elseif row2.Kind == "KIND_DISTRICT" then
 			params[CityCommandTypes.PARAM_DISTRICT_TYPE] = row2.Hash;
+			if x == nil or y == nil then return false, "no_district_plot"; end
+			params[CityOperationTypes.PARAM_X] = x;
+			params[CityOperationTypes.PARAM_Y] = y;
 		else
 			-- Same reasoning as the produce arm above: name it or it cannot be chased.
 			return false, "no_params_" .. tostring(row2.Kind or verb);
 		end
-		local gold = try(function() return GameInfo.Yields["YIELD_GOLD"].Index; end);
-		if gold == nil then return false, "no_yield"; end
-		params[CityCommandTypes.PARAM_YIELD_TYPE] = gold;
+		local yieldName = kind == "purchase_faith" and "YIELD_FAITH" or "YIELD_GOLD";
+		local currency = try(function() return GameInfo.Yields[yieldName].Index; end);
+		if currency == nil then return false, "no_yield"; end
+		params[CityCommandTypes.PARAM_YIELD_TYPE] = currency;
 		-- ⚠⚠ ASK BEFORE CLAIMING. `pcall` succeeding means the call did not throw, not
 		-- that the city bought anything — the trap this file documents three times and
 		-- which I walked into again here. Run civvis-20260730T173235Z issued purchases
@@ -5632,8 +6475,11 @@ local function applyOrder(player, pid, row, turn)
 		-- is why that run held ONE city to turn 238.
 		local canBuy, results = false, nil;
 		local okCan, hostCan, hostResults = pcall(function()
+			-- Exact signature from Firaxis's shipped ProductionPanel.lua. The third
+			-- and fifth arguments are booleans; passing `params` as argument three
+			-- made every otherwise valid purchase answer false without throwing.
 			return CityManager.CanStartCommand(city, CityCommandTypes.PURCHASE,
-			                                   params, true);
+			                                   false, params, true);
 		end);
 		if okCan then canBuy, results = hostCan == true, hostResults; end
 		if not canBuy then
@@ -5652,13 +6498,20 @@ local function applyOrder(player, pid, row, turn)
 			end);
 			local cost = try(function()
 				if row2.Kind == "KIND_UNIT" then
-					return city:GetGold():GetPurchaseCost(gold, row2.Hash, formationForCost);
+					return city:GetGold():GetPurchaseCost(
+						currency, row2.Hash, formationForCost);
 				end
-				return city:GetGold():GetPurchaseCost(gold, row2.Hash);
+				return city:GetGold():GetPurchaseCost(currency, row2.Hash);
 			end, -1);
 			emit("purchase_refused", {
-				turn = turn, city = subject, item = verb,
-				balance = try(function() return player:GetTreasury():GetGoldBalance(); end, -1),
+				turn = turn, city = subject, item = resolved,
+				currency = yieldName,
+				balance = try(function()
+					if yieldName == "YIELD_FAITH" then
+						return player:GetReligion():GetFaithBalance();
+					end
+					return player:GetTreasury():GetGoldBalance();
+				end, -1),
 				cost = cost, checked = okCan, has_results = results ~= nil,
 				reasons = reasons,
 			});
@@ -5675,6 +6528,42 @@ local function applyOrder(player, pid, row, turn)
 		-- killed or consumed it.
 		local unit = liveUnit(pid, subject);
 		if unit == nil then return false, "unit_gone"; end
+		if verb == "ACTIVATE_GREAT_PERSON" then
+			local activated = commandUnit(
+				unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]);
+			if not activated then
+				emit("great_person_refused", {
+					turn = turn, unit = subject,
+					unit_kind = unitTypeName(unit),
+					x = try(function() return unit:GetX(); end, -1),
+					y = try(function() return unit:GetY(); end, -1),
+				});
+			end
+			return activated, verb;
+		end
+		if verb == "ENTER_FORMATION" then
+			-- `x`/`y` carry the target owner/id for this non-positional command.
+			-- This is the exact stock UnitPanel.lua signature.
+			if x == nil or y == nil then return false, "no_formation_target"; end
+			local target = liveUnit(x, y);
+			if target == nil then return false, "formation_target_gone"; end
+			local params = {};
+			params[UnitCommandTypes.PARAM_UNIT_PLAYER] = x;
+			params[UnitCommandTypes.PARAM_UNIT_ID] = y;
+			local hash = CMD["UNITCOMMAND_ENTER_FORMATION"];
+			if hash == nil then return false, "no_enter_formation_command"; end
+			local okCan, can = pcall(function()
+				return UnitManager.CanStartCommand(unit, hash, params);
+			end);
+			if not (okCan and can == true) then return false, "cannot_enter_formation"; end
+			local ok = pcall(function()
+				UnitManager.RequestCommand(unit, hash, params);
+			end);
+			return ok, ok and verb or "throw";
+		end
+		if verb == "EXIT_FORMATION" then
+			return commandUnit(unit, CMD["UNITCOMMAND_EXIT_FORMATION"]), verb;
+		end
 		-- FOUND_CITY, MOVE_TO and RANGE_ATTACK are the three that decide a game.
 		-- ⚠ There is NO attack operation on this build — the resolved list is only
 		-- MOVE_TO and RANGE_ATTACK — so a melee strike IS a MOVE_TO onto the
@@ -5922,7 +6811,7 @@ local function applyOrder(player, pid, row, turn)
 			-- automation does — and it only ever runs where CIVVIS's own choice was
 			-- refused. Reported as `IMPROVE_AUTOMATED` so it is never counted as CIVVIS's.
 			if cfg.AutomateStuckBuilders ~= false
-					and commandUnit(unit, CMD["UNITCOMMAND_AUTOMATE"], {}) then
+					and commandUnit(unit, CMD["UNITCOMMAND_AUTOMATE"]) then
 				return true, "IMPROVE_AUTOMATED";
 			end
 			-- ★★★★ TELL CIVVIS THE TILE IS DEAD, or it will order another builder.
@@ -5996,12 +6885,24 @@ local function applyOrder(player, pid, row, turn)
 			local params = {};
 			params[UnitOperationTypes.PARAM_X0] = x;
 			params[UnitOperationTypes.PARAM_Y0] = y;
-			params[UnitOperationTypes.PARAM_X1] = try(function() return unit:GetX(); end, -1);
-			params[UnitOperationTypes.PARAM_Y1] = try(function() return unit:GetY(); end, -1);
-			return operate(unit, op, params), verb;
+			local fromX = try(function() return unit:GetX(); end, -1);
+			local fromY = try(function() return unit:GetY(); end, -1);
+			params[UnitOperationTypes.PARAM_X1] = fromX;
+			params[UnitOperationTypes.PARAM_Y1] = fromY;
+			local routed = operate(unit, op, params);
+			if not routed then
+				-- Geometric range is not a route. Carry both endpoints back so the
+				-- mirror can stop offering this exact unreachable pairing instead of
+				-- re-sending it forever (83 consecutive turns in the Poland trace).
+				emit("trade_route_refused", {
+					turn = turn, unit = subject,
+					from_x = fromX, from_y = fromY, x = x, y = y,
+				});
+			end
+			return routed, verb;
 		end
 		if verb == "UPGRADE" then
-			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"], {}), verb;
+			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"]), verb;
 		end
 		-- Anything else is a named operation from the resolved table: FORTIFY,
 		-- ALERT, SKIP_TURN, HEAL, AUTOMATE_EXPLORE, BUILD_IMPROVEMENT.
@@ -6307,8 +7208,10 @@ local function applyOrders(player, pid, turn, rows)
 			local name = unitTypeName(unit);
 			-- Civilians cannot explore, and a settler that wanders is a settler that
 			-- never founds — this project has already paid for both.
+			local gp = try(function() return unit:GetGreatPerson(); end);
 			if name == "UNIT_SETTLER" or name == "UNIT_BUILDER"
-					or name == "UNIT_TRADER" then
+					or name == "UNIT_TRADER"
+					or (gp ~= nil and try(function() return gp:IsGreatPerson(); end, false)) then
 				return;
 			end
 			if operate(unit, OP["UNITOPERATION_AUTOMATE_EXPLORE"], {}) then
@@ -6489,9 +7392,15 @@ local function settleTurn(player, pid, turn, playFallback)
 	emit("await", { turn = turn, polls = awaiting.polls });
 
 	local ready = ordersReady(turn);
-	if ready ~= nil and ready > 0 then
+	if ready ~= nil and ready >= 0 then
 		local rows = fetchOrders(turn);
-		if #rows > 0 then
+		-- `ready.count` is the transaction boundary, including for an empty
+		-- decision. Requiring a positive row count wedged every turn where CIVVIS
+		-- correctly chose no action: the brain had durably written count=0, but the
+		-- game waited until the legacy fallback budget expired. Match the declared
+		-- count so zero completes immediately while a partially visible batch still
+		-- cannot be actuated.
+		if #rows == ready then
 			-- ⚠ BEFORE, not after: `applyOrders` emits the turn record, which reads
 			-- `awaiting.source`. Setting it afterwards made every CIVVIS turn report
 			-- `orders_source: pending` — the one field that proves who drove the game,
@@ -6745,14 +7654,23 @@ local function tick()
 			attempts = attempts + 1;
 			local answered;
 			if SOFT_BLOCKERS[name] then
-				-- Bounded per turn. The order pass is the expensive one, and a
-				-- soft blocker that will not clear -- a unit the engine keeps
-				-- listing as ready -- would otherwise run it on every batch of
-				-- game-core events for the rest of the turn.
-				if spend("soft", cfg.MaxSoftPasses or 3) then
-					orderUnits(player, pid, turn);
+				if cfg.CivvisDecides then
+					-- CIVVIS has already made and applied its complete unit-order
+					-- pass in settleTurn. A soft blocker is only a UI reminder; the
+					-- legacy unit AI must not invent orders here. In particular, it
+					-- previously moved a Settler out of a safe capital and into a
+					-- visible barbarian capture zone after CIVVIS chose to wait.
+					answered = "civvis_complete";
+				else
+					-- Bounded per turn. The order pass is the expensive one, and a
+					-- soft blocker that will not clear -- a unit the engine keeps
+					-- listing as ready -- would otherwise run it on every batch of
+					-- game-core events for the rest of the turn.
+					if spend("soft", cfg.MaxSoftPasses or 3) then
+						orderUnits(player, pid, turn);
+					end
+					answered = "units";
 				end
-				answered = "units";
 			else
 				answered = answerBlocker(player, pid, blocker, turn);
 			end
@@ -6910,6 +7828,7 @@ function Initialize()
 		CityAddedToMap = onGameCoreTick,
 		UnitAddedToMap = onGameCoreTick,
 		CityProductionCompleted = onGameCoreTick,
+		GovernorAppointed = onGovernorAppointed,
 		LoadGameViewStateDone = ensureStarted,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,

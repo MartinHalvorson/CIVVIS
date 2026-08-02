@@ -4971,6 +4971,7 @@ mod tests {
         assert_eq!(pool.base_rating, ELO_BASE_RATING);
         let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
         historical_profile.protocol_version = 1;
+        historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
         assert_eq!(
             pool.profile,
             Some(historical_profile)
@@ -5021,6 +5022,7 @@ mod tests {
         assert_eq!(pool.base_rating, ELO_BASE_RATING);
         let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
         historical_profile.protocol_version = 2;
+        historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
         assert_eq!(
             pool.profile,
             Some(historical_profile)
@@ -5076,10 +5078,8 @@ mod tests {
         assert_eq!(pool.base_rating, ELO_BASE_RATING);
         let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
         historical_profile.protocol_version = 3;
-        assert_eq!(
-            pool.profile,
-            Some(historical_profile)
-        );
+        historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
+        assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
         assert!(pool.history.iter().all(|game| {
@@ -5129,7 +5129,12 @@ mod tests {
             ..TourneyCfg::default()
         };
         assert_eq!(pool.base_rating, ELO_BASE_RATING);
-        assert_eq!(pool.profile, Some(TournamentProfile::from_cfg(&expected_cfg)));
+        let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
+        // The checked-in v4 games predate the Firaxis-exact unique-unit and
+        // improvement rows. Keep their measured rules binding honest instead of
+        // relabeling old evidence with the current rules fingerprint.
+        historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
+        assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
         assert!(pool.history.iter().all(|game| {

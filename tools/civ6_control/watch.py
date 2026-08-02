@@ -15,6 +15,7 @@ from the start rather than silently reporting nothing for the rest of a run.
 
 from __future__ import annotations
 
+from collections import Counter
 import json
 import sys
 import time
@@ -24,6 +25,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import civ6_env as env  # noqa: E402
 
 PREFIX = "CIVVISJSON "
+
+
+def _encoded_event(event: dict) -> str:
+    """Return the canonical on-disk representation for one controller event."""
+    return json.dumps(event, sort_keys=True, separators=(",", ":"))
 
 
 class LogTail:
@@ -65,9 +71,75 @@ class LogTail:
         return events
 
 
+class EventLogBridge:
+    """Copy one live run's Automation.log events into its ``events.jsonl``.
+
+    The game cannot write into a run directory directly.  ``civ6_play.py``
+    normally performs this relay while it owns the game, but an operator can
+    also start a verified lobby by hand.  In that case CIVVIS's brain would
+    otherwise wait forever for a state file despite the game exporting it.
+
+    Starting a bridge after a game has already begun is deliberate: it tails
+    the complete Automation log once, filters by the run tag, and replays every
+    missing event.  Existing output is treated as a multiset rather than a
+    simple set so two identical, meaningful events are never collapsed.
+    """
+
+    def __init__(self, run_dir: Path, *, tag: str | None = None,
+                 log_path: Path | None = None):
+        self.run_dir = Path(run_dir)
+        self.tag = tag or self.run_dir.name
+        self.events_path = self.run_dir / "events.jsonl"
+        self.tail = LogTail(log_path)
+        self._already_written: Counter[str] = Counter()
+        self.run_dir.mkdir(parents=True, exist_ok=True)
+        self.events_path.touch(exist_ok=True)
+        self._read_existing()
+
+    def _read_existing(self) -> None:
+        """Count completed current-run lines so a restarted bridge is lossless."""
+        for line in self.events_path.read_text(errors="replace").splitlines():
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(event, dict) and event.get("run") == self.tag:
+                self._already_written[_encoded_event(event)] += 1
+
+    def pump(self) -> int:
+        """Append newly seen events and return how many were copied."""
+        lines: list[str] = []
+        for event in self.tail.poll():
+            if event.get("run") != self.tag:
+                continue
+            encoded = _encoded_event(event)
+            if self._already_written[encoded]:
+                self._already_written[encoded] -= 1
+                continue
+            lines.append(encoded)
+        if not lines:
+            return 0
+        with self.events_path.open("a", buffering=1) as output:
+            output.write("\n".join(lines) + "\n")
+        return len(lines)
+
+    def follow(self, timeout_s: float, *, poll_s: float = 0.5,
+               on_write=None) -> int:
+        """Relay events for ``timeout_s`` seconds and return the copied count."""
+        deadline = time.monotonic() + timeout_s
+        copied = 0
+        while time.monotonic() < deadline:
+            wrote = self.pump()
+            copied += wrote
+            if wrote and on_write is not None:
+                on_write(wrote)
+            time.sleep(poll_s)
+        return copied
+
+
 def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
            stop_when=None, each_poll=None, stall_s: float | None = 600.0,
-           frozen_s: float | None = None) -> str:
+           frozen_s: float | None = None, pause_when=None) -> str:
     """Pump events to ``on_event`` until ``stop_when`` says so or time runs out.
 
     Returns a short reason string. The game exiting is reported as its own
@@ -91,32 +163,40 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
 
     The second is now the common one, and until it existed nothing could see it.
     """
-    deadline = time.time() + timeout_s
-    last_event = time.time()
-    # ★★★★★ SILENCE IS NOT THE ONLY WAY A RUN DIES, AND IT IS NO LONGER THE COMMON
-    # ONE. `stall_s` asks "has anything been emitted", which cannot see a game whose
-    # TURN has stopped advancing while the harness keeps polling it.
-    #
-    # Measured 2026-08-02 on run civvis-20260802T033552Z: the game wedged on the
-    # World Congress at turn 209 and stayed there. `events.jsonl` kept growing the
-    # whole time — tiles, state, orders, and a `blocked` record every pass — so
-    # `last_event` was never more than a couple of seconds old and this watchdog
-    # would NEVER have fired. It sat there until a human looked at the screen.
-    #
-    # ⚠ Every liveness check in this project had the same hole: mirror turn equalled
-    # game turn (both frozen at 209), the events file was seconds old, the popup
-    # clearer's log was quiet because the congress screen shows live MAP on both
-    # sides and reads as "map". Everything agreed nothing was wrong.
-    #
-    # The turn number is the only thing that actually moves when a game is alive.
-    last_turn, last_turn_at = None, time.time()
-    while time.time() < deadline:
+    # ``monotonic`` is backed by mach_absolute_time on macOS, so closed-lid
+    # sleep does not spend the run budget.  A locked-but-awake session does
+    # advance that clock; pause_when explicitly refunds those intervals while
+    # continuing to relay game events to the decision worker.
+    now = time.monotonic()
+    deadline = now + timeout_s
+    last_event = now
+    # Silence is not the only way a run dies. A wedged popup can keep emitting
+    # state from one turn forever, so track actual turn progress separately.
+    last_turn, last_turn_at = None, now
+    last_poll = now
+    was_paused = False
+    while True:
+        now = time.monotonic()
+        paused = bool(pause_when is not None and pause_when())
+        if paused or was_paused:
+            paused_for = now - last_poll
+            deadline += paused_for
+            last_event += paused_for
+            if last_turn is not None:
+                last_turn_at += paused_for
+        last_poll = now
+        was_paused = paused
+        # Check only after refunding a paused interval.  Otherwise a session
+        # locked longer than the remaining budget would fall out of the loop
+        # before it got a chance to observe the unlock and restore that time.
+        if not paused and now >= deadline:
+            return "timeout"
         for event in tail.poll():
             on_event(event)
-            last_event = time.time()
+            last_event = time.monotonic()
             turn = event.get("turn") if isinstance(event, dict) else None
             if isinstance(turn, int) and (last_turn is None or turn > last_turn):
-                last_turn, last_turn_at = turn, time.time()
+                last_turn, last_turn_at = turn, last_event
             if stop_when is not None and stop_when(event):
                 return "stopped"
         if not env.game_pids():
@@ -128,20 +208,22 @@ def follow(tail: LogTail, timeout_s: float, on_event, poll_s: float = 2.0,
         # still non-empty so this loop waited another twenty-six minutes and
         # would have burned the whole timeout. A live process is not a live
         # game, and a stalled attempt costs the next one its slot.
-        if stall_s is not None and time.time() - last_event > stall_s:
+        if paused:
+            time.sleep(poll_s)
+            continue
+        if stall_s is not None and time.monotonic() - last_event > stall_s:
             return f"stalled: no event for {stall_s:.0f}s"
         # ⚠ Only once a turn has actually been SEEN. Setup emits no turn at all, and
         # treating "no turn yet" as a frozen turn would kill every run before it
         # started — the same class of mistake as the popup clearer's own
         # "no turn recorded yet; this is setup" guard.
         if (frozen_s is not None and last_turn is not None
-                and time.time() - last_turn_at > frozen_s):
+                and time.monotonic() - last_turn_at > frozen_s):
             return (f"stalled: turn {last_turn} has not advanced for "
                     f"{frozen_s:.0f}s while events kept arriving")
         if each_poll is not None:
             each_poll()
         time.sleep(poll_s)
-    return "timeout"
 
 
 if __name__ == "__main__":
@@ -150,7 +232,23 @@ if __name__ == "__main__":
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--timeout", type=float, default=3600.0)
     ap.add_argument("--kinds", help="comma-separated event kinds to show")
+    ap.add_argument("--run-dir", type=Path,
+                    help="relay this run's Automation.log events into events.jsonl")
+    ap.add_argument("--tag",
+                    help="run tag to relay (defaults to the run directory name)")
+    ap.add_argument("--poll", type=float, default=0.5,
+                    help="seconds between Automation.log polls while relaying")
     args = ap.parse_args()
+
+    if args.run_dir is not None:
+        bridge = EventLogBridge(args.run_dir, tag=args.tag)
+
+        def report(wrote: int) -> None:
+            print(f"# relayed {wrote} event(s) for {bridge.tag}", flush=True)
+
+        copied = bridge.follow(args.timeout, poll_s=args.poll, on_write=report)
+        print(f"# relay finished after copying {copied} event(s)", file=sys.stderr)
+        raise SystemExit(0)
 
     wanted = set(args.kinds.split(",")) if args.kinds else None
 

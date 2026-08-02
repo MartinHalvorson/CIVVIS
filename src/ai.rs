@@ -371,6 +371,14 @@ fn empire_reading(g: &Game, pid: usize, w: &Weights) -> f64 {
             + w.pol_culture * y.culture
             + w.pol_faith * y.faith;
     }
+    if let Some(y) = g.observed_yield_adjustments.get(&pid) {
+        value += w.pol_food * y.food
+            + w.pol_production * y.production
+            + w.pol_gold * y.gold
+            + w.pol_science * y.science
+            + w.pol_culture * y.culture
+            + w.pol_faith * y.faith;
+    }
     // Combat cards move no yield. Ask the units themselves instead: a card
     // worth +5 strength to a standing army is visible here and nowhere else.
     let mut strength = 0.0;
