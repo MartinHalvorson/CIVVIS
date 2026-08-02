@@ -16473,7 +16473,13 @@ struct GameSer {
 impl From<GameSer> for Game {
     fn from(s: GameSer) -> Game {
         let needs_visibility_backfill = s.visibility_memory_version == 0;
-        let rules = Rules::for_game(s.seed, s.future_tree_layout.as_ref());
+        let has_unknown_terrain = s.map.tiles.values().any(|tile| tile.terrain == "unknown");
+        let mut rules = Rules::for_game(s.seed, s.future_tree_layout.as_ref());
+        if has_unknown_terrain {
+            // Mirror-only terrain is injected after normal ruleset loading so it
+            // survives a save round trip without changing the audited fingerprint.
+            Arc::make_mut(&mut rules).enable_unknown_terrain();
+        }
         // Both speed representations exist for save compatibility. Prefer an
         // explicit ruleset speed, except when loading an older map-script save
         // whose absent string field defaulted to Standard.
@@ -25140,6 +25146,13 @@ impl Game {
             });
         if !self.rules.is_passable(tile) && !mountain_worker && !improvement_passage {
             return false;
+        }
+        // A mirror frontier is an invitation to discover the tile, not a claim
+        // that it is land or water. Until the host reveals it, either movement
+        // domain may plan toward it; the next authoritative sync replaces the
+        // unknown with its real terrain before subsequent orders are chosen.
+        if self.rules.is_unknown(tile) {
+            return tile.assumed_traversable;
         }
         let water = self.rules.is_water(tile);
         if water && tile.terrain == "ocean" && !class.ocean {

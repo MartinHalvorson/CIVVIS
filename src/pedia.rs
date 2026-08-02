@@ -477,7 +477,9 @@ pub fn entries(rules: &Rules) -> Vec<Entry> {
         if let Some(yields) = yields_summary(spec.yields) {
             facts.insert(0, ("Yields".to_string(), yields));
         }
-        let summary = if spec.water {
+        let summary = if spec.unknown {
+            "Unknown terrain"
+        } else if spec.water {
             "Water terrain"
         } else if !spec.passable {
             "Impassable terrain"
