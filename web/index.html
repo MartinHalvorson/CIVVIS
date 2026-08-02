@@ -3967,7 +3967,6 @@
         <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
         <label class="setting-row"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
         <label class="setting-row"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
-        <label class="setting-row display-advanced-setting" data-advanced-order="30"><span><input type="checkbox" id="edgepanchk"> Pan when the pointer reaches a map edge</span></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
         <details class="advanced-settings" id="display-advanced-settings" data-advanced-settings="display">
           <summary><span class="advanced-settings-summary">Advanced Settings<small>Overlay layout, map edges &amp; archaeology</small></span></summary>
@@ -4959,11 +4958,6 @@ let SHOW_RESOURCES = localStorage.getItem("civvis-show-resources") !== "0";
 // their literal top and bottom until somebody explicitly asks for a torus.
 let FLAT_MAP_WRAP_X = localStorage.getItem("civvis-flat-map-wrap-x") !== "0";
 let FLAT_MAP_WRAP_Y = localStorage.getItem("civvis-flat-map-wrap-y") === "1";
-// Civ 6's Gameplay > Edge Pan, which ships on: the camera walks when the
-// pointer reaches the edge of the map. It is a setting there and a setting
-// here, because a windowed browser map is a different proposition from a
-// fullscreen game and some players will want it off.
-let EDGE_PAN = localStorage.getItem("civvis-edge-pan") !== "0";
 const OVERLAY_STORAGE_KEY = "civvis-map-overlays-v1";
 const OVERLAY_NAMES = ["players", "victory", "minimap", "controls", "lenses"];
 let OVERLAY_VISIBILITY = Object.fromEntries(OVERLAY_NAMES.map(name => [name, true]));
@@ -28489,18 +28483,6 @@ function advanceUserCameraMotion(now = performance.now()) {
   const dt = Math.max(1, Math.min(50, now - (cameraMotionLast || now - 16)));
   cameraMotionLast = now;
   let active = false;
-  // Edge pan — Civ 6's Gameplay > Edge Pan. While the pointer rests against a
-  // side of the map the camera walks that way for as long as it stays there.
-  // It is a velocity and not a flight, so it does not fight the eased camera
-  // moves the rest of the client asks for; it just cancels one that is running.
-  if (edgePanVector && !dragState && !cameraZoom) {
-    cameraFlight = null;
-    const step = EDGE_PAN_SPEED * dt / 1000 / Math.max(.25, cam.scale);
-    const vx = edgePanVector.x * step, vy = edgePanVector.y * step / YS;
-    cam.x = clampCameraX(cam.x + COSR * vx + SINR * vy);
-    cam.y = clampCameraY(cam.y - SINR * vx + COSR * vy);
-    active = true;
-  }
   if (cameraZoom) {
     const ease = 1 - Math.pow(.012, dt / 1000);
     if (cameraZoom.kind === "planet" && cameraZoom.path) {
@@ -29242,26 +29224,6 @@ bindHeldZoom("zout", () => { takeCameraControl(true); zoomAt(skyZoomStep(1 / 1.3
 // ---------------------------------------------------------------- input
 let dragState = null, dragMoved = false, rdrag = null, rdragTo = null;
 let altTap = false; // tapping Alt (no drag) resets the map's viewing angles
-// How near the pointer has to come to a side of the map before the camera
-// starts walking, and how fast it walks there in screen pixels a second.
-const EDGE_PAN_BAND = 28, EDGE_PAN_SPEED = 760;
-let edgePanVector = null;
-// Nothing pans under a pointer that is over an open screen, mid-drag, or on a
-// board the player is not driving.
-function updateEdgePan(clientX, clientY) {
-  if (!EDGE_PAN || SPEC || dragState || cinemaActive() || anyScreenOpen()) {
-    edgePanVector = null; return;
-  }
-  const r = cv.getBoundingClientRect();
-  const left = clientX - r.left, right = r.right - clientX;
-  const top = clientY - r.top, bottom = r.bottom - clientY;
-  if (left < 0 || right < 0 || top < 0 || bottom < 0) { edgePanVector = null; return; }
-  const x = left < EDGE_PAN_BAND ? -1 : right < EDGE_PAN_BAND ? 1 : 0;
-  const y = top < EDGE_PAN_BAND ? -1 : bottom < EDGE_PAN_BAND ? 1 : 0;
-  if (!x && !y) { edgePanVector = null; return; }
-  if (!edgePanVector) takeCameraControl(true);
-  edgePanVector = {x, y};
-}
 cv.addEventListener("pointerdown", ev => {
   // Touch has its own one/two-finger path below. Mouse and pen share this
   // captured pointer path so a drag does not depend on compatibility mouse
@@ -29932,11 +29894,6 @@ function queueTileTip(clientX, clientY) {
     if (tileTipPointer === pointer) refreshTileTip(true);
   }, TILE_TIP_DELAY_MS);
 }
-// The overlays — player standings across the top, the victory rail, the
-// minimap — sit *on* the map, so the canvas never sees a pointer parked at the
-// edges that matter. Watch the window and measure against the map's own box.
-window.addEventListener("mousemove", ev => updateEdgePan(ev.clientX, ev.clientY), {passive: true});
-window.addEventListener("mouseout", ev => { if (!ev.relatedTarget) edgePanVector = null; });
 cv.addEventListener("mousemove", ev => {
   // `dragMoved` outlives the drag: it is cleared by the click that follows, and
   // a drag released off the canvas never gets one. Hovering must ask whether a
@@ -29945,7 +29902,7 @@ cv.addEventListener("mousemove", ev => {
   queueTileTip(ev.clientX, ev.clientY);
 });
 cv.addEventListener("mouseleave", () => hideTileTip(true));
-window.addEventListener("blur", () => { edgePanVector = null; hideTileTip(true); });
+window.addEventListener("blur", () => hideTileTip(true));
 
 // ----------------------------------------------------------- the turn loop
 // A Civ 6 turn is a loop around one button: the game names what it is waiting
@@ -30415,13 +30372,6 @@ function setShowResources(on) {
   const box = document.getElementById("reschk");
   if (box) box.checked = SHOW_RESOURCES;
   if (state) draw();
-}
-function setEdgePan(on) {
-  EDGE_PAN = !!on;
-  localStorage.setItem("civvis-edge-pan", EDGE_PAN ? "1" : "0");
-  const box = document.getElementById("edgepanchk");
-  if (box) box.checked = EDGE_PAN;
-  if (!EDGE_PAN) edgePanVector = null;
 }
 function syncFlatMapWrapControls() {
   const group = document.getElementById("flat-map-wrap-settings");
@@ -31774,11 +31724,6 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   const res = document.getElementById("reschk");
   res.checked = SHOW_RESOURCES;
   res.onchange = () => setShowResources(res.checked);
-}
-{
-  const edge = document.getElementById("edgepanchk");
-  edge.checked = EDGE_PAN;
-  edge.onchange = () => setEdgePan(edge.checked);
 }
 {
   const wrapXBox = document.getElementById("wrapxchk");

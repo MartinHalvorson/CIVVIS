@@ -8189,10 +8189,11 @@ mod tests {
         }
         assert!(EMBEDDED_INDEX.contains("{id: \"Diplomacy\", key: \"F8\""));
 
-        // Movement: Civ 6 pans with a left drag, moves with the right button,
-        // centres with the middle one, and walks the camera at the map's edge.
-        assert!(EMBEDDED_INDEX.contains("function updateEdgePan(clientX, clientY)"));
-        assert!(EMBEDDED_INDEX.contains("id=\"edgepanchk\""));
+        // Movement: a left drag pans, the right button moves units, and the
+        // middle one centres. Merely resting near an edge must not move the map.
+        assert!(!EMBEDDED_INDEX.contains("updateEdgePan"));
+        assert!(!EMBEDDED_INDEX.contains("edgepanchk"));
+        assert!(!EMBEDDED_INDEX.contains("civvis-edge-pan"));
         assert!(EMBEDDED_INDEX.contains("else if (ev.button === 1) {"));
         // Command belongs to the browser on a Mac; only Control chords are ours.
         assert!(EMBEDDED_INDEX.contains("if (ev.metaKey) return undefined;"));
