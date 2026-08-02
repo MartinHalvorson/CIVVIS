@@ -720,12 +720,6 @@ mod tests {
         );
     }
 
-    /// ★★★★ Landmass identity comes from the export, and invented cliffs come off.
-    ///
-    /// Same defect as the rivers above, two fields over. On the live board 200 of 776
-    /// tiles carried a continent and 576 carried none — the generated world's regions
-    /// showing through on a map where every land plot really has one.
-    #[test]
     /// ★★★★ A card the host has retired must stop being offered.
     ///
     /// `POLICY_ILKUM` was chosen and refused **105 times** on live run
@@ -752,7 +746,7 @@ mod tests {
             "precondition: the card is on offer before the host retires it"
         );
 
-        game.blocked_policies.insert(victim.clone());
+        game.blocked_policies.insert(victim);
         assert!(
             !game.available_policies(0).contains(&victim),
             "a card the host ruleset retired must not be offered again — this is the \
@@ -809,6 +803,12 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// ★★★★ Landmass identity comes from the export, and invented cliffs come off.
+    ///
+    /// Same defect as the rivers above, two fields over. On the live board 200 of 776
+    /// tiles carried a continent and 576 carried none — the generated world's regions
+    /// showing through on a map where every land plot really has one.
+    #[test]
     fn the_landmass_is_civ6s_and_the_generated_cliffs_are_gone() {
         let mut home = plot(5, 5, "TERRAIN_GRASS");
         home.ct = Some("CONTINENT_AFRICA".to_string());
@@ -1070,7 +1070,6 @@ mod tests {
         assert!(chunk.plots[1].f.is_none() && chunk.plots[1].r.is_none());
     }
 
-    #[test]
     /// ★★★★★ A building CIVVIS does not model must not take the decider down.
     ///
     /// `BUILDING_CASTLE` **panicked the whole decider** on live run
@@ -1219,14 +1218,14 @@ mod tests {
         game.blocked_districts
             .entry(blocked_city)
             .or_default()
-            .insert(district.clone());
+            .insert(district);
 
         assert!(
-            game.district_sites(blocked_city, &district).is_empty(),
+            game.district_sites(blocked_city, district).is_empty(),
             "the city the host refused must stop offering it"
         );
         assert!(
-            !game.district_sites(other_city, &district).is_empty(),
+            !game.district_sites(other_city, district).is_empty(),
             "and every OTHER city must be untouched — a global block would cost far \
              more than the waste it prevents"
         );
@@ -1453,7 +1452,7 @@ mod tests {
             .expect("the seat's city must be on the board");
 
         assert_eq!(
-            city.districts.get(&Name::new("campus")).copied(),
+            city.districts.get(Name::new("campus")).copied(),
             Some(crate::hex::offset_to_axial(5, 6)),
             "a built district must reach the board, on the plot the export named"
         );
@@ -1461,7 +1460,7 @@ mod tests {
         // centre is implicit. Inserting it would put a district on the board that
         // CIVVIS's own games never have — checked in the source, not assumed.
         assert!(
-            !city.districts.contains_key(&Name::new("city_center")),
+            !city.districts.contains_key(Name::new("city_center")),
             "the city centre stays implicit, as it is in an ordinary CIVVIS game"
         );
     }
@@ -1874,7 +1873,7 @@ mod tests {
              a city that reads as bare ground is exactly how CIVVIS asked 79 times"
         );
         assert!(
-            at_cap.game.district_sites(capped, &probe).is_empty(),
+            at_cap.game.district_sites(capped, probe).is_empty(),
             "population 4 allows 1 + (4-1)/3 = 2 specialty districts and this city has 3, \
              so CIVVIS must stop choosing {probe}"
         );
@@ -2032,6 +2031,7 @@ mod tests {
         );
     }
 
+    #[test]
     fn a_city_carries_the_religion_it_follows_and_the_one_converting_it() {
         // ⚠ THIS FIELD EXISTED AND WAS NEVER FILLED. `religion` was null on all
         // 26,954 city records ever exported — the schema had it, the mod never sent
@@ -2200,6 +2200,149 @@ mod tests {
         assert!(
             !recon.game.players[owner].is_free_city,
             "Free Cities is not the barbarian seat, however its flags read"
+        );
+    }
+
+    fn open_grass_board(side: i32) -> Snapshot {
+        let chunks = vec![TilesChunk {
+            turn: 4,
+            width: side,
+            height: side,
+            chunk: 1,
+            plots: (0..side)
+                .flat_map(|x| {
+                    (0..side).map(move |y| Plot {
+                        x,
+                        y,
+                        im: None,
+                        t: Some("TERRAIN_GRASS".to_string()),
+                        f: None,
+                        r: None,
+                        o: -1,
+                        w: false,
+                        i: false,
+                        fw: false,
+                        rv: 0,
+                        ri: false,
+                        ct: None,
+                        cl: -1,
+                    })
+                })
+                .collect(),
+        }];
+        Snapshot::from_chunks(&chunks)
+    }
+
+    #[test]
+    fn a_city_states_city_reaches_the_board_and_blocks_the_ring_civ6_refuses() {
+        // ★★★★ The defect in one board: run civvis-20260801T224944Z was refused
+        // founding six times, every one `can_start=false,no_reasons`, and every
+        // early one 2-3 tiles from a city-state city the export never mentioned.
+        // `can_found_city`'s four-tile floor was correct and blind — the city it
+        // needed was structurally absent, because `rivals` is built from
+        // `GetAliveMajorIDs`.
+        let snapshot = open_grass_board(12);
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        state.units.push(StateUnit {
+            kind: "UNIT_SETTLER".to_string(),
+            x: 4,
+            y: 6,
+            ..StateUnit::default()
+        });
+        state.minors.push(StateRival {
+            player: 7,
+            civ: "CIVILIZATION_KABUL".to_string(),
+            cities: vec![StateCity {
+                id: 5,
+                name: "Kabul".to_string(),
+                x: 6,
+                y: 6,
+                ..StateCity::default()
+            }],
+            ..StateRival::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(recon.placed_minor_cities, 1, "the city-state's city must be planted");
+        let minor_city = recon
+            .game
+            .cities
+            .values()
+            .find(|city| city.owner != 0)
+            .expect("the minor's city must be on the board");
+        let seat = minor_city.owner;
+        assert!(recon.game.players[seat].is_minor, "a city-state seats as a minor");
+        assert!(
+            seat >= 4,
+            "a minor must never take a 1..n seat — those indices are the \
+             DeclareWar-to-Civ-6-id mapping and a minor in the middle would aim a \
+             declaration at the wrong civilization"
+        );
+        let (uid, _) = recon
+            .game
+            .units
+            .iter()
+            .find(|(_, unit)| unit.owner == 0)
+            .expect("our settler must be on the board");
+        assert!(
+            !recon.game.can_found_city(*uid),
+            "two tiles from Kabul the four-tile floor must refuse — before this \
+             fix the city was invisible and CIVVIS aimed here every time"
+        );
+    }
+
+    #[test]
+    fn a_seated_but_cityless_minors_ground_is_still_blocked() {
+        // Borders are visible before centres are: a city-state's territory can
+        // arrive while its city is still under fog. A seat we can NAME but that
+        // holds no city must not read as free land — that is the same hole the
+        // unattributable-owner arm closes for minors we cannot name.
+        let mut chunks = vec![TilesChunk {
+            turn: 4,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: (0..8)
+                .flat_map(|x| {
+                    (0..8).map(move |y| Plot {
+                        x,
+                        y,
+                        im: None,
+                        t: Some("TERRAIN_GRASS".to_string()),
+                        f: None,
+                        r: None,
+                        o: if (5..=6).contains(&x) && (5..=6).contains(&y) { 7 } else { -1 },
+                        w: false,
+                        i: false,
+                        fw: false,
+                        rv: 0,
+                        ri: false,
+                        ct: None,
+                        cl: -1,
+                    })
+                })
+                .collect(),
+        }];
+        let snapshot = Snapshot::from_chunks(&std::mem::take(&mut chunks));
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        state.minors.push(StateRival {
+            player: 7,
+            civ: "CIVILIZATION_KABUL".to_string(),
+            ..StateRival::default()
+        });
+
+        let recon = rebuild_from_state(&snapshot, &state, 4, 1, 500, 0);
+        assert_eq!(recon.placed_minor_cities, 0, "no city was visible to plant");
+        let pos = crate::hex::offset_to_axial(5, 5);
+        assert!(
+            recon.game.blocked_city_sites.contains(&pos),
+            "ground a named-but-cityless minor owns must stay unfoundable"
         );
     }
 
@@ -2780,7 +2923,7 @@ pub(crate) fn apply_city_memory(game: &mut crate::game::Game) {
 ///
 /// Idempotent.
 pub(crate) fn apply_tile_memory(game: &mut crate::game::Game, snapshot: &Snapshot) {
-    let turn = snapshot.turn.max(1) as u32;
+    let turn = snapshot.turn.max(1);
     // Decided first, applied second: reading the map and the owning city needs `game`
     // immutably while writing the seat's memory needs it mutably.
     let remembered: Vec<(crate::Pos, crate::world::RememberedTile)> = snapshot
@@ -3250,6 +3393,18 @@ pub struct StateSnapshot {
     /// open" and "none is" — see `apply_trade_routes`.
     #[serde(default)]
     pub trade_routes: Vec<StateTradeRoute>,
+    /// Met CITY-STATES, with the cities of theirs this seat has actually seen.
+    ///
+    /// ★★★★ `rivals` is built from `GetAliveMajorIDs`, so a minor's cities could
+    /// never cross — and a city the board does not hold is a spacing rule that
+    /// cannot fire. Measured on run civvis-20260801T224944Z: every early
+    /// `found_refused` (`can_start=false,no_reasons`) sat 2-3 tiles from an
+    /// invisible city-state city, and the sister run turned 13 settlers into
+    /// 2 cities aiming at ground Civilization VI refuses. Same family as
+    /// `hostiles`: a threat list the planner needs, not knowledge the seat has
+    /// not earned — the mod gates each city on the plot being revealed.
+    #[serde(default)]
+    pub minors: Vec<StateRival>,
 }
 
 /// The identity Civilization VI gave this game: who we play, and under what rules.
@@ -3539,6 +3694,9 @@ pub struct Reconstruction {
     pub placed_units: usize,
     pub placed_rival_cities: usize,
     pub placed_rival_units: usize,
+    /// City-state cities on the board. Counted apart from the rivals' so a
+    /// missing minor reads as a mirror gap rather than vanishing into a total.
+    pub placed_minor_cities: usize,
     pub unmapped: Vec<String>,
     /// Every unit the export named that did NOT end up on the board, with the reason.
     ///
@@ -3611,7 +3769,7 @@ fn class_representative(class: &str, rules: &crate::rules::Rules) -> Option<&'st
         "PROMOTION_CLASS_SUPPORT" => &["battering_ram", "siege_tower", "medic"],
         _ => &[],
     };
-    candidates.iter().copied().find(|c| rules.units.contains_key(*c))
+    candidates.iter().copied().find(|c| rules.units.contains_key(c))
 }
 
 /// A Civilization VI unit name with its owner qualifier removed, when that is what
@@ -4112,7 +4270,7 @@ fn civvis_production_item(
         _ => None,
     };
     if let Some(name) = project_alias
-        .filter(|name| rules.projects.contains_key(*name))
+        .filter(|name| rules.projects.contains_key(name))
         .map(str::to_string)
         .or_else(|| civvis_node_name(&rules.projects, civ6, "PROJECT_"))
     {
@@ -4283,10 +4441,11 @@ pub fn rebuild_from_state(
     let mut placed_units = 0;
     let mut placed_rival_cities = 0;
     let mut placed_rival_units = 0;
+    let mut placed_minor_cities = 0;
 
     // Land only, and revealed only. `place_city` on water or on an unseen tile
     // would put CIVVIS's empire somewhere the seat cannot act.
-    let mut plant_city = |game: &mut crate::game::Game, owner: usize, c: &StateCity| -> Option<u32> {
+    let plant_city = |game: &mut crate::game::Game, owner: usize, c: &StateCity| -> Option<u32> {
         if !snapshot.is_revealed((c.x, c.y)) {
             return None;
         }
@@ -4563,7 +4722,7 @@ pub fn rebuild_from_state(
     }
 
     let mut dropped: Vec<String> = Vec::new();
-    let mut plant_unit = |game: &mut crate::game::Game,
+    let plant_unit = |game: &mut crate::game::Game,
                           owner: usize,
                           u: &StateUnit,
                           unmapped: &mut Vec<String>,
@@ -4796,6 +4955,39 @@ pub fn rebuild_from_state(
         }
     }
 
+    // City-states seat AFTER the majors and by name, never in 1..n — those
+    // indices are the `DeclareWar { player } -> Civ 6 id` mapping and a minor
+    // in the middle would aim a declaration at the wrong civilization. Their
+    // cities are the point: `can_found_city`'s four-tile floor reads
+    // `self.cities`, so a minor's city on the board is what stops the settle
+    // search re-aiming at the ring Civilization VI refuses with
+    // `can_start=false` and no reasons given.
+    for minor in &state.minors {
+        let name = minor
+            .civ
+            .strip_prefix("CIVILIZATION_")
+            .unwrap_or(&minor.civ);
+        if name.is_empty() {
+            continue;
+        }
+        let owner = game.ensure_minor_seat(name);
+        game.players[0].met.insert(owner);
+        game.players[owner].met.insert(0);
+        // A city-state CAN be at war with this seat, and a war the board holds
+        // is a threat the planner weighs — same bond the rivals set.
+        let bond = (0, owner);
+        if minor.at_war {
+            game.at_war.insert(bond);
+        } else {
+            game.at_war.remove(&bond);
+        }
+        for city in &minor.cities {
+            if plant_city(&mut game, owner, city).is_some() {
+                placed_minor_cities += 1;
+            }
+        }
+    }
+
     apply_territory(&mut game, snapshot, state);
     // ⚠ AFTER territory, not before. `apply_terrain` already recorded the seat's memory
     // of every revealed plot, but ownership is written here — so a memory taken earlier
@@ -4828,6 +5020,7 @@ pub fn rebuild_from_state(
         placed_units,
         placed_rival_cities,
         placed_rival_units,
+        placed_minor_cities,
         unmapped,
         dropped_units: dropped,
     }
@@ -4867,6 +5060,21 @@ fn apply_territory(
     let mut seat_of: std::collections::BTreeMap<i32, usize> = Default::default();
     for (index, rival) in state.rivals.iter().enumerate() {
         seat_of.insert(rival.player as i32, index + 1);
+    }
+    // Minors are seated by NAME, not position — `ensure_minor_seat` is
+    // idempotent, so territory arriving before the first visible city still
+    // resolves to the same seat the city will land on. Before this, a
+    // city-state's ground fell to the unattributable arm below and its
+    // CITIES never arrived at all; see `StateSnapshot::minors`.
+    for minor in &state.minors {
+        let name = minor
+            .civ
+            .strip_prefix("CIVILIZATION_")
+            .unwrap_or(&minor.civ);
+        if name.is_empty() {
+            continue;
+        }
+        seat_of.insert(minor.player as i32, game.ensure_minor_seat(name));
     }
     for city in &state.cities {
         if let Some(plot) = snapshot.plot((city.x, city.y)) {
@@ -4935,6 +5143,13 @@ fn apply_territory(
             });
             if owner.is_some() {
                 assign.push((pos, owner));
+            } else if seat != 0 {
+                // A seat we can NAME but that holds no city on this board —
+                // their centre is unrevealed, or refused planting. Their
+                // ground is still not ours to found on; leaving it unassigned
+                // would re-open the exact hole the unattributable arm above
+                // closes.
+                blocked.insert(pos);
             }
         }
     }
@@ -5523,6 +5738,49 @@ impl LiveMirror {
                 }
                 let uid = self.game.spawn_unit(&name, owner, pos);
                 self.rival_units.push(uid);
+            }
+        }
+
+        // City-states, by the same rules the rivals follow. Seated by NAME —
+        // see `rebuild_from_state` for why never in 1..n — and their cities
+        // planted once through the same seen-set the rivals use: it records
+        // "a foreign city already stands at this plot", which is exactly the
+        // question here too.
+        for minor in &state.minors {
+            let name = minor
+                .civ
+                .strip_prefix("CIVILIZATION_")
+                .unwrap_or(&minor.civ);
+            if name.is_empty() {
+                continue;
+            }
+            let owner = self.game.ensure_minor_seat(name);
+            self.game.players[0].met.insert(owner);
+            self.game.players[owner].met.insert(0);
+            let bond = (0, owner);
+            if minor.at_war {
+                self.game.at_war.insert(bond);
+            } else {
+                self.game.at_war.remove(&bond);
+            }
+            for city in &minor.cities {
+                if self.rival_cities.contains(&(city.x, city.y))
+                    || !snapshot.is_revealed((city.x, city.y))
+                {
+                    continue;
+                }
+                let pos = crate::hex::offset_to_axial(city.x, city.y);
+                let water = self
+                    .game
+                    .map
+                    .get(pos)
+                    .map(|tile| self.game.rules.is_water(tile))
+                    .unwrap_or(true);
+                if water || self.game.city_at(pos).is_some() {
+                    continue;
+                }
+                self.game.place_city(owner, pos, banner(city));
+                self.rival_cities.insert((city.x, city.y));
             }
         }
     }

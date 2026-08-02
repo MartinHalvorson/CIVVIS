@@ -816,7 +816,7 @@ fn distinguished_units_and_underdog_kills_pay_their_rows() {
             unit.moves_left = 2.0;
             unit.acted = false;
         }
-        let promotion = game.available_promotions(veteran)[0].clone();
+        let promotion = game.available_promotions(veteran)[0];
         game.do_promote(0, veteran, &promotion).unwrap();
         assert_eq!(game.units[&veteran].level, expected_level);
     }

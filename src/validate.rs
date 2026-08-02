@@ -389,7 +389,7 @@ fn trees(check: &mut Check) {
         // A prerequisite cycle would hang any traversal of the tree.
         for id in tree.keys() {
             let mut seen = BTreeSet::new();
-            let mut frontier = vec![id.clone()];
+            let mut frontier = vec![*id];
             while let Some(node) = frontier.pop() {
                 let Some(spec) = tree.get(&node) else { continue };
                 for prerequisite in &spec.requires {
@@ -401,8 +401,8 @@ fn trees(check: &mut Check) {
                         frontier.clear();
                         break;
                     }
-                    if seen.insert(prerequisite.clone()) {
-                        frontier.push(Name::new(&prerequisite));
+                    if seen.insert(*prerequisite) {
+                        frontier.push(Name::new(prerequisite));
                     }
                 }
             }
@@ -662,7 +662,7 @@ fn politics(check: &mut Check) {
     for (id, spec) in &governments {
         let subject = format!("governments/{id}");
         check.gates(&subject, None, spec.civic.as_ref());
-        let slots = serde_json::to_value(&spec.slots).unwrap_or_default();
+        let slots = serde_json::to_value(spec.slots).unwrap_or_default();
         if let Some(map) = slots.as_object() {
             let total: i64 = map.values().filter_map(|v| v.as_i64()).sum();
             if total == 0 {

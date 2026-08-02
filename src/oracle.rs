@@ -317,8 +317,8 @@ impl<A: Ai> Oracle<A> {
             // Bounded by the length of an upgrade chain; the guard only stops
             // a cycle in a malformed ruleset.
             for _ in 0..16 {
-                let kind = g.units[&uid].kind.clone();
-                let Some(target) = g.unit_upgrade_target(pid, &kind) else {
+                let kind = g.units[&uid].kind;
+                let Some(target) = g.unit_upgrade_target(pid, kind) else {
                     break;
                 };
                 if target == kind {
@@ -411,11 +411,11 @@ impl<A: Ai> Oracle<A> {
                 if let Some(tile) = g.map.tiles.get_mut(&old) {
                     tile.district_foundation = None;
                 }
-                let name = foundation.district.clone();
+                let name = foundation.district;
                 let best = g
-                    .district_sites(cid, &name)
+                    .district_sites(cid, name)
                     .into_iter()
-                    .map(|pos| (Self::yield_total(g.district_yields(&name, pos)), pos))
+                    .map(|pos| (Self::yield_total(g.district_yields(name, pos)), pos))
                     // Ties broken on position so a re-run is bit-identical.
                     .max_by(|a, b| a.0.total_cmp(&b.0).then_with(|| b.1.cmp(&a.1)))
                     .map(|(_, pos)| pos)
@@ -996,7 +996,7 @@ mod tests {
                 g.map.tiles[&pos]
                     .district_foundation
                     .as_ref()
-                    .map(|f| (pos, f.district.clone()))
+                    .map(|f| (pos, f.district))
             })
             .collect();
         out.sort();

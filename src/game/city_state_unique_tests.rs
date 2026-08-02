@@ -290,7 +290,7 @@ fn zanzibar_and_kandy_supply_luxuries_relics_and_relic_faith() {
             tile.feature.as_ref().and_then(|feature| {
                 game.rules.features[feature]
                     .natural_wonder
-                    .then_some((*position, feature.clone()))
+                    .then_some((*position, *feature))
             })
         })
         .unwrap();
@@ -951,7 +951,7 @@ fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
 
     // Taruga scales on distinct improved Strategic resources.
     game.players[minor].civ = "Taruga".to_string();
-    let owned: Vec<Pos> = game.cities[&city].owned_tiles.iter().copied().collect();
+    let owned = game.cities[&city].owned_tiles.to_vec();
     let plain: Vec<Pos> = owned
         .into_iter()
         .filter(|pos| *pos != game.cities[&city].pos)

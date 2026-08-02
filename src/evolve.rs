@@ -258,7 +258,7 @@ fn load_champion_record(dir: &Path) -> Option<Champion> {
 /// naming somewhere else is asking a question about *that* directory, and
 /// answering it with the built-in would be a lie.
 fn embedded_champion(dir: &Path) -> Option<Champion> {
-    (dir == Path::new("evolved")).then(|| ())?;
+    (dir == Path::new("evolved")).then_some(())?;
     serde_json::from_str(EMBEDDED_CHAMPION).ok()
 }
 
@@ -567,9 +567,8 @@ fn sprt_confirm(
         } else {
             l += 1;
         }
-        match gate.verdict(w as usize, l as usize) {
-            Some(accepted) => return (accepted, w, l),
-            None => {}
+        if let Some(accepted) = gate.verdict(w as usize, l as usize) {
+            return (accepted, w, l);
         }
     }
     (false, w, l)

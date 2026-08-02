@@ -310,7 +310,7 @@ impl ChronicleSnapshot {
                     .get(building)
                     .is_some_and(|spec| spec.buildable)
                 {
-                    buildings.insert((city.id, building.clone()), city.owner);
+                    buildings.insert((city.id, *building), city.owner);
                 }
             }
             for wonder in city.wonders.keys() {
@@ -419,7 +419,7 @@ fn completed_buildings(game: &Game) -> BTreeSet<Name> {
         .filter(|building| {
             game.rules
                 .buildings
-                .get(*building)
+                .get(building)
                 .is_some_and(|spec| spec.buildable)
         })
         .cloned()
@@ -550,7 +550,7 @@ fn chronicle_world_events(
         .collect();
     new_buildings.sort_by_key(|((city, building), _)| (*city, building.as_str()));
     for ((city_id, building), owner) in new_buildings {
-        if chronicle.buildings.insert(building.clone()) {
+        if chronicle.buildings.insert(*building) {
             let city = after.cities.get(city_id).map(|city| city.name.as_str());
             events.push(json!({
                 "type": "building_first", "player": owner,
@@ -3078,7 +3078,7 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.civs = civs
             .iter()
             .filter_map(|civ| civ.as_str())
-            .filter(|civ| rules.civs.contains_key(*civ))
+            .filter(|civ| rules.civs.contains_key(civ))
             .map(str::to_string)
             .collect();
     }
@@ -5247,7 +5247,7 @@ mod tests {
         let same = tile_mark(&tile);
         assert_eq!(same, tile_mark(&tile.clone()), "the same tile, twice");
 
-        let mut changed = |mutate: &dyn Fn(&mut Value)| {
+        let changed = |mutate: &dyn Fn(&mut Value)| {
             let mut other = tile.clone();
             mutate(&mut other);
             assert_ne!(tile_mark(&other), same, "unnoticed change: {other}");
@@ -9795,19 +9795,16 @@ mod tests {
             .expect("a map has somewhere out of reach");
         assert!(session.game.path_to(unit, far).is_none());
 
-        match session.game.route_step(unit, far, 0) {
-            Some(step) => {
-                assert_ne!(step, start, "a route step must leave where it started");
-                assert_eq!(
-                    session.game.wdist(start, step),
-                    1,
-                    "a route step is one tile, validated by the caller's Move"
-                );
-            }
-            // An island start can legitimately have no land route; the client
-            // treats that the same way — the order ends rather than retrying.
-            None => {}
+        if let Some(step) = session.game.route_step(unit, far, 0) {
+            assert_ne!(step, start, "a route step must leave where it started");
+            assert_eq!(
+                session.game.wdist(start, step),
+                1,
+                "a route step is one tile, validated by the caller's Move"
+            );
         }
+        // An island start can legitimately have no land route; the client treats that
+        // the same way — the order ends rather than retrying.
 
         // A refused step must not end the journey: a unit with one movement
         // point cannot enter a two-cost forest, and next turn it can. The
@@ -11242,11 +11239,9 @@ pub fn serve_with_game(
     // fine behind the stall. Each connection gets its own thread; the session
     // mutex still serialises the state itself, but only for as long as the
     // snapshot takes, not for the serialisation and the socket write too.
-    for stream in listener.incoming() {
-        if let Ok(mut s) = stream {
-            let shared = shared.clone();
-            std::thread::spawn(move || handle(&mut s, &shared));
-        }
+    for mut s in listener.incoming().flatten() {
+        let shared = shared.clone();
+        std::thread::spawn(move || handle(&mut s, &shared));
     }
 }
 

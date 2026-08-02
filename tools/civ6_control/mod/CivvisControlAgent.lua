@@ -4393,6 +4393,50 @@ local function exportState(player, pid, turn)
 		end
 	end
 
+	-- ★★★★ CITY-STATES, the same way and for the same reason as `hostiles`:
+	-- `rivals` is built from `GetAliveMajorIDs`, so a minor's cities could never
+	-- cross — and a city the mirror does not hold is a spacing rule that cannot
+	-- fire. Every early `found_refused` (`can_start=false,no_reasons`) on run
+	-- civvis-20260801T224944Z sat 2-3 tiles from a city-state city this export
+	-- never mentioned, and the sister run turned 13 settlers into 2 cities
+	-- aiming at ground Civilization VI refuses. Cities only, no units: settle
+	-- legality is about ground, and each city is gated on its plot being
+	-- revealed, so this hands the seat nothing it has not seen.
+	local minors = {};
+	for _, otherId in ipairs(try(function() return PlayerManager.GetAliveMinorIDs(); end, {})) do
+		if otherId ~= pid and diplomacy ~= nil
+				and try(function() return diplomacy:HasMet(otherId); end, false) then
+			local other = Players[otherId];
+			local theirCities = {};
+			pcall(function()
+				for _, city in other:GetCities():Members() do
+					local cx = city:GetX();
+					local cy = city:GetY();
+					if plotRevealed(pid, cx, cy) then
+						local theirDef, theirDmg = cityDefence(cx, cy);
+						theirCities[#theirCities + 1] = {
+							x = cx, y = cy,
+							name = try(function()
+								return Locale.Lookup(city:GetName());
+							end, ""),
+							capital = try(function() return city:IsCapital(); end, false),
+							defense = theirDef,
+							damage = theirDmg,
+						};
+					end
+				end
+			end);
+			minors[#minors + 1] = {
+				player = otherId,
+				civ = try(function()
+					return PlayerConfigurations[otherId]:GetCivilizationTypeName();
+				end, ""),
+				at_war = try(function() return diplomacy:IsAtWarWith(otherId); end, false),
+				cities = theirCities,
+			};
+		end
+	end
+
 	-- ★★★ WITHOUT THESE, CIVVIS DECIDES IN THE ANCIENT ERA FOREVER. The
 	-- reconstruction had no research at all, so `civvis-orders` on the turn-190
 	-- board of run 101628Z ordered SLINGERS and `TECH_ASTROLOGY` — reasonable
@@ -4559,6 +4603,7 @@ local function exportState(player, pid, turn)
 		cities = cities,
 		units = units,
 		rivals = rivals,
+		minors = minors,
 	});
 end
 
