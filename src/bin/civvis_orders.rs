@@ -984,7 +984,7 @@ fn translate(
                 subject: Some(*civ6),
                 verb: Some("ENTER_FORMATION".to_string()),
                 // This command is not positional: x/y are target owner/unit id.
-                pos: Some((state.seat.local_player as i32, *target as i32)),
+                pos: Some((state.seat.local_player, *target as i32)),
             })
         }),
         Action::UnlinkUnits { unit } => civ6_of.get(unit).map(|civ6| Order {

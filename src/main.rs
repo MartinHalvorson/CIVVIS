@@ -825,7 +825,7 @@ fn main() {
                             .filter(|unit| g.rules.units[unit.kind].class == "military")
                             .fold((0, 0, 0), |(obsolete, ancient, army), unit| {
                                 (
-                                    obsolete + g.unit_is_obsolete(unit.owner, &unit.kind) as i32,
+                                    obsolete + g.unit_is_obsolete(unit.owner, unit.kind) as i32,
                                     ancient
                                         + (g.world_era.saturating_sub(unit_era(&unit.kind)) >= 3)
                                             as i32,
