@@ -3297,13 +3297,22 @@ impl AdvancedAi {
         // `besieged_city_item` builds walls or a defender for a city with a
         // raiding party at its gates before the ordinary build order, whatever
         // the grand strategy says.
+        //
+        // ⚠ The bound is measured against the WAR's age, not the plan's. Keyed
+        // on `strategy_since` it released Recovery for exactly one assessment
+        // and then re-armed: leaving Recovery resets `strategy_since`, the
+        // power gap is still there next turn, so the arm fires again with a
+        // fresh clock. Replayed against the real `civvis-20260802T205959Z`
+        // mirror that produced a 1-in-25 duty cycle — recovery 86% -> 81%, with
+        // only 5 of 93 assessed turns changed, at t87, t153, t176, t201 and
+        // t219, each ~25 turns apart. `major_war_since` is monotone for as long
+        // as the war lasts, so a posture that has already been given its turns
+        // stays released until the war ends.
         let recovery_is_stale = self.bounded_recovery
-            && self
-                .plan
-                .as_ref()
-                .is_some_and(|plan| plan.strategy == GrandStrategy::Recovery)
-            && g.turn.saturating_sub(self.strategy_since)
-                >= g.standard_duration(RECOVERY_POSTURE_LIMIT).max(1);
+            && self.major_war_since.is_some_and(|started| {
+                g.turn.saturating_sub(started)
+                    >= g.standard_duration(RECOVERY_POSTURE_LIMIT).max(1)
+            });
         let (mut strategy, mut because, trigger) = if at_war
             && (threatened_city.is_some() || (my_power * 1.25 < strongest_rival && !recovery_is_stale))
         {
@@ -16703,13 +16712,13 @@ mod tests {
         game.turn = 100;
         let mut untreated = AdvancedAi::new();
         untreated.plan = Some(opening.clone());
-        untreated.strategy_since = 0;
+        untreated.major_war_since = Some(0);
         assert_eq!(untreated.assess(&game, 0).strategy, GrandStrategy::Recovery);
 
         let mut bounded = AdvancedAi::new();
         bounded.bounded_recovery = true;
         bounded.plan = Some(opening.clone());
-        bounded.strategy_since = 0;
+        bounded.major_war_since = Some(0);
         assert_ne!(
             bounded.assess(&game, 0).strategy,
             GrandStrategy::Recovery,
@@ -16721,12 +16730,39 @@ mod tests {
         let mut fresh = AdvancedAi::new();
         fresh.bounded_recovery = true;
         fresh.plan = Some(opening);
-        fresh.strategy_since = game.turn.saturating_sub(1);
+        fresh.major_war_since = Some(game.turn.saturating_sub(1));
         assert_eq!(
             fresh.assess(&game, 0).strategy,
             GrandStrategy::Recovery,
-            "the bound must not fire on a posture adopted last turn"
+            "the bound must not fire on a war that started last turn"
         );
+    }
+
+    #[test]
+    fn a_released_recovery_posture_does_not_rearm_next_turn() {
+        let (mut game, _) = outgunned_at_war_fixture();
+        game.turn = 100;
+
+        let mut bounded = AdvancedAi::new();
+        bounded.bounded_recovery = true;
+        bounded.major_war_since = Some(0);
+        let released = bounded.assess(&game, 0);
+        assert_ne!(released.strategy, GrandStrategy::Recovery);
+
+        // ⚠ The regression this pins. Keyed on the PLAN's age, leaving Recovery
+        // reset the clock and the very next assessment fell straight back into
+        // it — a 1-in-25 duty cycle rather than a release. Keyed on the war's
+        // age it stays out, because the war did not get younger.
+        bounded.plan = Some(released);
+        bounded.strategy_since = game.turn;
+        for turn in [101u32, 102, 110, 140] {
+            game.turn = turn;
+            assert_ne!(
+                bounded.assess(&game, 0).strategy,
+                GrandStrategy::Recovery,
+                "the bound re-armed on turn {turn}"
+            );
+        }
     }
 
     #[test]
