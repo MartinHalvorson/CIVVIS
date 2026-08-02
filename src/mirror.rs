@@ -346,6 +346,8 @@ mod tests {
                 "\n",
                 r#"{"kind":"purchase_refused","turn":90,"city":14,"item":"BUILDING_LIBRARY"}"#,
                 "\n",
+                r#"{"kind":"purchase_refused","turn":90,"city":14,"item":"DISTRICT_CAMPUS"}"#,
+                "\n",
             ),
         )
         .expect("write events");
@@ -395,6 +397,14 @@ mod tests {
             Some(&std::collections::BTreeSet::from([
                 "unit:settler".to_string()
             ]))
+        );
+        assert_eq!(
+            blocked_purchases.get(&42),
+            Some(&std::collections::BTreeSet::from([
+                "building:library".to_string(),
+                "district:campus".to_string(),
+            ])),
+            "district purchase refusals do not need a production-placement plot"
         );
 
         let mut game = crate::game::Game::new(1, 20, 14, 73_001, 120, 0);
@@ -4165,8 +4175,14 @@ fn blocked_production_from(
         };
         let translated: std::collections::BTreeSet<String> = names
             .iter()
-            .filter_map(|name| civvis_production_item(rules, Some(name), &[]))
-            .map(|item| crate::game::Game::production_block_key(&item))
+            .filter_map(|name| {
+                civvis_production_item(rules, Some(name), &[])
+                    .map(|item| crate::game::Game::production_block_key(&item))
+                    .or_else(|| {
+                        civvis_node_name(&rules.districts, name, "DISTRICT_")
+                            .map(|district| format!("district:{district}"))
+                    })
+            })
             .collect();
         if !translated.is_empty() {
             out.insert(*cid, translated);

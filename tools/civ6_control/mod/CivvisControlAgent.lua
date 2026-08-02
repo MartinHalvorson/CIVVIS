@@ -5484,7 +5484,17 @@ local function applyOrder(player, pid, row, turn)
 			-- otherwise valid. Corps and Armies are the only explicit formations.
 			local formation = tonumber(x) or 0;
 			formationForCost = MilitaryFormationTypes.STANDARD_MILITARY_FORMATION;
-			if formation == 1 then
+			local unitRow = try(function() return GameInfo.Units[resolved]; end);
+			local militaryFormation = unitRow ~= nil
+				and ((unitRow.Combat or 0) > 0
+				     or (unitRow.RangedCombat or 0) > 0
+				     or (unitRow.Bombard or 0) > 0
+				     or (unitRow.AntiAirCombat or 0) > 0);
+			if formation == 0 and militaryFormation then
+				-- Preserve the host's explicit standard formation for combat units;
+				-- civilian and support units deliberately take the parameter-free path.
+				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
+			elseif formation == 1 then
 				formationForCost = MilitaryFormationTypes.CORPS_MILITARY_FORMATION;
 				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] = formationForCost;
 			elseif formation == 2 then

@@ -84,11 +84,13 @@ class ProductionActuatorTests(unittest.TestCase):
             "formationForCost = MilitaryFormationTypes.STANDARD_MILITARY_FORMATION",
             self.purchase,
         )
-        self.assertNotRegex(
+        self.assertRegex(
             self.purchase,
             re.compile(
-                r"params\[CityCommandTypes\.PARAM_MILITARY_FORMATION_TYPE\]\s*=\s*"
-                r"MilitaryFormationTypes\.STANDARD_MILITARY_FORMATION"
+                r"local militaryFormation = unitRow ~= nil.*?"
+                r"if formation == 0 and militaryFormation then.*?"
+                r"PARAM_MILITARY_FORMATION_TYPE\] = formationForCost",
+                re.DOTALL,
             ),
         )
         self.assertRegex(
