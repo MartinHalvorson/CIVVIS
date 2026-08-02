@@ -371,21 +371,72 @@ def dialogue_buttons(gray, box):
     y0, y1 = y0d + int(hd * 0.65), y0d + int(hd * 0.99)
     bands, cur = [], None
     for y in range(y0, y1, 2):
-        bright = sum(1 for x in range(x0, x1, 2) if px[x, y] > 140)
-        if bright > 12:
+        # The Gathering Storm Goodbye button measured only 101-139 luminance
+        # along most of its thin border; the old >140 probe saw no button at
+        # all. Keep the scan inside the leader-only lower-left band and join
+        # the top edge, label, and bottom edge into one control below.
+        bright = sum(1 for x in range(x0, x1, 2) if px[x, y] > 100)
+        if bright > 8:
             cur = [y, y] if cur is None else [cur[0], y]
         elif cur:
             bands.append(cur)
             cur = None
     if cur:
         bands.append(cur)
-    out = []
+    merged = []
     for top, bottom in bands:
+        if merged and top - merged[-1][1] <= 14:
+            merged[-1][1] = bottom
+        else:
+            merged.append([top, bottom])
+    out = []
+    for top, bottom in merged:
         cy = (top + bottom) // 2
-        xs = [x for x in range(x0, x1, 2) if px[x, cy] > 140]
+        xs = [
+            x for y in range(top, bottom + 1, 2)
+            for x in range(x0, x1, 2) if px[x, y] > 100
+        ]
         if xs:
             out.append(((min(xs) + max(xs)) // 2, cy))
     return out
+
+
+def notice_button(rgb, gray):
+    """A centered one-button Firaxis notice, such as ``Unit Captured``.
+
+    These notices sit over the map and therefore are neither dark leader
+    scenes nor completion cards. Require both the narrow centered blue button
+    and the much wider centered blue frame above it; either shape alone occurs
+    in ordinary HUD controls, while the pair is the measured modal geometry.
+    """
+    w, h = rgb.size
+    clusters = blue_clusters(rgb)
+    buttons = [
+        cluster for cluster in clusters
+        if cluster["n"] >= 120
+        and w * 0.42 < cluster["cx"] < w * 0.58
+        and h * 0.50 < cluster["cy"] < h * 0.62
+        and w * 0.05 < cluster["w"] < w * 0.16
+        and cluster["h"] < h * 0.04
+    ]
+    for button in buttons:
+        framed = any(
+            frame["n"] >= 250
+            and abs(frame["cx"] - button["cx"]) < w * 0.03
+            and w * 0.18 < frame["w"] < w * 0.35
+            and h * 0.05 < button["cy"] - frame["cy"] < h * 0.14
+            for frame in clusters
+        )
+        if not framed:
+            continue
+        panel = gray.crop((
+            int(w * 0.44), int(h * 0.43),
+            int(w * 0.56), int(h * 0.56),
+        ))
+        bright = sum(1 for value in panel.getdata() if value > 160)
+        if bright >= 0.35 * (panel.size[0] * panel.size[1]):
+            return (button["cx"], button["cy"])
+    return None
 
 
 def classify(window):
@@ -419,6 +470,10 @@ def classify(window):
     advisor = advisor_buttons(window, grey)
     if advisor:
         return "advisor", advisor, dark
+
+    notice = notice_button(window, grey)
+    if notice:
+        return "notice", [notice], dark
 
     if dark > LEADER_DARK_FRACTION:
         return "leader", dialogue_buttons(grey, box), dark

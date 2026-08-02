@@ -2844,6 +2844,30 @@ fn install_test_district(game: &mut Game, city: u32, district: &str) -> Pos {
     position
 }
 
+#[cfg(test)]
+pub(crate) fn vacate_land_combat_purchase_slot(game: &mut Game, player: usize, city: u32) {
+    let center = game.cities[&city].pos;
+    let blocker = game.units_at(center).into_iter().find(|unit| {
+        let unit = &game.units[unit];
+        let spec = &game.rules.units[unit.kind];
+        unit.owner == player
+            && spec.class == "military"
+            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+    });
+    if let Some(unit) = blocker {
+        let destination = game
+            .nbrs(center)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                }) && game.units_at(*position).is_empty()
+            })
+            .expect("test city has an open adjacent land-combat slot");
+        game.relocate(unit, destination);
+    }
+}
+
 pub mod quests;
 
 #[cfg(test)]
@@ -6285,6 +6309,49 @@ mod governor_runtime_tests {
         assert_eq!(game.city_local_amenities(&game.cities[&city]), amenities_before + 1);
         game.players[0].civics.insert(crate::name!("natural_history"));
         assert_eq!(game.city_local_amenities(&game.cities[&city]), amenities_before + 2);
+    }
+
+    #[test]
+    fn armagh_monastery_matches_firaxis_placement_faith_and_religious_healing() {
+        let mut game = Game::new_full(2, 24, 16, 91_982, 200, 0, false);
+        let city = found_capital(&mut game, 0);
+        let monastery = game.nbrs(game.cities[&city].pos)[0];
+        {
+            let tile = game.map.tiles.get_mut(&monastery).unwrap();
+            tile.owner_city = Some(city);
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.resource = None;
+            tile.hills = false;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+            tile.pillaged = false;
+        }
+        if !game.cities[&city].owned_tiles.contains(&monastery) {
+            game.cities.get_mut(&city).unwrap().owned_tiles.push(monastery);
+        }
+
+        game.players[1].is_minor = true;
+        game.players[1].civ = "Armagh".to_string();
+        assert!(!game
+            .valid_improvements(0, monastery)
+            .contains(&crate::name!("monastery")));
+        game.players[0].envoys.push((1, 3));
+        assert!(game
+            .valid_improvements(0, monastery)
+            .contains(&crate::name!("monastery")));
+
+        let bare = game.player_tile_yields(0, monastery, &game.map.tiles[&monastery]);
+        game.map.tiles.get_mut(&monastery).unwrap().improvement =
+            Some(crate::name!("monastery"));
+        let improved = game.player_tile_yields(0, monastery, &game.map.tiles[&monastery]);
+        assert_eq!(improved.faith - bare.faith, 2.0);
+
+        let missionary = game.spawn_unit("missionary", 0, monastery);
+        assert_eq!(game.unit_heal_rate(missionary), 15);
+        game.map.tiles.get_mut(&monastery).unwrap().pillaged = true;
+        assert_eq!(game.unit_heal_rate(missionary), 0);
     }
 
     #[test]
@@ -10707,6 +10774,7 @@ mod government_runtime_tests {
     #[test]
     fn democracy_discounts_gold_unit_building_and_district_purchases() {
         let (mut game, city) = one_city(774_507);
+        vacate_land_combat_purchase_slot(&mut game, 0, city);
         game.players[0].government = Some("democracy".to_string());
         game.players[0].gold = 100_000.0;
         game.players[0].techs.insert(crate::name!("pottery"));
@@ -11010,8 +11078,52 @@ mod district_building_wonder_runtime_tests {
     }
 
     #[test]
+    fn land_combat_purchase_requires_an_unreserved_city_center_combat_layer() {
+        let (mut game, city, _) = one_city(774_405);
+        let center = game.cities[&city].pos;
+        let open_land = game
+            .nbrs(center)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                })
+            })
+            .unwrap();
+        for unit in game.units_at(center) {
+            game.relocate(unit, open_land);
+        }
+
+        // Live Firaxis evidence: Rome offered a Scout purchase with an empty
+        // center while a Warrior was completing, but refused it with the
+        // explicit same-class placement reason. A Settler queue did not
+        // reserve the combat layer and the next military purchase succeeded.
+        game.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
+            unit: crate::name!("warrior"),
+        }];
+        assert_eq!(game.unit_purchase_cost(0, city, "scout", "gold"), None);
+        game.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
+            unit: crate::name!("settler"),
+        }];
+        assert_eq!(
+            game.unit_purchase_cost(0, city, "scout", "gold"),
+            Some(120.0)
+        );
+
+        game.cities.get_mut(&city).unwrap().queue.clear();
+        let blocker = game.spawn_unit("warrior", 0, center);
+        assert_eq!(game.unit_purchase_cost(0, city, "scout", "gold"), None);
+        game.relocate(blocker, open_land);
+        assert_eq!(
+            game.unit_purchase_cost(0, city, "scout", "gold"),
+            Some(120.0)
+        );
+    }
+
+    #[test]
     fn formations_can_be_bought_directly_for_full_constituent_cost() {
         let (mut game, city, _) = one_city(774_406);
+        vacate_land_combat_purchase_slot(&mut game, 0, city);
         game.cities
             .get_mut(&city)
             .unwrap()
@@ -11045,6 +11157,20 @@ mod district_building_wonder_runtime_tests {
             .unwrap();
         assert_eq!(game.units[&bought].formation, 1);
         assert!(game.players[0].gold.abs() < 1e-9);
+
+        // Firaxis purchases into the City Center's combat layer, so clear the
+        // first formation before quoting a second one from this city.
+        let center = game.cities[&city].pos;
+        let open_land = game
+            .nbrs(center)
+            .into_iter()
+            .find(|position| {
+                game.map.get(*position).is_some_and(|tile| {
+                    game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                }) && game.units_at(*position).is_empty()
+            })
+            .unwrap();
+        game.relocate(bought, open_land);
 
         game.players[0].government = Some("theocracy".to_string());
         assert_eq!(
@@ -18846,6 +18972,17 @@ impl Game {
         }
         if spec.class == "religious" {
             let mut best: f64 = 0.0;
+            if self.map.get(unit.pos).is_some_and(|tile| {
+                tile.improvement.as_deref() == Some("monastery") && !tile.pillaged
+            }) {
+                best = best.max(
+                    self.rules.improvements["monastery"]
+                        .effects
+                        .get("religious_unit_heal_rate")
+                        .copied()
+                        .unwrap_or(0.0),
+                );
+            }
             for position in self.wdisk(unit.pos, 1) {
                 let Some(tile) = self.map.get(position) else {
                     continue;
@@ -41636,6 +41773,32 @@ impl Game {
         self.unit_purchase_cost_for_formation(pid, cid, unit, 0, currency)
     }
 
+    /// Firaxis buys ordinary land-combat units into the City Center's combat
+    /// layer. Unlike production completion, purchase does not search adjacent
+    /// tiles: an existing land-combat unit, or one completing from the active
+    /// queue, makes the purchase button refuse with "Too many units of the
+    /// same class in this location." Keep this deliberately scoped to the
+    /// live-proven layer; civilian, religious, naval, and air purchases use
+    /// different placement rules and districts.
+    fn land_combat_purchase_slot_open(&self, pid: usize, city: &City) -> bool {
+        let is_land_combat = |unit: &Name| {
+            self.rules.units.get(unit).is_some_and(|spec| {
+                spec.class == "military"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            })
+        };
+        if self.units_at(city.pos).into_iter().any(|uid| {
+            let other = &self.units[&uid];
+            other.owner != pid || is_land_combat(&other.kind)
+        }) {
+            return false;
+        }
+        !city.queue.first().is_some_and(|item| match item {
+            Item::Unit { unit } | Item::Formation { unit, .. } => is_land_combat(unit),
+            _ => false,
+        })
+    }
+
     fn unit_purchase_cost_for_formation(
         &self,
         pid: usize,
@@ -41660,6 +41823,12 @@ impl Game {
         let rock_band = unit == "rock_band";
         let naturalist = unit == "naturalist";
         if formation > 0 && (religious || rock_band || naturalist) {
+            return None;
+        }
+        if spec.class == "military"
+            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            && !self.land_combat_purchase_slot_open(pid, city)
+        {
             return None;
         }
         if rock_band || naturalist {

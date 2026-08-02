@@ -21460,6 +21460,8 @@ mod tests {
                 .unwrap();
         }
         game.current = 0;
+        let home = game.player_city_ids(0)[0];
+        crate::game::vacate_land_combat_purchase_slot(&mut game, 0, home);
         game.players[0].civics.insert(crate::name!("reformed_church"));
         game.players[0].faith = 1_500.0;
         let target = game.player_city_ids(1)[0];

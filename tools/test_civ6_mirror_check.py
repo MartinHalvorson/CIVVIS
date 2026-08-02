@@ -302,12 +302,20 @@ class MirrorCheckTest(unittest.TestCase):
                          ("unit", "builder"))
         self.assertEqual(civ6_mirror_check.production_item_name("BUILDING_MONUMENT"),
                          ("building", "monument"))
+        self.assertEqual(
+            civ6_mirror_check.production_item_name("BUILDING_GOV_CITYSTATES"),
+            ("building", "foreign_ministry"),
+        )
         self.assertEqual(civ6_mirror_check.production_item_name("DISTRICT_CAMPUS"),
                          ("district", "campus"))
         self.assertEqual(civ6_mirror_check.production_item_name("DISTRICT_GOVERNMENT"),
                          ("district", "government_plaza"))
         self.assertEqual(civ6_mirror_check.production_item_name("DISTRICT_THEATER"),
                          ("district", "theater_square"))
+        self.assertEqual(
+            civ6_mirror_check.production_item_name("PROJECT_ENHANCE_DISTRICT_THEATER"),
+            ("project", "theater_square_festival"),
+        )
         self.assertEqual(civ6_mirror_check.production_item_name(None), None)
         self.assertEqual(civ6_mirror_check.queue_item_name({"district": "campus", "pos": [2, 3]}),
                          ("district", "campus"))

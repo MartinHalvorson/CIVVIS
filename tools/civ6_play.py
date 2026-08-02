@@ -31,7 +31,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
-from civ6_control import gamelock, launcher, macos_input, macos_ocr, vision, watch  # noqa: E402
+from civ6_control import (gamelock, launcher, macos_input, macos_ocr,
+                          popup_clear, vision, watch)  # noqa: E402
 from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
@@ -1426,6 +1427,27 @@ def dismiss_leader_dialogue(clicks: int = 6) -> bool:
     return True
 
 
+def dismiss_visually_confirmed_popup() -> tuple[bool, str]:
+    """Click one safe target only when the current pixels prove a modal exists."""
+    rect = game_window()
+    if rect is None:
+        return False, "game window unavailable"
+    focus_game(GAME_SIDE, GAME_FRACTION)
+    time.sleep(0.25)
+    try:
+        window, scale = popup_clear.capture(rect)
+        surface, targets, _dark = popup_clear.classify(window)
+    except (OSError, subprocess.SubprocessError):
+        return False, "popup classification failed"
+    if surface not in ("leader", "notice"):
+        return False, f"no safe visible dialogue ({surface})"
+    target = popup_clear.click_target(surface, targets, window.size[0])
+    if target is None:
+        return False, f"visible {surface} has no confirmed button"
+    popup_clear.held_click(target, rect, scale)
+    return True, f"confirmed {surface} button"
+
+
 def press_escape(times: int = 2) -> bool:
     """Dismiss the load screen, for when the mod's own dismissal does not land.
 
@@ -1659,8 +1681,11 @@ def _play(args: argparse.Namespace) -> int:
         elif kind == "blocked":
             print(f"[turn {event.get('turn')}] blocked on {event.get('blocker')} "
                   f"({event.get('attempts')} attempts)")
-        elif kind == "autoclose_stuck":
-            # ⚠ THE SHIM HAS GIVEN UP, so press the key a person would.
+        elif kind in ("autoclose_desktop", "autoclose_stuck"):
+            # Every desktop request is pixel-classified before any click. A
+            # DiplomacyActionView context can remain technically visible while
+            # the ordinary map is in front; treating its counter alone as proof
+            # caused a live t68 fallback to sweep clicks across an uncovered map.
             #
             # `autoclose_stuck` means twenty close attempts failed. Photograph the
             # exact variant before clicking: dialogue geometry has changed several
@@ -1673,7 +1698,11 @@ def _play(args: argparse.Namespace) -> int:
             screen = event.get("screen")
             shot = run_dir / f"autoclose-stuck-turn-{state['turn']}.png"
             screenshot(shot)
-            print(f"[autoclose_stuck] {screen} gave up after "
+            reason = (
+                "requested desktop help after"
+                if kind == "autoclose_desktop" else "gave up after"
+            )
+            print(f"[{kind}] {screen} {reason} "
                   f"{event.get('attempts')} attempts; photographed to {shot}")
             # ⚠⚠ ESCAPE WITH NOTHING TO CLOSE OPENS THE PAUSE MENU, AND THAT KILLS THE
             # RUN. Photographed at the moment of a stall (run civvis-20260730T181327Z,
@@ -1694,8 +1723,7 @@ def _play(args: argparse.Namespace) -> int:
                         "WorldCongressBetweenTurns", "GreatWorkShowcase",
                         "ChooseArtifact")
             if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):
-                ok = dismiss_leader_dialogue()
-                how = "dialogue clicks"
+                ok, how = dismiss_visually_confirmed_popup()
             elif screen == "WorldCongressBetweenTurns":
                 ok = dismiss_world_congress_between_turns()
                 how = "World Congress close control"
@@ -1705,9 +1733,10 @@ def _play(args: argparse.Namespace) -> int:
             else:
                 ok = True
                 how = "left alone (not a blocking screen)"
-            print(f"[autoclose_stuck] {how} "
-                  f"{'sent' if ok else 'FAILED'} for {screen}",
-                  file=sys.stderr if not ok else sys.stdout)
+            safe_skip = not ok and how.startswith("no safe visible dialogue")
+            result = "sent" if ok else "skipped safely" if safe_skip else "FAILED"
+            print(f"[{kind}] {how} {result} for {screen}",
+                  file=sys.stderr if not ok and not safe_skip else sys.stdout)
         elif kind in ("victory", "defeat", "error"):
             print(f"[{kind}] {json.dumps(event, sort_keys=True)}")
             if kind in ("victory", "defeat"):

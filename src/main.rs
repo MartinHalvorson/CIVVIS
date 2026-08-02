@@ -163,7 +163,9 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// anchor, so this is a real protocol change: protocol v3 is preserved at
 /// `data/elo_ratings_v3.json`, protocol v4 was regenerated from these exact
 /// sources, and this pin identifies that new contract.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4525_adce_487a_8519;
+// Re-pinned after a cfg(test)-only purchase-placement fixture changed in
+// ai/advanced.rs; the compiled AdvancedAi implementation is unchanged.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa041_5eeb_949b_de0a;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

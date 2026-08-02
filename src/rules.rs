@@ -2612,12 +2612,12 @@ mod tests {
     #[test]
     fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
         // The fingerprint is the Elo ledger's binding. Firaxis-exact unique units,
-        // including the Shield Bearer, Oromo Cavalry, and Pairidaeza found by live
-        // replay, are real simulation changes; older ledgers retain their original
-        // fingerprint.
+        // including the Shield Bearer, Oromo Cavalry, Pairidaeza, and Armagh's
+        // Monastery found by live replay, are real simulation changes; older ledgers
+        // retain their original fingerprint.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:e510dc661d838fc3"
+            "fnv1a64:d9602d2bcdabd481"
         );
     }
 
@@ -3115,7 +3115,7 @@ mod tests {
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
-        assert_eq!(rules.improvements.len(), 44);
+        assert_eq!(rules.improvements.len(), 45);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
         // 118 civic-unlocked cards plus the seven Dark Age cards, which no

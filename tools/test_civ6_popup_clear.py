@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Pixel tests for the no-stray-click popup classifier."""
+"""Pixel-safety regressions for the Civilization VI popup backstop."""
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 import tempfile
 import time
 import unittest
@@ -57,7 +57,7 @@ class PopupClearTest(unittest.TestCase):
         draw = ImageDraw.Draw(image)
         draw.rectangle((330, 40, 670, 245), fill=(225, 221, 202))
         # This represents a Tell me more-style action without a recognized
-        # Continue action.  The watchdog must wait rather than opening help.
+        # Continue action. The watchdog must wait rather than opening help.
         draw.rectangle((525, 180, 625, 205), fill=(32, 86, 148))
 
         kind, targets, _ = popup_clear.classify(image)
@@ -186,6 +186,39 @@ class PopupClearTest(unittest.TestCase):
 
         self.assertEqual((kind, targets), ("map", []))
 
+    def test_centered_one_button_notice_requires_its_modal_frame(self) -> None:
+        image = Image.new("RGB", (1000, 600), (70, 85, 65))
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((400, 250, 600, 320), fill=(210, 210, 190))
+        draw.rectangle((350, 235, 650, 320), outline=(15, 80, 150), width=8)
+        draw.rectangle((450, 335, 550, 355), outline=(15, 80, 150), width=8)
+
+        kind, targets, _dark = popup_clear.classify(image)
+        self.assertEqual(kind, "notice")
+        self.assertEqual(len(targets), 1)
+
+        # A similarly placed ordinary blue map control is never enough to
+        # license a click without the wide modal frame and bright paper.
+        bare = Image.new("RGB", image.size, (70, 85, 65))
+        ImageDraw.Draw(bare).rectangle(
+            (450, 335, 550, 355), outline=(15, 80, 150), width=8
+        )
+        self.assertEqual(popup_clear.classify(bare)[:2], ("map", []))
+
+    def test_dim_gathering_storm_goodbye_border_is_a_leader_button(self) -> None:
+        image = Image.new("RGB", (1000, 600), (5, 5, 5))
+        draw = ImageDraw.Draw(image)
+        draw.rectangle(
+            (60, 535, 260, 555), outline=(120, 120, 120), width=3
+        )
+        draw.line((100, 545, 220, 545), fill=(120, 120, 120), width=2)
+
+        kind, targets, _dark = popup_clear.classify(image)
+        self.assertEqual(kind, "leader")
+        self.assertEqual(len(targets), 1)
+        self.assertTrue(60 <= targets[0][0] <= 260)
+        self.assertTrue(535 <= targets[0][1] <= 555)
+
     def test_stalled_turn_is_allowed_only_with_explicit_long_grace(self) -> None:
         with tempfile.TemporaryDirectory() as root:
             run = Path(root) / "active"
@@ -197,3 +230,7 @@ class PopupClearTest(unittest.TestCase):
 
             self.assertFalse(popup_clear.game_in_progress(root, fresh_seconds=180))
             self.assertTrue(popup_clear.game_in_progress(root, fresh_seconds=600))
+
+
+if __name__ == "__main__":
+    unittest.main()

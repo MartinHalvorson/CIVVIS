@@ -67,6 +67,7 @@ fn arbitrary_building_yields_and_abilities_flow_through_runtime_attachments() {
 #[test]
 fn per_unit_purchase_discount_is_shared_by_quotes_actions_and_execution() {
     let (mut game, city) = game_with_city(86_102);
+    vacate_land_combat_purchase_slot(&mut game, 0, city);
     install_selector_modifier(&mut game);
     let full = game.unit_purchase_cost(0, city, "warrior", "gold").unwrap();
     game.attach_modifier_to_player(0, "selector_bundle").unwrap();
@@ -88,6 +89,7 @@ fn per_unit_purchase_discount_is_shared_by_quotes_actions_and_execution() {
 #[test]
 fn theocracy_faith_purchase_quote_applies_its_discount_once() {
     let (mut game, city) = game_with_city(86_104);
+    vacate_land_combat_purchase_slot(&mut game, 0, city);
     game.players[0].government = Some("theocracy".to_string());
     let base = game.item_cost_for(
         0,

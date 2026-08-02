@@ -339,6 +339,27 @@ mod tests {
     }
 
     #[test]
+    fn armaghs_monastery_crosses_as_a_real_improvement() {
+        let mut site = plot(3, 4, "TERRAIN_GRASS");
+        site.im = Some("IMPROVEMENT_MONASTERY".to_string());
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 1,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![site],
+        }]);
+        let game = rebuild_game(&snapshot, 2, 1);
+        assert_eq!(
+            game.map
+                .get(crate::hex::offset_to_axial(3, 4))
+                .unwrap()
+                .improvement,
+            Some(crate::name!("monastery"))
+        );
+    }
+
+    #[test]
     fn historical_snapshot_does_not_read_tiles_from_a_future_turn() {
         let dir = std::env::temp_dir().join(format!(
             "civvis-mirror-time-boundary-{}",
@@ -6004,6 +6025,28 @@ fn civvis_production_item(
             building: crate::name::Name::new(&name),
         });
     }
+    // Firaxis's repeatable district grants use implementation names while
+    // CIVVIS keeps their player-facing names. The outbound bridge already
+    // translates these seven aliases; mirror the same vocabulary inbound so a
+    // city actively running one never appears idle and gets its queue replaced.
+    let project_alias = match civ6.to_ascii_uppercase().as_str() {
+        "PROJECT_ENHANCE_DISTRICT_CAMPUS" => Some("campus_research_grants"),
+        "PROJECT_ENHANCE_DISTRICT_HOLY_SITE" => Some("holy_site_prayers"),
+        "PROJECT_ENHANCE_DISTRICT_COMMERCIAL_HUB" => Some("commercial_hub_investment"),
+        "PROJECT_ENHANCE_DISTRICT_HARBOR" => Some("harbor_shipping"),
+        "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT" => Some("encampment_training"),
+        "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE" => Some("industrial_zone_logistics"),
+        "PROJECT_ENHANCE_DISTRICT_THEATER" => Some("theater_square_festival"),
+        _ => None,
+    };
+    let project = project_alias
+        .map(str::to_string)
+        .or_else(|| civvis_node_name(&rules.projects, civ6, "PROJECT_"));
+    if let Some(name) = project {
+        return Some(crate::game::Item::Project {
+            project: crate::name::Name::new(&name),
+        });
+    }
     // ★★★★★ A DISTRICT, once the export says WHERE.
     //
     // This used to return None for every district on the honest grounds that
@@ -8457,6 +8500,17 @@ mod host_fact_tests {
         assert!(
             matches!(monument, Some(crate::game::Item::Building { .. })),
             "BUILDING_MONUMENT should map to a CIVVIS building, got {monument:?}"
+        );
+        let theater = civvis_production_item(
+            &rules,
+            Some("PROJECT_ENHANCE_DISTRICT_THEATER"),
+            &[],
+        );
+        assert_eq!(
+            theater,
+            Some(crate::game::Item::Project {
+                project: crate::name!("theater_square_festival"),
+            })
         );
 
         // ⚠ Refusing to guess is the point. A wrong item tells CIVVIS a city is busy

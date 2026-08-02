@@ -157,6 +157,25 @@
    "housing_after_cultural_heritage": 1
   }
  },
+ "monastery": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "unique_to": "Armagh",
+  "same_adjacent_valid": false,
+  "yields": {
+   "faith": 2
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "effects": {
+   "religious_unit_heal_rate": 15
+  }
+ },
  "mekewap": {
   "plunder_type": "heal",
   "plunder_amount": 50,

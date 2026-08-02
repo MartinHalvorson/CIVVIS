@@ -59,6 +59,12 @@ local ERA_SCREENS = {
 -- being hidden in between, so only a screen that ignores its own close
 -- callback ever reaches the limit.
 local GIVE_UP_AFTER = 20;
+-- Dialogue contexts can remain technically visible behind a different modal.
+-- Ask the desktop classifier to inspect the real pixels after one second while
+-- the complete Lua exit ladder keeps trying in the background. This caught a
+-- live one-button "Unit Captured" acknowledgement that otherwise waited for
+-- all twenty rungs.
+local DESKTOP_AFTER = GIVE_UP_AFTER;
 
 local PREFIX = "CIVVISJSON ";
 
@@ -74,6 +80,7 @@ if ERA_SCREENS[NAME] then SECONDS = ERA_SECONDS; end
 -- seconds before the desktop fallback even began.
 if NAME == "DiplomacyActionView" or NAME == "DiplomacyDealView" then
 	SECONDS = math.min(SECONDS, tonumber(cfg.DialogueSeconds) or 0.25);
+	DESKTOP_AFTER = 4;
 end
 if SECONDS < 0 then SECONDS = 0; end
 
@@ -386,6 +393,7 @@ else
 	-- BACK-OFF, never a stop -- see the end of `tick` for why nothing here may
 	-- be permanent.
 	local reported = false;
+	local desktopReported = false;
 
 	-- How long to leave a screen alone once it has refused GIVE_UP_AFTER times.
 	-- Long enough not to hammer it, short enough that the map comes back on its
@@ -407,6 +415,7 @@ else
 			showing = false;
 			closes = 0;
 			reported = false;
+			desktopReported = false;
 			return;
 		end
 		if not showing then
@@ -462,7 +471,15 @@ else
 		-- stuck. Nothing was stuck. Every context simply died on its 20th popup
 		-- and covered the map from then on, which is why a run gets worse the
 		-- longer it lasts.
-		if gone then closes = 0; reported = false; end
+		if gone then
+			closes = 0;
+			reported = false;
+			desktopReported = false;
+		end
+		if closes >= DESKTOP_AFTER and not desktopReported then
+			desktopReported = true;
+			report("autoclose_desktop", string.format(',"attempts":%d', closes));
+		end
 		if closes >= GIVE_UP_AFTER then
 			-- ⚠⚠ GIVING UP MUST NOT BE PERMANENT, AND MUST NOT BE ABOUT THE CONTEXT.
 			--

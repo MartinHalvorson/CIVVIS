@@ -505,12 +505,26 @@ def production_item_name(value):
     ):
         if value.upper().startswith(prefix):
             name = civ6_id(value, prefix)
+            # Reuse the audited Firaxis-to-CIVVIS vocabulary for internal
+            # implementation names such as BUILDING_GOV_CITYSTATES (the
+            # player-facing Foreign Ministry), unique units, and era walls.
+            name = IDENTIFIER_ALIASES.get(name, name)
             # Firaxis truncates these district type identifiers; the mirror
             # restores the full CIVVIS names when it resolves the rules table.
             if kind == "district":
                 name = {
                     "government": "government_plaza",
                     "theater": "theater_square",
+                }.get(name, name)
+            elif kind == "project":
+                name = {
+                    "enhance_district_campus": "campus_research_grants",
+                    "enhance_district_holy_site": "holy_site_prayers",
+                    "enhance_district_commercial_hub": "commercial_hub_investment",
+                    "enhance_district_harbor": "harbor_shipping",
+                    "enhance_district_encampment": "encampment_training",
+                    "enhance_district_industrial_zone": "industrial_zone_logistics",
+                    "enhance_district_theater": "theater_square_festival",
                 }.get(name, name)
             return kind, name
     return None

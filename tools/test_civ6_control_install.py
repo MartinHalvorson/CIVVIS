@@ -77,6 +77,8 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn('NAME == "DiplomacyActionView"', closer)
         self.assertIn('NAME == "DiplomacyDealView"', closer)
         self.assertIn("tonumber(cfg.DialogueSeconds) or 0.25", closer)
+        self.assertIn("DESKTOP_AFTER = 4", closer)
+        self.assertIn('report("autoclose_desktop"', closer)
 
     def test_governors_export_exact_state_and_use_stock_operation_indices(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
