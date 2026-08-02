@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import Future, ThreadPoolExecutor
 import csv
+import ctypes
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import json
@@ -128,11 +129,71 @@ def parse_top_cpu(text: str) -> float | None:
     return max(0.0, min(100.0, 100.0 - float(matches[-1]))) if matches else None
 
 
+_darwin_cpu_ticks: tuple[int, int, int, int] | None = None
+_darwin_libsystem: Any | None = None
+_darwin_host_port: int | None = None
+DARWIN_CPU_STATE_IDLE = 2
+
+
+def darwin_cpu_ticks() -> tuple[int, int, int, int] | None:
+    """Return the host-wide user, system, idle, and nice tick totals on macOS."""
+    global _darwin_host_port, _darwin_libsystem
+    try:
+        if _darwin_libsystem is None:
+            _darwin_libsystem = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+            _darwin_libsystem.mach_host_self.restype = ctypes.c_uint
+            _darwin_libsystem.host_statistics.argtypes = [
+                ctypes.c_uint,
+                ctypes.c_int,
+                ctypes.POINTER(ctypes.c_int),
+                ctypes.POINTER(ctypes.c_uint),
+            ]
+            _darwin_libsystem.host_statistics.restype = ctypes.c_int
+        if _darwin_host_port is None:
+            _darwin_host_port = _darwin_libsystem.mach_host_self()
+        ticks = (ctypes.c_uint * 4)()
+        count = ctypes.c_uint(4)
+        status = _darwin_libsystem.host_statistics(
+            _darwin_host_port,
+            3,  # HOST_CPU_LOAD_INFO
+            ctypes.cast(ticks, ctypes.POINTER(ctypes.c_int)),
+            ctypes.byref(count),
+        )
+    except (AttributeError, OSError, TypeError):
+        return None
+    if status != 0 or count.value < 4:
+        return None
+    return tuple(int(tick) for tick in ticks)
+
+
+def darwin_cpu_percent() -> float | None:
+    """Measure aggregate CPU from native tick deltas without spawning ``top``."""
+    global _darwin_cpu_ticks
+    current = darwin_cpu_ticks()
+    if current is None:
+        return None
+    previous = _darwin_cpu_ticks
+    if previous is None:
+        # The host API is cumulative.  A short bootstrap interval gives the
+        # first resource gate a valid sample without the costly ``top`` fork.
+        time.sleep(0.2)
+        previous = current
+        current = darwin_cpu_ticks()
+        if current is None:
+            return None
+    _darwin_cpu_ticks = current
+    deltas = [((new - old) & 0xFFFFFFFF) for old, new in zip(previous, current)]
+    total = sum(deltas)
+    return 100.0 * (total - deltas[DARWIN_CPU_STATE_IDLE]) / total if total > 0 else None
+
+
 def cpu_percent() -> float | None:
     if sys.platform == "darwin":
-        # ``top -l 1`` already reports the host-wide CPU aggregate.  Asking
-        # macOS for a second sample adds a whole-second wait and can exceed the
-        # sampling timeout while a simulator and a build are both active.
+        native = darwin_cpu_percent()
+        if native is not None:
+            return native
+        # Keep the familiar command path as a conservative fallback if the
+        # native host API is unavailable on a future macOS release.
         try:
             result = command("top", "-l", "1", "-n", "0", timeout=4)
         except (OSError, subprocess.TimeoutExpired):

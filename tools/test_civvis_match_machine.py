@@ -385,6 +385,8 @@ class MatchMachineTests(unittest.TestCase):
 
     def test_cpu_sampling_timeout_fails_closed_without_crashing_the_machine(self):
         with mock.patch.object(machine.sys, "platform", "darwin"), mock.patch.object(
+            machine, "darwin_cpu_percent", return_value=None
+        ), mock.patch.object(
             machine,
             "command",
             side_effect=subprocess.TimeoutExpired(["top"], 4),
@@ -396,11 +398,30 @@ class MatchMachineTests(unittest.TestCase):
         self.assertFalse(missing_cpu.comfortably_below(70))
         self.assertEqual(machine.resource_action(missing_cpu, 70), "shed_all")
 
-    def test_macos_cpu_sampling_uses_one_immediate_top_snapshot(self):
+    def test_darwin_cpu_tick_sampler_bootstraps_and_measures_idle_delta(self):
+        first = (100, 50, 850, 0)
+        second = (106, 55, 869, 0)
+        with mock.patch.object(machine, "_darwin_cpu_ticks", None), mock.patch.object(
+            machine, "darwin_cpu_ticks", side_effect=[first, second]
+        ), mock.patch.object(machine.time, "sleep") as pause:
+            self.assertAlmostEqual(machine.darwin_cpu_percent(), 100.0 * 11.0 / 30.0)
+
+        pause.assert_called_once_with(0.2)
+
+    def test_macos_cpu_sampling_uses_native_ticks_before_top(self):
+        with mock.patch.object(machine.sys, "platform", "darwin"), mock.patch.object(
+            machine, "darwin_cpu_percent", return_value=20.0
+        ), mock.patch.object(machine, "command") as run:
+            self.assertEqual(machine.cpu_percent(), 20.0)
+
+        run.assert_not_called()
+
+    def test_macos_cpu_sampling_falls_back_to_one_immediate_top_snapshot(self):
         report = "CPU usage: 12.0% user, 8.0% sys, 80.0% idle\n"
         completed = subprocess.CompletedProcess(["top"], 0, report)
         with mock.patch.object(machine.sys, "platform", "darwin"), mock.patch.object(
-            machine, "command", return_value=completed
+            machine, "darwin_cpu_percent", return_value=None
+        ), mock.patch.object(machine, "command", return_value=completed
         ) as run:
             self.assertEqual(machine.cpu_percent(), 20.0)
 
