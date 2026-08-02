@@ -24,8 +24,11 @@ Requires the mirror server on :8610 (see civvis-civ6-mirror/follow.py).
 - CITIES  compare the SETS and name what is missing, never the counts.
 - UNITS   likewise. "21 exported, 15 reconstructed" once read as healthy because
           nothing compared them.
+- TREASURY gold and faith are BALANCES (`GetGoldBalance`, `GetFaithBalance`), not
+          the per-turn rates `economy_drift` compares. Same turn, or the delta is
+          just income.
 
-## Three ways this checker itself cried wolf
+## Four ways this checker itself cried wolf
 
 Each of these is a real bug I nearly reported, caught only by looking again:
 
@@ -37,6 +40,11 @@ Each of these is a real bug I nearly reported, caught only by looking again:
 3. It asserted water carries no continent. Civilization VI really does put COAST
    tiles on a continent -- 17 read CONTINENT_AUSTRALIA on one run -- so the check
    is agreement with the export, not a rule of its own.
+4. TREASURY, read against the NEWEST export rather than the board's own turn,
+   showed `gold 176 vs 167` and `faith 23 vs 21` -- a confident 5% shortfall that
+   was one turn of income at +9 gold and +2 faith. Bounded, the same instant read
+   134/134 and 27/27. That is defect 1 again, in a new check, which is why the
+   note below its `latest_state` says to bound every future reader.
 
 ⚠ The board served on :8610 is follow.py's FLIPPED staged copy:
 `board_axial = offset_to_axial(x, TOP - y)`. The flip constant is discovered here
@@ -270,6 +278,48 @@ def main():
                   f"CIVVIS does not model; the decider's `dropped_units` names which")
     print(f"UNITS    export {len(civ6_units)}  board {len(ours)}"
           + (detail or "   OK"))
+
+    # --- TREASURY ----------------------------------------------------------
+    #
+    # ⚠⚠ THESE TWO ARE STOCKS, NOT RATES, AND THAT IS WHY THEY GET THEIR OWN
+    # CHECK RATHER THAN JOINING `economy_drift`.
+    #
+    # The mod exports `gold` from `GetTreasury():GetGoldBalance()` and `faith`
+    # from `GetReligion():GetFaithBalance()` — balances. `economy_drift` compares
+    # science and culture, which the mod takes from `GetTechs():GetScienceYield()`
+    # — a per-turn rate. Putting a balance beside a rate under one heading is the
+    # apples-to-oranges the rest of this file exists to prevent.
+    #
+    # ⚠ AND IT MUST BE READ AT THE SAME TURN, which is the whole reason this was
+    # worth adding rather than eyeballing. Measured 2026-08-02 on run
+    # civvis-20260802T030910Z: read against the NEWEST export the treasury showed
+    # `gold 176 vs 167` and `faith 23 vs 21` — a confident-looking 5% shortfall
+    # that is nothing but one turn of income at +9 gold and +2 faith. Bounded to
+    # the board's own turn the same instant read **134 vs 134 and 27 vs 27,
+    # delta 0.0 on both**. An unbounded version of this check would have reported
+    # a treasury defect on a perfectly faithful mirror, every single time.
+    board_me = next((p for p in board.get("players") or [] if p.get("id") == 0), None)
+    if board_me is None:
+        print("TREASURY no seated player 0 on the board; cannot compare")
+    else:
+        rows = []
+        for field in ("gold", "faith"):
+            theirs, ours_value = state.get(field), board_me.get(field)
+            # -1 is the mod's own "could not read it" sentinel, and a missing key
+            # is an older export. Neither is a disagreement — say so rather than
+            # inventing a delta, the same way `economy_drift` refuses to claim
+            # anything from an export carrying no yields.
+            if theirs is None or ours_value is None or theirs < 0:
+                rows.append(f"{field} unknown")
+                continue
+            delta = ours_value - theirs
+            rows.append(f"{field} {theirs:g}/{ours_value:g}"
+                        + ("" if abs(delta) < 0.5 else f" ⚠{delta:+g}"))
+            if abs(delta) >= 0.5:
+                problems.append(f"treasury:{field}")
+        print(f"TREASURY {'  '.join(rows)}"
+              + ("   OK" if not any("⚠" in r for r in rows) else ""))
+
     # ⚠ Non-zero on a real disagreement, so this can gate a run rather than only
     # inform one. A frame mismatch already returned 1 above for the same reason:
     # a comparison whose coordinates do not line up is worse than no comparison.
