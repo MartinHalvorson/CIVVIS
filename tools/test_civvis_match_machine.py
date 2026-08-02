@@ -325,6 +325,16 @@ class MatchMachineTests(unittest.TestCase):
         self.assertFalse(missing_cpu.comfortably_below(70))
         self.assertEqual(machine.resource_action(missing_cpu, 70), "shed_all")
 
+    def test_macos_cpu_sampling_uses_one_immediate_top_snapshot(self):
+        report = "CPU usage: 12.0% user, 8.0% sys, 80.0% idle\n"
+        completed = subprocess.CompletedProcess(["top"], 0, report)
+        with mock.patch.object(machine.sys, "platform", "darwin"), mock.patch.object(
+            machine, "command", return_value=completed
+        ) as run:
+            self.assertEqual(machine.cpu_percent(), 20.0)
+
+        run.assert_called_once_with("top", "-l", "1", "-n", "0", timeout=4)
+
     def test_resource_ceiling_is_hard_and_resume_has_headroom(self):
         safe = machine.Resources(59.0, 20.0, 12.0, 0.0, False)
         edge = machine.Resources(70.0, 20.0, 12.0, 0.0, False)
