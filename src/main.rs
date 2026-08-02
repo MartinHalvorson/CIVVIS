@@ -290,8 +290,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// with the flag on and off are byte-identical on score, cities and the
 /// strategy census, because the sim reaches Recovery on only 8% of
 /// strategy-turns against the live ladder's 86%. A compatibility re-pin.
+///
+/// #934 re-keys that same bound from the plan's age to the WAR's age
+/// (`major_war_since`). Still behind `bounded_recovery`, still short-circuiting
+/// on the flag before anything is read, so every configured, legacy and Elo
+/// agent is byte-identical. Another compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf2a0_3e13_5898_75a2;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3ff9_fbfa_5d2f_bbff;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
