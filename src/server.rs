@@ -4250,13 +4250,13 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        chronicle_world_events, final_countdown_ms, held_frame, new_game_params, query_value,
-        request_path, save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot,
-        ChronicleState, FrameDelivery, Params,
+        automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
+        new_game_params, query_value, request_path, save_path, seat_delay_ms, strategy_roster,
+        tile_mark, ChronicleSnapshot, ChronicleState, FrameDelivery, Params,
         Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_CIV6_UNIT_FLAGS,
         EMBEDDED_INDEX, RESULT_COUNTDOWN_MS,
         EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL,
-        VIEWER_ACTIVE,
+        MAX_EXACT_JAVASCRIPT_INTEGER, VIEWER_ACTIVE,
     };
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
@@ -8836,7 +8836,7 @@ mod tests {
         // This is the predecessor from the live failure. Its old full-width
         // successor was 7_959_629_191_918_103_844, which JavaScript rounded
         // before returning it in the painted-frame acknowledgement.
-        let predecessor = 1_785_694_281;
+        let predecessor: u64 = 1_785_694_281;
         let old_full_width = predecessor
             .wrapping_mul(6364136223846793005)
             .wrapping_add(1442695040888963407);
