@@ -1106,7 +1106,11 @@ class MatchMachine:
     def sync(self) -> None:
         revision = self.fetch()
         self.next_sync = time.monotonic() + self.args.sync_interval
-        if revision != self.current_revision:
+        if revision == self.current_revision:
+            # A queued revision can become unnecessary if upstream is rebased
+            # or reverted while the old headless fleet is draining.
+            self.pending_revision = None
+        elif revision != self.pending_revision:
             self.pending_revision = revision
             self.event("head_changed", current=self.current_revision, target=revision)
 
@@ -1169,7 +1173,18 @@ class MatchMachine:
                     if self.capacity_available(
                         last_sample, cpu_reservation=build_reservation
                     ):
-                        self.start_head_build(self.pending_revision)
+                        # Draining a long game can take several minutes. Fetch
+                        # once more at the last safe boundary so we compile the
+                        # newest HEAD rather than a revision that was current
+                        # only when draining began. Re-sample after network
+                        # work before reserving build CPU.
+                        self.sync()
+                        last_sample = resources(self.runtime)
+                        self.govern(last_sample)
+                        if self.pending_revision and self.capacity_available(
+                            last_sample, cpu_reservation=build_reservation
+                        ):
+                            self.start_head_build(self.pending_revision)
                 self.fill_slots(last_sample)
                 # The promoted revision refreshes the ranking after the worker
                 # finishes.  Avoid executing a source-tree script while that
