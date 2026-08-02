@@ -3925,6 +3925,34 @@ pub struct StateGreatWork {
     pub slot: i32,
 }
 
+/// One appointed Governor exactly as Civilization VI reports it.
+///
+/// `None` at the snapshot level means the Governor API was unavailable or the
+/// event predates this contract. `Some([])` means the player has appointed none.
+#[derive(Clone, Debug, Default, serde::Deserialize)]
+pub struct StateGovernor {
+    #[serde(default, rename = "type")]
+    pub kind: String,
+    #[serde(default = "minus_one_i64")]
+    pub city: i64,
+    #[serde(default = "minus_one")]
+    pub city_player: i32,
+    #[serde(default = "minus_one")]
+    pub x: i32,
+    #[serde(default = "minus_one")]
+    pub y: i32,
+    #[serde(default)]
+    pub established: bool,
+    #[serde(default)]
+    pub turns_on_site: i32,
+    #[serde(default)]
+    pub turns_to_establish: i32,
+    #[serde(default)]
+    pub neutralized_turns: i32,
+    #[serde(default)]
+    pub promotions: Vec<String>,
+}
+
 /// One city as Civilization VI reported it, in OFFSET coordinates.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateCity {
@@ -4402,6 +4430,15 @@ pub struct StateSnapshot {
     /// mirrored empire does not reproduce every capacity modifier.
     #[serde(default)]
     pub trade_capacity: Option<i64>,
+    /// Total Governor Titles obtained and spent according to Firaxis. These are
+    /// separate from the roster because a title can be held unspent.
+    #[serde(default)]
+    pub governor_points: Option<i64>,
+    #[serde(default)]
+    pub governor_points_spent: Option<i64>,
+    /// Authoritative appointed roster. `None` means unknown; `Some([])` means empty.
+    #[serde(default)]
+    pub governors: Option<Vec<StateGovernor>>,
     #[serde(default)]
     pub cities: Vec<StateCity>,
     #[serde(default)]
@@ -4538,6 +4575,134 @@ fn restore_active_trade_routes(
     unresolved
 }
 
+/// Replace CIVVIS's inferred Governor state with the authoritative Firaxis roster.
+///
+/// Rebuilding cities and completed Civics alone is insufficient: title sources are
+/// not all Civics, and neither appointments, promotions nor assignments are derived
+/// facts. Without this pass CIVVIS spends the same titles on every reconstructed
+/// turn and repeatedly appoints Governors already visible in the host game.
+fn apply_governor_state(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    unmapped: &mut Vec<String>,
+) {
+    let Some(governors) = state.governors.as_deref() else {
+        return;
+    };
+
+    let mut roster = crate::specmap::SpecMap::default();
+    let mut assigned_own_cities = Vec::new();
+    for observed in governors {
+        let Some(name) = civvis_governor_name(&observed.kind) else {
+            let issue = format!("{}:governor", observed.kind);
+            if !unmapped.contains(&issue) {
+                unmapped.push(issue);
+            }
+            continue;
+        };
+        let Some(spec) = game.rules.governors.get(name) else {
+            let issue = format!("{}:governor_rules", observed.kind);
+            if !unmapped.contains(&issue) {
+                unmapped.push(issue);
+            }
+            continue;
+        };
+        let establish_turns = game.standard_duration(spec.establish_turns);
+        let located_city = (observed.x >= 0 && observed.y >= 0)
+            .then(|| game.city_at(crate::hex::offset_to_axial(observed.x, observed.y)))
+            .flatten();
+        if observed.city >= 0 && located_city.is_none() {
+            let issue = format!(
+                "{}:governor_city@{},{}",
+                observed.kind, observed.x, observed.y
+            );
+            if !unmapped.contains(&issue) {
+                unmapped.push(issue);
+            }
+        }
+        let city = located_city.filter(|cid| {
+            game.cities.get(cid).is_some_and(|target| {
+                target.owner == 0
+                    || (name == "amani"
+                        && game.players[target.owner].is_minor
+                        && !game.players[target.owner].is_barbarian)
+            })
+        });
+        if located_city.is_some() && city.is_none() {
+            let issue = format!("{}:invalid_governor_owner", observed.kind);
+            if !unmapped.contains(&issue) {
+                unmapped.push(issue);
+            }
+        }
+        if let Some(cid) = city {
+            if game.cities[&cid].owner == 0 {
+                assigned_own_cities.push(cid);
+            }
+        }
+        let assigned_turn = if city.is_none() {
+            game.turn
+        } else if observed.established {
+            game.turn.saturating_sub(establish_turns)
+        } else {
+            game.turn
+                .saturating_sub(observed.turns_on_site.max(0) as u32)
+        };
+        let mut promotions = std::collections::BTreeSet::new();
+        for host_promotion in &observed.promotions {
+            match civvis_governor_promotion(host_promotion) {
+                Some(promotion) if spec.promotions.contains_key(promotion) => {
+                    promotions.insert(promotion.to_string());
+                }
+                _ => {
+                    let issue = format!("{}:governor_promotion", host_promotion);
+                    if !unmapped.contains(&issue) {
+                        unmapped.push(issue);
+                    }
+                }
+            }
+        }
+        roster.insert(
+            name.to_string(),
+            crate::game::GovernorState {
+                city,
+                assigned_turn,
+                disabled_until: game
+                    .turn
+                    .saturating_add(observed.neutralized_turns.max(0) as u32),
+                promotions,
+            },
+        );
+    }
+
+    assigned_own_cities.sort_unstable();
+    assigned_own_cities.dedup();
+    game.players[0].governor_roster = roster;
+    game.players[0].governors = assigned_own_cities;
+    if let Some(spent) = state.governor_points_spent.filter(|value| *value >= 0) {
+        game.players[0].governor_titles_spent = spent as usize;
+    }
+    if let Some(total) = state.governor_points.filter(|value| *value >= 0) {
+        let civic_titles: usize = game.players[0]
+            .civics
+            .iter()
+            .filter_map(|civic| game.rules.civics.get(civic))
+            .map(|civic| civic.governor_title)
+            .sum();
+        let other = (total as usize).saturating_sub(civic_titles);
+        if total as usize >= civic_titles {
+            game.players[0]
+                .counters
+                .insert("district_governor_titles".to_string(), other as i64);
+        } else {
+            game.players[0].counters.remove("district_governor_titles");
+            let issue = format!("governor_titles:{total}<civic:{civic_titles}");
+            if !unmapped.contains(&issue) {
+                unmapped.push(issue);
+            }
+        }
+    }
+}
+
 /// The identity Civilization VI gave this game: who we play, and under what rules.
 ///
 /// ★★★★ THE SIXTH FACT THE BRIDGE DROPPED. The mod has always exported all of this
@@ -4548,6 +4713,8 @@ fn restore_active_trade_routes(
 /// before any deeper comparison starts.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct Seat {
+    #[serde(default = "minus_one")]
+    pub local_player: i32,
     #[serde(default)]
     pub players: usize,
     /// Configured city-state seats, including ones this player has not met yet.
@@ -4628,6 +4795,84 @@ pub fn civvis_civ_name(civ6: &str) -> Option<&'static str> {
     matches(&bare)
         .or_else(|| matches(&format!("{bare}s")))
         .or_else(|| matches(bare.trim_end_matches('s')))
+}
+
+const GOVERNOR_TYPES: &[(&str, &str)] = &[
+    ("amani", "GOVERNOR_THE_AMBASSADOR"),
+    ("liang", "GOVERNOR_THE_BUILDER"),
+    ("moksha", "GOVERNOR_THE_CARDINAL"),
+    ("victor", "GOVERNOR_THE_DEFENDER"),
+    ("pingala", "GOVERNOR_THE_EDUCATOR"),
+    ("reyna", "GOVERNOR_THE_MERCHANT"),
+    ("magnus", "GOVERNOR_THE_RESOURCE_MANAGER"),
+];
+
+const GOVERNOR_PROMOTION_TYPES: &[(&str, &str)] = &[
+    ("emissary", "GOVERNOR_PROMOTION_AMBASSADOR_EMISSARY"),
+    ("affluence", "GOVERNOR_PROMOTION_AMBASSADOR_AFFLUENCE"),
+    ("local_informants", "GOVERNOR_PROMOTION_LOCAL_INFORMANTS"),
+    ("foreign_investor", "GOVERNOR_PROMOTION_AMBASSADOR_FOREIGN_INVESTOR"),
+    ("puppeteer", "GOVERNOR_PROMOTION_AMBASSADOR_PUPPETEER"),
+    ("zoning_commissioner", "GOVERNOR_PROMOTION_ZONING_COMMISSIONER"),
+    ("aquaculture", "GOVERNOR_PROMOTION_AQUACULTURE"),
+    ("reinforced_materials", "GOVERNOR_PROMOTION_REINFORCED_INFRASTRUCTURE"),
+    ("water_works", "GOVERNOR_PROMOTION_WATER_WORKS"),
+    ("parks_and_recreation", "GOVERNOR_PROMOTION_PARKS_RECREATION"),
+    ("grand_inquisitor", "GOVERNOR_PROMOTION_CARDINAL_GRAND_INQUISITOR"),
+    ("laying_on_of_hands", "GOVERNOR_PROMOTION_CARDINAL_LAYING_ON_OF_HANDS"),
+    ("citadel_of_god", "GOVERNOR_PROMOTION_CARDINAL_CITADEL_OF_GOD"),
+    ("patron_saint", "GOVERNOR_PROMOTION_CARDINAL_PATRON_SAINT"),
+    ("divine_architect", "GOVERNOR_PROMOTION_CARDINAL_DIVINE_ARCHITECT"),
+    ("garrison_commander", "GOVERNOR_PROMOTION_GARRISON_COMMANDER"),
+    ("defense_logistics", "GOVERNOR_PROMOTION_DEFENSE_LOGISTICS"),
+    ("embrasure", "GOVERNOR_PROMOTION_EMBRASURE"),
+    ("air_defense_initiative", "GOVERNOR_PROMOTION_AIR_DEFENSE_INITIATIVE"),
+    ("arms_race_proponent", "GOVERNOR_PROMOTION_EDUCATOR_ARMS_RACE_PROPONENT"),
+    ("connoisseur", "GOVERNOR_PROMOTION_EDUCATOR_CONNOISSEUR"),
+    ("researcher", "GOVERNOR_PROMOTION_EDUCATOR_RESEARCHER"),
+    ("grants", "GOVERNOR_PROMOTION_EDUCATOR_GRANTS"),
+    ("space_initiative", "GOVERNOR_PROMOTION_EDUCATOR_SPACE_INITIATIVE"),
+    ("curator", "GOVERNOR_PROMOTION_MERCHANT_CURATOR"),
+    ("harbormaster", "GOVERNOR_PROMOTION_MERCHANT_HARBORMASTER"),
+    ("forestry_management", "GOVERNOR_PROMOTION_MERCHANT_FORESTRY_MANAGEMENT"),
+    ("tax_collector", "GOVERNOR_PROMOTION_MERCHANT_TAX_COLLECTOR"),
+    ("contractor", "GOVERNOR_PROMOTION_MERCHANT_CONTRACTOR"),
+    ("renewable_subsidizer", "GOVERNOR_PROMOTION_MERCHANT_RENEWABLE_ENERGY"),
+    ("surplus_logistics", "GOVERNOR_PROMOTION_RESOURCE_MANAGER_SURPLUS_LOGISTICS"),
+    ("provision", "GOVERNOR_PROMOTION_RESOURCE_MANAGER_EXPEDITION"),
+    ("industrialist", "GOVERNOR_PROMOTION_RESOURCE_MANAGER_INDUSTRIALIST"),
+    ("black_marketeer", "GOVERNOR_PROMOTION_RESOURCE_MANAGER_BLACK_MARKETEER"),
+    ("vertical_integration", "GOVERNOR_PROMOTION_RESOURCE_MANAGER_VERTICAL_INTEGRATION"),
+];
+
+/// Translate Firaxis's stable Governor type id into CIVVIS's rules key.
+pub fn civvis_governor_name(civ6: &str) -> Option<&'static str> {
+    let civ6 = civ6.trim();
+    GOVERNOR_TYPES
+        .iter()
+        .find_map(|(ours, host)| (*host == civ6).then_some(*ours))
+}
+
+/// Translate a CIVVIS Governor key into the exact Firaxis database type.
+pub fn civ6_governor_name(civvis: &str) -> Option<&'static str> {
+    GOVERNOR_TYPES
+        .iter()
+        .find_map(|(ours, host)| (*ours == civvis).then_some(*host))
+}
+
+/// Translate Firaxis's Governor promotion ids into CIVVIS's promotion keys.
+pub fn civvis_governor_promotion(civ6: &str) -> Option<&'static str> {
+    let civ6 = civ6.trim();
+    GOVERNOR_PROMOTION_TYPES
+        .iter()
+        .find_map(|(ours, host)| (*host == civ6).then_some(*ours))
+}
+
+/// Translate a CIVVIS promotion key into the exact Firaxis database type.
+pub fn civ6_governor_promotion(civvis: &str) -> Option<&'static str> {
+    GOVERNOR_PROMOTION_TYPES
+        .iter()
+        .find_map(|(ours, host)| (*ours == civvis).then_some(*host))
 }
 
 /// Give every seat the civilization Civilization VI is actually playing.
@@ -4757,8 +5002,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "prophet_pending",
         "policies", "policy_slots", "gold", "faith", "science", "culture", "score",
-        "military", "trade_capacity", "cities", "units", "trade_routes", "rivals", "minors",
-        "hostiles",
+        "military", "trade_capacity", "governor_points", "governor_points_spent",
+        "governors", "cities", "units", "trade_routes", "rivals", "minors", "hostiles",
     ];
     const CITY: &[&str] = &[
         "id", "name", "buildings", "religion", "religion_next", "religion_turns",
@@ -4779,6 +5024,10 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     const ROUTE: &[&str] = &[
         "trader", "origin", "destination", "destination_player", "origin_x", "origin_y",
         "destination_x", "destination_y",
+    ];
+    const GOVERNOR: &[&str] = &[
+        "type", "city", "city_player", "x", "y", "established", "turns_on_site",
+        "turns_to_establish", "neutralized_turns", "promotions",
     ];
     const RIVAL: &[&str] = &[
         "player", "civ", "leader", "can_declare", "score", "military", "at_war",
@@ -4820,6 +5069,9 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     cities(value.get("cities"), &mut gaps);
     units(value.get("units"), &mut gaps);
     units(value.get("hostiles"), &mut gaps);
+    for governor in value.get("governors").and_then(|v| v.as_array()).into_iter().flatten() {
+        keys(governor, GOVERNOR, "governor", &mut gaps);
+    }
     for route in value.get("trade_routes").and_then(|v| v.as_array()).into_iter().flatten() {
         keys(route, ROUTE, "trade_route", &mut gaps);
     }
@@ -6853,6 +7105,7 @@ pub fn rebuild_from_state(
         &state.trade_routes,
         &known_city_ids,
     ));
+    apply_governor_state(&mut game, state, &mut unmapped);
     apply_observed_host_metrics(&mut game, state, &mut unmapped);
 
     // Districts the host has refused to place, mapped onto CIVVIS's cities. Done here
@@ -7599,6 +7852,7 @@ impl LiveMirror {
         // Rebuilt wholesale: what we can see of them is fog-dependent and they carry
         // no plan of ours worth preserving.
         if skip_rivals {
+            apply_governor_state(&mut self.game, state, &mut self.unmapped);
             return;
         }
         for uid in std::mem::take(&mut self.rival_units) {
@@ -7903,6 +8157,7 @@ impl LiveMirror {
         apply_territory(&mut self.game, snapshot, state);
         apply_tile_memory(&mut self.game, snapshot);
         apply_city_memory(&mut self.game);
+        apply_governor_state(&mut self.game, state, &mut self.unmapped);
         apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
     }
 }
@@ -7910,6 +8165,25 @@ impl LiveMirror {
 #[cfg(test)]
 mod host_fact_tests {
     use super::*;
+
+    fn host_grass(x: i32, y: i32) -> Plot {
+        Plot {
+            x,
+            y,
+            t: Some("TERRAIN_GRASS".to_string()),
+            f: None,
+            r: None,
+            o: 0,
+            w: false,
+            i: false,
+            fw: false,
+            im: None,
+            rv: 0,
+            ri: false,
+            ct: None,
+            cl: -1,
+        }
+    }
 
     /// Civilization VI's production names must reach CIVVIS's queue as real items.
     ///
@@ -7975,5 +8249,94 @@ mod host_fact_tests {
             }],
         )
         .is_none());
+    }
+
+    #[test]
+    fn firaxis_governors_replace_inferred_titles_roster_and_promotions() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let state = StateSnapshot {
+            turn: 92,
+            governor_points: Some(4),
+            governor_points_spent: Some(4),
+            governors: Some(vec![
+                StateGovernor {
+                    kind: "GOVERNOR_THE_DEFENDER".to_string(),
+                    city: 65_536,
+                    city_player: 0,
+                    x: 3,
+                    y: 3,
+                    established: true,
+                    turns_on_site: 20,
+                    turns_to_establish: 3,
+                    promotions: vec![
+                        "GOVERNOR_PROMOTION_GARRISON_COMMANDER".to_string(),
+                        "GOVERNOR_PROMOTION_DEFENSE_LOGISTICS".to_string(),
+                    ],
+                    ..StateGovernor::default()
+                },
+                StateGovernor {
+                    kind: "GOVERNOR_THE_RESOURCE_MANAGER".to_string(),
+                    city: -1,
+                    ..StateGovernor::default()
+                },
+            ]),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Capital".to_string(),
+                x: 3,
+                y: 3,
+                pop: 6,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let rebuilt = rebuild_from_state(&snapshot, &state, 4, 1, 250, 0);
+        let player = &rebuilt.game.players[0];
+        let victor = player
+            .governor_roster
+            .get("victor")
+            .expect("Victor crosses from the Firaxis roster");
+        assert!(victor.city.is_some());
+        assert!(victor.promotions.contains("garrison_commander"));
+        assert!(victor.promotions.contains("defense_logistics"));
+        assert!(player.governor_roster.contains_key("magnus"));
+        assert_eq!(player.governor_titles_spent, 4);
+        assert_eq!(rebuilt.game.governor_titles(0), 4);
+        assert_eq!(rebuilt.game.governor_titles_available(0), 0);
+        assert!(rebuilt.game.legal_actions(0).iter().all(|action| !matches!(
+            action,
+            crate::game::Action::AssignGovernor { .. }
+                | crate::game::Action::AppointGovernor { .. }
+                | crate::game::Action::ReassignGovernor { .. }
+                | crate::game::Action::PromoteGovernor { .. }
+        )));
+    }
+
+    #[test]
+    fn every_civvis_governor_and_promotion_round_trips_through_firaxis_ids() {
+        let rules = crate::rules::Rules::embedded();
+        for (governor, spec) in rules.governors.iter() {
+            let host = civ6_governor_name(governor)
+                .unwrap_or_else(|| panic!("{governor} needs a Firaxis Governor type"));
+            assert_eq!(civvis_governor_name(host), Some(governor.as_str()));
+            for promotion in spec.promotions.keys() {
+                let host = civ6_governor_promotion(promotion).unwrap_or_else(|| {
+                    panic!("{governor}.{promotion} needs a Firaxis promotion type")
+                });
+                assert_eq!(
+                    civvis_governor_promotion(host),
+                    Some(promotion.as_str()),
+                    "{governor}.{promotion} must round-trip"
+                );
+            }
+        }
     }
 }

@@ -235,6 +235,58 @@ class InfrastructureMirrorTest(unittest.TestCase):
 
         self.assertTrue(any("CITY ECONOMY DISAGREES" in verdict for verdict in verdicts))
 
+    def test_governor_agreement_compares_roster_assignment_promotions_and_titles(self) -> None:
+        events = [{
+            "kind": "state", "turn": 92,
+            "governor_points": 4, "governor_points_spent": 4,
+            "governors": [{
+                "type": "GOVERNOR_THE_DEFENDER", "x": 62, "y": 16,
+                "established": True, "neutralized_turns": 0,
+                "promotions": [
+                    "GOVERNOR_PROMOTION_GARRISON_COMMANDER",
+                    "GOVERNOR_PROMOTION_DEFENSE_LOGISTICS",
+                ],
+            }],
+        }]
+        dump = {
+            "governor_points": 4,
+            "governor_points_spent": 4,
+            "governor_points_available": 0,
+            "governors": [{
+                "type": "GOVERNOR_THE_DEFENDER", "x": 62, "y": 16,
+                "established": True, "neutralized": False,
+                "promotions": [
+                    "GOVERNOR_PROMOTION_DEFENSE_LOGISTICS",
+                    "GOVERNOR_PROMOTION_GARRISON_COMMANDER",
+                ],
+            }],
+        }
+
+        report = civ6_watchdogs.governor_agreement(events, dump)
+
+        self.assertEqual(report["compared"], 4)
+        self.assertEqual(report["agree"], 4)
+        self.assertEqual(report["disagree_by_field"], {})
+
+    def test_governor_disagreement_is_a_loud_verdict(self) -> None:
+        report = {
+            "mirror": {
+                "agree": 168, "compared": 168, "agree_fraction": 1.0,
+                "missing_in_mirror": 0,
+                "infrastructure_disagree_by_field": {},
+                "city_economy_disagree_by_field": {},
+                "governor_agree": 3, "governor_compared": 5,
+                "governor_disagree_by_field": {
+                    "promotions": 1, "titles_spent": 1,
+                },
+                "governor_examples": {},
+            }
+        }
+
+        verdicts = civ6_watchdogs.verdicts(report, 0.35, 0.98)
+
+        self.assertTrue(any("GOVERNORS DISAGREE" in verdict for verdict in verdicts))
+
 
 if __name__ == "__main__":
     unittest.main()

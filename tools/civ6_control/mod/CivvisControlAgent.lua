@@ -3240,16 +3240,19 @@ local GOVERNOR_ORDER = {
 -- a Civilization VI API has cost this project three failed fixes today, so the
 -- assignment we made is the assignment we remember.
 local governorPost = {};
+-- CIVVIS appoints and posts a Governor as one semantic action. Firaxis's stock UI
+-- first submits APPOINT_GOVERNOR and waits for GovernorAppointed before it opens the
+-- assignment flow, so retain that target across the asynchronous engine boundary.
+local pendingGovernorAssignments = {};
 
 local function chooseGovernor(player, pid)
-	-- ⚠⚠ OFF BY DEFAULT: THIS FUNCTION SEGFAULTS THE GAME CORE. See the
-	-- `ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT` entry in `SOFT_BLOCKERS` for the
-	-- three-run, byte-identical-stack evidence. Belt-and-braces with the skip list:
-	-- a blocker route added later must not silently re-arm a known crash.
+	-- OFF BY DEFAULT: CIVVIS owns Governor strategy. This legacy blocker fallback
+	-- remains independently gated so a later config cannot silently add a second AI.
 	if not (cfg.GovernorAppoint or cfg.GovernorAssign) then return nil; end
 	-- ⚠ Enum members first. `params[nil] = x` throws "table index is nil".
 	local govParam = try(function() return PlayerOperations.PARAM_GOVERNOR_TYPE; end);
 	local cityParam = try(function() return PlayerOperations.PARAM_CITY_DEST; end);
+	local playerParam = try(function() return PlayerOperations.PARAM_PLAYER_ONE; end);
 	local appointOp = try(function() return PlayerOperations.APPOINT_GOVERNOR; end);
 	local assignOp = try(function() return PlayerOperations.ASSIGN_GOVERNOR; end);
 	if govParam == nil or appointOp == nil then return nil; end
@@ -3271,7 +3274,9 @@ local function chooseGovernor(player, pid)
 				end, false);
 				if not held and possible then
 					local params = {};
-					params[govParam] = row.Hash;
+					-- The stock GovernorPanel operation contract takes the row INDEX.
+					-- This used to send Hash and produced the repeatable Game Core crash.
+					params[govParam] = row.Index;
 					local ok = pcall(function()
 						UI.RequestPlayerOperation(pid, appointOp, params);
 					end);
@@ -3308,7 +3313,7 @@ local function chooseGovernor(player, pid)
 	local posted = nil;
 	-- Gated independently of the appointment: two mutations, two flags, so whichever
 	-- one faults can be identified without re-running both.
-	if cfg.GovernorAssign and assignOp ~= nil and cityParam ~= nil then
+	if cfg.GovernorAssign and assignOp ~= nil and cityParam ~= nil and playerParam ~= nil then
 		local taken = {};
 		for _, where in pairs(governorPost) do taken[where] = true; end
 		local target, targetRank = nil, nil;
@@ -3345,7 +3350,8 @@ local function chooseGovernor(player, pid)
 				if row ~= nil and governorPost[wanted] == nil
 						and try(function() return governors:HasGovernor(row.Hash); end, false) then
 					local params = {};
-					params[govParam] = row.Hash;
+					params[govParam] = row.Index;
+					params[playerParam] = pid;
 					params[cityParam] = target;
 					local ok = pcall(function()
 						UI.RequestPlayerOperation(pid, assignOp, params);
@@ -3746,8 +3752,8 @@ local SOFT_BLOCKERS = {
 	ENDTURN_BLOCKING_GOVERNOR_PROMOTION = true,
 	ENDTURN_BLOCKING_GOVERNOR_IDLE = true,
 	ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY = true,
-	-- ⚠⚠⚠ GOVERNOR_APPOINTMENT JOINS ITS SIBLINGS, AND THIS ONE IS MEASURED.
-	-- Answering it with `chooseGovernor` CRASHES THE GAME CORE. Three runs, three
+	-- ⚠⚠⚠ GOVERNOR_APPOINTMENT JOINS ITS SIBLINGS, AND THIS ONE WAS MEASURED.
+	-- Answering it with the old `chooseGovernor` CRASHED THE GAME CORE. Three runs, three
 	-- different maps and civilizations, all with CIVVIS deciding:
 	--     civvis-…T111953Z  t38      civvis-…T112719Z  t37      civvis-…T113303Z  t37
 	-- Every one died with EXC_BAD_ACCESS at KERN_INVALID_ADDRESS 0x18 on the
@@ -3755,7 +3761,10 @@ local SOFT_BLOCKERS = {
 	-- three: GameCore_XP2.dll +746148, +745916, +2560108, +2565576, +2567456,
 	-- +546828. In each run the very last event written is the turn record with
 	-- `blocker: ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT, answered: null` — the game
-	-- dies in the answer, before the answer can be reported.
+	-- died in the answer, before the answer could be reported. Comparing against
+	-- Firaxis's shipped GovernorPanel later found the cause: the fallback supplied a
+	-- Governor Hash where the operation requires its row Index, and assignment omitted
+	-- PARAM_PLAYER_ONE. Both parameters are corrected above and in the CIVVIS actuator.
 	--
 	-- ⚠ WHY THIS NEVER SHOWED UP BEFORE: the prompt has to be RAISED first, and it
 	-- is raised by holding a governor title. The long heuristic runs
@@ -3766,11 +3775,9 @@ local SOFT_BLOCKERS = {
 	-- for the t44-47 cluster this project recorded as unexplained and wrongly
 	-- attributed to envoys: same thread, same null offset, different prompt.
 	--
-	-- ⚠ THIS COSTS SOMETHING REAL. A governor is +8 loyalty and 56% of runs past
-	-- t60 lose a city to revolt, so this is not a free skip — it is the lesser of
-	-- two failures, exactly as with `GIVE_INFLUENCE_TOKEN`. `GovernorAppoint` and
-	-- `GovernorAssign` re-enable the two mutations SEPARATELY. Do not turn both on
-	-- at once: that is precisely what made the envoy crash un-attributable.
+	-- This blocker remains soft because CIVVIS now spends and actuates the title from
+	-- the exported roster. `GovernorAppoint` and `GovernorAssign` re-enable only the
+	-- legacy heuristic fallback and should stay off in a CIVVIS-decided run.
 	ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT = true,
 	-- ⚠⚠ GIVE_INFLUENCE_TOKEN IS BACK HERE, AND THE REASON MATTERS. Answering it
 	-- with `chooseEnvoy` CRASHES THE GAME CORE. On one fixed seed (425255), same
@@ -4728,6 +4735,66 @@ local function exportState(player, pid, turn)
 			end
 		end
 	end
+
+	-- Governor Titles, appointments, promotions and assignments are authoritative
+	-- host state. Completed Civics cannot reconstruct them: districts also grant
+	-- titles, a title may be unspent, and appointments are player choices. Omitting
+	-- this roster made CIVVIS appoint Victor and Magnus again on every replayed frame.
+	local governor_points, governor_points_spent, governor_roster = nil, nil, nil;
+	local governors = try(function() return player:GetGovernors(); end);
+	if governors ~= nil then
+		governor_points = try(function() return governors:GetGovernorPoints(); end);
+		governor_points_spent = try(function() return governors:GetGovernorPointsSpent(); end);
+		-- `GetGovernorList` returns two values. The generic `try` helper deliberately
+		-- retains only one, so preserve the shipped API's full return tuple here.
+		local okList, hasGovernors, appointed = pcall(function()
+			return governors:GetGovernorList();
+		end);
+		if okList and type(appointed) == "table" then
+			governor_roster = {};
+			for _, governor in ipairs(appointed) do
+				pcall(function()
+					local definition = GameInfo.Governors[governor:GetType()];
+					if definition == nil then return; end
+					local promotions = {};
+					for promotionSet in GameInfo.GovernorPromotionSets() do
+						if promotionSet.GovernorType == definition.GovernorType
+								and not (promotionSet.BaseAbility == true
+									or promotionSet.BaseAbility == 1) then
+							local promotion = GameInfo.GovernorPromotions[
+								promotionSet.GovernorPromotion];
+							if promotion ~= nil and try(function()
+								return governor:HasPromotion(promotion.Hash);
+							end, false) then
+								promotions[#promotions + 1] = promotion.GovernorPromotionType;
+							end
+						end
+					end
+					table.sort(promotions);
+					local city = try(function() return governor:GetAssignedCity(); end);
+					governor_roster[#governor_roster + 1] = {
+						type = definition.GovernorType,
+						city = city ~= nil and try(function() return city:GetID(); end, -1) or -1,
+						city_player = city ~= nil and try(function() return city:GetOwner(); end, -1) or -1,
+						x = city ~= nil and try(function() return city:GetX(); end, -1) or -1,
+						y = city ~= nil and try(function() return city:GetY(); end, -1) or -1,
+						established = try(function() return governor:IsEstablished(); end, false),
+						turns_on_site = try(function() return governor:GetTurnsOnSite(); end, 0),
+						turns_to_establish = try(function()
+							return governor:GetTurnsToEstablish();
+						end, 0),
+						neutralized_turns = try(function()
+							return governor:GetNeutralizedTurns();
+						end, 0),
+						promotions = promotions,
+					};
+				end);
+			end
+			table.sort(governor_roster, function(a, b)
+				return tostring(a.type) < tostring(b.type);
+			end);
+		end
+	end
 	emit("state", {
 		turn = turn,
 		techs = techs,
@@ -4753,6 +4820,9 @@ local function exportState(player, pid, turn)
 		score = try(function() return player:GetScore(); end, -1),
 		-- Ours, on the same scale as each rival's, so a comparison is possible at all.
 		military = try(function() return player:GetStats():GetMilitaryStrength(); end, -1),
+		governor_points = governor_points,
+		governor_points_spent = governor_points_spent,
+		governors = governor_roster,
 		trade_capacity = try(function()
 			return player:GetTrade():GetOutgoingRouteCapacity();
 		end, -1),
@@ -5255,11 +5325,113 @@ local function liveCity(player, id)
 	return try(function() return player:GetCities():FindID(id); end);
 end
 
+local function requestGovernorAssignment(pid, governorIndex, cityOwner, cityID)
+	if governorIndex == nil or cityOwner == nil or cityID == nil or cityID < 0 then
+		return false;
+	end
+	local city = try(function() return CityManager.GetCity(cityOwner, cityID); end);
+	if city == nil then return false; end
+	local params = {};
+	params[PlayerOperations.PARAM_GOVERNOR_TYPE] = governorIndex;
+	-- Gathering Storm's assignment chooser sends the owner explicitly. City ids
+	-- collide across players, so omitting this can post Amani to the wrong city.
+	params[PlayerOperations.PARAM_PLAYER_ONE] = cityOwner;
+	params[PlayerOperations.PARAM_CITY_DEST] = cityID;
+	return pcall(function()
+		UI.RequestPlayerOperation(pid, PlayerOperations.ASSIGN_GOVERNOR, params);
+	end);
+end
+
+local function onGovernorAppointed(playerID, governorID)
+	local pending = pendingGovernorAssignments[playerID];
+	if pending == nil or pending.governor ~= governorID then return; end
+	pendingGovernorAssignments[playerID] = nil;
+	local ok = requestGovernorAssignment(
+		playerID, governorID, pending.city_player, pending.city);
+	emit("governor_assignment", {
+		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
+		player = playerID, governor = governorID,
+		city_player = pending.city_player, city = pending.city, applied = ok,
+	});
+end
+
 local function applyOrder(player, pid, row, turn)
 	local kind = tostring(row.kind or "");
 	local verb = tostring(row.verb or "");
 	local subject = tonumber(row.subject) or -1;
 	local x, y = tonumber(row.x), tonumber(row.y);
+
+	if kind == "governor_appoint" or kind == "governor_assign" then
+		local governor, resolved = resolveType(GameInfo.Governors, verb);
+		if governor == nil then return false, "unknown_" .. verb; end
+		local governors = try(function() return player:GetGovernors(); end);
+		if governors == nil then return false, "no_governors"; end
+		local cityOwner = x ~= nil and x or pid;
+		if try(function() return CityManager.GetCity(cityOwner, subject); end) == nil then
+			return false, "governor_city_missing";
+		end
+		local held = try(function() return governors:HasGovernor(governor.Hash); end, false);
+		if kind == "governor_assign" or held then
+			if not held then return false, "governor_not_appointed"; end
+			local appointed = try(function() return governors:GetGovernor(governor.Hash); end);
+			if appointed ~= nil and try(function()
+				return appointed:GetNeutralizedTurns();
+			end, 0) > 0 then
+				return false, "governor_neutralized";
+			end
+			local ok = requestGovernorAssignment(
+				pid, governor.Index, cityOwner, subject);
+			return ok, ok and resolved or "governor_assign_throw";
+		end
+		if not try(function() return governors:CanAppoint(); end, false) then
+			return false, "no_governor_title";
+		end
+		if not try(function()
+			return governors:CanEverAppointGovernor(governor.Hash);
+		end, false) then
+			return false, "governor_not_appointable";
+		end
+		pendingGovernorAssignments[pid] = {
+			governor = governor.Index, city_player = cityOwner, city = subject,
+		};
+		local params = {};
+		-- The shipped GovernorPanel sends row INDEXES in operation parameters.
+		-- The disabled legacy path sent Hash here, which is the root cause of its
+		-- repeatable game-core crash.
+		params[PlayerOperations.PARAM_GOVERNOR_TYPE] = governor.Index;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, PlayerOperations.APPOINT_GOVERNOR, params);
+		end);
+		if not ok then pendingGovernorAssignments[pid] = nil; end
+		return ok, ok and resolved or "governor_appoint_throw";
+	end
+
+	if kind == "governor_promote" then
+		local comma = string.find(verb, ",", 1, true);
+		if comma == nil then return false, "governor_promotion_malformed"; end
+		local governorType = string.sub(verb, 1, comma - 1);
+		local promotionType = string.sub(verb, comma + 1);
+		local governor, governorName = resolveType(GameInfo.Governors, governorType);
+		local promotion, promotionName = resolveType(
+			GameInfo.GovernorPromotions, promotionType);
+		if governor == nil then return false, "unknown_" .. governorType; end
+		if promotion == nil then return false, "unknown_" .. promotionType; end
+		local governors = try(function() return player:GetGovernors(); end);
+		if governors == nil then return false, "no_governors"; end
+		if not try(function()
+			return governors:CanEarnPromotion(governor.Hash, promotion.Hash);
+		end, false) then
+			return false, "governor_promotion_unavailable";
+		end
+		local params = {};
+		params[PlayerOperations.PARAM_GOVERNOR_TYPE] = governor.Index;
+		params[PlayerOperations.PARAM_GOVERNOR_PROMOTION_TYPE] = promotion.Index;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, PlayerOperations.PROMOTE_GOVERNOR, params);
+		end);
+		return ok, ok and (governorName .. ":" .. promotionName)
+			or "governor_promote_throw";
+	end
 
 	if kind == "war" then
 		local diplomacy = try(function() return player:GetDiplomacy(); end);
@@ -6895,6 +7067,7 @@ function Initialize()
 		CityAddedToMap = onGameCoreTick,
 		UnitAddedToMap = onGameCoreTick,
 		CityProductionCompleted = onGameCoreTick,
+		GovernorAppointed = onGovernorAppointed,
 		LoadGameViewStateDone = ensureStarted,
 		TeamVictory = onTeamVictory,
 		PlayerDefeat = onPlayerDefeat,

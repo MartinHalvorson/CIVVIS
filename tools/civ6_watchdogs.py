@@ -733,6 +733,100 @@ def city_economy_agreement(events: list[dict], dump: dict) -> dict:
     }
 
 
+def governor_agreement(events: list[dict], dump: dict) -> dict:
+    """Diff the exact Governor roster, assignments, promotions and title ledger."""
+    states = [event for event in events if event.get("kind") == "state"]
+    if not states or "governors" not in states[-1]:
+        return {"compared": 0, "agree": 0, "disagree_by_field": {}, "examples": {}}
+    state = states[-1]
+    wanted = {
+        governor.get("type"): governor
+        for governor in state.get("governors") or []
+        if governor.get("type")
+    }
+    mirrored = {
+        governor.get("type"): governor
+        for governor in dump.get("governors") or []
+        if governor.get("type")
+    }
+    fields: Counter = Counter()
+    examples: dict[str, list] = defaultdict(list)
+    agree = 0
+    compared = 0
+
+    for governor_type in sorted(set(wanted) | set(mirrored)):
+        compared += 1
+        expected_governor = wanted.get(governor_type)
+        actual_governor = mirrored.get(governor_type)
+        bad = []
+        if expected_governor is None:
+            bad.append("extra_governor")
+        elif actual_governor is None:
+            bad.append("missing_governor")
+        else:
+            if (expected_governor.get("x", -1), expected_governor.get("y", -1)) != (
+                actual_governor.get("x", -1), actual_governor.get("y", -1)
+            ):
+                bad.append("assignment")
+            if bool(expected_governor.get("established")) != bool(
+                actual_governor.get("established")
+            ):
+                bad.append("established")
+            if (int(expected_governor.get("neutralized_turns") or 0) > 0) != bool(
+                actual_governor.get("neutralized")
+            ):
+                bad.append("neutralized")
+            if set(expected_governor.get("promotions") or []) != set(
+                actual_governor.get("promotions") or []
+            ):
+                bad.append("promotions")
+        if bad:
+            for field in bad:
+                fields[field] += 1
+                if len(examples[field]) < 3:
+                    examples[field].append({
+                        "type": governor_type,
+                        "civ6": expected_governor,
+                        "mirror": actual_governor,
+                    })
+        else:
+            agree += 1
+
+    point_fields = (
+        ("governor_points", "titles"),
+        ("governor_points_spent", "titles_spent"),
+    )
+    for source, field in point_fields:
+        value = state.get(source)
+        if value is None or int(value) < 0:
+            continue
+        compared += 1
+        if dump.get(source) is not None and int(dump[source]) == int(value):
+            agree += 1
+        else:
+            fields[field] += 1
+            examples[field].append({"civ6": value, "mirror": dump.get(source)})
+    if state.get("governor_points") is not None and state.get("governor_points_spent") is not None:
+        expected_available = max(
+            0, int(state["governor_points"]) - int(state["governor_points_spent"])
+        )
+        compared += 1
+        if int(dump.get("governor_points_available", -1)) == expected_available:
+            agree += 1
+        else:
+            fields["titles_available"] += 1
+            examples["titles_available"].append({
+                "civ6": expected_available,
+                "mirror": dump.get("governor_points_available"),
+            })
+    return {
+        "compared": compared,
+        "agree": agree,
+        "disagree_by_field": dict(fields.most_common()),
+        "examples": dict(examples),
+    }
+
+
 def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
     """Ask CIVVIS for its board in OFFSET coordinates and diff it against the export."""
     exported = latest_tiles(events)
@@ -829,6 +923,7 @@ def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
         else:
             infrastructure_agree += 1
     economy = city_economy_agreement(events, dump)
+    governors = governor_agreement(events, dump)
     return {
         "exported_plots": len(exported),
         "mirrored_plots": len(mirrored),
@@ -855,6 +950,10 @@ def mirror_agreement(run: Path, events: list[dict], orders_bin: Path) -> dict:
         "city_economy_disagree_by_field": economy["disagree_by_field"],
         "city_economy_examples": economy["examples"],
         "max_model_yield_drift": economy["max_model_yield_drift"],
+        "governor_compared": governors["compared"],
+        "governor_agree": governors["agree"],
+        "governor_disagree_by_field": governors["disagree_by_field"],
+        "governor_examples": governors["examples"],
     }
 
 
@@ -977,6 +1076,13 @@ def verdicts(report: dict, stuck_max: float, agree_min: float) -> list[str]:
                 "empire rates agree; "
                 f"{mirror['city_economy_disagree_by_field']} "
                 f"{mirror.get('city_economy_examples')}")
+        if mirror.get("governor_disagree_by_field"):
+            out.append(
+                "MIRROR GOVERNORS DISAGREE: "
+                f"{mirror['governor_agree']}/{mirror['governor_compared']} roster/title "
+                "facts agree; "
+                f"{mirror['governor_disagree_by_field']} "
+                f"{mirror.get('governor_examples')}")
     return out
 
 
@@ -1078,6 +1184,10 @@ def main() -> int:
                           f"{mirror.get('empire_economy_compared', 0)}, raw max yield drift "
                           f"{mirror['max_model_yield_drift']}  "
                           f"{mirror['city_economy_disagree_by_field']}")
+                if mirror.get("governor_compared"):
+                    print(f"    governors: {mirror['governor_agree']}/"
+                          f"{mirror['governor_compared']} roster/title facts  "
+                          f"{mirror['governor_disagree_by_field']}")
                 if mirror.get("unresolved_terrain"):
                     print(f"    unresolved terrain names: {mirror['unresolved_terrain']}")
                 if mirror.get("unmodelled_improvements"):

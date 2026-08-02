@@ -21,7 +21,7 @@
 //! ⚠ THE RECONSTRUCTION IS PARTIAL, and the partiality has a direction. Terrain,
 //! both empires' remembered cities, own units, visible hostile units, research,
 //! government, development, treasury and public aggregate strength cross over.
-//! Promotions remain an explicit modeling gap. Firaxis's physical Great Person units
+//! Unit promotions remain an explicit modeling gap. Firaxis's physical Great Person units
 //! are bridged through its own activation verdict and legal activation plots, matching
 //! CIVVIS's immediate-effect semantics without reproducing those rules here. An
 //! untranslatable order or entity is refused or counted rather than guessed, so
@@ -201,6 +201,61 @@ fn defer_unit_followups(orders: Vec<Order>) -> (Vec<Order>, usize) {
         })
         .collect();
     (orders, deferred)
+}
+
+/// Firaxis resolves Governor operations asynchronously. CIVVIS can spend several
+/// titles in one simulated planning pass, but each later appointment/promotion was
+/// chosen against the result of the prior one. Send only the first and re-plan from
+/// the next authoritative host frame.
+fn defer_governor_followups(orders: Vec<Order>) -> (Vec<Order>, usize) {
+    let mut sent = false;
+    let mut deferred = 0;
+    let orders = orders
+        .into_iter()
+        .filter(|order| {
+            if !order.kind.starts_with("governor_") {
+                return true;
+            }
+            if sent {
+                deferred += 1;
+                false
+            } else {
+                sent = true;
+                true
+            }
+        })
+        .collect();
+    (orders, deferred)
+}
+
+/// Resolve a CIVVIS city back to Firaxis's owner/id pair through its exact plot.
+/// Firaxis city ids are only unique within a player, so id-only matching is unsafe.
+fn host_city_target(
+    mirror_state: &civvis::mirror::LiveMirror,
+    state: &civvis::mirror::StateSnapshot,
+    city: u32,
+) -> Option<(i64, i32)> {
+    let city = mirror_state.game.cities.get(&city)?;
+    let (x, y) = civvis::hex::axial_to_offset(city.pos.0, city.pos.1);
+    if let Some(host) = state.cities.iter().find(|host| (host.x, host.y) == (x, y)) {
+        let owner = if state.seat.local_player >= 0 {
+            state.seat.local_player
+        } else {
+            0
+        };
+        return Some((host.id, owner));
+    }
+    for rival in &state.rivals {
+        if let Some(host) = rival.cities.iter().find(|host| (host.x, host.y) == (x, y)) {
+            return Some((host.id, rival.player as i32));
+        }
+    }
+    for minor in &state.minors {
+        if let Some(host) = minor.cities.iter().find(|host| (host.x, host.y) == (x, y)) {
+            return Some((host.id, minor.player as i32));
+        }
+    }
+    None
 }
 
 /// Translate CIVVIS's immediate Great Person semantics into Firaxis's physical
@@ -573,6 +628,14 @@ fn decide(
         note_bits.push(format!("deferred_unit_followups={deferred_unit_followups}"));
     }
 
+    let (governor_safe, deferred_governor_followups) = defer_governor_followups(orders);
+    orders = governor_safe;
+    if deferred_governor_followups > 0 {
+        note_bits.push(format!(
+            "deferred_governor_followups={deferred_governor_followups}"
+        ));
+    }
+
     if !mirror_state.unmapped.is_empty() {
         note_bits.push(format!("unmapped: {}", mirror_state.unmapped.join(",")));
     }
@@ -922,6 +985,37 @@ fn translate(
             kind: "pantheon",
             subject: None,
             verb: Some(format!("BELIEF_{}", belief.as_str().to_ascii_uppercase())),
+            pos: None,
+        }),
+        Action::AppointGovernor { governor, city } => {
+            let governor = mirror::civ6_governor_name(governor.as_str())?;
+            host_city_target(mirror_state, state, *city).map(|(city, owner)| Order {
+                kind: "governor_appoint",
+                subject: Some(city),
+                verb: Some(governor.to_string()),
+                pos: Some((owner, -1)),
+            })
+        }
+        Action::ReassignGovernor { governor, city } => {
+            let governor = mirror::civ6_governor_name(governor.as_str())?;
+            host_city_target(mirror_state, state, *city).map(|(city, owner)| Order {
+                kind: "governor_assign",
+                subject: Some(city),
+                verb: Some(governor.to_string()),
+                pos: Some((owner, -1)),
+            })
+        }
+        Action::PromoteGovernor {
+            governor,
+            promotion,
+        } => Some(Order {
+            kind: "governor_promote",
+            subject: None,
+            verb: Some(format!(
+                "{},{}",
+                mirror::civ6_governor_name(governor.as_str())?,
+                mirror::civ6_governor_promotion(promotion.as_str())?
+            )),
             pos: None,
         }),
         Action::FoundReligion { follower, founder } => Some(Order {
@@ -1330,6 +1424,38 @@ fn main() {
             )
         })
         .collect::<std::collections::BTreeMap<_, _>>();
+        let governors = game.players[0]
+            .governor_roster
+            .iter()
+            .filter_map(|(name, governor)| {
+                let host_type = mirror::civ6_governor_name(name.as_str())?;
+                let city = governor.city.and_then(|cid| game.cities.get(&cid));
+                let (x, y) = city
+                    .map(|city| civvis::hex::axial_to_offset(city.pos.0, city.pos.1))
+                    .unwrap_or((-1, -1));
+                let establish_turns = game
+                    .rules
+                    .governors
+                    .get(name)
+                    .map(|spec| game.standard_duration(spec.establish_turns))
+                    .unwrap_or(0);
+                let mut promotions = governor
+                    .promotions
+                    .iter()
+                    .filter_map(|promotion| mirror::civ6_governor_promotion(promotion))
+                    .collect::<Vec<_>>();
+                promotions.sort_unstable();
+                Some(serde_json::json!({
+                    "type": host_type,
+                    "x": x,
+                    "y": y,
+                    "established": city.is_some()
+                        && game.turn >= governor.assigned_turn.saturating_add(establish_turns),
+                    "neutralized": game.turn < governor.disabled_until,
+                    "promotions": promotions,
+                }))
+            })
+            .collect::<Vec<_>>();
         let mut empire_yields = civvis::rules::Yields::default();
         let mut model_empire_yields = civvis::rules::Yields::default();
         for city in game.cities.values().filter(|city| city.owner == 0) {
@@ -1342,7 +1468,9 @@ fn main() {
         println!(
             "{{\"turn\":{},\"width\":{},\"height\":{},\"revealed\":{},\
              \"unresolved_terrain\":{{{}}},\"plots\":[{}],\"cities\":{},\
-             \"great_works\":{},\"empire_yields\":{},\"model_empire_yields\":{}}}",
+             \"great_works\":{},\"governors\":{},\"governor_points\":{},\
+             \"governor_points_spent\":{},\"governor_points_available\":{},\
+             \"empire_yields\":{},\"model_empire_yields\":{}}}",
             state.turn,
             width,
             height,
@@ -1351,6 +1479,10 @@ fn main() {
             plots.join(","),
             serde_json::to_string(&cities).unwrap(),
             serde_json::to_string(&great_works).unwrap(),
+            serde_json::to_string(&governors).unwrap(),
+            game.governor_titles(0),
+            game.players[0].governor_titles_spent,
+            game.governor_titles_available(0),
             serde_json::to_string(&empire_yields).unwrap(),
             serde_json::to_string(&model_empire_yields).unwrap(),
         );
@@ -1596,7 +1728,7 @@ mod tests {
     use super::*;
     use civvis::mirror::{
         Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGreatPerson,
-        StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
+        StateGovernor, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
     };
 
     #[test]
@@ -1916,6 +2048,163 @@ mod tests {
         assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
         assert_eq!(orders[1].subject, Some(99));
         assert_eq!(orders[2].kind, "research");
+    }
+
+    #[test]
+    fn governor_followups_wait_for_the_next_observed_firaxis_frame() {
+        let (orders, deferred) = defer_governor_followups(vec![
+            Order {
+                kind: "governor_appoint",
+                subject: Some(65_536),
+                verb: Some("GOVERNOR_THE_DEFENDER".to_string()),
+                pos: Some((0, -1)),
+            },
+            Order {
+                kind: "governor_promote",
+                subject: None,
+                verb: Some(
+                    "GOVERNOR_THE_DEFENDER,GOVERNOR_PROMOTION_GARRISON_COMMANDER"
+                        .to_string(),
+                ),
+                pos: None,
+            },
+            Order {
+                kind: "research",
+                subject: None,
+                verb: Some("TECH_WRITING".to_string()),
+                pos: None,
+            },
+        ]);
+
+        assert_eq!(deferred, 1);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].kind, "governor_appoint");
+        assert_eq!(orders[1].kind, "research");
+    }
+
+    #[test]
+    fn governor_actions_use_firaxis_types_and_city_owner_ids() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 40,
+            seat: civvis::mirror::Seat {
+                local_player: 7,
+                ..civvis::mirror::Seat::default()
+            },
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Capital".to_string(),
+                x: 6,
+                y: 6,
+                pop: 5,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let city = mirror.game.player_city_ids(0)[0];
+
+        let appoint = translate(
+            &Action::AppointGovernor {
+                governor: civvis::name!("victor"),
+                city,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a known Governor and city translate");
+        assert_eq!(appoint.kind, "governor_appoint");
+        assert_eq!(appoint.subject, Some(65_536));
+        assert_eq!(appoint.verb.as_deref(), Some("GOVERNOR_THE_DEFENDER"));
+        assert_eq!(appoint.pos, Some((7, -1)));
+
+        let promote = translate(
+            &Action::PromoteGovernor {
+                governor: civvis::name!("victor"),
+                promotion: civvis::name!("garrison_commander"),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a known promotion translates");
+        assert_eq!(promote.kind, "governor_promote");
+        assert_eq!(
+            promote.verb.as_deref(),
+            Some("GOVERNOR_THE_DEFENDER,GOVERNOR_PROMOTION_GARRISON_COMMANDER")
+        );
+    }
+
+    #[test]
+    fn exact_spent_firaxis_titles_suppress_duplicate_governor_orders() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 92,
+            governor_points: Some(4),
+            governor_points_spent: Some(4),
+            governors: Some(vec![
+                StateGovernor {
+                    kind: "GOVERNOR_THE_DEFENDER".to_string(),
+                    city: 65_536,
+                    x: 6,
+                    y: 6,
+                    established: true,
+                    promotions: vec![
+                        "GOVERNOR_PROMOTION_GARRISON_COMMANDER".to_string(),
+                        "GOVERNOR_PROMOTION_DEFENSE_LOGISTICS".to_string(),
+                    ],
+                    ..StateGovernor::default()
+                },
+                StateGovernor {
+                    kind: "GOVERNOR_THE_RESOURCE_MANAGER".to_string(),
+                    city: -1,
+                    ..StateGovernor::default()
+                },
+            ]),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Capital".to_string(),
+                x: 6,
+                y: 6,
+                pop: 5,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let mut ai = civvis::ai::AdvancedAi::new();
+
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+        ))
+        .expect("the decision is JSON");
+
+        assert!(reply["orders"].as_array().unwrap().iter().all(|order| {
+            !order["kind"]
+                .as_str()
+                .is_some_and(|kind| kind.starts_with("governor_"))
+        }));
     }
 
     #[test]

@@ -38,6 +38,33 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("params[CityOperationTypes.PARAM_X] = x", source)
         self.assertIn("params[CityOperationTypes.PARAM_Y] = y", source)
 
+    def test_governors_export_exact_state_and_use_stock_operation_indices(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+        exporter = source.split("-- Governor Titles", 1)[1].split('emit("state"', 1)[0]
+        actuator = source.split('if kind == "governor_appoint"', 1)[1].split(
+            'if kind == "war"', 1
+        )[0]
+
+        self.assertIn("governors:GetGovernorList()", exporter)
+        self.assertIn("governors:GetGovernorPoints()", exporter)
+        self.assertIn("governors:GetGovernorPointsSpent()", exporter)
+        self.assertIn("governor:GetAssignedCity()", exporter)
+        self.assertIn("governor:HasPromotion(promotion.Hash)", exporter)
+        self.assertIn("governor:IsEstablished()", exporter)
+        self.assertIn("governor:GetNeutralizedTurns()", exporter)
+        self.assertIn(
+            "params[PlayerOperations.PARAM_GOVERNOR_TYPE] = governor.Index", actuator
+        )
+        self.assertIn(
+            "params[PlayerOperations.PARAM_GOVERNOR_PROMOTION_TYPE] = promotion.Index",
+            actuator,
+        )
+        self.assertIn("params[PlayerOperations.PARAM_PLAYER_ONE] = cityOwner", source)
+        self.assertIn("GovernorAppointed = onGovernorAppointed", source)
+        self.assertNotIn("params[govParam] = row.Hash", source)
+        self.assertIn("params[govParam] = row.Index", source)
+        self.assertIn("params[playerParam] = pid", source)
+
     def test_district_export_distinguishes_foundations_from_completed_districts(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         exporter = source.split("-- ★★★★★ AND WHAT IT HAS DISTRICTED", 1)[1].split(
