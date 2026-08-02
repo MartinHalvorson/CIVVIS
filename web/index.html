@@ -609,15 +609,29 @@
     align-items: stretch; gap: 2px;
   }
   .victory-track {
-    container-type: inline-size; min-height: 0; display: flex; flex-direction: column;
-    justify-content: center; padding: 4px 5px;
-    color: var(--track); background: #ffffff03; border-top: 1px solid #ffffff0b;
+    container-type: inline-size; min-height: 0; display: grid;
+    grid-template-columns: 16px minmax(0, 1fr); align-items: stretch; column-gap: 4px;
+    padding: 4px 5px; color: var(--track); background: #ffffff03;
+    border-top: 1px solid #ffffff0b;
   }
   .victory-track:first-child { border-top-color: transparent; }
-  .victory-heading { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; color: var(--track); }
-  .victory-heading b { overflow: hidden; color: #dde5e1; font-size: var(--type-small); letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
+  /* The path name gets a spine of its own down the left edge. It no longer
+     consumes the first line above the meters, so civilization names and bars
+     form one uninterrupted threat-reading column. */
+  .victory-heading {
+    min-height: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; padding-right: 3px; color: var(--track);
+    border-right: 1px solid color-mix(in srgb, var(--track) 28%, transparent);
+  }
+  .victory-heading b {
+    min-height: 0; overflow: hidden; color: #dde5e1; font-size: var(--type-small);
+    letter-spacing: .04em; line-height: 1; text-overflow: ellipsis;
+    text-orientation: mixed; white-space: nowrap; writing-mode: vertical-rl;
+    transform: rotate(180deg);
+  }
+  .victory-body { min-width: 0; align-self: center; }
   .victory-none-note {
-    margin: 3px 0 0 9px; color: #8ea099; font-size: var(--type-small); font-weight: 650;
+    margin: 3px 0 0; color: #8ea099; font-size: var(--type-small); font-weight: 650;
     line-height: 1.45; text-wrap: pretty;
   }
   .victory-subheading {
@@ -3032,7 +3046,7 @@
       grid-template-rows: minmax(0, 1fr);
       grid-template-columns: repeat(var(--victory-rows, 6), minmax(84px, 1fr));
     }
-    .victory-track { display: block; border-top: 0; border-left: 1px solid #ffffff0b; }
+    .victory-track { border-top: 0; border-left: 1px solid #ffffff0b; }
     .victory-track:first-child { border-left-color: transparent; }
     body.cinema-mode #victoryhud {
       top: 36px; left: 16px; right: auto; width: calc(100% - 32px);
@@ -3120,7 +3134,7 @@
     grid-template-columns: repeat(var(--victory-rows, 6), minmax(112px, 1fr));
   }
   #victoryhud[data-type-shape="wide"] .victory-track {
-    display: block; border-top: 0; border-left: 1px solid #ffffff0b;
+    border-top: 0; border-left: 1px solid #ffffff0b;
   }
   #victoryhud[data-type-shape="wide"] .victory-track:first-child { border-left-color: transparent; }
   #victoryhud[data-type-shape="rail"] .hud-rail {
@@ -3132,7 +3146,7 @@
     grid-template-rows: repeat(var(--victory-rows, 6), minmax(64px, 1fr));
   }
   #victoryhud[data-type-shape="rail"] .victory-track {
-    display: flex; border-left: 0; border-top: 1px solid #ffffff0b;
+    border-left: 0; border-top: 1px solid #ffffff0b;
   }
   #victoryhud[data-type-shape="rail"] .victory-track:first-child { border-top-color: transparent; }
   #victoryhud[data-type-size="compact"] > .hud-section-heading { padding-left: 10px; }
@@ -6758,7 +6772,7 @@ const RESPONSIVE_TEXT_RULES = [
   // four adjacent settings looking like one instrument.
   {selector:"#playerhud .turn-settings", min:8.5, max:12, slack:4},
   {selector:"#victoryhud > .hud-section-heading > span", min:9, max:14, parentWidth:true},
-  {selector:"#victoryhud .victory-heading b", min:10, max:14},
+  {selector:"#victoryhud .victory-heading b", min:8.5, max:12},
   {selector:"#victoryhud .victory-subheading span", min:9, max:11},
   {selector:"#victoryhud .victory-civ", min:10, max:14},
   {selector:"#victoryhud .victory-value", min:10, max:14},
@@ -24408,7 +24422,8 @@ function playerHudOverview() {
     defaultVictoryRows = Math.max(defaultVictoryRows,
       Math.min(DEFAULT_VICTORY_LEADERS, ranked.length) + (focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0));
     return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
-      `<div class="victory-heading"><span>${track.icon}</span><b>${track.label}</b></div>` +
+      `<div class="victory-heading"><b>${track.label}</b></div>` +
+      `<div class="victory-body">` +
       `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div>` +
       `<div class="victory-list">` + ranked.map((player, index) => {
         const metric = victoryMetric(player, track.id);
@@ -24420,7 +24435,7 @@ function playerHudOverview() {
           `<div class="victory-line"><span class="victory-civ-dot"></span>` +
           `<span class="victory-civ">${player.civ}</span><span class="victory-value${track.id === "score" ? " single" : ""}">${victoryTrackerStats(track.id, metric)}</span></div>` +
           victoryMeter(track.id, metric, progress) + `</div>`;
-      }).join("") + `</div></section>`;
+      }).join("") + `</div></div></section>`;
   }).join("");
   // The lobby lets every victory condition be switched off, and then there is
   // genuinely nothing to track: `set_winner` is gated on the condition being
@@ -24428,18 +24443,18 @@ function playerHudOverview() {
   // having won. Say that instead of standing an empty panel down the rail.
   const victoryBody = victoryTracks ||
     `<section class="victory-track victory-none" aria-label="No victory conditions">` +
-    `<div class="victory-heading"><span>◌</span><b>No victory conditions</b></div>` +
-    `<p class="victory-none-note">Every path is switched off in Game setup, so this ` +
-    `world plays to turn ${turnCapLabel()} and ends without a winner.</p></section>`;
+    `<div class="victory-heading"><b>No victory conditions</b></div>` +
+    `<div class="victory-body"><p class="victory-none-note">Every path is switched off in Game setup, so this ` +
+    `world plays to turn ${turnCapLabel()} and ends without a winner.</p></div></section>`;
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
   // Two floors for two orientations: one band per row down the rail, and one
   // row of columns on a viewport too narrow to have a rail at all.
   // One contender needs only a compact band. Three leaders take a taller one,
   // and a watched player outside them adds exactly one more row. The outer
   // tracker follows that content until the map/minimap seam caps it.
-  const victoryTrackHeight = Math.max(64, 50 + defaultVictoryRows * 18);
+  const victoryTrackHeight = Math.max(64, 32 + defaultVictoryRows * 18);
   const victoryMinHeight = victoryCount * victoryTrackHeight + Math.max(0, victoryCount - 1) * 2;
-  const victoryMinWidth = victoryCount * 128 + Math.max(0, victoryCount - 1) * 2;
+  const victoryMinWidth = victoryCount * 148 + Math.max(0, victoryCount - 1) * 2;
   const victoryHudHeight = victoryMinHeight + 35;
   document.getElementById("maparea").style.setProperty("--victory-hud-height", `${victoryHudHeight}px`);
   const overview =
