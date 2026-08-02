@@ -8653,6 +8653,29 @@ mod tests {
     }
 
     #[test]
+    fn strategic_volcanic_soil_splats_from_the_volcano_facing_edge() {
+        let splat = EMBEDDED_INDEX
+            .split("function drawStrategicVolcanicSoil")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawFeatureEffects").next())
+            .expect("strategic Volcanic Soil renderer");
+        assert!(splat.contains("nbrTile(t.pos, DIRS[side])"));
+        assert!(splat.contains("neighbor?.feature === \"volcano\""));
+        assert!(splat.contains("cx.rotate(Math.atan2(sourceY, sourceX))"));
+        assert!(splat.contains("hexPath(x, y, S - 1.1); cx.clip();"));
+        assert!(splat.contains("cx.bezierCurveTo"));
+        assert!(!splat.contains("performance.now"));
+        assert!(!splat.contains("requestAnimationFrame"));
+
+        let strategic_features = EMBEDDED_INDEX
+            .split("} else if (t.feature === \"volcanic_soil\") {")
+            .nth(1)
+            .and_then(|tail| tail.split("} else if (t.feature === \"impact_zone\")").next())
+            .expect("strategic Volcanic Soil feature branch");
+        assert!(strategic_features.contains("drawStrategicVolcanicSoil(t, x, y)"));
+    }
+
+    #[test]
     fn painted_planet_blends_terrain_without_revealing_the_hex_mesh() {
         let underpaint = EMBEDDED_INDEX
             .split("function planetTerrainUnderpaint")
