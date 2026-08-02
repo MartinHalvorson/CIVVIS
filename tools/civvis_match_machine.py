@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import Future, ThreadPoolExecutor
 import csv
+import ctypes
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import json
@@ -128,11 +129,71 @@ def parse_top_cpu(text: str) -> float | None:
     return max(0.0, min(100.0, 100.0 - float(matches[-1]))) if matches else None
 
 
+_darwin_cpu_ticks: tuple[int, int, int, int] | None = None
+_darwin_libsystem: Any | None = None
+_darwin_host_port: int | None = None
+DARWIN_CPU_STATE_IDLE = 2
+
+
+def darwin_cpu_ticks() -> tuple[int, int, int, int] | None:
+    """Return the host-wide user, system, idle, and nice tick totals on macOS."""
+    global _darwin_host_port, _darwin_libsystem
+    try:
+        if _darwin_libsystem is None:
+            _darwin_libsystem = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+            _darwin_libsystem.mach_host_self.restype = ctypes.c_uint
+            _darwin_libsystem.host_statistics.argtypes = [
+                ctypes.c_uint,
+                ctypes.c_int,
+                ctypes.POINTER(ctypes.c_int),
+                ctypes.POINTER(ctypes.c_uint),
+            ]
+            _darwin_libsystem.host_statistics.restype = ctypes.c_int
+        if _darwin_host_port is None:
+            _darwin_host_port = _darwin_libsystem.mach_host_self()
+        ticks = (ctypes.c_uint * 4)()
+        count = ctypes.c_uint(4)
+        status = _darwin_libsystem.host_statistics(
+            _darwin_host_port,
+            3,  # HOST_CPU_LOAD_INFO
+            ctypes.cast(ticks, ctypes.POINTER(ctypes.c_int)),
+            ctypes.byref(count),
+        )
+    except (AttributeError, OSError, TypeError):
+        return None
+    if status != 0 or count.value < 4:
+        return None
+    return tuple(int(tick) for tick in ticks)
+
+
+def darwin_cpu_percent() -> float | None:
+    """Measure aggregate CPU from native tick deltas without spawning ``top``."""
+    global _darwin_cpu_ticks
+    current = darwin_cpu_ticks()
+    if current is None:
+        return None
+    previous = _darwin_cpu_ticks
+    if previous is None:
+        # The host API is cumulative.  A short bootstrap interval gives the
+        # first resource gate a valid sample without the costly ``top`` fork.
+        time.sleep(0.2)
+        previous = current
+        current = darwin_cpu_ticks()
+        if current is None:
+            return None
+    _darwin_cpu_ticks = current
+    deltas = [((new - old) & 0xFFFFFFFF) for old, new in zip(previous, current)]
+    total = sum(deltas)
+    return 100.0 * (total - deltas[DARWIN_CPU_STATE_IDLE]) / total if total > 0 else None
+
+
 def cpu_percent() -> float | None:
     if sys.platform == "darwin":
-        # ``top -l 1`` already reports the host-wide CPU aggregate.  Asking
-        # macOS for a second sample adds a whole-second wait and can exceed the
-        # sampling timeout while a simulator and a build are both active.
+        native = darwin_cpu_percent()
+        if native is not None:
+            return native
+        # Keep the familiar command path as a conservative fallback if the
+        # native host API is unavailable on a future macOS release.
         try:
             result = command("top", "-l", "1", "-n", "0", timeout=4)
         except (OSError, subprocess.TimeoutExpired):
@@ -402,6 +463,10 @@ class MatchMachine:
         self.resource_log = self.runtime / "resources.jsonl"
         self.state_path = self.runtime / "state.json"
         self.ranking = self.runtime / "AI_PLAYER_ELO_RANKINGS.md"
+        # Builds reset ``self.source`` in a background worker. Keep the
+        # self-contained ranking updater in the runtime so completed games can
+        # refresh their durable Elo view while a newer HEAD is compiling.
+        self.ranking_updater = self.runtime / "update_ai_player_elo_rankings.py"
         self.runtime.mkdir(parents=True, exist_ok=True)
         self.logs.mkdir(parents=True, exist_ok=True)
         self.games: list[GameProcess] = []
@@ -676,6 +741,7 @@ class MatchMachine:
         self.current_revision = revision
         if self.pending_revision == revision:
             self.pending_revision = None
+        self.cache_ranking_updater()
         self.initialize_league()
         self.refresh_ranking()
         self.event("build_ready", revision=revision, binary=str(promoted))
@@ -705,8 +771,22 @@ class MatchMachine:
             self.build_future = None
             self.build_revision = None
 
+    def cache_ranking_updater(self) -> None:
+        """Snapshot the self-contained ranking script after a source reset."""
+        source_script = self.source / "tools" / "update_ai_player_elo_rankings.py"
+        if not source_script.exists():
+            return
+        temporary = self.ranking_updater.with_suffix(".tmp")
+        try:
+            shutil.copy2(source_script, temporary)
+            os.replace(temporary, self.ranking_updater)
+        except OSError as error:
+            temporary.unlink(missing_ok=True)
+            self.event("ranking_updater_cache_failed", error=str(error))
+
     def refresh_ranking(self) -> None:
-        script = self.source / "tools" / "update_ai_player_elo_rankings.py"
+        source_script = self.source / "tools" / "update_ai_player_elo_rankings.py"
+        script = self.ranking_updater if self.ranking_updater.exists() else source_script
         if not script.exists() or not (self.league / "league.json").exists():
             return
         result = command(
@@ -714,7 +794,7 @@ class MatchMachine:
             str(script),
             "--league", str(self.league / "league.json"),
             "--output", str(self.ranking),
-            cwd=self.source,
+            cwd=self.runtime,
             timeout=60,
         )
         if result.returncode != 0:
