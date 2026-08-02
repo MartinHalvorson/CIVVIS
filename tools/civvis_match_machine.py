@@ -711,7 +711,7 @@ class MatchMachine:
             raise RuntimeError(f"cannot reset private worktree: {reset.stdout}")
         environment = os.environ.copy()
         environment["CARGO_BUILD_JOBS"] = str(self.args.build_jobs)
-        environment["CIVVIS_COMMIT"] = revision
+        environment.pop("CIVVIS_COMMIT", None)
         result = command(
             "cargo", "build", "--release", "--locked", "--bin", "civvis",
             cwd=self.source,
@@ -820,6 +820,8 @@ class MatchMachine:
         handle = log.open("w", encoding="utf-8")
         speed = getattr(self.args, "speed", DEFAULT_SPEED)
         turns = getattr(self.args, "turns", SPEED_TURNS[speed])
+        environment = os.environ.copy()
+        environment["CIVVIS_COMMIT"] = self.current_revision
         process = subprocess.Popen(
             game_command(
                 self.binary,
@@ -833,6 +835,7 @@ class MatchMachine:
                 focus_strategy=focus_strategy,
             ),
             cwd=self.binary.parent,
+            env=environment,
             stdout=handle,
             stderr=subprocess.STDOUT,
             text=True,

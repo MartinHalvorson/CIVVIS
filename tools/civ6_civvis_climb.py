@@ -283,6 +283,35 @@ def ensure_mirror() -> None:
             Path.home() / "civvis-civ6-mirror" / "follow.log", "mirror")
 
 
+def commits_behind_main() -> int | None:
+    """How many commits this tree is behind `origin/main`, or None if unknown.
+
+    ⚠⚠ WHY THIS EXISTS. On 2026-08-02 the batch tree spent hours at `#868` while
+    four merged fixes — including the two the session's whole diagnosis rested on —
+    sat unbuilt. It had briefly reached `#880` and was moved BACK. Nothing in the log
+    said so: `batch pinned to 1000a13` reads identically whether that commit is main
+    or eighteen behind it, and the resulting batch measured an engine nobody meant to
+    test.
+
+    Pinning to an old commit is legitimate — it is how a controlled batch stays
+    comparable — so this reports and never refuses. What it removes is the case where
+    a tree is stale by ACCIDENT and the log looks exactly the same.
+
+    ⚠ Does not fetch. A batch must not depend on the network, and a stale
+    `origin/main` ref simply under-reports rather than blocking anything.
+    """
+    # ⚠ The module's own `run()`, not `subprocess.run` — it merges stdout and stderr
+    # and never raises, which is what every other git call here relies on, and what
+    # the tests fake.
+    out = run(["git", "-C", str(HERE.parent), "rev-list", "--count",
+               "HEAD..origin/main"]).strip()
+    try:
+        return int(out)
+    except ValueError:
+        # No such ref, not a repository, or git said something else entirely.
+        return None
+
+
 def code_state() -> str:
     """A name for the program this attempt will actually run.
 
@@ -679,9 +708,17 @@ def main() -> int:
 
     pinned = None if args.no_pin else code_state()
     if pinned is not None:
+        behind = commits_behind_main()
+        # Loud above a handful, because that is where "deliberately pinned" stops
+        # being the likely explanation and "nobody rebuilt this tree" starts.
+        staleness = ""
+        if behind:
+            staleness = (f"  ⚠ {behind} commits behind origin/main"
+                         if behind >= 5 else f"  ({behind} behind origin/main)")
         print(f"batch pinned to {pinned}"
               + ("  ⚠ working tree is dirty; the fingerprint tracks it"
-                 if "+" in pinned else ""), flush=True)
+                 if "+" in pinned else "")
+              + staleness, flush=True)
 
     played = 0          # attempts that produced a MEASUREMENT — the only budget
     started = 0         # iterations, for the log line only
@@ -809,6 +846,45 @@ def main() -> int:
         record["victory_target"] = args.victory
         record["difficulty_asked"] = args.difficulty
         record["code_rev"] = code_rev
+
+        # ★★★★★ A ROW THAT WAS DEALT SOMETHING ELSE MUST SAY SO, WIN OR NOT.
+        #
+        # `is_win` already refuses to count a VICTORY at the wrong rung, and the
+        # reasoning above it is right: `setup: "(absent)"` on this build means
+        # several requested settings never applied, so the `seat` event read back
+        # from inside the game is the only trustworthy witness.
+        #
+        # But that check only ever fires on a win. Every LOSING row — which is all
+        # of them so far — was written with `difficulty_asked: DIFFICULTY_SETTLER`
+        # beside a seat that said something else, and nothing said a word. Those
+        # rows then sit in the ledger being compared against each other as though
+        # they were the same experiment.
+        #
+        # Measured 2026-08-02: 25 consecutive runs dealt DIFFICULTY_SETTLER and the
+        # 26th dealt DIFFICULTY_PRINCE, on identical setup code. So this is rare,
+        # not chronic — which is exactly why it needs to be recorded rather than
+        # watched for. A one-in-twenty-six silent substitution is the kind of thing
+        # that is never noticed and quietly explains a whole batch.
+        #
+        # ⚠ Recorded, NOT fatal. A game at the wrong rung is still a game, and the
+        # data is still worth having; what it must not do is masquerade as the rung
+        # that was asked for. `settings_dealt` is the field a reader can filter on.
+        dealt = (record.get("seat") or {})
+        mismatch = {
+            field: {"asked": asked, "dealt": dealt.get(key)}
+            for field, key, asked in (
+                ("difficulty", "difficulty", args.difficulty),
+                ("map_size", "size", args.map_size),
+                ("speed", "speed", args.speed),
+            )
+            if dealt.get(key) is not None and dealt.get(key) != asked
+        }
+        if mismatch:
+            record["settings_mismatch"] = mismatch
+            for field, pair in mismatch.items():
+                print(f"  ⚠ {field}: asked {pair['asked']}, the game dealt "
+                      f"{pair['dealt']} — this row is NOT comparable with the rest "
+                      f"of the batch", flush=True)
 
         # ⚠ NO TURN WAS EVER OBSERVED, so this row is not a loss — it is a run that
         # did not happen. It is still written down, because a batch with holes in it
