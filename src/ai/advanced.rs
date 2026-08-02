@@ -11149,25 +11149,25 @@ impl AdvancedAi {
         uid: u32,
         target: Pos,
     ) -> bool {
-        self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), target)
+        self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), false, target)
     }
 
     /// Move either a Settler or the military leader of its linked formation
     /// without walking the civilian into a visible capture envelope.
     ///
-    /// `risk_uid` is the Settler when it moves alone, preserving the ordinary
-    /// nearby-escort discount. It is deliberately `None` when the linked escort
-    /// leads: being linked does not make the civilian expendable, and a weak
-    /// escort can be killed before the Settler is captured. A live Firaxis run
-    /// lost three Settlers this way; the first linked Slinger walked its Settler
-    /// beside two visible Warriors because the escort path used the generic
-    /// mover and bypassed this check entirely.
+    /// `risk_uid` is the actual mover. An outmatched formation leader uses raw
+    /// civilian capture risk: being linked does not make its Settler expendable,
+    /// while roughly peer-strength escorts retain the ordinary movement behavior.
+    /// A live Firaxis run lost three Settlers this way; the first strength-5
+    /// Slinger walked its Settler beside visible strength-20 Warriors because the
+    /// escort path used the generic mover and bypassed this check entirely.
     fn settlement_unit_step_toward_safe(
         &self,
         g: &mut Game,
         pid: usize,
         moving_uid: u32,
         risk_uid: Option<u32>,
+        formation_leader: bool,
         target: Pos,
     ) -> bool {
         let move_without_guard = |g: &mut Game| {
@@ -11187,20 +11187,50 @@ impl AdvancedAi {
             return move_without_guard(g);
         };
         let visible = self.battlefront_visibility(g, pid);
+        let formation_outmatched = formation_leader
+            && g.units.values().any(|unit| {
+                if unit.owner == pid
+                    || !g.is_at_war(pid, unit.owner)
+                    || !g.sees(&visible, unit.pos)
+                    || !g.unit_visible_to(unit.id, pid)
+                {
+                    return false;
+                }
+                let spec = &g.rules.units[unit.kind];
+                if spec.class != "military"
+                    || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                {
+                    return false;
+                }
+                let attack_range = if spec.has_ranged_attack() {
+                    g.unit_attack_range(unit.id)
+                } else {
+                    1
+                };
+                let attack_reach = attack_range + spec.moves.ceil() as i32;
+                let attacker = crate::game::effective_strength(
+                    g.unit_strength(unit, false),
+                    unit.hp,
+                );
+                let escort = &g.units[&moving_uid];
+                let defender = crate::game::effective_strength(
+                    g.unit_strength(escort, false),
+                    escort.hp,
+                );
+                g.wdist(unit.pos, next) <= attack_reach && attacker > defender * 1.5
+            });
         let planned_risk = self.settlement_tile_risk_with_support(
             g,
             pid,
             risk_uid,
             next,
             &visible,
-            risk_uid.is_some(),
+            !formation_outmatched,
         );
-        if planned_risk <= SETTLER_STEP_RISK_LIMIT {
-            // Apply the exact step whose risk was checked. The generic military
-            // mover may choose a different greedy neighbor before consulting the
-            // route, which would make the check true of one tile and the move use
-            // another.
-            return self.base.path_move(g, pid, moving_uid, next);
+        if planned_risk <= SETTLER_STEP_RISK_LIMIT || (formation_leader && !formation_outmatched) {
+            // Keep ordinary movement behavior unchanged. This guard intervenes
+            // only when an outmatched escort's route enters a capture envelope.
+            return move_without_guard(g);
         }
 
         let current = g.units[&moving_uid].pos;
@@ -11220,7 +11250,7 @@ impl AdvancedAi {
                     risk_uid,
                     position,
                     &visible,
-                    risk_uid.is_some(),
+                    !formation_outmatched,
                 );
                 let progress = current_distance - g.wdist(position, target);
                 let score = progress as f64 * 8.0
@@ -14221,7 +14251,7 @@ impl AdvancedAi {
             };
             let before = g.units[&uid].pos;
             let moved = before != target
-                && self.settlement_unit_step_toward_safe(g, pid, uid, None, target);
+                && self.settlement_unit_step_toward_safe(g, pid, uid, Some(uid), true, target);
             if moved && g.units.get(&uid).is_some_and(|escort| escort.pos != before) {
                 self.settler_stalls.remove(&settler);
                 self.settler_blocked_turns.remove(&settler);
@@ -24002,10 +24032,10 @@ mod tests {
         let planned = game
             .route_step(escort, target, 0)
             .expect("the formation has a next route step");
-        let threat = game
+        let threats = game
             .nbrs(planned)
             .into_iter()
-            .find(|position| {
+            .filter(|position| {
                 *position != source
                     && *position != target
                     && game.units_at(*position).is_empty()
@@ -24013,16 +24043,23 @@ mod tests {
                         game.rules.is_passable(tile) && !game.rules.is_water(tile)
                     })
             })
-            .expect("the route has an adjacent attack square");
-        let enemy = game.spawn_test_unit("warrior", 1, threat);
+            .take(2)
+            .collect::<Vec<_>>();
+        assert_eq!(threats.len(), 2, "the route has two adjacent attack squares");
+        let enemies = threats
+            .iter()
+            .map(|position| game.spawn_test_unit("warrior", 1, *position))
+            .collect::<Vec<_>>();
         game.at_war.insert((0, 1));
-        game.players[0].explored.insert(threat);
+        for threat in &threats {
+            game.players[0].explored.insert(*threat);
+        }
         let visible = ai.battlefront_visibility(&game, 0);
-        assert!(game.sees(&visible, threat));
+        assert!(threats.iter().all(|threat| game.sees(&visible, *threat)));
         let planned_risk = ai.settlement_tile_risk_with_support(
             &game,
             0,
-            None,
+            Some(escort),
             planned,
             &visible,
             false,
@@ -24048,7 +24085,7 @@ mod tests {
         let after_risk = ai.settlement_tile_risk_with_support(
             &game,
             0,
-            None,
+            Some(escort),
             after,
             &visible,
             false,
@@ -24058,7 +24095,7 @@ mod tests {
             "the formation may hold or take a materially safer detour: \
              planned={planned_risk}, after={after_risk}"
         );
-        assert!(game.units.contains_key(&enemy));
+        assert!(enemies.iter().all(|enemy| game.units.contains_key(enemy)));
     }
 
     #[test]
