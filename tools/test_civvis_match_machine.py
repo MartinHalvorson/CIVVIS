@@ -321,16 +321,23 @@ class MatchMachineTests(unittest.TestCase):
                     "placements": "a@Trajan@Rome@0|b@Cleopatra@Egypt@1",
                 },
             ):
-                subject.finish(subject.games[0], failed=False, reason="winner recorded")
+                subject.finish(
+                    subject.games[0],
+                    failed=True,
+                    reason="match machine stopped before result",
+                )
 
             self.assertEqual(events[0][0], "game_started")
             self.assertEqual(events[0][1]["game_kind"], "visible")
             self.assertEqual(events[1][0], "game_completed")
             self.assertEqual(events[1][1]["game_kind"], "visible")
+            self.assertEqual(events[1][1]["reason"], "rated result recorded before process stopped")
             self.assertEqual(events[1][1]["turn"], "423")
             self.assertEqual(events[1][1]["victory"], "science")
             self.assertIsNone(events[1][1]["winner"])
             self.assertEqual(events[1][1]["winner_placement"], "a@Trajan@Rome@0")
+            self.assertEqual(subject.completed, 1)
+            self.assertEqual(subject.failed, 0)
 
     def test_visible_successor_reuses_process_and_records_both_lifecycle_events(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)

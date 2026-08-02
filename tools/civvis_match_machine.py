@@ -779,6 +779,13 @@ class MatchMachine:
 
     def finish(self, game: GameProcess, *, failed: bool, reason: str) -> None:
         row = match_row(self.league, game.seed)
+        # ``matches.csv`` is the authoritative, atomically recorded outcome.
+        # A shutdown can arrive during the brief result-hold window after that
+        # row has appeared, so never turn a rated result into a failure merely
+        # because its process is being stopped.
+        if row is not None and failed:
+            failed = False
+            reason = "rated result recorded before process stopped"
         stop_process(game.process)
         if game in self.games:
             self.games.remove(game)
