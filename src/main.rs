@@ -281,8 +281,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// also gates `besieged_city_item`, which lets a city with a raiding party at
 /// its gates build walls or a defender ahead of the ordinary build order; both
 /// entry points return early on `!siege_muster` before reading the board.
+///
+/// #933 bounds the defensive-war Recovery posture behind `bounded_recovery`, a
+/// field that is `false` in `AdvancedAi::new()` and set only by
+/// `civvis_orders`. `recovery_is_stale` short-circuits on that flag before it
+/// reads the plan or the clock, so `assess` returns the identical strategy for
+/// configured, legacy and Elo agents. Headless confirmation: 24 paired seeds
+/// with the flag on and off are byte-identical on score, cities and the
+/// strategy census, because the sim reaches Recovery on only 8% of
+/// strategy-turns against the live ladder's 86%. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x66fd_2c34_d554_b29f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf2a0_3e13_5898_75a2;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

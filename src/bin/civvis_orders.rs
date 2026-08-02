@@ -640,6 +640,15 @@ fn decide(
     // until t80, score 140 against a best rival's 416. The tournament controller
     // stays frozen so its recorded ladders remain comparable.
     ai.enable_siege_muster();
+    // ⚠ `assess` drops the empire into Recovery whenever it is at war and
+    // `my_power * 1.25 < strongest_rival`, and Recovery does not build an army —
+    // so the test stays true because of the choice it caused. Measured on run
+    // `civvis-20260802T205959Z`: the journal names that arm 160 times, the
+    // posture held from t65 to t229 (72% of the game), and the empire finished
+    // with ONE warrior at military 34 against the Mapuche's 1354. The bound
+    // releases only the power-gap half, and only after the posture has had
+    // `RECOVERY_POSTURE_LIMIT` standard turns to work.
+    ai.enable_bounded_recovery();
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.
