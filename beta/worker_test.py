@@ -269,7 +269,7 @@ def main(argv: list[str] | None = None) -> int:
               module["contentType"] == "application/wasm", f"got {module['contentType']!r}")
         check(problems, "the module is revalidated rather than trusted",
               "must-revalidate" in (module["cacheControl"] or ""), f"got {module['cacheControl']!r}")
-        atlas = hit(path="/beta/assets/terrain-atlas.webp")
+        atlas = hit(path="/beta/assets/feature-atlas.webp")
         check(problems, "atlases are cached", "max-age=86400" in (atlas["cacheControl"] or ""),
               f"got {atlas['cacheControl']!r}")
 

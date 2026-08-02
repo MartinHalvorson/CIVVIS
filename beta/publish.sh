@@ -76,7 +76,6 @@ fi
 
 echo "==> assembling the page"
 cp "$repo_root/beta/shim.js" "$repo_root/beta/worker.js" "$out/beta/"
-cp "$source_tree/web/cinematic3d.js" "$out/beta/"
 cp -R "$source_tree/web/assets" "$out/beta/assets"
 cp "$repo_root/beta/landing.html" "$out/index.html"
 # `/download/` rather than `/download.html`: the page outlives any one release
@@ -89,7 +88,7 @@ cp "$repo_root/beta/_worker.js" "$out/_worker.js"
 
 # The viewer, copied and then made to work one directory down. Each
 # substitution is checked, because a silently unmatched one publishes a page
-# whose sprites and 3D view are simply missing.
+# whose strategic map sprites are simply missing.
 python3 - "$source_tree/web/index.html" "$out/beta/index.html" "$out/beta/assets" <<'PY'
 import re, sys, pathlib
 
@@ -107,7 +106,6 @@ page = source.read_text(encoding="utf-8")
 # survives into the published page, because each one is a sprite that silently
 # does not load.
 edits = [
-    ('src="/cinematic3d.js"', 'src="cinematic3d.js"'),
     ('"/assets/', '"assets/'),
 ]
 for needle, replacement in edits:
@@ -118,7 +116,7 @@ for needle, replacement in edits:
         )
     page = page.replace(needle, replacement)
 
-for stranded in ('"/assets/', 'src="/cinematic3d.js"'):
+for stranded in ('"/assets/',):
     if stranded in page:
         raise SystemExit(f"{stranded!r} survived the rewrite; the published page would 404 on it")
 

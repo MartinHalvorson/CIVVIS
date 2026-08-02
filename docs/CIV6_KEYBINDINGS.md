@@ -74,13 +74,11 @@ owns the keyboard: only the screen keys and `Escape` reach through it.
 | `Y` | `ToggleYield` | Tile yields |
 | `G` | `ToggleGrid` | Hex grid |
 | `Q` | `ToggleResources` | Resource icons |
-| `+` | `Toggle2DView` | Flat strategic view, and back to the view you were in |
 | `←` `→` `↑` `↓` | `CameraPan*` | Pan the camera (`Shift` for twice the step) |
 | Numpad `+` / `−` | `ZoomIn` / `ZoomOut` | Zoom |
 
-Civ 6 spends the main-row `+` on the 2D view and zooms on the keypad only. Both
-are honoured here; `=` and `−` are added as aliases because a laptop has no
-keypad (see the additions below).
+Civ 6 zooms on the keypad only. `=` and `−` are added as aliases because a
+laptop has no keypad (see the additions below).
 
 ### Mouse
 
@@ -92,7 +90,7 @@ keypad (see the additions below).
 | Right release | `OnMouseSelectionUnitMoveEnd` — move there | Same, and a tile out of this turn's range becomes a multi-turn travel order |
 | Middle click | `OnMouseSelectionSnapToPlot` — centre on that plot | Same |
 | Wheel | `OnMouseWheelZoom` | Same |
-| Alt + drag | Spin the camera | Rotates, and in cinematic also tilts |
+| Alt + drag | Spin the map | Rotates the strategic map |
 | Pointer at a map edge | `EdgePan` (Gameplay option, ships on) | Same, and a setting under Display settings |
 
 ## Deliberate overrides
@@ -122,14 +120,9 @@ shadow a binding somebody arrived with.
 | `Ctrl+R` | Face north and reset the view |
 | `Ctrl+U` | Hide and show the command deck |
 | `Ctrl+←` `Ctrl+→` | Rotate the map |
-| `Ctrl+↑` `Ctrl+↓` | Tilt the map |
-| `Shift`+scroll | Rotate; `Alt`+scroll tilts |
+| `Shift`+scroll | Rotate the map |
 | Double click | Dive in; `Shift`+double click pulls back |
 | `Escape` | Close the topmost screen, then cancel an armed mode, a follow, the full-screen map, and finally the selection |
-
-Two spectator-only keys, `M` for cinema audio and `C` for cinema mode, are live
-only while a cinema is running — a board no seated player is ever looking at —
-so they cannot shadow Civ 6's `M` and `C`.
 
 ## Civ 6 actions with nothing here to bind
 
