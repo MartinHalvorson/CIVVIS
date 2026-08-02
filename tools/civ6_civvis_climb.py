@@ -172,6 +172,54 @@ def busy() -> str | None:
     return out.strip() or None
 
 
+def ensure_mirror() -> None:
+    """Make sure something is FEEDING the mirror window, not just serving it.
+
+    ⚠⚠ THE SERVER BEING UP IS NOT THE MIRROR BEING LIVE, and the two failure modes
+    look identical from `/status`. `civvis play --serve` on :8610 reads a staged
+    board out of `civvis-civ6-mirror/stage`; `tools/follow.py` is what rebuilds that
+    stage from the running attempt's `events.jsonl`. The server is long-lived and
+    reparented to init, so it answers `/status` cheerfully with LAST NIGHT'S BOARD
+    while follow.py is dead — turn, frames_painted and frames_missed all stay frozen
+    at whatever they were, which reads as a healthy idle mirror.
+
+    Measured 2026-08-02 on run civvis-20260802T014139Z: follow.py exited, the game
+    ran on to turn 97, and :8610 kept reporting `turn 82, frames_painted 82,
+    frames_missed 0` — a fifteen-turn hole that no status field named. The operator
+    saw a CIVVIS window that had simply stopped agreeing with the game.
+
+    The batch has always relied on someone having started follow.py by hand, which
+    is the whole defect: "both games visible" is a REQUIREMENT of every run here and
+    nothing enforced it. Starting the stager costs one process launch per batch.
+
+    Deliberately not fatal. A batch that cannot raise the viewer is still a batch
+    that measures play, and refusing to start one because a window is missing would
+    trade the measurement for the picture.
+    """
+    if run(["pgrep", "-f", "tools/follow.py"]).strip():
+        print("[mirror] stager already running", flush=True)
+        return
+    follow = HERE / "follow.py"
+    if not follow.exists():
+        print(f"[mirror] no stager at {follow}; the window will not track the game",
+              flush=True)
+        return
+    log = Path.home() / "civvis-civ6-mirror" / "follow.log"
+    try:
+        # `start_new_session` is the load-bearing argument: without it the stager is
+        # in this batch's process group and dies with it, which is exactly how the
+        # fifteen-turn hole above was opened.
+        with log.open("a") as handle:
+            subprocess.Popen(
+                [sys.executable, "-u", str(follow)],
+                stdout=handle, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL, start_new_session=True,
+            )
+        print(f"[mirror] started the stager; it logs to {log}", flush=True)
+    except OSError as exc:
+        print(f"[mirror] could not start the stager: {exc}", flush=True)
+
+
 def code_state() -> str:
     """A name for the program this attempt will actually run.
 
@@ -448,6 +496,10 @@ def main() -> int:
 
     # A batch is a COMPARISON, so it is pinned to one program by default. Opting out
     # is a deliberate act with a name, not the silent default it used to be.
+    # Raise the viewer before the first attempt, not after: the opening is the part
+    # of the game the operator most needs to see against the real one.
+    ensure_mirror()
+
     pinned = None if args.no_pin else code_state()
     if pinned is not None:
         print(f"batch pinned to {pinned}"
