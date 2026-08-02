@@ -28,6 +28,16 @@ class ProtectedInstallTest(unittest.TestCase):
         self.assertIn("city:GetYield(YieldTypes.SCIENCE)", exporter)
         self.assertIn("production_progress = productionProgress(city, queue)", exporter)
 
+    def test_purchase_actuator_preserves_faith_formation_and_district_placement(self) -> None:
+        source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
+
+        self.assertIn('kind == "purchase_faith"', source)
+        self.assertIn('kind == "purchase_faith" and "YIELD_FAITH" or "YIELD_GOLD"', source)
+        self.assertIn("MilitaryFormationTypes.CORPS_MILITARY_FORMATION", source)
+        self.assertIn("MilitaryFormationTypes.ARMY_MILITARY_FORMATION", source)
+        self.assertIn("params[CityOperationTypes.PARAM_X] = x", source)
+        self.assertIn("params[CityOperationTypes.PARAM_Y] = y", source)
+
     def test_district_export_distinguishes_foundations_from_completed_districts(self) -> None:
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         exporter = source.split("-- ★★★★★ AND WHAT IT HAS DISTRICTED", 1)[1].split(

@@ -5661,14 +5661,17 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and verb or "throw";
 	end
 
-	-- ★★★★ BUY. CIVVIS spends gold and the seat sat on hundreds of it: 122 `Buy` and
-	-- 224 `BuyBuilding` actions dropped in one 81-turn stretch. Worse than the waste,
+	-- ★★★★ BUY. CIVVIS spends Gold or Faith and the seat sat on hundreds of it. The old
+	-- tally reported 122 `Buy` and 224 `BuyBuilding` skips in one 81-turn stretch,
+	-- including the since-fixed 2x diagnostic count. Worse than the waste,
 	-- a purchase CIVVIS makes in its model and the bridge discards leaves it believing
 	-- it owns a unit that does not exist — the same phantom that stopped it building
 	-- settlers for a whole game.
 	--
 	-- Pattern copied from the shipped `ProductionPanel.lua`: a PURCHASE **command**,
 	-- not a BUILD operation, with the item hash and the yield to pay from.
+	-- The order kind carries that yield explicitly; hardcoding Gold discarded every
+	-- Faith purchase even though Firaxis uses the same command for both currencies.
 	-- ★★★★★ BUYING GROUND FOR A CITY.
 	--
 	-- `BuyPlot` had no arm at all: `civvis_orders` counted it in the `skipped` tally
@@ -5706,7 +5709,7 @@ local function applyOrder(player, pid, row, turn)
 		return ok, ok and "bought_plot" or "throw";
 	end
 
-	if kind == "purchase" then
+	if kind == "purchase" or kind == "purchase_faith" then
 		local city = liveCity(player, subject);
 		if city == nil then return false, "no_city"; end
 		local row2, resolved = resolveType(GameInfo.Types, verb);
@@ -5714,19 +5717,32 @@ local function applyOrder(player, pid, row, turn)
 		local params = {};
 		if row2.Kind == "KIND_UNIT" then
 			params[CityCommandTypes.PARAM_UNIT_TYPE] = row2.Hash;
-			params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] =
-				MilitaryFormationTypes.STANDARD_MILITARY_FORMATION;
+			local formation = tonumber(x) or 0;
+			if formation == 1 then
+				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] =
+					MilitaryFormationTypes.CORPS_MILITARY_FORMATION;
+			elseif formation == 2 then
+				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] =
+					MilitaryFormationTypes.ARMY_MILITARY_FORMATION;
+			else
+				params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE] =
+					MilitaryFormationTypes.STANDARD_MILITARY_FORMATION;
+			end
 		elseif row2.Kind == "KIND_BUILDING" then
 			params[CityCommandTypes.PARAM_BUILDING_TYPE] = row2.Hash;
 		elseif row2.Kind == "KIND_DISTRICT" then
 			params[CityCommandTypes.PARAM_DISTRICT_TYPE] = row2.Hash;
+			if x == nil or y == nil then return false, "no_district_plot"; end
+			params[CityOperationTypes.PARAM_X] = x;
+			params[CityOperationTypes.PARAM_Y] = y;
 		else
 			-- Same reasoning as the produce arm above: name it or it cannot be chased.
 			return false, "no_params_" .. tostring(row2.Kind or verb);
 		end
-		local gold = try(function() return GameInfo.Yields["YIELD_GOLD"].Index; end);
-		if gold == nil then return false, "no_yield"; end
-		params[CityCommandTypes.PARAM_YIELD_TYPE] = gold;
+		local yieldName = kind == "purchase_faith" and "YIELD_FAITH" or "YIELD_GOLD";
+		local currency = try(function() return GameInfo.Yields[yieldName].Index; end);
+		if currency == nil then return false, "no_yield"; end
+		params[CityCommandTypes.PARAM_YIELD_TYPE] = currency;
 		-- ⚠⚠ ASK BEFORE CLAIMING. `pcall` succeeding means the call did not throw, not
 		-- that the city bought anything — the trap this file documents three times and
 		-- which I walked into again here. Run civvis-20260730T173235Z issued purchases
@@ -5752,14 +5768,20 @@ local function applyOrder(player, pid, row, turn)
 			local cost = try(function()
 				if row2.Kind == "KIND_UNIT" then
 					return city:GetGold():GetPurchaseCost(
-						gold, row2.Hash,
-						MilitaryFormationTypes.STANDARD_MILITARY_FORMATION);
+						currency, row2.Hash,
+						params[CityCommandTypes.PARAM_MILITARY_FORMATION_TYPE]);
 				end
-				return city:GetGold():GetPurchaseCost(gold, row2.Hash);
+				return city:GetGold():GetPurchaseCost(currency, row2.Hash);
 			end, -1);
 			emit("purchase_refused", {
 				turn = turn, city = subject, item = resolved,
-				gold = try(function() return player:GetTreasury():GetGoldBalance(); end, -1),
+				currency = yieldName,
+				balance = try(function()
+					if yieldName == "YIELD_FAITH" then
+						return player:GetReligion():GetFaithBalance();
+					end
+					return player:GetTreasury():GetGoldBalance();
+				end, -1),
 				cost = cost, checked = okCan, has_results = results ~= nil,
 			});
 			return false, "cannot_buy_" .. resolved;

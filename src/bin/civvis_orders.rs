@@ -438,6 +438,7 @@ fn decide(
     let mut orders: Vec<Order> = Vec::new();
     let mut skipped: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
+    let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
     let mut policy_changed = false;
     if !pre_traders.is_empty() {
@@ -460,10 +461,13 @@ fn decide(
             policy_changed = true;
             continue;
         }
-        let order = translate(action, mirror_state, state, &mut skipped);
+        let order = translate(action, mirror_state, state);
         match order {
             Some(value) => orders.push(value),
             None => {
+                if skipped_examples.len() < 12 {
+                    skipped_examples.push(format!("{action:?}"));
+                }
                 // Which half failed: the action had no counterpart, or it named a unit
                 // or city this bridge could not map back to Civilization VI. Those are
                 // completely different repairs.
@@ -600,6 +604,7 @@ fn decide(
             .collect::<Vec<_>>()
             .join(" ");
         note_bits.push(format!("skipped {text}"));
+        note_bits.push(format!("skipped_examples [{}]", skipped_examples.join(" | ")));
     }
     // ⚠ Diagnostics for the "CIVVIS returned nothing" case, which is otherwise
     // indistinguishable from "CIVVIS chose to do nothing". Both a stopped game
@@ -713,7 +718,6 @@ fn translate(
     action: &Action,
     mirror_state: &civvis::mirror::LiveMirror,
     state: &civvis::mirror::StateSnapshot,
-    skipped: &mut std::collections::BTreeMap<String, usize>,
 ) -> Option<Order> {
     let civ6_of = &mirror_state.civ6_of;
     match action {
@@ -774,27 +778,64 @@ fn translate(
         }),
         // A builder improving the tile it stands on. Dropping this is what kept the
         // mirror looking undeveloped and made CIVVIS order builder after builder.
-        // Gold purchases. Dropping these both wastes the treasury and leaves CIVVIS
-        // believing it owns something it does not — the phantom-settler failure again.
-        Action::Buy { city, unit, currency, .. } if currency.as_str() == "gold" => mirror_state
+        // Preserve the currency and formation CIVVIS chose. The old bridge accepted
+        // only Gold and silently dropped every Faith purchase; two were lost on
+        // recorded turn 92 (the old diagnostic reported four because it counted each
+        // skip twice). For unit purchases `x` is the CIVVIS formation tier (0/1/2),
+        // while district purchases use x/y as their actual OFFSET placement. The item
+        // kind makes those meanings unambiguous.
+        Action::Buy {
+            city,
+            unit,
+            formation,
+            currency,
+        } if matches!(currency.as_str(), "gold" | "faith") => mirror_state
             .cid_of
             .iter()
             .find(|(_, cid)| **cid == *city)
             .map(|(civ6, _)| Order {
-                kind: "purchase",
+                kind: if currency == "faith" {
+                    "purchase_faith"
+                } else {
+                    "purchase"
+                },
                 subject: Some(*civ6),
                 verb: Some(civ6_unit_type(unit)),
-                pos: None,
+                pos: Some((*formation as i32, -1)),
             }),
-        Action::BuyBuilding { city, building, currency } if currency.as_str() == "gold" => mirror_state
+        Action::BuyBuilding { city, building, currency }
+            if matches!(currency.as_str(), "gold" | "faith") => mirror_state
             .cid_of
             .iter()
             .find(|(_, cid)| **cid == *city)
             .map(|(civ6, _)| Order {
-                kind: "purchase",
+                kind: if currency == "faith" {
+                    "purchase_faith"
+                } else {
+                    "purchase"
+                },
                 subject: Some(*civ6),
                 verb: Some(format!("BUILDING_{}", building.as_str().to_ascii_uppercase())),
                 pos: None,
+            }),
+        Action::BuyDistrict {
+            city,
+            district,
+            pos,
+            currency,
+        } if matches!(currency.as_str(), "gold" | "faith") => mirror_state
+            .cid_of
+            .iter()
+            .find(|(_, cid)| **cid == *city)
+            .map(|(civ6, _)| Order {
+                kind: if currency == "faith" {
+                    "purchase_faith"
+                } else {
+                    "purchase"
+                },
+                subject: Some(*civ6),
+                verb: Some(format!("DISTRICT_{}", district.as_str().to_ascii_uppercase())),
+                pos: Some(civvis::hex::axial_to_offset(pos.0, pos.1)),
             }),
         // ★★★★★ BUYING GROUND. Discarded for the life of this bridge: `BuyPlot`
         // reached `translate` only to be counted in the `skipped` tally, 25 of them
@@ -905,10 +946,7 @@ fn translate(
                 },
             )
         }
-        other => {
-            *skipped.entry(action_variant(other)).or_insert(0) += 1;
-            None
-        }
+        _ => None,
     }
 }
 
@@ -1770,8 +1808,7 @@ mod tests {
             .into_iter()
             .find(|action| matches!(action, Action::FoundReligion { .. }))
             .expect("a pending Firaxis Prophet must expose a religion choice");
-        let mut skipped = std::collections::BTreeMap::new();
-        let order = translate(&action, &mirror, &state, &mut skipped)
+        let order = translate(&action, &mirror, &state)
             .expect("a CIVVIS religion choice must reach Firaxis");
 
         assert_eq!(order.kind, "religion");
@@ -1780,7 +1817,68 @@ mod tests {
             .verb
             .as_deref()
             .is_some_and(|verb| verb.starts_with("BELIEF_") && verb.contains(",BELIEF_")));
-        assert!(skipped.is_empty());
+    }
+
+    #[test]
+    fn purchases_preserve_currency_formation_and_district_plot() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 92,
+            cities: vec![StateCity {
+                id: 77,
+                name: "Wroclaw".to_string(),
+                x: 6,
+                y: 6,
+                pop: 4,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+        let city = mirror.game.player_city_ids(0)[0];
+        let unit = translate(
+            &Action::Buy {
+                city,
+                unit: civvis::name!("missionary"),
+                formation: 2,
+                currency: "faith".to_string(),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("faith unit purchase crosses");
+        assert_eq!(unit.kind, "purchase_faith");
+        assert_eq!(unit.subject, Some(77));
+        assert_eq!(unit.verb.as_deref(), Some("UNIT_MISSIONARY"));
+        assert_eq!(unit.pos, Some((2, -1)));
+
+        let pos = (7, 6);
+        let district = translate(
+            &Action::BuyDistrict {
+                city,
+                district: civvis::name!("campus"),
+                pos,
+                currency: "gold".to_string(),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("placed district purchase crosses");
+        assert_eq!(district.kind, "purchase");
+        assert_eq!(district.verb.as_deref(), Some("DISTRICT_CAMPUS"));
+        assert_eq!(
+            district.pos,
+            Some(civvis::hex::axial_to_offset(pos.0, pos.1))
+        );
     }
 
     #[test]
