@@ -231,6 +231,19 @@ class MatchMachineTests(unittest.TestCase):
         self.assertEqual(machine.parse_top_cpu(report), 29.5)
         self.assertIsNone(machine.parse_top_cpu("not top"))
 
+    def test_cpu_sampling_timeout_fails_closed_without_crashing_the_machine(self):
+        with mock.patch.object(machine.sys, "platform", "darwin"), mock.patch.object(
+            machine,
+            "command",
+            side_effect=subprocess.TimeoutExpired(["top"], 4),
+        ):
+            self.assertIsNone(machine.cpu_percent())
+
+        missing_cpu = machine.Resources(None, 20, 12, 0, False)
+        self.assertTrue(missing_cpu.overloaded(70))
+        self.assertFalse(missing_cpu.comfortably_below(70))
+        self.assertEqual(machine.resource_action(missing_cpu, 70), "shed_all")
+
     def test_resource_ceiling_is_hard_and_resume_has_headroom(self):
         safe = machine.Resources(59.0, 20.0, 12.0, 0.0, False)
         edge = machine.Resources(70.0, 20.0, 12.0, 0.0, False)
