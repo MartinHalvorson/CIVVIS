@@ -131,12 +131,28 @@ fn civ6_improvement_type(name: &civvis::name::Name) -> String {
     format!("IMPROVEMENT_{id}")
 }
 
+/// Civilization VI keeps the three wall tiers under internal implementation names.
+///
+/// The mirror already translates these names in the other direction.  Keep the
+/// outbound boundary symmetric: live turns 165-219 refused 200 production orders
+/// for the nonexistent `BUILDING_MEDIEVAL_WALLS`, leaving three or four queues idle
+/// per turn.  The shipped Buildings.xml names the tiers WALLS, CASTLE, and STAR_FORT.
+fn civ6_building_type(name: &civvis::name::Name) -> String {
+    let id = match name.as_str() {
+        "ancient_walls" => "WALLS",
+        "medieval_walls" => "CASTLE",
+        "renaissance_walls" => "STAR_FORT",
+        other => return format!("BUILDING_{}", other.to_ascii_uppercase()),
+    };
+    format!("BUILDING_{id}")
+}
+
 fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
     use civvis::game::Item;
     let upper = |name: &civvis::name::Name| name.as_str().to_ascii_uppercase();
     match item {
         Item::Unit { unit } => Some(civ6_unit_type(unit)),
-        Item::Building { building } => Some(format!("BUILDING_{}", upper(building))),
+        Item::Building { building } => Some(civ6_building_type(building)),
         Item::District { district, .. } => Some(format!("DISTRICT_{}", upper(district))),
         Item::Wonder { wonder, .. } => Some(format!("BUILDING_{}", upper(wonder))),
         // ⚠ CIVVIS'S DISTRICT PROJECTS ARE NOT NAMED LIKE CIVILIZATION VI'S, and the
@@ -184,9 +200,7 @@ fn civ6_live_build_name(
             .get(*pos)
             .and_then(|tile| tile.district.as_ref())
             .map(|district| format!("DISTRICT_{}", district.as_str().to_ascii_uppercase())),
-        Item::Repair { repair, .. } => {
-            Some(format!("BUILDING_{}", repair.as_str().to_ascii_uppercase()))
-        }
+        Item::Repair { repair, .. } => Some(civ6_building_type(repair)),
         _ => civ6_build_name(item),
     }
 }
@@ -1174,7 +1188,7 @@ fn translate(
                     "purchase"
                 },
                 subject: Some(*civ6),
-                verb: Some(format!("BUILDING_{}", building.as_str().to_ascii_uppercase())),
+                verb: Some(civ6_building_type(building)),
                 pos: None,
             }),
         Action::BuyDistrict {
@@ -2649,6 +2663,20 @@ mod tests {
         assert_eq!(unit.verb.as_deref(), Some("UNIT_MISSIONARY"));
         assert_eq!(unit.pos, Some((2, -1)));
 
+        let walls = translate(
+            &Action::BuyBuilding {
+                city,
+                building: civvis::name!("medieval_walls"),
+                currency: "gold".to_string(),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a wall purchase crosses through the same building vocabulary");
+        assert_eq!(walls.kind, "purchase");
+        assert_eq!(walls.subject, Some(77));
+        assert_eq!(walls.verb.as_deref(), Some("BUILDING_CASTLE"));
+
         let pos = (7, 6);
         let district = translate(
             &Action::BuyDistrict {
@@ -3037,6 +3065,30 @@ mod tests {
         };
         assert_eq!(civ6_build_pos(&district), Some((9, 4)));
         assert_eq!(civ6_build_pos(&wonder), Some((7, 8)));
+    }
+
+    #[test]
+    fn wall_production_and_repairs_use_firaxis_internal_type_ids() {
+        for (civvis, firaxis) in [
+            ("ancient_walls", "BUILDING_WALLS"),
+            ("medieval_walls", "BUILDING_CASTLE"),
+            ("renaissance_walls", "BUILDING_STAR_FORT"),
+        ] {
+            let building = civvis::game::Item::Building {
+                building: civvis::name::Name::new(civvis),
+            };
+            assert_eq!(civ6_build_name(&building).as_deref(), Some(firaxis));
+
+            let repair = civvis::game::Item::Repair {
+                repair: civvis::name::Name::new(civvis),
+                pos: (4, 4),
+            };
+            let game = civvis::game::Game::new(2, 12, 12, 1, 50, 0);
+            assert_eq!(
+                civ6_live_build_name(&repair, &game).as_deref(),
+                Some(firaxis)
+            );
+        }
     }
 
     #[test]
