@@ -118,58 +118,71 @@ fn sign_p(up: u32, down: u32) -> f64 {
     (2.0 * tail).min(1.0)
 }
 
+/// The fixed game and treatment surface for both directions of one map.
+struct PlayConfig<'a> {
+    players: usize,
+    width: i32,
+    height: i32,
+    turns: u32,
+    city_states: usize,
+    speed: &'a str,
+    arms: (PolicyDeck, PolicyDeck),
+    gene: Option<(usize, f64)>,
+    base: &'a Weights,
+}
+
 /// Play one map with the treatment on the seats whose parity is `treated`.
 ///
 /// The win is an `Option`: a game that reached its turn cap with nobody
 /// victorious says nothing about either arm, and folding that into "the
 /// treatment did not win" would count silence as a defeat.
-fn play(
-    players: usize,
-    width: i32,
-    height: i32,
-    seed: u64,
-    turns: u32,
-    city_states: usize,
-    speed: &str,
-    treated: usize,
-    arms: (PolicyDeck, PolicyDeck),
-    gene: Option<(usize, f64)>,
-    base: &Weights,
-) -> (Option<bool>, f64, f64) {
+fn play(seed: u64, treated: usize, config: &PlayConfig<'_>) -> (Option<bool>, f64, f64) {
     let mut game = Game::new_with(GameOptions {
-        speed: speed.to_string(),
-        ..GameOptions::new(players, width, height, seed, turns, city_states)
+        speed: config.speed.to_string(),
+        ..GameOptions::new(
+            config.players,
+            config.width,
+            config.height,
+            seed,
+            config.turns,
+            config.city_states,
+        )
     });
-    let mut treat_w = base.clone();
-    treat_w.policy_deck = arms.0;
+    let mut treat_w = config.base.clone();
+    treat_w.policy_deck = config.arms.0;
     // A single-gene arm, so a genome change can be decided on WINS. The score
     // share that nominates a value is a selection proxy; `docs/EVAL.md` is
     // explicit that wins and score measure different things, and a change that
     // moves the economy without moving the victory is exactly the shape this
     // repository has been fooled by before.
-    if let Some((index, value)) = gene {
+    if let Some((index, value)) = config.gene {
         let mut v = treat_w.to_vec();
         v[index] = value;
         treat_w = Weights::from_vec_like(&v, &treat_w);
     }
-    let mut control_w = base.clone();
-    control_w.policy_deck = arms.1;
+    let mut control_w = config.base.clone();
+    control_w.policy_deck = config.arms.1;
     let mut treatment: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &treat_w);
     let mut control: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, &control_w);
     let is_treated = |pid: usize| pid % 2 == treated;
 
-    for _ in 0..turns {
+    for _ in 0..config.turns {
         if game.winner.is_some() {
             break;
         }
-        for pid in 0..game.players.len() {
+        for (pid, (treatment_agent, control_agent)) in treatment
+            .iter_mut()
+            .zip(control.iter_mut())
+            .enumerate()
+            .take(game.players.len())
+        {
             if game.winner.is_some() {
                 break;
             }
             if is_treated(pid) {
-                treatment[pid].take_turn(&mut game, pid);
+                treatment_agent.take_turn(&mut game, pid);
             } else {
-                control[pid].take_turn(&mut game, pid);
+                control_agent.take_turn(&mut game, pid);
             }
             if game.winner.is_none() && game.current == pid {
                 let _ = game.apply(pid, &Action::EndTurn);
@@ -253,34 +266,21 @@ fn main() {
     );
     println!("  base weights: {source}");
 
+    let config = PlayConfig {
+        players,
+        width,
+        height,
+        turns,
+        city_states,
+        speed: &speed,
+        arms,
+        gene,
+        base: &base,
+    };
     let results = parallel::map(maps, jobs, move |index| {
         let seed = seed0 + index as u64;
-        let a = play(
-            players,
-            width,
-            height,
-            seed,
-            turns,
-            city_states,
-            &speed,
-            0,
-            arms,
-            gene,
-            &base,
-        );
-        let b = play(
-            players,
-            width,
-            height,
-            seed,
-            turns,
-            city_states,
-            &speed,
-            1,
-            arms,
-            gene,
-            &base,
-        );
+        let a = play(seed, 0, &config);
+        let b = play(seed, 1, &config);
         (a, b)
     });
 
