@@ -24,11 +24,14 @@ Requires the mirror server on :8610 (see civvis-civ6-mirror/follow.py).
 - CITIES  compare the SETS and name what is missing, never the counts.
 - UNITS   likewise. "21 exported, 15 reconstructed" once read as healthy because
           nothing compared them.
+- HOSTILES every exported hostile must be somewhere on the board. ONE DIRECTION
+          only: the board's non-seat units include rivals and city-states, so the
+          two counts are not comparable and are deliberately not printed as a pair.
 - TREASURY gold and faith are BALANCES (`GetGoldBalance`, `GetFaithBalance`), not
           the per-turn rates `economy_drift` compares. Same turn, or the delta is
           just income.
 
-## Four ways this checker itself cried wolf
+## Five ways this checker itself cried wolf
 
 Each of these is a real bug I nearly reported, caught only by looking again:
 
@@ -45,6 +48,11 @@ Each of these is a real bug I nearly reported, caught only by looking again:
    was one turn of income at +9 gold and +2 faith. Bounded, the same instant read
    134/134 and 27/27. That is defect 1 again, in a new check, which is why the
    note below its `latest_state` says to bound every future reader.
+5. HOSTILES, on its very first run, printed `export 0  board 1` as though those
+   were a matched pair. They are not: the board's non-seat units include rivals
+   and city-states, the export's `hostiles` is only the threat list. The count
+   comparison was removed the same minute it was written -- a line that invites a
+   false reading is worse than no line.
 
 ⚠ The board served on :8610 is follow.py's FLIPPED staged copy:
 `board_axial = offset_to_axial(x, TOP - y)`. The flip constant is discovered here
@@ -278,6 +286,60 @@ def main():
                   f"CIVVIS does not model; the decider's `dropped_units` names which")
     print(f"UNITS    export {len(civ6_units)}  board {len(ours)}"
           + (detail or "   OK"))
+
+    # --- HOSTILES ----------------------------------------------------------
+    #
+    # ★★★★★ THE ONE THING ON THE BOARD THE SEAT MOST NEEDS TO SEE, AND NOTHING
+    # CHECKED IT. Every other line here verifies what the empire OWNS. The threat
+    # list is what it must plan AROUND, and until now no instrument compared it.
+    #
+    # Measured 2026-08-02 on run civvis-20260802T041527Z: 14 settlers were built
+    # and every one vanished at hp 100 having moved 0-4 tiles from the capital,
+    # while the city count sat at 1 from turn 41 to 241. Civilization VI CAPTURES
+    # civilians rather than killing them, so full health at disappearance is the
+    # signature of capture — and on each settler's last turn a hostile stood 1-3
+    # tiles away, 8 of 13 of them ADJACENT. One of those "hostiles" was itself a
+    # UNIT_SETTLER: ours, already taken.
+    #
+    # The first question that asks is whether the seat could SEE them, and it took
+    # a hand-written pass over events.jsonl to answer (it could — 11 to 15 hostiles
+    # exported on every capture turn). This line makes that answer automatic.
+    #
+    # ⚠ Hostiles are planted under the BARBARIAN SEAT, not the viewer, so they are
+    # board units whose owner is not `view_player` — see `rebuild_from_state`'s
+    # `barbarian_seat` branch, which records `no_barbarian_seat` for every hostile
+    # when that seat is missing. A roster with no barbarian seat cannot hold the
+    # threat list at all, and that reads here as every hostile missing.
+    civ6_hostiles = list(state.get("hostiles") or [])
+    seat = board.get("view_player", 0)
+    theirs = [u for u in board.get("units", []) if u.get("owner") != seat]
+    their_pos = {tuple(u["pos"]) for u in theirs if u.get("pos")}
+    missing_hostiles = [
+        f'{h.get("kind", "?")}@{h.get("x")},{h.get("y")}'
+        for h in civ6_hostiles
+        if axial(h.get("x", 0), best - h.get("y", 0)) not in their_pos
+    ]
+    # ⚠⚠ ONE DIRECTION ONLY, AND THE COUNTS ARE NOT COMPARABLE. `theirs` is every
+    # board unit the viewer does not own — rivals and city-states as well as
+    # barbarians — while `hostiles` is only the threat list. Printing the two
+    # side by side as though they should match invites exactly the false reading
+    # the rest of this file exists to prevent; the first run of this check read
+    # `export 0  board 1` and looked like a defect when nothing was wrong.
+    #
+    # The invariant that IS true: every exported hostile must be somewhere on the
+    # board. The reverse is not.
+    #
+    # ⚠ An empty threat list is a REAL state, not a failure. Early turns and quiet
+    # stretches genuinely have none, and failing on that would cry wolf across most
+    # of a peaceful game — the same care the FOG line takes over a board with
+    # nothing fogged.
+    if missing_hostiles:
+        problems.append("hostiles")
+    print(f"HOSTILES export {len(civ6_hostiles)}"
+          + (f"   ⚠ {len(missing_hostiles)} NOT on the board: {missing_hostiles[:6]}"
+             if missing_hostiles
+             else ("   all on the board   OK" if civ6_hostiles
+                   else "   none exported   OK")))
 
     # --- TREASURY ----------------------------------------------------------
     #
