@@ -58,7 +58,7 @@ fn hexes(list: &str) -> Vec<String> {
                 !next.is_ascii_hexdigit(),
                 "colour at byte {at} is longer than #rrggbb"
             );
-            out.push(format!("#{}", &hex[..6].to_ascii_lowercase()));
+            out.push(format!("#{}", hex[..6].to_ascii_lowercase()));
         }
     }
     out
