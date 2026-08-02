@@ -4,7 +4,7 @@
 cannot be used for a CIVVIS-driven attempt. This does one rung, repeatedly, with the
 decision loop attached, and keeps a ledger.
 
-    python3 tools/civ6_civvis_climb.py --attempts 12 --victory domination
+    python3 tools/civ6_civvis_climb.py --attempts 12 --victory score
 
 ⚠ ONE HARNESS AT A TIME. There is one installation, one mod directory, one log and
 one run lock. Two harnesses driving it interleave their installs and each reads the
@@ -491,13 +491,40 @@ def main() -> int:
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
     ap.add_argument("--timeout", type=float, default=5400.0)
-    # ⚠ Passed straight to the brain, and domination is currently unreachable:
-    # `findWarTarget` needs a REVEALED rival city and meeting a civilization
-    # reveals none of its land, so the target set stays empty for the whole game.
-    # Measured 2026-07-31: `met: 1` with `cities_SEEN: 0` at t125 and zero
-    # declarations in every unforced run. A ladder left on this default measures a
-    # plan that cannot complete. See the note on `--victory` in civ6_brain.py.
-    ap.add_argument("--victory", default="domination")
+    # ⚠⚠ THE DEFAULT WAS `domination`, AND THE COMMENT SAYING SO WAS ALREADY HERE.
+    #
+    # "A ladder left on this default measures a plan that cannot complete" was
+    # written on 2026-07-31 against a different mechanism — `findWarTarget` needs a
+    # REVEALED rival city, and meeting a civilization reveals none of its land, so
+    # the target set stayed empty (`met: 1`, `cities_SEEN: 0` at t125, zero
+    # declarations in every unforced run). The diagnosis landed; the default did
+    # not move. All 104 rows of `civvis_ladder.jsonl` then carried `domination`
+    # with ZERO wins, and the 21 `victory` events in them are RIVALS winning.
+    #
+    # ★★★★★ It is also out of budget, independently of that mechanism.
+    # `victory_eval`'s own per-target turn limits are 650 for Domination and 300
+    # for Score; this ladder runs `--max-turns 250`. Measured at exactly those
+    # settings (`victory_eval --target domination,score --games 8 --players 6
+    # --turns 250`): eight of eight domination-targeted games ended by score at the
+    # turn limit, none by conquest. Score is the only lane whose budget is near 250.
+    #
+    # ★★★★★ And it is not merely unwinnable, it is WORSE. Mirrored head-to-head at
+    # this ladder's own profile, `ai_eval advanced_target_score
+    # advanced_target_domination --pairs 30 --players 6 --turns 250`:
+    #
+    #     discovery    seed 71000000   68.3%   +134 Elo   p=0.0010
+    #     confirmation seed 82000000   70.0%   +147 Elo   p=0.0042   CONFIRMED
+    #
+    # The confirmation came in ABOVE the discovery estimate rather than regressing
+    # toward parity. Per-seat means on the confirmed arm: gold 1226 against 194,
+    # culture 81 against 48, score 429 against 373 — the conquest lane takes MORE
+    # cities (5.08 against 4.49) and converts none of them, which is the treasury
+    # collapse recorded in `civvis-civ6-expansion-ends-in-bankruptcy`.
+    #
+    # ⚠ `domination` stays available and unchanged; only the default moves. Anyone
+    # comparing against the 104 existing rows must pass `--victory domination`
+    # explicitly, and rows either side of this commit are NOT comparable.
+    ap.add_argument("--victory", default="score")
     # Passed straight through to the brain; see its `--strategy` note for why the
     # default changed from the built-in AdvancedAi and what would undo it.
     ap.add_argument("--strategy", default="auto",
