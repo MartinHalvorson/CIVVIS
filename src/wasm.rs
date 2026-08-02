@@ -176,7 +176,7 @@ fn route(method: &str, target: &str, body: &str) -> Value {
         ("GET", "/runtime") => json!({
             "server_instance": process_identity(),
             "seed": with_session(|s| s.game.seed),
-            "commit": option_env!("CIVVIS_COMMIT").unwrap_or("unknown"),
+            "commit": runtime_commit("unknown"),
         }),
 
         // No per-viewer tile delta: the page is told the whole world every
