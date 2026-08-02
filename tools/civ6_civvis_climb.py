@@ -74,6 +74,18 @@ def dismiss_crash_dialogs() -> None:
 
     ⚠ These are not cosmetic. Civilization VI segfaults (see the governor-appointment
     note) and every teardown `pkill`s it, so Steam and macOS both leave modal
+    ⚠⚠ THE PROCESS IS "Problem Reporter", NOT "ReportCrash", AND THAT ONE WORD
+    COST A BATCH. `ReportCrash` is the background daemon; it has no windows. The
+    dialog a human actually sees — titled "Problem Report for Civilization VI",
+    with buttons Hide Details / OK / Reopen — belongs to a process literally named
+    `Problem Reporter`. This list named only the daemon, so it walked windows that
+    never exist and the real modal was never closed.
+
+    Measured 2026-08-02: four Civ 6 segfaults left a Problem Reporter window up.
+    Every later attempt then reported "NO GAME — could not start a game from the
+    main menu", because the modal was taking the click the Create Game vision pass
+    was about to make. `pgrep -lf "Problem Reporter"` is how to confirm it.
+
     dialogs behind. A modal left on screen steals the click the NEXT attempt's
     vision pass is about to make on the Create Game screen — and this project has
     already had a stray click land on "Exit to Desktop".
@@ -83,7 +95,7 @@ def dismiss_crash_dialogs() -> None:
     """
     script = """
     tell application "System Events"
-        repeat with procName in {"Steam", "Civilization VI", "Civ6", "ReportCrash"}
+        repeat with procName in {"Steam", "Civilization VI", "Civ6", "ReportCrash", "Problem Reporter"}
             try
                 if exists (process procName) then
                     tell process procName
