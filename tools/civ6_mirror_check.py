@@ -148,7 +148,69 @@ def live_runtime_problems(run, process_text=None, now=None, max_age=120.0):
         problems.append("the CIVVIS decision worker is absent")
     if game_running and age > max_age:
         problems.append(f"the Firaxis export is {age:.0f}s stale")
+    problems.extend(stale_rig_problems(lines))
     return problems
+
+
+# The deployed binary that RENDERS the board this file compares against. It is not
+# a git checkout and nothing rebuilds it.
+RIG_BINARY = str(Path.home() / "civvis-civ6-mirror" / "civvis")
+
+
+def stale_rig_problems(process_lines, rig=RIG_BINARY):
+    """Is the board being SERVED built by older code than the board being DECIDED?
+
+    ⚠⚠ THE LINE ABOVE USED TO SAY "export and CIVVIS worker are current" HAVING
+    CHECKED ONLY THAT THE WORKER PROCESS EXISTS. Presence is not currency, and the
+    difference cost a whole diagnosis.
+
+    Measured 2026-08-02. `/Users/martin/civvis-civ6-mirror/civvis` — a DEPLOYED
+    binary, not a git checkout, that nothing rebuilds — was dated Aug 1 02:52 while
+    the decider's binary was minutes old. `follow.py` stages into that rig and
+    `civvis play --serve` renders it, so both the CIVVIS window and every check in
+    this file were reading a DAY-OLD reconstruction of a current game. CONTROL
+    reported OK throughout.
+
+    One rebuild moved four whole axes from failing to passing:
+
+        BEFORE  setup, tiles, knowledge, city-states, public facts, city facts, unit facts
+        AFTER   tiles, knowledge, unit facts
+
+    including `SETUP ⚠ speed Civ6=online CIVVIS=standard`, which I was one step
+    from chasing as a code defect. That one matters on its own: Online costs are
+    HALF of Standard, so a reconstruction running Standard prices every build and
+    every tech wrong.
+
+    The decider's binary is named on the brain's own command line (`--bin`), so the
+    comparison needs no configuration — it asks the running system what it is using.
+    """
+    wanted = None
+    for line in process_lines:
+        if "civ6_brain.py" not in line or "--bin" not in line:
+            continue
+        parts = line.split()
+        if "--bin" in parts:
+            index = parts.index("--bin")
+            if index + 1 < len(parts):
+                wanted = parts[index + 1]
+                break
+    if wanted is None:
+        return []
+    try:
+        rig_at = os.path.getmtime(rig)
+        decider_at = os.path.getmtime(wanted)
+    except OSError:
+        # ⚠ Absent is not stale. A rig that is not there at all is a different
+        # failure and belongs to whoever starts the server.
+        return []
+    if rig_at >= decider_at:
+        return []
+    behind = (decider_at - rig_at) / 3600.0
+    return [
+        f"the served board is built by a rig binary {behind:.1f}h older than the "
+        f"decider's — rebuild it (cargo build --release --bin civvis), then restart "
+        f"follow.py AND the server, because a running one keeps its inode"
+    ]
 
 
 def axial(x, y):
@@ -803,7 +865,8 @@ def main(argv=None):
             problems.append("control")
             print("CONTROL  ⚠ " + "; ".join(runtime))
         else:
-            print("CONTROL  live game, export and CIVVIS worker are current   OK")
+            print("CONTROL  live game, fresh export, worker present, rig binary "
+                  "not behind the decider   OK")
     # The viewer can publish a staged board a fraction of a second before follow.py
     # appends the corresponding host event. Never compare that future board with the
     # previous export: one ordinary unit move then looks exactly like a dropped unit.
