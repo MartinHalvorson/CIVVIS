@@ -22428,11 +22428,10 @@ function draw() {
       // both the lobes and their spacing so the whole paired silhouette grows
       // 20% wider, rather than merely making the two strokes overlap more.
       const hillWidth = 1.2, hillHeight = 2.6 * 1.4;
-      // Woods and rainforest occupy the hill's upper half. Drop only those
-      // hills by their new height: the new crest then starts at the old
-      // baseline, leaving both the landform and its trees legible.
-      const woodedHill = t.feature === "forest" || t.feature === "jungle";
-      const hillBaseY = y + 3 + (woodedHill ? hillHeight : 0);
+      // Seat the base on the horizontal through the hex's two lower outside
+      // corners. Deriving it from the projected hex keeps the glyph aligned if
+      // tile size or Strategic's pitch ever changes.
+      const hillBaseY = y + S * YS / 2;
       cx.strokeStyle = "#00000066"; cx.lineWidth = 2.4;
       cx.beginPath();
       cx.ellipse(x - 7 * hillWidth, hillBaseY,
