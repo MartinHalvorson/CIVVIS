@@ -496,6 +496,10 @@ def outcome_of(tag: str) -> dict:
                 seat = event
             elif kind in ("victory", "defeat", "gameover"):
                 victory = event
+                # The mod's terminal event is emitted by the game core BEFORE it
+                # halts, so unlike the end-screen autoclose below it actually
+                # arrives. See the note under `reached_end_screen`.
+                ended_on_screen = event
             # ★★★★ A GAME THAT ENDED IS NOT A GAME THAT HUNG. Civilization VI's
             # end-game screen halts the game core, so the agent stops exporting and
             # the harness times out — and every such run was written down as
@@ -504,6 +508,28 @@ def outcome_of(tag: str) -> dict:
             #
             # ⚠ This records that the game ENDED, never who won. `won()` still
             # demands the mod's victory event naming us.
+            #
+            # ⚠⚠⚠ AND IT WAS KEYED ON AN EVENT THAT HAS NEVER ONCE BEEN EMITTED.
+            # Measured across every run on this machine:
+            #
+            #     250 runs, 145 `autoclose_armed` for EndGameMenu, ZERO `autoclose`
+            #
+            # `armed` fires when the context registers its handler, which happens at
+            # game START — line 19 of a real run's `events.jsonl`. The `autoclose`
+            # that this looked for cannot happen at all: Civilization VI halts the
+            # Game Core when it shows the end-of-game screen, so the shim is ticking
+            # off a frame loop that has stopped.
+            #
+            # So `reached_end_screen` read `None` on all 250 rows while its name
+            # promised the opposite, and the paragraph above — a real finding —
+            # described a column that could not deliver it. The evidence that DOES
+            # exist is the mod's own terminal event, emitted by the game core before
+            # it halts. Take that.
+            #
+            # ⚠ Deliberately ALSO counts a rival's victory: the question this
+            # answers is "did the game reach its end", not "did we win". The
+            # terminal event is captured in the `victory` branch above — this is
+            # an `elif` chain, so setting it here as well would be unreachable.
             elif kind == "autoclose" and event.get("screen") == "EndGameMenu":
                 ended_on_screen = event
     from_events = {
