@@ -424,8 +424,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `ranged_tile_is_blind` returns `false` on that flag before it reads the
 /// board, so every configured, legacy and Elo agent scores every tile exactly
 /// as it did. A compatibility re-pin.
+///
+/// The siege-role branch adds `best_military_role`, `siege_is_the_missing_arm`
+/// and a `missing_siege_arm` term on the army floor, all behind the new
+/// `siege_role` flag. It is `false` in both `BasicAi` constructors and every
+/// new path short-circuits on it before reading anything, so every configured,
+/// legacy and Elo agent picks exactly what it always picked. A compatibility
+/// re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe878_c745_0830_3603;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd66b_4301_ef64_ad8d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
