@@ -57,9 +57,16 @@ and a list of function indices.
 
 ### What a visitor lands on
 
-Six majors on a Continents map, spectated: the shape of game the channel shows,
-and the one that asks nothing of somebody who has just arrived. The lobby is
-right there for anyone who wants to play a seat instead.
+An AI-only simulation on the stock Small map: six free-for-all majors and nine
+city-states on a 74×46 flat Continents world, with a hot equator and cold poles,
+an Ancient start, Online game speed, Blitz watch pace, and every victory
+condition enabled. It is the shape of game the desktop launchers open too, and
+the one that asks nothing of somebody who has just arrived. The lobby is right
+there for anyone who wants to play a seat instead.
+
+The lower-left build marker names the pinned revision, its commit time, and its
+live age. It describes source recency rather than packaging recency: rebuilding
+the same commit tomorrow does not make the code look a day newer.
 
 The world is **different every visit**. The engine is deterministic per seed and
 imports nothing, so it cannot vary on its own — the page rolls a seed per load

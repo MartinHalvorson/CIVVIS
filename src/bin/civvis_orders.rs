@@ -805,6 +805,15 @@ fn decide(
     // releases only the power-gap half, and only after the posture has had
     // `RECOVERY_POSTURE_LIMIT` standard turns to work.
     ai.enable_bounded_recovery();
+    // ⚠ The siege appetite was one unit for any target city at all, walled
+    // or not. The engine halves a non-siege unit's wall damage
+    // (`mult = if spec.siege { 1.0 } else { 0.5 }`) and docks a non-siege
+    // ranged unit a flat 17 attack for shooting a city, so an army without a
+    // siege train pays twice. Measured on run `civvis-20260803T005930Z`: four
+    // siege units across 251 turns against a Korea holding five walled cities;
+    // 27 turns in contact with Jinju and Jeonju removed 12 and 9 points of a
+    // 400-point wall, while Korea stripped Kwango's 400 in six.
+    ai.enable_siege_tracks_the_wall();
     // ⚠ `local_strength_ratio` prices an objective city only while it is
     // currently in sight, and returns its `hostile <= 0.0` sentinel of 3.0 —
     // the maximum — otherwise. Under live fog that makes a walled enemy
