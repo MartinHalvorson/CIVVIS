@@ -690,11 +690,10 @@
     text-align: left; transition: border-color .12s ease, background .12s ease;
   }
   .diplomacy-card:hover { transform: none; border-color: #718b81; background: linear-gradient(100deg, #0e1b17f7, #1a302af2); }
-  .diplomacy-card.allied { border-color: #4f9488; box-shadow: inset 3px 0 #6bc0ae, inset 0 1px #fff1; }
-  .diplomacy-card.friend { border-color: #708d62; box-shadow: inset 3px 0 #9dbb7d, inset 0 1px #fff1; }
   .diplomacy-card.at-war {
-    /* Keep the row geometry stable, but move the red border 30% toward the
-       danger color so wars stand out sooner in the standings scan. */
+    /* War is the only relationship state carried by the row frame. Alliances
+       and friendships remain in the words of the dossier instead of painting
+       green around a civilization. */
     border-color: color-mix(in srgb, #a65450 70%, var(--danger));
     box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1;
   }
@@ -823,7 +822,7 @@
   /* An open dossier leaves a quiet highlight on its player row. The dossier
      itself is a separate map window, so several civilizations can stay open
      without changing the height or scroll position of the standings. */
-  .diplomacy-card.expanded { border-color: #8ba79b; }
+  .diplomacy-card.expanded:not(.at-war) { border-color: #697176; }
   #dossier-windows {
     position: absolute; inset: 0; z-index: 12; overflow: hidden;
     pointer-events: none;
@@ -3340,14 +3339,21 @@
   #victoryhud > .hud-section-heading { color: #c4c9c6; }
   .diplomacy-card, #playerhud .diplomacy-card.pinned {
     background: linear-gradient(105deg, #0b0d0ff5, #171a1cee);
+  }
+  .diplomacy-card:not(.at-war), #playerhud .diplomacy-card.pinned:not(.at-war) {
     border-color: #42494d;
   }
-  .diplomacy-card:hover {
+  .diplomacy-card:hover:not(.at-war) {
     border-color: #626a6f;
     background: linear-gradient(100deg, #101315f7, #202428f2);
   }
   #playerhud .diplomacy-card.pinned {
     box-shadow: inset 0 1px #ffffff10, 0 0 0 1px #caa45633,
+                0 var(--hud-row-gap) 0 #090b0d, 0 5px 14px #0009;
+  }
+  #playerhud .diplomacy-card.pinned.at-war {
+    box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1,
+                0 0 0 1px #caa45633,
                 0 var(--hud-row-gap) 0 #090b0d, 0 5px 14px #0009;
   }
   .victory-turn { background: linear-gradient(155deg, #caa45618, #caa45606); }
@@ -25033,6 +25039,12 @@ function drawPlayerHud() {
   syncVictoryLeaderCapacity(victoryHud);
   const acting = SPEC ? state.current : 0;
   const highlightActing = highlightActingPlayerInHud();
+  // The omniscient standings describe the world, not whichever seat happens
+  // to be taking its turn. Use the public war ledger there so every current
+  // belligerent is red at once; a played or Watch-as view keeps the familiar
+  // relationship-to-me meaning supplied by `at_war_with_me`.
+  const activeWarPlayers = SPEC && !Number.isInteger(state.view_player)
+    ? activeWarPlayerIds() : null;
   const majors = state.players
     .filter(p => !p.is_minor && !p.is_barbarian && metPlayer(p))
     .sort((a, b) => b.score - a.score || a.id - b.id);
@@ -25127,11 +25139,12 @@ function drawPlayerHud() {
           (capitalHolder ? ` — now held by ${capitalHolder.civ}` : " — now in other hands")
         : `View ${p.civ}'s empire from its capital, ${capital.name}`;
       const alliance = p.alliance;
+      const atWar = activeWarPlayers ? activeWarPlayers.has(p.id) : p.at_war_with_me;
       const strategy = p.ai_strategy || "";
       const strategyText = strategy ? `${titleCase(strategy)} plan` : "";
       const relation = !p.alive ? "Defeated"
+        : atWar ? "At war"
         : p.id === acting ? "Acting civilization"
-        : p.at_war_with_me ? "At war"
         : alliance ? `${titleCase(alliance.kind)} Alliance · Level ${alliance.level}`
         : p.friend ? "Declared Friend"
         : "Neutral standing";
@@ -25207,8 +25220,7 @@ function drawPlayerHud() {
         : `${p.ai_name || "AI player"} · ${eloKnown
             ? `${eloProvisional ? "provisional " : ""}ELO ${eloValue} ±${eloRd}` : "unrated"}` +
           ` · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
-      const relationClass = alliance ? "allied" : p.friend ? "friend" : "";
-      const stateClass = `${relationClass} ${p.at_war_with_me ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
+      const stateClass = `${atWar ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
       const stats = statsByPlayer.get(p.id);
       const watchTitle = `Watch ${p.civ} through its fog of war · ${relationSummary}${agendaText}`;
       const expanded = hudOpenDossiers.includes(p.id);
@@ -25446,6 +25458,26 @@ dossierWindows.addEventListener("click", ev => {
 
 function civName(id) {
   return state.players.find(player => player.id === id)?.civ || `Player ${id}`;
+}
+
+// The war log is public knowledge and retains alliance and city-state parties,
+// including when one leaves a conflict that continues without it. Only parties
+// whose latest interval is still open count; the principals are the fallback
+// for legacy records that predate the party list.
+function activeWarPlayerIds() {
+  const players = new Set();
+  for (const war of (state.wars || [])) {
+    if (war.ended !== null && war.ended !== undefined) continue;
+    const parties = Array.isArray(war.parties) ? war.parties : [];
+    if (parties.length) {
+      for (const party of parties)
+        if (party.exited === null || party.exited === undefined) players.add(party.player);
+    } else {
+      for (const player of [war.aggressor, war.defender])
+        if (player !== null && player !== undefined) players.add(player);
+    }
+  }
+  return players;
 }
 
 // Wars this civilization is still fighting, longest-running first, with what

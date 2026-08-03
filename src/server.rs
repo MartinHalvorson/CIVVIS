@@ -7762,7 +7762,7 @@ mod tests {
         ), "the five identity columns inside one button are the parent's own tracks");
         assert!(!EMBEDDED_INDEX.contains("minmax(0, .55fr) minmax(0, .55fr)"),
             "a second copy of the identity ratios is exactly what subgrid replaced");
-        // The rows carry a 1px border that says allied, at war or defeated, and
+        // The rows carry a 1px border that says at war or defeated, and
         // both boxes are border-box — so the heading carries a transparent one
         // or it divides two more pixels than a row does and every head sits off
         // its own figures by up to a pixel, in opposite directions at the two
@@ -8010,7 +8010,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const SHOT_KIND = {"));
         assert!(EMBEDDED_INDEX.contains("const SHOT_STYLE = {"));
         assert!(EMBEDDED_INDEX.contains("function drawAtmosphere("));
-        assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-card.at-war"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
         assert!(EMBEDDED_INDEX.contains("const focusBounds = mapFocusBounds();"));
@@ -8387,6 +8387,38 @@ mod tests {
         assert!(side_rule.contains("order: -1"));
         assert!(EMBEDDED_INDEX.contains("<strong>${reportedTurn()}</strong>"));
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
+    }
+
+    /// Player-row color is reserved for a current war. Friendships and
+    /// alliances remain available in the row's text and dossier, but must not
+    /// paint green state frames that compete with the red danger signal. The
+    /// omniscient spectator uses the public conflict ledger so both sides —
+    /// including active allied parties — stay red regardless of whose turn it
+    /// is, while a played or Watch-as view remains relative to that seat.
+    #[test]
+    fn browser_player_rows_use_relationship_color_only_for_active_wars() {
+        assert!(!EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
+        assert!(!EMBEDDED_INDEX.contains(".diplomacy-card.friend"));
+        assert!(!EMBEDDED_INDEX.contains("const relationClass ="));
+        assert!(EMBEDDED_INDEX.contains("function activeWarPlayerIds()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (war.ended !== null && war.ended !== undefined) continue;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (party.exited === null || party.exited === undefined) players.add(party.player);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const activeWarPlayers = SPEC && !Number.isInteger(state.view_player)"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const atWar = activeWarPlayers ? activeWarPlayers.has(p.id) : p.at_war_with_me;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const stateClass = `${atWar ? \"at-war\" : \"\"} ${p.alive ? \"\" : \"dead\"}`;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-card.expanded:not(.at-war)"));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-card:hover:not(.at-war)"));
+        assert!(EMBEDDED_INDEX.contains("#playerhud .diplomacy-card.pinned.at-war"));
     }
 
     /// A defeated civilization all but disappears from the masthead — its row
