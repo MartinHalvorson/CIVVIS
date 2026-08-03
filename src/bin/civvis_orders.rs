@@ -2165,6 +2165,12 @@ fn main() {
                     // circles could never fire in this bridge at all.
                     let previous: Option<std::collections::BTreeMap<u32, i64>> =
                         live.as_ref().map(|board| board.civ6_of.clone());
+                    // The treasury baseline dies with the old board unless it is
+                    // handed over: see `LiveMirror::carry_treasury_baseline`. Without
+                    // this, `gold_per_turn` is 0 for the whole game and every
+                    // bankruptcy response that reads it is dead.
+                    let carried_treasury =
+                        live.as_ref().and_then(|board| board.treasury_baseline());
                     let mut board = civvis::mirror::LiveMirror::new(
                         &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
                     );
@@ -2180,6 +2186,7 @@ fn main() {
                         }
                         None => ai.forget_unit_memory(),
                     }
+                    board.carry_treasury_baseline(carried_treasury);
                     let reply = decide(&mut board, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
                     live = Some(board);
                     reply
