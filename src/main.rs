@@ -296,7 +296,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// on the flag before anything is read, so every configured, legacy and Elo
 /// agent is byte-identical. Another compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3ff9_fbfa_5d2f_bbff;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8d43_d159_fee8_377f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

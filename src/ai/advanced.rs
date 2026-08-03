@@ -15379,7 +15379,7 @@ impl AdvancedAi {
                                     Some("goody_hut" | "meteor_goody" | "barbarian_camp")
                                 )
                             })
-                            || g.units_at(*to)
+                            || g.unit_ids_at(*to)
                                 .iter()
                                 .any(|other| g.units[other].owner != pid)
                     }
