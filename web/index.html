@@ -3579,7 +3579,7 @@
          and this is the current answer. It names one civilization at a time —
          the standings table already carries every seat's doctrine in its PLAN
          column, and twenty research cards would bury the logs. -->
-    <details class="sidebar-section" id="strategysec" data-section="active-strategy" open>
+    <details class="sidebar-section" id="strategysec" data-section="active-strategy">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span>Active AI strategy</span></span>
         <span class="section-meta"><span class="event-scope" id="strategyscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -3605,7 +3605,7 @@
       </div>
     </details>
 
-    <details class="sidebar-section" id="reasonsec" data-section="ai-reasoning" open>
+    <details class="sidebar-section" id="reasonsec" data-section="ai-reasoning">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">◉</span><span>AI reasoning log</span></span>
         <span class="section-meta"><span class="event-scope" id="reasonscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -3634,7 +3634,7 @@
       </div>
     </details>
 
-    <details class="sidebar-section" id="warsec" data-section="war-log" open>
+    <details class="sidebar-section" id="warsec" data-section="war-log">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">⚔</span><span>War log</span></span>
         <span class="section-meta"><span class="event-scope" id="warscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -3658,7 +3658,7 @@
       </div>
     </details>
 
-    <details class="sidebar-section" id="eventsec" data-section="event-log" open>
+    <details class="sidebar-section" id="eventsec" data-section="event-log">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">☷</span><span>Game event log</span></span>
         <span class="section-meta"><span class="event-scope" id="eventscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -3680,7 +3680,7 @@
       </div>
     </details>
 
-    <details class="sidebar-section" id="govsec" data-section="government" style="display:none" open>
+    <details class="sidebar-section" id="govsec" data-section="government" style="display:none">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">♜</span><span>Government</span></span>
         <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -6832,8 +6832,8 @@ let serverInstance = null;
 // build this document actually came from is what tells a successor worth
 // reloading for from one this page is already running.
 let documentCommit = null;
-function formatBuildAge(commitDate) {
-  const totalMinutes = Math.floor(Math.max(0, Date.now() - commitDate.getTime()) / 60000);
+function formatBuildAge(buildDate) {
+  const totalMinutes = Math.floor(Math.max(0, Date.now() - buildDate.getTime()) / 60000);
   const days = Math.floor(totalMinutes / 1440);
   const hours = Math.floor(totalMinutes % 1440 / 60);
   const minutes = totalMinutes % 60;
@@ -6843,9 +6843,12 @@ function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
   const commit = st?.server_commit;
   const commitTime = st?.server_commit_time;
+  const builtAt = st?.server_built_at;
   const commitDate = typeof commitTime === "string" ? new Date(commitTime) : null;
+  const buildDate = typeof builtAt === "string" ? new Date(builtAt) : null;
   if (!marker || typeof commit !== "string" || commit === "unknown" ||
-      !commitDate || !Number.isFinite(commitDate.getTime())) {
+      !commitDate || !Number.isFinite(commitDate.getTime()) ||
+      !buildDate || !Number.isFinite(buildDate.getTime())) {
     if (marker) marker.hidden = true;
     return;
   }
@@ -6853,9 +6856,9 @@ function updateBuildMarker(st = state) {
     year: "numeric", month: "short", day: "numeric",
     hour: "numeric", minute: "2-digit", timeZoneName: "short",
   });
-  marker.textContent = `${commit.slice(0, 7)} · ${committed} · ` +
-    `Build is ${formatBuildAge(commitDate)} old`;
-  marker.title = `${commit}\nCommitted ${commitTime}`;
+  marker.textContent = `${commit.slice(0, 7)} · committed ${committed} · ` +
+    `Build is ${formatBuildAge(buildDate)} old`;
+  marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}`;
   marker.hidden = false;
 }
 setInterval(() => updateBuildMarker(), 60_000);
@@ -7347,12 +7350,18 @@ function reportSpecStatus() {
     body: JSON.stringify({paused: specPaused})}, 3000).catch(() => {});
 }
 function updateSpecPauseButtons() {
-  const action = specPaused ? "Resume" : "Pause";
+  // Turn 1 can already contain several completed seats, so the turn number
+  // alone does not mean the simulation has never run. Seat 0 still acting is
+  // the untouched opening position; a paused world there is started, not
+  // resumed. Every later paused position resumes in the ordinary sense.
+  const atStart = state?.turn === 1 && state?.current === 0 && state?.winner == null;
+  const action = specPaused ? (atStart ? "Start" : "Resume") : "Pause";
+  const icon = specPaused ? "▶" : "⏸";
   const main = document.getElementById("specpause");
   const collapsed = document.getElementById("collapsepause");
-  main.textContent = specPaused ? "▶ Resume" : "⏸ Pause";
+  main.textContent = `${icon} ${action}`;
   main.setAttribute("aria-pressed", String(specPaused));
-  collapsed.textContent = specPaused ? "▶" : "⏸";
+  collapsed.textContent = icon;
   collapsed.title = `${action} simulation`;
   collapsed.setAttribute("aria-label", `${action} simulation`);
   collapsed.setAttribute("aria-pressed", String(specPaused));
@@ -9172,25 +9181,27 @@ function drawFeatureEffects(t, x, y) {
 }
 
 // Strategic terrain marks are tiny map symbols, not reduced illustrations.
-// Marsh uses a shallow inverse-hill silhouette: a broad, low W that reads as
-// wet ground without competing with units, yields, or improvements.
+// Marsh uses a shallow inverse-hill silhouette: a broad, very low W that reads
+// as wet ground without competing with units, yields, or improvements. Keep
+// its vertical profile at one third of the original 15 px design.
 function drawStrategicMarsh(x, y) {
+  const h = 1 / 3;
   cx.save();
   cx.lineCap = "round"; cx.lineJoin = "round";
   cx.fillStyle = "#86cddd";
   cx.strokeStyle = "#285f79";
   cx.lineWidth = 1.8;
   cx.beginPath();
-  cx.moveTo(x - 15, y - 7);
-  cx.bezierCurveTo(x - 13, y - 1, x - 12, y + 5, x - 7, y + 5);
-  cx.bezierCurveTo(x - 3.5, y + 5, x - 3, y - 1, x, y - 1);
-  cx.bezierCurveTo(x + 3, y - 1, x + 3.5, y + 5, x + 7, y + 5);
-  cx.bezierCurveTo(x + 12, y + 5, x + 13, y - 1, x + 15, y - 7);
-  cx.lineTo(x + 15, y - 2);
-  cx.bezierCurveTo(x + 12.5, y + 5, x + 11, y + 8, x + 7, y + 8);
-  cx.bezierCurveTo(x + 3.5, y + 8, x + 3, y + 2, x, y + 2);
-  cx.bezierCurveTo(x - 3, y + 2, x - 3.5, y + 8, x - 7, y + 8);
-  cx.bezierCurveTo(x - 11, y + 8, x - 12.5, y + 5, x - 15, y - 2);
+  cx.moveTo(x - 15, y - 7 * h);
+  cx.bezierCurveTo(x - 13, y - h, x - 12, y + 5 * h, x - 7, y + 5 * h);
+  cx.bezierCurveTo(x - 3.5, y + 5 * h, x - 3, y - h, x, y - h);
+  cx.bezierCurveTo(x + 3, y - h, x + 3.5, y + 5 * h, x + 7, y + 5 * h);
+  cx.bezierCurveTo(x + 12, y + 5 * h, x + 13, y - h, x + 15, y - 7 * h);
+  cx.lineTo(x + 15, y - 2 * h);
+  cx.bezierCurveTo(x + 12.5, y + 5 * h, x + 11, y + 8 * h, x + 7, y + 8 * h);
+  cx.bezierCurveTo(x + 3.5, y + 8 * h, x + 3, y + 2 * h, x, y + 2 * h);
+  cx.bezierCurveTo(x - 3, y + 2 * h, x - 3.5, y + 8 * h, x - 7, y + 8 * h);
+  cx.bezierCurveTo(x - 11, y + 8 * h, x - 12.5, y + 5 * h, x - 15, y - 2 * h);
   cx.closePath();
   cx.fill(); cx.stroke();
   cx.restore();
@@ -15550,31 +15561,27 @@ function drawEmpireDetailsPlanet(cells) {
   cx.restore();
 }
 
-const SETTLER_LENS_BANDS = [
-  {at:.78, fill:"#20df78", alpha:.91},
-  {at:.52, fill:"#61cd58", alpha:.87},
-  {at:.26, fill:"#c4c447", alpha:.83},
-  {at:0,   fill:"#db8c3f", alpha:.80},
-];
-function settleLensStyle(quality) {
-  const q = Math.max(0, Math.min(1, quality));
-  return SETTLER_LENS_BANDS.find(band => q >= band.at) ||
-    SETTLER_LENS_BANDS[SETTLER_LENS_BANDS.length - 1];
+// Civ 6's Settler lens is a water-availability guide, not a desirability
+// heatmap. It deliberately reuses the Appeal lens's dark green, light green,
+// gray and red: fresh water, coastal water, no water and unavailable ground.
+const SETTLER_LENS_STYLES = {
+  fresh:   {fill:"#176a3a", alpha:.90, label:"Fresh water", housing:3},
+  coast:   {fill:"#65ad5a", alpha:.86, label:"Coastal water", housing:1},
+  dry:     {fill:"#8b8f8a", alpha:.80, label:"No water access", housing:0},
+  blocked: {fill:"#b73535", alpha:.88, label:"Settlement unavailable", housing:0},
+};
+function settleLensStyle(water) {
+  return SETTLER_LENS_STYLES[water] || SETTLER_LENS_STYLES.dry;
 }
-function settleWaterColor(water) {
-  return water === "fresh" ? "#75ddff" : water === "coast" ? "#8de4cf" : "#edbb62";
+function paintSettlerLensTile(path, style, scale) {
+  path(); cx.fillStyle = style.fill; cx.globalAlpha = style.alpha; cx.fill();
+  // Keep individual hexes readable through the opaque Civ 6 category colors.
+  path(); cx.strokeStyle = "#13201c"; cx.globalAlpha = .38;
+  cx.lineWidth = .9 * scale; cx.stroke();
+  cx.globalAlpha = 1;
 }
 function drawSettlerLensSite(path, site, lens, scale, center) {
-  const quality = settleSiteQuality(site, lens);
-  const style = settleLensStyle(quality);
-  path(); cx.fillStyle = style.fill; cx.globalAlpha = style.alpha; cx.fill();
-  // A dark keyline keeps the water-access color readable over every quality
-  // band instead of letting hundreds of pale outlines dissolve into terrain.
-  path(); cx.strokeStyle = "#10231d"; cx.globalAlpha = .92;
-  cx.lineWidth = 3.4 * scale; cx.stroke();
-  path(); cx.strokeStyle = settleWaterColor(site.water); cx.globalAlpha = 1;
-  cx.lineWidth = 1.8 * scale; cx.stroke();
-  cx.globalAlpha = 1;
+  paintSettlerLensTile(path, settleLensStyle(site.water), scale);
   if (!center || !settleSiteIsRecommended(site, lens)) return;
   const [x, y, radius] = center;
   cx.save();
@@ -15592,8 +15599,9 @@ function drawPlanetSettlerLens(cells) {
     const site = lens.sites.get(key(cell.tile.pos));
     if (!site) {
       if (isWater(cell.tile)) continue;
-      planetPaintPath(cx, cell, .15);
-      cx.fillStyle = "rgba(18,17,22,.76)"; cx.fill();
+      paintSettlerLensTile(
+        () => planetPaintPath(cx, cell, .15), SETTLER_LENS_STYLES.blocked,
+        Math.max(.62, Math.min(1.15, planetCellInradius(cell) / 12)));
       continue;
     }
     const inradius = planetCellInradius(cell);
@@ -15614,7 +15622,8 @@ function drawSettlerLensFlat(tiles) {
     const site = lens.sites.get(key(tile.pos));
     if (!site) {
       if (isWater(tile)) continue;
-      hexPath(x, y, S + .2); cx.fillStyle = "rgba(18,17,22,.76)"; cx.fill();
+      paintSettlerLensTile(
+        () => hexPath(x, y, S + .2), SETTLER_LENS_STYLES.blocked, UI_K());
       continue;
     }
     drawSettlerLensSite(() => hexPath(x, y, S + .2), site, lens, UI_K(),
@@ -16447,12 +16456,12 @@ function draw() {
     } else if (t.feature === "marsh") {
       drawStrategicMarsh(x, y);
     } else if (t.feature === "oasis") {
-      // The original 17 x 11 pond and 13 px palm formed a roughly 22 x 20
-      // mark whose visual midpoint was (2.5, -1.5) from the hex centre. Scale
-      // that whole composition by the requested 2.5, then subtract its old
-      // midpoint so the enlarged oasis remains centred in its owning tile.
+      // The original 17 x 11 pond and 13 px palm form a roughly 22 x 20 mark
+      // whose visual midpoint is (2.5, -1.5) from the hex centre. A 2.0 scale
+      // is 20% smaller than 2.5; subtract the original midpoint before scaling
+      // so the resized oasis remains centred in its owning tile.
       cx.save();
-      cx.translate(x, y); cx.scale(2.5, 2.5); cx.translate(-2.5, 1.5);
+      cx.translate(x, y); cx.scale(2, 2); cx.translate(-2.5, 1.5);
       cx.fillStyle = "#3d7aa6"; cx.beginPath();
       cx.ellipse(0, 3, 8.5, 5.5, 0, 0, 7); cx.fill();
       cx.font = "13px sans-serif"; cx.fillText("🌴", 7, -5);
@@ -21620,7 +21629,7 @@ const MAP_LENS_INFO = {
   religion:"RELIGION LENS — territory follows its majority faith · city rings show pressure distribution",
   continent:"CONTINENT LENS — each geographic continent has one color · water remains blue",
   appeal:"APPEAL LENS — dark green Breathtaking · green Charming · gray Average · orange Uninviting · red Disgusting",
-  settler:"SETTLER — orange→green quality · blue/teal/ochre: fresh/coast/dry · targets: best",
+  settler:"SETTLER — dark green fresh +3 Housing · light green coast +1 · gray dry +0 · red unavailable",
   government:"GOVERNMENT LENS — territory is grouped by its civilization's current government",
   political:"POLITICAL LENS — territory uses civilization colors · city-states are dark",
   tourism:"TOURISM LENS — highlighted tiles show exact current Tourism per turn",
@@ -21631,8 +21640,14 @@ for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++)
   if (Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r)) <= 2)
     SETTLE_DISK.push([q, r]);
 function settleWaterAccess(t) {
-  if (t.river || DIRS.some(d => nbrTile(t.pos, d)?.feature === "oasis")) return "fresh";
-  if (DIRS.some(d => { const n = nbrTile(t.pos, d); return n && isWater(n); })) return "coast";
+  if (t.river || DIRS.some(d => {
+    const n = nbrTile(t.pos, d);
+    return n && (n.terrain === "lake" || n.feature === "oasis");
+  })) return "fresh";
+  if (DIRS.some(d => {
+    const n = nbrTile(t.pos, d);
+    return n && (n.terrain === "coast" || n.terrain === "ocean");
+  })) return "coast";
   return "dry";
 }
 function settleValue(pos) {
@@ -21685,7 +21700,7 @@ function settlerLensSites() {
   const recommended = new Set();
   const lens = {state, rules:RULES, sites, recommended, low, high};
   for (const site of sites.values()) {
-    if (settleSiteQuality(site, lens) < .68) continue;
+    if (settleRecommendationQuality(site, lens) < .68) continue;
     const siteKey = key(site.tile.pos);
     let localBest = true;
     for (const offset of SETTLE_DISK) {
@@ -21704,7 +21719,7 @@ function settlerLensSites() {
   settleLensCache = lens;
   return settleLensCache;
 }
-function settleSiteQuality(site, lens = settlerLensSites()) {
+function settleRecommendationQuality(site, lens = settlerLensSites()) {
   return Math.max(0, Math.min(1, (site.value - lens.low) / (lens.high - lens.low)));
 }
 function settleSiteIsRecommended(site, lens = settlerLensSites()) {
@@ -23409,9 +23424,11 @@ function tileTipLines(t, pos, tileKey) {
   if (mapLens === "settler") {
     const lens = settlerLensSites();
     const site = lens.sites.get(tileKey);
-    if (site) lines.push(`⌂ Settlement quality ${Math.round(settleSiteQuality(site, lens) * 100)}/100 · ` +
-      (site.water === "fresh" ? "fresh water" : site.water === "coast" ? "coastal water" : "no water") +
-      (settleSiteIsRecommended(site, lens) ? " · local best" : ""));
+    if (site) {
+      const water = settleLensStyle(site.water);
+      lines.push(`⌂ ${water.label} · +${water.housing} Housing from water` +
+        (settleSiteIsRecommended(site, lens) ? " · recommended site" : ""));
+    }
     else lines.push("⌂ Settlement unavailable");
   }
 

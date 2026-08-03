@@ -189,6 +189,7 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             "seed": with_session(|s| s.game.seed),
             "commit": runtime_commit("unknown"),
             "commit_time": runtime_commit_time(),
+            "built_at": runtime_built_at(),
         }),
 
         // No per-viewer tile delta: the page is told the whole world every
@@ -237,6 +238,7 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 "server_instance": process_identity(),
                 "commit": runtime_commit("unknown"),
                 "commit_time": runtime_commit_time(),
+                "built_at": runtime_built_at(),
             })
         }),
 

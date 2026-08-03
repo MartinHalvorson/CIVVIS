@@ -444,8 +444,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// new path short-circuits on it before reading anything, so every configured,
 /// legacy and Elo agent picks exactly what it always picked. A compatibility
 /// re-pin.
+///
+/// #1011 holds a promotion until its healing would land, behind
+/// `promote_when_wounded` — `false` in `AdvancedAi::new()` and set by nothing
+/// on the shipped paths (it is native/eval only and deliberately absent from
+/// `enable_live_bridge`). `promotion_heal_is_wasted` returns `false` on that
+/// flag before it reads a unit, so every configured, legacy and Elo agent
+/// promotes exactly when it always did. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc480_74a5_a771_3060;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfb9a_fd07_542d_848a;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

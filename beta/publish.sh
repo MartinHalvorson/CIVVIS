@@ -54,7 +54,8 @@ built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 echo "==> building the engine for wasm32 from $short"
 (
   cd "$source_tree"
-  CIVVIS_COMMIT="$commit" CIVVIS_COMMIT_TIME="$commit_time" cargo rustc --lib \
+  CIVVIS_COMMIT="$commit" CIVVIS_COMMIT_TIME="$commit_time" CIVVIS_BUILT_AT="$built_at" \
+    cargo rustc --lib \
     --target wasm32-unknown-unknown --release --crate-type cdylib
 )
 
