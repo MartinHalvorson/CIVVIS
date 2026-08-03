@@ -483,7 +483,7 @@ impl JointTactics {
                     let city = &g.cities[&cid];
                     city.owner != pid && g.is_at_war(pid, city.owner)
                 });
-            let hostile_unit = g.units_at(target).into_iter().any(|oid| {
+            let hostile_unit = g.unit_ids_at(target).iter().any(|oid| {
                 let other = &g.units[&oid];
                 other.owner != pid
                     && g.is_at_war(pid, other.owner)
@@ -538,15 +538,15 @@ impl JointTactics {
         }
 
         let defender = g
-            .units_at(target)
-            .into_iter()
+            .unit_ids_at(target)
+            .iter()
             .filter(|oid| {
                 let other = &g.units[oid];
                 other.owner != pid && g.rules.units[other.kind].class == "military"
             })
             .max_by(|a, b| {
-                let strength = |id: &u32| {
-                    let unit = &g.units[id];
+                let strength = |id: &&u32| {
+                    let unit = &g.units[*id];
                     effective_strength(g.unit_strength(unit, true), unit.hp)
                 };
                 strength(a)
@@ -972,7 +972,7 @@ mod tests {
                     .get(*pos)
                     .is_some_and(|tile| !g.rules.is_water(tile) && g.rules.is_passable(tile))
                     && g.city_at(*pos).is_none()
-                    && g.units_at(*pos).is_empty()
+                    && g.unit_ids_at(*pos).is_empty()
             })
             .collect();
         // Ours stand together; theirs stand within the archers' reach of both.

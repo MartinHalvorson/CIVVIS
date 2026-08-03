@@ -77,14 +77,39 @@ pub fn obs_tensor(g: &Game, pid: usize) -> ObsTensor {
     let (vis, explored) = visibility(g, pid);
     let (w, h) = (g.map.width as usize, g.map.height as usize);
     let mut data = vec![0.0f32; PLANES.len() * w * h];
-    let plane = |name: &str| ObsTensor::plane_index(name);
+    let area = w * h;
+    let plane_visible = ObsTensor::plane_index("visible");
+    let plane_explored = ObsTensor::plane_index("explored");
+    let plane_water = ObsTensor::plane_index("water");
+    let plane_hills = ObsTensor::plane_index("hills");
+    let plane_mountain = ObsTensor::plane_index("mountain");
+    let plane_forestlike = ObsTensor::plane_index("forestlike");
+    let plane_river = ObsTensor::plane_index("river");
+    let plane_cliff = ObsTensor::plane_index("cliff");
+    let plane_road = ObsTensor::plane_index("road");
+    let plane_resource = ObsTensor::plane_index("resource");
+    let plane_improvement = ObsTensor::plane_index("improvement");
+    let plane_pillaged = ObsTensor::plane_index("pillaged");
+    let plane_district = ObsTensor::plane_index("district");
+    let plane_wonder = ObsTensor::plane_index("wonder");
+    let plane_territory_mine = ObsTensor::plane_index("territory_mine");
+    let plane_territory_other = ObsTensor::plane_index("territory_other");
+    let plane_city_mine = ObsTensor::plane_index("city_mine");
+    let plane_city_other = ObsTensor::plane_index("city_other");
+    let plane_city_hp = ObsTensor::plane_index("city_hp");
+    let plane_unit_mine_mil = ObsTensor::plane_index("unit_mine_mil");
+    let plane_unit_mine_civ = ObsTensor::plane_index("unit_mine_civ");
+    let plane_unit_enemy_mil = ObsTensor::plane_index("unit_enemy_mil");
+    let plane_unit_other = ObsTensor::plane_index("unit_other");
+    let plane_unit_mine_hp = ObsTensor::plane_index("unit_mine_hp");
+    let plane_unit_enemy_hp = ObsTensor::plane_index("unit_enemy_hp");
     let index_of = |pos: Pos| -> usize {
         let canon = hex::canon(pos, g.map.width);
         let (col, row) = hex::axial_to_offset(canon.0, canon.1);
         row as usize * w + col as usize
     };
-    let put = |data: &mut Vec<f32>, name: &str, pos: Pos, value: f32| {
-        let slot = plane(name) * w * h + index_of(pos);
+    let put = |data: &mut [f32], plane: usize, pos: Pos, value: f32| {
+        let slot = plane * area + index_of(pos);
         if value > data[slot] {
             data[slot] = value;
         }
@@ -92,53 +117,57 @@ pub fn obs_tensor(g: &Game, pid: usize) -> ObsTensor {
 
     for pos in &explored {
         let Some(tile) = g.map.get(*pos) else { continue };
-        put(&mut data, "explored", *pos, 1.0);
+        put(&mut data, plane_explored, *pos, 1.0);
         if vis.contains(pos) {
-            put(&mut data, "visible", *pos, 1.0);
+            put(&mut data, plane_visible, *pos, 1.0);
         }
         match tile.terrain.as_str() {
-            "coast" | "lake" | "ocean" => put(&mut data, "water", *pos, 1.0),
-            "mountain" => put(&mut data, "mountain", *pos, 1.0),
+            "coast" | "lake" | "ocean" => put(&mut data, plane_water, *pos, 1.0),
+            "mountain" => put(&mut data, plane_mountain, *pos, 1.0),
             _ => {}
         }
         if tile.hills {
-            put(&mut data, "hills", *pos, 1.0);
+            put(&mut data, plane_hills, *pos, 1.0);
         }
         if matches!(tile.feature.as_deref(), Some("woods") | Some("rainforest")) {
-            put(&mut data, "forestlike", *pos, 1.0);
+            put(&mut data, plane_forestlike, *pos, 1.0);
         }
         let rivers = tile.river_edges.iter().filter(|e| **e).count();
         if rivers > 0 {
-            put(&mut data, "river", *pos, rivers as f32 / 6.0);
+            put(&mut data, plane_river, *pos, rivers as f32 / 6.0);
         }
         let cliffs = tile.cliff_edges.iter().filter(|e| **e).count();
         if cliffs > 0 {
-            put(&mut data, "cliff", *pos, cliffs as f32 / 6.0);
+            put(&mut data, plane_cliff, *pos, cliffs as f32 / 6.0);
         }
         if tile.road > 0 {
-            put(&mut data, "road", *pos, 1.0);
+            put(&mut data, plane_road, *pos, 1.0);
         }
         if let Some(resource) = &tile.resource {
             if g.resource_visible_to(pid, resource) {
-                put(&mut data, "resource", *pos, 1.0);
+                put(&mut data, plane_resource, *pos, 1.0);
             }
         }
         if tile.improvement.is_some() && !tile.pillaged {
-            put(&mut data, "improvement", *pos, 1.0);
+            put(&mut data, plane_improvement, *pos, 1.0);
         }
         if tile.pillaged {
-            put(&mut data, "pillaged", *pos, 1.0);
+            put(&mut data, plane_pillaged, *pos, 1.0);
         }
         if tile.district.is_some() {
-            put(&mut data, "district", *pos, 1.0);
+            put(&mut data, plane_district, *pos, 1.0);
         }
         if tile.wonder.is_some() {
-            put(&mut data, "wonder", *pos, 1.0);
+            put(&mut data, plane_wonder, *pos, 1.0);
         }
         if let Some(cid) = tile.owner_city {
             if let Some(city) = g.cities.get(&cid) {
-                let name = if city.owner == pid { "territory_mine" } else { "territory_other" };
-                put(&mut data, name, *pos, 1.0);
+                let plane = if city.owner == pid {
+                    plane_territory_mine
+                } else {
+                    plane_territory_other
+                };
+                put(&mut data, plane, *pos, 1.0);
             }
         }
     }
@@ -151,12 +180,16 @@ pub fn obs_tensor(g: &Game, pid: usize) -> ObsTensor {
         if !explored.contains(&city.pos) {
             continue;
         }
-        let name = if city.owner == pid { "city_mine" } else { "city_other" };
-        put(&mut data, name, city.pos, 1.0);
+        let plane = if city.owner == pid {
+            plane_city_mine
+        } else {
+            plane_city_other
+        };
+        put(&mut data, plane, city.pos, 1.0);
         if vis.contains(&city.pos) || city.owner == pid {
             let pool = (city.hp + city.wall_hp).max(0) as f32;
             let cap = (100 + g.city_max_wall_hp(city).max(0)) as f32;
-            put(&mut data, "city_hp", city.pos, (pool / cap).clamp(0.0, 1.0));
+            put(&mut data, plane_city_hp, city.pos, (pool / cap).clamp(0.0, 1.0));
         }
     }
 
@@ -170,17 +203,17 @@ pub fn obs_tensor(g: &Game, pid: usize) -> ObsTensor {
         if mine {
             if military {
                 let s = (g.unit_strength(unit, false) as f32 / 100.0).clamp(0.0, 1.0);
-                put(&mut data, "unit_mine_mil", unit.pos, s);
-                put(&mut data, "unit_mine_hp", unit.pos, hp);
+                put(&mut data, plane_unit_mine_mil, unit.pos, s);
+                put(&mut data, plane_unit_mine_hp, unit.pos, hp);
             } else {
-                put(&mut data, "unit_mine_civ", unit.pos, 1.0);
+                put(&mut data, plane_unit_mine_civ, unit.pos, 1.0);
             }
         } else if g.is_at_war(pid, unit.owner) && military {
             let s = (g.unit_strength(unit, false) as f32 / 100.0).clamp(0.0, 1.0);
-            put(&mut data, "unit_enemy_mil", unit.pos, s);
-            put(&mut data, "unit_enemy_hp", unit.pos, hp);
+            put(&mut data, plane_unit_enemy_mil, unit.pos, s);
+            put(&mut data, plane_unit_enemy_hp, unit.pos, hp);
         } else {
-            put(&mut data, "unit_other", unit.pos, 1.0);
+            put(&mut data, plane_unit_other, unit.pos, 1.0);
         }
     }
 
@@ -244,6 +277,25 @@ fn global_block(g: &Game, pid: usize, vis: &BTreeSet<Pos>) -> (Vec<f32>, Vec<Str
         .filter(|o| o.id != pid && !o.is_minor && !o.is_barbarian)
         .map(|o| o.id)
         .collect();
+    let mut rival_slots = vec![usize::MAX; g.players.len()];
+    for (slot, other) in rivals.iter().copied().enumerate() {
+        rival_slots[other] = slot;
+    }
+    let mut seen_by_rival = vec![0.0f32; rivals.len()];
+    for unit in g.units.values() {
+        if g.rules.units[unit.kind].class != "military"
+            || !vis.contains(&unit.pos)
+            || !g.unit_visible_to(unit.id, pid)
+            || unit.owner >= rival_slots.len()
+        {
+            continue;
+        }
+        let slot = rival_slots[unit.owner];
+        if slot == usize::MAX || slot >= seen_by_rival.len() {
+            continue;
+        }
+        seen_by_rival[slot] += g.unit_strength(unit, false) as f32;
+    }
     // The engine has no first-contact state (all majors are mutually known),
     // so rival slots are populated for every major. Alive/war status and
     // score match the in-game public ranking screens; military is only what
@@ -259,17 +311,7 @@ fn global_block(g: &Game, pid: usize, vis: &BTreeSet<Pos>) -> (Vec<f32>, Vec<Str
                     g.is_at_war(pid, other) as u8 as f32);
                 push(&mut names, &mut out, &format!("{prefix}_score"),
                     g.score(other) as f32 / 1500.0);
-                let seen: f32 = g
-                    .units
-                    .values()
-                    .filter(|u| {
-                        u.owner == other
-                            && g.rules.units[u.kind].class == "military"
-                            && vis.contains(&u.pos)
-                            && g.unit_visible_to(u.id, pid)
-                    })
-                    .map(|u| g.unit_strength(u, false) as f32)
-                    .sum();
+                let seen = seen_by_rival[slot];
                 push(&mut names, &mut out, &format!("{prefix}_seen_military"),
                     seen / 500.0);
             }
