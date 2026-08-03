@@ -38,7 +38,14 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 82] = [
+pub const EVAL_ONLY_AIS: [&str; 86] = [
+    // The deployed Civilization VI agent, and one arm per live-bridge flag
+    // held off. Eval-only by construction: they move whenever the bridge
+    // moves, which is exactly what a rating anchor must not do.
+    "live",
+    "live_without_home_defense",
+    "live_without_solvent_faith_army",
+    "live_without_siege_muster",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -126,6 +133,24 @@ pub const EVAL_ONLY_AIS: [&str; 82] = [
     "strategic_deep_rivals",
 ];
 
+/// Every mechanism the Civilization VI bridge turns on, as evaluator treatment
+/// tags. `live` carries all of them; each `live_without_*` carries all but one,
+/// so `differing_axes` between them names exactly the mechanism under test.
+///
+/// ⚠ Keep in step with `AdvancedAi::enable_live_bridge`. A flag added there and
+/// not here makes the arms claim a controlled comparison they are not running.
+const LIVE_BRIDGE_TREATMENTS: [&str; 9] = [
+    "live-trader-route",
+    "live-religious-purchase",
+    "siege-muster",
+    "home-defense",
+    "recorded-tactical-step",
+    "bounded-recovery",
+    "siege-tracks-wall",
+    "blind-objective-strength",
+    "solvent-faith-army",
+];
+
 /// Register a selectable arm once, under a typed identity.  The factory,
 /// artifact resolver, provenance report, and evaluator-collapse guard all use
 /// this identity rather than maintaining separate string matches.
@@ -154,6 +179,12 @@ macro_rules! define_arm_kinds {
 }
 
 define_arm_kinds! {
+    // The deployed Civilization VI agent and one arm per live-bridge flag
+    // held off, so each repair can be priced in cities and score.
+    Live => "live",
+    LiveWithoutHomeDefense => "live_without_home_defense",
+    LiveWithoutSolventFaithArmy => "live_without_solvent_faith_army",
+    LiveWithoutSiegeMuster => "live_without_siege_muster",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
     AdvancedBeliefPressure => "advanced_belief_pressure",
@@ -1966,6 +1997,40 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score))
         }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
+        // ★★★★ THE AGENT THAT ACTUALLY PLAYS CIVILIZATION VI, PLAYABLE HEADLESS.
+        //
+        // Eight flags separate the frozen controller from the deployed one, and
+        // until now they were set inside a binary, so no arm could construct the
+        // deployed agent and none of them had ever been priced on an outcome.
+        // `live` is that agent; each `live_without_*` holds ONE flag off, so
+        // `civvis tournament --ais live,live_without_home_defense` measures that
+        // flag in cities and score rather than in order counts.
+        //
+        // ⚠ These are NOT rating anchors. They move whenever the bridge moves,
+        // which is exactly what an anchor must not do.
+        "live" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            Box::new(ai)
+        }
+        "live_without_home_defense" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_home_defense();
+            Box::new(ai)
+        }
+        "live_without_solvent_faith_army" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_solvent_faith_army();
+            Box::new(ai)
+        }
+        "live_without_siege_muster" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_siege_muster();
+            Box::new(ai)
+        }
         "random" => Box::new(RandomAi::new(seed)),
         // Exact netless fallback played by `neural` when the committed
         // champion is present. Naming it makes provenance collapse checks
@@ -2613,6 +2678,14 @@ impl ArmKind {
 
     fn treatments(self) -> &'static [&'static str] {
         match self {
+            // The live bridge is a COMPOSITE, and each flag is tagged so a
+            // `live` vs `live_without_*` comparison reports exactly the one
+            // mechanism that differs instead of the catch-all
+            // "implementation" axis, which the evaluator refuses.
+            Self::Live => &LIVE_BRIDGE_TREATMENTS,
+            Self::LiveWithoutHomeDefense => &["live-trader-route", "live-religious-purchase", "siege-muster", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
+            Self::LiveWithoutSolventFaithArmy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength"],
+            Self::LiveWithoutSiegeMuster => &["live-trader-route", "live-religious-purchase", "home-defense", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
             Self::AdvancedBeliefPressure => &["belief-pressure"],
             // `advanced` now owns the confirmed Live + infrastructure +
             // priority composite. The retained arms below are therefore
@@ -3120,6 +3193,14 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             vec![genome, value(true)],
             if net { "production_net" } else { "production" },
         ),
+        // The bridge arms are scripted composites: no genome, no value net, and
+        // each is effective as ITSELF. Without an explicit row they inherit the
+        // catch-all and the evaluator reports them as plain `basic`, which would
+        // silently compare two identical agents.
+        "live" => (Vec::new(), "live"),
+        "live_without_home_defense" => (Vec::new(), "live_without_home_defense"),
+        "live_without_solvent_faith_army" => (Vec::new(), "live_without_solvent_faith_army"),
+        "live_without_siege_muster" => (Vec::new(), "live_without_siege_muster"),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_belief_pressure" => (Vec::new(), "advanced_belief_pressure"),
         "advanced_policy_live_control" => (Vec::new(), "advanced_policy_live_control"),
@@ -4214,7 +4295,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 49] = [
+            const SCRIPTED: [&str; 53] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4265,6 +4346,12 @@ mod tests {
                 "advanced_target_score",
                 "advanced_v1",
                 "basic",
+                // Scripted composites of bridge flags: built from code, no
+                // weights artifact and no value net.
+                "live",
+                "live_without_home_defense",
+                "live_without_siege_muster",
+                "live_without_solvent_faith_army",
                 "random",
             ];
             const SCRIPTED_ALIASES: [&str; 1] = ["advanced_policy_envoy_priority"];
