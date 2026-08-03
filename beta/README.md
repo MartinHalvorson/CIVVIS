@@ -64,9 +64,10 @@ condition enabled. It is the shape of game the desktop launchers open too, and
 the one that asks nothing of somebody who has just arrived. The lobby is right
 there for anyone who wants to play a seat instead.
 
-The lower-left build marker names the pinned revision, its commit time, and its
-live age. It describes source recency rather than packaging recency: rebuilding
-the same commit tomorrow does not make the code look a day newer.
+The lower-left build marker names the pinned revision and its commit time, then
+ages the exact artifact in the browser. Source and packaging time stay visibly
+distinct: rebuilding the same commit tomorrow produces a fresh build without
+pretending Git history changed.
 
 The world is **different every visit**. The engine is deterministic per seed and
 imports nothing, so it cannot vary on its own — the page rolls a seed per load

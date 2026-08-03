@@ -6832,8 +6832,8 @@ let serverInstance = null;
 // build this document actually came from is what tells a successor worth
 // reloading for from one this page is already running.
 let documentCommit = null;
-function formatBuildAge(commitDate) {
-  const totalMinutes = Math.floor(Math.max(0, Date.now() - commitDate.getTime()) / 60000);
+function formatBuildAge(buildDate) {
+  const totalMinutes = Math.floor(Math.max(0, Date.now() - buildDate.getTime()) / 60000);
   const days = Math.floor(totalMinutes / 1440);
   const hours = Math.floor(totalMinutes % 1440 / 60);
   const minutes = totalMinutes % 60;
@@ -6843,9 +6843,12 @@ function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
   const commit = st?.server_commit;
   const commitTime = st?.server_commit_time;
+  const builtAt = st?.server_built_at;
   const commitDate = typeof commitTime === "string" ? new Date(commitTime) : null;
+  const buildDate = typeof builtAt === "string" ? new Date(builtAt) : null;
   if (!marker || typeof commit !== "string" || commit === "unknown" ||
-      !commitDate || !Number.isFinite(commitDate.getTime())) {
+      !commitDate || !Number.isFinite(commitDate.getTime()) ||
+      !buildDate || !Number.isFinite(buildDate.getTime())) {
     if (marker) marker.hidden = true;
     return;
   }
@@ -6853,9 +6856,9 @@ function updateBuildMarker(st = state) {
     year: "numeric", month: "short", day: "numeric",
     hour: "numeric", minute: "2-digit", timeZoneName: "short",
   });
-  marker.textContent = `${commit.slice(0, 7)} · ${committed} · ` +
-    `Build is ${formatBuildAge(commitDate)} old`;
-  marker.title = `${commit}\nCommitted ${commitTime}`;
+  marker.textContent = `${commit.slice(0, 7)} · committed ${committed} · ` +
+    `Build is ${formatBuildAge(buildDate)} old`;
+  marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}`;
   marker.hidden = false;
 }
 setInterval(() => updateBuildMarker(), 60_000);
