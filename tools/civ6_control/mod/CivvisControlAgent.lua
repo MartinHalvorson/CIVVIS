@@ -4054,14 +4054,41 @@ local function chooseEnvoy(player, pid, turn)
 
 	-- 3. Clear the prompt whatever happened. This is the line that ends the
 	--    turn, and skipping it is what left a run wedged for ten minutes.
-	--    ⚠ It is also a PRIME SUSPECT for the game-core segfault: it writes a
-	--    flag the shipped code only ever writes from the CityStates screen's own
-	--    context, and the fault is delayed by 6-9 turns, which fits desynced
-	--    bookkeeping better than a bad operation request.
+	--
+	-- ⚠⚠ THE HANDLE WAS STALE, AND THAT IS THE BEST EXPLANATION ANYONE HAS FOR
+	-- THE SEGFAULT. `influence` is fetched ONCE at the top of this function and
+	-- was then written through HERE — after up to `tokens` calls to
+	-- `UI.RequestPlayerOperation(pid, giveOp, ...)`, every one of which mutates
+	-- the very gameplay object it points at.
+	--
+	-- The shipped screen never does that. `UI/PartialScreens/CityStates.lua`
+	-- `Close()` re-fetches in the same expression as the read and the write:
+	--
+	--     local localPlayer = Players[Game.GetLocalPlayer()];
+	--     if (... and not localPlayer:GetInfluence():IsGivingTokensConsidered()) then
+	--         localPlayer:GetInfluence():SetGivingTokensConsidered(true);
+	--     end
+	--
+	-- So the suspected illegality was never the CONTEXT — the shipped call is a
+	-- UI script too, exactly like this one. What differs is holding a pointer to
+	-- a gameplay sub-object across operations that rewrite it. That matches the
+	-- recorded signature far better than a bad immediate call does: three
+	-- EXC_BAD_ACCESS faults in the game core on seed 425255, each **6-9 turns
+	-- AFTER** the single envoy was placed, against 0-for-2 on the same seed with
+	-- no envoy placed. A delayed fault is corrupted bookkeeping.
+	--
+	-- ⚠ This does NOT re-enable envoys. `cfg.EnvoyEnabled` stays off and this
+	-- whole function is still unreachable in deployment, so shipping this changes
+	-- nothing at runtime. It removes one concrete defect so that the isolation
+	-- experiment the comment in SOFT_BLOCKERS asks for has a fair chance —
+	-- `EnvoyPlace` and `EnvoyConsider` already switch the two mutations
+	-- independently, so that experiment is a config change, not a code change.
 	if cfg.EnvoyConsider ~= false then
 		pcall(function()
-			if not influence:IsGivingTokensConsidered() then
-				influence:SetGivingTokensConsidered(true);
+			-- Re-fetch: mirror the shipped screen exactly.
+			local fresh = player:GetInfluence();
+			if fresh ~= nil and not fresh:IsGivingTokensConsidered() then
+				fresh:SetGivingTokensConsidered(true);
 			end
 		end);
 	end
@@ -4154,10 +4181,25 @@ local SOFT_BLOCKERS = {
 	-- state rather than a bad immediate call. Civ 6 does segfault on its own
 	-- (there is a pre-envoy crash at t25), but 3-for-3 against 0-for-2 on the
 	-- SAME SEED is a controlled comparison, not a coincidence.
-	-- Set `EnvoyEnabled` to re-enable and isolate which mutation does it:
-	-- `GIVE_INFLUENCE_TOKEN` from a gameplay context, or the
-	-- `SetGivingTokensConsidered` write. Until then the known-stable skip stands,
-	-- and the ten-minute wedge is the lesser of the two failures.
+	-- ⚠ THE "WRONG CONTEXT" HYPOTHESIS IS DEAD — do not spend another cycle on it.
+	-- The shipped `UI/PartialScreens/CityStates.lua` `Close()` calls
+	-- `SetGivingTokensConsidered(true)` from a UI script, exactly like this agent.
+	-- What differed was that `chooseEnvoy` cached `player:GetInfluence()` at the
+	-- top of the function and wrote through that handle AFTER up to `tokens`
+	-- `UI.RequestPlayerOperation` calls had rewritten the object underneath it,
+	-- while the shipped screen re-fetches in the same expression. A stale
+	-- gameplay handle fits a fault delayed 6-9 turns; a bad immediate call does
+	-- not. That is now fixed, so the isolation run is worth doing.
+	--
+	-- Set `EnvoyEnabled` to re-enable. `EnvoyPlace` and `EnvoyConsider` already
+	-- switch the two mutations independently, so isolating them is a CONFIG
+	-- change, not a code change: place-only, then consider-only, same seed.
+	-- ⚠ Do it on a throwaway batch, never on a running one. Until then the
+	-- known-stable skip stands, and the ten-minute wedge is the lesser failure.
+	--
+	-- The prize is large: the same agent headless places **18.1 envoys and holds
+	-- 0.71 suzerainties** per seat (74x46, 9 city-states, 200 turns), against a
+	-- live median of **1 and 0** over 36 runs.
 	ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN = true,
 	ENDTURN_BLOCKING_CLAIM_GREAT_PERSON = true,
 	ENDTURN_BLOCKING_ARTIFACT = true,

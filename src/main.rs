@@ -401,13 +401,19 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// returns the old level-only answer on it before reading any rate, so every
 /// configured, legacy and Elo agent behaves identically. A compatibility re-pin.
 ///
+/// #984 credits a movement tile for the attack it opens, behind
+/// `strike_opening` — `false` in `AdvancedAi::new()` and set only by
+/// `enable_live_bridge`. `strike_opening_value` returns 0.0 on that flag
+/// before it reads the board, so every configured, legacy and Elo agent scores
+/// every tile exactly as it did. A compatibility re-pin.
+///
 /// #989 adds a journal line for a DECLINED attack and a diagnostic tally of the
 /// reasons the forward model refuses one. Both are behind
 /// `journal().wants(Detail)` or write only to a process-local census; no board
 /// state is read and no decision changes, so every configured, legacy and Elo
 /// agent attacks exactly what it always did. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe529_26aa_8137_59ea;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5fce_4211_8fe2_9e61;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
