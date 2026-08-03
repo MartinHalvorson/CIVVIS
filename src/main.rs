@@ -444,8 +444,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// new path short-circuits on it before reading anything, so every configured,
 /// legacy and Elo agent picks exactly what it always picked. A compatibility
 /// re-pin.
+///
+/// #1009 corrects a doc comment and adds one test. No executable path changes,
+/// so `advanced_v1` is byte-identical by construction. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x109d_ff8e_cc0e_9578;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9454_a7d2_054d_be0c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
