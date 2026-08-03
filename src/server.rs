@@ -8804,7 +8804,7 @@ mod tests {
         let renderer = EMBEDDED_INDEX
             .split("function drawTileYields")
             .nth(1)
-            .and_then(|tail| tail.split("function mountainRockColumn").next())
+            .and_then(|tail| tail.split("function tri(").next())
             .expect("tile-yield renderer");
         assert!(renderer.contains(".filter(([, amount]) => amount >= 1)"));
         assert!(renderer.contains("(i - (entries.length - 1) / 2) * step"));
