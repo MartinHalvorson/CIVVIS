@@ -21626,34 +21626,59 @@ function drawEmpireDetailsPlanet(cells) {
   cx.restore();
 }
 
-function settleLensColor(quality, alpha) {
+const SETTLER_LENS_BANDS = [
+  {at:.78, fill:"#20df78", alpha:.91},
+  {at:.52, fill:"#61cd58", alpha:.87},
+  {at:.26, fill:"#c4c447", alpha:.83},
+  {at:0,   fill:"#db8c3f", alpha:.80},
+];
+function settleLensStyle(quality) {
   const q = Math.max(0, Math.min(1, quality));
-  const red = Math.round(205 - q * 142);
-  const green = Math.round(151 + q * 91);
-  const blue = Math.round(72 + q * 42);
-  return `rgba(${red},${green},${blue},${alpha})`;
+  return SETTLER_LENS_BANDS.find(band => q >= band.at) ||
+    SETTLER_LENS_BANDS[SETTLER_LENS_BANDS.length - 1];
 }
 function settleWaterColor(water) {
-  return water === "fresh" ? "#72d9ff" : water === "coast" ? "#89d8c7" : "#d2af68";
+  return water === "fresh" ? "#75ddff" : water === "coast" ? "#8de4cf" : "#edbb62";
+}
+function drawSettlerLensSite(path, site, lens, scale, center) {
+  const quality = settleSiteQuality(site, lens);
+  const style = settleLensStyle(quality);
+  path(); cx.fillStyle = style.fill; cx.globalAlpha = style.alpha; cx.fill();
+  // A dark keyline keeps the water-access color readable over every quality
+  // band instead of letting hundreds of pale outlines dissolve into terrain.
+  path(); cx.strokeStyle = "#10231d"; cx.globalAlpha = .92;
+  cx.lineWidth = 3.4 * scale; cx.stroke();
+  path(); cx.strokeStyle = settleWaterColor(site.water); cx.globalAlpha = 1;
+  cx.lineWidth = 1.8 * scale; cx.stroke();
+  cx.globalAlpha = 1;
+  if (!center || !settleSiteIsRecommended(site, lens)) return;
+  const [x, y, radius] = center;
+  cx.save();
+  cx.shadowColor = "#fff0a3"; cx.shadowBlur = 7 * scale;
+  cx.fillStyle = "#fff2ae"; cx.strokeStyle = "#12261e"; cx.lineWidth = 1.5 * scale;
+  cx.beginPath(); cx.arc(x, y, radius, 0, 7); cx.fill(); cx.stroke();
+  cx.shadowBlur = 0; cx.fillStyle = "#168c54";
+  cx.beginPath(); cx.arc(x, y, radius * .42, 0, 7); cx.fill();
+  cx.restore();
 }
 function drawPlanetSettlerLens(cells) {
   const lens = settlerLensSites();
+  cx.save();
   for (const cell of cells) {
     const site = lens.sites.get(key(cell.tile.pos));
     if (!site) {
       if (isWater(cell.tile)) continue;
       planetPaintPath(cx, cell, .15);
-      cx.fillStyle = "rgba(38,24,30,.48)"; cx.fill();
+      cx.fillStyle = "rgba(18,17,22,.76)"; cx.fill();
       continue;
     }
-    const quality = settleSiteQuality(site, lens);
-    planetPaintPath(cx, cell, .15);
-    cx.fillStyle = settleLensColor(quality, .26 + quality * .38); cx.fill();
-    planetPath(cx, cell.points);
-    cx.strokeStyle = settleWaterColor(site.water);
-    cx.lineWidth = quality > .76 ? 2.2 : 1.15;
-    cx.globalAlpha = .58 + quality * .4; cx.stroke(); cx.globalAlpha = 1;
+    const inradius = planetCellInradius(cell);
+    drawSettlerLensSite(
+      () => planetPaintPath(cx, cell, .15), site, lens,
+      Math.max(.62, Math.min(1.15, inradius / 12)),
+      [cell.center.x, cell.center.y, Math.max(2.6, Math.min(5.2, inradius * .29))]);
   }
+  cx.restore();
 }
 
 function drawSettlerLensFlat(tiles) {
@@ -21665,19 +21690,11 @@ function drawSettlerLensFlat(tiles) {
     const site = lens.sites.get(key(tile.pos));
     if (!site) {
       if (isWater(tile)) continue;
-      hexPath(x, y, S + .2); cx.fillStyle = "rgba(38,24,30,.48)"; cx.fill();
+      hexPath(x, y, S + .2); cx.fillStyle = "rgba(18,17,22,.76)"; cx.fill();
       continue;
     }
-    const quality = settleSiteQuality(site, lens);
-    hexPath(x, y, S + .2);
-    cx.fillStyle = settleLensColor(quality, .25 + quality * .42); cx.fill();
-    cx.strokeStyle = settleWaterColor(site.water);
-    cx.lineWidth = (quality > .76 ? 2.7 : 1.5) * UI_K();
-    cx.globalAlpha = .58 + quality * .4; cx.stroke(); cx.globalAlpha = 1;
-    if (quality > .84) {
-      cx.fillStyle = "#f8f0c8";
-      cx.beginPath(); cx.arc(x, y, 2.6 * UI_K(), 0, 7); cx.fill();
-    }
+    drawSettlerLensSite(() => hexPath(x, y, S + .2), site, lens, UI_K(),
+      [x, y, 4.6 * UI_K()]);
   }
   cx.restore();
 }
@@ -28470,7 +28487,7 @@ const MAP_LENS_INFO = {
   religion:"RELIGION LENS — territory follows its majority faith · city rings show pressure distribution",
   continent:"CONTINENT LENS — each geographic continent has one color · water remains blue",
   appeal:"APPEAL LENS — dark green Breathtaking · green Charming · gray Average · orange Uninviting · red Disgusting",
-  settler:"SETTLER LENS — green is stronger · blue edge fresh water · teal coast · ochre dry (2 to exit)",
+  settler:"SETTLER — orange→green quality · blue/teal/ochre: fresh/coast/dry · targets: best",
   government:"GOVERNMENT LENS — territory is grouped by its civilization's current government",
   political:"POLITICAL LENS — territory uses civilization colors · city-states are dark",
   tourism:"TOURISM LENS — highlighted tiles show exact current Tourism per turn",
@@ -28515,7 +28532,9 @@ function validSettle(t) {
   for (const c of state.cities) if (whexDist(t.pos, c.pos) < 4) return false;
   return true;
 }
-let settleLensCache = { state:null, rules:null, sites:new Map(), low:0, high:1 };
+let settleLensCache = {
+  state:null, rules:null, sites:new Map(), recommended:new Set(), low:0, high:1,
+};
 function settlerLensSites() {
   if (settleLensCache.state === state && settleLensCache.rules === RULES) return settleLensCache;
   const sites = new Map();
@@ -28530,11 +28549,33 @@ function settlerLensSites() {
   const at = fraction => values[Math.min(values.length - 1,
     Math.max(0, Math.floor((values.length - 1) * fraction)))] ?? 0;
   const low = at(.12), high = Math.max(low + 1, at(.92));
-  settleLensCache = {state, rules:RULES, sites, low, high};
+  const recommended = new Set();
+  const lens = {state, rules:RULES, sites, recommended, low, high};
+  for (const site of sites.values()) {
+    if (settleSiteQuality(site, lens) < .68) continue;
+    const siteKey = key(site.tile.pos);
+    let localBest = true;
+    for (const offset of SETTLE_DISK) {
+      if (offset[0] === 0 && offset[1] === 0) continue;
+      const neighbor = nbrTile(site.tile.pos, offset);
+      const candidate = neighbor && sites.get(key(neighbor.pos));
+      if (!candidate) continue;
+      if (candidate.value > site.value + 1e-6 ||
+          (Math.abs(candidate.value - site.value) <= 1e-6 &&
+           key(candidate.tile.pos) < siteKey)) {
+        localBest = false; break;
+      }
+    }
+    if (localBest) recommended.add(siteKey);
+  }
+  settleLensCache = lens;
   return settleLensCache;
 }
 function settleSiteQuality(site, lens = settlerLensSites()) {
   return Math.max(0, Math.min(1, (site.value - lens.low) / (lens.high - lens.low)));
+}
+function settleSiteIsRecommended(site, lens = settlerLensSites()) {
+  return lens.recommended.has(key(site.tile.pos));
 }
 function tackStoreKey() { return "civvis-tacks-" + (lastSeed === null ? "x" : lastSeed); }
 function loadTacks() {
@@ -30305,9 +30346,11 @@ function tileTipLines(t, pos, tileKey) {
       " · " + appealBand(t.appeal));
   if (movement.length) lines.push("Movement: " + movement.join(" · "));
   if (mapLens === "settler") {
-    const site = settlerLensSites().sites.get(tileKey);
-    if (site) lines.push(`⌂ Settlement quality ${Math.round(settleSiteQuality(site) * 100)}/100 · ` +
-      (site.water === "fresh" ? "fresh water" : site.water === "coast" ? "coastal water" : "no water"));
+    const lens = settlerLensSites();
+    const site = lens.sites.get(tileKey);
+    if (site) lines.push(`⌂ Settlement quality ${Math.round(settleSiteQuality(site, lens) * 100)}/100 · ` +
+      (site.water === "fresh" ? "fresh water" : site.water === "coast" ? "coastal water" : "no water") +
+      (settleSiteIsRecommended(site, lens) ? " · local best" : ""));
     else lines.push("⌂ Settlement unavailable");
   }
 
