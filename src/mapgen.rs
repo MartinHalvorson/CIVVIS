@@ -2705,7 +2705,6 @@ pub fn generate_with_script(
                     .filter(|position| wm.tiles.contains_key(position))
                     .filter(|position| !cluster.contains(position))
                     .filter(|position| far_enough(*position, separation))
-                    .filter(|position| adjacent_feature_count(&wm, *position, "oasis") == 0)
                     .filter(|position| {
                         let tile = &wm.tiles[position];
                         if water_hex {
@@ -2735,9 +2734,7 @@ pub fn generate_with_script(
         let shaped_sites: Vec<Pos> = wm
             .tiles
             .iter()
-            .filter(|(position, tile)| {
-                is_open(tile) && adjacent_feature_count(&wm, **position, "oasis") == 0
-            })
+            .filter(|(_, tile)| is_open(tile))
             .map(|(position, _)| *position)
             .collect();
         // Sites are tried in order of how far each one departs from the ideal:
@@ -3272,6 +3269,25 @@ pub fn generate_with_script(
     // draws from the stream, so a world that needed no top-up is unmoved.
     place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &occupied, rng);
     place_artifact_quotas(rules, &mut wm, num_major_spawns, &occupied, rng);
+
+    // CIVVIS grows ordinary features before it draws Natural Wonders, the
+    // reverse of Firaxis' effective order for this rule. A later Woods,
+    // Floodplains, or Wonder can therefore invalidate an Oasis that was legal
+    // when rolled. Retire only those Oases after generation is final; this
+    // enforces `NoAdjacentFeatures` without changing the seeded draw stream,
+    // displacing a Natural Wonder, or redrawing a long-established map.
+    let invalid_oases: Vec<Pos> = wm
+        .tiles
+        .iter()
+        .filter(|(position, tile)| {
+            tile.feature.as_deref() == Some("oasis")
+                && !placed_oasis_is_valid(&wm, **position)
+        })
+        .map(|(position, _)| *position)
+        .collect();
+    for position in invalid_oases {
+        wm.tiles.get_mut(&position).unwrap().feature = None;
+    }
     (wm, spawns)
 }
 
@@ -3467,11 +3483,6 @@ fn wonder_anchor(
         return false;
     };
     if !wonder_ground(placement, tile) {
-        return false;
-    }
-    // Oasis carries `NoAdjacentFeatures`; a later feature must honor that
-    // rule even when its own placement row would otherwise allow the site.
-    if adjacent_feature_count(wm, position, "oasis") > 0 {
         return false;
     }
     if !placement.adjacent_terrain.is_empty()
@@ -3707,18 +3718,29 @@ fn adjacent_feature_count(wm: &WorldMap, pos: Pos, feature: &str) -> usize {
 /// names the flat Desert terrain, while `NoRiver`, `NoCoast`, and
 /// `NoAdjacentFeatures` constrain the tile and its ring. The adjacent land
 /// itself does not have to be Desert.
-fn oasis_site_is_valid(wm: &WorldMap, pos: Pos) -> bool {
+fn oasis_ground_and_ring_are_valid(wm: &WorldMap, pos: Pos) -> bool {
     wm.get(pos).is_some_and(|tile| {
         tile.terrain == "desert"
             && !tile.hills
             && !tile.has_river()
-            && tile.feature.is_none()
             && wm.neighbors(pos).into_iter().all(|neighbor| {
                 wm.get(neighbor).is_none_or(|adjacent| {
                     adjacent.terrain != "coast" && adjacent.feature.is_none()
                 })
             })
     })
+}
+
+#[cfg(test)]
+fn oasis_site_is_valid(wm: &WorldMap, pos: Pos) -> bool {
+    wm.get(pos).is_some_and(|tile| tile.feature.is_none())
+        && oasis_ground_and_ring_are_valid(wm, pos)
+}
+
+fn placed_oasis_is_valid(wm: &WorldMap, pos: Pos) -> bool {
+    wm.get(pos)
+        .is_some_and(|tile| tile.feature.as_deref() == Some("oasis"))
+        && oasis_ground_and_ring_are_valid(wm, pos)
 }
 
 /// Running-share cap: a feature stops being placed once it holds its quota of
@@ -3744,12 +3766,8 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
             .filter(|pos| wm.tiles[*pos].feature.as_deref() == Some(feature))
             .count()
     };
-    let (mut jungles, mut forests, mut marshes, mut oases) = (
-        count("jungle"),
-        count("forest"),
-        count("marsh"),
-        count("oasis"),
-    );
+    let (mut jungles, mut forests, mut marshes, mut oases) =
+        (count("jungle"), count("forest"), count("marsh"), 0);
 
     for row in 0..height {
         for col in 0..width {
@@ -3773,10 +3791,6 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
             if has_feature {
                 continue;
             }
-            // An Oasis ships `NoAdjacentFeatures`, so features considered
-            // after it in this single pass must also respect the rule.
-            let borders_oasis = adjacent_feature_count(wm, pos, "oasis") > 0;
-
             // Every desert tile bordering a river floods, as in the stock
             // generator.
             // 🟡 The Grassland and Plains variants stand in for river size,
@@ -3788,17 +3802,14 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
                     "plains" if rng.chance(0.18) => Some("plains_floodplains"),
                     _ => None,
                 };
-                if let Some(feature) = floodplain.filter(|_| !borders_oasis) {
+                if let Some(feature) = floodplain {
                     wm.tiles.get_mut(&pos).unwrap().feature = Some(feature.into());
                     continue;
                 }
             }
 
             if terrain == "desert" && !hills && !river {
-                if oasis_site_is_valid(wm, pos)
-                    && within_share(oases, considered_land, OASIS_PERCENT)
-                    && rng.below(4) == 1
-                {
+                if within_share(oases, considered_land, OASIS_PERCENT) && rng.below(4) == 1 {
                     wm.tiles.get_mut(&pos).unwrap().feature = Some("oasis".into());
                     oases += 1;
                 }
@@ -3808,7 +3819,6 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
             // Marsh, then Rainforest, then Woods — the shipped precedence.
             if terrain == "grassland"
                 && !hills
-                && !borders_oasis
                 && within_share(marshes, considered_land, MARSH_PERCENT)
                 && (rng.below(300) as i32)
                     <= cluster_score(adjacent_feature_count(wm, pos, "marsh"))
@@ -3825,10 +3835,7 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
             } else {
                 (row - equator).abs() <= (20 * height / 180).max(2)
             };
-            if tropical
-                && !borders_oasis
-                && matches!(terrain.as_str(), "grassland" | "plains")
-            {
+            if tropical && matches!(terrain.as_str(), "grassland" | "plains") {
                 jungle_candidates += 1;
                 if within_share(jungles, jungle_candidates, JUNGLE_PERCENT)
                     && (rng.below(450) as i32)
@@ -3844,7 +3851,6 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
             }
 
             if matches!(terrain.as_str(), "grassland" | "plains" | "tundra")
-                && !borders_oasis
                 && within_share(forests, considered_land, FOREST_PERCENT)
                 && (rng.below(300) as i32)
                     <= cluster_score(adjacent_feature_count(wm, pos, "forest"))
