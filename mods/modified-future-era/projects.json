@@ -1,0 +1,10 @@
+{
+  "mass_driver": {
+    "cost": 1200,
+    "tech": "offworld_mission",
+    "district": "spaceport",
+    "requires": ["launch_moon_landing"],
+    "repeatable": true,
+    "effects": {"mass_drivers": 1}
+  }
+}

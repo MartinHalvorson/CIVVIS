@@ -247,6 +247,27 @@ pub struct ResourceSpec {
     /// the percentage/production/growth effect above and both apply.
     #[serde(default)]
     pub product_yields: Yields,
+    /// What the Moon holds of this resource, if the ruleset says it holds any.
+    /// Absent everywhere in the stock data: the Moon is a milestone there and
+    /// not a place with ore in it. The Modified Future Era is what fills this
+    /// in, and a resource without it is simply not on the Moon.
+    #[serde(default)]
+    pub lunar: Option<LunarDeposit>,
+}
+
+/// How much of one resource the Moon spawns with, as the range a game rolls
+/// from.
+///
+/// There is one Moon and one set of piles on it, shared by everybody: this is
+/// rolled once at setup, not once per civilization, and it is drawn down by
+/// whoever gets a mass driver over it first. Unlike almost everything else a
+/// civilization spends, it does not scale with game speed — the ore is a
+/// physical quantity of rock, and a Quick game is a shorter race for the same
+/// Moon rather than a smaller one.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+pub struct LunarDeposit {
+    pub min: f64,
+    pub max: f64,
 }
 
 /// One Industry-sized economic effect for a Luxury resource. Civ VI doubles
@@ -2157,6 +2178,33 @@ static ACTIVE: OnceLock<Rules> = OnceLock::new();
 /// The same ruleset behind a handle, so games can share one copy.
 static SHARED: OnceLock<Arc<Rules>> = OnceLock::new();
 
+/// The JSON the active ruleset was built from, kept so a per-game overlay can
+/// merge onto the same data a mod already changed instead of onto the shipped
+/// files underneath it. Absent until mods are installed, which is the ordinary
+/// checkout: there the shipped values are the active ones.
+static ACTIVE_VALUES: OnceLock<BTreeMap<String, serde_json::Value>> = OnceLock::new();
+
+/// The active ruleset with the Modified Future Era merged on, built at most
+/// once per process and shared exactly like the stock one.
+static MODIFIED_FUTURE_ERA: OnceLock<Arc<Rules>> = OnceLock::new();
+
+/// The Modified Future Era, as the same kind of JSON overlay any mod is.
+///
+/// It is embedded from `mods/modified-future-era/` rather than copied into
+/// `data/`, so there is one source of truth for it: the lobby setting loads
+/// these bytes, and `--mods mods/modified-future-era` loads the same folder
+/// off disk. Growing it is editing those files, not this array.
+pub const FUTURE_ERA_MODIFIED_FILES: [(&str, &str); 2] = [
+    (
+        "projects",
+        include_str!("../mods/modified-future-era/projects.json"),
+    ),
+    (
+        "resources",
+        include_str!("../mods/modified-future-era/resources.json"),
+    ),
+];
+
 impl Rules {
     /// Stable identity of the effective rules data. The algorithm name is
     /// part of the value so a future fingerprint upgrade is an explicit
@@ -2182,12 +2230,68 @@ impl Rules {
             .clone()
     }
 
+    /// Record the JSON an installed ruleset was built from. Called once by
+    /// [`crate::mods::activate`]; without it the shipped files are the active
+    /// ones, which is what an unmodded checkout has.
+    pub fn record_active_values(values: BTreeMap<String, serde_json::Value>) {
+        let _ = ACTIVE_VALUES.set(values);
+    }
+
+    /// The JSON behind the active ruleset: the shipped files, with any
+    /// installed mod already merged into them.
+    pub fn active_values() -> BTreeMap<String, serde_json::Value> {
+        ACTIVE_VALUES
+            .get()
+            .cloned()
+            .unwrap_or_else(Rules::shipped_values)
+    }
+
+    /// The active ruleset plus the Modified Future Era.
+    ///
+    /// The overlay merges onto [`Rules::active_values`] rather than onto the
+    /// shipped files, so a game played with both a mod and this Future Era
+    /// gets both rather than silently losing the mod.
+    pub fn modified_future_era() -> Arc<Rules> {
+        MODIFIED_FUTURE_ERA
+            .get_or_init(|| {
+                let mut values = Rules::active_values();
+                for (file, text) in FUTURE_ERA_MODIFIED_FILES {
+                    let overlay: serde_json::Value = serde_json::from_str(text).unwrap_or_else(
+                        |error| panic!("the Modified Future Era's {file}.json is malformed: {error}"),
+                    );
+                    let base = values
+                        .get_mut(file)
+                        .unwrap_or_else(|| panic!("the Modified Future Era overlays unknown file {file}.json"));
+                    crate::mods::merge(base, overlay).unwrap_or_else(|error| {
+                        panic!("cannot merge the Modified Future Era's {file}.json: {error}")
+                    });
+                }
+                Arc::new(
+                    Rules::from_values(values)
+                        .unwrap_or_else(|error| panic!("the Modified Future Era does not load: {error}")),
+                )
+            })
+            .clone()
+    }
+
     /// Build the immutable rules snapshot for one match. Gathering Storm's
     /// Future trees are the only rules rows that vary by game seed; cloning
     /// once here keeps that variation out of every hot-path query, while
     /// tactical/search clones continue to share the resulting [`Arc`].
-    pub fn for_game(seed: u64, saved: Option<&FutureTreeLayout>) -> Arc<Rules> {
-        let shared = Self::shared();
+    ///
+    /// `future_era` is the one lobby setting that changes the rules rather
+    /// than the world, so it is resolved here too: the classic era is the
+    /// active ruleset unchanged, and the modified one is that ruleset with the
+    /// Moon's ore and the mass driver merged onto it.
+    pub fn for_game(
+        seed: u64,
+        saved: Option<&FutureTreeLayout>,
+        future_era: crate::setup::FutureEra,
+    ) -> Arc<Rules> {
+        let shared = match future_era {
+            crate::setup::FutureEra::Classic => Self::shared(),
+            crate::setup::FutureEra::Modified => Self::modified_future_era(),
+        };
         let layout = match saved {
             Some(layout) => layout.clone(),
             None => FutureTreeLayout::generate(&shared, seed)
@@ -2976,7 +3080,7 @@ mod tests {
 
         let mut layouts = BTreeSet::new();
         for seed in 0..64 {
-            let rules = Rules::for_game(seed, None);
+            let rules = Rules::for_game(seed, None, crate::setup::FutureEra::Classic);
             assert_randomized_tree_shape(
                 &rules.techs,
                 &rules.tech_ancestors,
@@ -3003,7 +3107,8 @@ mod tests {
                 "future_civic",
             );
             let layout = rules.future_tree_layout();
-            let restored = Rules::for_game(seed, Some(&layout));
+            let restored =
+                Rules::for_game(seed, Some(&layout), crate::setup::FutureEra::Classic);
             assert_eq!(restored.future_tree_layout(), layout);
             layouts.insert(format!("{layout:?}"));
         }
