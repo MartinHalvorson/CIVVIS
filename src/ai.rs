@@ -50,6 +50,25 @@ const LIVELOCK_STAND_DOWN_TURNS: u32 = 4;
 /// use the major civilization's unrestricted tactical doctrine instead.
 const MINOR_DEFENSE_RADIUS: i32 = 6;
 
+/// How near one of our own cities an enemy has to stand before the empire owes
+/// it an answer. Six is the same ring `nearest_enemy` already calls "near home"
+/// when it decides whether to chase a barbarian, so the two agree on the word.
+const HOME_THREAT_RADIUS: i32 = 6;
+
+/// The share of the army home defence may claim. Half, because the failure this
+/// fixes was total neglect of the homeland and the opposite extreme — recalling
+/// everything to chase raiders — loses the same game by another route.
+const HOME_DEFENSE_MAX_SHARE: f64 = 0.5;
+
+/// Answer a threat with this much more strength than it carries, so the units
+/// sent are sent to win rather than to trade evenly and leave a wounded raider
+/// healing on our ground.
+const HOME_DEFENSE_MARGIN: f64 = 1.25;
+
+/// A defender ten tiles from the threat spends five turns walking and arrives
+/// after the damage. Past this range the unit keeps its offensive job.
+const HOME_DEFENSE_RECALL_RANGE: i32 = 10;
+
 /// How close a visible hostile must be before a city musters against it. A
 /// horseman three tiles out reaches the city next turn; a wanderer beyond that
 /// is not worth a standing garrison.
@@ -6473,6 +6492,175 @@ impl BasicAi {
             .map(|(_, target)| target)
     }
 
+    /// ★★★★★ THE HOMELAND HAD NO CLAIM ON THE ARMY AT ALL.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo, Small, 154 turns):
+    /// **116 of 154 turns had a hostile standing inside or beside this empire's
+    /// own territory.** A full-health Crossbowman sat four tiles from two cities,
+    /// unmoved and unengaged, for **21 consecutive turns**. Earlier in the same
+    /// game a barbarian Warrior occupied a city tile for 11 straight turns, and a
+    /// Man-at-Arms roamed the interior for thirty — *healing* from 83 to 92 while
+    /// it did, because nothing ever touched it.
+    ///
+    /// ⚠ THE CAUSE IS NOT VISIBILITY AND NOT THE BARBARIAN SEAT. `is_at_war` is
+    /// true for `barb_pid`, the seat is alive, and every one of those raiders was
+    /// in `enemy_ids` the whole time. The cause is that the only target selector
+    /// this AI had, `nearest_enemy`, ranks candidates by **distance from the
+    /// asking unit**. For an army deployed on a war front an enemy city is always
+    /// nearer than a raider back home, so every unit converged on the offensive
+    /// and the empire's own ground was nobody's job. The fallback, `patrol_step`,
+    /// walks a frontier ring by `uid % posts.len()` and is threat-blind.
+    ///
+    /// So this is an ABSENT assignment rather than a broken one: nothing anywhere
+    /// measured threat *to our own cities*. This does, and answers the worst
+    /// threats with the nearest sufficient units before the offensive claims them.
+    ///
+    /// Deliberately NOT a gene. The genome is pinned at 40 and a committed
+    /// champion rides that exact length, so the constants below ship fixed and
+    /// earn a gene later if measurement says they matter.
+    fn home_defense_objective(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        enemy_ids: &[usize],
+    ) -> Option<Pos> {
+        // A city-state already guards home and nothing else; barbarians have no
+        // homeland to defend. Both would only fight this assignment.
+        if self.minor || self.barb {
+            return None;
+        }
+        let my_cities: Vec<Pos> = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .map(|city| city.pos)
+            .collect();
+        if my_cities.is_empty() {
+            return None;
+        }
+        let home_distance = |pos: Pos| -> i32 {
+            my_cities
+                .iter()
+                .map(|city| g.wdist(pos, *city))
+                .min()
+                .unwrap_or(i32::MAX)
+        };
+
+        // Threats, worst first. Severity is an integer so the ordering is
+        // identical on every platform: proximity to one of our cities dominates,
+        // and strength breaks ties within the same ring. A raider standing ON a
+        // city is therefore always answered before one six tiles out, however
+        // much bigger the distant one is.
+        let mut threats: Vec<(i64, Pos, f64)> = Vec::new();
+        for enemy in g.units.values() {
+            if !enemy_ids.contains(&enemy.owner)
+                || g.rules.units[enemy.kind].class != "military"
+            {
+                continue;
+            }
+            let distance = home_distance(enemy.pos);
+            if distance > HOME_THREAT_RADIUS {
+                continue;
+            }
+            let strength = effective_strength(g.unit_strength(enemy, true), enemy.hp);
+            let severity = (HOME_THREAT_RADIUS - distance) as i64 * 1_000 + strength as i64;
+            threats.push((severity, enemy.pos, strength));
+        }
+        // A camp does not fight back, but it keeps producing what does, and the
+        // measured raiders all came from one. Rank it just under a live raider at
+        // the same range so a unit already in the empire clears it once the
+        // shooting stops rather than leaving the tap running.
+        if let Some(barb) = g.barb_pid {
+            if enemy_ids.contains(&barb) {
+                for camp in g.barb_camps.keys() {
+                    let distance = home_distance(*camp);
+                    if distance > HOME_THREAT_RADIUS {
+                        continue;
+                    }
+                    threats.push(((HOME_THREAT_RADIUS - distance) as i64 * 1_000 - 1, *camp, 0.0));
+                }
+            }
+        }
+        if threats.is_empty() {
+            return None;
+        }
+        threats.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+
+        // Land units only: a ship cannot answer a raider inland, and pulling air
+        // units out of the offensive buys nothing a fighter on patrol does not
+        // already give. A unit already withdrawn to heal stays withdrawn —
+        // `healing_step` ran before this and its judgement outranks ours.
+        let responders: Vec<u32> = {
+            let mut ids: Vec<u32> = g
+                .units
+                .values()
+                .filter(|unit| unit.owner == pid)
+                .filter(|unit| g.rules.units[unit.kind].class == "military")
+                .filter(|unit| {
+                    matches!(
+                        g.rules.units[unit.kind].domain.as_deref(),
+                        None | Some("land")
+                    )
+                })
+                .filter(|unit| !self.recovering_units.contains(&unit.id))
+                .map(|unit| unit.id)
+                .collect();
+            ids.sort_unstable();
+            ids
+        };
+        // Never recall more than half the army. An empire that pulls everything
+        // home to chase raiders has not saved itself, it has lost the war a
+        // different way — and the measured game's problem was the opposite
+        // extreme, so the correction must not overshoot into it.
+        //
+        // ⚠ AT LEAST ONE, ALWAYS. A bare `floor` reads 0 for a one-unit army and
+        // 0 means "nobody defends", which is the exact behaviour being fixed —
+        // and a lone soldier with a raider at the gates is precisely who cannot
+        // afford to be somewhere else. The share bounds over-commitment; it does
+        // not license ignoring the threat entirely.
+        let cap = ((responders.len() as f64 * HOME_DEFENSE_MAX_SHARE).floor() as usize).max(1);
+        if !responders.contains(&uid) {
+            return None;
+        }
+
+        let mut committed: HashSet<u32> = HashSet::new();
+        for (_, threat, strength) in threats {
+            if committed.len() >= cap {
+                break;
+            }
+            // A defender that would spend ten turns walking home is not a
+            // defender. Past that range this unit keeps its offensive job and a
+            // nearer one answers instead.
+            let mut nearest: Vec<(i32, u32)> = responders
+                .iter()
+                .filter(|id| !committed.contains(id))
+                .map(|id| (g.wdist(g.units[id].pos, threat), *id))
+                .filter(|(distance, _)| *distance <= HOME_DEFENSE_RECALL_RANGE)
+                .collect();
+            nearest.sort_unstable();
+
+            // Send enough to win rather than enough to trade. A camp needs no
+            // margin, so `needed` of zero commits exactly one unit and stops.
+            let needed = strength * HOME_DEFENSE_MARGIN;
+            let mut answered = 0.0;
+            for (_, responder) in nearest {
+                committed.insert(responder);
+                if responder == uid {
+                    return Some(threat);
+                }
+                answered += effective_strength(
+                    g.unit_strength(&g.units[&responder], false),
+                    g.units[&responder].hp,
+                );
+                if answered >= needed || committed.len() >= cap {
+                    break;
+                }
+            }
+        }
+        None
+    }
+
     fn nearest_enemy(&self, g: &Game, pid: usize, uid: u32, enemy_ids: &[usize]) -> Option<Pos> {
         // Majors chase barbarians only near home and only when this unit's
         // doctrine would accept the eventual attack. This keeps scouts and
@@ -7025,7 +7213,14 @@ impl BasicAi {
             {
                 return true;
             }
-            return match self.nearest_enemy_for_unit(g, pid, uid, &enemy_ids) {
+            // The homeland gets first claim on this unit. Without it the
+            // objective below is always the offensive, because it ranks by
+            // distance from the asking unit and a deployed army is by
+            // definition standing next to the enemy.
+            return match self
+                .home_defense_objective(g, pid, uid, &enemy_ids)
+                .or_else(|| self.nearest_enemy_for_unit(g, pid, uid, &enemy_ids))
+            {
                 Some(t) => self.tactical_step(g, pid, uid, t, &enemy_ids, radius),
                 None => self.peacetime_step(g, pid, uid),
             };
@@ -9013,6 +9208,178 @@ mod tests {
         assert_eq!(
             ai.nearest_enemy_for_unit(&g, 0, galley, &[1]),
             Some(g.units[&embarked].pos)
+        );
+    }
+
+    /// Build one empire, one enemy city, and one raider standing in the home
+    /// ring, then place our soldier so the ENEMY CITY IS STRICTLY NEARER TO IT
+    /// than the raider is. That is the live shape: on run
+    /// `civvis-20260803T005930Z` the army stood on the Korean border while a
+    /// Crossbowman sat four tiles from two of our cities for 21 turns.
+    fn raider_at_home_game() -> (Game, u32, Pos, Pos) {
+        let mut g = Game::new_full(2, 30, 20, 77, 60, 0, false);
+        for player in 0..2 {
+            let settler = g
+                .player_unit_ids(player)
+                .into_iter()
+                .find(|uid| g.units[uid].kind == "settler")
+                .expect("each player opens with a settler");
+            g.current = player;
+            g.apply(player, &Action::FoundCity { unit: settler }).unwrap();
+        }
+        for player in 0..2 {
+            for uid in g.player_unit_ids(player) {
+                g.remove_unit(uid);
+            }
+        }
+        g.current = 0;
+        g.players[0].met.insert(1);
+        g.players[1].met.insert(0);
+        g.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+
+        let home = g.cities[&g.player_city_ids(0)[0]].pos;
+        let enemy_city = g.cities[&g.player_city_ids(1)[0]].pos;
+        let land = |g: &Game, pos: Pos| {
+            g.map
+                .get(pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+        };
+
+        // The raider: inside the home ring, and far from the enemy city so it
+        // can never be mistaken for an offensive target.
+        let raider_at = g
+            .wdisk(home, HOME_THREAT_RADIUS)
+            .into_iter()
+            .filter(|pos| land(&g, *pos) && g.wdist(*pos, home) >= 3)
+            .max_by_key(|pos| (g.wdist(*pos, enemy_city), *pos))
+            .expect("home ring has land in it");
+        g.spawn_test_unit("warrior", 1, raider_at);
+
+        // Our soldier: nearer the enemy city than the raider, and inside recall
+        // range of the raider. Without the fix it besieges and never turns round.
+        let soldier_at = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| land(&g, *pos) && g.units_at(*pos).is_empty())
+            .filter(|pos| g.wdist(*pos, enemy_city) < g.wdist(*pos, raider_at))
+            .filter(|pos| g.wdist(*pos, raider_at) <= HOME_DEFENSE_RECALL_RANGE)
+            .min_by_key(|pos| (g.wdist(*pos, enemy_city), *pos))
+            .expect("a tile exists that is closer to the enemy city than to the raider");
+        let soldier = g.spawn_test_unit("warrior", 0, soldier_at);
+        (g, soldier, raider_at, enemy_city)
+    }
+
+    #[test]
+    fn a_raider_in_the_home_ring_outranks_the_enemy_city_this_unit_is_standing_next_to() {
+        let (g, soldier, raider_at, enemy_city) = raider_at_home_game();
+        let ai = BasicAi::new();
+
+        // The defect, asserted first so the test cannot pass for the wrong
+        // reason: the only selector this AI had picks the offensive.
+        assert_eq!(
+            ai.nearest_enemy_for_unit(&g, 0, soldier, &[1]),
+            Some(enemy_city),
+            "precondition: distance-ranked targeting must prefer the enemy city here"
+        );
+        assert_eq!(
+            ai.home_defense_objective(&g, 0, soldier, &[1]),
+            Some(raider_at),
+            "a raider inside the home ring must claim the unit before the offensive does"
+        );
+    }
+
+    #[test]
+    fn a_defender_beyond_recall_range_keeps_its_offensive_job() {
+        let (mut g, soldier, raider_at, _) = raider_at_home_game();
+        // The threat is left exactly where it was — still in the home ring,
+        // still the worst thing on the board. The ONLY thing that changes is how
+        // far this unit would have to walk, so a None here can only mean range.
+        let far = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| g.wdist(*pos, raider_at) > HOME_DEFENSE_RECALL_RANGE)
+            .filter(|pos| g.units_at(*pos).is_empty())
+            .filter(|pos| {
+                g.map
+                    .get(*pos)
+                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .min()
+            .expect("a 30x20 map has land more than ten tiles from the raider");
+        g.remove_unit(soldier);
+        let distant = g.spawn_test_unit("warrior", 0, far);
+
+        let ai = BasicAi::new();
+        assert!(
+            g.wdist(far, raider_at) > HOME_DEFENSE_RECALL_RANGE,
+            "precondition: the unit really is out of recall range"
+        );
+        assert_eq!(
+            ai.home_defense_objective(&g, 0, distant, &[1]),
+            None,
+            "a defender that would spend five turns walking is not a defender"
+        );
+    }
+
+    #[test]
+    fn home_defense_never_recalls_more_than_half_the_army() {
+        let (mut g, _, raider_at, _) = raider_at_home_game();
+        let home = g.cities[&g.player_city_ids(0)[0]].pos;
+        // Four raiders in the ring against four of our soldiers: at most two of
+        // ours may be claimed, however many threats are shouting.
+        for pos in g
+            .wdisk(home, HOME_THREAT_RADIUS)
+            .into_iter()
+            .filter(|pos| {
+                *pos != raider_at
+                    && g.units_at(*pos).is_empty()
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .take(3)
+            .collect::<Vec<_>>()
+        {
+            g.spawn_test_unit("warrior", 1, pos);
+        }
+        let mut ours: Vec<u32> = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == 0)
+            .map(|unit| unit.id)
+            .collect();
+        for pos in g
+            .wdisk(home, 2)
+            .into_iter()
+            .filter(|pos| {
+                g.units_at(*pos).is_empty()
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .take(4 - ours.len())
+            .collect::<Vec<_>>()
+        {
+            ours.push(g.spawn_test_unit("warrior", 0, pos));
+        }
+        assert_eq!(ours.len(), 4, "the cap is only meaningful on a known army size");
+
+        let ai = BasicAi::new();
+        let claimed = ours
+            .iter()
+            .filter(|uid| ai.home_defense_objective(&g, 0, **uid, &[1]).is_some())
+            .count();
+        assert!(
+            claimed <= 2,
+            "home defence claimed {claimed} of 4 units; the cap is half the army"
+        );
+        assert!(
+            claimed >= 1,
+            "four raiders in the home ring and nobody answered any of them"
         );
     }
 
