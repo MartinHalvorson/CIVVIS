@@ -136,6 +136,12 @@ class DesktopAppsTests(unittest.TestCase):
         self.assertEqual(listeners, {"rust": detached_rust, "wasm": detached_wasm})
         sleep.assert_called_once_with(0.25)
 
+    def test_shared_page_names_each_desktop_channel(self):
+        page = (ROOT / "web/index.html").read_text(encoding="utf-8")
+        self.assertIn('channel === "rust") document.title = "CIVVIS (Rust)"', page)
+        self.assertIn('channel === "wasm" || channel === "beta"', page)
+        self.assertIn('document.title = "CIVVIS (Wasm)"', page)
+
 
 if __name__ == "__main__":
     unittest.main()
