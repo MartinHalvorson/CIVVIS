@@ -1792,6 +1792,13 @@ impl AdvancedAi {
         self.base.home_defense = true;
     }
 
+    /// Record tactical steps so a unit stepped twice in one turn cannot walk
+    /// back onto the tile it just left. Native tournament games leave this
+    /// disabled so their recorded ladders replay move-for-move.
+    pub fn enable_recorded_tactical_step(&mut self) {
+        self.base.recorded_tactical_step = true;
+    }
+
     /// Stop the defensive-war posture from becoming permanent. Native
     /// tournament games leave this disabled.
     pub fn enable_bounded_recovery(&mut self) {
@@ -13674,7 +13681,14 @@ impl AdvancedAi {
                 self.base.move_beats_holding(g, uid, candidate, stay)
             };
             if should_move {
-                return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                // ⚠ Through `path_move`, never `g.apply` directly: it records
+                // the step, and a unit stepped again this turn must not
+                // re-enter the tile it just left. This site emitted 50 of the
+                // 88 same-turn out-and-back pairs on the replay of run
+                // civvis-20260801T224944Z — net zero ground, two orders, and
+                // the second refused by Civilization VI as a MOVE_TO of the
+                // unit's own tile.
+                return self.base.tactical_apply_move(g, pid, uid, pos);
             }
         }
 
@@ -13701,7 +13715,9 @@ impl AdvancedAi {
                 })
             {
                 if self.base.move_beats_holding(g, uid, score(g, pos), stay) {
-                    return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                    // Same rule as the local arm above: recorded through
+                    // `path_move` so the next same-turn step cannot undo it.
+                    return self.base.tactical_apply_move(g, pid, uid, pos);
                 }
             }
         }
