@@ -451,8 +451,18 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `enable_live_bridge`). `promotion_heal_is_wasted` returns `false` on that
 /// flag before it reads a unit, so every configured, legacy and Elo agent
 /// promotes exactly when it always did. A compatibility re-pin.
+///
+/// #1026 keeps the land army out of the water, behind `come_ashore` — `false`
+/// in both `BasicAi` constructors and set only by `enable_live_bridge`. All
+/// three of its paths short-circuit on the flag before reading anything:
+/// `explore_step`'s `dry_only` is `self.come_ashore && …`, `disembark_step` is
+/// called only under `if self.come_ashore`, and `peacetime_step`'s new `at_war`
+/// parameter is folded through `at_war && self.come_ashore`, which reproduces
+/// the historical hardcoded `false` exactly. So every configured, legacy and
+/// Elo agent explores and moves exactly as it always did. A compatibility
+/// re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5f7e_744b_f90d_bb9c;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3a02_7973_7637_b8ea;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
