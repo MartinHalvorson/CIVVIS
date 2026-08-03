@@ -481,8 +481,19 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::promoted_policy_envoy` alone enables it for the production
 /// controller, so frozen Basic, configured, legacy and `advanced_v1` entrants
 /// retain their old branches. A compatibility re-pin.
+///
+/// ⚠ And again for a warning fix. `science_goal_for_campus` bound a building's
+/// name it never read; the loop now iterates the map's values. The anchor
+/// hashes whole files, so a change that cannot alter behaviour still moves it.
+/// That this one cannot was checked rather than argued: the same
+/// `BTreeMap<String, BuildingSpec>` in the same key order, with the binding the
+/// compiler proved unused removed. Seed 1002 was then played to completion on
+/// both revisions through the same routes — turn 206, player 4, religious, all
+/// six scores equal (Arabia 994, Aztec 592, Ethiopia 651, Georgia 1012, Khmer
+/// 706, Maya 464), and the same 254 requests to get there. A compatibility
+/// re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3f7a_b902_62c6_e98b;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x96e2_2786_e132_0d8e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

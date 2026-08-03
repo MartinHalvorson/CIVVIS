@@ -4706,7 +4706,7 @@ impl AdvancedAi {
             return None;
         }
         let mut best: Option<(f64, &str)> = None;
-        for (name, spec) in &g.rules.buildings {
+        for spec in g.rules.buildings.values() {
             if spec.wonder || spec.yields.science <= 0.0 {
                 continue;
             }
