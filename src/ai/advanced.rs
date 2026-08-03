@@ -728,6 +728,14 @@ pub struct AdvancedAi {
     /// `advanced_relief_scoped` entrant, so it can be re-measured once the
     /// conversion bottleneck moves rather than re-derived from scratch.
     pub scoped_relief_hold: bool,
+    /// Price a fogged objective city from this controller's last sighting of
+    /// it, instead of scoring it as absent.
+    ///
+    /// **Off by default, live-bridge only** — the same footing as
+    /// `bounded_recovery`, and for the same reason: the defect it repairs is a
+    /// live-regime one. See [`AdvancedAi::remembered_objective_strength`] for
+    /// the mechanism and the 294-of-426 measurement behind it.
+    pub blind_objective_strength: bool,
     /// Exclude victory lanes the empire cannot finish before the game ends.
     ///
     /// **Off by default, on the pre-registered rule.** Routing toward a lane
@@ -1639,6 +1647,7 @@ impl AdvancedAi {
             live_trader_route_adapter: false,
             battlefront_frame: None,
             scoped_relief_hold: false,
+            blind_objective_strength: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
             settler_price: 1.0,
@@ -1724,6 +1733,13 @@ impl AdvancedAi {
     /// tournament games leave this disabled.
     pub fn enable_bounded_recovery(&mut self) {
         self.bounded_recovery = true;
+    }
+
+    /// Stop a fogged objective city from reading as an empty tile when the
+    /// army decides whether it is strong enough to engage. Native tournament
+    /// games leave this disabled so their recorded ladders stay comparable.
+    pub fn enable_blind_objective_strength(&mut self) {
+        self.blind_objective_strength = true;
     }
 
     /// Redirect an existing agent at a new explicit victory target without
@@ -12957,24 +12973,73 @@ impl AdvancedAi {
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
             .sum::<f64>()
             + g.city_at(objective)
-                .filter(|city| {
-                    enemies.contains(&g.cities[city].owner)
-                        && (!self.battlefront_observation || g.sees(&visible, g.cities[city].pos))
+                .filter(|city| enemies.contains(&g.cities[city].owner))
+                .and_then(|city| {
+                    if !self.battlefront_observation || g.sees(&visible, g.cities[&city].pos) {
+                        Some(g.city_strength(city))
+                    } else {
+                        self.remembered_objective_strength(city)
+                    }
                 })
-                .map(|city| g.city_strength(city))
                 .unwrap_or(0.0)
             + g.encampment_at(objective)
-                .filter(|city| {
-                    enemies.contains(&g.cities[city].owner)
-                        && (!self.battlefront_observation || g.sees(&visible, g.cities[city].pos))
+                .filter(|city| enemies.contains(&g.cities[city].owner))
+                .and_then(|city| {
+                    if !self.battlefront_observation || g.sees(&visible, g.cities[&city].pos) {
+                        Some(g.encampment_strength(city))
+                    } else {
+                        self.remembered_objective_strength(city)
+                    }
                 })
-                .map(|city| g.encampment_strength(city))
                 .unwrap_or(0.0);
         if hostile <= 0.0 {
             3.0
         } else {
             (friendly / hostile).clamp(0.0, 3.0)
         }
+    }
+
+    /// What a fogged enemy city at the objective is worth to
+    /// [`AdvancedAi::local_strength_ratio`], from this controller's own last
+    /// sighting of it.
+    ///
+    /// The shipped rule prices an objective city only while it is *currently*
+    /// in sight. That is fog-honest but it is not belief-honest, and the
+    /// difference is the whole story of a failed siege: `local_strength_ratio`
+    /// returns its `hostile <= 0.0` sentinel of `3.0` — the maximum, "we
+    /// dominate here" — for an objective the army simply cannot see. A walled
+    /// capital under fog and an empty meadow produce the identical number, and
+    /// `3.0` clears [`LOCAL_SUPERIORITY_FLOOR`] by a factor of four, so the
+    /// group engages.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo, at war with Korea
+    /// from turn 64): Seoul — walled, 22 pop, city defense 101 — was the
+    /// objective of **426 force-group decisions between t65 and t231, and 294
+    /// of them read exactly 3.00**. 108 of those decisions were a force of
+    /// *one*. Seoul finished the game on 0 damage and 0 wall damage, as did
+    /// every other Korean city bar transient pokes that healed back: across 173
+    /// turns of war no rival city ever passed 27% of its health bar.
+    ///
+    /// The repair does not invent information. [`CitySighting::strength`] is
+    /// this controller's own recorded observation — city combat strength at the
+    /// last time it actually saw the City Center, garrison and defense
+    /// modifiers included — and it is already trusted for the defensive half of
+    /// the same question by [`AdvancedAi::remembered_city_pressure`]. Reading
+    /// it here only stops the offensive half from treating "I have not looked"
+    /// as "there is nothing there".
+    ///
+    /// A stale sighting stays stale on purpose: a city that walled up under fog
+    /// still reads at its last-seen strength, which is exactly the mistake a
+    /// fog-honest agent should be allowed to make. Returning `None` when there
+    /// is no sighting at all preserves the shipped behaviour for a city this
+    /// controller has genuinely never seen.
+    fn remembered_objective_strength(&self, cid: u32) -> Option<f64> {
+        if !self.blind_objective_strength {
+            return None;
+        }
+        self.remembered_city(cid)
+            .map(|sighting| sighting.strength.max(0.0))
+            .filter(|strength| *strength > 0.0)
     }
 
     fn rebuild_force_groups(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
@@ -21358,6 +21423,111 @@ mod tests {
                 .unwrap()
                 .posture,
             ForcePosture::Hold,
+        );
+    }
+
+    /// The defect this exists for: a walled enemy capital the army cannot
+    /// currently see scored identically to an empty meadow, because
+    /// `local_strength_ratio` reached its `hostile <= 0.0` sentinel and
+    /// returned 3.0 — four times the superiority floor. One lone warrior
+    /// therefore read itself as locally dominant over a city.
+    #[test]
+    fn a_fogged_objective_city_is_priced_from_the_last_sighting() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_103);
+        // An enemy city far enough away that nothing of ours can see it.
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        sites.sort_unstable();
+        game.current = 1;
+        for site in sites {
+            let settler = game.spawn_test_unit("settler", 1, site);
+            if game.apply(1, &Action::FoundCity { unit: settler }).is_ok() {
+                break;
+            }
+            game.remove_unit(settler);
+        }
+        game.current = 0;
+        let enemy_city = *game
+            .player_city_ids(1)
+            .first()
+            .expect("the enemy must have somewhere to be attacked");
+        let objective = game.cities[&enemy_city].pos;
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+
+        // Korea's Seoul was no frontier outpost, so neither is this: an empire
+        // fielding field cannons defends its cities at that standard.
+        game.players[1]
+            .counters
+            .insert("strongest_unit_built".to_string(), 60);
+
+        // One warrior, standing well outside its own sight range of the city.
+        let warrior = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 6));
+        assert!(
+            !game.player_can_see(0, objective),
+            "the setup must leave the objective fogged"
+        );
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(
+            !ai.blind_objective_strength,
+            "the shipped default must be unchanged"
+        );
+        assert_eq!(
+            ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective),
+            3.0,
+            "the shipped rule reads a fogged city as no enemy at all"
+        );
+
+        // A scout walks up, sees the city, and leaves. Nothing about the city
+        // changed — only what this controller has observed of it.
+        let watchtower = game
+            .nbrs(objective)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .expect("a tile beside the city");
+        let scout = game.spawn_test_unit("scout", 0, watchtower);
+        let in_sight = ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective);
+        ai.belief.observe(&game, 0);
+        game.remove_unit(scout);
+        assert!(
+            !game.player_can_see(0, objective),
+            "the city is fogged again once the scout is gone"
+        );
+        assert!(
+            ai.remembered_city(enemy_city).is_some(),
+            "the sighting must survive the fog"
+        );
+
+        ai.enable_blind_objective_strength();
+        let ratio = ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective);
+        assert_eq!(
+            ratio, in_sight,
+            "an unchanged city must read the same remembered as it did in sight"
+        );
+        assert!(
+            ratio < LOCAL_SUPERIORITY_FLOOR,
+            "one warrior is not locally superior to a city it remembers: {ratio}"
+        );
+
+        // Memory is the only new input: a city this controller has never seen
+        // still scores as absent, so the repair cannot become omniscience.
+        let mut unseen = AdvancedAi::targeting(VictoryTarget::Domination);
+        unseen.enable_blind_objective_strength();
+        assert_eq!(
+            unseen.local_strength_ratio(&game, 0, &[warrior], &[1], objective),
+            3.0,
+            "with no sighting on file the shipped behaviour is preserved"
         );
     }
 
