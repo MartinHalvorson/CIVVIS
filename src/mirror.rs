@@ -9660,6 +9660,43 @@ impl LiveMirror {
         }
     }
 
+    /// ★★★★★ CARRY THE TREASURY BASELINE ACROSS A `--fresh-board` REBUILD.
+    ///
+    /// `mirror_net_income` differences the treasury between CONSECUTIVE turns and
+    /// `last_treasury` lives on this struct — but the bridge runs
+    /// `civvis_orders --serve --fresh-board`, which builds a NEW `LiveMirror`
+    /// every turn and reaches `decide` without ever calling `sync`. So the only
+    /// place the rate is derived is never executed, `last_treasury` is re-seeded
+    /// to the current turn on every construction, and `gold_per_turn` keeps its
+    /// `0.0` default for the whole game.
+    ///
+    /// Measured by instrumenting `faith_military_is_affordable` and replaying run
+    /// `civvis-20260803T044538Z`: **`gold_per_turn` was 0.00 in 963 of 963 live
+    /// decisions.** Nothing that reads it can work:
+    ///
+    /// - `economic_recovery` in `BasicAi::product_for` needs `gold_per_turn < -0.5`,
+    ///   so the entire bankruptcy response **cannot fire in deployment** — which is
+    ///   the standing explanation for `civvis-civ6-the-treasury-confiscates-the-army`
+    ///   recurring after it was called fixed.
+    /// - the income arm of `#962`'s faith-purchase gate allowed **0 of 737**
+    ///   decisions; every allowance came from its balance arm instead.
+    ///
+    /// `src/bin/civvis_orders.rs` already carries `ours` and the unit-id memory
+    /// across the same rebuild for the same reason. This is the treasury's turn.
+    pub fn carry_treasury_baseline(&mut self, previous: Option<(u32, f64)>) {
+        let Some(previous) = previous else { return };
+        self.last_treasury = Some(previous);
+        let gold = self.game.players[0].gold;
+        if let Some(net) = self.mirror_net_income(self.game.turn, gold) {
+            self.game.players[0].gold_per_turn = net;
+        }
+    }
+
+    /// The baseline to hand to the next board built over this one.
+    pub fn treasury_baseline(&self) -> Option<(u32, f64)> {
+        self.last_treasury
+    }
+
     /// Net gold per turn, derived from the treasury balance because the export
     /// carries no rate.
     ///
