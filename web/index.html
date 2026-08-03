@@ -16447,12 +16447,12 @@ function draw() {
     } else if (t.feature === "marsh") {
       drawStrategicMarsh(x, y);
     } else if (t.feature === "oasis") {
-      // The original 17 x 11 pond and 13 px palm formed a roughly 22 x 20
-      // mark whose visual midpoint was (2.5, -1.5) from the hex centre. Scale
-      // that whole composition by the requested 2.5, then subtract its old
-      // midpoint so the enlarged oasis remains centred in its owning tile.
+      // The original 17 x 11 pond and 13 px palm form a roughly 22 x 20 mark
+      // whose visual midpoint is (2.5, -1.5) from the hex centre. A 2.0 scale
+      // is 20% smaller than 2.5; subtract the original midpoint before scaling
+      // so the resized oasis remains centred in its owning tile.
       cx.save();
-      cx.translate(x, y); cx.scale(2.5, 2.5); cx.translate(-2.5, 1.5);
+      cx.translate(x, y); cx.scale(2, 2); cx.translate(-2.5, 1.5);
       cx.fillStyle = "#3d7aa6"; cx.beginPath();
       cx.ellipse(0, 3, 8.5, 5.5, 0, 0, 7); cx.fill();
       cx.font = "13px sans-serif"; cx.fillText("🌴", 7, -5);
