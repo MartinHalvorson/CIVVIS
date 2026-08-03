@@ -15146,16 +15146,51 @@ function drawResourceBadge(t, x, y) {
   }
 }
 
-// Barbarian camps are hostile little fortifications, not tents. The sharpened
-// palisade is deliberately the largest part of the silhouette so it survives
-// strategic zoom; the fire and broken front gate make the ring read as an
-// occupied encampment instead of a generic fence.
+// Barbarian camps are hostile little fortifications, not tents. A spiked, warm
+// perimeter keeps the camp readable on busy tiles and makes the outline read as
+// an active defensive ring at survey zoom.
 function drawBarbarianCamp(x, y) {
   cx.save();
   cx.lineJoin = "round"; cx.lineCap = "round";
   const dir = -LITF;
   if (MODE.painted) castShadow(x, y + 7, 11, 15, .34);
   contactAO(x, y + 7.5, 15, 5, .34);
+
+  // Spiky fortification ring around the tile's interior perimeter.
+  const ringR = 16.9;
+  const ringY = y + 0.6;
+  const ring = new Path2D();
+  const ringSpikes = new Path2D();
+  for (let i = 0; i < 6; i++) {
+    const [p0x, p0y] = corner(x, ringY, ringR, i);
+    const [p1x, p1y] = corner(x, ringY, ringR, (i + 1) % 6);
+    if (!i) ring.moveTo(p0x, p0y); else ring.lineTo(p0x, p0y);
+    if (FINE()) {
+      const sx = (p0x + p1x) * 0.5;
+      const sy = (p0y + p1y) * 0.5;
+      const nx = x - sx;
+      const ny = ringY - sy;
+      const n = Math.hypot(nx, ny) || 1;
+      const spike = 4.4 + (i % 2) * 0.7;
+      ringSpikes.moveTo(p0x, p0y);
+      ringSpikes.lineTo(sx + nx / n * spike, sy + ny / n * spike);
+      ringSpikes.lineTo(p1x, p1y);
+      ringSpikes.closePath();
+    }
+  }
+  ring.closePath();
+  cx.fillStyle = "rgba(60, 34, 22, 0.62)";
+  cx.fill(ring);
+  cx.strokeStyle = "rgba(252, 148, 80, 0.66)";
+  cx.lineWidth = 1.85;
+  cx.stroke(ring);
+  if (FINE()) {
+    cx.fillStyle = "rgba(255, 148, 68, 0.2)";
+    cx.fill(ringSpikes);
+    cx.strokeStyle = "rgba(255, 206, 155, 0.8)";
+    cx.lineWidth = 1.1;
+    cx.stroke(ringSpikes);
+  }
 
   // Trampled, fire-darkened ground contained by the palisade ring.
   cx.fillStyle = "rgba(48,31,24,.82)";
