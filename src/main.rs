@@ -401,12 +401,18 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// returns the old level-only answer on it before reading any rate, so every
 /// configured, legacy and Elo agent behaves identically. A compatibility re-pin.
 ///
+/// #984 credits a movement tile for the attack it opens, behind
+/// `strike_opening` — `false` in `AdvancedAi::new()` and set only by
+/// `enable_live_bridge`. `strike_opening_value` returns 0.0 on that flag
+/// before it reads the board, so every configured, legacy and Elo agent scores
+/// every tile exactly as it did. A compatibility re-pin.
+///
 /// #990 adds four `disable_*` methods so every flag in `enable_live_bridge` has a
 /// measurement arm. They are called only by `builtin_ai`'s `live_without_*`
 /// factories, never in play, so every configured, legacy and Elo agent is
 /// byte-identical. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd9d2_a1a6_14c4_3162;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe16a_9db6_c7c9_8939;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

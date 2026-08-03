@@ -24,6 +24,11 @@ use std::sync::Arc;
 /// attack unsupported. Below it the group holds on its own account, whatever
 /// else is happening in the empire.
 const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
+/// Scale of [`AdvancedAi::strike_opening_value`] against `mv_threat`'s own
+/// `30.0`. At even odds this returns +5.2 where the parity threat penalty is
+/// -15.0, so contact becomes worth considering without becoming automatic —
+/// the shipped caution is reduced, not removed.
+const STRIKE_OPENING_SCALE: f64 = 0.6;
 /// Most the wartime army target may be multiplied by when the enemy outweighs
 /// us, used by [`AdvancedAi::wartime_army_target`]. Two doublings would be an
 /// empire of nothing but soldiers; 2.0 asks a six-city empire at war to want
@@ -768,6 +773,13 @@ pub struct AdvancedAi {
     /// `advanced_relief_scoped` entrant, so it can be re-measured once the
     /// conversion bottleneck moves rather than re-derived from scratch.
     pub scoped_relief_hold: bool,
+    /// Credit a tile for the attack it opens, not only charge it for the
+    /// threat it accepts.
+    ///
+    /// **Off by default, live-bridge only.** See
+    /// [`AdvancedAi::strike_opening_value`] for the arithmetic and the
+    /// 7-melee-attacks-in-188-turns measurement behind it.
+    pub strike_opening: bool,
     /// Raise the wartime army target when the enemy outweighs us, instead of
     /// keeping a headcount that only ever looks at our own city count.
     ///
@@ -1791,6 +1803,7 @@ impl AdvancedAi {
             solvent_faith_army: false,
             battlefront_frame: None,
             scoped_relief_hold: false,
+            strike_opening: false,
             army_target_weighs_the_enemy: false,
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
@@ -1895,6 +1908,12 @@ impl AdvancedAi {
     /// tournament games leave this disabled.
     pub fn enable_bounded_recovery(&mut self) {
         self.bounded_recovery = true;
+    }
+
+    /// Let movement credit the attack a tile opens. Native tournament games
+    /// leave this disabled so their recorded ladders stay comparable.
+    pub fn enable_strike_opening(&mut self) {
+        self.strike_opening = true;
     }
 
     /// Let the army target account for the enemy it has to beat. Native
@@ -2004,6 +2023,17 @@ impl AdvancedAi {
         // read exactly 3.00, 108 with a force of one. No Korean city ever passed
         // 27% damage in 173 turns of war. The repair reads only this controller's
         // own last sighting, which the defensive half already trusts.
+        // ⚠ And once the army is sent, something has to make it close. The
+        // movement score charges `mv_threat * threat_caution * 30.0` for
+        // standing where an enemy can reach — -15.0 at parity for a Vanguard —
+        // and credits the attack that position buys with nothing, while
+        // closing one hex is worth +2.9. Measured on run
+        // `civvis-20260803T005930Z`: **7 melee ATTACK orders in 188 turns of
+        // war** against 1546 MOVE_TO, with 622 military unit-turns sitting 2-4
+        // hexes from a target and 52% of those under an Engage posture. The
+        // tournament controller stays frozen so its recorded ladders remain
+        // comparable.
+        self.enable_strike_opening();
         self.enable_blind_objective_strength();
         // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
         // `military_faith_spending` never asks about gold — it gates on the faith
@@ -10027,6 +10057,116 @@ impl AdvancedAi {
         }
     }
 
+    /// What a tile is worth for the attack it opens.
+    ///
+    /// `src/ai/tactics.rs` names this as the fourth and largest defect in the
+    /// shipped tactical layer: *"Movement is blind to the attacks it enables.
+    /// Position is chosen by depth-to-target, adjacent support and incoming
+    /// threat; nothing scores a tile for the shot it opens."* The joint
+    /// planner written to repair it is `joint_tactics`, which is `false` and
+    /// measured null, so the shipped movement score still has the hole.
+    ///
+    /// The hole is not neutral, it is one-sided. Standing where an enemy can
+    /// reach costs `mv_threat * threat_caution * 30.0 * exp(..)` — **-15.0 at
+    /// parity for a Vanguard on the shipped weights** — while closing one hex
+    /// is worth `objective_progress * progress` = +2.9 plus `role_spacing`
+    /// +2.0. **Contact is priced at roughly three times what closing is worth,
+    /// and the attack that contact buys is worth nothing at all.** A melee
+    /// unit therefore never volunteers for the tile it has to occupy to
+    /// swing.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo vs Korea, war
+    /// t64-251), joining the run's own `orders.sqlite` to its per-turn state:
+    ///
+    /// - **7 melee ATTACK orders in 188 turns of war**, six of them inside one
+    ///   seven-turn window, against 1546 MOVE_TO.
+    /// - Of 1787 military unit-turns, **622 (35%) sat 2-4 hexes from a target
+    ///   without closing**, and **52% of those were under an `Engage`
+    ///   posture** — ordered to attack, declining to approach. 390 of the 622
+    ///   were melee, `UNIT_HEAVY_CHARIOT` alone accounting for 156 with four
+    ///   movement to spend.
+    /// - Movement itself is healthy: 67% of war `MOVE_TO` orders arrived and
+    ///   **0% named the unit's own tile**, so this is not
+    ///   `civvis-civ6-the-order-that-goes-nowhere`.
+    ///
+    /// The repair credits a tile for the strike it makes available, on the
+    /// same scale as the threat it charges, so the two are commensurable. Only
+    /// targets the group is actually prosecuting count — a hostile that merely
+    /// wanders into range is already handled by the threat term, and paying
+    /// for it here would pull the column off its objective.
+    ///
+    /// Odds are `attack / (attack + defense)`, bounded in `(0, 1)` by
+    /// construction, so unlike `mv_threat`'s uncapped `exp` this term cannot
+    /// run away. At even odds it returns `0.5 * 30.0 *
+    /// STRIKE_OPENING_SCALE` = +5.2, which offsets a third of the parity
+    /// threat penalty rather than erasing it: the intent is to make contact
+    /// *considerable*, not automatic.
+    fn strike_opening_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        tile: Pos,
+        group: &ForceGroup,
+        enemies: &[usize],
+        visible: Option<&crate::world::TileBits>,
+    ) -> f64 {
+        if !self.strike_opening || group.posture != ForcePosture::Engage {
+            return 0.0;
+        }
+        let unit = &g.units[&uid];
+        let spec = &g.rules.units[unit.kind];
+        if spec.class != "military" {
+            return 0.0;
+        }
+        let reach = if spec.has_ranged_attack() {
+            g.unit_attack_range(uid).max(1)
+        } else {
+            1
+        };
+        let attack = crate::game::effective_strength(
+            g.unit_strength(unit, false)
+                .max(g.unit_ranged_attack_strength(unit)),
+            unit.hp,
+        );
+        if attack <= 0.0 {
+            return 0.0;
+        }
+        // The objective the group is prosecuting, plus any hostile standing on
+        // it. Anything else in range is the threat term's business.
+        let focus = group.focus_target.unwrap_or(group.objective);
+        let mut best_defense: Option<f64> = None;
+        if g.wdist(tile, focus) <= reach {
+            if let Some(city) = g.city_at(focus).filter(|city| {
+                enemies.contains(&g.cities[city].owner)
+                    && visible.is_none_or(|visible| g.sees(visible, g.cities[city].pos))
+            }) {
+                best_defense = Some(g.city_strength(city));
+            }
+        }
+        for enemy in g.units.values() {
+            if !enemies.contains(&enemy.owner)
+                || g.rules.units[enemy.kind].class != "military"
+                || g.wdist(tile, enemy.pos) > reach
+            {
+                continue;
+            }
+            if visible.is_some_and(|visible| {
+                !(g.sees(visible, enemy.pos) && self.battlefront_unit_visible(g, pid, enemy.id))
+            }) {
+                continue;
+            }
+            let defense =
+                crate::game::effective_strength(g.unit_strength(enemy, true), enemy.hp);
+            best_defense = Some(best_defense.map_or(defense, |had: f64| had.min(defense)));
+        }
+        let Some(defense) = best_defense else {
+            return 0.0;
+        };
+        let odds = attack / (attack + defense.max(1.0));
+        STRIKE_OPENING_SCALE * 30.0 * odds
+    }
+
     /// Score the production shortlist under one memo scope, retaining item
     /// order and therefore the stock tie-break. These individual arithmetic
     /// evaluations are too small to amortize worker-private game snapshots;
@@ -14119,6 +14259,7 @@ impl AdvancedAi {
                         * ((attack - defense) / 25.0).exp();
                 }
             }
+            value += self.strike_opening_value(g, pid, uid, tile, group, &enemies, visible.as_ref());
             if g.wdist(tile, target) <= 5 {
                 value -= self.base.w.role_spacing
                     * spacing
@@ -22634,6 +22775,83 @@ mod tests {
             wanted(&shipped, &game, Some(target)),
             1,
             "the shipped rule never looked at the wall"
+        );
+    }
+
+    /// The defect this exists for: the movement score charged for the threat a
+    /// tile accepts and credited nothing for the attack it opens, so a melee
+    /// unit never volunteered for the tile it has to occupy to swing.
+    #[test]
+    fn a_tile_is_worth_the_attack_it_opens() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_106);
+        let ours = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 2));
+        let target = anchor_at(&game, home, 4);
+        let theirs = game.spawn_test_unit("warrior", 1, target);
+
+        let group = ForceGroup {
+            id: ours,
+            domain: ForceDomain::Land,
+            units: vec![ours],
+            anchor: game.units[&ours].pos,
+            objective: target,
+            focus_target: Some(target),
+            posture: ForcePosture::Engage,
+            readiness: 1.0,
+            local_strength_ratio: 1.0,
+        };
+        let enemies = vec![1usize];
+        let adjacent = game
+            .nbrs(target)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .expect("a tile beside the enemy");
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(!ai.strike_opening, "the shipped default must be unchanged");
+        assert_eq!(
+            ai.strike_opening_value(&game, 0, ours, adjacent, &group, &enemies, None),
+            0.0,
+            "the shipped agent credits nothing"
+        );
+
+        ai.enable_strike_opening();
+        let in_contact = ai.strike_opening_value(&game, 0, ours, adjacent, &group, &enemies, None);
+        assert!(
+            in_contact > 0.0,
+            "a tile that puts the target in reach must be worth something: {in_contact}"
+        );
+        // Two even warriors: odds are 0.5, so the credit is half the scale.
+        assert!(
+            (in_contact - STRIKE_OPENING_SCALE * 30.0 * 0.5).abs() < 1.5,
+            "even odds should pay about half the scale, got {in_contact}"
+        );
+
+        // A tile out of reach opens nothing.
+        let far = anchor_at(&game, home, 1);
+        assert_eq!(
+            ai.strike_opening_value(&game, 0, ours, far, &group, &enemies, None),
+            0.0,
+            "a tile the target cannot be struck from is worth nothing"
+        );
+
+        // Only while prosecuting. A group that is holding is not paid to close.
+        let holding = ForceGroup {
+            posture: ForcePosture::Hold,
+            ..group.clone()
+        };
+        assert_eq!(
+            ai.strike_opening_value(&game, 0, ours, adjacent, &holding, &enemies, None),
+            0.0,
+            "a held group must not be pulled into contact"
+        );
+
+        // A wounded defender is worth more than a fresh one, because the odds
+        // of the strike are better.
+        game.units.get_mut(&theirs).unwrap().hp = 30;
+        let wounded = ai.strike_opening_value(&game, 0, ours, adjacent, &group, &enemies, None);
+        assert!(
+            wounded > in_contact,
+            "pouncing on a wounded target must score higher: {wounded} vs {in_contact}"
         );
     }
 
