@@ -549,6 +549,32 @@ def listener(repo: pathlib.Path, port: int) -> dict:
     return {"pid": int(pid), "ppid": int(parent), "command": command}
 
 
+def wait_for_detached_listeners(repo: pathlib.Path, seconds: int = 30) -> dict:
+    """Wait for the short-lived app launchers to exit after both servers are live."""
+    deadline = time.time() + seconds
+    held = {}
+    last_error: Optional[Exception] = None
+    while time.time() < deadline:
+        try:
+            held = {
+                "rust": listener(repo, 8785),
+                "wasm": listener(repo, 8790),
+            }
+            if all(process["ppid"] == 1 for process in held.values()):
+                return held
+        except DesktopAppError as error:
+            last_error = error
+        time.sleep(0.25)
+    if held:
+        detail = ", ".join(
+            "{} pid {} ppid {}".format(mode, process["pid"], process["ppid"])
+            for mode, process in held.items()
+        )
+    else:
+        detail = str(last_error or "listeners unavailable")
+    raise DesktopAppError("desktop listeners did not detach from their launchers: " + detail)
+
+
 def verify_installed(
     repo: pathlib.Path,
     desktop: pathlib.Path,
@@ -621,15 +647,12 @@ def verify_installed(
             raise DesktopAppError("the local WASM channel lost its query string")
         if any("no-store" not in route_result[3] for route_result in rust_routes + wasm_routes):
             raise DesktopAppError("one or more local channel responses are cacheable")
-        rust_listener = listener(repo, 8785)
-        wasm_listener = listener(repo, 8790)
-        if rust_listener["ppid"] != 1 or wasm_listener["ppid"] != 1:
-            raise DesktopAppError("a desktop listener is still attached to its launcher")
+        listeners = wait_for_detached_listeners(repo)
         report.update(
             {
                 "live_rust": live_rust,
                 "live_wasm": live_wasm,
-                "listeners": {"rust": rust_listener, "wasm": wasm_listener},
+                "listeners": listeners,
                 "routes": {"rust": rust_routes, "wasm": wasm_routes},
             }
         )
