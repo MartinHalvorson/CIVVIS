@@ -309,8 +309,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// #955 also adds `garrison_assignments`/`garrison_step`, which put a unit on a
 /// threatened city's own tile. Behind the SAME `home_defense` flag, short-
 /// circuiting on it first, so this too is a compatibility re-pin.
+///
+/// #963 sizes the siege train against the target city's standing wall, behind
+/// `siege_tracks_the_wall` — `false` in `AdvancedAi::new()` and set only by
+/// `civvis_orders`. `siege_units_wanted` returns the shipped
+/// `usize::from(plan.target_city.is_some())` on that flag before it reads the
+/// board, so the legacy anchor's production value is bit-for-bit what it was.
+/// A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1f5b_6504_c076_b5fb;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf5b6_24d5_4be4_8ae9;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
