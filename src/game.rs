@@ -16360,6 +16360,44 @@ pub struct Game {
     /// the feedback is meant to repair. Ordinary CIVVIS games leave this empty.
     #[serde(default)]
     pub blocked_purchases: BTreeMap<u32, BTreeSet<String>>,
+    /// Ground a HOST holds for somebody else and will not let this seat's units
+    /// enter, for tiles whose owner [`Game::territory_owner_at`] cannot name.
+    ///
+    /// ★★★★★ THE MISSING MEMBER OF THE `blocked_*` FAMILY, AND THE COMMENT ON
+    /// [`Game::blocked_policies`] already says which one it is: policies were
+    /// "third behind **movement** and `no_params`". Movement is the largest
+    /// refusal category in the ledger and it was the only one with no block set.
+    ///
+    /// The ordinary gate in `can_enter` reads `territory_owner_at`, which resolves
+    /// a tile's owner through `owner_city -> cities -> owner`. A rival whose cities
+    /// this seat has never SEEN has no city on the mirrored board, so their border
+    /// resolves to `None` and reads as free ground. That is a closed loop: their
+    /// border is invisible precisely because we cannot get past it to see the city
+    /// that makes it.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z` (Rome, SETTLER, small).
+    /// Scout `196608` reached offset (12,24) on **turn 42** and was ordered
+    /// `MOVE_TO (11,24)` — one hex — on **74 separate turns** without ever moving;
+    /// at t91 it was upgraded in place and the Skirmisher kept re-sending the same
+    /// step. (11,24) is exported `o: 4`, Kongo's territory, and we were not at war
+    /// and held no open borders. **81 of 670 `MOVE_TO` orders targeted foreign
+    /// ground, every one of them Kongo's, and all 81 were counted `applied` —
+    /// a blocked move is a silent no-op, not a refusal.**
+    ///
+    /// What it cost, in order: exploration flatlined at **283 of 3404 tiles (8.3%)**
+    /// from turn 42; **zero rival cities were observed in 96 snapshots**; with no
+    /// known enemy city `plan.target_city` stayed `None`, so `campaign` fell through
+    /// to `peacetime_step` and all seven combat units garrisoned within three hexes
+    /// of home; and `strategy=conquest` ran for forty turns with `war_legal=9` and
+    /// **no war ever declared**. Of 35 walkable frontier tiles, 21 were sealed
+    /// behind that border — including all six nearest the scout — while 14 neutral
+    /// ones waited at distance 7, leading east into two thirds of an unseen map.
+    ///
+    /// Written fresh from the export every turn rather than accumulated, and never
+    /// written for an owner this seat has access to, so declaring war opens the
+    /// ground on the following turn instead of sealing our own invasion out.
+    #[serde(default)]
+    pub closed_borders: BTreeSet<Pos>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -16706,6 +16744,7 @@ impl From<GameSer> for Game {
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: BTreeSet::new(),
+            closed_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
@@ -17154,6 +17193,7 @@ impl Game {
             observed_city_strength: BTreeMap::new(),
             observed_city_max_wall_hp: BTreeMap::new(),
             blocked_city_sites: BTreeSet::new(),
+            closed_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
@@ -31357,11 +31397,26 @@ impl Game {
         {
             return false;
         }
-        if self
-            .territory_owner_at(pos)
-            .is_some_and(|owner| !self.unit_has_territory_access(u, owner))
-        {
-            return false;
+        match self.territory_owner_at(pos) {
+            // The owner is on the board, so ordinary diplomacy is authoritative.
+            Some(owner) => {
+                if !self.unit_has_territory_access(u, owner) {
+                    return false;
+                }
+            }
+            // Nobody on this board holds it — but a live host may still say
+            // somebody does, and a border whose owning city has never been seen
+            // resolves to `None` here. See [`Game::closed_borders`]: without this
+            // arm a scout re-sends the same one-hex step for fifty turns while
+            // the empire goes blind. Empty in an ordinary CIVVIS game.
+            None => {
+                if !self.closed_borders.is_empty()
+                    && self.closed_borders.contains(&pos)
+                    && !self.unit_ignores_closed_borders(u)
+                {
+                    return false;
+                }
+            }
         }
         for oid in self.units_at(pos) {
             let o = &self.units[&oid];
