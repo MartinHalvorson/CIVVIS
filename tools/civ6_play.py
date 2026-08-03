@@ -288,6 +288,12 @@ def build_config(args: argparse.Namespace) -> dict:
         "SettlePlan": load_settle_plan(args.settle_plan),
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
+        # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
+        # it had no clock of its own — so it took the general announcement one,
+        # which the climb sets to 0.05s so popups never sit on the map the operator
+        # is comparing against CIVVIS. The result a whole run exists to produce was
+        # on screen for a twentieth of a second.
+        "EndGameSeconds": args.end_game_seconds,
         "StartDelayFrames": args.start_delay_frames,
         "TickFrames": args.tick_frames,
     }
@@ -2348,6 +2354,13 @@ def main(argv: list[str] | None = None) -> int:
                          "it in a quadrant so CIVVIS can own the other half")
     ap.add_argument("--announcement-seconds", type=float, default=1.0)
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
+    # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made
+    # fast because something is waiting behind it; nothing is waiting behind this
+    # one, because the game is over. The operator's standing brief asks for ten
+    # seconds on the final screen and this is the only knob that can grant it.
+    ap.add_argument("--end-game-seconds", type=float, default=10.0,
+                    help="how long the victory/defeat screen is held before the "
+                         "autoclose shim dismisses it")
     ap.add_argument("--survey", action="store_true", default=True)
     ap.add_argument("--no-survey", dest="survey", action="store_false")
     ap.add_argument("--survey-enums", action="store_true",
