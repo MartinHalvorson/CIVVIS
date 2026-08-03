@@ -2083,6 +2083,7 @@ impl AdvancedAi {
         // frozen so its recorded ladders remain comparable.
         self.enable_loyalty_rate_alarm();
         self.enable_solvent_faith_army();
+        self.enable_district_coverage();
     }
 
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
@@ -2098,6 +2099,22 @@ impl AdvancedAi {
 
     pub fn disable_siege_muster(&mut self) {
         self.base.siege_muster = false;
+    }
+
+    /// Rank district families by how much of the empire still lacks them.
+    ///
+    /// ⚠ `d_theater` is the lowest of the four district weights in all 51 league
+    /// genomes and the picker only skips a family THIS CITY holds, so every city
+    /// works down the same constant list and the fourth entry is never reached.
+    /// Live run `civvis-20260803T090911Z`: 28 `DISTRICT_CAMPUS` orders, **zero**
+    /// `DISTRICT_THEATER`, and no Theatre Square anywhere in a 5-city empire — which
+    /// makes the whole culture chain unreachable by construction.
+    pub fn enable_district_coverage(&mut self) {
+        self.base.district_coverage = true;
+    }
+
+    pub fn disable_district_coverage(&mut self) {
+        self.base.district_coverage = false;
     }
 
     /// Require a faith-bought soldier's gold upkeep to be payable. Native
