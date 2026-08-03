@@ -51,7 +51,11 @@ class AppSpec:
 
     @property
     def executable_name(self) -> str:
-        return self.label + " Launcher"
+        return "CIVVISLauncher"
+
+    @property
+    def launcher_script_name(self) -> str:
+        return "CIVVIS Launcher.zsh"
 
 
 APPS = (
@@ -396,6 +400,9 @@ def stage_apps(repo: pathlib.Path, artifacts: BuildArtifacts, template_path: pat
     watcher_template = template_path.with_name("CIVVIS Tab Watcher.zsh.in")
     if not watcher_template.is_file():
         raise DesktopAppError("desktop tab watcher template is missing")
+    native_launcher_source = template_path.with_name("CIVVIS Launcher.c")
+    if not native_launcher_source.is_file():
+        raise DesktopAppError("native desktop launcher source is missing")
     system_icon = pathlib.Path(
         "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericApplicationIcon.icns"
     )
@@ -409,12 +416,29 @@ def stage_apps(repo: pathlib.Path, artifacts: BuildArtifacts, template_path: pat
         macos.mkdir(parents=True)
         resources.mkdir()
         built_at = artifacts.native_built_at if spec.mode == "rust" else artifacts.wasm_built_at
-        launcher = macos / spec.executable_name
-        launcher.write_text(
+        launcher_script = macos / spec.launcher_script_name
+        launcher_script.write_text(
             render_launcher(template, spec, artifacts.revision, built_at, repo),
             encoding="utf-8",
         )
-        launcher.chmod(0o755)
+        launcher_script.chmod(0o755)
+        native_launcher = macos / spec.executable_name
+        run(
+            (
+                "/usr/bin/xcrun",
+                "--sdk",
+                "macosx",
+                "clang",
+                "-Os",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                "-mmacosx-version-min=13.0",
+                str(native_launcher_source),
+                "-o",
+                str(native_launcher),
+            )
+        )
         write_info_plist(
             app / "Contents/Info.plist",
             spec,
@@ -455,7 +479,7 @@ def stage_apps(repo: pathlib.Path, artifacts: BuildArtifacts, template_path: pat
         run(("/usr/bin/xattr", "-cr", str(app)))
         run(("/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app)))
         run(("/usr/bin/codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)))
-        run(("/bin/zsh", "-n", str(launcher)))
+        run(("/bin/zsh", "-n", str(launcher_script)))
         run(("/bin/zsh", "-n", str(watcher)))
         run(("/usr/bin/plutil", "-lint", str(app / "Contents/Info.plist")))
 
@@ -715,8 +739,8 @@ def launch_apps(desktop: pathlib.Path, artifacts: BuildArtifacts) -> None:
     )
 
 
-def launcher_metadata(app: pathlib.Path, executable: str) -> dict:
-    text = (app / "Contents/MacOS" / executable).read_text(encoding="utf-8")
+def launcher_metadata(app: pathlib.Path, launcher_script: str) -> dict:
+    text = (app / "Contents/MacOS" / launcher_script).read_text(encoding="utf-8")
     values = {}
     for name in ("mode", "commit", "commit_time", "built_at"):
         match = re.search(r'^readonly civvis_{}="([^"]+)"$'.format(name), text, re.MULTILINE)
@@ -740,11 +764,11 @@ def installed_pair_needs_refresh(
     metadata = []
     for spec in APPS:
         app = desktop / spec.bundle_name
-        launcher = app / "Contents/MacOS" / spec.executable_name
+        launcher = app / "Contents/MacOS" / spec.launcher_script_name
         if not launcher.is_file():
             return True
         try:
-            held = launcher_metadata(app, spec.executable_name)
+            held = launcher_metadata(app, spec.launcher_script_name)
             if age_minutes(held["built_at"]) > max_build_age_minutes:
                 return True
         except (DesktopAppError, OSError, ValueError):
@@ -819,8 +843,12 @@ def verify_installed(
             raise DesktopAppError("missing " + str(app))
         run(("/usr/bin/codesign", "--verify", "--deep", "--verbose=2", str(app)))
         run(("/usr/bin/plutil", "-lint", str(app / "Contents/Info.plist")))
-        run(("/bin/zsh", "-n", str(app / "Contents/MacOS" / spec.executable_name)))
-        metadata[spec.mode] = launcher_metadata(app, spec.executable_name)
+        native_launcher = app / "Contents/MacOS" / spec.executable_name
+        if not native_launcher.is_file() or not os.access(native_launcher, os.X_OK):
+            raise DesktopAppError("missing native bundle executable " + str(native_launcher))
+        run(("/usr/bin/codesign", "--verify", "--verbose=2", str(native_launcher)))
+        run(("/bin/zsh", "-n", str(app / "Contents/MacOS" / spec.launcher_script_name)))
+        metadata[spec.mode] = launcher_metadata(app, spec.launcher_script_name)
 
     rust, wasm = metadata["rust"], metadata["wasm"]
     if rust["commit"] != wasm["commit"] or rust["commit_time"] != wasm["commit_time"]:
