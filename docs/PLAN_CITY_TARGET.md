@@ -78,7 +78,7 @@ The focused contract tests cover four properties:
 - a higher learned city target or Builder ratio is preserved;
 - after the historical stop turn, a wide plan builds a defender first when the
   army is short, then a Settler once the defense floor is filled, and restores
-  both temporary genes afterward.
+  all three temporary genes afterward.
 
 The existing six-seed fires census on the production candidate reported:
 
@@ -100,17 +100,17 @@ production candidate moved the `advanced` averages as follows:
 
 | measure | base | candidate |
 |---|---:|---:|
-| cities | 5.31 | **8.42** |
-| population | 63.8 | **91.5** |
-| districts | 21.0 | **30.1** |
-| buildings | 73.6 | **101.0** |
-| military power | 791.9 | **1319.6** |
-| Builders | 2.36 | **5.75** |
-| food yield | 163.5 | **236.2** |
-| production yield | 283.1 | **375.0** |
-| science yield | 148.2 | **176.6** |
-| culture yield | 115.2 | **129.6** |
-| terminal score | 563.8 | **669.3** |
+| cities | 5.31 | **8.28** |
+| population | 63.8 | **90.4** |
+| districts | 21.0 | **29.8** |
+| buildings | 73.6 | **100.9** |
+| military power | 791.9 | **1311.8** |
+| Builders | 2.36 | **5.67** |
+| food yield | 163.5 | **233.4** |
+| production yield | 283.1 | **373.6** |
+| science yield | 148.2 | **175.4** |
+| culture yield | 115.2 | **129.3** |
+| terminal score | 563.8 | **666.0** |
 
 All six maps favored the candidate on terminal score. Six maps are mechanism
 evidence, not a powered win-rate claim: no game in this short 200-turn profile

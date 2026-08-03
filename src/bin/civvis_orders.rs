@@ -223,7 +223,14 @@ fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
         Item::Unit { unit } => Some(civ6_unit_type(unit)),
         Item::Building { building } => Some(civ6_building_type(building)),
         Item::District { district, .. } => Some(civ6_district_type(district)),
-        Item::Wonder { wonder, .. } => Some(format!("BUILDING_{}", upper(wonder))),
+        // ⚠ A WONDER IS A BUILDING AND MUST USE THE BUILDING TABLE. #959 put the
+        // divergent spellings in `civ6_building_type`, but this arm still formatted its
+        // own name, so the three wonders Civilization VI spells differently
+        // — `BUILDING_HALICARNASSUS_MAUSOLEUM`, `BUILDING_STATUE_LIBERTY`,
+        // `BUILDING_UNIVERSITY_SANKORE` — kept going out mechanically uppercased and
+        // kept being refused. Two arms formatting the same table one line apart is the
+        // shape that made this a bug twice.
+        Item::Wonder { wonder, .. } => Some(civ6_building_type(wonder)),
         // ⚠ CIVVIS'S DISTRICT PROJECTS ARE NOT NAMED LIKE CIVILIZATION VI'S, and the
         // mechanical uppercase below produced names the game has never heard of.
         //
@@ -786,6 +793,27 @@ fn decide(
     // releases only the power-gap half, and only after the posture has had
     // `RECOVERY_POSTURE_LIMIT` standard turns to work.
     ai.enable_bounded_recovery();
+    // ⚠ `local_strength_ratio` prices an objective city only while it is
+    // currently in sight, and returns its `hostile <= 0.0` sentinel of 3.0 —
+    // the maximum — otherwise. Under live fog that makes a walled enemy
+    // capital score identically to an empty meadow, four times over the
+    // superiority floor, so the army engages. Measured on run
+    // `civvis-20260803T005930Z`: Seoul (walled, 22 pop, defense 101) was the
+    // objective of 426 force-group decisions from t65 to t231 and 294 of them
+    // read exactly 3.00, 108 with a force of one. No Korean city ever passed
+    // 27% damage in 173 turns of war. The repair reads only this controller's
+    // own last sighting, which the defensive half already trusts.
+    ai.enable_blind_objective_strength();
+    // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
+    // `military_faith_spending` never asks about gold — it gates on the faith
+    // bank alone. Measured on run `civvis-20260803T014330Z`: faith military
+    // purchases walked down the gold curve (t124 at 60 gold, t141 at 48, t165 at
+    // 51), the treasury hit zero on t168, Civilization VI disbanded the army
+    // from 29 units to 19 by t173, and on t174 — at FIVE gold, one turn after
+    // losing a third of the army — CIVVIS bought another Field Cannon. The
+    // tournament controller stays frozen so its recorded ladders stay
+    // comparable.
+    ai.enable_solvent_faith_army();
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.
@@ -3674,6 +3702,47 @@ mod tests {
         // Already fixed before this change; keep it pinned so the table stays whole.
         assert_eq!(building("medieval_walls"), "BUILDING_CASTLE");
         assert_eq!(project("campus_research_grants"), "PROJECT_ENHANCE_DISTRICT_CAMPUS");
+    }
+
+    /// ⚠ A wonder reaches Civilization VI as a BUILDING, so it must use the building
+    /// table — #959 added the divergent spellings but left `Item::Wonder` formatting its
+    /// own name one line away, so all three kept going out wrong. This asserts the two
+    /// arms agree, which is the property that was actually missing.
+    #[test]
+    fn a_wonder_and_a_building_translate_through_the_same_table() {
+        use civvis::game::Item;
+        use civvis::name::Name;
+
+        for name in ["mausoleum_at_halicarnassus", "statue_of_liberty",
+                     "university_of_sankore", "stonehenge", "great_bath"] {
+            let as_wonder = civ6_build_name(&Item::Wonder {
+                wonder: Name::new(name),
+                pos: (0, 0),
+            })
+            .expect("a wonder always names something");
+            assert_eq!(
+                as_wonder,
+                civ6_building_type(&Name::new(name)),
+                "{name} must translate the same way whichever Item variant carries it"
+            );
+        }
+
+        assert_eq!(
+            civ6_build_name(&Item::Wonder {
+                wonder: Name::new("mausoleum_at_halicarnassus"),
+                pos: (0, 0)
+            })
+            .as_deref(),
+            Some("BUILDING_HALICARNASSUS_MAUSOLEUM")
+        );
+        // The plot is part of the decision and must survive the shared table.
+        assert_eq!(
+            civ6_build_pos(&Item::Wonder {
+                wonder: Name::new("stonehenge"),
+                pos: (3, 4)
+            }),
+            Some(civvis::hex::axial_to_offset(3, 4))
+        );
     }
 
     /// The outbound table must not silently shrink relative to CIVVIS's own ruleset.

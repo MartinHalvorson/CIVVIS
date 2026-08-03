@@ -117,6 +117,12 @@ const SETTLER_LAND_FALLBACK_RADIUS: i32 = 12;
 const SETTLER_GLOBAL_PREMIUM: f64 = 10.0;
 const SETTLER_EXTRA_TRAVEL_PRICE: f64 = 2.5;
 
+/// How many turns of a faith-bought soldier's gold upkeep the treasury must be
+/// able to cover when income alone will not. Twenty-five turns is long enough
+/// that a purchase made on a deep balance is a real decision, and short enough
+/// that a healthy empire is never stopped from arming itself.
+const FAITH_ARMY_SOLVENCY_TURNS: f64 = 25.0;
+
 /// A Settler walking farther than this, or one that has already been stopped,
 /// gets a land escort when the empire can spare one.
 const SETTLER_ESCORT_DISTANCE: i32 = 4;
@@ -719,6 +725,10 @@ pub struct AdvancedAi {
     /// route-start action.  This stays off for every native game and is enabled
     /// only by the Civ VI order bridge.
     live_trader_route_adapter: bool,
+    /// Require a faith-bought soldier's GOLD upkeep to be payable before buying
+    /// it. Off for every native game, enabled only by the Civ VI order bridge.
+    /// See `faith_military_is_affordable`.
+    solvent_faith_army: bool,
     /// Immutable information frame captured before this major acts.  It is
     /// cleared after the turn so direct evaluators outside a turn still read
     /// the game's current observation.
@@ -741,6 +751,14 @@ pub struct AdvancedAi {
     /// `advanced_relief_scoped` entrant, so it can be re-measured once the
     /// conversion bottleneck moves rather than re-derived from scratch.
     pub scoped_relief_hold: bool,
+    /// Price a fogged objective city from this controller's last sighting of
+    /// it, instead of scoring it as absent.
+    ///
+    /// **Off by default, live-bridge only** — the same footing as
+    /// `bounded_recovery`, and for the same reason: the defect it repairs is a
+    /// live-regime one. See [`AdvancedAi::remembered_objective_strength`] for
+    /// the mechanism and the 294-of-426 measurement behind it.
+    pub blind_objective_strength: bool,
     /// Exclude victory lanes the empire cannot finish before the game ends.
     ///
     /// **Off by default, on the pre-registered rule.** Routing toward a lane
@@ -1663,8 +1681,10 @@ impl AdvancedAi {
             belief: BeliefState::new(),
             battlefront_observation: true,
             live_trader_route_adapter: false,
+            solvent_faith_army: false,
             battlefront_frame: None,
             scoped_relief_hold: false,
+            blind_objective_strength: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
             settler_price: 1.0,
@@ -1757,6 +1777,19 @@ impl AdvancedAi {
     /// tournament games leave this disabled.
     pub fn enable_bounded_recovery(&mut self) {
         self.bounded_recovery = true;
+    }
+
+    /// Stop a fogged objective city from reading as an empty tile when the
+    /// army decides whether it is strong enough to engage. Native tournament
+    /// games leave this disabled so their recorded ladders stay comparable.
+    pub fn enable_blind_objective_strength(&mut self) {
+        self.blind_objective_strength = true;
+    }
+
+    /// Require a faith-bought soldier's gold upkeep to be payable. Native
+    /// tournament games leave this disabled so their ladders stay comparable.
+    pub fn enable_solvent_faith_army(&mut self) {
+        self.solvent_faith_army = true;
     }
 
     /// Redirect an existing agent at a new explicit victory target without
@@ -8515,6 +8548,62 @@ impl AdvancedAi {
 
     }
 
+    /// ★★★★★ FAITH BUYS THE SOLDIER; GOLD PAYS FOR IT, EVERY TURN, FOREVER.
+    ///
+    /// `military_faith_spending` gates on `plan.strategy` and on the FAITH bank
+    /// (`faith >= 600`, `reserve = 180`). There is no gold term anywhere in it,
+    /// so a faith-rich empire keeps buying soldiers it cannot pay to keep — and
+    /// Civilization VI settles that bill by disbanding them.
+    ///
+    /// Measured on live run `civvis-20260803T014330Z`. Faith military purchases
+    /// walk straight down the gold curve — t104 at 288 gold, t124 at 60, t141 at
+    /// 48, t148 at 51, t157 at 61, t165 at 51 — and then:
+    ///
+    /// ```text
+    /// t165  gold  51   29 combat units
+    /// t168  gold   0   26   <- Civ 6 starts disbanding
+    /// t170  gold   0   23
+    /// t172  gold   0   20
+    /// t173  gold   0   19   <- a THIRD of the army confiscated
+    /// t174  gold   5   18   <- and CIVVIS bought another Field Cannon HERE
+    /// ```
+    ///
+    /// ⚠ 21 of 28 vanished units were last seen at FULL HP with a median
+    /// final-turn HP drop of 0, and 20 of 29 had no visible enemy within three
+    /// tiles. These are accounting deaths, not combat deaths — do not read them
+    /// as an attrition or exposure problem.
+    ///
+    /// ⚠ The `economic_recovery` branch of `BasicAi::product_for` does NOT cover
+    /// this. That gate stops *production* when `gold_per_turn < -0.5`; a faith
+    /// purchase never passes through it.
+    ///
+    /// Base ruleset maintenance is a deliberate approximation of the eventual
+    /// bill: formation multipliers and policy discounts are applied by
+    /// `Game::unit_gold_maintenance_cost` to a unit that does not exist yet.
+    /// Erring low is the safe direction — it refuses fewer purchases than the
+    /// true cost would, so this never blocks an empire that can actually pay.
+    fn faith_military_is_affordable(&self, g: &Game, pid: usize, unit: &str) -> bool {
+        if !self.solvent_faith_army {
+            return true;
+        }
+        let Some(spec) = g.rules.units.get(unit) else {
+            return true;
+        };
+        let upkeep = spec.maintenance.max(0.0);
+        if upkeep <= f64::EPSILON {
+            return true;
+        }
+        // Still in surplus once the new bill lands: buy.
+        if g.players[pid].gold_per_turn - upkeep >= 0.0 {
+            return true;
+        }
+        // Otherwise the balance has to be deep enough to carry it for a while.
+        // A treasury Civilization VI has clamped at zero reports as negative
+        // income, so an already-broke empire fails here however much faith it
+        // has piled up — which is the whole point.
+        g.players[pid].gold >= upkeep * FAITH_ARMY_SOLVENCY_TURNS
+    }
+
     /// A faith-rich empire countering a military or religious victory threat
     /// should convert that otherwise stranded treasury into defenders once
     /// Theocracy (or another legal faith-purchase source) makes them available.
@@ -8542,6 +8631,9 @@ impl AdvancedAi {
                 continue;
             };
             if currency != "faith" || g.rules.units[unit].class != "military" {
+                continue;
+            }
+            if !self.faith_military_is_affordable(g, pid, unit) {
                 continue;
             }
             options.push(action);
@@ -13023,24 +13115,73 @@ impl AdvancedAi {
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
             .sum::<f64>()
             + g.city_at(objective)
-                .filter(|city| {
-                    enemies.contains(&g.cities[city].owner)
-                        && (!self.battlefront_observation || g.sees(&visible, g.cities[city].pos))
+                .filter(|city| enemies.contains(&g.cities[city].owner))
+                .and_then(|city| {
+                    if !self.battlefront_observation || g.sees(&visible, g.cities[&city].pos) {
+                        Some(g.city_strength(city))
+                    } else {
+                        self.remembered_objective_strength(city)
+                    }
                 })
-                .map(|city| g.city_strength(city))
                 .unwrap_or(0.0)
             + g.encampment_at(objective)
-                .filter(|city| {
-                    enemies.contains(&g.cities[city].owner)
-                        && (!self.battlefront_observation || g.sees(&visible, g.cities[city].pos))
+                .filter(|city| enemies.contains(&g.cities[city].owner))
+                .and_then(|city| {
+                    if !self.battlefront_observation || g.sees(&visible, g.cities[&city].pos) {
+                        Some(g.encampment_strength(city))
+                    } else {
+                        self.remembered_objective_strength(city)
+                    }
                 })
-                .map(|city| g.encampment_strength(city))
                 .unwrap_or(0.0);
         if hostile <= 0.0 {
             3.0
         } else {
             (friendly / hostile).clamp(0.0, 3.0)
         }
+    }
+
+    /// What a fogged enemy city at the objective is worth to
+    /// [`AdvancedAi::local_strength_ratio`], from this controller's own last
+    /// sighting of it.
+    ///
+    /// The shipped rule prices an objective city only while it is *currently*
+    /// in sight. That is fog-honest but it is not belief-honest, and the
+    /// difference is the whole story of a failed siege: `local_strength_ratio`
+    /// returns its `hostile <= 0.0` sentinel of `3.0` — the maximum, "we
+    /// dominate here" — for an objective the army simply cannot see. A walled
+    /// capital under fog and an empty meadow produce the identical number, and
+    /// `3.0` clears [`LOCAL_SUPERIORITY_FLOOR`] by a factor of four, so the
+    /// group engages.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo, at war with Korea
+    /// from turn 64): Seoul — walled, 22 pop, city defense 101 — was the
+    /// objective of **426 force-group decisions between t65 and t231, and 294
+    /// of them read exactly 3.00**. 108 of those decisions were a force of
+    /// *one*. Seoul finished the game on 0 damage and 0 wall damage, as did
+    /// every other Korean city bar transient pokes that healed back: across 173
+    /// turns of war no rival city ever passed 27% of its health bar.
+    ///
+    /// The repair does not invent information. [`CitySighting::strength`] is
+    /// this controller's own recorded observation — city combat strength at the
+    /// last time it actually saw the City Center, garrison and defense
+    /// modifiers included — and it is already trusted for the defensive half of
+    /// the same question by [`AdvancedAi::remembered_city_pressure`]. Reading
+    /// it here only stops the offensive half from treating "I have not looked"
+    /// as "there is nothing there".
+    ///
+    /// A stale sighting stays stale on purpose: a city that walled up under fog
+    /// still reads at its last-seen strength, which is exactly the mistake a
+    /// fog-honest agent should be allowed to make. Returning `None` when there
+    /// is no sighting at all preserves the shipped behaviour for a city this
+    /// controller has genuinely never seen.
+    fn remembered_objective_strength(&self, cid: u32) -> Option<f64> {
+        if !self.blind_objective_strength {
+            return None;
+        }
+        self.remembered_city(cid)
+            .map(|sighting| sighting.strength.max(0.0))
+            .filter(|strength| *strength > 0.0)
     }
 
     fn rebuild_force_groups(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
@@ -16325,6 +16466,78 @@ mod tests {
     fn legacy_controller_keeps_battlefront_observation_off() {
         assert!(AdvancedAi::new().battlefront_observation);
         assert!(!AdvancedAi::legacy().battlefront_observation);
+    }
+
+    /// The measured t174 purchase: five gold in the treasury, one turn after
+    /// Civilization VI disbanded a third of the army to pay the upkeep bill,
+    /// and CIVVIS bought another Field Cannon because the gate only ever asked
+    /// about faith.
+    #[test]
+    fn a_broke_empire_stops_buying_soldiers_with_faith() {
+        let mut game = Game::new(2, 20, 14, 91_501, 80, 0);
+        let unit = game
+            .rules
+            .units
+            .iter()
+            .find(|(_, spec)| spec.class == "military" && spec.maintenance > 0.0)
+            .map(|(name, _)| name.to_string())
+            .expect("the ruleset has a military unit that costs upkeep");
+        let upkeep = game.rules.units[unit.as_str()].maintenance;
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_solvent_faith_army();
+
+        // The measured state: broke, and losing money.
+        game.players[0].gold = 5.0;
+        game.players[0].gold_per_turn = -3.0;
+        assert!(
+            !ai.faith_military_is_affordable(&game, 0, &unit),
+            "an empire on five gold and falling must not take on more upkeep"
+        );
+
+        // A deep balance carries the bill even while income is short.
+        game.players[0].gold = upkeep * FAITH_ARMY_SOLVENCY_TURNS + 1.0;
+        assert!(
+            ai.faith_military_is_affordable(&game, 0, &unit),
+            "a treasury that can pay for {FAITH_ARMY_SOLVENCY_TURNS} turns may still arm"
+        );
+
+        // And a surplus never needs the balance at all.
+        game.players[0].gold = 0.0;
+        game.players[0].gold_per_turn = upkeep + 1.0;
+        assert!(
+            ai.faith_military_is_affordable(&game, 0, &unit),
+            "income that covers the new bill is sufficient on its own"
+        );
+    }
+
+    /// The frozen controllers must keep buying exactly as they always have.
+    #[test]
+    fn the_default_controller_keeps_the_faith_army_ungated() {
+        let mut game = Game::new(2, 20, 14, 91_502, 80, 0);
+        let unit = game
+            .rules
+            .units
+            .iter()
+            .find(|(_, spec)| spec.class == "military" && spec.maintenance > 0.0)
+            .map(|(name, _)| name.to_string())
+            .expect("the ruleset has a military unit that costs upkeep");
+        game.players[0].gold = 5.0;
+        game.players[0].gold_per_turn = -3.0;
+
+        for frozen in [AdvancedAi::new(), AdvancedAi::legacy()] {
+            assert!(!frozen.solvent_faith_army);
+            assert!(
+                frozen.faith_military_is_affordable(&game, 0, &unit),
+                "a tournament controller must not change what it buys"
+            );
+        }
+        let mut live = AdvancedAi::new();
+        live.enable_solvent_faith_army();
+        assert!(
+            !live.faith_military_is_affordable(&game, 0, &unit),
+            "precondition: the same board DOES refuse once the gate is enabled"
+        );
     }
 
     #[test]
@@ -21463,6 +21676,111 @@ mod tests {
                 .unwrap()
                 .posture,
             ForcePosture::Hold,
+        );
+    }
+
+    /// The defect this exists for: a walled enemy capital the army cannot
+    /// currently see scored identically to an empty meadow, because
+    /// `local_strength_ratio` reached its `hostile <= 0.0` sentinel and
+    /// returned 3.0 — four times the superiority floor. One lone warrior
+    /// therefore read itself as locally dominant over a city.
+    #[test]
+    fn a_fogged_objective_city_is_priced_from_the_last_sighting() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_103);
+        // An enemy city far enough away that nothing of ours can see it.
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        sites.sort_unstable();
+        game.current = 1;
+        for site in sites {
+            let settler = game.spawn_test_unit("settler", 1, site);
+            if game.apply(1, &Action::FoundCity { unit: settler }).is_ok() {
+                break;
+            }
+            game.remove_unit(settler);
+        }
+        game.current = 0;
+        let enemy_city = *game
+            .player_city_ids(1)
+            .first()
+            .expect("the enemy must have somewhere to be attacked");
+        let objective = game.cities[&enemy_city].pos;
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+
+        // Korea's Seoul was no frontier outpost, so neither is this: an empire
+        // fielding field cannons defends its cities at that standard.
+        game.players[1]
+            .counters
+            .insert("strongest_unit_built".to_string(), 60);
+
+        // One warrior, standing well outside its own sight range of the city.
+        let warrior = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 6));
+        assert!(
+            !game.player_can_see(0, objective),
+            "the setup must leave the objective fogged"
+        );
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(
+            !ai.blind_objective_strength,
+            "the shipped default must be unchanged"
+        );
+        assert_eq!(
+            ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective),
+            3.0,
+            "the shipped rule reads a fogged city as no enemy at all"
+        );
+
+        // A scout walks up, sees the city, and leaves. Nothing about the city
+        // changed — only what this controller has observed of it.
+        let watchtower = game
+            .nbrs(objective)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .expect("a tile beside the city");
+        let scout = game.spawn_test_unit("scout", 0, watchtower);
+        let in_sight = ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective);
+        ai.belief.observe(&game, 0);
+        game.remove_unit(scout);
+        assert!(
+            !game.player_can_see(0, objective),
+            "the city is fogged again once the scout is gone"
+        );
+        assert!(
+            ai.remembered_city(enemy_city).is_some(),
+            "the sighting must survive the fog"
+        );
+
+        ai.enable_blind_objective_strength();
+        let ratio = ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective);
+        assert_eq!(
+            ratio, in_sight,
+            "an unchanged city must read the same remembered as it did in sight"
+        );
+        assert!(
+            ratio < LOCAL_SUPERIORITY_FLOOR,
+            "one warrior is not locally superior to a city it remembers: {ratio}"
+        );
+
+        // Memory is the only new input: a city this controller has never seen
+        // still scores as absent, so the repair cannot become omniscience.
+        let mut unseen = AdvancedAi::targeting(VictoryTarget::Domination);
+        unseen.enable_blind_objective_strength();
+        assert_eq!(
+            unseen.local_strength_ratio(&game, 0, &[warrior], &[1], objective),
+            3.0,
+            "with no sighting on file the shipped behaviour is preserved"
         );
     }
 
