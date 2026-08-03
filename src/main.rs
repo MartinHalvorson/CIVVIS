@@ -417,8 +417,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `journal().wants(Detail)` or write only to a process-local census; no board
 /// state is read and no decision changes, so every configured, legacy and Elo
 /// agent attacks exactly what it always did. A compatibility re-pin.
+///
+/// #991 makes a ranged unit prefer a movement tile it can actually see the
+/// target from, behind `ranged_needs_line_of_sight` — `false` in
+/// `AdvancedAi::new()` and set only by `enable_live_bridge`.
+/// `ranged_tile_is_blind` returns `false` on that flag before it reads the
+/// board, so every configured, legacy and Elo agent scores every tile exactly
+/// as it did. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe59a_6c7d_3f4c_136f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe878_c745_0830_3603;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
