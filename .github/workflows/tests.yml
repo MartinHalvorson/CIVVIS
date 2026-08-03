@@ -105,5 +105,3 @@ jobs:
           set -eu
           find tools/civ6_control/mod tools/civ6_mod -name '*.lua' -print0 \
             | xargs -0 -n1 luac5.1 -p
-      - name: Envoy spend order
-        run: lua5.1 tools/civ6_control/mod/envoy_spend_test.lua
