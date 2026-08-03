@@ -3043,9 +3043,14 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 	local results = try(function()
 		return CityManager.GetOperationTargets(city, CityOperationTypes.BUILD, probe);
 	end);
-	if results == nil then return nil; end
+	-- ⚠ The SECOND return is how many plots the engine offered, and it is the whole
+	-- difference between "this wonder is gone from the world" and "not on that tile".
+	-- Zero is a real answer and must be distinguishable from the nil-results case, so
+	-- both early exits return an explicit 0 rather than falling off the end.
+	if results == nil then return nil, 0; end
 	local plots = results[CityOperationResults.PLOTS];
-	if plots == nil then return nil; end
+	if plots == nil then return nil, 0; end
+	local offered = 0;
 	local first = nil;
 	-- Taken by iteration, not `plots[1]`: the shipped UI counts these with
 	-- `table.count`, so the result is not promised to be a dense array.
@@ -3055,9 +3060,10 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 			local px = try(function() return plot:GetX(); end, -1);
 			local py = try(function() return plot:GetY(); end, -1);
 			if px >= 0 and py >= 0 then
+				offered = offered + 1;
 				if requestedX ~= nil and requestedY ~= nil
 						and px == requestedX and py == requestedY then
-					return { x = px, y = py };
+					return { x = px, y = py }, offered;
 				end
 				if first == nil then first = { x = px, y = py }; end
 			end
@@ -3065,8 +3071,8 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 	end
 	-- A direct CIVVIS order names a plot. Substituting another legal plot would
 	-- actuate a different decision; only the emergency ladder may take the first.
-	if requestedX ~= nil or requestedY ~= nil then return nil; end
-	return first;
+	if requestedX ~= nil or requestedY ~= nil then return nil, offered; end
+	return first, offered;
 end
 
 -- ★ A PROBE, NOT A MAPPING — the measurement that decides whether repair can ship.
@@ -3178,14 +3184,43 @@ local function buildParams(row, city, requestedX, requestedY)
 			return city:GetBuildQueue():HasBeenPlaced(row.Hash);
 		end, false);
 		if building ~= nil and building.IsWonder and not alreadyPlaced then
-			local where = productionPlot(city,
+			local where, offered = productionPlot(city,
 				CityOperationTypes.PARAM_BUILDING_TYPE, row.Hash,
 				requestedX, requestedY);
 			if where == nil then
+				-- ★★★★★ SAY WHY. `build_no_plot` named the wonder and the city but
+				-- never the reason, and the two reasons want OPPOSITE responses.
+				--
+				-- Measured over 45 live runs to 2026-08-03: **726 wonder refusals, and
+				-- every single one named a plot that satisfies the wonder's own rule**
+				-- as the shipped database states it — all 264 Great Bath asks were on
+				-- Floodplains, all 160 Hanging Gardens asks on a river, all 78
+				-- Stonehenge asks on legal terrain. Not one wonder was built in any
+				-- run. So the plot is not the problem, and with only `x`/`y` in the
+				-- event there was no way to learn what was.
+				--
+				-- The two cases:
+				--   `offered == 0` — the engine has no target at all. A wonder is
+				--     unique in the world, and a rival's cities export no buildings
+				--     and no wonders, so CIVVIS cannot see that someone else already
+				--     finished it. That block belongs to the WHOLE EMPIRE and forever.
+				--   `offered > 0`  — the engine has ground, just not ours. That is a
+				--     placement disagreement in one city and must not stop the empire.
+				--
+				-- `reasons` comes off the same `CanProduce(hash, false, true)` the
+				-- ladder's `playable` uses, which is where "has already been built"
+				-- is spelled out in words.
+				local reasons = nil;
+				local ok, _, results = pcall(function()
+					return city:GetBuildQueue():CanProduce(row.Hash, false, true);
+				end);
+				if ok then reasons = productionFailureReasons(results); end
 				emit("build_no_plot", {
 					city = try(function() return city:GetID(); end, -1),
 					building = row.Type or tostring(row.Hash),
 					x = requestedX, y = requestedY,
+					offered = offered or 0,
+					reasons = reasons,
 				});
 				return nil;
 			end
@@ -3203,9 +3238,9 @@ local function buildParams(row, city, requestedX, requestedY)
 		local alreadyPlaced = try(function()
 			return city:GetBuildQueue():HasBeenPlaced(row.Hash);
 		end, false);
-		local where = nil;
+		local where, offered = nil, 0;
 		if not alreadyPlaced then
-			where = productionPlot(city,
+			where, offered = productionPlot(city,
 				CityOperationTypes.PARAM_DISTRICT_TYPE, row.Hash,
 				requestedX, requestedY);
 		end
@@ -3225,9 +3260,21 @@ local function buildParams(row, city, requestedX, requestedY)
 			-- ⚠ The id comes off the live city object, not from `subject`: this is a
 			-- top-level function and `subject` belongs to the order handler. The scope
 			-- checker caught that, which is exactly what it is for.
+			-- ⚠ `offered` separates the two reasons this comment already names. A
+			-- Government Plaza that exists elsewhere in the empire offers ZERO plots
+			-- in every city; a Campus in a full city offers zero here and plenty next
+			-- door. Measured over 45 runs: 1,353 district refusals, and **1,295 of
+			-- them named no plot at all**, so the count is the only signal available.
+			local reasons = nil;
+			local ok, _, results = pcall(function()
+				return city:GetBuildQueue():CanProduce(row.Hash, false, true);
+			end);
+			if ok then reasons = productionFailureReasons(results); end
 			emit("build_no_plot", {
 				city = try(function() return city:GetID(); end, -1),
 				district = row.Type or tostring(row.Hash),
+				offered = offered or 0,
+				reasons = reasons,
 				x = requestedX, y = requestedY,
 			});
 			return nil;
