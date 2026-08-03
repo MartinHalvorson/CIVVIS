@@ -293,6 +293,56 @@ def colliding_paths(
     )
 
 
+#: The one line every PR touching `src/ai.rs` or `src/ai/advanced.rs` must
+#: rewrite. `ADVANCED_V1_SOURCE_CONTRACT_FNV` is a fingerprint over the whole of
+#: both files, so any two such PRs collide on it by construction — and every
+#: merge invalidates the value on every other open PR, which must then re-merge
+#: and recompute. On 2026-08-03, 18 of the 41 commits that reached `main`
+#: touched it, and the resulting "coordinate with #N" bookkeeping never
+#: converged because the colliding set changed on every merge.
+#:
+#: The collision is real to git and meaningless to a reviewer. Exempt it, but
+#: only when the PR's edit to that file is *nothing but* the re-pin and its
+#: explanatory doc paragraph — a PR that also changes real code in `main.rs`
+#: still collides normally.
+SOURCE_CONTRACT_PIN = "ADVANCED_V1_SOURCE_CONTRACT_FNV"
+SOURCE_CONTRACT_FILE = "src/main.rs"
+
+
+def is_pin_only_edit(added: Sequence[str]) -> bool:
+    """True when every added line is the contract pin or its doc paragraph."""
+    meaningful = [line for line in added if line.strip()]
+    if not meaningful:
+        return False
+    saw_pin = False
+    for line in meaningful:
+        stripped = line.strip()
+        if SOURCE_CONTRACT_PIN in stripped:
+            saw_pin = True
+            continue
+        if stripped.startswith("///") or stripped.startswith("#[cfg(test)]"):
+            continue
+        return False
+    return saw_pin
+
+
+def drop_pin_only_collisions(
+    collisions: Sequence[str],
+    added_lines: Optional[Dict[str, Sequence[str]]],
+) -> List[str]:
+    """Remove the source-contract pin from a collision list. See SOURCE_CONTRACT_PIN."""
+    if not added_lines:
+        return list(collisions)
+    return [
+        path
+        for path in collisions
+        if not (
+            path == SOURCE_CONTRACT_FILE
+            and is_pin_only_edit(added_lines.get(path) or [])
+        )
+    ]
+
+
 def as_range_map(
     files: Iterable[str],
     ranges: Optional[Dict[str, Optional[List[Tuple[int, int]]]]],
@@ -368,7 +418,9 @@ def validate_pr(
         shared = sorted(set(mine) & set(theirs))
         if not shared:
             continue
-        collisions = colliding_paths(mine, theirs)
+        collisions = drop_pin_only_collisions(
+            colliding_paths(mine, theirs), added_lines
+        )
         if not collisions:
             # Same file, disjoint regions. Git merges this cleanly, so it is
             # information for the author, never a gate.
