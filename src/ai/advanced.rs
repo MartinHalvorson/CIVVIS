@@ -2079,6 +2079,25 @@ impl AdvancedAi {
         self.base.loyalty_rate_alarm = true;
     }
 
+    /// Hold one more live-bridge flag off so it can be priced. Every flag in
+    /// `enable_live_bridge` needs one of these or it ships unmeasured — which is
+    /// how five repairs reached deployment without a single outcome number.
+    pub fn disable_bounded_recovery(&mut self) {
+        self.bounded_recovery = false;
+    }
+
+    pub fn disable_army_target_weighs_the_enemy(&mut self) {
+        self.army_target_weighs_the_enemy = false;
+    }
+
+    pub fn disable_siege_tracks_the_wall(&mut self) {
+        self.siege_tracks_the_wall = false;
+    }
+
+    pub fn disable_blind_objective_strength(&mut self) {
+        self.blind_objective_strength = false;
+    }
+
     pub fn disable_loyalty_rate_alarm(&mut self) {
         self.base.loyalty_rate_alarm = false;
     }
