@@ -763,66 +763,10 @@ fn decide(
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
     // the AI simulates its turn; the tournament controller stays frozen.
-    ai.enable_live_trader_route_adapter();
-    ai.enable_live_religious_purchase_guard();
-    // ⚠ Barbarians are excluded from `at_major_war` by design, so every defensive
-    // escalation in the production picker reads a barbarian siege as no threat at
-    // all: a one-city empire's standing-army floor stays at `mil_per_city` (1.0)
-    // and it cannot want a third defender while horsemen stand on its doorstep.
-    // Measured on run `civvis-20260802T202501Z` — four settlers built into that
-    // siege and captured, two on the capital tile without ever moving, one city
-    // until t80, score 140 against a best rival's 416. The tournament controller
-    // stays frozen so its recorded ladders remain comparable.
-    ai.enable_siege_muster();
-    // ⚠ And once it CAN want the defenders, something has to send them. Measured
-    // on run `civvis-20260803T005930Z` (Kongo, 154 turns): **116 of 154 turns had
-    // a hostile standing inside or beside our own territory**, including a
-    // full-health Crossbowman parked four tiles from two cities, unmoved and
-    // unengaged, for 21 consecutive turns, while the whole seven-unit army stood
-    // eight tiles away on a war front that had taken nothing in 75 turns. The
-    // cause is `nearest_enemy` ranking targets by distance FROM THE ASKING UNIT,
-    // which for a deployed army is always the enemy's cities. The tournament
-    // controller stays frozen so its recorded ladders remain comparable.
-    ai.enable_home_defense();
-    // ⚠ `assess` drops the empire into Recovery whenever it is at war and
-    // `my_power * 1.25 < strongest_rival`, and Recovery does not build an army —
-    // so the test stays true because of the choice it caused. Measured on run
-    // `civvis-20260802T205959Z`: the journal names that arm 160 times, the
-    // posture held from t65 to t229 (72% of the game), and the empire finished
-    // with ONE warrior at military 34 against the Mapuche's 1354. The bound
-    // releases only the power-gap half, and only after the posture has had
-    // `RECOVERY_POSTURE_LIMIT` standard turns to work.
-    ai.enable_bounded_recovery();
-    // ⚠ The siege appetite was one unit for any target city at all, walled
-    // or not. The engine halves a non-siege unit's wall damage
-    // (`mult = if spec.siege { 1.0 } else { 0.5 }`) and docks a non-siege
-    // ranged unit a flat 17 attack for shooting a city, so an army without a
-    // siege train pays twice. Measured on run `civvis-20260803T005930Z`: four
-    // siege units across 251 turns against a Korea holding five walled cities;
-    // 27 turns in contact with Jinju and Jeonju removed 12 and 9 points of a
-    // 400-point wall, while Korea stripped Kwango's 400 in six.
-    ai.enable_siege_tracks_the_wall();
-    // ⚠ `local_strength_ratio` prices an objective city only while it is
-    // currently in sight, and returns its `hostile <= 0.0` sentinel of 3.0 —
-    // the maximum — otherwise. Under live fog that makes a walled enemy
-    // capital score identically to an empty meadow, four times over the
-    // superiority floor, so the army engages. Measured on run
-    // `civvis-20260803T005930Z`: Seoul (walled, 22 pop, defense 101) was the
-    // objective of 426 force-group decisions from t65 to t231 and 294 of them
-    // read exactly 3.00, 108 with a force of one. No Korean city ever passed
-    // 27% damage in 173 turns of war. The repair reads only this controller's
-    // own last sighting, which the defensive half already trusts.
-    ai.enable_blind_objective_strength();
-    // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
-    // `military_faith_spending` never asks about gold — it gates on the faith
-    // bank alone. Measured on run `civvis-20260803T014330Z`: faith military
-    // purchases walked down the gold curve (t124 at 60 gold, t141 at 48, t165 at
-    // 51), the treasury hit zero on t168, Civilization VI disbanded the army
-    // from 29 units to 19 by t173, and on t174 — at FIVE gold, one turn after
-    // losing a third of the army — CIVVIS bought another Field Cannon. The
-    // tournament controller stays frozen so its recorded ladders stay
-    // comparable.
-    ai.enable_solvent_faith_army();
+    // Every live-bridge adapter and repair, in one place so the headless
+    // measurement arms can play the SAME controller the bridge deploys.
+    // See `AdvancedAi::enable_live_bridge`.
+    ai.enable_live_bridge();
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.

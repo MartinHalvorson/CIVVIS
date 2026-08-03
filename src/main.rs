@@ -334,8 +334,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `usize::from(plan.target_city.is_some())` on that flag before it reads the
 /// board, so the legacy anchor's production value is bit-for-bit what it was.
 /// A compatibility re-pin.
+///
+/// #976 adds `AdvancedAi::enable_live_bridge` (the eight bridge flags in one
+/// place, so a headless arm can play the deployed agent) and three
+/// `disable_*` methods that hold one flag off for a measurement arm. Nothing
+/// calls either from `new()` or `legacy()`, so every configured, legacy and Elo
+/// agent is byte-identical. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9a5c_eb6d_f086_bc92;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd5d0_7438_19aa_5b59;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
