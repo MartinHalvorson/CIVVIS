@@ -5762,6 +5762,17 @@ pub struct StateSnapshot {
     /// mirrored empire does not reproduce every capacity modifier.
     #[serde(default)]
     pub trade_capacity: Option<i64>,
+    /// Great Person POINTS by Civilization VI class type, e.g.
+    /// `GREAT_PERSON_CLASS_SCIENTIST`. The points, not the people: the earned
+    /// individuals already arrive as units.
+    ///
+    /// `district_project_value` prices every district project against the live
+    /// Great Person race — how close this empire is to the next one of that
+    /// class, and how close the leading rival is. Without this the race is all
+    /// zeros in every live game, so the Campus project's entire reason to exist
+    /// (Great Scientist points) is invisible to the planner that chooses it.
+    #[serde(default)]
+    pub great_person_points: Option<BTreeMap<String, f64>>,
     /// Total Governor Titles obtained and spent according to Firaxis. These are
     /// separate from the roster because a title can be held unspent.
     #[serde(default)]
@@ -5930,6 +5941,42 @@ fn restore_active_trade_routes(
 /// not all Civics, and neither appointments, promotions nor assignments are derived
 /// facts. Without this pass CIVVIS spends the same titles on every reconstructed
 /// turn and repeatedly appoints Governors already visible in the host game.
+/// Carry the Great Person race across from the host.
+///
+/// Deliberately **not** part of `apply_governor_state`: that function returns
+/// early when the host reports no governors, and the Great Person race has
+/// nothing to do with governors. Bundling them would have made this arrive only
+/// in games that already had a Governor appointed, which is precisely the kind
+/// of silent conditional the mirror has been bitten by before.
+fn apply_great_person_points(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    unmapped: &mut Vec<String>,
+) {
+    // Civilization VI names the class `GREAT_PERSON_CLASS_SCIENTIST`; CIVVIS
+    // keys the same thing `scientist`. The nine classes correspond one to one,
+    // so the translation is the suffix, lowercased — and an unrecognised class
+    // is reported rather than dropped, because a new expansion adding one is
+    // exactly the case where silence would be wrong.
+    if let Some(points) = state.great_person_points.as_ref() {
+        let mut gpp = BTreeMap::new();
+        for (class, total) in points {
+            match class.strip_prefix("GREAT_PERSON_CLASS_") {
+                Some(kind) if !kind.is_empty() => {
+                    gpp.insert(kind.to_ascii_lowercase(), *total);
+                }
+                _ => {
+                    let issue = format!("great_person_class:{class}");
+                    if !unmapped.contains(&issue) {
+                        unmapped.push(issue);
+                    }
+                }
+            }
+        }
+        game.players[0].gpp = gpp;
+    }
+}
+
 fn apply_governor_state(
     game: &mut crate::game::Game,
     state: &StateSnapshot,
@@ -6439,7 +6486,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "prophet_pending",
         "policies", "policy_slots", "gold", "faith", "science", "culture", "score",
-        "military", "trade_capacity", "governor_points", "governor_points_spent",
+        "military", "trade_capacity", "great_person_points", "governor_points",
+        "governor_points_spent",
         "governors", "cities", "units", "trade_routes", "rivals", "minors", "hostiles",
     ];
     const CITY: &[&str] = CITY_KEYS;
@@ -9139,6 +9187,7 @@ pub fn rebuild_from_state(
         &known_city_ids,
     ));
     apply_governor_state(&mut game, state, &mut unmapped);
+    apply_great_person_points(&mut game, state, &mut unmapped);
     apply_observed_host_metrics(&mut game, state, &mut unmapped);
     block_loyalty_doomed_settler_sites(&mut game);
 
@@ -10024,6 +10073,7 @@ impl LiveMirror {
         // no plan of ours worth preserving.
         if skip_rivals {
             apply_governor_state(&mut self.game, state, &mut self.unmapped);
+            apply_great_person_points(&mut self.game, state, &mut self.unmapped);
             return;
         }
         for uid in std::mem::take(&mut self.rival_units) {
@@ -10447,6 +10497,64 @@ mod host_fact_tests {
             }],
         )
         .is_none());
+    }
+
+    /// The Great Person race the planner prices against must actually exist.
+    ///
+    /// `district_project_value` reads `players[pid].gpp` for this empire and
+    /// every rival, and awards up to 150 for closing on a leader and 240 for
+    /// overtaking one. Before this the field was never written from a live
+    /// game, so both sides of every one of those comparisons were 0.0 — which
+    /// is why the Campus research project, whose entire payoff is Great
+    /// Scientist points, was chosen 7 times against 131 for the other district
+    /// projects across five live runs.
+    #[test]
+    fn great_person_points_reach_the_planner_from_the_host() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let mut points = BTreeMap::new();
+        points.insert("GREAT_PERSON_CLASS_SCIENTIST".to_string(), 118.0);
+        points.insert("GREAT_PERSON_CLASS_WRITER".to_string(), 12.5);
+        // A class Civilization VI could add that CIVVIS has never heard of must
+        // be reported, not silently dropped.
+        points.insert("GREAT_PERSON_CLASS_ASTRONAUT".to_string(), 4.0);
+        points.insert("NOT_A_GREAT_PERSON_CLASS".to_string(), 9.0);
+        let state = StateSnapshot {
+            turn: 92,
+            great_person_points: Some(points),
+            ..StateSnapshot::default()
+        };
+        let report = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let game = &report.game;
+
+        assert_eq!(
+            game.players[0].gpp.get("scientist").copied(),
+            Some(118.0),
+            "the Scientist race is what the Campus project is played for"
+        );
+        assert_eq!(game.players[0].gpp.get("writer").copied(), Some(12.5));
+        assert_eq!(
+            game.players[0].gpp.get("astronaut").copied(),
+            Some(4.0),
+            "an unfamiliar class still translates by its suffix"
+        );
+        assert!(
+            report
+                .unmapped
+                .iter()
+                .any(|issue| issue.contains("NOT_A_GREAT_PERSON_CLASS")),
+            "a class that does not carry the prefix must be reported: {:?}",
+            report.unmapped
+        );
+        assert!(
+            !game.players[0].gpp.contains_key("not_a_great_person_class"),
+            "and must not be invented into the race"
+        );
     }
 
     #[test]
