@@ -4038,6 +4038,102 @@ mod tests {
         );
     }
 
+    /// ★★★★★ THE EXPORT IS THE HOST'S VISIBILITY ANSWER, AND WE RE-DERIVED IT.
+    ///
+    /// Civilization VI exports a rival's units only under CURRENT visibility, the
+    /// bridge plants exactly those, and then `player_vision_now` recomputes what
+    /// the seat can see from this engine's sight radii on a reconstructed map.
+    /// Where the two disagree, an enemy the host is showing us is invisible to the
+    /// agent deciding whether to shoot it — and `ForcePosture` only reaches
+    /// `Engage` through `g.sees(..) && battlefront_unit_visible(..)`.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z` across the 49 turns of
+    /// Kongo's war (t203-250), which cost Arpinum and Arretium and ended the game
+    /// at 479 against the winner's 1214: an enemy was in the export on 49 of 49
+    /// turns, our units stood adjacent to one on 95 unit-turns and within range 2
+    /// on 197. **37 attacks were issued** -- 81% of the shots the host was showing
+    /// the army were declined, and the force logged "still gathering" instead.
+    ///
+    /// ⚠ The second assertion is the one that keeps this honest. The inference
+    /// "a foreign unit is on the board, so we must be able to see it" is sound
+    /// ONLY for a mirrored board. Applied to an ordinary game it would hand every
+    /// AI perfect vision of the world, so the set must stay empty there.
+    #[test]
+    fn a_rival_the_host_exported_is_visible_however_sight_is_derived() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(15, 15, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 12,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        // Ten hexes away — far outside anything our own sight model reaches, and
+        // in the export only because Civilization VI can see it.
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: true,
+            units: vec![StateUnit {
+                id: 20,
+                kind: "UNIT_WARRIOR".to_string(),
+                x: 15,
+                y: 15,
+                hp: 100.0,
+                ..StateUnit::default()
+            }],
+            ..StateRival::default()
+        });
+
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let enemy = crate::hex::offset_to_axial(15, 15);
+        let empty = crate::hex::offset_to_axial(18, 18);
+
+        assert!(
+            mirror.game.units.values().any(|unit| unit.owner != 0 && unit.pos == enemy),
+            "the exported rival must reach the board at all — the rest of this test \
+             is about whether the agent is allowed to notice it"
+        );
+        assert!(
+            mirror.game.player_can_see(0, enemy),
+            "a unit Civilization VI exported is a unit Civilization VI is showing \
+             us; before this fix the engine re-derived sight on a reconstructed map \
+             and answered no, and the army declined 81% of its shots in a war it lost"
+        );
+        assert!(
+            !mirror.game.player_can_see(0, empty),
+            "and only that ground: far tiles with nothing exported on them must stay \
+             dark, or the repair is just omniscience wearing a fix's clothes"
+        );
+
+        // ★ The invariant that keeps ordinary play honest. A native game holds the
+        // FULL simulation, so foreign units on the board prove nothing about sight.
+        let native = crate::game::Game::new(4, 20, 20, 7, 500, 0);
+        assert!(
+            native.host_observed.is_empty(),
+            "an ordinary CIVVIS game must leave this set empty; reading the board the \
+             mirrored way there would give every AI player perfect vision"
+        );
+    }
+
     #[test]
     fn sync_discards_units_that_only_civvis_simulated_from_production() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -9557,6 +9653,7 @@ pub fn rebuild_from_state(
     game.blocked_promotions =
         blocked_promotions_from(&state.refused_promotions, &unit_ids, &game.rules);
 
+    record_host_observed(&mut game);
     Reconstruction {
         game,
         unit_ids,
@@ -9570,6 +9667,27 @@ pub fn rebuild_from_state(
         unmapped,
         dropped_units: dropped,
     }
+}
+
+/// Record the ground Civilization VI has just proved this seat can see.
+///
+/// Every foreign unit standing on this board arrived from the export, and the
+/// export carries a rival's or a minor's units **only under current visibility**
+/// — `StateMinor`'s own doc says so, and `state.hostiles` is the same channel for
+/// barbarians. So each of their tiles is a tile Civilization VI is showing us
+/// right now, whatever this engine's sight model would derive on a reconstructed
+/// map. See [`crate::game::Game::host_observed`] for what the disagreement cost.
+///
+/// Taken from the board rather than from the three planting loops so it cannot
+/// fall out of step with them: rivals, city-states and barbarians all land here,
+/// and a fourth channel added later is covered without being remembered.
+fn record_host_observed(game: &mut crate::game::Game) {
+    game.host_observed = game
+        .units
+        .values()
+        .filter(|unit| unit.owner != crate::game::MIRRORED_SEAT)
+        .map(|unit| unit.pos)
+        .collect();
 }
 
 /// Give every revealed plot the owner Civilization VI says it has.
@@ -10822,6 +10940,10 @@ impl LiveMirror {
         apply_governor_state(&mut self.game, state, &mut self.unmapped);
         apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
         block_loyalty_doomed_settler_sites(&mut self.game);
+        // Last, because it reads the finished board: every rival, minor and
+        // barbarian for this turn has been re-planted by now, and the previous
+        // turn's sightings were removed with them.
+        record_host_observed(&mut self.game);
     }
 }
 
