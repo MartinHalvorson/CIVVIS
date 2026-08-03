@@ -5390,6 +5390,42 @@ local function exportState(player, pid, turn)
 		trade_routes = tradeRoutes,
 		rivals = rivals,
 		minors = minors,
+		-- ★★★★★ THE ENVOYS WE ARE HOLDING BUT NEVER SPEND.
+		--
+		-- `minors[].envoys` says where our envoys have LANDED. Nothing has ever
+		-- said how many are sitting UNSPENT, and that omission decides the whole
+		-- axis: `Game::legal_actions` gates `Action::SendEnvoy` behind
+		-- `if p.envoys_free > 0`, `envoys_free` is never mirrored, so on every
+		-- reconstructed live board it is 0 and **CIVVIS never even enumerates
+		-- sending an envoy**. That is why `SendEnvoy` appears nowhere in the
+		-- skipped-action tally while `LevyMilitary` (which needs a suzerainty we
+		-- never have) appears 44 times.
+		--
+		-- Measured over 36 live runs past turn 150, from Civ 6's own export:
+		-- median envoys placed **1**, median suzerainties **0**, and 16 of 36
+		-- runs end holding zero envoys anywhere. A rival was sitting on 10 at a
+		-- single city-state.
+		--
+		-- CIVVIS models the payoff in full — `envoy_type_yields_for_count` gives a
+		-- cultural city-state culture at the 1/3/6 thresholds — so the sim
+		-- collects this and the live game collects none of it. Suzerainty also
+		-- hands over the city-state's luxuries, which is amenities, which is the
+		-- 0.70-0.80 multiplier on every yield.
+		--
+		-- ⚠ EXPORT ONLY. This deliberately does NOT reach `player.envoys_free` on
+		-- the reconstructed board yet, because the actuation path is a KNOWN GAME
+		-- CRASHER: `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` answered by
+		-- `chooseEnvoy` produced three SIGSEGVs in three runs on a seed that
+		-- reached t92/t106 without it, and `cfg.EnvoyEnabled` is off because of
+		-- it. Making CIVVIS want something the bridge cannot safely deliver would
+		-- trade a silent loss for a crashed run. First measure the size of the
+		-- prize; then isolate the crash.
+		--
+		-- `GetTokensToGive` is the same call `chooseEnvoy` already makes and
+		-- appears six times in the shipped UI Lua.
+		envoys_free = try(function()
+			return player:GetInfluence():GetTokensToGive();
+		end, -1),
 	});
 end
 
