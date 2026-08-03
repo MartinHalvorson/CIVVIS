@@ -328,6 +328,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy anchor takes the same `Some(g.city_strength(city))` arm it always
 /// took and is byte-identical twice over. A compatibility re-pin.
 ///
+/// #963 sizes the siege train against the target city's standing wall, behind
+/// `siege_tracks_the_wall` — `false` in `AdvancedAi::new()` and set only by
+/// `civvis_orders`. `siege_units_wanted` returns the shipped
+/// `usize::from(plan.target_city.is_some())` on that flag before it reads the
+/// board, so the legacy anchor's production value is bit-for-bit what it was.
+/// A compatibility re-pin.
+///
 /// #965 promotes wide, developed, defended expansion only in the production
 /// constructor: it enables call-local city/Builder floors, plan delegation plus
 /// the three existing defense flags, and lets that flagged plan consume the
@@ -338,7 +345,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// side of that boundary. This is therefore a compatibility re-pin for
 /// `advanced_v1`, not an Elo protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb289_7e5b_da99_13cf;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x35ed_5bb5_92ff_321d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
