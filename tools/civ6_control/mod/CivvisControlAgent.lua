@@ -2875,7 +2875,31 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	local DEVELOP = { "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
 	                  "BUILDING_UNIVERSITY", "BUILDING_RESEARCH_LAB",
 	                  "DISTRICT_THEATER", "BUILDING_AMPHITHEATER",
-	                  "BUILDING_ART_MUSEUM", "BUILDING_ARCHAEOLOGICAL_MUSEUM",
+	                  -- ⚠⚠ `BUILDING_MUSEUM_ART` / `BUILDING_MUSEUM_ARTIFACT`, NOT
+	                  -- `BUILDING_ART_MUSEUM` / `BUILDING_ARCHAEOLOGICAL_MUSEUM`.
+	                  -- Civilization VI has neither of the latter — the shipped rows
+	                  -- read subject-last. Exactly the defect the `BUILDING_WALLS`
+	                  -- comment below this list describes, sitting three lines above
+	                  -- it and unnoticed, because a ladder entry that cannot fire is
+	                  -- invisible: the ladder just moves to the next line.
+	                  --
+	                  -- ⚠ THIS RUNG IS NOT A CORNER. Across 50 live runs the harness
+	                  -- ladder decides **2,935 of 3,708 builds (79%)** and `develop`
+	                  -- is its largest rung at 879; CIVVIS itself gets 773. So both
+	                  -- roads to a Museum were closed by the same class of bug and
+	                  -- #959 only fixed CIVVIS's. Museums stand in **0 of 119** live
+	                  -- end-of-game cities, Broadcast Centres in 0, and the Great
+	                  -- People that need those slots rot: Artist 9 activated against
+	                  -- 67 idle, Musician **0 against 31**, while Merchant runs 89%.
+	                  --
+	                  -- ⚠ ART BEFORE ARTIFACT, and the order is load-bearing. They
+	                  -- are identical in cost and yield; only the slot kind differs.
+	                  -- An Artifact slot needs an Archaeologist, which no live run has
+	                  -- **ever** built, while 67 Great Artists sit idle for want of
+	                  -- the Art slot. The ladder takes the first entry that is
+	                  -- playable, so listing Art first spends the 290 on the museum
+	                  -- whose slots can actually fill.
+	                  "BUILDING_MUSEUM_ART", "BUILDING_MUSEUM_ARTIFACT",
 	                  "BUILDING_BROADCAST_CENTER",
 	                  "DISTRICT_COMMERCIAL_HUB", "BUILDING_MARKET",
 	                  "BUILDING_BANK", "BUILDING_STOCK_EXCHANGE",
