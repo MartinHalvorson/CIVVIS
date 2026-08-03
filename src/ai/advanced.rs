@@ -28822,3 +28822,48 @@ mod tests {
         println!();
     }
 }
+
+#[cfg(test)]
+mod build_value_probe {
+    use super::*;
+    use crate::ai::Ai;
+    use crate::game::{Action, Game};
+    use crate::setup::GameSpeed;
+
+    /// Paired A/B at the deployment shape for the value ranking. Reports the
+    /// Campus building chain directly, because that chain is the mechanism.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn build_by_value_ab_at_deployment_scale() {
+        let play = |seed: u64, treated: bool| {
+            let mut g = Game::new(6, 74, 46, seed, 250, 9);
+            g.game_speed = GameSpeed::Online;
+            let mut me = AdvancedAi::new();
+            me.base.build_by_value = treated;
+            let mut others = AdvancedAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 { me.take_turn(&mut g, pid); } else { others[pid].take_turn(&mut g, pid); }
+                if g.winner.is_none() && g.current == pid { let _ = g.apply(pid, &Action::EndTurn); }
+            }
+            let cities = g.player_city_ids(0);
+            let science: f64 = cities.iter().map(|c| g.city_yields(*c).science).sum();
+            let count = |b: &str| cities.iter().filter(|c| {
+                g.cities[c].buildings.iter().any(|x| x.as_str() == b)
+            }).count();
+            (cities.len(), count("library"), count("university"), count("research_lab"),
+             g.players[0].techs.len(), science, g.score(0))
+        };
+        let (mut n, mut tl, mut cl, mut tu, mut cu, mut tr, mut cr) = (0,0,0,0,0,0,0);
+        let (mut tt, mut ct, mut ts, mut cs, mut tsc, mut csc) = (0,0,0.0,0.0,0i64,0i64);
+        for seed in 9_500..9_508u64 {
+            let t = play(seed, true);
+            let c = play(seed, false);
+            println!("seed {seed}: treated cities={} lib={} uni={} lab={} techs={} sci={:.1} score={} | control cities={} lib={} uni={} lab={} techs={} sci={:.1} score={}",
+                t.0,t.1,t.2,t.3,t.4,t.5,t.6, c.0,c.1,c.2,c.3,c.4,c.5,c.6);
+            n+=1; tl+=t.1; cl+=c.1; tu+=t.2; cu+=c.2; tr+=t.3; cr+=c.3;
+            tt+=t.4; ct+=c.4; ts+=t.5; cs+=c.5; tsc+=t.6 as i64; csc+=c.6 as i64;
+        }
+        println!("TOTALS n={n} libraries {tl} vs {cl} | universities {tu} vs {cu} | research_labs {tr} vs {cr} | techs {tt} vs {ct} | science {ts:.1} vs {cs:.1} | score {tsc} vs {csc}");
+    }
+}
