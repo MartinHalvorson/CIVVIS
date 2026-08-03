@@ -453,7 +453,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// board state is touched, so the anchor plays the identical game and only its
 /// journal differs. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf285_126b_9a03_45d4;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xacfe_2dbf_b462_2abf;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

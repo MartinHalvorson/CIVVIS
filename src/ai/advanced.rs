@@ -13097,7 +13097,23 @@ impl AdvancedAi {
             // live runs with only the coarse reason returned 83 holds against 292
             // march attempts, and 67 of them — 81% — were "the next tile refuses
             // the unit", which is a symptom and not yet a repair.
-            let why = match g.route_step(uid, target, 0) {
+            // ⚠ `route_step` returns `None` for three different reasons and only
+            // one of them is a routing failure: it also returns `None` when the
+            // unit already stands on `target` (`wdist <= range`, with range 0),
+            // and when a zone of control has it locked in formation. Folding
+            // those into "no route" would repeat the very mistake this block
+            // exists to fix — the coarse reason bucketed 67 of 83 holds into a
+            // symptom rather than a cause.
+            //
+            // The already-arrived case is separated below. The ZoC lock is NOT
+            // yet distinguishable from here: `formation_movement_locked_by_zoc`
+            // is private to `game`, so a settler held by a zone of control
+            // still reports "no route". Read that bucket as "no route OR ZoC
+            // lock" until the predicate is exposed.
+            let why = if current == target {
+                "it is already standing on its target".to_string()
+            } else {
+                match g.route_step(uid, target, 0) {
                 None => "no route to it on our own board".to_string(),
                 Some(step) if !g.can_move(uid, step) => {
                     let occupant = g
@@ -13120,6 +13136,7 @@ impl AdvancedAi {
                     }
                 }
                 Some(_) => "the safe-step guard rejected every neighbour".to_string(),
+                }
             };
             think!(self.journal(), Expansion, Detail, "Settler HELD short of {target:?}";
                    "{} tiles away and it did not move — {why}",
