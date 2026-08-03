@@ -73,6 +73,13 @@ python3 tools/civvis_collab.py start <task-slug> --machine <machine-id> \
   shared repository.
 - Make descriptive checkpoint commits and push them to the task branch. A push
   is the cross-machine backup and handoff mechanism; `git stash` is not.
+- Name the computer in every commit. End the message with a `Computer:` trailer
+  carrying this device's own name (`scutil --get ComputerName` on macOS,
+  `hostname` elsewhere), so `git log` alone says which machine in the fleet
+  produced a commit. The device name is deliberately the whole identifier for
+  now; a richer computer ID can replace the value later without moving it. Put
+  the same `- Computer:` line in the PR ownership block too — squash merge
+  writes the PR body onto `main` and throws the branch's own messages away.
 - Do not force-push. Do not rebase a branch after it has been pushed. To update
   a task branch, fetch and merge `origin/main` into it once, resolve carefully,
   rerun validation, and push normally.

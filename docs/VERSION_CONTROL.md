@@ -103,6 +103,35 @@ never reused, including after its PR is merged. Avoid persistent branches named
 only `fix/foo`, `session-x`, or `agent/name`; their ownership and lifetime are
 ambiguous.
 
+Every commit also names the computer that produced it, in a `Computer:` trailer
+on the last line:
+
+```text
+Computer: mbp-m5-max-128
+```
+
+For now that value is simply the device's own name — `scutil --get ComputerName`
+on macOS, `hostname` elsewhere — not a curated identifier. It may therefore
+differ from the short `<machine-id>` in the branch name, and that is fine: the
+branch component is chosen once and stays stable for claims and ownership
+checks, while the trailer says which physical machine actually ran the work.
+When the fleet outgrows device names, replace the value with a stronger computer
+ID and keep the trailer where it is.
+
+The trailer does **not** reach `main` on its own. This repository squash-merges
+with `squash_merge_commit_message = PR_BODY`, so the commit that lands on `main`
+is titled by the PR title and bodied by the PR description; the branch's own
+messages and its `<machine-id>` are discarded with the branch. Repeat the same
+line in the PR ownership block so it survives the squash:
+
+```text
+- Computer: `mbp-m5-max-128`
+```
+
+`Machine ID` in that block stays as it is — `check-pr` compares it to the branch
+name literally and fails on anything else. `Computer` is an extra line the
+checker ignores.
+
 ## Start a task
 
 Start from a stable base checkout used only to manage worktrees. Do not edit in
@@ -175,7 +204,8 @@ At the beginning and end of each work period:
 git status --short --branch
 git diff --check
 git add -- path/to/file another/path
-git commit -m "Describe one coherent change"
+git commit -m "Describe one coherent change" \
+  -m "Computer: $(scutil --get ComputerName 2>/dev/null || hostname)"
 git push
 ```
 
