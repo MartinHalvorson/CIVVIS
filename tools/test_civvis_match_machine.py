@@ -325,12 +325,12 @@ class MatchMachineTests(unittest.TestCase):
                 machine, "set_paused", return_value=True
             ) as pause, mock.patch.object(machine.time, "sleep"):
                 result = subject.resource_capped_command(
-                    "cargo",
-                    "build",
+                    "civvis",
+                    "validate",
                     cwd=root,
                     env=None,
                     timeout=30,
-                    purpose="build",
+                    purpose="validation",
                     log_path=root / "build.log",
                 )
 
@@ -344,6 +344,105 @@ class MatchMachineTests(unittest.TestCase):
                 ["work_paused_for_resources", "work_resumed"],
             )
             self.assertTrue(launch.call_args.kwargs["start_new_session"])
+
+    def test_build_cpu_duty_cycle_bounds_a_saturating_worker(self):
+        self.assertEqual(machine.build_cpu_duty_cycle(None, 60), 0.0)
+        self.assertEqual(machine.build_cpu_duty_cycle(43, 60), 0.0)
+        self.assertEqual(machine.build_cpu_duty_cycle(10, 60), 0.35)
+
+        duty = machine.build_cpu_duty_cycle(30, 60)
+        worst_case_average = 30 + (100 - 30) * duty
+        self.assertAlmostEqual(worst_case_average, 43.0)
+
+    def test_build_is_stopped_before_resource_sample_and_runs_in_bounded_pulses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=60, poll=1)
+            subject.deadline = machine.time.monotonic() + 60
+            subject.stopping = False
+            subject.watched_terminal_closed = mock.Mock(return_value=False)
+            subject.event = mock.Mock()
+            process = mock.Mock(pid=1234, returncode=0)
+            process.poll.side_effect = [None, None, None, 0]
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ), mock.patch.object(
+                machine, "resources", return_value=machine.Resources(20, 20, 12, 0, False)
+            ), mock.patch.object(
+                machine, "set_paused", return_value=True
+            ) as pause, mock.patch.object(machine.time, "sleep") as sleep:
+                result = subject.resource_capped_command(
+                    "cargo",
+                    "build",
+                    cwd=root,
+                    env=None,
+                    timeout=30,
+                    purpose="build",
+                    log_path=root / "build.log",
+                )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(
+                pause.call_args_list,
+                [
+                    mock.call(process, True),
+                    mock.call(process, False),
+                    mock.call(process, True),
+                ],
+            )
+            duty = machine.build_cpu_duty_cycle(20, 60)
+            self.assertEqual(
+                sleep.call_args_list,
+                [
+                    mock.call(machine.BUILD_CPU_DUTY_CYCLE_SECONDS * duty),
+                    mock.call(machine.BUILD_CPU_DUTY_CYCLE_SECONDS * (1.0 - duty)),
+                ],
+            )
+            subject.event.assert_called_once_with(
+                "work_cpu_throttle_started",
+                purpose="build",
+                pid=1234,
+                cycle_seconds=machine.BUILD_CPU_DUTY_CYCLE_SECONDS,
+                max_duty=machine.BUILD_CPU_MAX_DUTY,
+            )
+
+    def test_build_throttle_fails_closed_if_a_pulse_cannot_be_stopped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=60, poll=1)
+            subject.deadline = machine.time.monotonic() + 60
+            subject.stopping = False
+            subject.watched_terminal_closed = mock.Mock(return_value=False)
+            subject.event = mock.Mock()
+            process = mock.Mock(pid=1234)
+            process.poll.side_effect = [None, None, None]
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ), mock.patch.object(
+                machine, "resources", return_value=machine.Resources(20, 20, 12, 0, False)
+            ), mock.patch.object(
+                machine, "set_paused", side_effect=[True, True, False]
+            ), mock.patch.object(
+                machine, "stop_process"
+            ) as stop, mock.patch.object(machine.time, "sleep"):
+                with self.assertRaisesRegex(RuntimeError, "cannot re-pause"):
+                    subject.resource_capped_command(
+                        "cargo",
+                        "build",
+                        cwd=root,
+                        env=None,
+                        timeout=30,
+                        purpose="build",
+                        log_path=root / "build.log",
+                    )
+
+            stop.assert_called_once_with(process, timeout=2)
 
     def test_terminal_close_cancels_resource_capped_work(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -362,12 +461,12 @@ class MatchMachineTests(unittest.TestCase):
                 machine.subprocess, "Popen", return_value=process
             ), mock.patch.object(machine, "stop_process") as stop:
                 result = subject.resource_capped_command(
-                    "cargo",
-                    "build",
+                    "civvis",
+                    "validate",
                     cwd=root,
                     env=None,
                     timeout=30,
-                    purpose="build",
+                    purpose="validation",
                     log_path=root / "build.log",
                 )
 

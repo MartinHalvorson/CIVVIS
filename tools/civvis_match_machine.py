@@ -67,6 +67,9 @@ SHED_HEADLESS_MARGIN = 10.0
 RESUME_MARGIN = 20.0
 RESUME_COOLDOWN_SECONDS = 15.0
 RESUME_STEP_SECONDS = 5.0
+BUILD_CPU_DUTY_CYCLE_SECONDS = 0.4
+BUILD_CPU_MAX_DUTY = 0.35
+BUILD_CPU_TARGET_MARGIN = SHED_ONE_MARGIN + 2.0
 _resource_sample_lock = threading.Lock()
 
 
@@ -440,6 +443,23 @@ def resource_action(sample: Resources, limit: float) -> str:
     return "hold"
 
 
+def build_cpu_duty_cycle(cpu: float | None, limit: float) -> float:
+    """Return a safe run fraction for a build that may saturate every CPU.
+
+    Cargo's job limit controls concurrent rustc processes, but one optimized
+    rustc invocation can still use every core.  Model that worst case and keep
+    its cycle-averaged host CPU below the normal shed-one threshold with a
+    small additional margin.
+    """
+    if cpu is None:
+        return 0.0
+    target = max(0.0, limit - BUILD_CPU_TARGET_MARGIN)
+    if cpu >= target:
+        return 0.0
+    available_fraction = (target - cpu) / max(1.0, 100.0 - cpu)
+    return min(BUILD_CPU_MAX_DUTY, max(0.0, available_fraction))
+
+
 @dataclass
 class GameProcess:
     process: subprocess.Popen[str]
@@ -723,6 +743,8 @@ class MatchMachine:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         started = time.monotonic()
         paused = False
+        cpu_throttled = purpose == "build"
+        pressure_paused = False
         with log_path.open("w", encoding="utf-8") as output:
             process = subprocess.Popen(
                 args,
@@ -733,6 +755,18 @@ class MatchMachine:
                 start_new_session=True,
                 text=True,
             )
+            if cpu_throttled and process.poll() is None:
+                if not set_paused(process, True):
+                    stop_process(process, timeout=2)
+                    raise RuntimeError("cannot engage the build CPU throttle")
+                paused = True
+                self.event(
+                    "work_cpu_throttle_started",
+                    purpose=purpose,
+                    pid=process.pid,
+                    cycle_seconds=BUILD_CPU_DUTY_CYCLE_SECONDS,
+                    max_duty=BUILD_CPU_MAX_DUTY,
+                )
             while process.poll() is None:
                 now = time.monotonic()
                 if self.stopping:
@@ -757,6 +791,48 @@ class MatchMachine:
                     or sample.thermal_pressure is True
                     or sample.maximum() >= self.args.limit - SHED_ONE_MARGIN
                 )
+                if cpu_throttled:
+                    duty = build_cpu_duty_cycle(sample.cpu, self.args.limit)
+                    must_pause = must_pause or duty <= 0.0
+                    if must_pause:
+                        if not paused:
+                            if not set_paused(process, True):
+                                stop_process(process, timeout=2)
+                                raise RuntimeError("cannot pause resource-capped build")
+                            paused = True
+                        if not pressure_paused:
+                            pressure_paused = True
+                            self.event(
+                                "work_paused_for_resources",
+                                purpose=purpose,
+                                pid=process.pid,
+                                resources=asdict(sample),
+                            )
+                        time.sleep(self.args.poll)
+                        continue
+                    if pressure_paused:
+                        pressure_paused = False
+                        self.event(
+                            "work_resumed",
+                            purpose=purpose,
+                            pid=process.pid,
+                            resources=asdict(sample),
+                        )
+                    if paused:
+                        if not set_paused(process, False):
+                            if process.poll() is None:
+                                stop_process(process, timeout=2)
+                                raise RuntimeError("cannot resume resource-capped build")
+                            continue
+                        paused = False
+                    time.sleep(BUILD_CPU_DUTY_CYCLE_SECONDS * duty)
+                    if process.poll() is None:
+                        if not set_paused(process, True):
+                            stop_process(process, timeout=2)
+                            raise RuntimeError("cannot re-pause resource-capped build")
+                        paused = True
+                    time.sleep(BUILD_CPU_DUTY_CYCLE_SECONDS * (1.0 - duty))
+                    continue
                 if must_pause and not paused and set_paused(process, True):
                     paused = True
                     self.event(
