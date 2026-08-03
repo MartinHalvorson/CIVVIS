@@ -28,6 +28,7 @@
   const here = new URL(".", document.currentScript.src);
   const WASM_URL = new URL("civvis.wasm", here).href;
   const WORKER_URL = new URL("worker.js", here).href;
+  const BUILD_URL = new URL("build.json", here).href;
 
   // Everything the engine answers. A path not in here is a real file, such as
   // a strategic map sprite atlas, and goes to the network untouched.
@@ -66,6 +67,30 @@
     lastTurn: null,
     seenTurns: new Set(),
   });
+
+  // Publication records the optimized module after `wasm-opt` has finished.
+  // Rust cannot truthfully bake that size into the module itself: changing the
+  // embedded number changes the file, and optimization happens afterwards.
+  // Load the adjacent manifest once and attach its exact byte count to the
+  // same runtime documents that carry the commit and build timestamps.
+  const publishedBuild = window.fetch(BUILD_URL)
+    .then((response) => response.ok ? response.json() : null)
+    .catch(() => null);
+
+  async function withPublishedArtifact(answer) {
+    if (!answer || typeof answer !== "object") return answer;
+    const build = await publishedBuild;
+    const bytes = build?.wasm_bytes;
+    if (!Number.isSafeInteger(bytes) || bytes <= 0) return answer;
+    if (Object.prototype.hasOwnProperty.call(answer, "server_commit")) {
+      answer.server_artifact_bytes = bytes;
+    }
+    if (Object.prototype.hasOwnProperty.call(answer, "commit")) {
+      answer.artifact_bytes = bytes;
+    }
+    report.artifactBytes = bytes;
+    return answer;
+  }
 
   // ------------------------------------------------------------------ worker
 
@@ -244,6 +269,7 @@
     }
 
     answer = await withFinale(answer);
+    answer = await withPublishedArtifact(answer);
 
     // Civ 6 autosaves at the top of every turn and so does the desktop build.
     // The engine cannot, so it says when one is due and the page keeps it.
