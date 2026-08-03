@@ -8823,8 +8823,8 @@ mod tests {
         );
         assert!(hidden.contains("const veiled = !open && mapEdgeVeiled();"));
         assert!(
-            hidden.contains("const span = open || veiled ? framedHexBounds(3)"),
-            "a veiled sheet is spanned by the frame, not by the map's rectangle"
+            hidden.contains("const span = open || veiled ? framedHexBounds(12)"),
+            "a veiled sheet and its large marginalia are spanned by the frame, not by the map's rectangle"
         );
         assert!(hidden.contains("const [x, y] = open || veiled ? hexXYRaw(q, row) : hexXY(q, row);"));
         // Only one copy of a wrapping world is drawn, so the background either
@@ -8834,7 +8834,7 @@ mod tests {
         assert!(hidden.contains("const test = veiled ? (q, r) => !veilDrawsGroundAt(q, r)"));
         // A canvas compound path costs quadratic time in its own size, so a
         // sheet that covers a whole frame has to be drawn as its rectangle.
-        assert!(hidden.contains("return {open, solid:veiled, cells, test};"));
+        assert!(hidden.contains("return {open, solid:veiled, cells, monsterCells, test};"));
         assert!(EMBEDDED_INDEX
             .contains("if (layer.solid) cx.rect(minX, minY, maxX - minX, maxY - minY);"));
 
