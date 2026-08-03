@@ -24,6 +24,17 @@ use std::sync::Arc;
 /// attack unsupported. Below it the group holds on its own account, whatever
 /// else is happening in the empire.
 const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
+/// Points of standing wall that justify one more siege train, used by
+/// [`AdvancedAi::siege_units_wanted`]. A Civ VI wall tier is 100 points and a
+/// fully walled Renaissance city carries 400, so this asks for two trains at
+/// Medieval walls and the cap at Renaissance — the shape Korea used to strip a
+/// 400-point wall off Kwango in six turns while CIVVIS removed 9 points from
+/// Jeonju in fourteen.
+const SIEGE_WALL_PER_UNIT: usize = 150;
+/// Ceiling on the siege train. Past this the production is better spent on the
+/// melee that has to walk in and take the city — ranged and siege units cannot
+/// capture, and an unsealed city heals 20 a turn.
+const SIEGE_UNITS_MAX: usize = 3;
 /// Radius `threatened_city` scores hostiles in. A group already inside it is
 /// part of the defence rather than a column marching to it.
 const THREAT_RELIEF_RADIUS: i32 = 6;
@@ -117,6 +128,12 @@ const SETTLER_LAND_FALLBACK_RADIUS: i32 = 12;
 const SETTLER_GLOBAL_PREMIUM: f64 = 10.0;
 const SETTLER_EXTRA_TRAVEL_PRICE: f64 = 2.5;
 
+/// How many turns of a faith-bought soldier's gold upkeep the treasury must be
+/// able to cover when income alone will not. Twenty-five turns is long enough
+/// that a purchase made on a deep balance is a real decision, and short enough
+/// that a healthy empire is never stopped from arming itself.
+const FAITH_ARMY_SOLVENCY_TURNS: f64 = 25.0;
+
 /// A Settler walking farther than this, or one that has already been stopped,
 /// gets a land escort when the empire can spare one.
 const SETTLER_ESCORT_DISTANCE: i32 = 4;
@@ -127,6 +144,19 @@ const SETTLER_ESCORT_SEARCH_RADIUS: i32 = 8;
 /// radius. Named here because a census that scores siting against raw
 /// `settle_value` is scoring it against an objective the agent never held.
 const SETTLE_DISTANCE_PENALTY: f64 = 0.9;
+
+/// Production Advanced opens wide: six cities are the floor, not the finish.
+/// The land-aware plan may then climb to nine as the empire and era mature.
+/// Six is also the point at which the existing expansion oracle first showed
+/// decisive headroom; keeping it named prevents the production constructor,
+/// the plan, and the delegated governor from drifting apart again.
+const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
+
+/// A growing empire needs enough Builder charges to make new territory earn
+/// its keep. Three active Builders per four cities provide roughly two useful
+/// improvements per city at ordinary three-charge Builders, while the existing
+/// `has_builder_work` gate stops production once there is no yield to add.
+const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 
 /// How far above its empire's per-city mean a yield must stand before it names
 /// the city's role. At 1.0 every city would be typed by a coin flip around the
@@ -706,6 +736,10 @@ pub struct AdvancedAi {
     /// route-start action.  This stays off for every native game and is enabled
     /// only by the Civ VI order bridge.
     live_trader_route_adapter: bool,
+    /// Require a faith-bought soldier's GOLD upkeep to be payable before buying
+    /// it. Off for every native game, enabled only by the Civ VI order bridge.
+    /// See `faith_military_is_affordable`.
+    solvent_faith_army: bool,
     /// Immutable information frame captured before this major acts.  It is
     /// cleared after the turn so direct evaluators outside a turn still read
     /// the game's current observation.
@@ -728,6 +762,21 @@ pub struct AdvancedAi {
     /// `advanced_relief_scoped` entrant, so it can be re-measured once the
     /// conversion bottleneck moves rather than re-derived from scratch.
     pub scoped_relief_hold: bool,
+    /// Size the siege train against the wall standing at the target city,
+    /// instead of asking for exactly one siege unit for any target at all.
+    ///
+    /// **Off by default, live-bridge only**, on the same footing as
+    /// `bounded_recovery`. See [`AdvancedAi::siege_units_wanted`] for the
+    /// engine arithmetic and the 4-units-in-251-turns measurement behind it.
+    pub siege_tracks_the_wall: bool,
+    /// Price a fogged objective city from this controller's last sighting of
+    /// it, instead of scoring it as absent.
+    ///
+    /// **Off by default, live-bridge only** — the same footing as
+    /// `bounded_recovery`, and for the same reason: the defect it repairs is a
+    /// live-regime one. See [`AdvancedAi::remembered_objective_strength`] for
+    /// the mechanism and the 294-of-426 measurement behind it.
+    pub blind_objective_strength: bool,
     /// Exclude victory lanes the empire cannot finish before the game ends.
     ///
     /// **Off by default, on the pre-registered rule.** Routing toward a lane
@@ -1071,11 +1120,13 @@ pub struct AdvancedAi {
     /// default-off evaluator arm; it does not claim to make the broader
     /// full-state Advanced controller fog honest.
     pub belief_pressure: bool,
-    /// Where the city-target ramp starts. **3 by default, the shipped value.**
+    /// Where the city-target ramp starts. Configured controls retain three;
+    /// production Advanced starts at [`PRODUCTION_CITY_TARGET_FLOOR`].
     ///
-    /// `assess` computes `desired_cities = (3 + turn / cadence).min(map_capacity).min(6)`
-    /// — the empire wants three cities at the opening and adds roughly one per
-    /// era. #554's oracle handed a seat settlers up to **six** from the start
+    /// `assess` computes `desired_cities = (floor + turn / cadence).min(map_capacity)`.
+    /// The production empire wants six cities at the opening and adds roughly
+    /// one per era up to the land-aware nine-city ceiling. #554's oracle handed
+    /// a seat settlers up to **six** from the start
     /// and more than doubled its win rate (23.0% to 52.3%, p=0.0000 over 300
     /// games). The gap between those two numbers is this ramp.
     ///
@@ -1091,13 +1142,15 @@ pub struct AdvancedAi {
     /// reaches 4.83 of its own 5.00 target, so what limits it is the target,
     /// not its ability to hit one.
     ///
-    /// Reachable as `advanced_wide_opening`, paired against `advanced`.
+    /// Historical controls can still set this to three; production promotes
+    /// the wide opening because a four-city ceiling is not a Civ VI scaling
+    /// strategy.
     pub city_target_floor: usize,
     /// Let the baseline production governor use the empire's own city target
     /// instead of the flat `city_target` gene.
     ///
     /// `assess` computes `plan.desired_cities` from the land actually on the
-    /// map: `(city_target_floor + turn / cadence).min(map_capacity).min(6)`,
+    /// map: `(city_target_floor + turn / cadence).min(map_capacity)`,
     /// where `map_capacity = (2 + land / 55).clamp(3, 9)`. Nothing on the
     /// adaptive path consumes it. `docs/OPENINGS.md` §19 records why: after
     /// the four-build opening an untargeted adaptive empire reaches
@@ -1114,16 +1167,15 @@ pub struct AdvancedAi {
     /// 4p 24×16 = 96 tiles per player and judged at 6p 74×46 = 567. The arm
     /// itself does not depend on that artifact value.
     ///
-    /// This flag makes the delegation carry the plan: the base governor is
-    /// handed `plan.desired_cities` for the duration of that call and its own
-    /// gene is restored afterwards. It changes no other gate — population,
-    /// production cost, the one-settler-at-a-time rule, the site search and
-    /// `settler_stop_turn` all still apply — and it deliberately does not
-    /// touch the opening-book branch, so the proven four-build opening is
-    /// unchanged.
+    /// This flag makes the delegation carry the plan: for the duration of that
+    /// call the base governor receives the larger of its gene and
+    /// `plan.desired_cities`, plus the plan's speed-aware expansion deadline.
+    /// Its own values are restored afterwards. Population, escalating Settler
+    /// cost, one-settler-at-a-time, practical-site, military-floor and Builder
+    /// gates still apply, and the four-build opening remains unchanged.
     ///
-    /// Default-off evaluator treatment, reachable as
-    /// `advanced_plan_city_target` and paired against `advanced`.
+    /// Production Advanced enables this. Historical evaluator controls retain
+    /// the old flat-gene delegation.
     pub plan_city_target: bool,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
@@ -1580,6 +1632,9 @@ impl AdvancedAi {
         // weight vector cannot silently withdraw the confirmed production
         // policy layer when it enters an Advanced controller.
         weights.policy_deck = PolicyDeck::Live;
+        // City and Builder floors are call-local policy in `delegated_cities`,
+        // not mutations of an evolved genome. That keeps frozen evaluators and
+        // strategy searches honest about the weights they were given.
         weights
     }
 
@@ -1597,6 +1652,13 @@ impl AdvancedAi {
         ai.adjacency_site_planning = true;
         ai.settler_commit = true;
         ai.research_economy = true;
+        ai.city_target_floor = PRODUCTION_CITY_TARGET_FLOOR;
+        ai.plan_city_target = true;
+        // Expansion is allowed only behind the existing production floors;
+        // make sure the larger empire can actually hold what it founds.
+        ai.base.siege_muster = true;
+        ai.base.home_defense = true;
+        ai.bounded_recovery = true;
         ai
     }
 
@@ -1713,8 +1775,11 @@ impl AdvancedAi {
             belief: BeliefState::new(),
             battlefront_observation: true,
             live_trader_route_adapter: false,
+            solvent_faith_army: false,
             battlefront_frame: None,
             scoped_relief_hold: false,
+            siege_tracks_the_wall: false,
+            blind_objective_strength: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
             settler_price: 1.0,
@@ -1798,10 +1863,44 @@ impl AdvancedAi {
         self.base.siege_muster = true;
     }
 
+    /// Let a raider standing in our own territory claim a unit before the
+    /// offensive does. Native tournament games leave this disabled so their
+    /// recorded ladders stay comparable.
+    pub fn enable_home_defense(&mut self) {
+        self.base.home_defense = true;
+    }
+
+    /// Record tactical steps so a unit stepped twice in one turn cannot walk
+    /// back onto the tile it just left. Native tournament games leave this
+    /// disabled so their recorded ladders replay move-for-move.
+    pub fn enable_recorded_tactical_step(&mut self) {
+        self.base.recorded_tactical_step = true;
+    }
+
     /// Stop the defensive-war posture from becoming permanent. Native
     /// tournament games leave this disabled.
     pub fn enable_bounded_recovery(&mut self) {
         self.bounded_recovery = true;
+    }
+
+    /// Let the siege train be sized by the wall it has to breach. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_siege_tracks_the_wall(&mut self) {
+        self.siege_tracks_the_wall = true;
+    }
+
+    /// Stop a fogged objective city from reading as an empty tile when the
+    /// army decides whether it is strong enough to engage. Native tournament
+    /// games leave this disabled so their recorded ladders stay comparable.
+    pub fn enable_blind_objective_strength(&mut self) {
+        self.blind_objective_strength = true;
+    }
+
+    /// Require a faith-bought soldier's gold upkeep to be payable. Native
+    /// tournament games leave this disabled so their ladders stay comparable.
+    pub fn enable_solvent_faith_army(&mut self) {
+        self.solvent_faith_army = true;
     }
 
     /// Redirect an existing agent at a new explicit victory target without
@@ -3323,9 +3422,16 @@ impl AdvancedAi {
         // the cadence with game speed; the old fixed turn-175 cutoff expired
         // before the five-city target even became active on Standard speed.
         let city_cadence = g.standard_duration(90).max(1) as usize;
-        let desired_cities = (self.city_target_floor + g.turn as usize / city_cadence)
-            .min(map_capacity)
-            .min(6);
+        // Historical controls keep the old six-city planning ceiling. The
+        // production delegation flag is also the compatibility boundary that
+        // lets the promoted controller consume the full land-aware capacity.
+        let city_ceiling = if self.plan_city_target {
+            map_capacity
+        } else {
+            map_capacity.min(6)
+        };
+        let desired_cities =
+            (self.city_target_floor + g.turn as usize / city_cadence).min(city_ceiling);
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(
@@ -3782,6 +3888,32 @@ impl AdvancedAi {
         } else {
             self.adaptive_expansion_window_open(g)
         }
+    }
+
+    /// Run the proven baseline city governor with the strategic expansion
+    /// contract temporarily threaded through it.
+    ///
+    /// The historical treatment replaced the four-city gene with an early
+    /// three-city plan and predictably made the opening smaller. Production
+    /// takes the maximum instead: the plan may widen a governor, never narrow
+    /// it. The speed-aware deadline similarly extends the raw turn-150 gene on
+    /// slower or longer games without removing the endgame reserve.
+    fn delegated_cities(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        if !self.plan_city_target {
+            self.base.cities(g, pid);
+            return;
+        }
+        let restore_target = self.base.w.city_target;
+        let restore_stop = self.base.w.settler_stop_turn;
+        let restore_builders = self.base.w.builder_per_city;
+        self.base.w.city_target = restore_target.max(plan.desired_cities as f64);
+        self.base.w.settler_stop_turn =
+            restore_stop.max(Self::stock_expansion_deadline(g) as f64);
+        self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
+        self.base.cities(g, pid);
+        self.base.w.city_target = restore_target;
+        self.base.w.settler_stop_turn = restore_stop;
+        self.base.w.builder_per_city = restore_builders;
     }
 
     /// Lower is a more attractive rival: nearby, weak empires with valuable
@@ -8596,6 +8728,62 @@ impl AdvancedAi {
 
     }
 
+    /// ★★★★★ FAITH BUYS THE SOLDIER; GOLD PAYS FOR IT, EVERY TURN, FOREVER.
+    ///
+    /// `military_faith_spending` gates on `plan.strategy` and on the FAITH bank
+    /// (`faith >= 600`, `reserve = 180`). There is no gold term anywhere in it,
+    /// so a faith-rich empire keeps buying soldiers it cannot pay to keep — and
+    /// Civilization VI settles that bill by disbanding them.
+    ///
+    /// Measured on live run `civvis-20260803T014330Z`. Faith military purchases
+    /// walk straight down the gold curve — t104 at 288 gold, t124 at 60, t141 at
+    /// 48, t148 at 51, t157 at 61, t165 at 51 — and then:
+    ///
+    /// ```text
+    /// t165  gold  51   29 combat units
+    /// t168  gold   0   26   <- Civ 6 starts disbanding
+    /// t170  gold   0   23
+    /// t172  gold   0   20
+    /// t173  gold   0   19   <- a THIRD of the army confiscated
+    /// t174  gold   5   18   <- and CIVVIS bought another Field Cannon HERE
+    /// ```
+    ///
+    /// ⚠ 21 of 28 vanished units were last seen at FULL HP with a median
+    /// final-turn HP drop of 0, and 20 of 29 had no visible enemy within three
+    /// tiles. These are accounting deaths, not combat deaths — do not read them
+    /// as an attrition or exposure problem.
+    ///
+    /// ⚠ The `economic_recovery` branch of `BasicAi::product_for` does NOT cover
+    /// this. That gate stops *production* when `gold_per_turn < -0.5`; a faith
+    /// purchase never passes through it.
+    ///
+    /// Base ruleset maintenance is a deliberate approximation of the eventual
+    /// bill: formation multipliers and policy discounts are applied by
+    /// `Game::unit_gold_maintenance_cost` to a unit that does not exist yet.
+    /// Erring low is the safe direction — it refuses fewer purchases than the
+    /// true cost would, so this never blocks an empire that can actually pay.
+    fn faith_military_is_affordable(&self, g: &Game, pid: usize, unit: &str) -> bool {
+        if !self.solvent_faith_army {
+            return true;
+        }
+        let Some(spec) = g.rules.units.get(unit) else {
+            return true;
+        };
+        let upkeep = spec.maintenance.max(0.0);
+        if upkeep <= f64::EPSILON {
+            return true;
+        }
+        // Still in surplus once the new bill lands: buy.
+        if g.players[pid].gold_per_turn - upkeep >= 0.0 {
+            return true;
+        }
+        // Otherwise the balance has to be deep enough to carry it for a while.
+        // A treasury Civilization VI has clamped at zero reports as negative
+        // income, so an already-broke empire fails here however much faith it
+        // has piled up — which is the whole point.
+        g.players[pid].gold >= upkeep * FAITH_ARMY_SOLVENCY_TURNS
+    }
+
     /// A faith-rich empire countering a military or religious victory threat
     /// should convert that otherwise stranded treasury into defenders once
     /// Theocracy (or another legal faith-purchase source) makes them available.
@@ -8623,6 +8811,9 @@ impl AdvancedAi {
                 continue;
             };
             if currency != "faith" || g.rules.units[unit].class != "military" {
+                continue;
+            }
+            if !self.faith_military_is_affordable(g, pid, unit) {
                 continue;
             }
             options.push(action);
@@ -9516,6 +9707,51 @@ impl AdvancedAi {
                     )
                     .is_ok()
                 {
+                    // What this city was told to build. `BasicAi::production`
+                    // has recorded its own choice since it was written, but
+                    // this path — the one the live controller actually uses —
+                    // had no line at all: on a 251-turn replay of run
+                    // `civvis-20260803T005930Z`, 394 build decisions were
+                    // explained and the 132 taken here were silent.
+                    //
+                    // The `displacing` half exists because every live produce
+                    // order carries `VALUE_REPLACE_AT`, so an order naming a
+                    // different item than the city is already building
+                    // REPLACES it in Civilization VI; the bridge only skips an
+                    // identical one. On that run's own orders, 23 of 297
+                    // produce orders (8%) landed on a city that was already
+                    // building something else — none of them a military unit.
+                    // That is small, and this line is what will say so
+                    // directly rather than by joining two sources.
+                    //
+                    // ⚠ Do not measure this by joining a REPLAY's orders
+                    // against the LIVE run's `producing`: the replay is a
+                    // counterfactual trajectory, and that join reads 46%
+                    // where the true figure is 8%.
+                    if self.journal().wants(crate::reasoning::Level::Decision) {
+                        let banked = g.cities[&cid]
+                            .production_progress
+                            .get(&format!("{item:?}"))
+                            .copied()
+                            .unwrap_or(0.0);
+                        let city_name = g.cities[&cid].name.clone();
+                        match &committed {
+                            Some((current, current_item)) if *current_item != item => {
+                                think!(self.journal(), Economy, Decision,
+                                       "{} switches to {}", city_name, Self::plain_item(&item);
+                                       "worth {score:.0}, displacing {} at {current:.0}; \
+                                        {banked:.0} banked on the new item",
+                                       Self::plain_item(current_item));
+                            }
+                            _ => {
+                                think!(self.journal(), Economy, Decision,
+                                       "{} starts {}", city_name, Self::plain_item(&item);
+                                       "worth {score:.0} to the {} plan; \
+                                        {banked:.0} already banked",
+                                       plan.strategy.as_str());
+                            }
+                        }
+                    }
                     let is_settler =
                         matches!(&item, Item::Unit { unit } if unit == "settler");
                     counts.add_item(g, &item);
@@ -9532,6 +9768,28 @@ impl AdvancedAi {
                     }
                 }
             }
+        }
+    }
+
+    /// A production item as an operator would say it: "trebuchet", "walls",
+    /// "campus", "commercial hub investment". `Debug` is what the scoring code
+    /// keys on and it is unreadable in a journal line — `Unit { unit: Name("trebuchet") }`
+    /// tells a reader nothing the word "trebuchet" does not.
+    fn plain_item(item: &Item) -> String {
+        match item {
+            Item::Formation { unit, formation } => {
+                let size = if *formation >= 2 { "army" } else { "corps" };
+                format!("{} {size}", crate::reasoning::plain(unit.as_str()))
+            }
+            Item::Unit { unit } => crate::reasoning::plain(unit.as_str()),
+            Item::Building { building } => crate::reasoning::plain(building.as_str()),
+            Item::District { district, .. } => crate::reasoning::plain(district.as_str()),
+            Item::Wonder { wonder, .. } => crate::reasoning::plain(wonder.as_str()),
+            Item::Repair { repair, .. } => {
+                format!("repairs to the {}", crate::reasoning::plain(repair.as_str()))
+            }
+            Item::Project { project } => crate::reasoning::plain(project.as_str()),
+            Item::Product { product } => crate::reasoning::plain(product.as_str()),
         }
     }
 
@@ -10284,7 +10542,9 @@ impl AdvancedAi {
                         } else {
                             0.0
                         }
-                        + if spec.siege && counts.siege == 0 && plan.target_city.is_some() {
+                        + if spec.siege
+                            && counts.siege < self.siege_units_wanted(g, pid, plan)
+                        {
                             95.0
                         } else {
                             0.0
@@ -13113,6 +13373,79 @@ impl AdvancedAi {
         })
     }
 
+    /// How many siege units the campaign wants, given the wall actually
+    /// standing at the city it means to take.
+    ///
+    /// The shipped rule asks for exactly one — `counts.siege == 0 &&
+    /// plan.target_city.is_some()` — and asks for it whether the target is an
+    /// unwalled frontier town or a capital behind 400 points of Renaissance
+    /// wall. The engine itself says those are not the same problem. In
+    /// `Game::apply`, a shot at a city is scaled by
+    ///
+    /// ```text
+    /// let mult = if spec.siege { 1.0 } else { 0.5 };
+    /// ```
+    ///
+    /// and a non-siege ranged unit additionally eats a flat `att_base -= 17.0`
+    /// for attacking a city at all. So an army without siege pays twice, and
+    /// the shortfall compounds against exactly the targets that matter most.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo vs Korea, 173
+    /// turns of war): **four siege units were owned across 251 turns** — one
+    /// catapult and three trebuchets — held on **53 of 251 turns**, against a
+    /// Korea holding five walled cities. The within-run contrast is the whole
+    /// argument:
+    ///
+    /// | window | siege present | result |
+    /// |---|---|---|
+    /// | Seoul t136-142 (7 turns) | 1 trebuchet | 48 of 400 wall |
+    /// | Jinju + Jeonju t174-200 (27 turns) | none | 12 and 9 of 400 wall |
+    ///
+    /// Over 27 turns in contact with 5 field cannons and 3 heavy chariots the
+    /// army removed 9 points of a 400-point wall. Korea stripped Kwango's 400
+    /// in six turns and Mbuji-Mayi's in three.
+    ///
+    /// Corpus-wide over 111 runs and 19,713 turns, once cities that were ever
+    /// *ours* are excluded from the rival lists: turns holding a siege unit
+    /// inflict **0.12** points of new damage on an enemy city against **0.02**
+    /// without — 5.5x. ⚠ That comparison is observational and confounded:
+    /// holding siege correlates with being on the offensive at all. It is
+    /// offered as consistency, not as the causal claim. The claim this change
+    /// rests on is the engine arithmetic above and the structural defect that
+    /// the appetite is one unit regardless of the wall.
+    ///
+    /// The rule: nothing without a target; nothing for an unwalled target,
+    /// where the shipped `is_melee_capable` preference already wins the city;
+    /// otherwise one train per [`SIEGE_WALL_PER_UNIT`] points of standing wall,
+    /// capped at [`SIEGE_UNITS_MAX`]. A fogged target is read from this
+    /// controller's last sighting, on the same footing as
+    /// [`AdvancedAi::remembered_objective_strength`] — the wall a city had when
+    /// we last looked is the best estimate we are entitled to.
+    fn siege_units_wanted(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> usize {
+        if !self.siege_tracks_the_wall {
+            return usize::from(plan.target_city.is_some());
+        }
+        let Some(cid) = plan.target_city else {
+            return 0;
+        };
+        let Some(city) = g.cities.get(&cid) else {
+            return 0;
+        };
+        let visible = self.battlefront_visibility(g, pid);
+        let wall = if !self.battlefront_observation || g.sees(&visible, city.pos) {
+            city.wall_hp
+        } else {
+            match self.remembered_city(cid) {
+                Some(sighting) => sighting.wall_hp,
+                None => return 0,
+            }
+        };
+        if wall <= 0 {
+            return 0;
+        }
+        ((wall as usize).div_ceil(SIEGE_WALL_PER_UNIT)).clamp(1, SIEGE_UNITS_MAX)
+    }
+
     fn local_strength_ratio(
         &self,
         g: &Game,
@@ -13144,24 +13477,73 @@ impl AdvancedAi {
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
             .sum::<f64>()
             + g.city_at(objective)
-                .filter(|city| {
-                    enemies.contains(&g.cities[city].owner)
-                        && (!self.battlefront_observation || g.sees(&visible, g.cities[city].pos))
+                .filter(|city| enemies.contains(&g.cities[city].owner))
+                .and_then(|city| {
+                    if !self.battlefront_observation || g.sees(&visible, g.cities[&city].pos) {
+                        Some(g.city_strength(city))
+                    } else {
+                        self.remembered_objective_strength(city)
+                    }
                 })
-                .map(|city| g.city_strength(city))
                 .unwrap_or(0.0)
             + g.encampment_at(objective)
-                .filter(|city| {
-                    enemies.contains(&g.cities[city].owner)
-                        && (!self.battlefront_observation || g.sees(&visible, g.cities[city].pos))
+                .filter(|city| enemies.contains(&g.cities[city].owner))
+                .and_then(|city| {
+                    if !self.battlefront_observation || g.sees(&visible, g.cities[&city].pos) {
+                        Some(g.encampment_strength(city))
+                    } else {
+                        self.remembered_objective_strength(city)
+                    }
                 })
-                .map(|city| g.encampment_strength(city))
                 .unwrap_or(0.0);
         if hostile <= 0.0 {
             3.0
         } else {
             (friendly / hostile).clamp(0.0, 3.0)
         }
+    }
+
+    /// What a fogged enemy city at the objective is worth to
+    /// [`AdvancedAi::local_strength_ratio`], from this controller's own last
+    /// sighting of it.
+    ///
+    /// The shipped rule prices an objective city only while it is *currently*
+    /// in sight. That is fog-honest but it is not belief-honest, and the
+    /// difference is the whole story of a failed siege: `local_strength_ratio`
+    /// returns its `hostile <= 0.0` sentinel of `3.0` — the maximum, "we
+    /// dominate here" — for an objective the army simply cannot see. A walled
+    /// capital under fog and an empty meadow produce the identical number, and
+    /// `3.0` clears [`LOCAL_SUPERIORITY_FLOOR`] by a factor of four, so the
+    /// group engages.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo, at war with Korea
+    /// from turn 64): Seoul — walled, 22 pop, city defense 101 — was the
+    /// objective of **426 force-group decisions between t65 and t231, and 294
+    /// of them read exactly 3.00**. 108 of those decisions were a force of
+    /// *one*. Seoul finished the game on 0 damage and 0 wall damage, as did
+    /// every other Korean city bar transient pokes that healed back: across 173
+    /// turns of war no rival city ever passed 27% of its health bar.
+    ///
+    /// The repair does not invent information. [`CitySighting::strength`] is
+    /// this controller's own recorded observation — city combat strength at the
+    /// last time it actually saw the City Center, garrison and defense
+    /// modifiers included — and it is already trusted for the defensive half of
+    /// the same question by [`AdvancedAi::remembered_city_pressure`]. Reading
+    /// it here only stops the offensive half from treating "I have not looked"
+    /// as "there is nothing there".
+    ///
+    /// A stale sighting stays stale on purpose: a city that walled up under fog
+    /// still reads at its last-seen strength, which is exactly the mistake a
+    /// fog-honest agent should be allowed to make. Returning `None` when there
+    /// is no sighting at all preserves the shipped behaviour for a city this
+    /// controller has genuinely never seen.
+    fn remembered_objective_strength(&self, cid: u32) -> Option<f64> {
+        if !self.blind_objective_strength {
+            return None;
+        }
+        self.remembered_city(cid)
+            .map(|sighting| sighting.strength.max(0.0))
+            .filter(|strength| *strength > 0.0)
     }
 
     fn rebuild_force_groups(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
@@ -13553,7 +13935,14 @@ impl AdvancedAi {
                 self.base.move_beats_holding(g, uid, candidate, stay)
             };
             if should_move {
-                return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                // ⚠ Through `path_move`, never `g.apply` directly: it records
+                // the step, and a unit stepped again this turn must not
+                // re-enter the tile it just left. This site emitted 50 of the
+                // 88 same-turn out-and-back pairs on the replay of run
+                // civvis-20260801T224944Z — net zero ground, two orders, and
+                // the second refused by Civilization VI as a MOVE_TO of the
+                // unit's own tile.
+                return self.base.tactical_apply_move(g, pid, uid, pos);
             }
         }
 
@@ -13580,7 +13969,9 @@ impl AdvancedAi {
                 })
             {
                 if self.base.move_beats_holding(g, uid, score(g, pos), stay) {
-                    return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                    // Same rule as the local arm above: recorded through
+                    // `path_move` so the next same-turn step cannot undo it.
+                    return self.base.tactical_apply_move(g, pid, uid, pos);
                 }
             }
         }
@@ -16409,18 +16800,9 @@ impl AdvancedAi {
             if active_victory_target.is_none() {
                 self.advanced_support_production(g, pid, &plan);
                 // The adaptive empire's Settler gate lives in the baseline
-                // governor, which reads a flat gene. Hand it the target this
-                // empire actually computed for this map, then put the gene
-                // back so nothing else in the turn sees the substitution.
-                let restore = self.plan_city_target.then(|| {
-                    let gene = self.base.w.city_target;
-                    self.base.w.city_target = plan.desired_cities as f64;
-                    gene
-                });
-                self.base.cities(g, pid);
-                if let Some(gene) = restore {
-                    self.base.w.city_target = gene;
-                }
+                // governor. Thread the larger, speed-aware plan through that
+                // call without leaking it to later consumers.
+                self.delegated_cities(g, pid, &plan);
             }
         }
         if active_victory_target.is_some() {
@@ -16467,6 +16849,123 @@ mod tests {
     fn legacy_controller_keeps_battlefront_observation_off() {
         assert!(AdvancedAi::new().battlefront_observation);
         assert!(!AdvancedAi::legacy().battlefront_observation);
+    }
+
+    /// The measured t174 purchase: five gold in the treasury, one turn after
+    /// Civilization VI disbanded a third of the army to pay the upkeep bill,
+    /// and CIVVIS bought another Field Cannon because the gate only ever asked
+    /// about faith.
+    #[test]
+    fn a_broke_empire_stops_buying_soldiers_with_faith() {
+        let mut game = Game::new(2, 20, 14, 91_501, 80, 0);
+        let unit = game
+            .rules
+            .units
+            .iter()
+            .find(|(_, spec)| spec.class == "military" && spec.maintenance > 0.0)
+            .map(|(name, _)| name.to_string())
+            .expect("the ruleset has a military unit that costs upkeep");
+        let upkeep = game.rules.units[unit.as_str()].maintenance;
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_solvent_faith_army();
+
+        // The measured state: broke, and losing money.
+        game.players[0].gold = 5.0;
+        game.players[0].gold_per_turn = -3.0;
+        assert!(
+            !ai.faith_military_is_affordable(&game, 0, &unit),
+            "an empire on five gold and falling must not take on more upkeep"
+        );
+
+        // A deep balance carries the bill even while income is short.
+        game.players[0].gold = upkeep * FAITH_ARMY_SOLVENCY_TURNS + 1.0;
+        assert!(
+            ai.faith_military_is_affordable(&game, 0, &unit),
+            "a treasury that can pay for {FAITH_ARMY_SOLVENCY_TURNS} turns may still arm"
+        );
+
+        // And a surplus never needs the balance at all.
+        game.players[0].gold = 0.0;
+        game.players[0].gold_per_turn = upkeep + 1.0;
+        assert!(
+            ai.faith_military_is_affordable(&game, 0, &unit),
+            "income that covers the new bill is sufficient on its own"
+        );
+    }
+
+    /// The frozen controllers must keep buying exactly as they always have.
+    #[test]
+    fn the_default_controller_keeps_the_faith_army_ungated() {
+        let mut game = Game::new(2, 20, 14, 91_502, 80, 0);
+        let unit = game
+            .rules
+            .units
+            .iter()
+            .find(|(_, spec)| spec.class == "military" && spec.maintenance > 0.0)
+            .map(|(name, _)| name.to_string())
+            .expect("the ruleset has a military unit that costs upkeep");
+        game.players[0].gold = 5.0;
+        game.players[0].gold_per_turn = -3.0;
+
+        for frozen in [AdvancedAi::new(), AdvancedAi::legacy()] {
+            assert!(!frozen.solvent_faith_army);
+            assert!(
+                frozen.faith_military_is_affordable(&game, 0, &unit),
+                "a tournament controller must not change what it buys"
+            );
+        }
+        let mut live = AdvancedAi::new();
+        live.enable_solvent_faith_army();
+        assert!(
+            !live.faith_military_is_affordable(&game, 0, &unit),
+            "precondition: the same board DOES refuse once the gate is enabled"
+        );
+    }
+
+    #[test]
+    fn production_advanced_scales_cities_development_and_home_defense_together() {
+        let production = AdvancedAi::new();
+        assert_eq!(
+            production.city_target_floor,
+            PRODUCTION_CITY_TARGET_FLOOR
+        );
+        assert!(production.plan_city_target);
+        assert_eq!(production.base.w.city_target, 4.0);
+        assert_eq!(production.base.w.builder_per_city, 0.5);
+        assert!(production.base.siege_muster);
+        assert!(production.base.home_defense);
+        assert!(production.bounded_recovery);
+        assert!(production.settlement_safety);
+        assert!(production.adjacency_site_planning);
+
+        // Frozen and evaluator controls keep the old policy exactly, including
+        // its smaller economy and default-off live-defense adapters.
+        let control = AdvancedAi::pre_policy_envoy();
+        assert_eq!(control.city_target_floor, 3);
+        assert!(!control.plan_city_target);
+        assert_eq!(control.base.w.city_target, 4.0);
+        assert_eq!(control.base.w.builder_per_city, 0.5);
+        assert!(!control.base.siege_muster);
+        assert!(!control.base.home_defense);
+        assert!(!control.bounded_recovery);
+
+        let frozen = AdvancedAi::legacy();
+        assert_eq!(frozen.city_target_floor, 3);
+        assert!(!frozen.plan_city_target);
+        assert_eq!(frozen.base.w.city_target, 4.0);
+        assert_eq!(frozen.base.w.builder_per_city, 0.5);
+        assert!(!frozen.base.siege_muster);
+        assert!(!frozen.base.home_defense);
+        assert!(!frozen.bounded_recovery);
+
+        // Production policy never mutates a wider, better-developed genome.
+        let mut wide = Weights::default();
+        wide.city_target = 10.0;
+        wide.builder_per_city = 0.9;
+        let weighted = AdvancedAi::with_weights(wide);
+        assert_eq!(weighted.base.w.city_target, 10.0);
+        assert_eq!(weighted.base.w.builder_per_city, 0.9);
     }
 
     #[test]
@@ -17215,6 +17714,9 @@ mod tests {
         // resolve, which is how a live run spent 160 turns here.
         game.turn = 100;
         let mut untreated = AdvancedAi::new();
+        // Production enables the bound by default; disable it explicitly for
+        // this counterfactual control.
+        untreated.bounded_recovery = false;
         untreated.plan = Some(opening.clone());
         untreated.major_war_since = Some(0);
         assert_eq!(untreated.assess(&game, 0).strategy, GrandStrategy::Recovery);
@@ -18342,7 +18844,7 @@ mod tests {
     }
 
     #[test]
-    fn expansion_window_reaches_its_six_city_target_before_endgame() {
+    fn expansion_window_reaches_its_nine_city_target_before_endgame() {
         let mut game = Game::new_full(1, 30, 18, 7_113, 500, 0, false);
         let settler = game
             .player_unit_ids(0)
@@ -18360,7 +18862,7 @@ mod tests {
 
         let ai = AdvancedAi::new();
         let plan = ai.assess(&game, 0);
-        assert_eq!(plan.desired_cities, 6);
+        assert_eq!(plan.desired_cities, 9);
         assert_eq!(plan.strategy, GrandStrategy::Expansion);
         let item = Item::Unit {
             unit: crate::name!("settler"),
@@ -21790,6 +22292,116 @@ mod tests {
         assert!(!AdvancedAi::can_relieve(&game, &[warrior], home, u32::MAX));
     }
 
+    /// The defect this exists for: the siege appetite was one unit for any
+    /// target city at all, so a capital behind 400 points of wall was
+    /// provisioned exactly like an unwalled frontier town — and once that one
+    /// unit existed the appetite went to zero.
+    #[test]
+    fn the_siege_train_is_sized_by_the_wall_it_has_to_breach() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_104);
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        sites.sort_unstable();
+        game.current = 1;
+        for site in sites {
+            let settler = game.spawn_test_unit("settler", 1, site);
+            if game.apply(1, &Action::FoundCity { unit: settler }).is_ok() {
+                break;
+            }
+            game.remove_unit(settler);
+        }
+        game.current = 0;
+        let target = *game.player_city_ids(1).first().expect("a target city");
+
+        let assessed_turn = game.turn;
+        let plan_for = move |city: Option<u32>| StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: city,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn,
+            rush: false,
+        };
+
+        // The city is out of sight, so every reading below comes from the
+        // belief layer. Look at it once, the way a scout would.
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_siege_tracks_the_wall();
+        let watchtower = game
+            .nbrs(game.cities[&target].pos)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .expect("a tile beside the city");
+        let scout = game.spawn_test_unit("scout", 0, watchtower);
+
+        let wanted = move |ai: &AdvancedAi, game: &Game, city: Option<u32>| {
+            ai.siege_units_wanted(game, 0, &plan_for(city))
+        };
+
+        // No target at all: no siege train, walls or not.
+        assert_eq!(wanted(&ai, &game, None), 0);
+
+        // An unwalled target does not need one either — melee takes the city
+        // and siege units can never land the capturing blow.
+        game.cities.get_mut(&target).unwrap().wall_hp = 0;
+        assert_eq!(wanted(&ai, &game, Some(target)), 0);
+
+        // One tier of wall, one train; four tiers, the cap.
+        game.cities.get_mut(&target).unwrap().wall_hp = 100;
+        assert_eq!(wanted(&ai, &game, Some(target)), 1);
+        game.cities.get_mut(&target).unwrap().wall_hp = 300;
+        assert_eq!(wanted(&ai, &game, Some(target)), 2);
+        game.cities.get_mut(&target).unwrap().wall_hp = 400;
+        assert_eq!(
+            wanted(&ai, &game, Some(target)),
+            SIEGE_UNITS_MAX,
+            "a fully walled capital is worth the whole train"
+        );
+
+        // The wall is read from memory once the scout leaves, so a fogged
+        // capital still provisions the campaign that has to breach it.
+        ai.belief.observe(&game, 0);
+        game.remove_unit(scout);
+        assert!(
+            !game.player_can_see(0, game.cities[&target].pos),
+            "the target must be fogged for the memory path to be exercised"
+        );
+        assert_eq!(
+            wanted(&ai, &game, Some(target)),
+            SIEGE_UNITS_MAX,
+            "the wall a city had when we last looked still sizes the train"
+        );
+
+        // Memory is the only new input: with no sighting on file the campaign
+        // provisions nothing rather than guessing.
+        let mut unseen = AdvancedAi::targeting(VictoryTarget::Domination);
+        unseen.enable_siege_tracks_the_wall();
+        assert_eq!(wanted(&unseen, &game, Some(target)), 0);
+
+        // The shipped agent is unchanged: one unit for any target, zero
+        // otherwise, whatever the wall is doing.
+        let shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(!shipped.siege_tracks_the_wall);
+        assert_eq!(wanted(&shipped, &game, Some(target)), 1);
+        assert_eq!(wanted(&shipped, &game, None), 0);
+        game.cities.get_mut(&target).unwrap().wall_hp = 0;
+        assert_eq!(
+            wanted(&shipped, &game, Some(target)),
+            1,
+            "the shipped rule never looked at the wall"
+        );
+    }
+
     /// The behaviour this exists for: a locally superior force far from the
     /// emergency keeps prosecuting its campaign, while one close enough to
     /// matter halts. Before this, one threatened city anywhere held every
@@ -21862,6 +22474,111 @@ mod tests {
                 .unwrap()
                 .posture,
             ForcePosture::Hold,
+        );
+    }
+
+    /// The defect this exists for: a walled enemy capital the army cannot
+    /// currently see scored identically to an empty meadow, because
+    /// `local_strength_ratio` reached its `hostile <= 0.0` sentinel and
+    /// returned 3.0 — four times the superiority floor. One lone warrior
+    /// therefore read itself as locally dominant over a city.
+    #[test]
+    fn a_fogged_objective_city_is_priced_from_the_last_sighting() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_103);
+        // An enemy city far enough away that nothing of ours can see it.
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        sites.sort_unstable();
+        game.current = 1;
+        for site in sites {
+            let settler = game.spawn_test_unit("settler", 1, site);
+            if game.apply(1, &Action::FoundCity { unit: settler }).is_ok() {
+                break;
+            }
+            game.remove_unit(settler);
+        }
+        game.current = 0;
+        let enemy_city = *game
+            .player_city_ids(1)
+            .first()
+            .expect("the enemy must have somewhere to be attacked");
+        let objective = game.cities[&enemy_city].pos;
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+
+        // Korea's Seoul was no frontier outpost, so neither is this: an empire
+        // fielding field cannons defends its cities at that standard.
+        game.players[1]
+            .counters
+            .insert("strongest_unit_built".to_string(), 60);
+
+        // One warrior, standing well outside its own sight range of the city.
+        let warrior = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 6));
+        assert!(
+            !game.player_can_see(0, objective),
+            "the setup must leave the objective fogged"
+        );
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(
+            !ai.blind_objective_strength,
+            "the shipped default must be unchanged"
+        );
+        assert_eq!(
+            ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective),
+            3.0,
+            "the shipped rule reads a fogged city as no enemy at all"
+        );
+
+        // A scout walks up, sees the city, and leaves. Nothing about the city
+        // changed — only what this controller has observed of it.
+        let watchtower = game
+            .nbrs(objective)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .expect("a tile beside the city");
+        let scout = game.spawn_test_unit("scout", 0, watchtower);
+        let in_sight = ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective);
+        ai.belief.observe(&game, 0);
+        game.remove_unit(scout);
+        assert!(
+            !game.player_can_see(0, objective),
+            "the city is fogged again once the scout is gone"
+        );
+        assert!(
+            ai.remembered_city(enemy_city).is_some(),
+            "the sighting must survive the fog"
+        );
+
+        ai.enable_blind_objective_strength();
+        let ratio = ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective);
+        assert_eq!(
+            ratio, in_sight,
+            "an unchanged city must read the same remembered as it did in sight"
+        );
+        assert!(
+            ratio < LOCAL_SUPERIORITY_FLOOR,
+            "one warrior is not locally superior to a city it remembers: {ratio}"
+        );
+
+        // Memory is the only new input: a city this controller has never seen
+        // still scores as absent, so the repair cannot become omniscience.
+        let mut unseen = AdvancedAi::targeting(VictoryTarget::Domination);
+        unseen.enable_blind_objective_strength();
+        assert_eq!(
+            unseen.local_strength_ratio(&game, 0, &[warrior], &[1], objective),
+            3.0,
+            "with no sighting on file the shipped behaviour is preserved"
         );
     }
 
@@ -28283,6 +29000,75 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn delegated_wide_expansion_extends_the_window_but_defense_stays_first() {
+        let mut game = Game::new_full(2, 30, 18, 4_810_002, 500, 0, false);
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+        }
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 6;
+        game.turn = 200;
+
+        let own_military: Vec<u32> = game
+            .player_unit_ids(0)
+            .into_iter()
+            .filter(|unit| game.rules.units[game.units[unit].kind].class == "military")
+            .collect();
+        for unit in own_military {
+            game.remove_unit(unit);
+        }
+        game.at_war.insert((0, 1));
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 9,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::new();
+        ai.base.book_pos = 4;
+        // Prove the delegated plan, not the production constructor's own
+        // defaults, opens both the target and the speed-aware time window.
+        ai.base.w.city_target = 1.0;
+        ai.base.w.settler_stop_turn = 100.0;
+        ai.base.w.builder_per_city = 0.25;
+        ai.delegated_cities(&mut game, 0, &plan);
+
+        let defensive_item = game.cities[&city].queue.first().unwrap();
+        assert!(matches!(
+            defensive_item,
+            Item::Unit { unit } if game.rules.units[unit].class == "military"
+        ));
+        assert_eq!(ai.base.w.city_target, 1.0);
+        assert_eq!(ai.base.w.settler_stop_turn, 100.0);
+        assert_eq!(ai.base.w.builder_per_city, 0.25);
+
+        // Once the one-unit-per-city floor is restored, the same wide plan may
+        // produce the Settler even though both historical genes would refuse it.
+        game.at_war.clear();
+        game.cities.get_mut(&city).unwrap().queue.clear();
+        game.spawn_test_unit("warrior", 0, game.cities[&city].pos);
+        ai.delegated_cities(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if unit == "settler"
+        ));
+        assert_eq!(ai.base.w.city_target, 1.0);
+        assert_eq!(ai.base.w.settler_stop_turn, 100.0);
+        assert_eq!(ai.base.w.builder_per_city, 0.25);
     }
 
     /// Fires-check for `plan_city_target`, at both map scales.

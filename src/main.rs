@@ -296,6 +296,71 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// on the flag before anything is read, so every configured, legacy and Elo
 /// agent is byte-identical. Another compatibility re-pin.
 ///
+/// #955 adds `home_defense_objective`, which lets a raider standing in our own
+/// territory claim a unit before the offensive does. Gated behind the new
+/// `home_defense` flag, which is `false` in BOTH `BasicAi` constructors and is
+/// turned on only by the Civilization VI bridge — exactly the contract
+/// `siege_muster` runs under. `home_defense_objective` short-circuits on that
+/// flag before it reads anything, so every configured, legacy and Elo agent is
+/// byte-identical and `the_default_controller_keeps_home_defense_off` asserts
+/// it on a board that DOES yield an objective once enabled. A compatibility
+/// re-pin.
+///
+/// #955 also adds `garrison_assignments`/`garrison_step`, which put a unit on a
+/// threatened city's own tile. Behind the SAME `home_defense` flag, short-
+/// circuiting on it first, so this too is a compatibility re-pin.
+///
+/// #962 gates faith military purchases on whether the empire can pay the GOLD
+/// upkeep the soldier incurs. Behind the new `solvent_faith_army` flag, which is
+/// `false` in `AdvancedAi::configured` (so `new()` and `legacy()` both have it
+/// off) and is turned on only by the Civilization VI bridge —
+/// `faith_military_is_affordable` returns `true` immediately on that flag, so
+/// every configured, legacy and Elo agent buys exactly what it always did.
+/// `the_default_controller_keeps_the_faith_army_ungated` asserts it on a board
+/// that DOES refuse once enabled. A compatibility re-pin.
+///
+/// #957 prices a fogged objective city from this controller's last sighting
+/// inside `local_strength_ratio`, behind `blind_objective_strength` — again
+/// `false` in `AdvancedAi::new()` and set only by `civvis_orders`.
+/// `remembered_objective_strength` returns `None` on that flag before it
+/// touches the belief state, and the fallback is only reachable at all once
+/// `battlefront_observation` is on. `advanced_v1` sets that to `false`, so the
+/// legacy anchor takes the same `Some(g.city_strength(city))` arm it always
+/// took and is byte-identical twice over. A compatibility re-pin.
+///
+/// #963 sizes the siege train against the target city's standing wall, behind
+/// `siege_tracks_the_wall` — `false` in `AdvancedAi::new()` and set only by
+/// `civvis_orders`. `siege_units_wanted` returns the shipped
+/// `usize::from(plan.target_city.is_some())` on that flag before it reads the
+/// board, so the legacy anchor's production value is bit-for-bit what it was.
+/// A compatibility re-pin.
+/// #819 routes `BasicAi::tactical_step` and the Advanced force mover through
+/// `path_move` so a unit stepped twice in one turn cannot reverse its own
+/// first step, behind `recorded_tactical_step` — `false` at both `BasicAi`
+/// construction sites and set only by `civvis_orders`. Unlike the flags
+/// above, this one guards a call that can *refuse*: `path_move` rejects a
+/// reversal, a retread, or a minor leaving its defense area where the raw
+/// `g.apply(Move)` would have moved. `tactical_apply_move` therefore returns
+/// the historical raw apply on the flag before it reaches `path_move` at all,
+/// so `advanced_v1` takes byte-for-byte the arm it always took. A
+/// compatibility re-pin.
+///
+/// #974 adds a `Cities/Decision` journal line to `advanced_production`, which
+/// had none. It is inside `if self.journal().wants(Decision)` and writes only
+/// to the reasoning journal — no board state is read or changed, and the
+/// legacy anchor's chosen item is bit-for-bit what it was. A compatibility
+/// re-pin.
+///
+/// #965 promotes wide, developed, defended expansion only in the production
+/// constructor: it enables call-local city/Builder floors, plan delegation plus
+/// the three existing defense flags, and lets that flagged plan consume the
+/// land-aware nine-city ceiling. Stored genomes, `configured`, and
+/// `AdvancedAi::legacy()` retain the historical weights; the controls also keep
+/// their three-city floor, six-city ceiling, flat delegation, and default-off
+/// defense fields. The focused production/control contract test asserts each
+/// side of that boundary. This is therefore a compatibility re-pin for
+/// `advanced_v1`, not an Elo protocol change.
+///
 /// #958 prices research outside the victory lane, behind `research_economy`.
 /// `advanced_v1` is `AdvancedAi::legacy()`, which goes through
 /// `AdvancedAi::configured` and therefore has that field `false`; only
@@ -316,7 +381,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 ///
 /// A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbf41_0ad2_e55c_69ef;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe918_fffd_8dfb_44c8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
