@@ -5762,6 +5762,36 @@ pub struct StateSnapshot {
     /// mirrored empire does not reproduce every capacity modifier.
     #[serde(default)]
     pub trade_capacity: Option<i64>,
+    /// Envoys we are HOLDING and have not placed, per Firaxis's own
+    /// `GetTokensToGive`.
+    ///
+    /// ★★★★★ `minors[].envoys` has always said where our envoys LANDED. Nothing
+    /// ever said how many were sitting unspent, and that single omission closes
+    /// the whole axis: [`crate::game::Game::legal_actions`] gates
+    /// `Action::SendEnvoy` behind `if p.envoys_free > 0`, `envoys_free` is never
+    /// mirrored, so on every reconstructed live board it reads 0 and **CIVVIS
+    /// never enumerates sending an envoy at all**. That is why `SendEnvoy`
+    /// appears nowhere in the skipped-action tally, while `LevyMilitary` — which
+    /// needs a suzerainty we never hold — appears there 44 times.
+    ///
+    /// Measured over 36 live runs past turn 150: median envoys placed **1**,
+    /// median suzerainties **0**, 16 of 36 runs ending with none placed anywhere.
+    /// CIVVIS prices the payoff in full (`envoy_type_yields_for_count` pays a
+    /// cultural city-state at the 1/3/6 thresholds), so the sim collects it and
+    /// the live game collects nothing.
+    ///
+    /// ⚠ **CARRIED AND REPORTED, NOT ACTED ON.** This deliberately does not reach
+    /// `Player::envoys_free` on the reconstructed board. The actuation path is a
+    /// known game crasher — `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` answered by
+    /// `chooseEnvoy` gave three SIGSEGVs in three runs on a seed that reached
+    /// t92/t106 without it, and `cfg.EnvoyEnabled` is off for that reason.
+    /// Teaching CIVVIS to want something the bridge cannot safely deliver trades
+    /// a silent loss for a crashed run. Size the prize first.
+    ///
+    /// `None`/negative means the host did not answer; a real 0 means we are
+    /// genuinely holding none, and the two must not read the same.
+    #[serde(default)]
+    pub envoys_free: Option<i64>,
     /// Great Person POINTS by Civilization VI class type, e.g.
     /// `GREAT_PERSON_CLASS_SCIENTIST`. The points, not the people: the earned
     /// individuals already arrive as units.
@@ -6489,6 +6519,10 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "military", "trade_capacity", "great_person_points", "governor_points",
         "governor_points_spent",
         "governors", "cities", "units", "trade_routes", "rivals", "minors", "hostiles",
+        // Unspent envoys. `the_schema_allowlists_cover_every_declared_field` fails
+        // if a new StateSnapshot field is missing here — this list is a second
+        // copy of the struct's names and nothing keeps them in step automatically.
+        "envoys_free",
     ];
     const CITY: &[&str] = CITY_KEYS;
     const DISTRICT: &[&str] = &["type", "x", "y", "pillaged", "complete"];
@@ -7485,7 +7519,7 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
         false => String::new(),
     };
     Some(format!(
-        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}{}",
+        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}{}{}",
         state.science,
         science,
         pct(science, state.science),
@@ -7495,7 +7529,37 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
         production_part,
         attributed,
         host_amenity_report(state),
+        host_envoy_report(state),
     ))}
+
+/// Envoys Civilization VI says we are holding and have not placed.
+///
+/// ★★★★★ Reported here because the loss is invisible everywhere else. `SendEnvoy`
+/// is gated behind `Player::envoys_free`, which the mirror does not carry, so the
+/// action is never enumerated on a live board and never even reaches the
+/// skipped-action tally. The empire simply never notices it is holding them.
+///
+/// Measured over 36 live runs past turn 150: median envoys PLACED **1**, median
+/// suzerainties **0**, and 16 of 36 runs finished having placed none at all.
+///
+/// Prints nothing when the host did not answer, so a mirror built before the
+/// export does not read as an empire that is correctly holding zero.
+fn host_envoy_report(state: &StateSnapshot) -> String {
+    let Some(free) = state.envoys_free.filter(|n| *n >= 0) else {
+        return String::new();
+    };
+    let placed: i64 = state.minors.iter().map(|m| m.envoys.max(0)).sum();
+    // ⚠ `suzerain` is a SEAT ID defaulting to `minus_one`, not a flag. Seat 0 is
+    // ours, and an unclaimed city-state reads -1 — so testing `== 0` counts only
+    // the ones we actually hold. A truthiness test here would report every
+    // masterless city-state as ours, which is the instrument lying in the one
+    // direction that would make this whole finding look already-solved.
+    let suzerain = state.minors.iter().filter(|m| m.suzerain == 0).count();
+    format!(
+        "; envoys unspent {free} placed {placed} suzerain {suzerain}/{}",
+        state.minors.len()
+    )
+}
 
 /// What Civilization VI itself says the empire's happiness is costing it.
 ///
@@ -10784,6 +10848,45 @@ mod host_fact_tests {
             ..Default::default()
         };
         assert_eq!(host_amenity_report(&state), "",
+            "the mod's -1 must be refused as firmly as an absent field");
+    }
+
+    /// The wire format is the risk: a Lua key that does not match the serde name
+    /// silently returns the default and the empire reads as correctly holding zero.
+    #[test]
+    fn unspent_envoys_cross_the_bridge_and_name_the_suzerainties_we_hold() {
+        let state: StateSnapshot = serde_json::from_str(
+            r#"{"turn":214,"envoys_free":7,
+                "minors":[
+                  {"player":8,"civ":"CIVILIZATION_YEREVAN","envoys":3,"suzerain":0},
+                  {"player":9,"civ":"CIVILIZATION_VILNIUS","envoys":1,"suzerain":3},
+                  {"player":10,"civ":"CIVILIZATION_KABUL","envoys":0}]}"#,
+        )
+        .expect("the mod's state record deserializes");
+        assert_eq!(state.envoys_free, Some(7), "the field name must match the Lua key");
+
+        let report = host_envoy_report(&state);
+        assert!(report.contains("unspent 7"), "{report}");
+        assert!(report.contains("placed 4"), "{report}");
+        // ⚠ Exactly one: seat 0 is ours, seat 3 is a rival's, and the third
+        // city-state has no suzerain at all and defaults to -1.
+        assert!(report.contains("suzerain 1/3"),
+            "an unclaimed city-state must not count as ours: {report}");
+    }
+
+    /// ⚠ A mirror built before this export must not read as an empire correctly
+    /// holding no envoys — that is the instrument inventing good news.
+    #[test]
+    fn a_host_that_never_reported_envoys_says_nothing_rather_than_zero() {
+        let silent: StateSnapshot =
+            serde_json::from_str(r#"{"turn":40,"minors":[]}"#).expect("deserializes");
+        assert_eq!(silent.envoys_free, None);
+        assert_eq!(host_envoy_report(&silent), "");
+
+        // The other shape: the host was asked and could not answer.
+        let failed: StateSnapshot = serde_json::from_str(
+            r#"{"turn":40,"envoys_free":-1,"minors":[]}"#).expect("deserializes");
+        assert_eq!(host_envoy_report(&failed), "",
             "the mod's -1 must be refused as firmly as an absent field");
     }
 }
