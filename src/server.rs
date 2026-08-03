@@ -183,6 +183,15 @@ pub(crate) fn runtime_artifact_bytes() -> Option<u64> {
     }
 }
 
+/// Short label for the artifact whose byte count is being reported.
+pub(crate) const fn runtime_artifact_kind() -> &'static str {
+    if cfg!(target_arch = "wasm32") {
+        "WASM"
+    } else {
+        "native"
+    }
+}
+
 const EMBEDDED_INDEX: &str = include_str!("../web/index.html");
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
 const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
@@ -2474,6 +2483,7 @@ impl Session {
             o["server_commit_time"] = json!(runtime_commit_time());
             o["server_built_at"] = json!(runtime_built_at());
             o["server_artifact_bytes"] = json!(runtime_artifact_bytes());
+            o["server_artifact_kind"] = json!(runtime_artifact_kind());
             return o;
         }
         let mut o = observation(&self.game, 0);
@@ -2496,6 +2506,7 @@ impl Session {
         o["server_commit_time"] = json!(runtime_commit_time());
         o["server_built_at"] = json!(runtime_built_at());
         o["server_artifact_bytes"] = json!(runtime_artifact_bytes());
+        o["server_artifact_kind"] = json!(runtime_artifact_kind());
         o
     }
 
@@ -3616,6 +3627,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "commit_time": runtime_commit_time(),
                     "built_at": runtime_built_at(),
                     "artifact_bytes": runtime_artifact_bytes(),
+                    "artifact_kind": runtime_artifact_kind(),
                     // The supervisor's only view of a restart used to be
                     // `/state`, which is exactly what a long AI turn makes
                     // unavailable. This probe takes no lock the simulation
@@ -3770,6 +3782,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "commit_time": runtime_commit_time(),
                     "built_at": runtime_built_at(),
                     "artifact_bytes": runtime_artifact_bytes(),
+                    "artifact_kind": runtime_artifact_kind(),
                 }),
             );
         }
@@ -5466,6 +5479,7 @@ mod tests {
         assert_eq!(runtime["commit_time"], state["server_commit_time"]);
         assert_eq!(runtime["built_at"], state["server_built_at"]);
         assert_eq!(runtime["artifact_bytes"], state["server_artifact_bytes"]);
+        assert_eq!(runtime["artifact_kind"], state["server_artifact_kind"]);
         assert!(runtime["artifact_bytes"].as_u64().unwrap_or(0) > 0);
         // The supervisor's whole view of a pending restart. It rides here
         // rather than only on `/state` because a long AI turn is exactly when

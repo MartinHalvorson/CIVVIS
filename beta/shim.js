@@ -84,9 +84,11 @@
     if (!Number.isSafeInteger(bytes) || bytes <= 0) return answer;
     if (Object.prototype.hasOwnProperty.call(answer, "server_commit")) {
       answer.server_artifact_bytes = bytes;
+      answer.server_artifact_kind = "WASM";
     }
     if (Object.prototype.hasOwnProperty.call(answer, "commit")) {
       answer.artifact_bytes = bytes;
+      answer.artifact_kind = "WASM";
     }
     report.artifactBytes = bytes;
     return answer;
