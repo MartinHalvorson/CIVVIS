@@ -243,7 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         check(
             problems,
             "/home serves the landing page",
-            home["status"] == 200 and home["body"].strip() == "asset:/index.html",
+            home["status"] == 200 and home["body"].strip() == "asset:/",
             f"got {home['status']} {home['body'][:60]!r}",
         )
         download = hit(path="/download/")

@@ -161,7 +161,9 @@ async function asset(request, env, gated) {
 ///
 /// `ASSETS.fetch` keys off the URL it is handed, so the landing page can be
 /// deployed once as `index.html` and still answer at `/home` — no second copy
-/// to keep in step with the first.
+/// to keep in step with the first. Fetch the asset at `/`, not `/index.html`:
+/// Pages canonicalizes the latter back to `/`, returning a redirect instead of
+/// the landing-page body when this runs under the real asset binding.
 function assetAt(request, path) {
   const url = new URL(request.url);
   url.pathname = path;
@@ -182,7 +184,7 @@ export default {
       }
     }
     if (url.pathname === "/home" || url.pathname === "/home/") {
-      return asset(assetAt(request, "/index.html"), env, false);
+      return asset(assetAt(request, "/"), env, false);
     }
     if (url.pathname === "/rust" || url.pathname === "/rust/") {
       return buildChannel(url, "/download/");
