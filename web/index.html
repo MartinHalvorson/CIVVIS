@@ -10774,15 +10774,17 @@ function strategicUnitTokenPath(civilian, x, y, r) {
     cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2);
   } else cx.arc(x, y, r, 0, 7);
 }
-// A strategic health strip is part of the token rather than a floating map
+// Damage is exceptional state, so a healthy unit keeps its clean command token.
+// When damage exists, its bar is part of the token rather than a floating map
 // label. Its largest corner is still inside the token's enclosing circle, so
 // the same inradius calculation that contains the unit contains its health.
 function drawStrategicUnitHealth(x, y, r, hp, now) {
-  if (!(r > 0)) return;
+  const health = Math.max(0, Math.min(100, Math.round(hp ?? 100)));
+  if (!(r > 0) || health >= 100) return;
   cx.save();
-  const frac = Math.max(0, Math.min(1, (hp ?? 100) / 100));
-  const bw = r * 1.18, bh = r * 0.16, frame = r * 0.05;
-  const by = y + r * 0.28 - bh / 2;
+  const frac = health / 100;
+  const bw = r * 1.28, bh = r * 0.4, frame = r * 0.05;
+  const by = y + r * 0.24 - bh / 2;
   const color = frac > 0.5 ? "#4fd45c" : (frac > 0.25 ? "#f0b429" : "#f04f3f");
   cx.fillStyle = "#10151dd8";
   cx.beginPath(); cx.roundRect(x - bw / 2 - frame, by - frame,
@@ -10791,6 +10793,12 @@ function drawStrategicUnitHealth(x, y, r, hp, now) {
   cx.fillStyle = color;
   cx.beginPath(); cx.roundRect(x - bw / 2, by, bw * frac, bh, bh * .45);
   cx.fill();
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  cx.font = `900 ${bh * .76}px "Arial Narrow",Inter,sans-serif`;
+  cx.lineWidth = Math.max(.65, bh * .14);
+  cx.strokeStyle = "#10151d"; cx.fillStyle = "#fff";
+  cx.strokeText(String(health), x, by + bh / 2);
+  cx.fillText(String(health), x, by + bh / 2);
   if (frac <= 0.25) { // low health pulses for attention without growing outward
     cx.globalAlpha = 0.35 + 0.3 * Math.sin(now / 160);
     cx.strokeStyle = "#ff7060"; cx.lineWidth = Math.min(1, frame);
