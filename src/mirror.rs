@@ -7630,16 +7630,34 @@ fn host_amenity_report(state: &StateSnapshot) -> String {
         .iter()
         .filter(|c| c.amenities < c.amenities_needed)
         .count();
+    // ⚠⚠ `GetHappinessNonFoodYieldModifier` RETURNS A PERCENTAGE, NOT A MULTIPLIER,
+    // and it is NEGATIVE when the empire is unhappy. First live reading, run
+    // `civvis-20260803T082856Z` t111: Kraków -10, Wrocław -20, Radom/Warsaw/Gdańsk
+    // -10 — i.e. -10% and -20% on every non-food yield, not 0.90 and 0.80.
+    //
+    // The original code printed it as `host_yield_mult {:.2}` and filtered on
+    // `>= 0.0`, which was wrong twice over: the label reads like a multiplier, so
+    // `-12.00` would be misread as a factor, and the filter discarded every real
+    // reading because a taxed empire always reports a negative. An instrument that
+    // silently drops exactly the case it was built to measure is the failure this
+    // file exists to prevent.
+    //
+    // ⚠ The sentinel is now `is_finite` plus the mod's `-1`… which is itself a legal
+    // percentage. So the -1 sentinel is UNUSABLE for this field and the absent case
+    // is the only one that can be detected: `unknown_metric` is NaN, which
+    // `is_finite` rejects. A host that answered -1% and a host that failed to answer
+    // are indistinguishable here, and -1% is close enough to zero that treating it
+    // as unknown costs nothing.
     let mults: Vec<f64> = known
         .iter()
         .map(|c| c.happiness_yield_mult)
-        .filter(|m| *m >= 0.0)
+        .filter(|m| m.is_finite() && *m != -1.0)
         .collect();
     let mult = if mults.is_empty() {
         String::new()
     } else {
         format!(
-            " host_yield_mult {:.2}",
+            " host_yield_pct {:+.0}%",
             mults.iter().sum::<f64>() / mults.len() as f64
         )
     };
@@ -10869,7 +10887,7 @@ mod host_fact_tests {
         let city: StateCity = serde_json::from_str(
             r#"{"id":65536,"name":"Kabasa","pop":15,"x":3,"y":4,
                 "amenities":3,"amenities_needed":7,"happiness":2,
-                "happiness_yield_mult":0.8,
+                "happiness_yield_mult":-20,
                 "amenities_luxuries":2,"amenities_entertainment":1,
                 "amenities_civics":0,"amenities_city_states":0,
                 "amenities_war_weariness":0,"amenities_bankruptcy":0}"#,
@@ -10877,7 +10895,7 @@ mod host_fact_tests {
         .expect("the mod's city record deserializes");
         assert_eq!(city.amenities, 3.0, "the field name must match the Lua key");
         assert_eq!(city.amenities_needed, 7.0);
-        assert_eq!(city.happiness_yield_mult, 0.8);
+        assert_eq!(city.happiness_yield_mult, -20.0);
         assert_eq!(city.amenities_luxuries, 2.0);
 
         let state = StateSnapshot {
@@ -10888,8 +10906,8 @@ mod host_fact_tests {
         let report = host_amenity_report(&state);
         assert!(report.contains("net -4"), "the sign and size must survive: {report}");
         assert!(report.contains("(1 short)"), "{report}");
-        assert!(report.contains("host_yield_mult 0.80"),
-            "the host's own multiplier is the whole point of the line: {report}");
+        assert!(report.contains("host_yield_pct"),
+            "the host's own figure is the whole point of the line: {report}");
         assert!(report.contains("luxuries 2"), "{report}");
     }
 
@@ -10969,5 +10987,30 @@ mod host_fact_tests {
             r#"{"turn":40,"envoys_free":-1,"minors":[]}"#).expect("deserializes");
         assert_eq!(host_envoy_report(&failed), "",
             "the mod's -1 must be refused as firmly as an absent field");
+    }
+
+    /// ⚠ `GetHappinessNonFoodYieldModifier` is a PERCENTAGE and is NEGATIVE when the
+    /// empire is unhappy — first live reading was -10 and -20, not 0.90 and 0.80. The
+    /// original filter kept only `>= 0.0`, which discarded every real reading: an
+    /// instrument that drops exactly the case it exists to measure.
+    #[test]
+    fn the_host_happiness_figure_is_a_negative_percentage_and_survives_the_filter() {
+        let city = |name: &str, pct: f64| -> StateCity {
+            serde_json::from_str(&format!(
+                r#"{{"id":1,"name":"{name}","x":1,"y":1,"amenities":2,"amenities_needed":5,
+                     "happiness_yield_mult":{pct},"amenities_luxuries":2,
+                     "amenities_entertainment":0}}"#
+            ))
+            .expect("deserializes")
+        };
+        let state = StateSnapshot {
+            turn: 111,
+            cities: vec![city("Krakow", -10.0), city("Wroclaw", -20.0)],
+            ..Default::default()
+        };
+        let report = host_amenity_report(&state);
+        assert!(report.contains("host_yield_pct -15%"),
+            "a taxed empire must report its tax, not be filtered away: {report}");
+        assert!(report.contains("(2 short)"), "{report}");
     }
 }
