@@ -31778,6 +31778,8 @@ impl Game {
         let mut scratch = self.route_scratch.borrow_mut();
         if scratch.parent.len() < tile_count {
             scratch.parent.resize(tile_count, NO_PARENT);
+        }
+        if scratch.distance.len() < tile_count {
             scratch.distance.resize(tile_count, UNREACHED);
         }
         for slot in 0..tile_count {
@@ -32032,10 +32034,14 @@ impl Game {
         // `unit_can_traverse`, which rejects a position the grid does not
         // hold — so an index always exists for a reachable neighbour.
         const NO_PARENT: u32 = u32::MAX;
+        const UNREACHED: i32 = i32::MAX;
         let tile_count = self.map.tiles.len();
         let mut scratch = self.route_scratch.borrow_mut();
         if scratch.parent.len() < tile_count {
             scratch.parent.resize(tile_count, NO_PARENT);
+        }
+        if scratch.distance.len() < tile_count {
+            scratch.distance.resize(tile_count, UNREACHED);
         }
         if scratch.seen.len() < tile_count {
             scratch.seen.resize(tile_count, false);
