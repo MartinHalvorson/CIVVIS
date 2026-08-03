@@ -618,6 +618,34 @@ fn reserve_live_barbarian_defenders(planned_game: &mut civvis::game::Game, pid: 
     targets.len()
 }
 
+/// The skipped-reason key for a move whose destination is the unit's own tile.
+///
+/// ★★★★ NAME THE ANONYMOUS COUNT. `self_tile_move` is the largest single waste
+/// class on the ladder — **25,387 dropped orders across 43 live runs, on 3,803
+/// turns with at least one** — and as a bare total it cannot say whether that is
+/// one stuck Settler, the whole army, or a Trader with nowhere to go. Those are
+/// completely different repairs, and this project has three times found the
+/// standing hypothesis about an anonymous count to be wrong: `no_params` x221
+/// was one district, `move_refused` x33 was one trader, and 146 blocked upgrades
+/// were two resource gaps rather than gold.
+///
+/// It answered immediately. Replaying five finished runs through the fixed
+/// binary: **249 self-tile moves, 100% military** — warrior 59, heavy_chariot
+/// 53, field_cannon 52, pike_and_shot 32, archer 23, and a tail of galley,
+/// crossbowman, cuirassier, trebuchet, spec_ops and slinger. **Zero settlers,
+/// zero builders, zero traders**, against a prediction of ~2% settlers.
+///
+/// ⚠ Keep the `self_tile_move` PREFIX. Existing readers match on it, and the
+/// unit kind is a suffix so a total is still recoverable by prefix.
+fn self_tile_move_key(mirror_state: &civvis::mirror::LiveMirror, unit: u32) -> String {
+    mirror_state
+        .game
+        .units
+        .get(&unit)
+        .map(|unit| format!("self_tile_move:{}", unit.kind))
+        .unwrap_or_else(|| "self_tile_move".to_string())
+}
+
 fn decide(
     mirror_state: &mut civvis::mirror::LiveMirror,
     ai: &mut civvis::ai::AdvancedAi,
@@ -801,8 +829,31 @@ fn decide(
                     Action::Produce { .. } => "produce_not_mapped",
                     _ => "",
                 };
+                // ★★★★ NAME THE ANONYMOUS COUNT. `self_tile_move` is the largest
+                // single waste class on the ladder — **25,387 dropped orders across
+                // 43 live runs, on 3,803 turns with at least one** — and as a bare
+                // total it cannot say whether that is one stuck Settler, the whole
+                // army, or a Trader with nowhere to go. Those are completely
+                // different repairs, and this project has three times found that
+                // the standing hypothesis about an anonymous count was wrong:
+                // `no_params` x221 was one district, `move_refused` x33 was one
+                // trader, and 146 blocked upgrades were two resource gaps, not gold.
+                //
+                // The expansion half is already measured and it is worth naming:
+                // live settlers cross 0.78 tiles/turn on 2 movement points, stand
+                // still on 45% of their turn-transitions, and **0 of 1455** of those
+                // standstills carry a `move_refused` while 91% fall on a turn whose
+                // journal says the settler is marching. Whether the settler's own
+                // step is computing its own tile is exactly what this key answers.
                 let why = if why.is_empty() {
                     action_variant(action)
+                } else if why == "self_tile_move" {
+                    match action {
+                        Action::MoveTo { unit, .. } | Action::Move { unit, .. } => {
+                            self_tile_move_key(mirror_state, *unit)
+                        }
+                        _ => why.to_string(),
+                    }
                 } else {
                     why.to_string()
                 };
@@ -2160,6 +2211,45 @@ mod tests {
     /// rebuild seeds that choice into CIVVIS's queue as work in progress, and CIVVIS —
     /// which only produces for a city whose queue is empty — says nothing. Measured at
     /// 13% of turns carrying a produce order against 100% carrying research and civic.
+    /// The largest waste class on the ladder must say WHICH unit it is.
+    ///
+    /// `self_tile_move` totalled 25,387 across 43 live runs as one anonymous
+    /// number. Named, five replayed runs answered it in one pass: 249 events,
+    /// **100% military**, zero settlers — which is the opposite of what the
+    /// expansion-tempo reading predicted and sends the repair somewhere else.
+    ///
+    /// ⚠ Two-sided: the key must carry the kind AND keep the `self_tile_move`
+    /// prefix, because existing readers match on that prefix and a bare total
+    /// has to stay recoverable.
+    #[test]
+    fn a_self_tile_move_names_the_unit_that_asked_for_it() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        // ⚠ DISCOVERED, not hardcoded: the point is that whatever unit the board
+        // carries, its kind reaches the key. Naming one would make this fail on a
+        // fixture change rather than on anything to do with the instrument.
+        let unit = *mirror
+            .game
+            .units
+            .keys()
+            .next()
+            .expect("this board carries units");
+        let kind = mirror.game.units[&unit].kind.to_string();
+        assert!(!kind.is_empty(), "fixture precondition: the unit has a kind");
+
+        let key = self_tile_move_key(&mirror, unit);
+        assert!(
+            key.starts_with("self_tile_move"),
+            "the prefix is load-bearing for every existing reader, got {key}"
+        );
+        assert_eq!(key, format!("self_tile_move:{kind}"));
+
+        // A unit the bridge cannot map back still has to be counted, not dropped:
+        // an unnamed refusal is the exact failure this key exists to end.
+        let missing = mirror.game.units.keys().copied().max().unwrap_or(0) + 1_000;
+        assert_eq!(self_tile_move_key(&mirror, missing), "self_tile_move");
+    }
+
     #[test]
     fn a_build_civvis_did_not_choose_is_handed_back_to_it() {
         let (snapshot, state) = production_board();
