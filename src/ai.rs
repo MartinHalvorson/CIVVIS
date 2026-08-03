@@ -6608,7 +6608,64 @@ impl BasicAi {
 
     /// Walk the assigned defender to its city and hold it. Standing on the tile
     /// IS the job, so arriving means fortifying rather than looking for a fight.
-    fn garrison_step(&mut self, g: &mut Game, pid: usize, uid: u32, enemy_ids: &[usize]) -> bool {
+    /// ★★★★★ THE DEFENCE LAYER NEVER RAN DURING A WAR.
+    ///
+    /// `#955` put both mechanisms inside `BasicAi::military_step`, and on the
+    /// deployed (advanced) controller that function is reachable from exactly
+    /// one place — `advanced_military_step_with_decline`, inside
+    /// `if enemies.is_empty()`, where `enemies` is built with `!p.is_barbarian`.
+    /// So the empire defended itself only while it was at peace with every
+    /// major, and the moment a real war started the whole layer went dark —
+    /// which is precisely the regime in which the measured game lost four
+    /// cities.
+    ///
+    /// Proved by A/B replay of run `civvis-20260803T005930Z` at the same commit,
+    /// the only difference being the `home_defense` flag: **50 of 2131 unit
+    /// orders changed, and every one of them before t56**. The war began on t64.
+    /// After that the two order streams are byte-identical.
+    ///
+    /// ⚠ Do not "fix" this by widening `enemies` — that list drives the
+    /// offensive engagement and adding barbarians to it would send campaigns
+    /// after raiders. This is a separate claim that runs BEFORE it, in both
+    /// commanders, over a deliberately barbarian-INCLUSIVE enemy list.
+    pub(crate) fn home_defense_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        enemy_ids: &[usize],
+    ) -> bool {
+        // Holding a threatened city outranks everything else this unit could
+        // do: an empty city with breached walls is lost to one melee step, and
+        // the measured game lost four that way while its army was busy.
+        if self.garrison_step(g, pid, uid, enemy_ids) {
+            return true;
+        }
+        let Some(threat) = self.home_defense_objective(g, pid, uid, enemy_ids) else {
+            return false;
+        };
+        let radius = if g.rules.units[g.units[&uid].kind].has_ranged_attack() {
+            g.unit_attack_range(uid).max(1)
+        } else {
+            1
+        };
+        self.tactical_step(g, pid, uid, threat, enemy_ids, radius)
+    }
+
+    /// Every player this seat is actually shooting at, barbarians included.
+    ///
+    /// ⚠ The advanced commander's own `enemies` list drops barbarians because
+    /// it drives the OFFENSIVE. Defence has to see them: on the measured run
+    /// every raider that occupied our ground for whole eras was a barbarian.
+    pub(crate) fn belligerents(g: &Game, pid: usize) -> Vec<usize> {
+        g.players
+            .iter()
+            .filter(|other| other.id != pid && other.alive && g.is_at_war(pid, other.id))
+            .map(|other| other.id)
+            .collect()
+    }
+
+    pub(crate) fn garrison_step(&mut self, g: &mut Game, pid: usize, uid: u32, enemy_ids: &[usize]) -> bool {
         let Some((_, city)) = self
             .garrison_assignments(g, pid, enemy_ids)
             .into_iter()
@@ -7356,20 +7413,15 @@ impl BasicAi {
             {
                 return true;
             }
-            // Holding a threatened city outranks everything else this unit could
-            // do: an empty city with breached walls is lost to one melee step,
-            // and the measured game lost four that way while its army was busy.
-            if self.garrison_step(g, pid, uid, &enemy_ids) {
-                return true;
-            }
-            // The homeland gets first claim on this unit. Without it the
-            // objective below is always the offensive, because it ranks by
+            // The homeland gets first claim on this unit: hold a threatened
+            // city, else intercept a raider inside our own ground. Without it
+            // the objective below is always the offensive, because it ranks by
             // distance from the asking unit and a deployed army is by
             // definition standing next to the enemy.
-            return match self
-                .home_defense_objective(g, pid, uid, &enemy_ids)
-                .or_else(|| self.nearest_enemy_for_unit(g, pid, uid, &enemy_ids))
-            {
+            if self.home_defense_step(g, pid, uid, &enemy_ids) {
+                return true;
+            }
+            return match self.nearest_enemy_for_unit(g, pid, uid, &enemy_ids) {
                 Some(t) => self.tactical_step(g, pid, uid, t, &enemy_ids, radius),
                 None => self.peacetime_step(g, pid, uid),
             };

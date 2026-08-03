@@ -318,8 +318,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// every configured, legacy and Elo agent buys exactly what it always did.
 /// `the_default_controller_keeps_the_faith_army_ungated` asserts it on a board
 /// that DOES refuse once enabled. A compatibility re-pin.
+///
+/// #972 moves the #955 defence layer so it also runs under the WARTIME
+/// commander. `advanced_military_step_with_decline` reaches
+/// `BasicAi::military_step` only inside `enemies.is_empty()`, and `enemies`
+/// drops barbarians — so home defence and the garrison went dark the moment a
+/// major war began, which A/B replay measured as 50 of 2131 orders changing and
+/// every one of them before the war. The new claim reads `self.base.home_defense`
+/// before computing anything, so a frozen controller does not even pay for the
+/// belligerent scan and stays byte-identical. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfa3d_df3c_792b_d1f6;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x94d0_c517_cffc_0dac;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -14649,6 +14649,48 @@ impl AdvancedAi {
                 return self.base.fortify_or_stop(g, pid, uid);
             }
         }
+        // ★★★★★ THE DEFENCE LAYER USED TO SIT BELOW THIS LINE AND NEVER RAN.
+        //
+        // `enemies` drops barbarians, and `base.military_step` — which is where
+        // #955 put home defence and the garrison — is reached from this function
+        // ONLY inside `enemies.is_empty()`. So the empire defended itself while
+        // at peace with every major and went blind the moment a war started.
+        //
+        // A/B replay of run `civvis-20260803T005930Z`, same commit, only the
+        // `home_defense` flag differing: **50 of 2131 unit orders changed and
+        // every one was before t56.** The war began t64; after it the two
+        // streams are byte-identical, and that game lost four cities.
+        //
+        // ⚠ Widening `enemies` is the WRONG repair: it drives the offensive
+        // engagement below, so barbarians in it would send campaigns after
+        // raiders. Defence gets its own claim, ahead of the campaign, over a
+        // barbarian-inclusive list.
+        // The flag is read before anything is computed, so a frozen controller
+        // does not even pay for the belligerent scan.
+        //
+        // ⚠ DURING A MAJOR WAR THIS IS THE GARRISON ONLY, NOT FIELD INTERCEPTION.
+        // Measured by replay: claiming units for raiders anywhere in the 6-tile
+        // home ring while a war is on cost **half the empire's offensive output**
+        // — ATTACK 22 -> 11 and RANGE_ATTACK 89 -> 42 over the run — because
+        // something hostile is visible in that ring on most turns, so the recall
+        // never releases. Holding the city tile is the part that was actually
+        // losing games (four cities fell with 0/5 garrisoned); chasing raiders
+        // is what the campaign is already for.
+        if self.base.home_defense && !unwanted_settler_adjacent {
+            let belligerents = BasicAi::belligerents(g, pid);
+            let major_war = g
+                .players
+                .iter()
+                .any(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id));
+            let claimed = if major_war {
+                self.base.garrison_step(g, pid, uid, &belligerents)
+            } else {
+                self.base.home_defense_step(g, pid, uid, &belligerents)
+            };
+            if !belligerents.is_empty() && claimed {
+                return true;
+            }
+        }
         let enemies: Vec<usize> = g
             .players
             .iter()
@@ -16351,6 +16393,88 @@ mod tests {
     fn legacy_controller_keeps_battlefront_observation_off() {
         assert!(AdvancedAi::new().battlefront_observation);
         assert!(!AdvancedAi::legacy().battlefront_observation);
+    }
+
+    /// The regression this PR exists for. `enemies` in
+    /// `advanced_military_step_with_decline` drops barbarians and only an EMPTY
+    /// one reaches `base.military_step`, so with a major war live the whole
+    /// defence layer was unreachable — measured as 50 of 2131 replayed orders
+    /// changing and every one of them before the war started.
+    ///
+    /// Here the empire is at war with a major AND has a raider beside an empty
+    /// city. The garrison must still be claimed.
+    #[test]
+    fn home_defence_reaches_the_commander_during_a_major_war() {
+        let mut game = Game::new(3, 24, 16, 91_610, 90, 0);
+        for player in 0..3 {
+            let settler = game
+                .player_unit_ids(player)
+                .into_iter()
+                .find(|uid| game.units[uid].kind == "settler")
+                .expect("each player opens with a settler");
+            game.current = player;
+            game.apply(player, &Action::FoundCity { unit: settler }).unwrap();
+        }
+        for player in 0..3 {
+            for uid in game.player_unit_ids(player) {
+                game.remove_unit(uid);
+            }
+        }
+        game.current = 0;
+        // A live major war — the condition that used to switch defence off.
+        game.players[0].met.insert(1);
+        game.players[1].met.insert(0);
+        game.apply(0, &Action::DeclareWar { player: 1 }).unwrap();
+        assert!(
+            game.players
+                .iter()
+                .any(|p| p.id != 0 && p.alive && !p.is_barbarian && game.is_at_war(0, p.id)),
+            "precondition: a NON-barbarian enemy exists, so `enemies` is not empty"
+        );
+
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let beside = game
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| {
+                game.units_at(*pos).is_empty()
+                    && game.map.get(*pos).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("the capital has a passable neighbour");
+        game.spawn_test_unit("warrior", 1, beside);
+        let ours = game
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| {
+                *pos != beside
+                    && game.units_at(*pos).is_empty()
+                    && game.map.get(*pos).is_some_and(|tile| {
+                        game.rules.is_passable(tile) && !game.rules.is_water(tile)
+                    })
+            })
+            .expect("the capital has a second passable neighbour");
+        let soldier = game.spawn_test_unit("warrior", 0, ours);
+
+        let belligerents = BasicAi::belligerents(&game, 0);
+        assert!(
+            belligerents.contains(&1),
+            "the defence list must carry the major we are at war with"
+        );
+
+        let mut frozen = AdvancedAi::new();
+        assert!(
+            !frozen.base.home_defense_step(&mut game, 0, soldier, &belligerents),
+            "a tournament controller keeps its campaign"
+        );
+
+        let mut live = AdvancedAi::new();
+        live.enable_home_defense();
+        assert!(
+            live.base.home_defense_step(&mut game, 0, soldier, &belligerents),
+            "with a war on AND a raider at the gates, defence must still claim this unit"
+        );
     }
 
     /// The measured t174 purchase: five gold in the treasury, one turn after
