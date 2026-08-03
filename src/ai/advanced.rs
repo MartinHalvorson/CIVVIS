@@ -28981,3 +28981,166 @@ mod tests {
         println!();
     }
 }
+
+#[cfg(test)]
+mod amenity_probe {
+    use super::*;
+    use crate::ai::Ai;
+    use crate::game::{Action, Game};
+    use crate::setup::GameSpeed;
+
+    /// Paired A/B at the deployment shape: six players, Online speed, 250
+    /// turns, a Small world. Reports the Amenity band directly, not just score,
+    /// because that band is the mechanism under test.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn amenity_relief_ab_at_deployment_scale() {
+        let play = |seed: u64, treated: bool| {
+            let mut g = Game::new(6, 74, 46, seed, 250, 9);
+            g.game_speed = GameSpeed::Online;
+            let mut me = AdvancedAi::new();
+            me.amenity_relief = treated;
+            let mut others = AdvancedAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 {
+                    me.take_turn(&mut g, pid);
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            let cities = g.player_city_ids(0);
+            let science: f64 = cities.iter().map(|c| g.city_yields(*c).science).sum();
+            let unhappy = cities
+                .iter()
+                .filter(|c| g.city_amenity_surplus(&g.cities[c]) < 0)
+                .count();
+            let entertainment = cities
+                .iter()
+                .filter(|c| {
+                    g.cities[c].districts.keys().any(|d| {
+                        g.district_family(*d) == crate::name!("entertainment_complex")
+                    })
+                })
+                .count();
+            (cities.len(), unhappy, entertainment, science, g.score(0))
+        };
+        let (mut tc, mut cc, mut tu, mut cu, mut te, mut ce) = (0, 0, 0, 0, 0, 0);
+        let (mut ts, mut cs, mut tsc, mut csc) = (0.0, 0.0, 0i64, 0i64);
+        for seed in 9_300..9_308u64 {
+            let t = play(seed, true);
+            let c = play(seed, false);
+            println!(
+                "seed {seed}: treated cities={} unhappy={} ent={} sci={:.1} score={} | control cities={} unhappy={} ent={} sci={:.1} score={}",
+                t.0, t.1, t.2, t.3, t.4, c.0, c.1, c.2, c.3, c.4
+            );
+            tc += t.0; cc += c.0; tu += t.1; cu += c.1; te += t.2; ce += c.2;
+            ts += t.3; cs += c.3; tsc += t.4 as i64; csc += c.4 as i64;
+        }
+        println!(
+            "TOTALS cities {tc} vs {cc} | unhappy {tu} vs {cu} | entertainment {te} vs {ce} | science {ts:.1} vs {cs:.1} | score {tsc} vs {csc}"
+        );
+    }
+}
+
+#[cfg(test)]
+mod amenity_diagnosis {
+    use super::*;
+    use crate::ai::Ai;
+    use crate::game::{Action, Game, Item};
+    use crate::setup::GameSpeed;
+
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn why_the_amenity_treatment_did_not_fire() {
+        for seed in [9_302u64, 9_307] {
+            let mut g = Game::new(6, 74, 46, seed, 250, 9);
+            g.game_speed = GameSpeed::Online;
+            let mut me = AdvancedAi::new();
+            me.amenity_relief = true;
+            let mut others = AdvancedAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 { me.take_turn(&mut g, pid); } else { others[pid].take_turn(&mut g, pid); }
+                if g.winner.is_none() && g.current == pid { let _ = g.apply(pid, &Action::EndTurn); }
+            }
+            let has_civic = g.players[0].civics.contains(&crate::name!("games_recreation"));
+            println!("--- seed {seed}: games_recreation={has_civic} turn={} ---", g.turn);
+            for cid in g.player_city_ids(0) {
+                let city = g.cities[&cid].clone();
+                let surplus = g.city_amenity_surplus(&city);
+                let sites = g.district_sites(cid, crate::name!("entertainment_complex"));
+                let legal = sites.first().map(|pos| {
+                    g.can_produce(0, cid, &Item::District {
+                        district: crate::name!("entertainment_complex"), pos: *pos })
+                });
+                let relief1 = me.amenity_relief_value(&g, &city, 1.0, GrandStrategy::Expansion);
+                let relief3 = me.amenity_relief_value(&g, &city, 3.0, GrandStrategy::Expansion);
+                println!(
+                    "  {:16} pop={:3} surplus={:+3} sites={} producible={:?} relief(+1)={:.0} relief(+3)={:.0}",
+                    city.name, city.pop, surplus, sites.len(), legal, relief1, relief3
+                );
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod production_routing_census {
+    use super::*;
+    use crate::ai::Ai;
+    use crate::game::{Action, Game};
+    use crate::setup::GameSpeed;
+
+    /// How often does the adaptive deployment agent actually reach
+    /// `advanced_production` — the function that holds `production_value`?
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn how_often_is_advanced_production_asked() {
+        let mut reached = 0usize;
+        let mut turns = 0usize;
+        let mut by_reason = std::collections::BTreeMap::<&str, usize>::new();
+        for seed in 9_400..9_404u64 {
+            let mut g = Game::new(6, 74, 46, seed, 250, 9);
+            g.game_speed = GameSpeed::Online;
+            let mut me = AdvancedAi::new();
+            let mut others = AdvancedAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 {
+                    // Recompute the exact gate `take_turn_inner` uses, before
+                    // the turn, from the same inputs.
+                    let target = me.active_victory_target(&g);
+                    me.take_turn(&mut g, pid);
+                    if let Some(plan) = me.plan.as_ref() {
+                        turns += 1;
+                        let dispatch = me.adaptive_expansion_dispatches(plan, target);
+                        let recovery = plan.strategy == GrandStrategy::Recovery;
+                        if recovery || target.is_some() || dispatch {
+                            reached += 1;
+                            *by_reason.entry(if target.is_some() {
+                                "victory_target"
+                            } else if recovery {
+                                "recovery"
+                            } else {
+                                "expansion_dispatch"
+                            }).or_default() += 1;
+                        }
+                    }
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+        }
+        println!(
+            "advanced_production reached on {reached}/{turns} planned turns ({:.1}%) reasons={by_reason:?}",
+            100.0 * reached as f64 / turns.max(1) as f64
+        );
+    }
+}
