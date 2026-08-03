@@ -431,6 +431,40 @@ def tail_of(path: Path, limit: int = 200) -> str:
     return ""
 
 
+def settings_mismatch(asked: dict, dealt: dict) -> dict:
+    """Which requested lobby settings the game did NOT deal.
+
+    ⚠⚠ THIS LIVED IN TWO PLACES AND THE TEST OWNED THE SECOND COPY. `main` built the
+    comparison inline and `test_civ6_civvis_climb` re-declared it "in the same
+    shape" — so adding `leader` to the shipped tuple left the test asserting on the
+    old one, green, and blind. Same failure as [[civvis-civ6-one-table-one-formatter]]:
+    a rule with two spellings drifts, and the copy that drifts is the one nobody
+    runs. One function, called by both.
+
+    `asked` is keyed by ledger field name, `dealt` by the `seat` event's own key,
+    because those two vocabularies genuinely differ (`map_size` vs `size`) and
+    pretending otherwise is how the wrong field gets compared.
+    """
+    return {
+        field: {"asked": want, "dealt": dealt.get(key)}
+        for field, key, want in (
+            ("difficulty", "difficulty", asked.get("difficulty")),
+            ("map_size", "size", asked.get("map_size")),
+            ("speed", "speed", asked.get("speed")),
+            # The picker is OCR over a DLC-dependent list and `civ6_play` refuses to
+            # start when it cannot verify the pick — but "refused to start" and
+            # "started as someone else" are different failures, and only this line
+            # can tell them apart after the fact.
+            ("leader", "leader", asked.get("leader")),
+        )
+        # A falsy `want` is a deliberate "deal me anything" (`--leader ""`), or a
+        # field this caller did not ask about. Neither can mismatch.
+        # ⚠ Absent is not wrong either: an export naming nothing must not be
+        # reported as the game having dealt the wrong rung.
+        if want and dealt.get(key) is not None and dealt.get(key) != want
+    }
+
+
 def outcome_of(tag: str) -> dict:
     """The run's own summary, MERGED with what its event stream says.
 
@@ -482,6 +516,13 @@ def outcome_of(tag: str) -> dict:
         "army": (last_turn or {}).get("army"),
         "met": (last_turn or {}).get("met"),
         "seat": seat,
+        # ⚠ The civ is the largest single covariate on a row and it was only ever
+        # reachable by digging into the nested `seat` blob, so no ledger query ever
+        # grouped by it. Promote both to columns: `civ`/`leader` are what Civ 6
+        # DEALT, and the caller records `leader_asked` beside them, so a row where
+        # the picker missed reads as a mismatch instead of as a clean sample.
+        "civ": (seat or {}).get("civ"),
+        "leader": (seat or {}).get("leader"),
         "victory": victory,
         # True means Civilization VI showed its end-of-game screen: the run
         # FINISHED. It says nothing about who won.
@@ -598,6 +639,33 @@ def main() -> int:
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
+    # ⚠⚠⚠ THE SEAT WAS RANDOM FOR 190 RUNS, AND NOTHING SAID SO.
+    #
+    # `civ6_play.py` has taken `--leader` (and verifies the pick off the rendered
+    # picker) for as long as this script has existed, and this script never passed
+    # it. A census of every `seat` event under `civvis-civ6-runs/control`:
+    #
+    #     190 runs, 49 distinct civilizations
+    #     Trajan   4 / 190  (2.1%)      Rome  5 / 190  (2.6%)
+    #     modal seat: Philip II of Spain, 8
+    #
+    # Two things were silently lost. The operator's standing brief is Rome and
+    # Trajan, and the ladder was answering a different question 97.9% of the time.
+    # And `civ6_brain.seat_civ` narrows `--strategy auto` by the civ Civ 6 DEALT —
+    # `--civ Rome` picks `g56-48` at a 0.510 bound where the overall fallback is
+    # `adv-religious` at 0.410 — so the narrowing that exists could almost never
+    # fire, because the league rates only four civs and the deal was rarely one.
+    #
+    # ⚠ The civ effect is large enough to swamp a code change ([[civvis-rating-and-fleet]]
+    # measured Rome at 37.7% of league wins against Sumeria's 14.6%), so 190 rows
+    # dealt 49 different civs are not one experiment; pinning the seat is what makes
+    # consecutive rows comparable at all. Rows recorded before this change carry a
+    # random seat and cannot be pooled with rows recorded after it.
+    #
+    # Pass `--leader ""` to restore the old random deal deliberately.
+    ap.add_argument("--leader", default="LEADER_TRAJAN",
+                    help="Firaxis leader type to select and verify on the picker; "
+                         "empty string takes whatever the lobby deals")
     ap.add_argument("--timeout", type=float, default=5400.0)
     # ⚠ The LAST resort, not the first. `civ6_play --frozen-seconds` (480s)
     # watches the same thing from inside its own loop and gets first refusal;
@@ -807,7 +875,9 @@ def main() -> int:
              "--orders-db", str(orders_db),
              "--difficulty", args.difficulty,
              "--map-size", args.map_size,
-             "--speed", args.speed,
+             "--speed", args.speed]
+            + (["--leader", args.leader] if args.leader else [])
+            + [
              "--max-turns", str(args.max_turns),
              "--timeout", str(args.timeout),
              "--lock-wait", "30",
@@ -870,6 +940,7 @@ def main() -> int:
         record["utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         record["victory_target"] = args.victory
         record["difficulty_asked"] = args.difficulty
+        record["leader_asked"] = args.leader or None
         record["code_rev"] = code_rev
 
         # ★★★★★ A ROW THAT WAS DEALT SOMETHING ELSE MUST SAY SO, WIN OR NOT.
@@ -894,16 +965,10 @@ def main() -> int:
         # ⚠ Recorded, NOT fatal. A game at the wrong rung is still a game, and the
         # data is still worth having; what it must not do is masquerade as the rung
         # that was asked for. `settings_dealt` is the field a reader can filter on.
-        dealt = (record.get("seat") or {})
-        mismatch = {
-            field: {"asked": asked, "dealt": dealt.get(key)}
-            for field, key, asked in (
-                ("difficulty", "difficulty", args.difficulty),
-                ("map_size", "size", args.map_size),
-                ("speed", "speed", args.speed),
-            )
-            if dealt.get(key) is not None and dealt.get(key) != asked
-        }
+        mismatch = settings_mismatch(
+            {"difficulty": args.difficulty, "map_size": args.map_size,
+             "speed": args.speed, "leader": args.leader},
+            record.get("seat") or {})
         if mismatch:
             record["settings_mismatch"] = mismatch
             for field, pair in mismatch.items():

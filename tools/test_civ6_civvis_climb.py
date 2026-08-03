@@ -406,25 +406,20 @@ class SettingsDealt(unittest.TestCase):
     which is why it has to be RECORDED rather than watched for.
     """
 
-    @staticmethod
-    def _mismatch(asked, dealt):
-        """The comparison the climb performs, in the same shape."""
-        return {
-            field: {"asked": a, "dealt": dealt.get(key)}
-            for field, key, a in (
-                ("difficulty", "difficulty", asked["difficulty"]),
-                ("map_size", "size", asked["map_size"]),
-                ("speed", "speed", asked["speed"]),
-            )
-            if dealt.get(key) is not None and dealt.get(key) != a
-        }
+    # ⚠ This used to be a local re-declaration "in the same shape" as the climb's
+    # inline comparison. It was a second copy of a rule, and a second copy of a rule
+    # is a test that goes green while the shipped one changes underneath it. Call
+    # the shipped function.
+    _mismatch = staticmethod(climb.settings_mismatch)
 
     ASKED = {"difficulty": "DIFFICULTY_SETTLER", "map_size": "MAPSIZE_SMALL",
-             "speed": "GAMESPEED_ONLINE"}
+             "speed": "GAMESPEED_ONLINE", "leader": "LEADER_TRAJAN"}
+
+    DEALT = {"difficulty": "DIFFICULTY_SETTLER", "size": "MAPSIZE_SMALL",
+             "speed": "GAMESPEED_ONLINE", "leader": "LEADER_TRAJAN"}
 
     def test_the_rung_the_game_actually_dealt_is_recorded(self):
-        dealt = {"difficulty": "DIFFICULTY_PRINCE", "size": "MAPSIZE_SMALL",
-                 "speed": "GAMESPEED_ONLINE"}
+        dealt = {**self.DEALT, "difficulty": "DIFFICULTY_PRINCE"}
         found = self._mismatch(self.ASKED, dealt)
         self.assertIn("difficulty", found)
         self.assertEqual(found["difficulty"]["dealt"], "DIFFICULTY_PRINCE")
@@ -432,9 +427,23 @@ class SettingsDealt(unittest.TestCase):
 
     def test_a_matching_game_records_nothing(self):
         """⚠ A field that always fires says nothing. Silence is the healthy case."""
-        dealt = {"difficulty": "DIFFICULTY_SETTLER", "size": "MAPSIZE_SMALL",
-                 "speed": "GAMESPEED_ONLINE"}
-        self.assertEqual(self._mismatch(self.ASKED, dealt), {})
+        self.assertEqual(self._mismatch(self.ASKED, self.DEALT), {})
+
+    def test_a_seat_dealt_the_wrong_leader_is_recorded(self):
+        """The 2026-08-03 census: 190 runs, Trajan 4 of them, and no row said so.
+
+        The picker verifies its own click, so this should never fire — which is
+        exactly the argument for recording it rather than trusting it.
+        """
+        found = self._mismatch(self.ASKED, {**self.DEALT, "leader": "LEADER_TOKUGAWA"})
+        self.assertEqual(found["leader"],
+                         {"asked": "LEADER_TRAJAN", "dealt": "LEADER_TOKUGAWA"})
+
+    def test_asking_for_no_leader_accepts_whatever_is_dealt(self):
+        """`--leader ""` is a deliberate random deal, not a field to police."""
+        asked = {**self.ASKED, "leader": ""}
+        self.assertEqual(self._mismatch(asked, {**self.DEALT, "leader": "LEADER_GORGO"}),
+                         {})
 
     def test_a_seat_that_could_not_be_read_is_not_a_mismatch(self):
         """⚠ Absent is not wrong. An old export naming nothing must not be
