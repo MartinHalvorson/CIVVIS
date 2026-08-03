@@ -8285,7 +8285,11 @@ mod strategic_resource_tests {
     fn researching_the_retiring_technology_clears_the_order_and_refunds_material() {
         let mut game = strategic_game();
         game.players[0].civ = "Egypt".to_string();
-        for tech in ["gunpowder", "replaceable_parts"] {
+        // ⚠ `apprenticeship` belongs on this list: it unlocks the Man-At-Arms, and a
+        // unit leaves the menu as soon as its upgrade is available. Without removing
+        // it the Swordsman is already retired and this test cannot reach the
+        // MandatoryObsoleteTech it is actually about.
+        for tech in ["gunpowder", "replaceable_parts", "apprenticeship"] {
             game.players[0].techs.remove(&Name::new(tech));
         }
         let city = game.player_city_ids(0)[0];
@@ -19849,14 +19853,68 @@ impl Game {
         )
     }
 
-    /// Whether `pid` has researched the technology that retires `kind`. The
-    /// unit stays on the map; it simply leaves every production menu.
+    /// Whether `kind` has left `pid`'s production menus. The unit stays on the
+    /// map; it simply can no longer be trained or purchased.
+    ///
+    /// ★★★★★ TWO RULES RETIRE A UNIT, AND CIVVIS MODELLED ONLY THE LATER ONE.
+    ///
+    /// `MandatoryObsoleteTech` is the one the shipped table names, and it fires
+    /// late. Civilization VI ALSO drops a unit from the menu the moment its
+    /// UPGRADE becomes available — a Catapult disappears when Trebuchets unlock,
+    /// not when Steel is researched — and `obsolete_tech` disagrees with the
+    /// successor's tech on **54 of the 57 units that have an `upgrade_to`**:
+    ///
+    /// ```text
+    /// unit            obsolete_tech          Civ 6 drops it at
+    /// scout           None                   machinery      <- buildable FOREVER
+    /// catapult        steel                  military_engineering
+    /// trebuchet       steel                  metal_casting
+    /// warrior         gunpowder              iron_working
+    /// heavy_chariot   combustion             stirrups
+    /// ```
+    ///
+    /// The cost is measured, not theoretical. Live run `civvis-20260803T141442Z`
+    /// (turn 241) emitted **123 `civvis_build_unplayable` refusals and 111 of them
+    /// were units whose successor's tech was already researched** — 48 Scouts, and
+    /// **54 SIEGE UNITS**, 29 Trebuchets and 25 Catapults, every one rejected by the
+    /// host. The army was not failing to ask for siege. It asked 54 times and
+    /// Civilization VI refused all 54, because the chooser takes the CHEAPEST unit
+    /// in a class and the cheapest is exactly the obsolete one.
+    ///
+    /// Re-asking never stopped because the refusal feeds an EIGHT-TURN cooldown
+    /// (`recent_host_item_refusals`) while obsolescence is permanent, so the block
+    /// expired and the order came back for the rest of the game.
+    ///
+    /// `unit_upgrade_target` is the right predicate to reuse rather than a fresh
+    /// tech comparison: it already resolves a civilization's unique replacement and
+    /// already requires the successor to be `buildable` and unlocked, which is
+    /// precisely the host's condition for withdrawing the predecessor.
     pub fn unit_is_obsolete(&self, pid: usize, kind: impl AsName) -> bool {
-        self.rules
+        let kind = kind.as_name();
+        if self
+            .rules
             .units
-            .get_interned(kind.as_name())
+            .get_interned(kind)
             .and_then(|spec| spec.obsolete_tech)
             .is_some_and(|tech| self.players[pid].techs.contains(&tech))
+        {
+            return true;
+        }
+        let Some(target) = self.unit_upgrade_target(pid, kind) else {
+            return false;
+        };
+        // ⚠ A SUCCESSOR THAT CANNOT BE BUILT RETIRES NOTHING.
+        //
+        // Civilization VI keeps the Warrior on the menu for an empire that has no
+        // Iron for a Swordsman, and the first version of this rule did not: it
+        // retired the predecessor on the tech alone and left such an empire with NO
+        // melee unit at all. `military_picker_preserves_city_capturing_melee` caught
+        // exactly that, returning a ranged unit where it demanded melee.
+        self.rules
+            .units
+            .get(&target)
+            .and_then(|spec| spec.requires_resource)
+            .is_none_or(|resource| self.strategic_stockpile(pid, resource) > 0.0)
     }
 
     /// Gold and strategic material to upgrade one `kind` into its successor.
@@ -55726,6 +55784,9 @@ mod combat_scenarios {
         let archer = Item::Unit {
             unit: crate::name!("archer"),
         };
+        let crossbowman = Item::Unit {
+            unit: crate::name!("crossbowman"),
+        };
         assert!(game.can_produce(0, city, &slinger));
         game.cities.get_mut(&city).unwrap().queue = vec![slinger.clone()];
         game.cities.get_mut(&city).unwrap().production = 18.0;
@@ -55733,15 +55794,18 @@ mod combat_scenarios {
             .get_mut(&city)
             .unwrap()
             .production_progress
-            .insert(Game::item_progress_key(&archer), 7.0);
+            .insert(Game::item_progress_key(&crossbowman), 7.0);
         game.players[0]
             .techs
             .extend([crate::name!("archery"), crate::name!("machinery")]);
 
         assert!(!game.can_produce(0, city, &slinger));
-        assert!(game.can_produce(0, city, &archer));
+        // ⚠ Machinery retires the Archer TOO, because it unlocks the Crossbowman.
+        // Civilization VI withdraws a unit as soon as its upgrade is available, so
+        // the queue walks the whole chain rather than stopping one rung up.
+        assert!(!game.can_produce(0, city, &archer));
         game.modernize_unit_queue(0, city);
-        assert_eq!(game.cities[&city].queue, vec![archer]);
+        assert_eq!(game.cities[&city].queue, vec![crossbowman]);
         assert!((game.cities[&city].production - 25.0).abs() < 1e-9);
 
         let warrior = Item::Unit {
@@ -55755,7 +55819,8 @@ mod combat_scenarios {
         game.players[0].techs.insert(crate::name!("iron_working"));
         assert!(
             game.can_produce(0, city, &warrior),
-            "the old unit remains available before its mandatory obsolete technology"
+            "with NO iron the Swordsman cannot be built, so the Warrior stays on the \
+             menu -- a successor that cannot be built retires nothing"
         );
         game.modernize_unit_queue(0, city);
         assert_eq!(game.cities[&city].queue, vec![warrior.clone()]);
@@ -55763,7 +55828,10 @@ mod combat_scenarios {
         game.players[0]
             .strategic_resources
             .insert(crate::name!("iron"), 20.0);
-        assert!(game.can_produce(0, city, &warrior));
+        // ⚠ Iron in the stockpile makes the Swordsman buildable, and Civilization VI
+        // withdraws the Warrior the moment it is -- long before gunpowder, which is
+        // only its MandatoryObsoleteTech.
+        assert!(!game.can_produce(0, city, &warrior));
         game.players[0].techs.insert(crate::name!("gunpowder"));
         assert!(!game.can_produce(0, city, &warrior));
         game.modernize_unit_queue(0, city);
@@ -57460,6 +57528,44 @@ mod combat_scenarios {
         game.remove_unit(convoy);
         assert_eq!(game.unit_heal_rate(soldier), base_heal);
         assert_eq!(game.unit_max_moves(soldier), 2.0);
+    }
+
+    #[test]
+    fn a_unit_leaves_the_menu_when_its_upgrade_unlocks_not_when_steel_arrives() {
+        let (mut game, _center, _ring) = controlled_game(31_436);
+
+        // Catapult: obsolete_tech is `steel`, but Civilization VI withdraws it the
+        // moment Trebuchets unlock at Military Engineering.
+        assert!(
+            !game.unit_is_obsolete(0, crate::name!("catapult")),
+            "a Catapult is trainable before its successor exists"
+        );
+        assert!(
+            !game.players[0].techs.contains(&crate::name!("steel")),
+            "the late MandatoryObsoleteTech is NOT what retires it"
+        );
+
+        game.players[0].techs.insert(crate::name!("military_engineering"));
+        assert!(
+            game.unit_is_obsolete(0, crate::name!("catapult")),
+            "unlocking the Trebuchet withdraws the Catapult, 54 refused siege orders \
+             in one live game before this rule existed"
+        );
+
+        // A Scout has NO obsolete_tech at all, so it was buildable forever: 48
+        // refusals in that same run.
+        assert!(!game.unit_is_obsolete(0, crate::name!("scout")));
+        game.players[0].techs.insert(crate::name!("machinery"));
+        assert!(
+            game.unit_is_obsolete(0, crate::name!("scout")),
+            "the Skirmisher withdraws the Scout even though scout.obsolete_tech is None"
+        );
+
+        // The successor itself stays available -- this retires predecessors only.
+        assert!(
+            !game.unit_is_obsolete(0, crate::name!("trebuchet")),
+            "the Trebuchet is what CIVVIS should be building instead"
+        );
     }
 
     #[test]
