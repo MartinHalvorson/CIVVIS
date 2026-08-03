@@ -468,8 +468,21 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// never calls; the working change is in
 /// `AdvancedAi::coordinated_tactical_step`. Both edits touch anchored source,
 /// so both moved this hash.
+///
+/// ⚠ And a third time on merging `origin/main`, which had re-pinned the same
+/// constant for the `tactical_strategy` branch documented below. Neither hash
+/// survives a merge of the two — the anchored source is now different from
+/// both — so the value here is the one the test computes over the merged tree.
+/// Both gating arguments still hold independently, which is what makes the
+/// re-pin a compatibility one rather than a ledger break.
+/// The tactical-role branch adds class assignments, projected return-fire,
+/// wall/support coordination, and cavalry action priority behind
+/// `BasicAi::tactical_strategy`. Both Basic constructors leave it `false`, and
+/// `AdvancedAi::promoted_policy_envoy` alone enables it for the production
+/// controller, so frozen Basic, configured, legacy and `advanced_v1` entrants
+/// retain their old branches. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb940_35d3_24b3_8cee;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3f7a_b902_62c6_e98b;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

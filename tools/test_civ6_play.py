@@ -563,5 +563,67 @@ class SetupRowReadbackTest(unittest.TestCase):
         self.assertEqual(set(rows), {"difficulty"})
 
 
+class EndGameScreenHoldTests(unittest.TestCase):
+    """The victory/defeat screen is the only screen that states the OUTCOME.
+
+    ⚠⚠ It had no clock of its own, so it took the general announcement clock —
+    which `civ6_civvis_climb` sets to 0.05s on purpose, so no popup sits on the map
+    the operator is comparing against CIVVIS. The result a whole run exists to
+    produce was on screen for a twentieth of a second.
+    """
+
+    def test_the_end_screen_hold_is_ten_seconds_by_default(self):
+        """Asserted on the shipped parser line, not on a copy of the number."""
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('"--end-game-seconds", type=float, default=10.0', source)
+
+    def test_the_hold_reaches_the_baked_mod_config(self):
+        """⚠ A flag the mod never receives is a flag that does nothing. `civ6_play`
+        bakes the config the Lua shim reads; the key has to be in it.
+
+        Built from a namespace that answers None for anything not named here, so
+        this stays about `EndGameSeconds` and does not become a second, drifting
+        copy of every unrelated setting `build_config` happens to read.
+        """
+        class Defaults(SimpleNamespace):
+            def __getattr__(self, name):    # only for attributes not set below
+                return None
+
+        config = civ6_play.build_config(
+            Defaults(tag="t", game_mode=[], end_game_seconds=10.0,
+                     difficulty="DIFFICULTY_SETTLER", map_size="MAPSIZE_SMALL",
+                     speed="GAMESPEED_ONLINE", map="Continents.lua",
+                     leader="LEADER_TRAJAN"))
+        self.assertEqual(config["EndGameSeconds"], 10.0)
+
+    def test_the_shim_gives_the_end_screen_its_own_clock(self):
+        """The far end of the wire, asserted on the Lua that actually runs.
+
+        ⚠ Order matters and is asserted: the era table can only SHORTEN a clock and
+        the dialogue rule takes a `math.min`, so an end-screen line placed after the
+        dialogue one would be clamped back to 0.25s and the hold would silently not
+        happen.
+        """
+        lua = (Path(__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAutoClose.lua").read_text()
+        self.assertIn("local END_SECONDS = tonumber(cfg.EndGameSeconds) or 10.0;", lua)
+        self.assertIn("local END_SCREENS = { EndGameMenu = true };", lua)
+        end_at = lua.index("if END_SCREENS[NAME] then")
+        era_at = lua.index("if ERA_SCREENS[NAME] then SECONDS = ERA_SECONDS; end")
+        dialogue_at = lua.index('if NAME == "DiplomacyActionView"')
+        self.assertLess(era_at, end_at, "the era clock must not overwrite the hold")
+        self.assertLess(end_at, dialogue_at,
+                        "a later math.min would clamp the hold back to 0.25s")
+
+    def test_end_screens_declared_after_name_exists(self):
+        """⚠ `ERA_SCREENS[nil]` reads as nil without complaint — that is exactly how
+        the era clock went a whole project unapplied. The lookup must sit below the
+        line that gives `NAME` a value."""
+        lua = (Path(__file__).resolve().parent / "civ6_control" / "mod"
+               / "CivvisControlAutoClose.lua").read_text()
+        self.assertLess(lua.index('local NAME = "unknown";'),
+                        lua.index("if END_SCREENS[NAME] then"))
+
+
 if __name__ == "__main__":
     unittest.main()

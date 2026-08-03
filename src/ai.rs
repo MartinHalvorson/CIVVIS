@@ -17,6 +17,23 @@ use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 /// stepping into a dangerous attack envelope.
 const FIRST_MOVE_SCORE_BONUS: f64 = 4.0;
 
+/// Assignment value for putting the right front-line class into its favorable
+/// matchup. The engine still resolves the real combat modifiers; this is the
+/// smaller commander's preference that stops two otherwise-comparable units
+/// from choosing one another's jobs.
+const TACTICAL_COUNTER_ASSIGNMENT: f64 = 12.0;
+
+/// Value of firing from outside the defender's current return-fire range.
+/// This is deliberately smaller than a kill or a class counter: safety breaks
+/// close choices without making a ranged unit ignore a decisive target.
+const SAFE_RANGED_FIRE: f64 = 10.0;
+
+/// Standing walls are the siege arm's job. Melee can still attack them, but
+/// it should wait for the ram/tower that makes the blow useful when possible.
+const SIEGE_WALL_ASSIGNMENT: f64 = 22.0;
+const SUPPORTED_WALL_ASSAULT: f64 = 16.0;
+const UNSUPPORTED_WALL_ASSAULT: f64 = 12.0;
+
 /// How many turns of a unit's recent whereabouts to keep. A livelock is not
 /// visible in one decision — every individual step looks like the best one
 /// available — so it can only be recognized from a unit's own recent past.
@@ -1423,6 +1440,14 @@ pub struct BasicAi {
     /// call sites are shared with the frozen `advanced_v1` anchor, whose
     /// recorded ladders must keep replaying move-for-move.
     recorded_tactical_step: bool,
+    /// Use explicit combined-arms roles when assigning attacks and movement:
+    /// the melee/anti-cavalry/cavalry counter cycle, safe ranged standoff,
+    /// siege against walls, compatible ram/tower escorts, and distinct light-
+    /// versus-heavy cavalry jobs.
+    ///
+    /// Off for the frozen Basic/`advanced_v1` tournament controls and enabled
+    /// by the production Advanced controller.
+    tactical_strategy: bool,
     w: Weights,
     book_pos: usize, // opening-book progress (capital builds played so far)
     /// Units that have withdrawn from combat stay in recovery until they are
@@ -1510,6 +1535,226 @@ impl BasicAi {
             "naval_carrier" => UnitDoctrine::Carrier,
             _ => UnitDoctrine::Assault,
         }
+    }
+
+    /// Innate class strength the rules engine applies against one opponent.
+    /// Keep tactical projections on the same counter cycle as combat itself.
+    pub(crate) fn class_matchup_strength(g: &Game, attacker: u32, defender: u32) -> f64 {
+        let unit = &g.units[&attacker];
+        let other_unit = &g.units[&defender];
+        let spec = &g.rules.units[unit.kind];
+        let other = &g.rules.units[other_unit.kind];
+        if spec.promotion_class == "anti_cavalry"
+            && (matches!(
+                other.promotion_class.as_str(),
+                "light_cavalry" | "heavy_cavalry"
+            ) || (other.cavalry && other.promotion_class == "ranged"))
+            && other_unit.kind != "war_cart"
+        {
+            10.0
+        } else if spec.promotion_class == "melee" && other.promotion_class == "anti_cavalry" {
+            5.0
+        } else {
+            0.0
+        }
+    }
+
+    fn wall_levels(g: &Game, cid: u32) -> usize {
+        let city = &g.cities[&cid];
+        city.buildings
+            .iter()
+            .filter(|building| !city.pillaged_buildings.contains(*building))
+            .filter(|building| g.rules.buildings[*building].outer_defense > 0)
+            .count()
+    }
+
+    fn siege_support_works_for_city(g: &Game, kind: &str, cid: u32) -> bool {
+        let city = &g.cities[&cid];
+        if g.players[city.owner].techs.contains(&crate::name!("steel")) {
+            return false;
+        }
+        match (kind, Self::wall_levels(g, cid)) {
+            ("battering_ram", 1) => true,
+            ("siege_tower", 1..=2) => true,
+            _ => false,
+        }
+    }
+
+    /// Rams and towers only empower the promotion classes the engine accepts.
+    /// Other support formations retain the ordinary any-military escort rule.
+    fn support_escort_compatible(&self, g: &Game, support: u32, escort: u32) -> bool {
+        let support_unit = &g.units[&support];
+        let escort_unit = &g.units[&escort];
+        let escort_spec = &g.rules.units[escort_unit.kind];
+        if escort_spec.class != "military" {
+            return false;
+        }
+        if !self.tactical_strategy
+            || !matches!(support_unit.kind.as_str(), "battering_ram" | "siege_tower")
+        {
+            return true;
+        }
+        matches!(escort_spec.promotion_class.as_str(), "melee" | "anti_cavalry")
+    }
+
+    fn active_breach_support(g: &Game, pid: usize, cid: u32, target: Pos) -> bool {
+        g.nbrs(target).into_iter().any(|position| {
+            g.units_at(position).into_iter().any(|support| {
+                let unit = &g.units[&support];
+                unit.owner == pid
+                    && matches!(unit.kind.as_str(), "battering_ram" | "siege_tower")
+                    && Self::siege_support_works_for_city(g, unit.kind.as_str(), cid)
+            })
+        })
+    }
+
+    /// Extra assignment value for the tactical job this action performs.
+    /// Damage, casualties and captures remain valued by the normal exchange or
+    /// exact forward model; this directs close choices to the correct role.
+    pub(crate) fn tactical_action_bonus(
+        &self,
+        g: &Game,
+        uid: u32,
+        target: Pos,
+        ranged: bool,
+    ) -> f64 {
+        self.tactical_action_bonus_from(g, uid, g.units[&uid].pos, target, ranged)
+    }
+
+    pub(crate) fn tactical_action_bonus_from(
+        &self,
+        g: &Game,
+        uid: u32,
+        from: Pos,
+        target: Pos,
+        ranged: bool,
+    ) -> f64 {
+        if !self.tactical_strategy {
+            return 0.0;
+        }
+        let attacker = &g.units[&uid];
+        let spec = &g.rules.units[attacker.kind];
+
+        if let Some(cid) = g.city_at(target).or_else(|| g.encampment_at(target)) {
+            let city = &g.cities[&cid];
+            let wall_hp = if g.city_at(target) == Some(cid) {
+                city.wall_hp
+            } else {
+                city.encampment_wall_hp
+            };
+            if wall_hp > 0 {
+                if spec.siege {
+                    return SIEGE_WALL_ASSIGNMENT;
+                }
+                if !ranged
+                    && matches!(spec.promotion_class.as_str(), "melee" | "anti_cavalry")
+                {
+                    return if Self::active_breach_support(g, attacker.owner, cid, target) {
+                        SUPPORTED_WALL_ASSAULT
+                    } else {
+                        -UNSUPPORTED_WALL_ASSAULT
+                    };
+                }
+            }
+            return 0.0;
+        }
+
+        let defender = g
+            .units_at(target)
+            .into_iter()
+            .filter(|other| {
+                let other = &g.units[other];
+                other.owner != attacker.owner
+                    && g.is_at_war(attacker.owner, other.owner)
+                    && g.rules.units[other.kind].class == "military"
+            })
+            .max_by(|left, right| {
+                let strength = |id: &u32| {
+                    let unit = &g.units[id];
+                    effective_strength(g.unit_strength(unit, true), unit.hp)
+                };
+                strength(left)
+                    .partial_cmp(&strength(right))
+                    .unwrap_or(Ordering::Equal)
+            });
+        let Some(defender) = defender else {
+            return 0.0;
+        };
+        let defender_spec = &g.rules.units[g.units[&defender].kind];
+        let favorable = match spec.promotion_class.as_str() {
+            "melee" => defender_spec.promotion_class == "anti_cavalry",
+            "anti_cavalry" => {
+                matches!(
+                    defender_spec.promotion_class.as_str(),
+                    "light_cavalry" | "heavy_cavalry"
+                ) && g.units[&defender].kind != "war_cart"
+            }
+            "light_cavalry" | "heavy_cavalry" => defender_spec.promotion_class == "melee",
+            _ => false,
+        };
+        let mut value = if favorable {
+            TACTICAL_COUNTER_ASSIGNMENT
+        } else {
+            0.0
+        };
+        if ranged {
+            let return_range = if defender_spec.has_ranged_attack() {
+                g.unit_attack_range(defender).max(1)
+            } else {
+                1
+            };
+            if g.wdist(from, target) > return_range {
+                value += SAFE_RANGED_FIRE;
+            }
+        }
+        value
+    }
+
+    /// Expected damage enemies could deliver after one approach step. Ranged
+    /// and siege units use this to prefer standoff tiles outside return reach.
+    pub(crate) fn projected_counter_damage(
+        &self,
+        g: &Game,
+        uid: u32,
+        tile: Pos,
+        hostile_units: &[u32],
+    ) -> f64 {
+        let defender = &g.units[&uid];
+        hostile_units
+            .iter()
+            .filter_map(|enemy| g.units.get(enemy).map(|unit| (*enemy, unit)))
+            .filter(|(_, enemy)| {
+                let spec = &g.rules.units[enemy.kind];
+                spec.class == "military"
+                    && (spec.is_melee_capable() || spec.has_ranged_attack())
+            })
+            .filter_map(|(enemy_id, enemy)| {
+                let enemy_spec = &g.rules.units[enemy.kind];
+                let ranged = enemy_spec.has_ranged_attack();
+                let attack_range = if ranged {
+                    g.unit_attack_range(enemy_id).max(1)
+                } else {
+                    1
+                };
+                // Price the enemy's next turn, when movement refreshes; its
+                // leftover points from the previous turn are irrelevant.
+                // Ordinary land units can take at least one approach step,
+                // while siege cannot move and fire without a promotion.
+                let approach = (!enemy_spec.siege) as i32;
+                (g.wdist(tile, enemy.pos) <= attack_range + approach).then(|| {
+                    let attack = if ranged {
+                        g.unit_ranged_attack_strength(enemy)
+                    } else {
+                        g.unit_strength(enemy, false)
+                    } + Self::class_matchup_strength(g, enemy_id, uid);
+                    let defense = g.unit_strength(defender, true)
+                        + Self::class_matchup_strength(g, uid, enemy_id);
+                    let attack = effective_strength(attack, enemy.hp);
+                    let defense = effective_strength(defense, defender.hp);
+                    30.0 * ((attack - defense) / 25.0).exp()
+                })
+            })
+            .sum()
     }
 
     pub(crate) fn city_is_coastal(g: &Game, cid: u32) -> bool {
@@ -1959,6 +2204,9 @@ impl BasicAi {
         let role = match doctrine {
             UnitDoctrine::Recon => 14.0,
             UnitDoctrine::Assault => -2.0,
+            // Light cavalry raids first and takes only favorable field trades;
+            // heavy cavalry remains Assault and presses attacks first.
+            UnitDoctrine::Mobile if self.tactical_strategy => 2.0,
             UnitDoctrine::Mobile => -5.0,
             UnitDoctrine::Ranged => 0.0,
             UnitDoctrine::Siege => 5.0,
@@ -2235,6 +2483,24 @@ impl BasicAi {
         }
     }
 
+    /// Heavy cavalry attacks first, but remains a strong fallback pillager.
+    /// Light cavalry reaches Pillage through `doctrine_action` before combat.
+    pub(crate) fn heavy_cavalry_pillage_action(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<Action> {
+        if !self.tactical_strategy
+            || g.rules.units[g.units[&uid].kind].promotion_class != "heavy_cavalry"
+        {
+            return None;
+        }
+        g.legal_doctrine_actions(pid, uid)
+            .into_iter()
+            .find(|action| matches!(action, Action::Pillage { unit } if *unit == uid))
+    }
+
     pub fn new() -> BasicAi {
         BasicAi {
             minor: false,
@@ -2250,6 +2516,7 @@ impl BasicAi {
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            tactical_strategy: false,
             w: Weights::default(),
             book_pos: 0,
             recovering_units: HashSet::new(),
@@ -2278,6 +2545,7 @@ impl BasicAi {
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
+            tactical_strategy: false,
             w,
             book_pos: 0,
             recovering_units: HashSet::new(),
@@ -5804,10 +6072,12 @@ impl BasicAi {
                     let b_spec = &game.rules.units[b.kind];
                     let support = (a_spec.class == "support"
                         && a.kind != "military_engineer"
-                        && b_spec.class == "military")
+                        && b_spec.class == "military"
+                        && self.support_escort_compatible(game, a.id, b.id))
                         || (b_spec.class == "support"
                             && b.kind != "military_engineer"
-                            && a_spec.class == "military");
+                            && a_spec.class == "military"
+                            && self.support_escort_compatible(game, b.id, a.id));
                     let naval_settler = (a_spec.domain.as_deref() == Some("sea")
                         && b.kind == "settler")
                         || (b_spec.domain.as_deref() == Some("sea") && a.kind == "settler");
@@ -5824,8 +6094,11 @@ impl BasicAi {
                         let a = &g.rules.units[g.units[unit].kind];
                         let b = &g.rules.units[g.units[with].kind];
                         let support = (a.class == "support"
-                            && g.units[unit].kind != "military_engineer")
-                            || (b.class == "support" && g.units[with].kind != "military_engineer");
+                            && g.units[unit].kind != "military_engineer"
+                            && self.support_escort_compatible(g, *unit, *with))
+                            || (b.class == "support"
+                                && g.units[with].kind != "military_engineer"
+                                && self.support_escort_compatible(g, *with, *unit));
                         let naval_settler = (a.domain.as_deref() == Some("sea")
                             && g.units[with].kind == "settler")
                             || (b.domain.as_deref() == Some("sea")
@@ -5886,6 +6159,15 @@ impl BasicAi {
             UnitDoctrine::Support | UnitDoctrine::Carrier => (2, 0.65, 1.40),
             UnitDoctrine::AirDefense | UnitDoctrine::AirStrike => (attack_range.max(1), 1.0, 1.0),
         };
+        let hostile_units: Vec<u32> = if self.tactical_strategy {
+            g.units
+                .values()
+                .filter(|enemy| enemy_ids.contains(&enemy.owner))
+                .map(|enemy| enemy.id)
+                .collect()
+        } else {
+            Vec::new()
+        };
         let score = |g: &Game, tile: Pos| -> f64 {
             let depth_error = (g.wdist(tile, target) - preferred_range).abs();
             let mut s = -3.0 * progress * depth_error as f64;
@@ -5898,7 +6180,7 @@ impl BasicAi {
                     }
                     if o.owner == pid && oid != uid {
                         adjacent_support += 1;
-                    } else if enemy_ids.contains(&o.owner) {
+                    } else if !self.tactical_strategy && enemy_ids.contains(&o.owner) {
                         let att = effective_strength(g.unit_strength(o, false), o.hp);
                         s -= self.w.mv_threat
                             * threat_caution
@@ -5906,6 +6188,11 @@ impl BasicAi {
                             * ((att - my_def) / 25.0).exp();
                     }
                 }
+            }
+            if self.tactical_strategy {
+                s -= self.w.mv_threat
+                    * threat_caution
+                    * self.projected_counter_damage(g, uid, tile, &hostile_units);
             }
             // A pair of neighbors is enough to hold a coherent line. Giving
             // every extra adjacent unit the full bonus makes dense armies
@@ -6467,29 +6754,42 @@ impl BasicAi {
             .values()
             .filter(|c| c.owner != pid && g.is_at_war(pid, c.owner))
             .filter(|c| {
-                let walls = c
-                    .buildings
-                    .iter()
-                    .filter(|b| *b == "walls" || *b == "medieval_walls")
-                    .count();
-                walls > 0 && (support_kind == "siege_tower" || walls == 1)
+                if self.tactical_strategy {
+                    c.wall_hp > 0 && Self::siege_support_works_for_city(g, support_kind, c.id)
+                } else {
+                    let walls = c
+                        .buildings
+                        .iter()
+                        .filter(|b| *b == "walls" || *b == "medieval_walls")
+                        .count();
+                    walls > 0 && (support_kind == "siege_tower" || walls == 1)
+                }
             })
             .map(|c| c.pos)
             .collect();
         if targets.is_empty() {
             return false;
         }
+        if self.tactical_strategy && targets.iter().any(|target| g.wdist(upos, *target) <= 1) {
+            return false;
+        }
 
-        // Follow the melee unit closest to a compatible walled target. Newer
-        // support units normally act after the army, so they naturally step
-        // onto the tile their escort just vacated or currently occupies.
+        // Follow a melee/anti-cavalry unit: only those classes can use the aura.
         let escort = g
             .units
             .values()
             .filter(|u| u.owner == pid && u.id != uid)
             .filter(|u| {
-                let spec = &g.rules.units[u.kind];
-                spec.class == "military" && spec.ranged_strength <= 0.0 && !spec.siege
+                if self.tactical_strategy {
+                    self.support_escort_compatible(g, uid, u.id)
+                        && matches!(
+                            g.rules.units[u.kind].promotion_class.as_str(),
+                            "melee" | "anti_cavalry"
+                        )
+                } else {
+                    let spec = &g.rules.units[u.kind];
+                    spec.class == "military" && spec.ranged_strength <= 0.0 && !spec.siege
+                }
             })
             .min_by_key(|u| {
                 let front = targets.iter().map(|t| g.wdist(u.pos, *t)).min().unwrap();
@@ -7855,6 +8155,7 @@ impl BasicAi {
                     } else {
                         self.exchange_score(g, uid, pos, ranged)
                             - self.attack_threshold(g, uid, pos)
+                            + self.tactical_action_bonus(g, uid, pos, ranged)
                             + if capture { 500.0 } else { 0.0 }
                     };
                     if best
@@ -7870,6 +8171,11 @@ impl BasicAi {
             }
             if let Some((utility, _, action)) = best {
                 if utility > 0.0 && g.apply(pid, &action).is_ok() {
+                    return true;
+                }
+            }
+            if let Some(action) = self.heavy_cavalry_pillage_action(g, pid, uid) {
+                if g.apply(pid, &action).is_ok() {
                     return true;
                 }
             }
@@ -10964,6 +11270,217 @@ mod tests {
     }
 
     #[test]
+    fn tactical_assignment_forms_the_melee_anti_cavalry_cavalry_cycle() {
+        fn chosen_target(
+            seed: u64,
+            attacker_kind: &str,
+            favored_kind: &str,
+            other_kind: &str,
+        ) -> (Pos, Pos) {
+            let mut g = Game::new_full(2, 24, 16, seed, 30, 0, false);
+            for unit in g.units.keys().copied().collect::<Vec<_>>() {
+                g.remove_unit(unit);
+            }
+            g.at_war.insert((0, 1));
+            let (origin, targets) = g
+                .map
+                .tiles
+                .iter()
+                .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                .find_map(|(origin, _)| {
+                    let targets: Vec<Pos> = g
+                        .nbrs(*origin)
+                        .into_iter()
+                        .filter(|position| {
+                            g.map.get(*position).is_some_and(|tile| {
+                                g.rules.is_passable(tile) && !g.rules.is_water(tile)
+                            })
+                        })
+                        .take(2)
+                        .collect();
+                    (targets.len() == 2).then_some((*origin, targets))
+                })
+                .expect("test map has a two-target tactical ring");
+            let attacker = g.spawn_test_unit(attacker_kind, 0, origin);
+            let favored = g.spawn_test_unit(favored_kind, 1, targets[0]);
+            let other = g.spawn_test_unit(other_kind, 1, targets[1]);
+            g.units.get_mut(&favored).unwrap().hp = 1;
+            g.units.get_mut(&other).unwrap().hp = 1;
+
+            let mut ai = BasicAi::new();
+            ai.tactical_strategy = true;
+            assert!(ai.military_step(&mut g, 0, attacker));
+            let chosen = match g.log.last() {
+                Some((0, Action::Attack { target, .. })) => *target,
+                action => panic!("expected a class-assigned melee attack, got {action:?}"),
+            };
+            (chosen, targets[0])
+        }
+
+        for result in [
+            chosen_target(37_101, "swordsman", "spearman", "warrior"),
+            chosen_target(37_102, "spearman", "horseman", "warrior"),
+            chosen_target(37_103, "heavy_chariot", "warrior", "horseman"),
+        ] {
+            assert_eq!(result.0, result.1);
+        }
+    }
+
+    #[test]
+    fn ranged_standoff_prices_move_and_attack_return_fire() {
+        let mut g = Game::new_full(2, 24, 16, 37_104, 30, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        g.at_war.insert((0, 1));
+        let enemy_pos = *g
+            .map
+            .tiles
+            .iter()
+            .find(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            .map(|(position, _)| position)
+            .unwrap();
+        let exposed = g
+            .wdisk(enemy_pos, 2)
+            .into_iter()
+            .find(|position| g.wdist(*position, enemy_pos) == 2)
+            .unwrap();
+        let safe = g
+            .wdisk(enemy_pos, 3)
+            .into_iter()
+            .find(|position| g.wdist(*position, enemy_pos) == 3)
+            .unwrap();
+        let archer = g.spawn_test_unit("archer", 0, safe);
+        let warrior = g.spawn_test_unit("warrior", 1, enemy_pos);
+        g.units.get_mut(&warrior).unwrap().moves_left = 0.0;
+        let mut ai = BasicAi::new();
+        ai.tactical_strategy = true;
+
+        assert!(ai.projected_counter_damage(&g, archer, exposed, &[warrior]) > 0.0);
+        assert_eq!(ai.projected_counter_damage(&g, archer, safe, &[warrior]), 0.0);
+        assert_eq!(
+            ai.tactical_action_bonus_from(&g, archer, exposed, enemy_pos, true),
+            SAFE_RANGED_FIRE,
+            "a range-two shot is outside a melee defender's direct return fire"
+        );
+    }
+
+    #[test]
+    fn siege_and_compatible_support_own_standing_walls() {
+        let (mut g, _, enemy) = walled_war_game(37_105);
+        let target = g.cities[&enemy].pos;
+        g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
+        let melee = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| g.rules.units[g.units[unit].kind].promotion_class == "melee")
+            .unwrap();
+        let open: Vec<Pos> = g
+            .nbrs(target)
+            .into_iter()
+            .filter(|position| g.units_at(*position).is_empty())
+            .take(3)
+            .collect();
+        assert_eq!(open.len(), 3);
+        let siege = g.spawn_test_unit("catapult", 0, open[0]);
+        let cavalry = g.spawn_test_unit("heavy_chariot", 0, open[1]);
+        let mut ai = BasicAi::new();
+        ai.tactical_strategy = true;
+
+        assert_eq!(ai.tactical_action_bonus(&g, siege, target, true), SIEGE_WALL_ASSIGNMENT);
+        assert_eq!(
+            ai.tactical_action_bonus(&g, melee, target, false),
+            -UNSUPPORTED_WALL_ASSAULT
+        );
+        let ram = g.spawn_test_unit("battering_ram", 0, open[2]);
+        assert_eq!(
+            ai.tactical_action_bonus(&g, melee, target, false),
+            SUPPORTED_WALL_ASSAULT
+        );
+        assert_eq!(
+            ai.tactical_action_bonus(&g, cavalry, target, false),
+            0.0,
+            "cavalry cannot use a ram or tower in the combat rules"
+        );
+
+        g.cities
+            .get_mut(&enemy)
+            .unwrap()
+            .buildings
+            .push(crate::name!("medieval_walls"));
+        assert_eq!(
+            ai.tactical_action_bonus(&g, melee, target, false),
+            -UNSUPPORTED_WALL_ASSAULT,
+            "a ram is obsolete against Medieval Walls"
+        );
+        g.remove_unit(ram);
+        g.spawn_test_unit("siege_tower", 0, open[2]);
+        assert_eq!(
+            ai.tactical_action_bonus(&g, melee, target, false),
+            SUPPORTED_WALL_ASSAULT
+        );
+    }
+
+    #[test]
+    fn light_cavalry_raids_first_while_heavy_cavalry_attacks_first() {
+        let mut g = Game::new_full(2, 24, 16, 37_106, 30, 0, false);
+        for unit in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(unit);
+        }
+        g.at_war.insert((0, 1));
+        let (heavy_position, enemy_position, light_position) = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            .find_map(|(position, _)| {
+                let neighbors: Vec<Pos> = g
+                    .nbrs(*position)
+                    .into_iter()
+                    .filter(|neighbor| {
+                        g.map.get(*neighbor).is_some_and(|tile| {
+                            g.rules.is_passable(tile) && !g.rules.is_water(tile)
+                        })
+                    })
+                    .take(2)
+                    .collect();
+                (neighbors.len() == 2).then_some((*position, neighbors[0], neighbors[1]))
+            })
+            .expect("test map needs two open neighbors");
+        let light = g.spawn_test_unit("horseman", 0, light_position);
+        let heavy = g.spawn_test_unit("heavy_chariot", 0, heavy_position);
+        let enemy = g.spawn_test_unit("warrior", 1, enemy_position);
+        g.units.get_mut(&enemy).unwrap().hp = 1;
+        for position in [light_position, heavy_position] {
+            g.map.tiles.get_mut(&position).unwrap().improvement =
+                Some(crate::name!("barbarian_camp"));
+        }
+        let mut ai = BasicAi::new();
+        ai.tactical_strategy = true;
+
+        assert!(matches!(
+            ai.doctrine_action(&g, 0, light),
+            Some(Action::Pillage { unit }) if unit == light
+        ));
+        assert_eq!(ai.doctrine_action(&g, 0, heavy), None);
+        assert!(matches!(
+            ai.heavy_cavalry_pillage_action(&g, 0, heavy),
+            Some(Action::Pillage { unit }) if unit == heavy
+        ));
+        assert!(ai.military_step(&mut g, 0, heavy));
+        assert!(matches!(
+            g.log.last(),
+            Some((0, Action::Attack { unit, target }))
+                if *unit == heavy && *target == enemy_position
+        ));
+        assert_eq!(
+            g.map.tiles[&heavy_position].improvement.as_deref(),
+            Some("barbarian_camp"),
+            "heavy cavalry should leave pillaging until after an attack opportunity"
+        );
+    }
+
+    #[test]
     fn scout_explores_while_strong_assault_unit_attacks() {
         let mut g = Game::new_full(2, 24, 16, 38, 30, 0, false);
         g.at_war.insert((0, 1));
@@ -12055,7 +12572,8 @@ mod tests {
 
     #[test]
     fn siege_support_catches_up_and_stacks_with_melee_escort() {
-        let (mut g, home, _) = walled_war_game(34);
+        let (mut g, home, enemy) = walled_war_game(34);
+        g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
         g.players[0].techs.insert(crate::name!("masonry"));
         g.players[0].gold = 1_000.0;
         g.apply(
@@ -12093,7 +12611,19 @@ mod tests {
         .unwrap();
         assert_ne!(g.units[&ram].pos, g.units[&warrior].pos);
 
-        assert!(BasicAi::new().siege_support_step(&mut g, 0, ram));
+        // A closer cavalry unit is a tempting but useless escort: the engine
+        // grants Ram/Tower effects only to melee and anti-cavalry classes.
+        let enemy_pos = g.cities[&enemy].pos;
+        let cavalry_pos = g
+            .nbrs(enemy_pos)
+            .into_iter()
+            .find(|position| g.units_at(*position).is_empty())
+            .unwrap();
+        g.spawn_test_unit("heavy_chariot", 0, cavalry_pos);
+
+        let mut ai = BasicAi::new();
+        ai.tactical_strategy = true;
+        assert!(ai.siege_support_step(&mut g, 0, ram));
         assert_eq!(g.units[&ram].pos, g.units[&warrior].pos);
     }
 

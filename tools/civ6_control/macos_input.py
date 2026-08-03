@@ -85,15 +85,31 @@ case "key":
     CGEvent(keyboardEventSource: source, virtualKey: code, keyDown: false)?
         .post(tap: .cghidEventTap)
 case "scroll":
-    guard args.count == 2 else { invalidArguments() }
-    CGEvent(
-        scrollWheelEvent2Source: source,
-        units: .line,
-        wheelCount: 1,
-        wheel1: Int32(integer(1)),
-        wheel2: 0,
-        wheel3: 0
-    )?.post(tap: .cghidEventTap)
+    // ⚠⚠⚠ PIXELS, NOT LINES — Civilization VI IGNORES LINE-UNIT SCROLL ENTIRELY.
+    //
+    // Measured 2026-08-03 against the Create Game leader picker, with the list
+    // open, the pointer inside it and Civ6_Exe_Child frontmost: `cliclick w:-30`,
+    // `w:-5`, `w:-1` and this helper's own line-unit event all moved the list by
+    // ZERO rows, repeatedly. The same helper in pixel units scrolls it. Real
+    // trackpad scrolling always worked, which is why nothing ever caught it.
+    //
+    // ⚠ The COUNT matters as much as the unit: one pixel event of -100 moves
+    // nothing, while two of -40 move a page. So the caller says how many events
+    // to post, and the magnitude of each stays small.
+    guard args.count == 2 || args.count == 3 else { invalidArguments() }
+    let pixels = Int32(integer(1))
+    let times = args.count == 3 ? max(1, integer(2)) : 1
+    for _ in 0..<times {
+        CGEvent(
+            scrollWheelEvent2Source: source,
+            units: .pixel,
+            wheelCount: 1,
+            wheel1: pixels,
+            wheel2: 0,
+            wheel3: 0
+        )?.post(tap: .cghidEventTap)
+        Thread.sleep(forTimeInterval: 0.02)
+    }
 default:
     invalidArguments()
 }
@@ -221,8 +237,29 @@ def press_key(name: str, *, check: bool = False):
     return _run_native(["key", str(key_codes[normalized])], check=check)
 
 
-def scroll(lines: int, *, check: bool = False):
-    """Scroll under the pointer by a signed number of wheel lines."""
-    if _cliclick():
-        return _run_cliclick([f"w:{lines}"], check=check)
-    return _run_native(["scroll", str(lines)], check=check)
+# One wheel notch, in pixels. Small on purpose: Civilization VI ignores a single
+# large pixel event and honours a burst of small ones, so the caller's notch count
+# is what does the scrolling and this only has to be big enough to register.
+WHEEL_PIXELS = 40
+
+
+def scroll(notches: int, *, check: bool = False):
+    """Scroll under the pointer by a signed number of wheel notches.
+
+    ⚠⚠⚠ NEVER cliclick, AND NEVER LINE UNITS. Civilization VI ignores line-unit
+    scroll events completely — measured against the Create Game leader picker with
+    the list open, the pointer inside it and the game frontmost, `cliclick w:-30`,
+    `w:-5` and `w:-1` each moved it by zero rows. Real trackpad scrolling always
+    worked, so the harness's own note ("thirteen -30 wheel ticks only reached
+    Harald") recorded a hand-scrolled list and the automated path never scrolled at
+    all. It cost the leader pin: `select_requested_leader` scrolled 100 times, never
+    left the letter A, and correctly refused to start a game as the wrong leader.
+
+    `cliclick` can only emit line units, so scrolling always takes the native
+    helper. Every other verb still prefers cliclick.
+    """
+    notches = int(notches)
+    if notches == 0:
+        return None
+    pixels = WHEEL_PIXELS if notches > 0 else -WHEEL_PIXELS
+    return _run_native(["scroll", str(pixels), str(abs(notches))], check=check)

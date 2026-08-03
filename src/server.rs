@@ -2944,6 +2944,10 @@ fn request_path(target: &str) -> &str {
     target.split_once('?').map_or(target, |(path, _)| path)
 }
 
+fn viewer_path(path: &str) -> bool {
+    matches!(path, "/" | "/index.html" | "/rust" | "/rust/")
+}
+
 /// One parameter out of a request target's query, or `None` if the request
 /// did not carry the key at all. A key present with an empty value reads as
 /// `Some("")`: the page announces itself as a viewer on its very first poll,
@@ -3493,6 +3497,11 @@ fn staged_next_game_params(base: &Params, request: &Value) -> Params {
 fn decorate(o: &mut Value, sh: &Shared) {
     let r = sh.restart_in.load(Ordering::Relaxed);
     if r != u64::MAX {
+        // `restart_in` remains the compact, backwards-compatible display
+        // value. The browser also needs the unrounded remainder so it can
+        // paint the seconds between these expensive full-state responses
+        // instead of using their one-second long-poll cadence as a clock.
+        o["restart_in_ms"] = json!(r);
         o["restart_in"] = json!(r.div_ceil(1000));
     }
     o["pace"] = json!(sh.pace_ms.load(Ordering::Relaxed));
@@ -3552,7 +3561,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
     let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
 
     match (method.as_str(), path.as_str()) {
-        ("GET", "/") | ("GET", "/index.html") => {
+        ("GET", path) if viewer_path(path) => {
             respond(stream, "200 OK", "text/html; charset=utf-8", &index_html());
         }
         ("GET", "/assets/feature-atlas.png") => {
@@ -4313,10 +4322,10 @@ mod tests {
         automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
         new_game_params, publishes_player_turn_frames, query_value, request_path, save_path,
         seat_delay_ms, spectator_frame, spectator_step_completes_frame, strategy_roster,
-        tile_mark, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session, Shared,
-        SpectatorFrame, EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
-        MAX_EXACT_JAVASCRIPT_INTEGER, RESULT_COUNTDOWN_MS, SAVE_DIR, STATE_LONG_POLL,
-        VIEWER_ACTIVE,
+        tile_mark, viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session,
+        Shared, SpectatorFrame, EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS,
+        EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, RESULT_COUNTDOWN_MS, SAVE_DIR,
+        STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
@@ -5447,13 +5456,19 @@ mod tests {
     }
 
     #[test]
-    fn viewer_marks_the_selected_revision_and_its_age() {
+    fn viewer_marks_the_selected_revision_and_its_compact_ages_beneath_the_minimap() {
         assert!(EMBEDDED_INDEX.contains("id=\"buildmark\""));
         assert!(EMBEDDED_INDEX.contains("function updateBuildMarker(st = state)"));
         assert!(EMBEDDED_INDEX.contains("st?.server_commit_time"));
         assert!(EMBEDDED_INDEX.contains("st?.server_built_at"));
         assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
+        assert!(EMBEDDED_INDEX.contains("return parts.join(\" \") || \"0m\""));
+        assert!(EMBEDDED_INDEX.contains("Commit is ${formatBuildAge(commitDate)} old"));
         assert!(EMBEDDED_INDEX.contains("Build is ${formatBuildAge(buildDate)} old"));
+        assert!(EMBEDDED_INDEX.contains(
+            "#buildmark {\n    /* The authored World minimap owns the lower-right corner at z-index 6."
+        ));
+        assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 5;\n    right:"));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -5517,6 +5532,15 @@ mod tests {
             json!(RESULT_COUNTDOWN_MS / 1_000),
             "a result was published without the ten seconds it is owed"
         );
+        let restart_in_ms = decided["restart_in_ms"]
+            .as_u64()
+            .expect("the page receives an unrounded remainder");
+        assert!(restart_in_ms > 0 && restart_in_ms <= RESULT_COUNTDOWN_MS);
+        assert_eq!(
+            restart_in_ms.div_ceil(1_000),
+            decided["restart_in"].as_u64().unwrap(),
+            "the precise and backwards-compatible countdowns describe one deadline"
+        );
 
         let played_on: Value = serde_json::from_str(
             &http_post(
@@ -5544,6 +5568,7 @@ mod tests {
             json!("until_next_victory")
         );
         assert!(played_on["restart_in"].is_null());
+        assert!(played_on["restart_in_ms"].is_null());
         assert!(played_on["turn_limit"].is_null(), "there is no new cap");
         assert_eq!(played_on["max_turns"], json!(3), "setup stays intact");
         assert_eq!(played_on["seed"], decided["seed"], "the same world");
@@ -5834,6 +5859,29 @@ mod tests {
             )),
             "the browser's finale countdown must be the server's countdown"
         );
+    }
+
+    /// A full spectator state intentionally waits for either the next frame or
+    /// a one-second cap. That transport cadence cannot also be the visible
+    /// clock: boundary jitter made 10 linger for two seconds and skipped other
+    /// numbers. The page paints from the precise server remainder between
+    /// snapshots, while duplicate or delayed replies can only shorten its
+    /// deadline.
+    #[test]
+    fn exhibition_countdown_paints_between_full_state_responses() {
+        let sync = EMBEDDED_INDEX
+            .split_once("function syncExhibitionCountdown(st) {")
+            .expect("exhibition countdown synchronizer")
+            .1
+            .split_once("\n}\n\nfor (const gesture")
+            .expect("end of exhibition countdown synchronizer")
+            .0;
+        assert!(sync.contains("Number(st.restart_in_ms)"));
+        assert!(sync.contains("Math.min(exhibitionCountdownDeadline, candidateDeadline)"));
+        assert!(sync.contains("setInterval(paintExhibitionCountdown, 100)"));
+        assert!(EMBEDDED_INDEX.contains("Math.ceil(milliseconds / 1000)"));
+        assert!(EMBEDDED_INDEX.contains("The next world is beginning"));
+        assert!(!EMBEDDED_INDEX.contains("countdownTime.textContent = `${st.restart_in}s`;"));
     }
 
     #[test]
@@ -6853,6 +6901,68 @@ mod tests {
                  the whole client script dies at that line"
             );
         }
+    }
+
+    /// Map search is deliberately a client-side read of the observation the
+    /// browser already owns. It must use exact sight rather than remembered
+    /// tiles, understand the named things that can occupy a tile, and paint
+    /// the same result on both supported map projections.
+    #[test]
+    fn browser_search_lights_every_matching_visible_tile() {
+        let dock = EMBEDDED_INDEX
+            .split_once("<div id=\"map-controls-dock\">")
+            .expect("map controls dock")
+            .1
+            .split_once("<div id=\"map-area-editor\"")
+            .expect("end of map controls dock")
+            .0;
+        let search_at = dock.find("id=\"map-search\"").expect("map search control");
+        let controls_at = dock.find("id=\"zoomctl\"").expect("map controls");
+        assert!(
+            search_at < controls_at,
+            "the search box should stand directly above the lower-left map controls"
+        );
+        assert!(dock.contains("id=\"map-search-input\" type=\"search\""));
+        assert!(dock.contains("aria-live=\"polite\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "#map-search {\n    position: absolute; z-index: 2; left: 0; bottom: calc(100% + 6px);"
+        ));
+
+        let matcher = EMBEDDED_INDEX
+            .split_once("function computeMapSearchMatches(st, query) {")
+            .expect("map search matcher")
+            .1
+            .split_once("\nfunction mapSearchMatches() {")
+            .expect("end of map search matcher")
+            .0;
+        assert!(matcher.contains("new Set((st.visible || []).map(key))"));
+        assert!(
+            !matcher.contains("turn_visible"),
+            "search must not reveal remembered tiles outside exact sight"
+        );
+        for field in [
+            "tile.terrain",
+            "tile.feature",
+            "tile.resource",
+            "tile.improvement",
+            "tile.district",
+            "tile.planned_district",
+            "tile.wonder",
+            "st.cities",
+            "st.units",
+            "st.camps",
+        ] {
+            assert!(matcher.contains(field), "map search ignores {field}");
+        }
+        assert!(matcher.contains("RULES?.districts?.[district]?.replaces"));
+        assert!(EMBEDDED_INDEX.contains("drawFlatMapSearchHighlights(tiles);"));
+        assert!(EMBEDDED_INDEX.contains("drawPlanetMapSearchHighlights(cells);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));\n  syncMapSearchStatus();"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const message = `${count} visible ${count === 1 ? \"tile\" : \"tiles\"}`;"
+        ));
     }
 
     /// Every lobby setting is answered before a game starts: each select
@@ -8602,6 +8712,24 @@ mod tests {
     }
 
     #[test]
+    fn unit_health_bars_only_label_damage() {
+        let renderer = EMBEDDED_INDEX
+            .split("function drawStrategicUnitHealth")
+            .nth(1)
+            .and_then(|tail| tail.split("// The Civ VI atlas cells").next())
+            .expect("strategic unit health renderer");
+        assert!(renderer.contains("Math.round(hp ?? 100)"));
+        assert!(renderer.contains("health >= 100"));
+        assert!(renderer.contains("cx.strokeText(String(health), x, by + bh / 2)"));
+        assert!(renderer.contains("cx.fillText(String(health), x, by + bh / 2)"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("drawStrategicUnitHealth(").count(),
+            3,
+            "the shared damage-only health renderer should serve the flat map and globe"
+        );
+    }
+
+    #[test]
     fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 500_000);
@@ -8902,6 +9030,14 @@ mod tests {
         assert_eq!(request_path("/?instance=9232"), "/");
         assert_eq!(request_path("/?instance=9232&game=17"), "/");
         assert_eq!(request_path("/state?instance=9232"), "/state");
+    }
+
+    #[test]
+    fn native_channel_routes_to_the_embedded_page() {
+        assert!(viewer_path("/rust"));
+        assert!(viewer_path("/rust/"));
+        assert!(viewer_path(request_path("/rust?instance=9232&game=17")));
+        assert!(!viewer_path("/wasm"));
     }
 
     #[test]

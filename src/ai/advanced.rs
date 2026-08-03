@@ -1711,6 +1711,7 @@ impl AdvancedAi {
         // make sure the larger empire can actually hold what it founds.
         ai.base.siege_muster = true;
         ai.base.home_defense = true;
+        ai.base.tactical_strategy = true;
         ai.bounded_recovery = true;
         ai
     }
@@ -1932,6 +1933,14 @@ impl AdvancedAi {
     /// disabled so their recorded ladders replay move-for-move.
     pub fn enable_recorded_tactical_step(&mut self) {
         self.base.recorded_tactical_step = true;
+    }
+
+    /// Enable explicit battlefield roles: the land-unit counter cycle, safe
+    /// ranged standoff, wall-focused siege/support, and cavalry job priority.
+    /// Production Advanced enables this at construction; the method exists for
+    /// focused evaluator controls.
+    pub fn enable_tactical_strategy(&mut self) {
+        self.base.tactical_strategy = true;
     }
 
     /// Stop the defensive-war posture from becoming permanent. Native
@@ -14550,6 +14559,21 @@ impl AdvancedAi {
             })
             .map(|other| g.wdist(g.units[other].pos, target))
             .min();
+        let projected_hostiles: Vec<u32> = if self.base.tactical_strategy {
+            g.units
+                .values()
+                .filter(|other| {
+                    enemies.contains(&other.owner)
+                        && visible.as_ref().is_none_or(|visible| {
+                            g.sees(visible, other.pos)
+                                && self.battlefront_unit_visible(g, pid, other.id)
+                        })
+                })
+                .map(|other| other.id)
+                .collect()
+        } else {
+            Vec::new()
+        };
         let score = |g: &Game, tile: Pos| -> f64 {
             let objective_distance = g.wdist(tile, target);
             let (progress, cohesion, threat_caution, spacing) = match role {
@@ -14574,37 +14598,50 @@ impl AdvancedAi {
                     value += self.base.w.mv_support;
                 }
             }
-            for enemy in g
-                .units
-                .values()
-                .filter(|other| {
-                    enemies.contains(&other.owner)
-                        && visible.as_ref().is_none_or(|visible| {
-                            g.sees(visible, other.pos)
-                                && self.battlefront_unit_visible(g, pid, other.id)
-                        })
-                })
-            {
-                let enemy_spec = &g.rules.units[enemy.kind];
-                if enemy_spec.class != "military"
-                    || (!enemy_spec.is_melee_capable() && !enemy_spec.has_ranged_attack())
+            if self.base.tactical_strategy {
+                value -= self.base.w.mv_threat
+                    * threat_caution
+                    * self.base.projected_counter_damage(
+                        g,
+                        uid,
+                        tile,
+                        &projected_hostiles,
+                    );
+            } else {
+                for enemy in g
+                    .units
+                    .values()
+                    .filter(|other| {
+                        enemies.contains(&other.owner)
+                            && visible.as_ref().is_none_or(|visible| {
+                                g.sees(visible, other.pos)
+                                    && self.battlefront_unit_visible(g, pid, other.id)
+                            })
+                    })
                 {
-                    continue;
-                }
-                let radius = if enemy_spec.has_ranged_attack() {
-                    g.unit_attack_range(enemy.id).max(1)
-                } else {
-                    1
-                };
-                if g.wdist(tile, enemy.pos) <= radius {
-                    let attack =
-                        crate::game::effective_strength(g.unit_strength(enemy, false), enemy.hp);
-                    let defense =
-                        crate::game::effective_strength(g.unit_strength(unit, true), unit.hp);
-                    value -= self.base.w.mv_threat
-                        * threat_caution
-                        * 30.0
-                        * ((attack - defense) / 25.0).exp();
+                    let enemy_spec = &g.rules.units[enemy.kind];
+                    if enemy_spec.class != "military"
+                        || (!enemy_spec.is_melee_capable() && !enemy_spec.has_ranged_attack())
+                    {
+                        continue;
+                    }
+                    let radius = if enemy_spec.has_ranged_attack() {
+                        g.unit_attack_range(enemy.id).max(1)
+                    } else {
+                        1
+                    };
+                    if g.wdist(tile, enemy.pos) <= radius {
+                        let attack = crate::game::effective_strength(
+                            g.unit_strength(enemy, false),
+                            enemy.hp,
+                        );
+                        let defense =
+                            crate::game::effective_strength(g.unit_strength(unit, true), unit.hp);
+                        value -= self.base.w.mv_threat
+                            * threat_caution
+                            * 30.0
+                            * ((attack - defense) / 25.0).exp();
+                    }
                 }
             }
             // Walking into the sea costs most of the unit; the score has no
@@ -15885,6 +15922,11 @@ impl AdvancedAi {
         {
             return true;
         }
+        if self.base.tactical_strategy
+            && matches!(unit.kind.as_str(), "battering_ram" | "siege_tower")
+        {
+            return self.base.siege_support_step(g, pid, uid);
+        }
         if matches!(doctrine, UnitDoctrine::AirDefense | UnitDoctrine::AirStrike) {
             let Some(action) = self.advanced_air_action(g, pid, uid, plan) else {
                 return false;
@@ -16062,7 +16104,9 @@ impl AdvancedAi {
             candidates.into_iter().zip(evaluations)
         {
             let threshold = self.base.attack_threshold(g, uid, pos);
-            let mut score = attack_value - threshold;
+            let ranged = matches!(&action, Action::Ranged { .. });
+            let mut score = attack_value - threshold
+                + self.base.tactical_action_bonus(g, uid, pos, ranged);
             if plan
                 .target_city
                 .is_some_and(|cid| g.cities.get(&cid).is_some_and(|c| c.pos == pos))
@@ -16163,6 +16207,12 @@ impl AdvancedAi {
                         caution {caution:.0}, reply {reply:.0} — {score:.0} \
                         under a margin of {required_margin:.0}, on {} health",
                        unit.hp; at);
+            }
+        }
+
+        if let Some(action) = self.base.heavy_cavalry_pillage_action(g, pid, uid) {
+            if g.apply(pid, &action).is_ok() {
+                return true;
             }
         }
 
@@ -16433,6 +16483,7 @@ impl AdvancedAi {
                     unit.owner == pid
                         && unit.linked_to.is_none()
                         && g.rules.units[unit.kind].class == "military"
+                        && self.base.support_escort_compatible(g, with, unit.id)
                 })
                 .max_by_key(|unit| {
                     let unit = &g.units[unit];
@@ -16827,7 +16878,7 @@ impl AdvancedAi {
                                     Some("goody_hut" | "meteor_goody" | "barbarian_camp")
                                 )
                             })
-                            || g.units_at(*to)
+                            || g.unit_ids_at(*to)
                                 .iter()
                                 .any(|other| g.units[other].owner != pid)
                     }
@@ -17719,6 +17770,36 @@ mod tests {
     fn legacy_controller_keeps_battlefront_observation_off() {
         assert!(AdvancedAi::new().battlefront_observation);
         assert!(!AdvancedAi::legacy().battlefront_observation);
+    }
+
+    #[test]
+    fn production_controller_enables_tactics_without_moving_the_legacy_anchor() {
+        assert!(AdvancedAi::new().base.tactical_strategy);
+        assert!(!AdvancedAi::legacy().base.tactical_strategy);
+    }
+
+    #[test]
+    fn advanced_formations_link_breach_support_to_a_compatible_escort() {
+        let mut game = Game::new_full(1, 20, 14, 71_001, 30, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        let position = *game
+            .map
+            .tiles
+            .iter()
+            .find(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+            .map(|(position, _)| position)
+            .unwrap();
+        let ram = game.spawn_test_unit("battering_ram", 0, position);
+        let cavalry = game.spawn_test_unit("heavy_chariot", 0, position);
+        let spear = game.spawn_test_unit("spearman", 0, position);
+
+        AdvancedAi::new().advanced_formations(&mut game, 0);
+
+        assert_eq!(game.units[&ram].linked_to, Some(spear));
+        assert_eq!(game.units[&spear].linked_to, Some(ram));
+        assert_eq!(game.units[&cavalry].linked_to, None);
     }
 
     /// The measured t174 purchase: five gold in the treasury, one turn after

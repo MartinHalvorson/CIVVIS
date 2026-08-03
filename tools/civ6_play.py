@@ -177,6 +177,16 @@ def build_config(args: argparse.Namespace) -> dict:
         # actively costs cities — one run went 4 cities to 3 while besieging.
         # So peace is a real strategy here, not a concession, and it is one flag.
         "MakeWar": args.make_war,
+        # ★ The largest measured headroom in the project and the one lane that
+        # is switched off. An oracle granted suzerainty wins 56.7% against
+        # 22.7%; headless the same agent places 18.1 envoys and holds 0.71
+        # suzerainties per seat against a live median of 1 and 0 over 36 runs.
+        # Live turn 231 of civvis-20260803T191900Z: 56 envoys held, 0
+        # suzerainties, and all four met city-states flying a rival's flag.
+        "EnvoyEnabled": args.envoys,
+        "EnvoyPlace": args.envoy_place,
+        "EnvoyLevy": args.envoy_levy,
+        "EnvoyConsider": args.envoy_consider,
         # How many units are aimed at the city plot each turn. Each MOVE_TO onto
         # an enemy city is an attack that bounces back unless it captures, so
         # this is attacks per turn — and a city heals between turns, so too few
@@ -288,6 +298,12 @@ def build_config(args: argparse.Namespace) -> dict:
         "SettlePlan": load_settle_plan(args.settle_plan),
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
+        # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
+        # it had no clock of its own — so it took the general announcement one,
+        # which the climb sets to 0.05s so popups never sit on the map the operator
+        # is comparing against CIVVIS. The result a whole run exists to produce was
+        # on screen for a twentieth of a second.
+        "EndGameSeconds": args.end_game_seconds,
         "StartDelayFrames": args.start_delay_frames,
         "TickFrames": args.tick_frames,
     }
@@ -342,9 +358,20 @@ SETUP_X = 0.500
 # changes the normalized coordinate (measured at 0.277 on 1474x949 and 0.294 on
 # the taller full-screen setup).
 LEADER_PICKER_OFFSET = 0.056
-LEADER_SCROLL_STEPS = 100
-LEADER_SCROLL_RESET = 10_000
-LEADER_SCROLL_AMOUNT = -30
+# ⚠ RETUNED 2026-08-03 when scrolling started working at all — see
+# `macos_input.scroll`, which was emitting line-unit events Civilization VI
+# ignores. These are wheel NOTCHES now, and they are measured, not guessed:
+#
+#   20 notches up      returns the list to `Random Leader` from anywhere in it
+#    2 notches down    advances ~10 rows against ~10 visible: page by page
+#    3 notches down    advances ~11 against 10 visible: it SKIPS rows
+#
+# At 2 the sweep saw 73 distinct rows in 6 steps — the whole installed roster —
+# and found Trajan. `STEPS` stays generous because overshooting the bottom costs
+# one wasted screenshot and undershooting costs the run.
+LEADER_SCROLL_STEPS = 40
+LEADER_SCROLL_RESET = 20
+LEADER_SCROLL_AMOUNT = -2
 
 # Each dropdown's closed box, as a fraction of window height.
 DROPDOWN = {
@@ -1808,6 +1835,8 @@ def _play(args: argparse.Namespace) -> int:
             "--strategy", args.civvis_strategy,
             "--seconds", str(max(21600.0, args.timeout + 3600.0)),
         ]
+        if args.civvis_war_from_plan:
+            command.append("--war-from-plan")
         brain = subprocess.Popen(
             command,
             cwd=REPO_ROOT,
@@ -1815,8 +1844,12 @@ def _play(args: argparse.Namespace) -> int:
             stderr=subprocess.STDOUT,
             text=True,
         )
+        # ⚠ Print the WHOLE configuration, not a chosen subset. `--war-from-plan`
+        # was carried by a second, undeclared brain for as long as it existed, and a
+        # banner naming only strategy and victory could not have shown that.
         print(f"CIVVIS decision worker pid={brain.pid} strategy={args.civvis_strategy} "
-              f"victory={args.civvis_victory}")
+              f"victory={args.civvis_victory} "
+              f"war_from_plan={args.civvis_war_from_plan} bin={binary}")
 
     def stop_brain() -> None:
         nonlocal brain, brain_log
@@ -2125,6 +2158,32 @@ def _play(args: argparse.Namespace) -> int:
     # board, while the old agreement checker compared only the two stale files
     # and reported success. Stop the process before publishing the summary so a
     # completed run has one unambiguous last frame.
+    # ⚠⚠⚠ HOLD THE FINAL SCREEN HERE, NOT IN THE MOD — THE MOD CANNOT DO IT.
+    #
+    # `CivvisControlAutoClose` gained an `EndGameSeconds` clock for `EndGameMenu` in
+    # #1041 and it is INERT. Measured across every run on this machine:
+    #
+    #     250 runs, 145 `autoclose_armed` for EndGameMenu, ZERO `autoclose`
+    #
+    # The shim never closes that screen, and the reason is structural: Civilization
+    # VI halts the Game Core when it shows the end-of-game screen, so the shim is
+    # ticking off a frame loop that has just stopped. A Lua clock cannot run there.
+    #
+    # ⚠ The same absent event is what `civ6_civvis_climb.outcome_of` keys
+    # `reached_end_screen` on, which is why that column has been `None` on all 250
+    # runs while claiming to record whether the game reached its end screen.
+    #
+    # So the thing that actually decides how long the operator sees the result is
+    # THIS gap — between `finished()` breaking the loop above and `launcher.stop()`
+    # killing the game below. Unheld it is a second or two.
+    #
+    # ⚠ Only when the game actually ENDED. A stall, a timeout, or a wrong-modes
+    # refusal has nothing on screen worth looking at, and holding there would add
+    # ten seconds to every failure in a batch.
+    if state["outcome"] and args.end_game_seconds > 0:
+        print(f"holding the final screen for {args.end_game_seconds:.0f}s",
+              flush=True)
+        time.sleep(args.end_game_seconds)
     game_stopped = launcher.stop()
     stop_brain()
     if not game_stopped:
@@ -2242,6 +2301,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--explore-until-turn", type=int, default=12)
     ap.add_argument("--make-war", dest="make_war", action="store_true", default=True)
     ap.add_argument("--no-war", dest="make_war", action="store_false")
+    # The envoy lane. OFF by default because `chooseEnvoy` is blamed for three
+    # game-core SIGSEGVs (3-for-3 against 0-for-2 on the same seed) and the fix
+    # for the handle defect behind them is a hypothesis, not a verified result.
+    # Until an isolation batch clears it, the known-stable skip stands.
+    #
+    # It is exposed here because the Lua comment asks for exactly this
+    # experiment -- "a CONFIG change, not a code change: place-only, then
+    # consider-only, same seed" -- and there was no way to run it without
+    # hand-editing the mod. `EnvoyPlace`/`EnvoyLevy`/`EnvoyConsider` switch the
+    # three mutations independently, so one variable moves at a time.
+    ap.add_argument("--envoys", dest="envoys", action="store_true", default=False)
+    ap.add_argument("--no-envoys", dest="envoys", action="store_false")
+    ap.add_argument("--envoy-place", dest="envoy_place", action="store_true", default=True)
+    ap.add_argument("--no-envoy-place", dest="envoy_place", action="store_false")
+    ap.add_argument("--envoy-levy", dest="envoy_levy", action="store_true", default=True)
+    ap.add_argument("--no-envoy-levy", dest="envoy_levy", action="store_false")
+    ap.add_argument(
+        "--envoy-consider", dest="envoy_consider", action="store_true", default=True
+    )
+    ap.add_argument("--no-envoy-consider", dest="envoy_consider", action="store_false")
     ap.add_argument("--assault-width", type=int, default=2)
     ap.add_argument("--settlers-in-flight", type=int, default=1)
     # 1 = the shipped behaviour (always CIVVIS's top-ranked unoccupied site),
@@ -2304,6 +2383,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="victory objective passed to the supervised CIVVIS worker")
     ap.add_argument("--civvis-strategy", default="auto",
                     help="rated CIVVIS strategy name; auto selects the strongest bound")
+    # ⚠ This flag existed on `civ6_brain.py` and had no route here, so the only way
+    # to turn it on was to start a SECOND brain beside this one — which is exactly
+    # what `civ6_civvis_climb.py` did, and the two then raced over one orders.sqlite.
+    # A decider option with no path through its own launcher grows a second launcher.
+    ap.add_argument("--civvis-war-from-plan", action="store_true", default=False,
+                    help="declare on CIVVIS's plan target, since a board rebuilt "
+                         "each turn can never mature a casus belli")
     ap.add_argument("--governor-appoint", action="store_true", default=False,
                     help="spend governor titles (KNOWN to segfault the Game Core)")
     ap.add_argument("--governor-assign", action="store_true", default=False,
@@ -2324,6 +2410,13 @@ def main(argv: list[str] | None = None) -> int:
                          "it in a quadrant so CIVVIS can own the other half")
     ap.add_argument("--announcement-seconds", type=float, default=1.0)
     ap.add_argument("--era-announcement-seconds", type=float, default=0.5)
+    # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made
+    # fast because something is waiting behind it; nothing is waiting behind this
+    # one, because the game is over. The operator's standing brief asks for ten
+    # seconds on the final screen and this is the only knob that can grant it.
+    ap.add_argument("--end-game-seconds", type=float, default=10.0,
+                    help="how long the victory/defeat screen is held before the "
+                         "autoclose shim dismisses it")
     ap.add_argument("--survey", action="store_true", default=True)
     ap.add_argument("--no-survey", dest="survey", action="store_false")
     ap.add_argument("--survey-enums", action="store_true",

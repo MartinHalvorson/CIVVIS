@@ -3719,6 +3719,63 @@ mod tests {
     }
 
     #[test]
+    fn a_promotion_the_host_refused_is_not_offered_again() {
+        let dir = std::env::temp_dir().join(format!("civvis_promo_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("events.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"kind":"promotion_refused","unit":3342338,"promotion":"PROMOTION_TRANSLATOR","turn":40}"#,
+                "\n",
+                r#"{"kind":"promotion_refused","unit":3342338,"promotion":"PROMOTION_TRANSLATOR","turn":41}"#,
+                "\n",
+                r#"{"kind":"promotion_refused","unit":5111818,"promotion":"PROMOTION_ECHELON","turn":42}"#,
+                "\n",
+                r#"{"kind":"promotion_refused","unit":3342338,"promotion":"PROMOTION_CHAPLAIN","turn":90}"#,
+                "\n",
+            ),
+        )
+        .expect("write events");
+
+        let refused = refused_promotions_through(&path, Some(50));
+        assert_eq!(
+            refused.get(&3342338).map(|names| names.len()),
+            Some(1),
+            "the turn limit keeps the turn-90 Chaplain refusal out"
+        );
+        assert!(
+            refused[&3342338].contains("PROMOTION_TRANSLATOR"),
+            "the refused promotion is recorded under its Civilization VI unit id"
+        );
+        assert!(refused[&5111818].contains("PROMOTION_ECHELON"));
+
+        let later = refused_promotions_through(&path, Some(120));
+        assert_eq!(
+            later[&3342338].len(),
+            2,
+            "both distinct refusals are in hand once the game reaches turn 90"
+        );
+
+        let rules = crate::rules::Rules::embedded();
+        let unit_ids: std::collections::BTreeMap<u32, i64> =
+            [(7u32, 3342338i64), (9u32, 5111818i64)].into_iter().collect();
+        let blocked = blocked_promotions_from(&later, &unit_ids, &rules);
+        assert!(
+            blocked[&7].contains(&crate::name::Name::new("translator")),
+            "the host name PROMOTION_TRANSLATOR is TRANSLATED to the CIVVIS rule name, \
+             not interned raw — `available_promotions` compares CIVVIS names"
+        );
+        assert!(blocked[&9].contains(&crate::name::Name::new("echelon")));
+        assert!(
+            !blocked.contains_key(&11),
+            "a unit the host never refused carries no block"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_trader_is_given_no_movement_because_civ6_gives_it_none() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 20,
@@ -3978,6 +4035,218 @@ mod tests {
             !mirror.game.valid_improvements(0, grown).is_empty(),
             "owned ground must offer improvements; an unowned tile offers none, which \
              is how a stale border silently stops an empire developing"
+        );
+    }
+
+    /// ★★★★★ THE EXPORT IS THE HOST'S VISIBILITY ANSWER, AND WE RE-DERIVED IT.
+    ///
+    /// Civilization VI exports a rival's units only under CURRENT visibility, the
+    /// bridge plants exactly those, and then `player_vision_now` recomputes what
+    /// the seat can see from this engine's sight radii on a reconstructed map.
+    /// Where the two disagree, an enemy the host is showing us is invisible to the
+    /// agent deciding whether to shoot it — and `ForcePosture` only reaches
+    /// `Engage` through `g.sees(..) && battlefront_unit_visible(..)`.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z` across the 49 turns of
+    /// Kongo's war (t203-250), which cost Arpinum and Arretium and ended the game
+    /// at 479 against the winner's 1214: an enemy was in the export on 49 of 49
+    /// turns, our units stood adjacent to one on 95 unit-turns and within range 2
+    /// on 197. **37 attacks were issued** -- 81% of the shots the host was showing
+    /// the army were declined, and the force logged "still gathering" instead.
+    ///
+    /// ⚠ The second assertion is the one that keeps this honest. The inference
+    /// "a foreign unit is on the board, so we must be able to see it" is sound
+    /// ONLY for a mirrored board. Applied to an ordinary game it would hand every
+    /// AI perfect vision of the world, so the set must stay empty there.
+    #[test]
+    fn a_rival_the_host_exported_is_visible_however_sight_is_derived() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(15, 15, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 12,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        // Ten hexes away — far outside anything our own sight model reaches, and
+        // in the export only because Civilization VI can see it.
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: true,
+            units: vec![StateUnit {
+                id: 20,
+                kind: "UNIT_WARRIOR".to_string(),
+                x: 15,
+                y: 15,
+                hp: 100.0,
+                ..StateUnit::default()
+            }],
+            ..StateRival::default()
+        });
+
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let enemy = crate::hex::offset_to_axial(15, 15);
+        let empty = crate::hex::offset_to_axial(18, 18);
+
+        assert!(
+            mirror.game.units.values().any(|unit| unit.owner != 0 && unit.pos == enemy),
+            "the exported rival must reach the board at all — the rest of this test \
+             is about whether the agent is allowed to notice it"
+        );
+        assert!(
+            mirror.game.player_can_see(0, enemy),
+            "a unit Civilization VI exported is a unit Civilization VI is showing \
+             us; before this fix the engine re-derived sight on a reconstructed map \
+             and answered no, and the army declined 81% of its shots in a war it lost"
+        );
+        assert!(
+            !mirror.game.player_can_see(0, empty),
+            "and only that ground: far tiles with nothing exported on them must stay \
+             dark, or the repair is just omniscience wearing a fix's clothes"
+        );
+
+        // ★ The invariant that keeps ordinary play honest. A native game holds the
+        // FULL simulation, so foreign units on the board prove nothing about sight.
+        let native = crate::game::Game::new(4, 20, 20, 7, 500, 0);
+        assert!(
+            native.host_observed.is_empty(),
+            "an ordinary CIVVIS game must leave this set empty; reading the board the \
+             mirrored way there would give every AI player perfect vision"
+        );
+    }
+
+    /// ★★★★★ A RIVAL'S BORDER IS INVISIBLE PRECISELY BECAUSE IT IS IN THE WAY.
+    ///
+    /// `can_enter` reads `territory_owner_at`, which resolves a plot through
+    /// `owner_city -> cities -> owner`. A rival whose cities this seat has never
+    /// SEEN owns no city on the mirrored board, so their border resolves to `None`
+    /// and reads as free ground — and we cannot see the city that would fix that,
+    /// because the border is what stops us walking to it.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z` (Rome, SETTLER, small).
+    /// Scout `196608` reached offset (12,24) on turn 42 and was ordered
+    /// `MOVE_TO (11,24)` — one hex — on **74 separate turns** without ever moving.
+    /// (11,24) is exported `o: 4`: Kongo's, with no war and no open borders.
+    /// **81 of 670 `MOVE_TO` orders targeted foreign ground and all 81 were
+    /// counted `applied`** — a blocked move is a silent no-op, not a refusal, so
+    /// every turn read as healthy while the empire went blind. Exploration
+    /// flatlined at 283 of 3404 tiles, no rival city was seen in 96 snapshots,
+    /// `plan.target_city` stayed `None`, and forty turns of `strategy=conquest`
+    /// with `war_legal=9` produced no war at all.
+    ///
+    /// ⚠ Asserted through `can_move`, not against `closed_borders` directly, for
+    /// the same reason the border-growth test above asserts through
+    /// `valid_improvements`: the field only matters where it is consulted, and a
+    /// test on the field alone would pass on a set nothing reads.
+    #[test]
+    fn a_rival_border_whose_city_is_unseen_still_stops_the_unit() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 3), owned(4, 5, -1)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 12,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_SCOUT".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        // Met, nameable, and NOT at war — but not one of their cities is in sight,
+        // which is the whole condition. `cities` is deliberately empty.
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: false,
+            cities: Vec::new(),
+            ..StateRival::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let theirs = crate::hex::offset_to_axial(5, 6);
+        let neutral = crate::hex::offset_to_axial(4, 5);
+        let scout = *mirror
+            .game
+            .player_unit_ids(0)
+            .first()
+            .expect("the scout must reach the board");
+
+        assert!(
+            mirror.game.map.get(theirs).is_some_and(|t| t.owner_city.is_none()),
+            "their plot has no owning city on this board — that is the premise, not \
+             the defect: we have never seen the city that holds it"
+        );
+        assert!(
+            !mirror.game.can_move(scout, theirs),
+            "a rival's ground must stop the unit even when the mirror cannot name the \
+             city that owns it — before this fix the step was legal on CIVVIS's board, \
+             was ordered 74 times on one live run, and silently did nothing every time"
+        );
+        assert!(
+            mirror.game.can_move(scout, neutral),
+            "genuinely neutral ground must stay open, or the fix would seal the empire \
+             in instead of the border out"
+        );
+
+        // ★ And war must OPEN it again on the next sync. The seat is named, so its
+        // diplomacy is answerable even with its cities unseen; sealing ground we have
+        // just declared war on would lock our own invasion out — which is a worse
+        // failure than the one being repaired.
+        state.rivals[0].at_war = true;
+        state.turn = 13;
+        mirror.sync(&snapshot, &state, 0);
+        let scout = *mirror
+            .game
+            .player_unit_ids(0)
+            .first()
+            .expect("the scout survives the sync");
+        assert!(
+            !mirror.game.closed_borders.contains(&theirs),
+            "war opens the border: the seal is recomputed from the export every turn \
+             and must not outlive the peace that justified it"
+        );
+        assert!(
+            mirror.game.can_move(scout, theirs),
+            "once at war the unit must be able to cross — the repair must not cost us \
+             the invasion it exists to make possible"
         );
     }
 
@@ -5962,6 +6231,17 @@ pub struct StateSnapshot {
     /// Tiles Civilization VI refused to improve, AXIAL, from `improve_refused`.
     #[serde(default)]
     pub refused_improves: std::collections::BTreeSet<crate::Pos>,
+    /// Promotions the host refused, per Civilization VI unit id.
+    /// See `Game::blocked_promotions` for why this exists.
+    ///
+    /// ⚠ `#[serde(default)]` is LOAD-BEARING: this is merged in by
+    /// [`state_from_events`] and never appears in the host's `state` JSON, so
+    /// without it the whole `StateSnapshot` fails to deserialize and the board is
+    /// silently lost — the failure documented on [`map_or_empty_sequence`]. Adding
+    /// this field without the attribute took a replay from 4,339 orders to 0.
+    #[serde(default)]
+    pub refused_promotions:
+        std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     /// Origin/destination pairs Firaxis rejected for trade-route pathing.
     #[serde(default)]
     pub refused_trade_routes: std::collections::BTreeSet<(crate::Pos, crate::Pos)>,
@@ -6773,6 +7053,7 @@ pub fn state_from_events(
         state.refused_wonders = refused_wonders_through(path, turn);
         state.refused_production = refused_production(path, state.turn);
         state.refused_purchases = refused_purchases(path, state.turn);
+        state.refused_promotions = refused_promotions_through(path, turn);
     }
     best
 }
@@ -7243,6 +7524,48 @@ fn refused_sites_of_kind_through(
     refused
 }
 
+/// Promotions a host engine refused, keyed by Civilization VI unit id.
+///
+/// ★★★★★ Read from `promotion_refused`, which the mod emits when `CanPromote` says
+/// no. Without this the ask returned every turn for the rest of the game: **411
+/// refusals from 19 distinct (unit, promotion) pairs on 2026-08-03, median 13
+/// retries, max 71**, 318 of them Apostles — which take one promotion at creation
+/// and can never take another.
+fn refused_promotions_through(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
+    let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
+        Default::default();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return refused;
+    };
+    for line in raw.lines() {
+        if !line.contains("promotion_refused") {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|k| k.as_str()) != Some("promotion_refused") {
+            continue;
+        }
+        if turn.is_some_and(|limit| {
+            event.get("turn").and_then(|value| value.as_u64()).unwrap_or(0) > limit as u64
+        }) {
+            continue;
+        }
+        let (Some(unit), Some(promotion)) = (
+            event.get("unit").and_then(|v| v.as_i64()),
+            event.get("promotion").and_then(|v| v.as_str()),
+        ) else {
+            continue;
+        };
+        refused.entry(unit).or_default().insert(promotion.to_string());
+    }
+    refused
+}
+
 fn refused_trade_routes_through(
     path: &std::path::Path,
     turn: Option<u32>,
@@ -7328,6 +7651,37 @@ fn blocked_wonders_from(
 }
 
 /// Translate recent host production refusals onto CIVVIS city ids and typed keys.
+/// Translate host promotion refusals onto CIVVIS unit ids.
+///
+/// Keyed by unit AND promotion: a refusal is specific to both, and another unit of
+/// the same kind may legitimately take a promotion this one cannot.
+fn blocked_promotions_from(
+    refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    unit_ids: &std::collections::BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> BTreeMap<u32, std::collections::BTreeSet<crate::name::Name>> {
+    let mut out: BTreeMap<u32, std::collections::BTreeSet<crate::name::Name>> = Default::default();
+    for (uid, civ6_id) in unit_ids {
+        let Some(names) = refused.get(civ6_id) else {
+            continue;
+        };
+        // ⚠ TRANSLATE, do not intern the host name. Civilization VI says
+        // `PROMOTION_TRANSLATOR`; CIVVIS's rules call it `translator`, and
+        // `available_promotions` compares CIVVIS names. Interning the raw host name
+        // produced a block set that was correctly populated and matched nothing —
+        // the gate measured 153 promotion orders before and 153 after.
+        let translated: std::collections::BTreeSet<crate::name::Name> = names
+            .iter()
+            .filter_map(|name| civvis_node_name(&rules.promotions, name, "PROMOTION_"))
+            .map(|name| crate::name::Name::new(&name))
+            .collect();
+        if !translated.is_empty() {
+            out.insert(*uid, translated);
+        }
+    }
+    out
+}
+
 fn blocked_production_from(
     refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     city_ids: &std::collections::BTreeMap<u32, i64>,
@@ -9409,7 +9763,13 @@ pub fn rebuild_from_state(
     let blocked_purchases =
         blocked_production_from(&state.refused_purchases, &city_ids, &game.rules);
     game.replace_blocked_purchases(blocked_purchases);
+    // ⚠ Wired on BOTH the rebuild (here) and the refresh path. `--fresh-board`
+    // reconstructs the board every turn and never runs the refresh, so wiring only
+    // there left the block set permanently empty and the gate measured no change.
+    game.blocked_promotions =
+        blocked_promotions_from(&state.refused_promotions, &unit_ids, &game.rules);
 
+    record_host_observed(&mut game);
     Reconstruction {
         game,
         unit_ids,
@@ -9423,6 +9783,27 @@ pub fn rebuild_from_state(
         unmapped,
         dropped_units: dropped,
     }
+}
+
+/// Record the ground Civilization VI has just proved this seat can see.
+///
+/// Every foreign unit standing on this board arrived from the export, and the
+/// export carries a rival's or a minor's units **only under current visibility**
+/// — `StateMinor`'s own doc says so, and `state.hostiles` is the same channel for
+/// barbarians. So each of their tiles is a tile Civilization VI is showing us
+/// right now, whatever this engine's sight model would derive on a reconstructed
+/// map. See [`crate::game::Game::host_observed`] for what the disagreement cost.
+///
+/// Taken from the board rather than from the three planting loops so it cannot
+/// fall out of step with them: rivals, city-states and barbarians all land here,
+/// and a fourth channel added later is covered without being remembered.
+fn record_host_observed(game: &mut crate::game::Game) {
+    game.host_observed = game
+        .units
+        .values()
+        .filter(|unit| unit.owner != crate::game::MIRRORED_SEAT)
+        .map(|unit| unit.pos)
+        .collect();
 }
 
 /// Give every revealed plot the owner Civilization VI says it has.
@@ -9479,6 +9860,12 @@ fn apply_territory(
     let mut assign: Vec<(crate::Pos, Option<u32>)> = Vec::new();
     // Ground somebody else holds that we cannot attribute to a mirrored seat.
     let mut blocked: std::collections::BTreeSet<crate::Pos> = Default::default();
+    // The same ground, minus whatever this seat may already walk through. See
+    // [`crate::game::Game::closed_borders`]: `blocked` answers "cannot found
+    // here", which is not the same question as "cannot enter here" — war and
+    // open borders open the second while leaving the first shut, and a settler
+    // barred by loyalty is barred from founding on ground it may cross freely.
+    let mut sealed: std::collections::BTreeSet<crate::Pos> = Default::default();
     for y in 0..snapshot.height.max(1) {
         for x in 0..snapshot.width.max(1) {
             let Some(plot) = snapshot.plot((x, y)) else {
@@ -9518,6 +9905,18 @@ fn apply_territory(
                 // we do not know where their city is and a phantom owner is worse than
                 // a known prohibition.
                 blocked.insert(pos);
+                // Nobody we can name holds it, so there is no diplomacy to
+                // consult and no war that could have opened it. A city-state's
+                // land is shut to us until we are its Suzerain, which is the
+                // conservative reading and the one that matches the settler
+                // stall this arm was written for.
+                sealed.insert(pos);
+                // ⚠ And it is certainly not OURS. `place_city` hands a mirrored
+                // city its whole first ring, so a rival or minor plot that falls
+                // inside one reads back as our own territory — worse than the
+                // "reads unowned" error this function was written to fix, because
+                // it inflates the yields and workable tiles we plan on. Strip it.
+                assign.push((pos, None));
                 continue;
             };
             // The city that would work it: the owner's nearest. Civ 6 records only
@@ -9537,10 +9936,34 @@ fn apply_territory(
                 // would re-open the exact hole the unattributable arm above
                 // closes.
                 blocked.insert(pos);
+                // ...and not ours to walk into either, unless we are at war.
+                // Asking here rather than in `can_enter` is what keeps a
+                // declaration of war from sealing our own invasion out: the seat
+                // is named, so `at_war` is answerable from the export even
+                // though their cities are unseen.
+                //
+                // ⚠ `has_open_borders` is deliberately NOT consulted. It returns
+                // TRUE whenever the owner has no `open_borders` tree effect —
+                // the correct Civ 6 rule that a civ without Early Empire has no
+                // enforced border — and this mirror does not model a RIVAL's
+                // civics, so it answers "free passage" for every rival by
+                // default. Consulting it would defeat the seal in exactly the
+                // live case it exists for. Sealing ground we could in truth have
+                // crossed costs a peacetime shortcut; not sealing it cost 74
+                // turns of a scout re-sending one blocked step.
+                if !game.is_at_war(0, seat) {
+                    sealed.insert(pos);
+                }
+                // Nor ours to count as territory — see the arm above.
+                assign.push((pos, None));
             }
         }
     }
     game.blocked_city_sites.extend(blocked);
+    // Assigned, not extended: recomputed from the export every turn, so ground
+    // that opens — a war declared, borders granted, or simply their city coming
+    // into view so the ordinary gate takes over — stops being sealed next turn.
+    game.closed_borders = sealed;
     for (pos, owner) in assign {
         let previous = game.map.tiles.get(&pos).and_then(|tile| tile.owner_city);
         if previous == owner {
@@ -9958,6 +10381,13 @@ impl LiveMirror {
             &self.game.rules,
         );
         self.game.replace_blocked_purchases(blocked_purchases);
+        // Unit ids are only in hand here, so the promotion blocks are wired late for
+        // the same reason the production blocks are.
+        self.game.blocked_promotions = blocked_promotions_from(
+            &state.refused_promotions,
+            &self.civ6_of,
+            &self.game.rules,
+        );
         // Rivals are met as the game goes on, so identity is not a one-time job at
         // reconstruction: a civilization first seen on turn 90 arrives here.
         apply_identity(&mut self.game, state);
@@ -10668,6 +11098,10 @@ impl LiveMirror {
         apply_governor_state(&mut self.game, state, &mut self.unmapped);
         apply_observed_host_metrics(&mut self.game, state, &mut self.unmapped);
         block_loyalty_doomed_settler_sites(&mut self.game);
+        // Last, because it reads the finished board: every rival, minor and
+        // barbarian for this turn has been re-planted by now, and the previous
+        // turn's sightings were removed with them.
+        record_host_observed(&mut self.game);
     }
 }
 

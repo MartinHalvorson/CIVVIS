@@ -4,6 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>CIVVIS · Civilization VIS</title>
+<script>
+  (() => {
+    const channel = location.pathname.split("/").find(part => ["rust", "wasm", "beta"].includes(part));
+    if (channel === "rust") document.title = "CIVVIS (Rust)";
+    if (channel === "wasm" || channel === "beta") document.title = "CIVVIS (Wasm)";
+  })();
+</script>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='16' fill='%2307110f'/%3E%3Ccircle cx='16' cy='16' r='12.5' fill='%23d7b66a' stroke='%23f6e4ac'/%3E%3Ctext x='16' y='21' text-anchor='middle' font-family='Georgia,serif' font-size='15' font-weight='700' fill='%2315221c'%3EV%3C/text%3E%3C/svg%3E">
 <style>
   :root {
@@ -892,14 +899,43 @@
   }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
-  /* The sky bar rides directly above the zoom buttons and is taken out of the
-     dock's flow to get there: the dock is the map's bottom strip and its
-     height is a reservation the framing already pays for, so a second row in
-     the flow would have moved the world every time the camera left the globe.
-     Standing over the map instead costs nothing, and the sky keeps its
-     captions clear of the bar the same way it does of every other widget. */
+  /* Search belongs to the map, not the command deck: keep it immediately
+     above the lower-left instruments where it remains available whether the
+     deck is open or collapsed. The exact result count is part of the control
+     so a search with matches beyond the current camera still answers clearly. */
+  #map-search {
+    position: absolute; z-index: 2; left: 0; bottom: calc(100% + 6px);
+    width: min(310px, calc(100vw - 18px)); min-height: 38px;
+    display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center;
+    gap: 5px; padding: 4px 7px; border: 1px solid #3c554c; border-radius: 13px;
+    background: #0a1512df; box-shadow: 0 12px 26px #0006;
+    backdrop-filter: blur(12px); pointer-events: auto;
+  }
+  #map-search:focus-within {
+    border-color: #d7b66aa8; box-shadow: 0 12px 26px #0007, 0 0 0 2px #d7b66a24;
+  }
+  #map-search.no-match { border-color: #a6545080; }
+  #map-search-icon { color: #e6c978; font-size: 16px; text-align: center; }
+  #map-search-input {
+    min-width: 0; width: 100%; height: 28px; padding: 0 2px; border: 0; outline: 0;
+    background: transparent; color: #eef4f1; font: 750 var(--type-control)/1.2 system-ui, sans-serif;
+  }
+  #map-search-input::placeholder { color: #8fa39b; font-weight: 650; opacity: 1; }
+  #map-search-status {
+    min-width: 22px; padding: 2px 6px; border: 1px solid #d7b66a45; border-radius: 999px;
+    background: #d7b66a18; color: #ffe7a6; font-size: var(--type-caption);
+    font-weight: 900; font-variant-numeric: tabular-nums; text-align: center;
+  }
+  #map-search-status[hidden] { display: none; }
+  /* The sky bar rides above the lower-left search and zoom instruments and is
+     taken out of the dock's flow to get there: the dock is the map's bottom
+     strip and its height is a reservation the framing already pays for, so a
+     second row in the flow would have moved the world every time the camera
+     left the globe. Standing over the map instead costs nothing, and the sky
+     keeps its captions clear of the bar the same way it does of every other
+     widget. */
   #skynav {
-    position: absolute; z-index: 1; left: 0; bottom: calc(100% + 6px);
+    position: absolute; z-index: 1; left: 0; bottom: calc(100% + 50px);
     max-width: 100%; display: flex; flex-wrap: wrap; align-items: center;
     gap: 4px; padding: 5px; border-radius: 13px;
     background: #0a1512d8; border: 1px solid #3c554c;
@@ -1490,8 +1526,11 @@
     font-size: var(--type-control); line-height: 1.6; backdrop-filter: blur(14px);
   }
   #buildmark {
-    position: fixed; z-index: 25;
-    left: max(7px, env(safe-area-inset-left)); bottom: max(5px, env(safe-area-inset-bottom));
+    /* The authored World minimap owns the lower-right corner at z-index 6.
+       Keeping this one layer beneath it makes the provenance unobtrusive at
+       first, then reveals it naturally when that movable map leaves home. */
+    position: fixed; z-index: 5;
+    right: max(7px, env(safe-area-inset-right)); bottom: max(5px, env(safe-area-inset-bottom));
     max-width: calc(100vw - 14px); padding: 3px 6px;
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
     color: #9aaca5; background: #07110fbd; border: 1px solid #40534b99;
@@ -2614,6 +2653,7 @@
   body.overlay-victory-hidden #victoryhud,
   body.overlay-minimap-hidden .minimap-frame,
   body.overlay-controls-hidden #zoomctl,
+  body.overlay-controls-hidden #map-search,
   body.overlay-controls-hidden #skynav,
   body.overlay-lenses-hidden #map-lenses { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
@@ -3011,7 +3051,7 @@
   }
   .victory-turn { background: linear-gradient(155deg, #caa45618, #caa45606); }
 
-  .minimap-frame, #zoomctl, #map-lenses, #ubar {
+  .minimap-frame, #zoomctl, #map-search, #map-lenses, #ubar {
     background: #090b0de8; border-color: #41484c;
   }
   #mini { background: var(--ink); }
@@ -3152,11 +3192,11 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="map-controls-dock">
-    <!-- The sky's own way about, standing directly over the zoom buttons
-         because it is the same control: the four places anyone out there is
-         going, the shots that hold a whole scale, and the zoom itself laid
-         out end to end with the camera's place on it. It is only there while
-         there is a sky to cross — see `getting about the sky`. -->
+    <!-- The sky's own way about, standing over the lower-left map instruments:
+         the four places anyone out there is going, the shots that hold a whole
+         scale, and the zoom itself laid out end to end with the camera's place
+         on it. It is only there while there is a sky to cross — see `getting
+         about the sky`. -->
     <div id="skynav" hidden role="group" aria-label="Sky navigation">
       <div class="skynav-group" id="skynav-worlds" role="group" aria-label="Fly to a world"></div>
       <div class="skynav-group" id="skynav-scales" role="group" aria-label="Frame a scale"></div>
@@ -3166,6 +3206,13 @@
           title="The whole zoom, end to end — left is the far stop, right is the ground">
         <span id="skyspan" title="How wide the stage is">—</span>
       </div>
+    </div>
+    <div id="map-search" role="search" aria-label="Search visible map tiles">
+      <span id="map-search-icon" aria-hidden="true">⌕</span>
+      <input id="map-search-input" type="search" autocomplete="off" spellcheck="false"
+        placeholder="Search visible tiles" aria-label="Search visible map tiles"
+        aria-describedby="map-search-status">
+      <output id="map-search-status" aria-live="polite" hidden></output>
     </div>
     <!-- Left to right: collapse the deck, set the map area, face north, zoom
          in, zoom out, and dismiss. Dismissal is last because it is the only
@@ -4370,6 +4417,8 @@ const VICTORY_TRACKS = [
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
 let mapLens = null, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
+let mapSearchQuery = "";
+let mapSearchCache = {state:null, rules:null, query:"", matches:new Set()};
 // Civ 6's M, A and R arm the next click rather than acting on the spot. The
 // flag lives up here with the other map modes because `modeline()` reads it
 // and runs long before the key bindings further down are defined.
@@ -6837,7 +6886,12 @@ function formatBuildAge(buildDate) {
   const days = Math.floor(totalMinutes / 1440);
   const hours = Math.floor(totalMinutes % 1440 / 60);
   const minutes = totalMinutes % 60;
-  return `${days}d ${hours}h ${minutes}m`;
+  const parts = [
+    days ? `${days}d` : "",
+    hours ? `${hours}h` : "",
+    minutes ? `${minutes}m` : "",
+  ].filter(Boolean);
+  return parts.join(" ") || "0m";
 }
 function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
@@ -6852,11 +6906,8 @@ function updateBuildMarker(st = state) {
     if (marker) marker.hidden = true;
     return;
   }
-  const committed = commitDate.toLocaleString(undefined, {
-    year: "numeric", month: "short", day: "numeric",
-    hour: "numeric", minute: "2-digit", timeZoneName: "short",
-  });
-  marker.textContent = `${commit.slice(0, 7)} · committed ${committed} · ` +
+  marker.textContent = `${commit.slice(0, 7)} · ` +
+    `Commit is ${formatBuildAge(commitDate)} old · ` +
     `Build is ${formatBuildAge(buildDate)} old`;
   marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}`;
   marker.hidden = false;
@@ -7094,6 +7145,73 @@ function clearFinaleCountdown() {
   cancelFinaleCountdown();
   finaleCountdownResult = null;
   finaleCountdownWorld = null;
+}
+
+// The server owns an exhibition restart, but a full spectator snapshot is a
+// megabyte-scale long poll and therefore a poor display clock. Previously the
+// label changed only when one of those snapshots happened to arrive: a real
+// ten-second countdown could show 10 twice and then skip 6 entirely. Anchor a
+// local painter to the server's precise remainder instead. New snapshots may
+// pull the deadline earlier, never extend it, so network delay or a duplicate
+// response cannot make the visible clock count backwards.
+let exhibitionCountdownDeadline = 0;
+let exhibitionCountdownTimer = null;
+let exhibitionCountdownWorld = null;
+
+function clearExhibitionCountdown() {
+  if (exhibitionCountdownTimer !== null) clearInterval(exhibitionCountdownTimer);
+  exhibitionCountdownTimer = null;
+  exhibitionCountdownDeadline = 0;
+  exhibitionCountdownWorld = null;
+}
+
+function paintExhibitionCountdown() {
+  if (exhibitionCountdownTimer === null) return;
+  const respawn = document.getElementById("respawn");
+  if (!respawn || !state || !exhibitionCountdownWorld ||
+      (state.server_instance ?? null) !== exhibitionCountdownWorld.serverInstance ||
+      (state.seed ?? null) !== exhibitionCountdownWorld.seed) {
+    clearExhibitionCountdown();
+    return;
+  }
+  const milliseconds = exhibitionCountdownDeadline - Date.now();
+  if (milliseconds <= 0) {
+    if (respawn.textContent !== "The next world is beginning")
+      respawn.textContent = "The next world is beginning";
+    return;
+  }
+  const seconds = Math.ceil(milliseconds / 1000);
+  const text = `${seconds}s`;
+  if (respawn.querySelector(".winner-countdown-time")?.textContent === text) return;
+  respawn.replaceChildren();
+  respawn.append("The next world begins in");
+  const countdownTime = document.createElement("strong");
+  countdownTime.className = "winner-countdown-time";
+  countdownTime.textContent = text;
+  respawn.append(countdownTime);
+}
+
+function syncExhibitionCountdown(st) {
+  const wholeSeconds = Number(st.restart_in);
+  const preciseMilliseconds = Number(st.restart_in_ms);
+  const remaining = Number.isFinite(preciseMilliseconds)
+    ? Math.max(0, preciseMilliseconds)
+    : Math.max(0, wholeSeconds * 1000);
+  const world = {
+    serverInstance: st.server_instance ?? null,
+    seed: st.seed ?? null,
+  };
+  const sameWorld = exhibitionCountdownWorld &&
+    exhibitionCountdownWorld.serverInstance === world.serverInstance &&
+    exhibitionCountdownWorld.seed === world.seed;
+  const candidateDeadline = Date.now() + remaining;
+  exhibitionCountdownDeadline = sameWorld
+    ? Math.min(exhibitionCountdownDeadline, candidateDeadline)
+    : candidateDeadline;
+  exhibitionCountdownWorld = world;
+  if (exhibitionCountdownTimer === null)
+    exhibitionCountdownTimer = setInterval(paintExhibitionCountdown, 100);
+  paintExhibitionCountdown();
 }
 
 for (const gesture of ["pointerdown", "keydown", "wheel"])
@@ -8262,6 +8380,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (SPEC) sel = null;
   if (sel) sel = st.units.find(u => u.id === sel.id && u.owner === 0) || null;
   TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));
+  syncMapSearchStatus();
   if (newWorld || viewChanged) {
     setObservedPlayersView(false);
   }
@@ -8339,16 +8458,13 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     }
     const respawn = document.getElementById("respawn");
     if (respawn) {
-      respawn.replaceChildren();
       if (st.paused) {
+        clearExhibitionCountdown();
         respawn.textContent = "Final frame · exhibition paused";
       } else if (st.restart_in !== undefined) {
-        respawn.append("The next world begins in");
-        const countdownTime = document.createElement("strong");
-        countdownTime.className = "winner-countdown-time";
-        countdownTime.textContent = `${st.restart_in}s`;
-        respawn.append(countdownTime);
+        syncExhibitionCountdown(st);
       } else {
+        clearExhibitionCountdown();
         respawn.textContent = "Preparing the next world";
       }
     }
@@ -8359,6 +8475,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // Playing on takes the result screen away, and with it any countdown to
     // the game that would have replaced this one.
     clearFinaleCountdown();
+    clearExhibitionCountdown();
   }
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
   refreshTileTip();
@@ -10664,15 +10781,17 @@ function strategicUnitTokenPath(civilian, x, y, r) {
     cx.roundRect(x - r, y - h / 2, r * 2, h, h / 2);
   } else cx.arc(x, y, r, 0, 7);
 }
-// A strategic health strip is part of the token rather than a floating map
+// Damage is exceptional state, so a healthy unit keeps its clean command token.
+// When damage exists, its bar is part of the token rather than a floating map
 // label. Its largest corner is still inside the token's enclosing circle, so
 // the same inradius calculation that contains the unit contains its health.
 function drawStrategicUnitHealth(x, y, r, hp, now) {
-  if (!(r > 0)) return;
+  const health = Math.max(0, Math.min(100, Math.round(hp ?? 100)));
+  if (!(r > 0) || health >= 100) return;
   cx.save();
-  const frac = Math.max(0, Math.min(1, (hp ?? 100) / 100));
-  const bw = r * 1.18, bh = r * 0.16, frame = r * 0.05;
-  const by = y + r * 0.28 - bh / 2;
+  const frac = health / 100;
+  const bw = r * 1.28, bh = r * 0.4, frame = r * 0.05;
+  const by = y + r * 0.24 - bh / 2;
   const color = frac > 0.5 ? "#4fd45c" : (frac > 0.25 ? "#f0b429" : "#f04f3f");
   cx.fillStyle = "#10151dd8";
   cx.beginPath(); cx.roundRect(x - bw / 2 - frame, by - frame,
@@ -10681,6 +10800,12 @@ function drawStrategicUnitHealth(x, y, r, hp, now) {
   cx.fillStyle = color;
   cx.beginPath(); cx.roundRect(x - bw / 2, by, bw * frac, bh, bh * .45);
   cx.fill();
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  cx.font = `900 ${bh * .76}px "Arial Narrow",Inter,sans-serif`;
+  cx.lineWidth = Math.max(.65, bh * .14);
+  cx.strokeStyle = "#10151d"; cx.fillStyle = "#fff";
+  cx.strokeText(String(health), x, by + bh / 2);
+  cx.fillText(String(health), x, by + bh / 2);
   if (frac <= 0.25) { // low health pulses for attention without growing outward
     cx.globalAlpha = 0.35 + 0.3 * Math.sin(now / 160);
     cx.strokeStyle = "#ff7060"; cx.lineWidth = Math.min(1, frame);
@@ -12104,6 +12229,8 @@ const SKY_LAUNCH_FLIGHTS = {
 function queueSkyLaunches(prev, next, now = performance.now()) {
   if (!prev || !next || prev.seed !== next.seed || REDUCED_MOTION_QUERY.matches) return;
   const before = new Map((prev.players || []).map(player => [player.id, player]));
+  const majors = (next.players || []).filter(player =>
+    player.alive && !player.is_minor && !player.is_barbarian);
   for (const player of next.players || []) {
     if (player.is_minor || player.is_barbarian) continue;
     const old = before.get(player.id);
@@ -12117,15 +12244,36 @@ function queueSkyLaunches(prev, next, now = performance.now()) {
       // also makes synthetic/recovery state streams harmless.
       if (anim.skyLaunches.some(launch =>
           launch.playerId === player.id && launch.mission === mission)) continue;
-      anim.skyLaunches.push({playerId:player.id, mission, t0:now,
-                            duration:flight.duration});
+      const launchCrew = majors.filter(candidate =>
+        (candidate.science_projects || []).includes(flight.project))
+        .map(candidate => ({id:candidate.id}));
+      const target = +player.victories?.science?.distance_target || 50;
+      const origin = statePlayerAnchor(next, player.id)?.pos;
+      // A launch is a wall-clock event, not a turn-frame decoration. Fast
+      // spectators can advance dozens of turns during one flight, so freeze
+      // everything the route inherited from the completion frame. In
+      // particular, an exoplanet ship begins advancing on the next turn; if
+      // its live light-year progress becomes this temporary rocket's endpoint,
+      // the endpoint races off-screen and makes a three-second launch look as
+      // though the following turn cut it short.
+      anim.skyLaunches.push({
+        playerId:player.id, player:{id:player.id}, mission, t0:now,
+        duration:flight.duration, endsAt:now + flight.duration,
+        originPos:Array.isArray(origin) ? [...origin] : null,
+        crew:launchCrew,
+        expeditionProgress:Math.max(0, Math.min(1,
+          (+player.exoplanet_distance || 0) / target)),
+      });
     }
   }
 }
 function activeSkyLaunches(now = performance.now()) {
-  for (let index = anim.skyLaunches.length - 1; index >= 0; index--)
-    if (now >= anim.skyLaunches[index].t0 + anim.skyLaunches[index].duration)
+  for (let index = anim.skyLaunches.length - 1; index >= 0; index--) {
+    const launch = anim.skyLaunches[index];
+    const endsAt = launch.endsAt ?? launch.t0 + launch.duration;
+    if (now >= endsAt)
       anim.skyLaunches.splice(index, 1);
+  }
   return anim.skyLaunches;
 }
 function skyLaunchInFlight(playerId, mission, now = performance.now()) {
@@ -14461,15 +14609,19 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
 // The expedition is the only one of the four that is still moving, and the
 // engine already knows how far it has come. Its lane is the line from here to
 // there, and the ship sits on it at exactly that fraction. Launch injection
-// uses this same calculation so the temporary rocket hands off to the real
-// ship without changing lanes.
-function skyExpeditionRoute(player, index, count, exo, radius, centerX, centerY) {
+// uses this same calculation and lane, but freezes the completion-frame
+// fraction: turns may keep moving the real ship while the launch film plays,
+// without dragging the temporary rocket along with it.
+function skyExpeditionRoute(player, index, count, exo, radius, centerX, centerY,
+                            travelledOverride = null) {
   const dx = exo.x - centerX, dy = exo.y - centerY;
   const span = Math.hypot(dx, dy) || 1;
   const ux = dx / span, uy = dy / span;
   const lane = Math.max(7, radius * .9);
   const target = +player.victories?.science?.distance_target || 50;
-  const travelled = Math.max(0, Math.min(1, (+player.exoplanet_distance || 0) / target));
+  const travelled = travelledOverride === null
+    ? Math.max(0, Math.min(1, (+player.exoplanet_distance || 0) / target))
+    : Math.max(0, Math.min(1, travelledOverride));
   const offset = (index - (count - 1) / 2) * lane;
   const ox = -uy * offset, oy = ux * offset;
   const from = radius * 1.6 + 6, to = span - exo.r - 5;
@@ -14531,16 +14683,20 @@ function skyLaunchStart(player, place, radius, centerX, centerY) {
 
 function skyLaunchEnd(launch, player, place, crews,
                       radius, centerX, centerY) {
+  const launchCrew = Array.isArray(launch.crew) && launch.crew.length
+    ? launch.crew
+    : launch.mission === "moon" ? crews.moon
+    : launch.mission === "mars" ? crews.mars : crews.expedition;
   if (launch.mission === "expedition") {
-    const index = crews.expedition.findIndex(candidate => candidate.id === player.id);
+    const index = launchCrew.findIndex(candidate => candidate.id === player.id);
     if (index >= 0) {
-      const route = skyExpeditionRoute(player, index, crews.expedition.length,
-                                       place, radius, centerX, centerY);
+      const route = skyExpeditionRoute(player, index, launchCrew.length,
+        place, radius, centerX, centerY, launch.expeditionProgress);
       return {x:route.shipX, y:route.shipY};
     }
   }
-  const crew = launch.mission === "moon" ? crews.moon : crews.mars;
-  const seat = skyLandingSeats(place, crew).find(entry => entry.player.id === player.id);
+  const seat = skyLandingSeats(place, launchCrew)
+    .find(entry => entry.player.id === player.id);
   if (seat) return {x:seat.x, y:seat.y};
   // A stable landing site can be around the back of a close-up world. Aim for
   // the Earth-facing limb in that case: the rocket disappears behind the body
@@ -14688,7 +14844,8 @@ function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
   const launches = activeSkyLaunches(now);
   if (!launches.length) return;
   for (const launch of launches) {
-    const player = (state.players || []).find(candidate => candidate.id === launch.playerId);
+    const player = launch.player ||
+      (state.players || []).find(candidate => candidate.id === launch.playerId);
     const flight = SKY_LAUNCH_FLIGHTS[launch.mission];
     const place = flight && placements.get(flight.body);
     if (!player || !place) continue;
@@ -15091,7 +15248,7 @@ function flatSkyProject(worldX, worldY) {
 // city and an unambiguous direction: up and out of the picture. Keep that path
 // in screen proportions so the same completion is legible at every map zoom.
 function flatLaunchRoute(launch, player) {
-  const anchor = playerAnchor(player.id);
+  const anchor = launch.originPos ? {pos:launch.originPos} : playerAnchor(player.id);
   if (!anchor?.pos) return null;
   const [x, y] = worldXY(anchor.pos);
   const pixel = 1 / cam.scale;
@@ -15109,7 +15266,8 @@ function drawFlatLaunches(now) {
   const launches = activeSkyLaunches(now);
   if (!launches.length) return;
   for (const launch of launches) {
-    const player = (state.players || []).find(candidate => candidate.id === launch.playerId);
+    const player = launch.player ||
+      (state.players || []).find(candidate => candidate.id === launch.playerId);
     const flight = SKY_LAUNCH_FLIGHTS[launch.mission];
     if (!player || !flight) continue;
     const route = flatLaunchRoute(launch, player);
@@ -15741,6 +15899,58 @@ function drawFlatVisibilityPerimeter(tiles, visible) {
   cx.restore();
 }
 
+// Search is a luminous surface rather than another map lens. It stays legible
+// over any active lens and keeps districts, wonders, cities, and units intact
+// above the fill. The sight perimeter is drawn after it, preserving the exact
+// edge of what the current viewer is allowed to search.
+function drawFlatMapSearchHighlights(tiles) {
+  const matches = mapSearchMatches();
+  if (!matches.size) return;
+  const scale = UI_K();
+  cx.save();
+  cx.lineJoin = "round";
+  for (const tile of tiles) {
+    if (!matches.has(key(tile.pos))) continue;
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    hexPath(x, y, S - .9 * scale);
+    cx.fillStyle = "rgba(255,221,105,.28)";
+    cx.shadowColor = "rgba(255,232,151,.95)";
+    cx.shadowBlur = 13 * scale;
+    cx.fill();
+    cx.strokeStyle = "#fff0a8";
+    cx.lineWidth = 2.8 * scale;
+    cx.stroke();
+    cx.shadowBlur = 0;
+    hexPath(x, y, S - 4.2 * scale);
+    cx.strokeStyle = "rgba(255,250,218,.82)";
+    cx.lineWidth = .9 * scale;
+    cx.stroke();
+  }
+  cx.restore();
+}
+
+function drawPlanetMapSearchHighlights(cells) {
+  const matches = mapSearchMatches();
+  if (!matches.size) return;
+  cx.save();
+  cx.lineJoin = "round";
+  for (const cell of cells) {
+    if (!matches.has(key(cell.tile.pos))) continue;
+    const inradius = planetCellInradius(cell);
+    if (inradius < .6) continue;
+    planetPaintPath(cx, cell, -.4);
+    cx.fillStyle = "rgba(255,221,105,.32)";
+    cx.shadowColor = "rgba(255,232,151,.95)";
+    cx.shadowBlur = Math.max(5, Math.min(14, inradius * .8));
+    cx.fill();
+    cx.strokeStyle = "#fff0a8";
+    cx.lineWidth = Math.max(.9, Math.min(3, inradius * .18));
+    cx.stroke();
+  }
+  cx.restore();
+}
+
 function drawPlanetChartMarginalia() {
   if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
   const [seedA, seedB] = hiddenMapSeedWords();
@@ -15922,6 +16132,7 @@ function drawPlanetMap() {
   else if (mapLens === "empire") drawEmpireDetailsPlanet(cells);
   else if (mapLens) drawThematicLensPlanet(cells);
   if (radius >= SKY_MARKERS) drawPlanetNaturalWonderPerimeters(cells);
+  drawPlanetMapSearchHighlights(cells);
   if (!spectator && radius >= SKY_MARKERS)
     drawPlanetVisibilityPerimeter(cells, visible);
   // Cities and armies are drawn at a floor size so they stay clickable, and a
@@ -16474,22 +16685,25 @@ function draw() {
         cx.beginPath(); cx.arc(x + dx, y + dy, r, 0, 7); cx.fill();
       }
     } else if (t.feature === "geothermal_fissure") {
-      // Two mineral pools and one vertical geyser: three discrete landmarks
-      // read more clearly than the former single pond with two steam curls.
+      // Lift the whole landmark clear of the hills beneath it. The pools keep
+      // their heights but are exactly 30% wider, so they read at survey zoom
+      // without making the fissure taller or pushing it farther down the tile.
+      const gy = y - 4;
       cx.fillStyle = "#66b6b3"; cx.strokeStyle = "#286f72"; cx.lineWidth = 1.1;
-      for (const [dx, dy, rx, ry] of [[-7, 5, 6, 2.8], [7, 7, 5, 2.3]]) {
-        cx.beginPath(); cx.ellipse(x + dx, y + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
+      for (const [dx, dy, rx, ry] of [[-7, 5, 7.8, 2.8], [7, 7, 6.5, 2.3]]) {
+        cx.beginPath(); cx.ellipse(x + dx, gy + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
       }
       cx.fillStyle = "#dcece8";
-      cx.beginPath(); cx.moveTo(x - 2.2, y + 3);
-      cx.bezierCurveTo(x - 1.4, y - 3, x - 1.1, y - 10, x, y - 16);
-      cx.bezierCurveTo(x + 1.2, y - 10, x + 1.6, y - 3, x + 2.2, y + 3);
-      cx.closePath(); cx.fill();
+      cx.strokeStyle = "#8fbfc4"; cx.lineWidth = .9;
+      cx.beginPath(); cx.moveTo(x - 2.2, gy + 3);
+      cx.bezierCurveTo(x - 1.4, gy - 3, x - 1.1, gy - 10, x, gy - 16);
+      cx.bezierCurveTo(x + 1.2, gy - 10, x + 1.6, gy - 3, x + 2.2, gy + 3);
+      cx.closePath(); cx.fill(); cx.stroke();
       cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.5;
       cx.beginPath();
-      cx.arc(x, y - 14, 4.5, 3.55, 5.9);
-      cx.moveTo(x - 1, y - 12); cx.lineTo(x - 4, y - 8);
-      cx.moveTo(x + 1, y - 12); cx.lineTo(x + 4, y - 8);
+      cx.arc(x, gy - 14, 4.5, 3.55, 5.9);
+      cx.moveTo(x - 1, gy - 12); cx.lineTo(x - 4, gy - 8);
+      cx.moveTo(x + 1, gy - 12); cx.lineTo(x + 4, gy - 8);
       cx.stroke();
     } else if (t.feature === "ice") {
       cx.fillStyle = "#dfeff3"; cx.strokeStyle = "#7db3c5"; cx.lineWidth = 1.4;
@@ -16656,6 +16870,7 @@ function draw() {
     // hex, and disappears one segment at a time as that ground is explored.
     drawHiddenMapFrontier(tiles);
   }
+  drawFlatMapSearchHighlights(tiles);
   if (Number.isInteger(state.view_player))
     drawFlatVisibilityPerimeter(tiles, visible);
   // --- secondary-press order line
@@ -21731,6 +21946,109 @@ function loadTacks() {
   catch { tacks = []; }
 }
 function saveTacks() { localStorage.setItem(tackStoreKey(), JSON.stringify(tacks)); }
+function normalizeMapSearch(value) {
+  return String(value ?? "")
+    .normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase().replace(/[^a-z0-9]+/g, " ").trim().replace(/\s+/g, " ");
+}
+function mapSearchTextMatches(values, query) {
+  const needle = normalizeMapSearch(query);
+  if (!needle) return false;
+  const haystack = normalizeMapSearch(values.filter(value => value !== null && value !== undefined).join(" "));
+  if (haystack.includes(needle)) return true;
+  // Display names and protocol names differ only in their word boundaries:
+  // "space port", "space-port", and `spaceport` should find one another.
+  const compactNeedle = needle.replaceAll(" ", "");
+  return compactNeedle.length > 2 && haystack.replaceAll(" ", "").includes(compactNeedle);
+}
+function computeMapSearchMatches(st, query) {
+  const matches = new Set();
+  const needle = normalizeMapSearch(query);
+  if (!st?.map?.tiles || !needle) return matches;
+
+  // Exact sight, rather than explored memory, is the privacy boundary. A
+  // search must never disclose a district or army hidden by the viewer's fog.
+  const visible = new Set((st.visible || []).map(key));
+  const terms = new Map();
+  const add = (pos, ...values) => {
+    if (!Array.isArray(pos) || !visible.has(key(pos))) return;
+    const at = key(pos), held = terms.get(at);
+    if (held) held.push(...values); else terms.set(at, values);
+  };
+  const districtTerms = district => {
+    if (!district) return [];
+    const replaced = RULES?.districts?.[district]?.replaces;
+    return [district, `${district} district`, replaced, replaced && `${replaced} district`];
+  };
+  const players = new Map((st.players || []).map(player => [player.id, player]));
+
+  for (const tile of st.map.tiles) {
+    const planned = tile.planned_district?.district;
+    const owner = players.get(tile.owner);
+    add(tile.pos,
+      tile.terrain, tile.terrain && `${tile.terrain} terrain`,
+      tile.feature, tile.feature && `${tile.feature} feature`,
+      tile.resource, tile.resource && `${tile.resource} resource`,
+      tile.improvement, tile.improvement && `${tile.improvement} improvement`,
+      ...districtTerms(tile.district), ...districtTerms(planned),
+      planned && `planned ${planned}`,
+      tile.wonder, tile.wonder && `${tile.wonder} wonder`,
+      tile.owner_city_name,
+      owner?.civ, owner?.leader);
+  }
+  for (const city of st.cities || []) {
+    const owner = players.get(city.owner);
+    add(city.pos, city.name, "city", city.is_capital && "capital",
+        city.religion, owner?.civ, owner?.leader);
+  }
+  for (const unit of st.units || []) {
+    const owner = players.get(unit.owner);
+    add(unit.pos, unit.type, unit.type && `${unit.type} unit`, owner?.civ, owner?.leader);
+  }
+  for (const camp of st.camps || []) add(camp, "barbarian camp", "camp");
+
+  for (const [at, values] of terms)
+    if (mapSearchTextMatches(values, needle)) matches.add(at);
+  return matches;
+}
+function mapSearchMatches() {
+  const query = normalizeMapSearch(mapSearchQuery);
+  if (mapSearchCache.state !== state || mapSearchCache.rules !== RULES ||
+      mapSearchCache.query !== query) {
+    mapSearchCache = {
+      state, rules:RULES, query, matches:computeMapSearchMatches(state, query),
+    };
+  }
+  return mapSearchCache.matches;
+}
+function syncMapSearchStatus(matches = mapSearchMatches()) {
+  const search = document.getElementById("map-search");
+  const status = document.getElementById("map-search-status");
+  const active = !!normalizeMapSearch(mapSearchQuery);
+  const count = matches.size;
+  status.hidden = !active;
+  status.textContent = active ? String(count) : "";
+  const message = `${count} visible ${count === 1 ? "tile" : "tiles"}`;
+  status.setAttribute("aria-label", message);
+  status.title = message;
+  search.classList.toggle("no-match", active && count === 0);
+}
+function refreshMapSearch() {
+  mapSearchQuery = document.getElementById("map-search-input").value;
+  mapSearchCache.state = null;
+  syncMapSearchStatus();
+  if (state) draw();
+}
+const mapSearchInput = document.getElementById("map-search-input");
+mapSearchInput.addEventListener("input", refreshMapSearch);
+mapSearchInput.addEventListener("keydown", event => {
+  if (event.key !== "Escape") return;
+  event.preventDefault(); event.stopPropagation();
+  if (mapSearchInput.value) {
+    mapSearchInput.value = ""; refreshMapSearch();
+  } else mapSearchInput.blur();
+});
+syncMapSearchStatus();
 function syncMapLensControls() {
   for (const button of document.querySelectorAll("[data-map-lens]")) {
     const active = button.dataset.mapLens === mapLens;
@@ -22277,11 +22595,14 @@ function centerWorld(pos, immediate = false) {
   cam.x = x; cam.y = clampCameraY(y);
   cameraFlight = null; draw(); drawMini();
 }
+function statePlayerAnchor(st, pid) {
+  if (!st || !Number.isInteger(pid)) return null;
+  return (st.cities || []).find(c => c.owner === pid && c.is_capital) ||
+         (st.cities || []).find(c => c.owner === pid) ||
+         (st.units || []).find(u => u.owner === pid) || null;
+}
 function playerAnchor(pid) {
-  if (!state || !Number.isInteger(pid)) return null;
-  return state.cities.find(c => c.owner === pid && c.is_capital) ||
-         state.cities.find(c => c.owner === pid) ||
-         state.units.find(u => u.owner === pid) || null;
+  return statePlayerAnchor(state, pid);
 }
 function observedPlayerIds() {
   if (!state) return [];
