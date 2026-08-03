@@ -2977,6 +2977,7 @@ pub fn generate_with_script(
                 .filter(|position| {
                     let tile = &wm.tiles[position];
                     tile.improvement.is_none()
+                        && tile.feature.as_deref() != Some("oasis")
                         && !tile
                             .feature
                             .as_ref()
@@ -3268,6 +3269,25 @@ pub fn generate_with_script(
     // draws from the stream, so a world that needed no top-up is unmoved.
     place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &occupied, rng);
     place_artifact_quotas(rules, &mut wm, num_major_spawns, &occupied, rng);
+
+    // CIVVIS grows ordinary features before it draws Natural Wonders, the
+    // reverse of Firaxis' effective order for this rule. A later Woods,
+    // Floodplains, or Wonder can therefore invalidate an Oasis that was legal
+    // when rolled. Retire only those Oases after generation is final; this
+    // enforces `NoAdjacentFeatures` without changing the seeded draw stream,
+    // displacing a Natural Wonder, or redrawing a long-established map.
+    let invalid_oases: Vec<Pos> = wm
+        .tiles
+        .iter()
+        .filter(|(position, tile)| {
+            tile.feature.as_deref() == Some("oasis")
+                && !placed_oasis_is_valid(&wm, **position)
+        })
+        .map(|(position, _)| *position)
+        .collect();
+    for position in invalid_oases {
+        wm.tiles.get_mut(&position).unwrap().feature = None;
+    }
     (wm, spawns)
 }
 
@@ -3694,6 +3714,35 @@ fn adjacent_feature_count(wm: &WorldMap, pos: Pos, feature: &str) -> usize {
         .count()
 }
 
+/// The ordinary-feature rule Firaxis ships for an Oasis. `TERRAIN_DESERT`
+/// names the flat Desert terrain, while `NoRiver`, `NoCoast`, and
+/// `NoAdjacentFeatures` constrain the tile and its ring. The adjacent land
+/// itself does not have to be Desert.
+fn oasis_ground_and_ring_are_valid(wm: &WorldMap, pos: Pos) -> bool {
+    wm.get(pos).is_some_and(|tile| {
+        tile.terrain == "desert"
+            && !tile.hills
+            && !tile.has_river()
+            && wm.neighbors(pos).into_iter().all(|neighbor| {
+                wm.get(neighbor).is_none_or(|adjacent| {
+                    adjacent.terrain != "coast" && adjacent.feature.is_none()
+                })
+            })
+    })
+}
+
+#[cfg(test)]
+fn oasis_site_is_valid(wm: &WorldMap, pos: Pos) -> bool {
+    wm.get(pos).is_some_and(|tile| tile.feature.is_none())
+        && oasis_ground_and_ring_are_valid(wm, pos)
+}
+
+fn placed_oasis_is_valid(wm: &WorldMap, pos: Pos) -> bool {
+    wm.get(pos)
+        .is_some_and(|tile| tile.feature.as_deref() == Some("oasis"))
+        && oasis_ground_and_ring_are_valid(wm, pos)
+}
+
 /// Running-share cap: a feature stops being placed once it holds its quota of
 /// the tiles considered so far, exactly as the stock generator's counters work.
 fn within_share(count: usize, considered: usize, percent: usize) -> bool {
@@ -3742,7 +3791,6 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
             if has_feature {
                 continue;
             }
-
             // Every desert tile bordering a river floods, as in the stock
             // generator.
             // 🟡 The Grassland and Plains variants stand in for river size,
@@ -8866,6 +8914,43 @@ mod river_tests {
     }
 
     #[test]
+    fn oasis_uses_its_shipped_ground_and_ring_rules_not_a_desert_ring() {
+        let mut world = WorldMap::new(9, 9);
+        let position = hex::offset_to_axial(4, 4);
+        let neighbors = world.neighbors(position);
+        {
+            let tile = world.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("desert");
+            tile.hills = false;
+            tile.feature = None;
+        }
+        for neighbor in &neighbors {
+            let tile = world.tiles.get_mut(neighbor).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.hills = false;
+            tile.feature = None;
+        }
+
+        world.tiles.get_mut(&neighbors[0]).unwrap().terrain = crate::name!("grassland");
+        assert!(
+            oasis_site_is_valid(&world, position),
+            "adjacent non-Desert land is legal"
+        );
+
+        world.tiles.get_mut(&neighbors[1]).unwrap().feature = Some(crate::name!("forest"));
+        assert!(!oasis_site_is_valid(&world, position));
+        world.tiles.get_mut(&neighbors[1]).unwrap().feature = None;
+        world.tiles.get_mut(&neighbors[2]).unwrap().terrain = crate::name!("coast");
+        assert!(!oasis_site_is_valid(&world, position));
+        world.tiles.get_mut(&neighbors[2]).unwrap().terrain = crate::name!("plains");
+        world.set_river_edge(position, neighbors[3], true);
+        assert!(!oasis_site_is_valid(&world, position));
+        world.set_river_edge(position, neighbors[3], false);
+        world.tiles.get_mut(&position).unwrap().hills = true;
+        assert!(!oasis_site_is_valid(&world, position));
+    }
+
+    #[test]
     fn complete_civ6_feature_roster_is_modeled_and_generated_in_valid_biomes() {
         let rules = Rules::embedded();
         let modeled = [
@@ -8904,6 +8989,25 @@ mod river_tests {
                 };
                 generated.insert(feature.to_string());
                 match feature {
+                    "oasis" => {
+                        assert_eq!(tile.terrain, "desert", "oasis at {position:?}");
+                        assert!(!tile.hills, "oasis at {position:?} is on hills");
+                        assert!(!tile.has_river(), "oasis at {position:?} touches a river");
+                        for neighbor in world.neighbors(*position) {
+                            let Some(adjacent) = world.get(neighbor) else {
+                                continue;
+                            };
+                            assert_ne!(
+                                adjacent.terrain, "coast",
+                                "oasis at {position:?} touches Coast at {neighbor:?}"
+                            );
+                            assert!(
+                                adjacent.feature.is_none(),
+                                "oasis at {position:?} touches feature {:?} at {neighbor:?}",
+                                adjacent.feature
+                            );
+                        }
+                    }
                     "ice" => assert!(
                         matches!(tile.terrain.as_str(), "coast" | "ocean"),
                         "sea ice generated on {} at {position:?}",
