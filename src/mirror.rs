@@ -11100,3 +11100,77 @@ mod host_fact_tests {
         assert!(report.contains("(2 short)"), "{report}");
     }
 }
+
+#[cfg(test)]
+mod amenity_model_probe {
+    use super::*;
+
+    /// Does CIVVIS's own amenity model agree with the host's exported figures
+    /// on a real reconstructed board?
+    ///
+    /// This decides whether `BasicAi::amenity_districts` (#1003) is keyed on the
+    /// right number. It reads `city_amenity_surplus`, which is CIVVIS's own
+    /// derivation; the host's `amenities`/`amenities_needed` arrive in the same
+    /// state event and are currently only *reported*, never applied.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn does_the_amenity_model_agree_with_the_host() {
+        let path = std::env::var("CIVVIS_EVENTS")
+            .unwrap_or_else(|_| "/Users/martin/civvis-civ6-runs/control/civvis-20260803T110955Z/events.jsonl".into());
+        let text = std::fs::read_to_string(&path).expect("events file");
+        let mut snapshot: Option<Snapshot> = None;
+        let mut chunks: Vec<TilesChunk> = Vec::new();
+        let mut state: Option<StateSnapshot> = None;
+        for line in text.lines() {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+            match value.get("kind").and_then(|k| k.as_str()) {
+                Some("tiles") => {
+                    if let Ok(chunk) = serde_json::from_value::<TilesChunk>(value.clone()) {
+                        chunks.push(chunk);
+                    }
+                }
+                Some("state") => {
+                    if let Ok(s) = serde_json::from_value::<StateSnapshot>(value.clone()) {
+                        state = Some(s);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if !chunks.is_empty() {
+            snapshot = Some(Snapshot::from_chunks(&chunks));
+        }
+        let (Some(snapshot), Some(state)) = (snapshot, state) else {
+            println!("no reconstructable board in {path}");
+            return;
+        };
+        let rebuilt = rebuild_from_state(&snapshot, &state, 6, 1, 250, 9);
+        let game = &rebuilt.game;
+        println!("turn {}  cities on the board: {}", state.turn, game.player_city_ids(0).len());
+        println!("{:18} {:>10} {:>10} {:>8}", "city", "host", "civvis", "delta");
+        for cid in game.player_city_ids(0) {
+            let city = &game.cities[&cid];
+            let model = game.city_amenity_surplus(city);
+            let host = state
+                .cities
+                .iter()
+                .find(|c| c.name == city.name)
+                .filter(|c| c.amenities >= 0.0 && c.amenities_needed >= 0.0)
+                .map(|c| (c.amenities - c.amenities_needed) as i64);
+            let sites = game.district_sites(cid, crate::name!("entertainment_complex"));
+            let producible = sites.first().map(|pos| {
+                game.can_produce(0, cid, &crate::game::Item::District {
+                    district: crate::name!("entertainment_complex"), pos: *pos })
+            });
+            let queue = game.cities[&cid].queue.len();
+            match host {
+                Some(h) => println!(
+                    "{:18} {:>6} {:>7} {:>7} | ec_sites={:<3} producible={:<6} queue={}",
+                    city.name, h, model, model - h, sites.len(),
+                    producible.map(|b| b.to_string()).unwrap_or_else(|| "no-site".into()), queue),
+                None => println!("{:18} {:>6} {:>7} {:>7}", city.name, "-", model, "-"),
+            }
+        }
+        println!("games_recreation held: {}", game.players[0].civics.contains(&crate::name!("games_recreation")));
+    }
+}
