@@ -14723,6 +14723,37 @@ impl AdvancedAi {
     /// enemy's forcing combat actions, and prices a two-action focus-fire
     /// sequence. It catches poisoned captures and coordinated ranged kills
     /// without turning every unit decision into an unbounded turn search.
+    /// Why the forward model refused an attack, counted by reason.
+    ///
+    /// `forcing_reply_penalty_owned` runs on the work pool, so this cannot be
+    /// `&mut self` state; a process-wide tally is the cheapest thing that
+    /// survives the thread boundary, and it is diagnostic only — nothing reads
+    /// it to decide anything.
+    fn illegal_attack_tally() -> &'static std::sync::Mutex<BTreeMap<String, usize>> {
+        static REASONS: std::sync::OnceLock<std::sync::Mutex<BTreeMap<String, usize>>> =
+            std::sync::OnceLock::new();
+        REASONS.get_or_init(|| std::sync::Mutex::new(BTreeMap::new()))
+    }
+
+    fn note_illegal_attack(why: &str) {
+        if let Ok(mut tally) = Self::illegal_attack_tally().lock() {
+            *tally.entry(why.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    /// Every reason the model has refused an attack this process, commonest
+    /// first. The live bridge prints it so a run says which rule is refusing
+    /// its army rather than leaving 45 silent declines in a war.
+    pub fn illegal_attack_census() -> Vec<(String, usize)> {
+        let Ok(tally) = Self::illegal_attack_tally().lock() else {
+            return Vec::new();
+        };
+        let mut rows: Vec<(String, usize)> =
+            tally.iter().map(|(why, count)| (why.clone(), *count)).collect();
+        rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        rows
+    }
+
     fn forcing_reply_penalty_owned(
         work_pool: Option<Arc<WorkPool>>,
         mut after: Game,
@@ -14730,7 +14761,16 @@ impl AdvancedAi {
         uid: u32,
         action: &Action,
     ) -> f64 {
-        if after.apply(pid, action).is_err() {
+        if let Err(why) = after.apply(pid, action) {
+            // ⚠ The refusal reason is the whole diagnosis and it used to be
+            // thrown away. Measured on a replay of run
+            // `civvis-20260803T005930Z`, 45 of 87 declined attacks reached
+            // this line — the model rejecting an attack outright, not judging
+            // it bad — and 27 of those were a Field Cannon. `do_ranged`
+            // refuses for seven distinct reasons (embarked, siege moved,
+            // no moves, no attacks left, out of range, target not visible,
+            // line of sight blocked) and the journal could name none of them.
+            Self::note_illegal_attack(&why);
             return 1_000.0;
         }
         if !after.units.contains_key(&uid) {
@@ -15657,11 +15697,12 @@ impl AdvancedAi {
                 .collect(),
         };
 
-        let mut best: Option<(f64, Pos, Action)> = None;
+        let mut best: Option<(f64, Pos, Action, [f64; 4])> = None;
         for ((pos, action), (attack_value, reply_penalty)) in
             candidates.into_iter().zip(evaluations)
         {
-            let mut score = attack_value - self.base.attack_threshold(g, uid, pos);
+            let threshold = self.base.attack_threshold(g, uid, pos);
+            let mut score = attack_value - threshold;
             if plan
                 .target_city
                 .is_some_and(|cid| g.cities.get(&cid).is_some_and(|c| c.pos == pos))
@@ -15674,20 +15715,25 @@ impl AdvancedAi {
             if group.as_ref().and_then(|orders| orders.focus_target) == Some(pos) {
                 score += self.base.w.focus_fire * 10.0;
             }
-            if let Some(orders) = &group {
-                score -= self.base.w.local_superiority
-                    * (1.0 - orders.local_strength_ratio).max(0.0);
-            }
-            score -= self.base.w.trade_caution * reply_penalty;
+            let caution = group
+                .as_ref()
+                .map(|orders| {
+                    self.base.w.local_superiority
+                        * (1.0 - orders.local_strength_ratio).max(0.0)
+                })
+                .unwrap_or(0.0);
+            score -= caution;
+            let reply = self.base.w.trade_caution * reply_penalty;
+            score -= reply;
             if best
                 .as_ref()
-                .map(|(old, bp, _)| score > *old || (score == *old && pos < *bp))
+                .map(|(old, bp, _, _)| score > *old || (score == *old && pos < *bp))
                 .unwrap_or(true)
             {
-                best = Some((score, pos, action));
+                best = Some((score, pos, action, [attack_value, threshold, caution, reply]));
             }
         }
-        if let Some((score, at, action)) = best {
+        if let Some((score, at, action, parts)) = best {
             let required_margin = if unit.hp < 55 { 12.0 } else { 0.0 };
             if score > required_margin {
                 if self.journal().wants(crate::reasoning::Level::Detail) {
@@ -15722,6 +15768,41 @@ impl AdvancedAi {
                     self.force_groups_dirty = true;
                     return true;
                 }
+            } else if self.journal().wants(crate::reasoning::Level::Detail) {
+                // ★★★★★ SAY WHY THE ARMY DID NOT SWING.
+                //
+                // The line above records every attack that happens and there
+                // is none for an attack that does not, so a unit standing in
+                // range declining a shot is indistinguishable in `why.log`
+                // from one that had no target at all. Measured on live run
+                // `civvis-20260803T005930Z`: of 1787 military unit-turns in
+                // 188 turns of war, 186 were in range of a target and **117
+                // did not attack — 77 of them with movement left and a median
+                // 100 health**, 37 of those Field Cannons. Not one of those 77
+                // decisions left a trace.
+                //
+                // The four terms are named because the score is a sum and
+                // knowing it was negative says nothing about which part sank
+                // it. `worth` is the exact forward-model attack value,
+                // `asking` the doctrine threshold from
+                // `BasicAi::attack_threshold`, `caution` the local-superiority
+                // deduction, and `reply` the enemy's best answer priced by
+                // `trade_caution`.
+                let [attack_value, threshold, caution, reply] = parts;
+                let defender = g
+                    .city_at(at)
+                    .and_then(|cid| g.cities.get(&cid))
+                    .map(|city| city.name.clone())
+                    .or_else(|| {
+                        g.units_at(at).first().map(|oid| plain(&g.units[oid].kind))
+                    })
+                    .unwrap_or_else(|| format!("{at:?}"));
+                think!(self.journal(), Military, Detail,
+                       "{} declines {defender}", plain(&unit.kind);
+                       "worth {attack_value:.0} against asking {threshold:.0}, \
+                        caution {caution:.0}, reply {reply:.0} — {score:.0} \
+                        under a margin of {required_margin:.0}, on {} health",
+                       unit.hp; at);
             }
         }
 

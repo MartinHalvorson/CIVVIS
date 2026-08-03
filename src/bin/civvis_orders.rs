@@ -876,6 +876,23 @@ fn decide(
         std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
+    // ⚠ Which rule is refusing the army its attacks. 45 of 87 declined attacks
+    // on a replay of run `civvis-20260803T005930Z` were the forward model
+    // rejecting the action outright rather than judging it bad, 27 of them a
+    // Field Cannon, and `do_ranged` alone refuses for seven distinct reasons.
+    // Naming them is the difference between "the army does not attack" and a
+    // fixable rule.
+    {
+        let census = civvis::ai::AdvancedAi::illegal_attack_census();
+        if !census.is_empty() {
+            let named: Vec<String> = census
+                .iter()
+                .take(6)
+                .map(|(why, count)| format!("{why}={count}"))
+                .collect();
+            note_bits.push(format!("illegal_attacks [{}]", named.join("; ")));
+        }
+    }
     let mut policy_changed = false;
     if !pre_traders.is_empty() {
         note_bits.push(format!(
