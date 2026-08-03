@@ -5590,6 +5590,42 @@ fn unknown_metric() -> f64 {
     f64::NAN
 }
 
+/// Accept a Lua table that may have encoded as an empty ARRAY rather than a map.
+///
+/// Lua has exactly one table type and no way to distinguish an empty map from an
+/// empty list, so every JSON encoder writes `{}` as `[]`. A field the host only
+/// sometimes populates therefore arrives in two different JSON shapes, and serde's
+/// derived impl rejects one of them — taking the entire surrounding struct with it,
+/// because a struct is all-or-nothing.
+///
+/// An empty sequence maps to an empty map. A NON-empty sequence is still an error:
+/// that would mean the host sent a real list where a map belongs, which is a genuine
+/// contract break and must not be silently swallowed.
+fn lua_map<'de, D>(de: D) -> Result<Option<BTreeMap<String, f64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Shape {
+        Map(BTreeMap<String, f64>),
+        Seq(Vec<serde_json::Value>),
+        Null,
+    }
+    Ok(match Shape::deserialize(de)? {
+        Shape::Map(m) => Some(m),
+        Shape::Seq(v) if v.is_empty() => Some(BTreeMap::new()),
+        Shape::Seq(v) => {
+            return Err(serde::de::Error::invalid_length(
+                v.len(),
+                &"an empty Lua table, or a map of class name to points",
+            ))
+        }
+        Shape::Null => None,
+    })
+}
+
 fn minus_one_i64() -> i64 {
     -1
 }
@@ -5801,7 +5837,22 @@ pub struct StateSnapshot {
     /// class, and how close the leading rival is. Without this the race is all
     /// zeros in every live game, so the Campus project's entire reason to exist
     /// (Great Scientist points) is invisible to the planner that chooses it.
-    #[serde(default)]
+    ///
+    /// ⚠⚠ **DESERIALIZED LENIENTLY, AND THAT IS LOAD-BEARING.** Lua has one table
+    /// type, so an EMPTY table encodes as `[]`, not `{}` — and on turn 1 no player
+    /// has any Great Person points, so the mod sends exactly that. A plain
+    /// `Option<BTreeMap<..>>` cannot parse `[]`, and because serde fails the WHOLE
+    /// struct, one empty map took the entire `StateSnapshot` down with it:
+    /// `state_from_events` returned `None`, `load` returned `None`, and the decider
+    /// answered `no revealed terrain or no state yet` with **zero orders on every
+    /// turn**. Measured: every attempt of the batch pinned to `d0fdcfb` wedged at
+    /// turn 6 with 0 cities and was killed by the watchdog after 900s.
+    ///
+    /// ⚠ The real lesson is not about this field. **An optional diagnostic must
+    /// never be able to reject the board.** Any future map-shaped field read off Lua
+    /// needs this same tolerance, or it is one empty table away from the same
+    /// outage.
+    #[serde(default, deserialize_with = "lua_map")]
     pub great_person_points: Option<BTreeMap<String, f64>>,
     /// Total Governor Titles obtained and spent according to Firaxis. These are
     /// separate from the roster because a title can be held unspent.
@@ -10888,5 +10939,48 @@ mod host_fact_tests {
             r#"{"turn":40,"envoys_free":-1,"minors":[]}"#).expect("deserializes");
         assert_eq!(host_envoy_report(&failed), "",
             "the mod's -1 must be refused as firmly as an absent field");
+    }
+
+    /// ⚠ THE EXACT SHAPE THAT TOOK LIVE RUNS DOWN. Lua encodes an empty table as
+    /// `[]`, no player holds Great Person points on turn 1, and serde fails a struct
+    /// as a whole — so one optional diagnostic rejected the entire board and the
+    /// decider answered every turn with zero orders.
+    #[test]
+    fn an_empty_lua_table_does_not_reject_the_whole_board() {
+        let state: StateSnapshot = serde_json::from_str(
+            r#"{"turn":1,"great_person_points":[],"gold":5,"score":4}"#,
+        )
+        .expect("an empty Lua table must not fail the whole StateSnapshot");
+        assert_eq!(state.turn, 1, "the rest of the board must survive it");
+        assert_eq!(state.great_person_points, Some(BTreeMap::new()));
+
+        // The populated shape still parses as a map.
+        let populated: StateSnapshot = serde_json::from_str(
+            r#"{"turn":9,"great_person_points":{"GREAT_PERSON_CLASS_SCIENTIST":12.5}}"#,
+        )
+        .expect("a real map still parses");
+        assert_eq!(
+            populated
+                .great_person_points
+                .as_ref()
+                .and_then(|m| m.get("GREAT_PERSON_CLASS_SCIENTIST"))
+                .copied(),
+            Some(12.5)
+        );
+
+        // Absent stays None — "the host said nothing" must not read as "zero".
+        let silent: StateSnapshot =
+            serde_json::from_str(r#"{"turn":3}"#).expect("absent is fine");
+        assert!(silent.great_person_points.is_none());
+
+        // ⚠ A NON-empty list is a real contract break and must still fail loudly,
+        // or the tolerance becomes a place for bad data to hide.
+        assert!(
+            serde_json::from_str::<StateSnapshot>(
+                r#"{"turn":1,"great_person_points":["SCIENTIST"]}"#
+            )
+            .is_err(),
+            "a populated list where a map belongs is not an empty Lua table"
+        );
     }
 }
