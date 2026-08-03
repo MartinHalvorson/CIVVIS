@@ -868,7 +868,9 @@ def main() -> int:
         orders_db = RUN_ROOT / tag / "orders.sqlite"
 
         play_log = (logs / f"{tag}-play.log").open("w")
-        brain_log = (logs / f"{tag}-brain.log").open("w")
+        # ⚠ No `<tag>-brain.log` any more, and its absence is the point: an empty
+        # file next to a real one reads as "the decider said nothing". The single
+        # decider logs to `<run-dir>/brain.log`, where `civ6_play` puts it.
         play = subprocess.Popen(
             [sys.executable, "-u", str(HERE / "civ6_play.py"),
              "--tag", tag,
@@ -891,6 +893,16 @@ def main() -> int:
              "--announcement-seconds", "0.05",
              "--era-announcement-seconds", "0.05",
              "--civvis-decides",
+             # The decider's whole configuration, on the ONE process that runs it.
+             # `--orders-bin` used to reach only this script's own second brain, so
+             # `civ6_play` fell back to its repo-relative default and a worktree
+             # without a build died with "CIVVIS decision binary does not exist"
+             # while the flag naming a real binary sat on the command line.
+             "--civvis-bin", str(orders_bin),
+             "--civvis-victory", args.victory,
+             "--civvis-strategy", args.strategy]
+            + (["--civvis-war-from-plan"] if args.war_from_plan else [])
+            + [
              "--tile-export-every", str(args.tile_export_every),
              # The operator's 2026-08-01 layout: the game owns the LOWER right
              # at 2/3 of the screen each way; CIVVIS holds the upper left.
@@ -908,20 +920,33 @@ def main() -> int:
              "--window-frac", "0.5", "--window-vfrac", "0.5"],
             stdout=play_log, stderr=subprocess.STDOUT,
         )
-        time.sleep(3)
-        brain = subprocess.Popen(
-            [sys.executable, "-u", str(HERE / "civ6_brain.py"),
-             "--run-dir", str(RUN_ROOT / tag),
-             "--mode", "civvis",
-             "--bin", str(orders_bin),
-             "--orders-db", str(orders_db),
-             "--victory", args.victory,
-             "--strategy", args.strategy]
-            + (["--war-from-plan"] if args.war_from_plan else [])
-            + [
-             "--seconds", str(args.timeout + 300)],
-            stdout=brain_log, stderr=subprocess.STDOUT,
-        )
+        # ⚠⚠⚠ THERE USED TO BE A SECOND DECIDER HERE, AND IT RACED THE FIRST ONE.
+        #
+        # `civ6_play.py --civvis-decides` spawns its own `civ6_brain.py` — it has
+        # since the bridge landed (#697) — and this script spawned another three
+        # seconds later, on the same run dir, the same `orders.sqlite` and the same
+        # `why.log`. Measured live on `civvis-20260803T185256Z`:
+        #
+        #     pid 81760   civ6_brain.py ...            (spawned by civ6_play)
+        #     pid 81772   civ6_brain.py --war-from-plan   (spawned by here)
+        #
+        # It hid for two reasons. Both deciders are deterministic over the same
+        # `events.jsonl`, so their logs agree turn for turn — 47/47 with identical
+        # order counts on the run before this one — and nothing ever compared the
+        # two configurations. They are NOT the same configuration: `--war-from-plan`
+        # is passed by this script only, so the flag the operator turned on for the
+        # 2026-08-03 batches was carried by one of two racing writers.
+        #
+        # ⚠ And `write_turn` is not safe to race. It does
+        #     DELETE FROM orders WHERE run=? AND turn=?  ->  INSERT ...  -> COMMIT
+        # and then commits the `ready` row SEPARATELY, on purpose, so that `ready`
+        # can never name a partial turn. Two writers reopen that window from the
+        # outside: A commits its orders, A commits ready=N, the mod starts reading —
+        # and B's DELETE for the same turn lands underneath it. `ready` says N and
+        # the table says nothing.
+        #
+        # So: ONE decider, the one `civ6_play` owns, configured from here. Every
+        # setting this script used to apply to its own copy is now passed through.
 
         try:
             why = wait_watching_the_turn(play, tag, args.timeout + 600,
@@ -930,10 +955,12 @@ def main() -> int:
                 print("attempt exceeded its own timeout; stopping it", flush=True)
                 play.send_signal(signal.SIGTERM)
         finally:
-            if brain.poll() is None:
-                brain.send_signal(signal.SIGTERM)
+            # `civ6_play` owns the decider now and stops it on the way out
+            # (`stop_brain`, also registered with atexit), so there is nothing to
+            # signal from here. `teardown()` still sweeps a brain that outlived a
+            # play process killed by signal, which is the case that motivated the
+            # explicit terminate in the first place.
             play_log.close()
-            brain_log.close()
             teardown()
 
         record = outcome_of(tag)

@@ -1808,6 +1808,8 @@ def _play(args: argparse.Namespace) -> int:
             "--strategy", args.civvis_strategy,
             "--seconds", str(max(21600.0, args.timeout + 3600.0)),
         ]
+        if args.civvis_war_from_plan:
+            command.append("--war-from-plan")
         brain = subprocess.Popen(
             command,
             cwd=REPO_ROOT,
@@ -1815,8 +1817,12 @@ def _play(args: argparse.Namespace) -> int:
             stderr=subprocess.STDOUT,
             text=True,
         )
+        # ⚠ Print the WHOLE configuration, not a chosen subset. `--war-from-plan`
+        # was carried by a second, undeclared brain for as long as it existed, and a
+        # banner naming only strategy and victory could not have shown that.
         print(f"CIVVIS decision worker pid={brain.pid} strategy={args.civvis_strategy} "
-              f"victory={args.civvis_victory}")
+              f"victory={args.civvis_victory} "
+              f"war_from_plan={args.civvis_war_from_plan} bin={binary}")
 
     def stop_brain() -> None:
         nonlocal brain, brain_log
@@ -2304,6 +2310,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="victory objective passed to the supervised CIVVIS worker")
     ap.add_argument("--civvis-strategy", default="auto",
                     help="rated CIVVIS strategy name; auto selects the strongest bound")
+    # ⚠ This flag existed on `civ6_brain.py` and had no route here, so the only way
+    # to turn it on was to start a SECOND brain beside this one — which is exactly
+    # what `civ6_civvis_climb.py` did, and the two then raced over one orders.sqlite.
+    # A decider option with no path through its own launcher grows a second launcher.
+    ap.add_argument("--civvis-war-from-plan", action="store_true", default=False,
+                    help="declare on CIVVIS's plan target, since a board rebuilt "
+                         "each turn can never mature a casus belli")
     ap.add_argument("--governor-appoint", action="store_true", default=False,
                     help="spend governor titles (KNOWN to segfault the Game Core)")
     ap.add_argument("--governor-assign", action="store_true", default=False,

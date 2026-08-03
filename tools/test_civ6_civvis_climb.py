@@ -490,3 +490,71 @@ class BatchPinStalenessTests(unittest.TestCase):
         before = source[start - 700:start]
         self.assertIn("commits_behind_main()", before)
         self.assertIn("behind origin/main", before)
+
+
+class OneDeciderTests(_Harness, unittest.TestCase):
+    """The climb must not start a decider; it must configure the one `civ6_play` runs.
+
+    ⚠⚠⚠ Measured live 2026-08-03 on `civvis-20260803T185256Z`: TWO `civ6_brain.py`
+    processes on one run dir, one `orders.sqlite` and one `why.log` —
+
+        pid 81760   civ6_brain.py ...                 (spawned by civ6_play)
+        pid 81772   civ6_brain.py --war-from-plan     (spawned by the climb)
+
+    It hid because both deciders are deterministic over the same `events.jsonl`, so
+    their logs agreed turn for turn, and nothing compared the two CONFIGURATIONS —
+    which differed on exactly the flag the operator had just turned on.
+    """
+
+    def _play_argv(self):
+        """The argv the climb hands to `civ6_play.py`, and every other spawn."""
+        seen = []
+
+        class Recording(FakeProc):
+            def __init__(self, argv, *args, **kwargs):
+                seen.append(list(argv))
+                super().__init__(argv, *args, **kwargs)
+
+        climb.subprocess.Popen = Recording
+        try:
+            self.climb_with([{"last_turn": 40}], attempts=1,
+                            argv_extra=("--war-from-plan",))
+        finally:
+            climb.subprocess.Popen = FakeProc
+        return seen
+
+    def test_the_climb_starts_exactly_one_process_and_it_is_not_a_brain(self):
+        spawned = self._play_argv()
+        brains = [argv for argv in spawned
+                  if any("civ6_brain.py" in str(word) for word in argv)]
+        self.assertEqual(brains, [], "the climb must not spawn its own decider")
+        plays = [argv for argv in spawned
+                 if any("civ6_play.py" in str(word) for word in argv)]
+        self.assertEqual(len(plays), 1)
+
+    def test_every_decider_setting_reaches_the_process_that_runs_it(self):
+        """A setting the climb keeps to itself is a setting that grew a second brain."""
+        play = next(argv for argv in self._play_argv()
+                    if any("civ6_play.py" in str(word) for word in argv))
+        words = [str(word) for word in play]
+        self.assertIn("--civvis-decides", words)
+        # ⚠ The one that was actually lost. `--war-from-plan` had no route through
+        # `civ6_play`, so the only way to apply it was a second brain.
+        self.assertIn("--civvis-war-from-plan", words)
+        self.assertIn("--civvis-victory", words)
+        self.assertIn("--civvis-strategy", words)
+        # `--orders-bin` used to reach only the climb's own brain, so `civ6_play`
+        # fell back to its repo-relative default and a worktree without a build died
+        # with "CIVVIS decision binary does not exist" while the flag naming a real
+        # binary sat on the command line.
+        self.assertIn("--civvis-bin", words)
+        self.assertEqual(words[words.index("--civvis-bin") + 1], str(self.orders_bin))
+
+    def test_civ6_play_forwards_the_war_flag_to_the_brain(self):
+        """The far end of the same wire. A flag `civ6_play` accepts and drops is worse
+        than one it does not accept: the climb would look configured and not be."""
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn('"--civvis-war-from-plan"', source)
+        self.assertIn("if args.civvis_war_from_plan:", source)
+        self.assertIn('command.append("--war-from-plan")', source)
