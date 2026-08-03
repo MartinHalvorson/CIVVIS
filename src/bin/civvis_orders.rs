@@ -793,6 +793,17 @@ fn decide(
     // releases only the power-gap half, and only after the posture has had
     // `RECOVERY_POSTURE_LIMIT` standard turns to work.
     ai.enable_bounded_recovery();
+    // ⚠ `local_strength_ratio` prices an objective city only while it is
+    // currently in sight, and returns its `hostile <= 0.0` sentinel of 3.0 —
+    // the maximum — otherwise. Under live fog that makes a walled enemy
+    // capital score identically to an empty meadow, four times over the
+    // superiority floor, so the army engages. Measured on run
+    // `civvis-20260803T005930Z`: Seoul (walled, 22 pop, defense 101) was the
+    // objective of 426 force-group decisions from t65 to t231 and 294 of them
+    // read exactly 3.00, 108 with a force of one. No Korean city ever passed
+    // 27% damage in 173 turns of war. The repair reads only this controller's
+    // own last sighting, which the defensive half already trusts.
+    ai.enable_blind_objective_strength();
     // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
     // `military_faith_spending` never asks about gold — it gates on the faith
     // bank alone. Measured on run `civvis-20260803T014330Z`: faith military
