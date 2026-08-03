@@ -431,7 +431,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// returns `None` on it before reading the board at all, so `advanced_v1` picks
 /// the technology it always picked. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xcc72_4414_a932_0edc;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x768ac8a61cadce8e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
