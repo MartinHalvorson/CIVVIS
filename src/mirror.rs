@@ -3719,6 +3719,63 @@ mod tests {
     }
 
     #[test]
+    fn a_promotion_the_host_refused_is_not_offered_again() {
+        let dir = std::env::temp_dir().join(format!("civvis_promo_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("events.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"kind":"promotion_refused","unit":3342338,"promotion":"PROMOTION_TRANSLATOR","turn":40}"#,
+                "\n",
+                r#"{"kind":"promotion_refused","unit":3342338,"promotion":"PROMOTION_TRANSLATOR","turn":41}"#,
+                "\n",
+                r#"{"kind":"promotion_refused","unit":5111818,"promotion":"PROMOTION_ECHELON","turn":42}"#,
+                "\n",
+                r#"{"kind":"promotion_refused","unit":3342338,"promotion":"PROMOTION_CHAPLAIN","turn":90}"#,
+                "\n",
+            ),
+        )
+        .expect("write events");
+
+        let refused = refused_promotions_through(&path, Some(50));
+        assert_eq!(
+            refused.get(&3342338).map(|names| names.len()),
+            Some(1),
+            "the turn limit keeps the turn-90 Chaplain refusal out"
+        );
+        assert!(
+            refused[&3342338].contains("PROMOTION_TRANSLATOR"),
+            "the refused promotion is recorded under its Civilization VI unit id"
+        );
+        assert!(refused[&5111818].contains("PROMOTION_ECHELON"));
+
+        let later = refused_promotions_through(&path, Some(120));
+        assert_eq!(
+            later[&3342338].len(),
+            2,
+            "both distinct refusals are in hand once the game reaches turn 90"
+        );
+
+        let rules = crate::rules::Rules::embedded();
+        let unit_ids: std::collections::BTreeMap<u32, i64> =
+            [(7u32, 3342338i64), (9u32, 5111818i64)].into_iter().collect();
+        let blocked = blocked_promotions_from(&later, &unit_ids, &rules);
+        assert!(
+            blocked[&7].contains(&crate::name::Name::new("translator")),
+            "the host name PROMOTION_TRANSLATOR is TRANSLATED to the CIVVIS rule name, \
+             not interned raw — `available_promotions` compares CIVVIS names"
+        );
+        assert!(blocked[&9].contains(&crate::name::Name::new("echelon")));
+        assert!(
+            !blocked.contains_key(&11),
+            "a unit the host never refused carries no block"
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn a_trader_is_given_no_movement_because_civ6_gives_it_none() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
             turn: 20,
@@ -5962,6 +6019,17 @@ pub struct StateSnapshot {
     /// Tiles Civilization VI refused to improve, AXIAL, from `improve_refused`.
     #[serde(default)]
     pub refused_improves: std::collections::BTreeSet<crate::Pos>,
+    /// Promotions the host refused, per Civilization VI unit id.
+    /// See `Game::blocked_promotions` for why this exists.
+    ///
+    /// ⚠ `#[serde(default)]` is LOAD-BEARING: this is merged in by
+    /// [`state_from_events`] and never appears in the host's `state` JSON, so
+    /// without it the whole `StateSnapshot` fails to deserialize and the board is
+    /// silently lost — the failure documented on [`map_or_empty_sequence`]. Adding
+    /// this field without the attribute took a replay from 4,339 orders to 0.
+    #[serde(default)]
+    pub refused_promotions:
+        std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     /// Origin/destination pairs Firaxis rejected for trade-route pathing.
     #[serde(default)]
     pub refused_trade_routes: std::collections::BTreeSet<(crate::Pos, crate::Pos)>,
@@ -6773,6 +6841,7 @@ pub fn state_from_events(
         state.refused_wonders = refused_wonders_through(path, turn);
         state.refused_production = refused_production(path, state.turn);
         state.refused_purchases = refused_purchases(path, state.turn);
+        state.refused_promotions = refused_promotions_through(path, turn);
     }
     best
 }
@@ -7243,6 +7312,48 @@ fn refused_sites_of_kind_through(
     refused
 }
 
+/// Promotions a host engine refused, keyed by Civilization VI unit id.
+///
+/// ★★★★★ Read from `promotion_refused`, which the mod emits when `CanPromote` says
+/// no. Without this the ask returned every turn for the rest of the game: **411
+/// refusals from 19 distinct (unit, promotion) pairs on 2026-08-03, median 13
+/// retries, max 71**, 318 of them Apostles — which take one promotion at creation
+/// and can never take another.
+fn refused_promotions_through(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
+    let mut refused: std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> =
+        Default::default();
+    let Ok(raw) = std::fs::read_to_string(path) else {
+        return refused;
+    };
+    for line in raw.lines() {
+        if !line.contains("promotion_refused") {
+            continue;
+        }
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            continue;
+        };
+        if event.get("kind").and_then(|k| k.as_str()) != Some("promotion_refused") {
+            continue;
+        }
+        if turn.is_some_and(|limit| {
+            event.get("turn").and_then(|value| value.as_u64()).unwrap_or(0) > limit as u64
+        }) {
+            continue;
+        }
+        let (Some(unit), Some(promotion)) = (
+            event.get("unit").and_then(|v| v.as_i64()),
+            event.get("promotion").and_then(|v| v.as_str()),
+        ) else {
+            continue;
+        };
+        refused.entry(unit).or_default().insert(promotion.to_string());
+    }
+    refused
+}
+
 fn refused_trade_routes_through(
     path: &std::path::Path,
     turn: Option<u32>,
@@ -7328,6 +7439,37 @@ fn blocked_wonders_from(
 }
 
 /// Translate recent host production refusals onto CIVVIS city ids and typed keys.
+/// Translate host promotion refusals onto CIVVIS unit ids.
+///
+/// Keyed by unit AND promotion: a refusal is specific to both, and another unit of
+/// the same kind may legitimately take a promotion this one cannot.
+fn blocked_promotions_from(
+    refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
+    unit_ids: &std::collections::BTreeMap<u32, i64>,
+    rules: &crate::rules::Rules,
+) -> BTreeMap<u32, std::collections::BTreeSet<crate::name::Name>> {
+    let mut out: BTreeMap<u32, std::collections::BTreeSet<crate::name::Name>> = Default::default();
+    for (uid, civ6_id) in unit_ids {
+        let Some(names) = refused.get(civ6_id) else {
+            continue;
+        };
+        // ⚠ TRANSLATE, do not intern the host name. Civilization VI says
+        // `PROMOTION_TRANSLATOR`; CIVVIS's rules call it `translator`, and
+        // `available_promotions` compares CIVVIS names. Interning the raw host name
+        // produced a block set that was correctly populated and matched nothing —
+        // the gate measured 153 promotion orders before and 153 after.
+        let translated: std::collections::BTreeSet<crate::name::Name> = names
+            .iter()
+            .filter_map(|name| civvis_node_name(&rules.promotions, name, "PROMOTION_"))
+            .map(|name| crate::name::Name::new(&name))
+            .collect();
+        if !translated.is_empty() {
+            out.insert(*uid, translated);
+        }
+    }
+    out
+}
+
 fn blocked_production_from(
     refused: &std::collections::BTreeMap<i64, std::collections::BTreeSet<String>>,
     city_ids: &std::collections::BTreeMap<u32, i64>,
@@ -9409,6 +9551,11 @@ pub fn rebuild_from_state(
     let blocked_purchases =
         blocked_production_from(&state.refused_purchases, &city_ids, &game.rules);
     game.replace_blocked_purchases(blocked_purchases);
+    // ⚠ Wired on BOTH the rebuild (here) and the refresh path. `--fresh-board`
+    // reconstructs the board every turn and never runs the refresh, so wiring only
+    // there left the block set permanently empty and the gate measured no change.
+    game.blocked_promotions =
+        blocked_promotions_from(&state.refused_promotions, &unit_ids, &game.rules);
 
     Reconstruction {
         game,
@@ -9958,6 +10105,13 @@ impl LiveMirror {
             &self.game.rules,
         );
         self.game.replace_blocked_purchases(blocked_purchases);
+        // Unit ids are only in hand here, so the promotion blocks are wired late for
+        // the same reason the production blocks are.
+        self.game.blocked_promotions = blocked_promotions_from(
+            &state.refused_promotions,
+            &self.civ6_of,
+            &self.game.rules,
+        );
         // Rivals are met as the game goes on, so identity is not a one-time job at
         // reconstruction: a civilization first seen on turn 90 arrives here.
         apply_identity(&mut self.game, state);
