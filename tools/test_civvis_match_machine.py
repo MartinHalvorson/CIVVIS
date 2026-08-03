@@ -753,6 +753,61 @@ class MatchMachineTests(unittest.TestCase):
         self.assertEqual(machine.resource_action(machine.Resources(60, 20, 12, 0, False), 70), "shed_headless")
         self.assertEqual(machine.resource_action(edge, 70), "shed_all")
 
+    def test_head_transition_recovery_alternates_headless_and_visible(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(limit=70)
+        subject.maxima = {name: 0.0 for name in ("cpu", "memory", "disk", "gpu")}
+        subject.pending_revision = "new-head"
+        subject.build_future = None
+        subject.resume_not_before = 0.0
+        subject.resume_visible_next = False
+        subject.event = mock.Mock()
+        visible = SimpleNamespace(
+            visible=True, paused=True, process=object(), seed=1
+        )
+        headless = SimpleNamespace(
+            visible=False, paused=True, process=object(), seed=2
+        )
+        subject.games = [visible, headless]
+        safe = machine.Resources(20, 20, 12, 0, False)
+
+        with mock.patch.object(machine, "set_paused", return_value=True) as resume:
+            subject.govern(safe)
+            headless.paused = True
+            subject.resume_not_before = 0.0
+            subject.govern(safe)
+
+        self.assertEqual(
+            resume.call_args_list,
+            [mock.call(headless.process, False), mock.call(visible.process, False)],
+        )
+        self.assertFalse(visible.paused)
+        self.assertTrue(headless.paused)
+
+    def test_steady_state_recovery_keeps_visible_first(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(limit=70)
+        subject.maxima = {name: 0.0 for name in ("cpu", "memory", "disk", "gpu")}
+        subject.pending_revision = None
+        subject.build_future = None
+        subject.resume_not_before = 0.0
+        subject.resume_visible_next = False
+        subject.event = mock.Mock()
+        visible = SimpleNamespace(
+            visible=True, paused=True, process=object(), seed=1
+        )
+        headless = SimpleNamespace(
+            visible=False, paused=True, process=object(), seed=2
+        )
+        subject.games = [visible, headless]
+
+        with mock.patch.object(machine, "set_paused", return_value=True) as resume:
+            subject.govern(machine.Resources(20, 20, 12, 0, False))
+
+        resume.assert_called_once_with(visible.process, False)
+        self.assertFalse(visible.paused)
+        self.assertTrue(headless.paused)
+
     def test_match_lookup_finds_a_concurrent_out_of_order_result(self):
         with tempfile.TemporaryDirectory() as directory:
             league = Path(directory)
