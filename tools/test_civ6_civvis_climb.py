@@ -406,25 +406,20 @@ class SettingsDealt(unittest.TestCase):
     which is why it has to be RECORDED rather than watched for.
     """
 
-    @staticmethod
-    def _mismatch(asked, dealt):
-        """The comparison the climb performs, in the same shape."""
-        return {
-            field: {"asked": a, "dealt": dealt.get(key)}
-            for field, key, a in (
-                ("difficulty", "difficulty", asked["difficulty"]),
-                ("map_size", "size", asked["map_size"]),
-                ("speed", "speed", asked["speed"]),
-            )
-            if dealt.get(key) is not None and dealt.get(key) != a
-        }
+    # ⚠ This used to be a local re-declaration "in the same shape" as the climb's
+    # inline comparison. It was a second copy of a rule, and a second copy of a rule
+    # is a test that goes green while the shipped one changes underneath it. Call
+    # the shipped function.
+    _mismatch = staticmethod(climb.settings_mismatch)
 
     ASKED = {"difficulty": "DIFFICULTY_SETTLER", "map_size": "MAPSIZE_SMALL",
-             "speed": "GAMESPEED_ONLINE"}
+             "speed": "GAMESPEED_ONLINE", "leader": "LEADER_TRAJAN"}
+
+    DEALT = {"difficulty": "DIFFICULTY_SETTLER", "size": "MAPSIZE_SMALL",
+             "speed": "GAMESPEED_ONLINE", "leader": "LEADER_TRAJAN"}
 
     def test_the_rung_the_game_actually_dealt_is_recorded(self):
-        dealt = {"difficulty": "DIFFICULTY_PRINCE", "size": "MAPSIZE_SMALL",
-                 "speed": "GAMESPEED_ONLINE"}
+        dealt = {**self.DEALT, "difficulty": "DIFFICULTY_PRINCE"}
         found = self._mismatch(self.ASKED, dealt)
         self.assertIn("difficulty", found)
         self.assertEqual(found["difficulty"]["dealt"], "DIFFICULTY_PRINCE")
@@ -432,9 +427,23 @@ class SettingsDealt(unittest.TestCase):
 
     def test_a_matching_game_records_nothing(self):
         """⚠ A field that always fires says nothing. Silence is the healthy case."""
-        dealt = {"difficulty": "DIFFICULTY_SETTLER", "size": "MAPSIZE_SMALL",
-                 "speed": "GAMESPEED_ONLINE"}
-        self.assertEqual(self._mismatch(self.ASKED, dealt), {})
+        self.assertEqual(self._mismatch(self.ASKED, self.DEALT), {})
+
+    def test_a_seat_dealt_the_wrong_leader_is_recorded(self):
+        """The 2026-08-03 census: 190 runs, Trajan 4 of them, and no row said so.
+
+        The picker verifies its own click, so this should never fire — which is
+        exactly the argument for recording it rather than trusting it.
+        """
+        found = self._mismatch(self.ASKED, {**self.DEALT, "leader": "LEADER_TOKUGAWA"})
+        self.assertEqual(found["leader"],
+                         {"asked": "LEADER_TRAJAN", "dealt": "LEADER_TOKUGAWA"})
+
+    def test_asking_for_no_leader_accepts_whatever_is_dealt(self):
+        """`--leader ""` is a deliberate random deal, not a field to police."""
+        asked = {**self.ASKED, "leader": ""}
+        self.assertEqual(self._mismatch(asked, {**self.DEALT, "leader": "LEADER_GORGO"}),
+                         {})
 
     def test_a_seat_that_could_not_be_read_is_not_a_mismatch(self):
         """⚠ Absent is not wrong. An old export naming nothing must not be
@@ -481,3 +490,105 @@ class BatchPinStalenessTests(unittest.TestCase):
         before = source[start - 700:start]
         self.assertIn("commits_behind_main()", before)
         self.assertIn("behind origin/main", before)
+
+
+class OneDeciderTests(_Harness, unittest.TestCase):
+    """The climb must not start a decider; it must configure the one `civ6_play` runs.
+
+    ⚠⚠⚠ Measured live 2026-08-03 on `civvis-20260803T185256Z`: TWO `civ6_brain.py`
+    processes on one run dir, one `orders.sqlite` and one `why.log` —
+
+        pid 81760   civ6_brain.py ...                 (spawned by civ6_play)
+        pid 81772   civ6_brain.py --war-from-plan     (spawned by the climb)
+
+    It hid because both deciders are deterministic over the same `events.jsonl`, so
+    their logs agreed turn for turn, and nothing compared the two CONFIGURATIONS —
+    which differed on exactly the flag the operator had just turned on.
+    """
+
+    def _play_argv(self):
+        """The argv the climb hands to `civ6_play.py`, and every other spawn."""
+        seen = []
+
+        class Recording(FakeProc):
+            def __init__(self, argv, *args, **kwargs):
+                seen.append(list(argv))
+                super().__init__(argv, *args, **kwargs)
+
+        climb.subprocess.Popen = Recording
+        try:
+            self.climb_with([{"last_turn": 40}], attempts=1)
+        finally:
+            climb.subprocess.Popen = FakeProc
+        return seen
+
+    def test_the_climb_starts_exactly_one_process_and_it_is_not_a_brain(self):
+        spawned = self._play_argv()
+        brains = [argv for argv in spawned
+                  if any("civ6_brain.py" in str(word) for word in argv)]
+        self.assertEqual(brains, [], "the climb must not spawn its own decider")
+        plays = [argv for argv in spawned
+                 if any("civ6_play.py" in str(word) for word in argv)]
+        self.assertEqual(len(plays), 1)
+
+    def test_every_decider_setting_reaches_the_process_that_runs_it(self):
+        """A setting the climb keeps to itself is a setting that grew a second brain."""
+        play = next(argv for argv in self._play_argv()
+                    if any("civ6_play.py" in str(word) for word in argv))
+        words = [str(word) for word in play]
+        self.assertIn("--civvis-decides", words)
+        # ⚠ NOT `--civvis-war-from-plan`. That is the one setting the climb must
+        # NOT pass: `civ6_play` refuses it as replay-only, the climb's own second
+        # brain was the only thing that ever applied it live, and asking for it is
+        # now refused before any of this runs. See `WarFromPlanGuardTests`.
+        self.assertNotIn("--civvis-war-from-plan", words)
+        self.assertIn("--civvis-victory", words)
+        self.assertIn("--civvis-strategy", words)
+        # `--orders-bin` used to reach only the climb's own brain, so `civ6_play`
+        # fell back to its repo-relative default and a worktree without a build died
+        # with "CIVVIS decision binary does not exist" while the flag naming a real
+        # binary sat on the command line.
+        self.assertIn("--civvis-bin", words)
+        self.assertEqual(words[words.index("--civvis-bin") + 1], str(self.orders_bin))
+
+    def test_civ6_play_forwards_the_war_flag_to_the_brain(self):
+        """The far end of the same wire. A flag `civ6_play` accepts and drops is worse
+        than one it does not accept: the climb would look configured and not be."""
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn('"--civvis-war-from-plan"', source)
+        self.assertIn("if args.civvis_war_from_plan:", source)
+        self.assertIn('command.append("--war-from-plan")', source)
+
+
+class WarFromPlanGuardTests(_Harness, unittest.TestCase):
+    """`--war-from-plan` must not reach a live game behind `civ6_play`'s back.
+
+    ⚠⚠⚠ `civ6_play.main` refuses `--civvis-war-from-plan` and says why: the override
+    declares on a plan's preferred rival even when the planner DECLINED war, and
+    live run `live-loop-rome-20260802-0800` forced one under a Religion plan on turn
+    37, spent 213 turns in Recovery asking for peace, and finished 400-1081.
+
+    The climb bypassed that guard for a day — not deliberately, but because it ran
+    its OWN `civ6_brain.py`, which takes the flag directly. Removing the second
+    decider is what made the conflict visible; this keeps it visible.
+    """
+
+    def test_asking_for_war_from_plan_refuses_the_batch(self):
+        code, rows = self.climb_with([{"last_turn": 40}], attempts=1,
+                                     argv_extra=("--war-from-plan",))
+        self.assertEqual(code, 4, "a refused configuration is not a played batch")
+        self.assertEqual(rows, [], "and it must not spend a rung or write a row")
+
+    def test_the_default_batch_still_runs(self):
+        """⚠ A guard that refuses everything is not a guard. Silence is the healthy case."""
+        code, rows = self.climb_with([{"last_turn": 40}], attempts=1)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(rows), 1)
+
+    def test_civ6_play_still_holds_the_guard_this_one_defers_to(self):
+        """If that guard is ever lifted, this refusal is stale and must go with it."""
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn('if "--civvis-war-from-plan" in raw_argv:', source)
+        self.assertIn("replay-only", source)

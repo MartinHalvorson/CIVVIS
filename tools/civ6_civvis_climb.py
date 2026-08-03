@@ -431,6 +431,40 @@ def tail_of(path: Path, limit: int = 200) -> str:
     return ""
 
 
+def settings_mismatch(asked: dict, dealt: dict) -> dict:
+    """Which requested lobby settings the game did NOT deal.
+
+    ⚠⚠ THIS LIVED IN TWO PLACES AND THE TEST OWNED THE SECOND COPY. `main` built the
+    comparison inline and `test_civ6_civvis_climb` re-declared it "in the same
+    shape" — so adding `leader` to the shipped tuple left the test asserting on the
+    old one, green, and blind. Same failure as [[civvis-civ6-one-table-one-formatter]]:
+    a rule with two spellings drifts, and the copy that drifts is the one nobody
+    runs. One function, called by both.
+
+    `asked` is keyed by ledger field name, `dealt` by the `seat` event's own key,
+    because those two vocabularies genuinely differ (`map_size` vs `size`) and
+    pretending otherwise is how the wrong field gets compared.
+    """
+    return {
+        field: {"asked": want, "dealt": dealt.get(key)}
+        for field, key, want in (
+            ("difficulty", "difficulty", asked.get("difficulty")),
+            ("map_size", "size", asked.get("map_size")),
+            ("speed", "speed", asked.get("speed")),
+            # The picker is OCR over a DLC-dependent list and `civ6_play` refuses to
+            # start when it cannot verify the pick — but "refused to start" and
+            # "started as someone else" are different failures, and only this line
+            # can tell them apart after the fact.
+            ("leader", "leader", asked.get("leader")),
+        )
+        # A falsy `want` is a deliberate "deal me anything" (`--leader ""`), or a
+        # field this caller did not ask about. Neither can mismatch.
+        # ⚠ Absent is not wrong either: an export naming nothing must not be
+        # reported as the game having dealt the wrong rung.
+        if want and dealt.get(key) is not None and dealt.get(key) != want
+    }
+
+
 def outcome_of(tag: str) -> dict:
     """The run's own summary, MERGED with what its event stream says.
 
@@ -482,6 +516,13 @@ def outcome_of(tag: str) -> dict:
         "army": (last_turn or {}).get("army"),
         "met": (last_turn or {}).get("met"),
         "seat": seat,
+        # ⚠ The civ is the largest single covariate on a row and it was only ever
+        # reachable by digging into the nested `seat` blob, so no ledger query ever
+        # grouped by it. Promote both to columns: `civ`/`leader` are what Civ 6
+        # DEALT, and the caller records `leader_asked` beside them, so a row where
+        # the picker missed reads as a mismatch instead of as a clean sample.
+        "civ": (seat or {}).get("civ"),
+        "leader": (seat or {}).get("leader"),
         "victory": victory,
         # True means Civilization VI showed its end-of-game screen: the run
         # FINISHED. It says nothing about who won.
@@ -598,6 +639,33 @@ def main() -> int:
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
+    # ⚠⚠⚠ THE SEAT WAS RANDOM FOR 190 RUNS, AND NOTHING SAID SO.
+    #
+    # `civ6_play.py` has taken `--leader` (and verifies the pick off the rendered
+    # picker) for as long as this script has existed, and this script never passed
+    # it. A census of every `seat` event under `civvis-civ6-runs/control`:
+    #
+    #     190 runs, 49 distinct civilizations
+    #     Trajan   4 / 190  (2.1%)      Rome  5 / 190  (2.6%)
+    #     modal seat: Philip II of Spain, 8
+    #
+    # Two things were silently lost. The operator's standing brief is Rome and
+    # Trajan, and the ladder was answering a different question 97.9% of the time.
+    # And `civ6_brain.seat_civ` narrows `--strategy auto` by the civ Civ 6 DEALT —
+    # `--civ Rome` picks `g56-48` at a 0.510 bound where the overall fallback is
+    # `adv-religious` at 0.410 — so the narrowing that exists could almost never
+    # fire, because the league rates only four civs and the deal was rarely one.
+    #
+    # ⚠ The civ effect is large enough to swamp a code change ([[civvis-rating-and-fleet]]
+    # measured Rome at 37.7% of league wins against Sumeria's 14.6%), so 190 rows
+    # dealt 49 different civs are not one experiment; pinning the seat is what makes
+    # consecutive rows comparable at all. Rows recorded before this change carry a
+    # random seat and cannot be pooled with rows recorded after it.
+    #
+    # Pass `--leader ""` to restore the old random deal deliberately.
+    ap.add_argument("--leader", default="LEADER_TRAJAN",
+                    help="Firaxis leader type to select and verify on the picker; "
+                         "empty string takes whatever the lobby deals")
     ap.add_argument("--timeout", type=float, default=5400.0)
     # ⚠ The LAST resort, not the first. `civ6_play --frozen-seconds` (480s)
     # watches the same thing from inside its own loop and gets first refusal;
@@ -678,11 +746,17 @@ def main() -> int:
     # `code_rev`, but the code_rev boundary at this commit also carries a
     # configuration change — do not read a before/after difference as a code
     # effect.
+    # ⚠⚠ DEFAULT FLIPPED TO OFF 2026-08-03, and the flip is the whole point: this
+    # defaulted to TRUE, so every live batch carried an override that `civ6_play`
+    # refuses outright as replay-only. It only worked because this script ran its own
+    # decider; with one decider it cannot work, and defaulting to a value that always
+    # aborts the batch would be a worse failure than the one being fixed. Passing it
+    # explicitly is refused, loudly, by the check at the top of `main`.
     ap.add_argument("--war-from-plan", action=argparse.BooleanOptionalAction,
-                    default=True,
-                    help="declare when the PLAN names a target, since a board "
-                         "rebuilt each turn can never mature a casus belli; "
-                         "--no-war-from-plan restores the old refusal")
+                    default=False,
+                    help="REFUSED for live games; see the guard in civ6_play.main. "
+                         "Kept so a batch that asks for it fails instead of quietly "
+                         "measuring something else")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--orders-bin", default=str(HERE.parent / "target" / "release" / "civvis_orders"))
@@ -694,6 +768,39 @@ def main() -> int:
 
     logs = Path(args.logs).expanduser() if args.logs else Path.cwd() / "civvis-climb-logs"
     logs.mkdir(parents=True, exist_ok=True)
+    # ⚠⚠⚠ THE SECOND DECIDER WAS ROUTING AROUND A DELIBERATE SAFETY GUARD.
+    #
+    # `civ6_play.main` refuses `--civvis-war-from-plan` outright, and its comment
+    # gives the evidence: the override turns a plan's preferred rival into an
+    # immediate declaration even when the planner DECLINED war, and live run
+    # `live-loop-rome-20260802-0800` forced that declaration under a Religion plan
+    # on turn 37, spent the remaining 213 turns in Recovery asking for peace, and
+    # finished 400-1081. "A production launcher must not be able to bypass the
+    # decider whose behavior it claims to measure."
+    #
+    # This script bypassed it anyway — not on purpose, but because it started its
+    # OWN `civ6_brain.py`, which takes the flag directly and never sees that guard.
+    # So `--war-from-plan`, enabled here on 2026-08-03, has been doing live exactly
+    # what `civ6_play` forbids, and the guard has been reading as enforced.
+    #
+    # Now that there is one decider, the conflict cannot hide, and it is not this
+    # script's to settle: one of the two deliberate decisions has to be withdrawn by
+    # whoever owns them. Refusing is the honest failure — silently dropping the flag
+    # would change what a batch measures without saying so, and silently keeping it
+    # is what got us here.
+    if args.war_from_plan:
+        print("--war-from-plan is refused for live games by civ6_play.main, which "
+              "calls it replay-only:\n"
+              "  'the override turns a plan's preferred rival into an immediate "
+              "declaration even when\n   the planner declined war' — live run "
+              "live-loop-rome-20260802-0800 forced one under a\n   Religion plan on "
+              "turn 37, spent 213 turns in Recovery, and finished 400-1081.\n"
+              "This script used to bypass that guard by running a second decider. It "
+              "no longer does.\n"
+              "Run with --no-war-from-plan, or lift the guard in civ6_play.main "
+              "deliberately.", file=sys.stderr)
+        return 4
+
     orders_bin = Path(args.orders_bin)
     if not orders_bin.exists():
         print(f"no civvis-orders binary at {orders_bin}", file=sys.stderr)
@@ -800,14 +907,18 @@ def main() -> int:
         orders_db = RUN_ROOT / tag / "orders.sqlite"
 
         play_log = (logs / f"{tag}-play.log").open("w")
-        brain_log = (logs / f"{tag}-brain.log").open("w")
+        # ⚠ No `<tag>-brain.log` any more, and its absence is the point: an empty
+        # file next to a real one reads as "the decider said nothing". The single
+        # decider logs to `<run-dir>/brain.log`, where `civ6_play` puts it.
         play = subprocess.Popen(
             [sys.executable, "-u", str(HERE / "civ6_play.py"),
              "--tag", tag,
              "--orders-db", str(orders_db),
              "--difficulty", args.difficulty,
              "--map-size", args.map_size,
-             "--speed", args.speed,
+             "--speed", args.speed]
+            + (["--leader", args.leader] if args.leader else [])
+            + [
              "--max-turns", str(args.max_turns),
              "--timeout", str(args.timeout),
              "--lock-wait", "30",
@@ -821,6 +932,16 @@ def main() -> int:
              "--announcement-seconds", "0.05",
              "--era-announcement-seconds", "0.05",
              "--civvis-decides",
+             # The decider's whole configuration, on the ONE process that runs it.
+             # `--orders-bin` used to reach only this script's own second brain, so
+             # `civ6_play` fell back to its repo-relative default and a worktree
+             # without a build died with "CIVVIS decision binary does not exist"
+             # while the flag naming a real binary sat on the command line.
+             "--civvis-bin", str(orders_bin),
+             "--civvis-victory", args.victory,
+             "--civvis-strategy", args.strategy]
+            + (["--civvis-war-from-plan"] if args.war_from_plan else [])
+            + [
              "--tile-export-every", str(args.tile_export_every),
              # The operator's 2026-08-01 layout: the game owns the LOWER right
              # at 2/3 of the screen each way; CIVVIS holds the upper left.
@@ -838,20 +959,33 @@ def main() -> int:
              "--window-frac", "0.5", "--window-vfrac", "0.5"],
             stdout=play_log, stderr=subprocess.STDOUT,
         )
-        time.sleep(3)
-        brain = subprocess.Popen(
-            [sys.executable, "-u", str(HERE / "civ6_brain.py"),
-             "--run-dir", str(RUN_ROOT / tag),
-             "--mode", "civvis",
-             "--bin", str(orders_bin),
-             "--orders-db", str(orders_db),
-             "--victory", args.victory,
-             "--strategy", args.strategy]
-            + (["--war-from-plan"] if args.war_from_plan else [])
-            + [
-             "--seconds", str(args.timeout + 300)],
-            stdout=brain_log, stderr=subprocess.STDOUT,
-        )
+        # ⚠⚠⚠ THERE USED TO BE A SECOND DECIDER HERE, AND IT RACED THE FIRST ONE.
+        #
+        # `civ6_play.py --civvis-decides` spawns its own `civ6_brain.py` — it has
+        # since the bridge landed (#697) — and this script spawned another three
+        # seconds later, on the same run dir, the same `orders.sqlite` and the same
+        # `why.log`. Measured live on `civvis-20260803T185256Z`:
+        #
+        #     pid 81760   civ6_brain.py ...            (spawned by civ6_play)
+        #     pid 81772   civ6_brain.py --war-from-plan   (spawned by here)
+        #
+        # It hid for two reasons. Both deciders are deterministic over the same
+        # `events.jsonl`, so their logs agree turn for turn — 47/47 with identical
+        # order counts on the run before this one — and nothing ever compared the
+        # two configurations. They are NOT the same configuration: `--war-from-plan`
+        # is passed by this script only, so the flag the operator turned on for the
+        # 2026-08-03 batches was carried by one of two racing writers.
+        #
+        # ⚠ And `write_turn` is not safe to race. It does
+        #     DELETE FROM orders WHERE run=? AND turn=?  ->  INSERT ...  -> COMMIT
+        # and then commits the `ready` row SEPARATELY, on purpose, so that `ready`
+        # can never name a partial turn. Two writers reopen that window from the
+        # outside: A commits its orders, A commits ready=N, the mod starts reading —
+        # and B's DELETE for the same turn lands underneath it. `ready` says N and
+        # the table says nothing.
+        #
+        # So: ONE decider, the one `civ6_play` owns, configured from here. Every
+        # setting this script used to apply to its own copy is now passed through.
 
         try:
             why = wait_watching_the_turn(play, tag, args.timeout + 600,
@@ -860,16 +994,19 @@ def main() -> int:
                 print("attempt exceeded its own timeout; stopping it", flush=True)
                 play.send_signal(signal.SIGTERM)
         finally:
-            if brain.poll() is None:
-                brain.send_signal(signal.SIGTERM)
+            # `civ6_play` owns the decider now and stops it on the way out
+            # (`stop_brain`, also registered with atexit), so there is nothing to
+            # signal from here. `teardown()` still sweeps a brain that outlived a
+            # play process killed by signal, which is the case that motivated the
+            # explicit terminate in the first place.
             play_log.close()
-            brain_log.close()
             teardown()
 
         record = outcome_of(tag)
         record["utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         record["victory_target"] = args.victory
         record["difficulty_asked"] = args.difficulty
+        record["leader_asked"] = args.leader or None
         record["code_rev"] = code_rev
 
         # ★★★★★ A ROW THAT WAS DEALT SOMETHING ELSE MUST SAY SO, WIN OR NOT.
@@ -894,16 +1031,10 @@ def main() -> int:
         # ⚠ Recorded, NOT fatal. A game at the wrong rung is still a game, and the
         # data is still worth having; what it must not do is masquerade as the rung
         # that was asked for. `settings_dealt` is the field a reader can filter on.
-        dealt = (record.get("seat") or {})
-        mismatch = {
-            field: {"asked": asked, "dealt": dealt.get(key)}
-            for field, key, asked in (
-                ("difficulty", "difficulty", args.difficulty),
-                ("map_size", "size", args.map_size),
-                ("speed", "speed", args.speed),
-            )
-            if dealt.get(key) is not None and dealt.get(key) != asked
-        }
+        mismatch = settings_mismatch(
+            {"difficulty": args.difficulty, "map_size": args.map_size,
+             "speed": args.speed, "leader": args.leader},
+            record.get("seat") or {})
         if mismatch:
             record["settings_mismatch"] = mismatch
             for field, pair in mismatch.items():
