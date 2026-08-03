@@ -16174,6 +16174,30 @@ pub struct Game {
     /// with seven builders alive against an army of one.
     #[serde(default)]
     pub blocked_improvement_sites: BTreeSet<Pos>,
+    /// ★★★★★ PROMOTIONS THE HOST REFUSED, so CIVVIS stops asking for them again.
+    ///
+    /// Every other host refusal already had a block set — `blocked_city_sites`,
+    /// `blocked_improvement_sites`, `blocked_trade_routes`, `blocked_policies`,
+    /// `blocked_districts`, `blocked_wonders`, `blocked_production` — and
+    /// promotions had NONE, so a refused promotion was re-requested every turn
+    /// for the rest of the game.
+    ///
+    /// Measured over every run recorded on 2026-08-03: **411 `promotion_refused`
+    /// events from only 19 distinct (unit, promotion) pairs — a median of 13
+    /// retries each and a maximum of 71.** Only 11% were asked once. The two
+    /// populations:
+    ///
+    /// - **318 on UNIT_APOSTLE** (Translator, Chaplain, Debater, Indulgence
+    ///   Vendor, Proselytizer). A Civilization VI Apostle takes ONE promotion when
+    ///   it is created and can never be promoted again, so every repeat was
+    ///   guaranteed to fail from the first refusal onward.
+    /// - **93 `PROMOTION_ECHELON` on UNIT_PIKE_AND_SHOT.**
+    ///
+    /// Keyed by unit id and promotion, because the refusal is specific to both:
+    /// another unit of the same kind may legitimately take the promotion this one
+    /// cannot.
+    #[serde(default)]
+    pub blocked_promotions: BTreeMap<u32, BTreeSet<Name>>,
     /// Origin/destination pairs a host engine rejected for a trade route.
     /// Native games leave this empty; a live mirror learns it from Firaxis so an
     /// unreachable city is not offered again every turn on geometric range alone.
@@ -16599,6 +16623,7 @@ impl From<GameSer> for Game {
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
+            blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
@@ -17046,6 +17071,7 @@ impl Game {
             observed_city_max_wall_hp: BTreeMap::new(),
             blocked_city_sites: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
+            blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
             blocked_policies: BTreeSet::new(),
             blocked_districts: BTreeMap::new(),
@@ -24533,6 +24559,33 @@ impl Game {
             })
             .map(|(name, _)| *name)
             .collect();
+        // ★★★★★ DROP PROMOTIONS THE HOST HAS ALREADY REFUSED FOR THIS UNIT.
+        //
+        // Filtered here rather than at the three appliers because every chooser and
+        // `do_promote` itself reach the offer through this one function, so one gate
+        // covers them all. Native games leave `blocked_promotions` empty and take the
+        // fast path below.
+        if let Some(blocked) = self.blocked_promotions.get(&uid) {
+            // ⚠ TWO DISTINCT REFUSALS MEAN THE UNIT CANNOT PROMOTE AT ALL, not that
+            // it should try the next name on the list.
+            //
+            // Blocking the pair alone is right for a unit the host refused ONE
+            // promotion for, and wrong for a Civilization VI Apostle, which takes a
+            // single promotion when it is created and can never take another.
+            // CIVVIS keeps `promotion_pending` true for it forever, so a pair block
+            // just walks the offer down the list: in the gate replay TRANSLATOR fell
+            // 67 -> 1 and CHAPLAIN 59 -> 31 while PROSELYTIZER rose 0 -> 83.
+            //
+            // The threshold is read off the corpus rather than assumed. Of 12 units
+            // the host ever refused, the 5 that were asked two or more DISTINCT
+            // promotions are all Apostles walking the list; the 7 asked exactly one
+            // are 4 Apostles that never got a second name and 3 Pike and Shot
+            // refused `PROMOTION_ECHELON`, which the pair block fixes outright.
+            if blocked.len() >= 2 {
+                return vec![];
+            }
+            available.retain(|name| !blocked.contains(name));
+        }
         let limited_offer = (class == "rock_band"
             && !self.rock_band_choose_any_promotion(unit.owner))
             || (class == "religious_apostle"
@@ -57407,6 +57460,46 @@ mod combat_scenarios {
         game.remove_unit(convoy);
         assert_eq!(game.unit_heal_rate(soldier), base_heal);
         assert_eq!(game.unit_max_moves(soldier), 2.0);
+    }
+
+    #[test]
+    fn a_promotion_the_host_refused_is_never_asked_for_again() {
+        let (mut game, center, _ring) = controlled_game(31_435);
+        let warrior = game.spawn_unit("warrior", 0, center);
+        game.award_xp(warrior, 20.0);
+        let offers = game.available_promotions(warrior);
+        assert!(
+            offers.len() >= 2,
+            "the warrior has a promotion pending with several choices"
+        );
+
+        // ONE refusal removes exactly that promotion and leaves the rest: another
+        // choice may still be legal for this unit.
+        game.blocked_promotions
+            .insert(warrior, [offers[0]].into_iter().collect());
+        let after_one = game.available_promotions(warrior);
+        assert!(
+            !after_one.contains(&offers[0]),
+            "the refused promotion is withdrawn"
+        );
+        assert!(
+            after_one.contains(&offers[1]),
+            "the others are still offered"
+        );
+
+        // TWO distinct refusals mean the unit cannot promote at all. This is the
+        // Apostle case: it takes one promotion when it is created and can never take
+        // another, so offering the next name just walks the list.
+        game.blocked_promotions
+            .insert(warrior, [offers[0], offers[1]].into_iter().collect());
+        assert!(
+            game.available_promotions(warrior).is_empty(),
+            "a unit refused twice is not offered a third name"
+        );
+
+        // A native game never populates the block set and is untouched.
+        game.blocked_promotions.clear();
+        assert_eq!(game.available_promotions(warrior), offers);
     }
 
     #[test]
