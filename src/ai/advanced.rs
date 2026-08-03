@@ -1690,6 +1690,9 @@ impl AdvancedAi {
         ai.adjacency_site_planning = true;
         ai.settler_commit = true;
         ai.research_economy = true;
+        // The baseline governor makes most of this agent's builds, and it
+        // cannot repair an Amenity deficit without this.
+        ai.base.amenity_districts = true;
         ai.city_target_floor = PRODUCTION_CITY_TARGET_FLOOR;
         ai.plan_city_target = true;
         // Expansion is allowed only behind the existing production floors;

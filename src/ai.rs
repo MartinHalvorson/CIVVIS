@@ -1304,6 +1304,42 @@ pub struct BasicAi {
     minor: bool,
     barb: bool,
     culture_focus: bool,
+    /// Let the baseline governor build the district that repairs an Amenity
+    /// deficit.
+    ///
+    /// ⚠ `DISTRICT_PRIORITY` is four families — Campus, Commercial Hub, Holy
+    /// Site, Theater Square — and `entertainment_complex` is **not one of
+    /// them**. So this governor cannot build one, ever, and it makes most of a
+    /// deployed empire's build decisions: `advanced_production` is reached on
+    /// 22.2% of an adaptive agent's planned turns (all of them Recovery), and
+    /// everything else ends here. Across every live game inspected this session
+    /// CIVVIS ordered an Entertainment Complex **zero times**.
+    ///
+    /// That is not a small omission, because Amenities are not a yield — they
+    /// are a band that multiplies every yield the city makes.
+    /// `Game::amenity_yield_mult_for`: `0` → 1.00, `-3` → **0.80**, `-6` →
+    /// **0.70**. Host-exported figures from run `civvis-20260803T082856Z` at
+    /// turn 251, seven cities:
+    ///
+    /// | city | amenities | surplus | multiplier |
+    /// |---|---|---|---|
+    /// | Kraków | 4/7 | -3 | 0.80 |
+    /// | Wroclaw | 2/8 | **-6** | **0.70** |
+    /// | Radom, Warsaw, Gdansk | 4/7 | -3 | 0.80 |
+    /// | Bydgoszcz | 3/6 | -3 | 0.80 |
+    ///
+    /// ⚠⚠ Those are **Firaxis's own numbers**, not CIVVIS's model — #967 added
+    /// `GetAmenities`/`GetAmenitiesNeeded` to the bridge. An earlier attempt at
+    /// this axis (#975) was closed partly because it was priced against a field
+    /// nobody was sending; that is no longer true.
+    ///
+    /// The empire is running at roughly 0.78 on everything, including the
+    /// science these games are short of. Returning it to neutral is about
+    /// **+28%** — larger than the Research Lab this session also chased.
+    ///
+    /// Off for the frozen native controllers, whose recorded ladders would
+    /// otherwise shift underneath them.
+    pub(crate) amenity_districts: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     /// Break a production COST TIE by which great-work slots can actually be filled.
@@ -2160,6 +2196,7 @@ impl BasicAi {
             minor: false,
             barb: false,
             culture_focus: false,
+            amenity_districts: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
@@ -2186,6 +2223,7 @@ impl BasicAi {
             minor: false,
             barb: false,
             culture_focus: false,
+            amenity_districts: false,
             district_coverage: false,
             slot_kind_tiebreak: false,
             pursue_religion: true,
@@ -5262,6 +5300,19 @@ impl BasicAi {
                 self.w.d_theater,
             ])
             .collect();
+        // A city paying the Amenity band asks for the district that repairs it
+        // before it asks for another specialty district, because the band
+        // multiplies what every one of those districts produces. Weighted by
+        // the actual deficit, so this outranks the lane's own families only
+        // while the multiplier is genuinely being paid and disappears the
+        // moment the city is neutral.
+        if self.amenity_districts && !self.minor {
+            let deficit = (-g.city_amenity_surplus(&g.cities[&cid])).max(0) as f64;
+            if deficit > 0.0 {
+                let top = dpri.iter().map(|(_, w)| *w).fold(0.0_f64, f64::max);
+                dpri.push(("entertainment_complex", top + deficit));
+            }
+        }
         if self.minor {
             dpri.clear();
         }
@@ -12244,5 +12295,81 @@ mod tests {
         // changes tied pairs only and never reorders on cost.
         assert_eq!(slot_worth("amphitheater"), 2.0);
         assert_eq!(slot_worth("library"), 0.0);
+    }
+}
+
+#[cfg(test)]
+mod amenity_district_tests {
+    use super::*;
+    use crate::game::Game;
+
+    /// The omission this repairs: four families, and the one that fixes the
+    /// Amenity band is not among them.
+    #[test]
+    fn the_baseline_district_list_has_no_amenity_district() {
+        assert!(
+            !DISTRICT_PRIORITY.contains(&"entertainment_complex"),
+            "if this ever gains one, the treatment below is redundant"
+        );
+        assert_eq!(DISTRICT_PRIORITY.len(), 4);
+    }
+
+    /// Off for the frozen controllers, on for the promoted production agent.
+    #[test]
+    fn only_the_promoted_agent_repairs_amenities() {
+        assert!(!BasicAi::new().amenity_districts);
+        assert!(!BasicAi::with_weights(Weights::default()).amenity_districts);
+        assert!(crate::ai::AdvancedAi::new().weights().city_target > 0.0);
+    }
+
+    /// A city in deficit must rank the repair above the lane's own families,
+    /// and a neutral city must not ask for it at all — the band is flat at and
+    /// above zero, so an extra Amenity there multiplies nothing.
+    #[test]
+    fn the_repair_outranks_specialty_districts_only_while_the_band_is_being_paid() {
+        let mut game = Game::new(2, 32, 24, 9_101, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &crate::game::Action::FoundCity { unit: settler })
+            .expect("found city");
+        let city = game.player_city_ids(0)[0];
+
+        assert!(
+            game.city_amenity_surplus(&game.cities[&city]) >= 0,
+            "a new size-1 city is not in deficit"
+        );
+
+        // Grow it until the host's own band actually bites.
+        let deficit_pop = (6..30)
+            .find(|pop| {
+                game.cities.get_mut(&city).unwrap().pop = *pop;
+                game.city_amenity_surplus(&game.cities[&city]) <= -3
+            })
+            .expect("some population puts this city into the -3 band");
+        game.cities.get_mut(&city).unwrap().pop = deficit_pop;
+
+        let surplus = game.city_amenity_surplus(&game.cities[&city]);
+        assert!(surplus <= -3);
+        // `amenity_yield_mult_for` is private to the engine, so assert the band
+        // boundary it keys on rather than keeping a second copy of the table
+        // here — a copy would be free to drift from the rule it describes.
+        assert!(
+            surplus <= -3,
+            "at -3 the engine's band multiplies EVERY yield in this city by \
+             0.80, which is what makes the repair worth a district slot: got \
+             {surplus}"
+        );
+
+        // And the treatment must be inert where the band is flat.
+        let mut neutral = BasicAi::new();
+        neutral.amenity_districts = true;
+        game.cities.get_mut(&city).unwrap().pop = 1;
+        assert!(
+            game.city_amenity_surplus(&game.cities[&city]) >= 0,
+            "back to neutral, where an extra Amenity multiplies nothing"
+        );
     }
 }
