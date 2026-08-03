@@ -5421,6 +5421,28 @@ local function exportState(player, pid, turn)
 		score = try(function() return player:GetScore(); end, -1),
 		-- Ours, on the same scale as each rival's, so a comparison is possible at all.
 		military = try(function() return player:GetStats():GetMilitaryStrength(); end, -1),
+		-- Great Person POINTS, not the Great People already earned. The planner
+		-- prices every district project against the live race -- how close we
+		-- are to the next Scientist, and how close the leading rival is -- and
+		-- with this absent that whole comparison ran against all zeros in every
+		-- live game.
+		--
+		-- ⚠ `GetPointsTotal` takes `row.Index`, NOT `row.Hash`. Passing a hash
+		-- here is what crashed the game four times, once per attempt, and a
+		-- pcall cannot catch that: it is a segfault inside the host, not a Lua
+		-- error. Base/Assets/UI/.../GreatPeoplePopup.lua:2098 is the reference.
+		great_person_points = try(function()
+			local points = player:GetGreatPeoplePoints();
+			if points == nil then return nil; end
+			local out = {};
+			for row in GameInfo.GreatPersonClasses() do
+				local total = points:GetPointsTotal(row.Index);
+				if total ~= nil and total > 0 then
+					out[row.GreatPersonClassType] = total;
+				end
+			end
+			return out;
+		end, nil),
 		governor_points = governor_points,
 		governor_points_spent = governor_points_spent,
 		governors = governor_roster,
