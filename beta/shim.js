@@ -243,7 +243,11 @@
       if (owed > 0) await sleep(owed);
     }
 
-    answer = await withFinale(answer);
+    // Only a world-state response is allowed to start, advance, or clear the
+    // finale clock. The viewer asks for metadata such as `/runtime` while the
+    // result is on screen; those answers have no `winner` field and used to
+    // clear the countdown on every poll, leaving the finished world forever.
+    if (path === "/state") answer = await withFinale(answer);
 
     // Civ 6 autosaves at the top of every turn and so does the desktop build.
     // The engine cannot, so it says when one is due and the page keeps it.

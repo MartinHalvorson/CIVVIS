@@ -77,6 +77,12 @@ jobs:
       - name: Check the routing
         run: ./beta/worker_test.py
 
+      # The browser owns the WASM turn clock and result countdown. Exercise it
+      # with a deterministic worker so metadata polling cannot strand a
+      # finished world before the longer live-engine check begins.
+      - name: Check the browser clock
+        run: ./beta/shim_test.py
+
       # And the part that proves the engine underneath is alive rather than
       # merely present: a real browser, watched until turns advance.
       - name: Check it plays
