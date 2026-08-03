@@ -785,6 +785,13 @@ pub struct AdvancedAi {
     /// `advanced_relief_scoped` entrant, so it can be re-measured once the
     /// conversion bottleneck moves rather than re-derived from scratch.
     pub scoped_relief_hold: bool,
+    /// Let a group's focus name an enemy a unit can reach **and still strike**
+    /// this turn.
+    ///
+    /// **Off by default, live-bridge only.** The unconditional version of this
+    /// measured worse and was closed (#995); see
+    /// [`AdvancedAi::pounce_reach`].
+    pub pounce_when_the_blow_lands: bool,
     /// Hold a promotion back until its healing would actually land.
     ///
     /// **Off by default. Native/eval only — deliberately NOT in
@@ -1831,6 +1838,7 @@ impl AdvancedAi {
             solvent_faith_army: false,
             battlefront_frame: None,
             scoped_relief_hold: false,
+            pounce_when_the_blow_lands: false,
             promote_when_wounded: false,
             strike_opening: false,
             ranged_needs_line_of_sight: false,
@@ -1940,6 +1948,12 @@ impl AdvancedAi {
         self.bounded_recovery = true;
     }
 
+    /// Let the focus name an enemy a unit can reach and still strike. Native
+    /// tournament games leave this disabled so their ladders stay comparable.
+    pub fn enable_pounce_when_the_blow_lands(&mut self) {
+        self.pounce_when_the_blow_lands = true;
+    }
+
     /// Hold a promotion until its healing would land. Native/eval only; the
     /// live bridge does not set this.
     pub fn enable_promote_when_wounded(&mut self) {
@@ -2047,6 +2061,13 @@ impl AdvancedAi {
         // steps recorded.
         self.enable_recorded_tactical_step();
         self.enable_bounded_recovery();
+        // ⚠ The focus could only ever name a target already inside a unit's
+        // attack radius, so a group with nothing in contact had no focus and
+        // marched at its distant objective. Widening that ring unconditionally
+        // measured WORSE (#995: attacks 83 -> 79, marching up) because 45% of
+        // loitering unit-turns cannot reach attack range at all. This widens it
+        // only by ground the unit can cross and still swing.
+        self.enable_pounce_when_the_blow_lands();
         // ⚠ `desired_military` is `2 * city_count` at war — a headcount keyed to
         // OUR empire that never asks how strong the rival is. Once it is met,
         // `force_gap` hits zero and the military arm of `production_value` drops
@@ -13955,6 +13976,51 @@ impl AdvancedAi {
             .unwrap_or(anchor)
     }
 
+    /// How far this unit will look for something to fight: its attack radius,
+    /// plus only the ground it can cross **and still have movement left to
+    /// swing**.
+    ///
+    /// `force_focus_target` searched `wdisk(unit.pos, radius)` — radius 1 for
+    /// melee, attack range for ranged — so the focus could only ever name a
+    /// target the group was already touching. With nothing in contact it
+    /// returned `None`, the group's movement target fell back to
+    /// `group.objective`, and the column marched at a distant city past enemies
+    /// it never engaged.
+    ///
+    /// ⚠⚠ **The obvious widening was tried and measured WORSE.** PR #995 added
+    /// a flat three-hex approach ring: war-turn attacks fell 83 -> 79 while
+    /// MOVE_TO rose 1572 -> 1612. It was closed unmerged. The reason is
+    /// geometric — of 394 loitering unit-turns on run
+    /// `civvis-20260803T005930Z`:
+    ///
+    /// | | | |
+    /// |---|---|---|
+    /// | **could not reach attack range at all** | 176 | **45%** |
+    /// | could close, arriving with nothing left to swing | 61 | 15% |
+    /// | could close **and** still swing | 157 | **40%** |
+    ///
+    /// **Most loitering is not a refusal to engage, it is distance.** Pointing
+    /// a column at a fight it cannot join this turn just buys marching, which
+    /// is exactly what #995 measured.
+    ///
+    /// So this widens the ring only by what the unit can actually spend and
+    /// still attack: reaching a firing tile costs at least `distance - radius`
+    /// movement, and an attack needs something left, so the extra ground is
+    /// `moves_left - 1` and no more. A unit with two movement standing three
+    /// hexes from a melee target gets a ring of 1 + 1 = 2 and correctly does not
+    /// see it; the same unit one hex closer does.
+    fn pounce_reach(&self, g: &Game, uid: u32, radius: i32) -> i32 {
+        if !self.pounce_when_the_blow_lands {
+            return radius;
+        }
+        let spare = g
+            .units
+            .get(&uid)
+            .map(|unit| unit.moves_left.floor() as i32 - 1)
+            .unwrap_or(0);
+        radius + spare.max(0)
+    }
+
     fn force_focus_target(
         &self,
         g: &Game,
@@ -13976,7 +14042,9 @@ impl AdvancedAi {
             } else {
                 1
             };
-            for pos in g.wdisk(unit.pos, radius) {
+            // ★★★★★ A TARGET THIS UNIT COULD STRIKE THIS TURN, not merely walk
+            // toward. See `pounce_reach`.
+            for pos in g.wdisk(unit.pos, self.pounce_reach(g, *uid, radius)) {
                 let visible_enemy = if self.battlefront_observation {
                     g.sees(&visible, pos)
                         && (g
@@ -23496,6 +23564,45 @@ mod tests {
 
         // A unit that no longer exists is not a promotion decision.
         assert!(!ai.promotion_heal_is_wasted(&game, u32::MAX));
+    }
+
+    /// The defect this exists for: the focus could only name a target already
+    /// inside a unit's attack radius. ⚠ Widening that unconditionally measured
+    /// WORSE (#995), so the ring grows only by ground the unit can cross and
+    /// still swing.
+    #[test]
+    fn the_pounce_ring_is_what_the_unit_can_cross_and_still_strike() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_108);
+        let warrior = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 1));
+
+        let shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_pounce_when_the_blow_lands();
+
+        // The shipped agent never looks past its own reach, whatever it has left.
+        game.units.get_mut(&warrior).unwrap().moves_left = 4.0;
+        assert_eq!(shipped.pounce_reach(&game, warrior, 1), 1);
+
+        // Spent: no ring at all beyond reach, because it cannot swing anyway.
+        game.units.get_mut(&warrior).unwrap().moves_left = 0.0;
+        assert_eq!(ai.pounce_reach(&game, warrior, 1), 1);
+        // One move buys nothing either — it would arrive with nothing left.
+        game.units.get_mut(&warrior).unwrap().moves_left = 1.0;
+        assert_eq!(ai.pounce_reach(&game, warrior, 1), 1);
+        // Two moves: step one hex and still strike.
+        game.units.get_mut(&warrior).unwrap().moves_left = 2.0;
+        assert_eq!(ai.pounce_reach(&game, warrior, 1), 2);
+        // Four moves on a ranged unit with reach 2 sees five hexes out.
+        game.units.get_mut(&warrior).unwrap().moves_left = 4.0;
+        assert_eq!(ai.pounce_reach(&game, warrior, 2), 5);
+
+        // Fractional movement rounds down rather than promising a step it
+        // cannot finish.
+        game.units.get_mut(&warrior).unwrap().moves_left = 2.75;
+        assert_eq!(ai.pounce_reach(&game, warrior, 1), 2);
+
+        // A unit that no longer exists never widens the ring.
+        assert_eq!(ai.pounce_reach(&game, u32::MAX, 1), 1);
     }
 
     /// The behaviour this exists for: a locally superior force far from the
