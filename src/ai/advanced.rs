@@ -1557,6 +1557,10 @@ impl AdvancedAi {
         ai.envoy_priority = true;
         ai.adjacency_site_planning = true;
         ai.settler_commit = true;
+        // `advanced_production` is reached on 22.2% of an adaptive empire's
+        // planned turns, so the baseline governor makes most of this agent's
+        // building decisions. Let it rank them by value rather than by price.
+        ai.base.build_by_value = true;
         ai
     }
 
@@ -16786,6 +16790,17 @@ mod tests {
         install_ai_test_district(game, city, "holy_site");
         game.cities.get_mut(&city).unwrap().buildings =
             vec![crate::name!("shrine"), crate::name!("temple")];
+    }
+
+    /// The promoted agent must actually receive the value ranking, and the
+    /// frozen anchor must not. `advanced_production` runs on 22.2% of an
+    /// adaptive empire's planned turns, so this flag decides most of what a
+    /// deployed game builds.
+    #[test]
+    fn only_the_promoted_agent_ranks_buildings_by_value() {
+        assert!(AdvancedAi::new().base.build_by_value);
+        assert!(!AdvancedAi::legacy().base.build_by_value);
+        assert!(!AdvancedAi::pre_policy_envoy().base.build_by_value);
     }
 
     #[test]

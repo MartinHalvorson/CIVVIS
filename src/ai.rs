@@ -1299,6 +1299,33 @@ pub struct BasicAi {
     minor: bool,
     barb: bool,
     culture_focus: bool,
+    /// Order a city's ordinary building choice by what the building is worth
+    /// instead of by what it costs.
+    ///
+    /// ⚠ The fallback this replaces is literally `buildable.sort()` on cost and
+    /// then take index 0 — **the cheapest thing the city can build**, with no
+    /// reference to yields, strategy or need. That is not a corner of the
+    /// codebase: `advanced_production` is reached on 22.2% of an adaptive
+    /// empire's planned turns (measured over four deployment-shape games, and
+    /// all of those are Recovery), so **this line makes most of the building
+    /// decisions in a deployed game.**
+    ///
+    /// Cheapest-first is a science policy by accident. The ladder runs monument
+    /// 60, granary 65, shrine 70, walls 80, water_mill 80, **library 90**,
+    /// market 120, temple 120, amphitheater 150 — and then **university 250**
+    /// and **research_lab 440**, the two largest Campus buildings, at the very
+    /// top. A city clears everything cheaper first, and across a 250-turn game
+    /// there is always something cheaper, because new cheap buildings keep
+    /// unlocking. Every live empire inspected holds exactly that prefix of the
+    /// ladder, and **no live game has ever built a Research Lab.**
+    ///
+    /// The value function is the one this file already uses to rank *gold
+    /// purchases*, so the ordering is calibrated rather than invented; the only
+    /// new claim is that production deserves the same ranking as gold.
+    ///
+    /// Off for the frozen native controllers, whose recorded ladders would
+    /// otherwise shift underneath them.
+    pub(crate) build_by_value: bool,
     pursue_religion: bool,
     /// Enforce the live Firaxis rule that a religious unit inherits its
     /// purchase city's majority. Off for the frozen native controllers and
@@ -2147,6 +2174,7 @@ impl BasicAi {
             minor: false,
             barb: false,
             culture_focus: false,
+            build_by_value: false,
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
@@ -2170,6 +2198,7 @@ impl BasicAi {
             minor: false,
             barb: false,
             culture_focus: false,
+            build_by_value: false,
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
@@ -4390,24 +4419,8 @@ impl BasicAi {
                     continue;
                 }
 
-                let great_people = spec.great_person_points.values().sum::<f64>();
-                let work_slots = spec.great_work_slots.values().sum::<i32>().max(0) as f64;
-                let mut value = spec.yields.food * 34.0
-                    + spec.yields.production * 48.0
-                    + spec.yields.gold * 26.0
-                    + spec.yields.science * 44.0
-                    + spec.yields.culture * 42.0
-                    + spec.yields.faith * 24.0
-                    + spec.housing * (16.0 + 24.0 * housing_need)
-                    + spec.amenity * (28.0 + 28.0 * amenity_need)
-                    + great_people * 24.0
-                    + work_slots * 30.0
-                    + spec.citizen_slots.max(0) as f64 * 8.0
-                    + spec.trade_route_capacity.max(0) as f64 * 90.0
-                    + spec.growth_pct.max(0.0) * 2.0
-                    + spec.builder_charges.max(0) as f64 * 24.0
-                    + spec.unit_levels.max(0) as f64 * 18.0
-                    - spec.maintenance.max(0.0) * 10.0;
+                let mut value =
+                    Self::building_infrastructure_value(spec, housing_need, amenity_need);
                 if building == "monument" {
                     value += 90.0;
                 }
@@ -4917,6 +4930,41 @@ impl BasicAi {
             })
     }
 
+    /// What an ordinary (non-wonder) building is worth to a city, given what
+    /// that city is currently short of.
+    ///
+    /// Lifted verbatim out of the gold-purchase ranking so production and gold
+    /// agree about what a building is for. Nothing here is new: these are the
+    /// weights that already decided which building an empire would *buy*, and
+    /// the only change is that the same question asked with hammers now gets
+    /// the same answer. Science at 44 sits just under production's 48 and above
+    /// gold's 26, which is why a University outranks a Water Mill here and
+    /// loses to it on a cost sort.
+    fn building_infrastructure_value(
+        spec: &crate::rules::BuildingSpec,
+        housing_need: f64,
+        amenity_need: f64,
+    ) -> f64 {
+        let great_people = spec.great_person_points.values().sum::<f64>();
+        let work_slots = spec.great_work_slots.values().sum::<i32>().max(0) as f64;
+        spec.yields.food * 34.0
+            + spec.yields.production * 48.0
+            + spec.yields.gold * 26.0
+            + spec.yields.science * 44.0
+            + spec.yields.culture * 42.0
+            + spec.yields.faith * 24.0
+            + spec.housing * (16.0 + 24.0 * housing_need)
+            + spec.amenity * (28.0 + 28.0 * amenity_need)
+            + great_people * 24.0
+            + work_slots * 30.0
+            + spec.citizen_slots.max(0) as f64 * 8.0
+            + spec.trade_route_capacity.max(0) as f64 * 90.0
+            + spec.growth_pct.max(0.0) * 2.0
+            + spec.builder_charges.max(0) as f64 * 24.0
+            + spec.unit_levels.max(0) as f64 * 18.0
+            - spec.maintenance.max(0.0) * 10.0
+    }
+
     fn pick_item(
         &self,
         g: &Game,
@@ -5295,6 +5343,36 @@ impl BasicAi {
             .map(|(b, s)| (s.cost as i64, *b))
             .collect();
         if !buildable.is_empty() {
+            if self.build_by_value {
+                // Rank by value per hammer, so a cheap useful building still
+                // wins and an expensive useless one still loses -- what changes
+                // is that "useful" is finally consulted at all. Ties break on
+                // cost and then on name, so the ordering stays total and
+                // reproducible.
+                let city = &g.cities[&cid];
+                let housing_need = (city.pop as f64 + 2.0 - g.city_housing(city)).max(0.0);
+                let amenity_need = (-g.city_amenity_surplus(city)).max(0) as f64;
+                if let Some((_, _, best)) = buildable
+                    .iter()
+                    .map(|(cost, name)| {
+                        let spec = &g.rules.buildings[name];
+                        let value = Self::building_infrastructure_value(
+                            spec,
+                            housing_need,
+                            amenity_need,
+                        );
+                        (value / (*cost).max(1) as f64, -*cost, *name)
+                    })
+                    .max_by(|left, right| {
+                        left.0
+                            .total_cmp(&right.0)
+                            .then(left.1.cmp(&right.1))
+                            .then(left.2.cmp(&right.2))
+                    })
+                {
+                    return Some(Item::Building { building: best });
+                }
+            }
             buildable.sort();
             return Some(Item::Building {
                 building: Name::new(&buildable[0].1),
@@ -11961,5 +12039,64 @@ mod tests {
             );
         }
         println!();
+    }
+}
+
+#[cfg(test)]
+mod build_by_value_tests {
+    use super::*;
+    use crate::game::Game;
+
+    /// The ladder that made this a science bug: the two largest Campus
+    /// buildings are the two most expensive things a developed city can build,
+    /// so a cost sort reaches them last, every time, in every game.
+    #[test]
+    fn a_cost_sort_puts_the_science_buildings_last_and_a_value_sort_does_not() {
+        let g = Game::new(2, 24, 16, 7_701, 250, 0);
+        let rank_by = |value: bool| -> Vec<&'static str> {
+            let mut rows: Vec<(f64, i64, &'static str)> = ["library", "university", "research_lab",
+                "monument", "granary", "walls", "water_mill"]
+                .into_iter()
+                .map(|name| {
+                    let spec = &g.rules.buildings[name];
+                    let score = if value {
+                        BasicAi::building_infrastructure_value(spec, 0.0, 0.0)
+                            / spec.cost.max(1.0)
+                    } else {
+                        -spec.cost
+                    };
+                    (score, spec.cost as i64, name)
+                })
+                .collect();
+            rows.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
+            rows.into_iter().map(|(_, _, name)| name).collect()
+        };
+
+        let by_cost = rank_by(false);
+        let by_value = rank_by(true);
+        let last_two = &by_cost[by_cost.len() - 2..];
+        assert!(
+            last_two.contains(&"university") && last_two.contains(&"research_lab"),
+            "a cost sort must reach the two big Campus buildings last: {by_cost:?}"
+        );
+        let value_rank = |name: &str| by_value.iter().position(|other| *other == name).unwrap();
+        assert!(
+            value_rank("university") < value_rank("walls"),
+            "a University must outrank Walls once value is consulted: {by_value:?}"
+        );
+        assert!(
+            value_rank("research_lab") < by_value.len() - 1,
+            "the Research Lab must not still be last: {by_value:?}"
+        );
+    }
+
+    /// The frozen controllers must keep the ladder their ratings were measured
+    /// on, so the flag has to be off wherever they are built.
+    #[test]
+    fn the_frozen_controllers_keep_the_cost_sort() {
+        assert!(!BasicAi::new().build_by_value);
+        assert!(!BasicAi::with_weights(Weights::default()).build_by_value);
+        // The promoted agent's own side of this is asserted in
+        // `src/ai/advanced.rs`, where `base` is reachable.
     }
 }

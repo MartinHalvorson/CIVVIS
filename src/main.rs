@@ -344,8 +344,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the historical raw apply on the flag before it reaches `path_move` at all,
 /// so `advanced_v1` takes byte-for-byte the arm it always took. A
 /// compatibility re-pin.
+///
+/// #978 replaces the baseline governor's cheapest-first building fallback with
+/// a value-per-hammer ranking, behind `BasicAi::build_by_value`. That field is
+/// `false` in `BasicAi::new()` and `BasicAi::with_weights`, and is set only by
+/// `AdvancedAi::promoted_policy_envoy`; `advanced_v1` is `AdvancedAi::legacy()`,
+/// which does not go through that constructor. The new branch is guarded by
+/// `if self.build_by_value` and falls through to the identical `buildable.sort()`
+/// otherwise, so every configured, legacy and Elo agent picks the same building
+/// it picked before. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe537_003c_0d86_8e47;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa49a_036c_e6a0_0324;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
