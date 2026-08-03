@@ -24,6 +24,17 @@ use std::sync::Arc;
 /// attack unsupported. Below it the group holds on its own account, whatever
 /// else is happening in the empire.
 const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
+/// Points of standing wall that justify one more siege train, used by
+/// [`AdvancedAi::siege_units_wanted`]. A Civ VI wall tier is 100 points and a
+/// fully walled Renaissance city carries 400, so this asks for two trains at
+/// Medieval walls and the cap at Renaissance — the shape Korea used to strip a
+/// 400-point wall off Kwango in six turns while CIVVIS removed 9 points from
+/// Jeonju in fourteen.
+const SIEGE_WALL_PER_UNIT: usize = 150;
+/// Ceiling on the siege train. Past this the production is better spent on the
+/// melee that has to walk in and take the city — ranged and siege units cannot
+/// capture, and an unsealed city heals 20 a turn.
+const SIEGE_UNITS_MAX: usize = 3;
 /// Radius `threatened_city` scores hostiles in. A group already inside it is
 /// part of the defence rather than a column marching to it.
 const THREAT_RELIEF_RADIUS: i32 = 6;
@@ -738,6 +749,21 @@ pub struct AdvancedAi {
     /// `advanced_relief_scoped` entrant, so it can be re-measured once the
     /// conversion bottleneck moves rather than re-derived from scratch.
     pub scoped_relief_hold: bool,
+    /// Size the siege train against the wall standing at the target city,
+    /// instead of asking for exactly one siege unit for any target at all.
+    ///
+    /// **Off by default, live-bridge only**, on the same footing as
+    /// `bounded_recovery`. See [`AdvancedAi::siege_units_wanted`] for the
+    /// engine arithmetic and the 4-units-in-251-turns measurement behind it.
+    pub siege_tracks_the_wall: bool,
+    /// Price a fogged objective city from this controller's last sighting of
+    /// it, instead of scoring it as absent.
+    ///
+    /// **Off by default, live-bridge only** — the same footing as
+    /// `bounded_recovery`, and for the same reason: the defect it repairs is a
+    /// live-regime one. See [`AdvancedAi::remembered_objective_strength`] for
+    /// the mechanism and the 294-of-426 measurement behind it.
+    pub blind_objective_strength: bool,
     /// Exclude victory lanes the empire cannot finish before the game ends.
     ///
     /// **Off by default, on the pre-registered rule.** Routing toward a lane
@@ -1650,6 +1676,8 @@ impl AdvancedAi {
             solvent_faith_army: false,
             battlefront_frame: None,
             scoped_relief_hold: false,
+            siege_tracks_the_wall: false,
+            blind_objective_strength: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
             settler_price: 1.0,
@@ -1738,10 +1766,31 @@ impl AdvancedAi {
         self.base.home_defense = true;
     }
 
+    /// Record tactical steps so a unit stepped twice in one turn cannot walk
+    /// back onto the tile it just left. Native tournament games leave this
+    /// disabled so their recorded ladders replay move-for-move.
+    pub fn enable_recorded_tactical_step(&mut self) {
+        self.base.recorded_tactical_step = true;
+    }
+
     /// Stop the defensive-war posture from becoming permanent. Native
     /// tournament games leave this disabled.
     pub fn enable_bounded_recovery(&mut self) {
         self.bounded_recovery = true;
+    }
+
+    /// Let the siege train be sized by the wall it has to breach. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_siege_tracks_the_wall(&mut self) {
+        self.siege_tracks_the_wall = true;
+    }
+
+    /// Stop a fogged objective city from reading as an empty tile when the
+    /// army decides whether it is strong enough to engage. Native tournament
+    /// games leave this disabled so their recorded ladders stay comparable.
+    pub fn enable_blind_objective_strength(&mut self) {
+        self.blind_objective_strength = true;
     }
 
     /// Require a faith-bought soldier's gold upkeep to be payable. Native
@@ -10220,7 +10269,9 @@ impl AdvancedAi {
                         } else {
                             0.0
                         }
-                        + if spec.siege && counts.siege == 0 && plan.target_city.is_some() {
+                        + if spec.siege
+                            && counts.siege < self.siege_units_wanted(g, pid, plan)
+                        {
                             95.0
                         } else {
                             0.0
@@ -13009,6 +13060,79 @@ impl AdvancedAi {
         })
     }
 
+    /// How many siege units the campaign wants, given the wall actually
+    /// standing at the city it means to take.
+    ///
+    /// The shipped rule asks for exactly one — `counts.siege == 0 &&
+    /// plan.target_city.is_some()` — and asks for it whether the target is an
+    /// unwalled frontier town or a capital behind 400 points of Renaissance
+    /// wall. The engine itself says those are not the same problem. In
+    /// `Game::apply`, a shot at a city is scaled by
+    ///
+    /// ```text
+    /// let mult = if spec.siege { 1.0 } else { 0.5 };
+    /// ```
+    ///
+    /// and a non-siege ranged unit additionally eats a flat `att_base -= 17.0`
+    /// for attacking a city at all. So an army without siege pays twice, and
+    /// the shortfall compounds against exactly the targets that matter most.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo vs Korea, 173
+    /// turns of war): **four siege units were owned across 251 turns** — one
+    /// catapult and three trebuchets — held on **53 of 251 turns**, against a
+    /// Korea holding five walled cities. The within-run contrast is the whole
+    /// argument:
+    ///
+    /// | window | siege present | result |
+    /// |---|---|---|
+    /// | Seoul t136-142 (7 turns) | 1 trebuchet | 48 of 400 wall |
+    /// | Jinju + Jeonju t174-200 (27 turns) | none | 12 and 9 of 400 wall |
+    ///
+    /// Over 27 turns in contact with 5 field cannons and 3 heavy chariots the
+    /// army removed 9 points of a 400-point wall. Korea stripped Kwango's 400
+    /// in six turns and Mbuji-Mayi's in three.
+    ///
+    /// Corpus-wide over 111 runs and 19,713 turns, once cities that were ever
+    /// *ours* are excluded from the rival lists: turns holding a siege unit
+    /// inflict **0.12** points of new damage on an enemy city against **0.02**
+    /// without — 5.5x. ⚠ That comparison is observational and confounded:
+    /// holding siege correlates with being on the offensive at all. It is
+    /// offered as consistency, not as the causal claim. The claim this change
+    /// rests on is the engine arithmetic above and the structural defect that
+    /// the appetite is one unit regardless of the wall.
+    ///
+    /// The rule: nothing without a target; nothing for an unwalled target,
+    /// where the shipped `is_melee_capable` preference already wins the city;
+    /// otherwise one train per [`SIEGE_WALL_PER_UNIT`] points of standing wall,
+    /// capped at [`SIEGE_UNITS_MAX`]. A fogged target is read from this
+    /// controller's last sighting, on the same footing as
+    /// [`AdvancedAi::remembered_objective_strength`] — the wall a city had when
+    /// we last looked is the best estimate we are entitled to.
+    fn siege_units_wanted(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> usize {
+        if !self.siege_tracks_the_wall {
+            return usize::from(plan.target_city.is_some());
+        }
+        let Some(cid) = plan.target_city else {
+            return 0;
+        };
+        let Some(city) = g.cities.get(&cid) else {
+            return 0;
+        };
+        let visible = self.battlefront_visibility(g, pid);
+        let wall = if !self.battlefront_observation || g.sees(&visible, city.pos) {
+            city.wall_hp
+        } else {
+            match self.remembered_city(cid) {
+                Some(sighting) => sighting.wall_hp,
+                None => return 0,
+            }
+        };
+        if wall <= 0 {
+            return 0;
+        }
+        ((wall as usize).div_ceil(SIEGE_WALL_PER_UNIT)).clamp(1, SIEGE_UNITS_MAX)
+    }
+
     fn local_strength_ratio(
         &self,
         g: &Game,
@@ -13040,24 +13164,73 @@ impl AdvancedAi {
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
             .sum::<f64>()
             + g.city_at(objective)
-                .filter(|city| {
-                    enemies.contains(&g.cities[city].owner)
-                        && (!self.battlefront_observation || g.sees(&visible, g.cities[city].pos))
+                .filter(|city| enemies.contains(&g.cities[city].owner))
+                .and_then(|city| {
+                    if !self.battlefront_observation || g.sees(&visible, g.cities[&city].pos) {
+                        Some(g.city_strength(city))
+                    } else {
+                        self.remembered_objective_strength(city)
+                    }
                 })
-                .map(|city| g.city_strength(city))
                 .unwrap_or(0.0)
             + g.encampment_at(objective)
-                .filter(|city| {
-                    enemies.contains(&g.cities[city].owner)
-                        && (!self.battlefront_observation || g.sees(&visible, g.cities[city].pos))
+                .filter(|city| enemies.contains(&g.cities[city].owner))
+                .and_then(|city| {
+                    if !self.battlefront_observation || g.sees(&visible, g.cities[&city].pos) {
+                        Some(g.encampment_strength(city))
+                    } else {
+                        self.remembered_objective_strength(city)
+                    }
                 })
-                .map(|city| g.encampment_strength(city))
                 .unwrap_or(0.0);
         if hostile <= 0.0 {
             3.0
         } else {
             (friendly / hostile).clamp(0.0, 3.0)
         }
+    }
+
+    /// What a fogged enemy city at the objective is worth to
+    /// [`AdvancedAi::local_strength_ratio`], from this controller's own last
+    /// sighting of it.
+    ///
+    /// The shipped rule prices an objective city only while it is *currently*
+    /// in sight. That is fog-honest but it is not belief-honest, and the
+    /// difference is the whole story of a failed siege: `local_strength_ratio`
+    /// returns its `hostile <= 0.0` sentinel of `3.0` — the maximum, "we
+    /// dominate here" — for an objective the army simply cannot see. A walled
+    /// capital under fog and an empty meadow produce the identical number, and
+    /// `3.0` clears [`LOCAL_SUPERIORITY_FLOOR`] by a factor of four, so the
+    /// group engages.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo, at war with Korea
+    /// from turn 64): Seoul — walled, 22 pop, city defense 101 — was the
+    /// objective of **426 force-group decisions between t65 and t231, and 294
+    /// of them read exactly 3.00**. 108 of those decisions were a force of
+    /// *one*. Seoul finished the game on 0 damage and 0 wall damage, as did
+    /// every other Korean city bar transient pokes that healed back: across 173
+    /// turns of war no rival city ever passed 27% of its health bar.
+    ///
+    /// The repair does not invent information. [`CitySighting::strength`] is
+    /// this controller's own recorded observation — city combat strength at the
+    /// last time it actually saw the City Center, garrison and defense
+    /// modifiers included — and it is already trusted for the defensive half of
+    /// the same question by [`AdvancedAi::remembered_city_pressure`]. Reading
+    /// it here only stops the offensive half from treating "I have not looked"
+    /// as "there is nothing there".
+    ///
+    /// A stale sighting stays stale on purpose: a city that walled up under fog
+    /// still reads at its last-seen strength, which is exactly the mistake a
+    /// fog-honest agent should be allowed to make. Returning `None` when there
+    /// is no sighting at all preserves the shipped behaviour for a city this
+    /// controller has genuinely never seen.
+    fn remembered_objective_strength(&self, cid: u32) -> Option<f64> {
+        if !self.blind_objective_strength {
+            return None;
+        }
+        self.remembered_city(cid)
+            .map(|sighting| sighting.strength.max(0.0))
+            .filter(|strength| *strength > 0.0)
     }
 
     fn rebuild_force_groups(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
@@ -13449,7 +13622,14 @@ impl AdvancedAi {
                 self.base.move_beats_holding(g, uid, candidate, stay)
             };
             if should_move {
-                return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                // ⚠ Through `path_move`, never `g.apply` directly: it records
+                // the step, and a unit stepped again this turn must not
+                // re-enter the tile it just left. This site emitted 50 of the
+                // 88 same-turn out-and-back pairs on the replay of run
+                // civvis-20260801T224944Z — net zero ground, two orders, and
+                // the second refused by Civilization VI as a MOVE_TO of the
+                // unit's own tile.
+                return self.base.tactical_apply_move(g, pid, uid, pos);
             }
         }
 
@@ -13476,7 +13656,9 @@ impl AdvancedAi {
                 })
             {
                 if self.base.move_beats_holding(g, uid, score(g, pos), stay) {
-                    return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                    // Same rule as the local arm above: recorded through
+                    // `path_move` so the next same-turn step cannot undo it.
+                    return self.base.tactical_apply_move(g, pid, uid, pos);
                 }
             }
         }
@@ -21565,6 +21747,116 @@ mod tests {
         assert!(!AdvancedAi::can_relieve(&game, &[warrior], home, u32::MAX));
     }
 
+    /// The defect this exists for: the siege appetite was one unit for any
+    /// target city at all, so a capital behind 400 points of wall was
+    /// provisioned exactly like an unwalled frontier town — and once that one
+    /// unit existed the appetite went to zero.
+    #[test]
+    fn the_siege_train_is_sized_by_the_wall_it_has_to_breach() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_104);
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        sites.sort_unstable();
+        game.current = 1;
+        for site in sites {
+            let settler = game.spawn_test_unit("settler", 1, site);
+            if game.apply(1, &Action::FoundCity { unit: settler }).is_ok() {
+                break;
+            }
+            game.remove_unit(settler);
+        }
+        game.current = 0;
+        let target = *game.player_city_ids(1).first().expect("a target city");
+
+        let assessed_turn = game.turn;
+        let plan_for = move |city: Option<u32>| StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: city,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn,
+            rush: false,
+        };
+
+        // The city is out of sight, so every reading below comes from the
+        // belief layer. Look at it once, the way a scout would.
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_siege_tracks_the_wall();
+        let watchtower = game
+            .nbrs(game.cities[&target].pos)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .expect("a tile beside the city");
+        let scout = game.spawn_test_unit("scout", 0, watchtower);
+
+        let wanted = move |ai: &AdvancedAi, game: &Game, city: Option<u32>| {
+            ai.siege_units_wanted(game, 0, &plan_for(city))
+        };
+
+        // No target at all: no siege train, walls or not.
+        assert_eq!(wanted(&ai, &game, None), 0);
+
+        // An unwalled target does not need one either — melee takes the city
+        // and siege units can never land the capturing blow.
+        game.cities.get_mut(&target).unwrap().wall_hp = 0;
+        assert_eq!(wanted(&ai, &game, Some(target)), 0);
+
+        // One tier of wall, one train; four tiers, the cap.
+        game.cities.get_mut(&target).unwrap().wall_hp = 100;
+        assert_eq!(wanted(&ai, &game, Some(target)), 1);
+        game.cities.get_mut(&target).unwrap().wall_hp = 300;
+        assert_eq!(wanted(&ai, &game, Some(target)), 2);
+        game.cities.get_mut(&target).unwrap().wall_hp = 400;
+        assert_eq!(
+            wanted(&ai, &game, Some(target)),
+            SIEGE_UNITS_MAX,
+            "a fully walled capital is worth the whole train"
+        );
+
+        // The wall is read from memory once the scout leaves, so a fogged
+        // capital still provisions the campaign that has to breach it.
+        ai.belief.observe(&game, 0);
+        game.remove_unit(scout);
+        assert!(
+            !game.player_can_see(0, game.cities[&target].pos),
+            "the target must be fogged for the memory path to be exercised"
+        );
+        assert_eq!(
+            wanted(&ai, &game, Some(target)),
+            SIEGE_UNITS_MAX,
+            "the wall a city had when we last looked still sizes the train"
+        );
+
+        // Memory is the only new input: with no sighting on file the campaign
+        // provisions nothing rather than guessing.
+        let mut unseen = AdvancedAi::targeting(VictoryTarget::Domination);
+        unseen.enable_siege_tracks_the_wall();
+        assert_eq!(wanted(&unseen, &game, Some(target)), 0);
+
+        // The shipped agent is unchanged: one unit for any target, zero
+        // otherwise, whatever the wall is doing.
+        let shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(!shipped.siege_tracks_the_wall);
+        assert_eq!(wanted(&shipped, &game, Some(target)), 1);
+        assert_eq!(wanted(&shipped, &game, None), 0);
+        game.cities.get_mut(&target).unwrap().wall_hp = 0;
+        assert_eq!(
+            wanted(&shipped, &game, Some(target)),
+            1,
+            "the shipped rule never looked at the wall"
+        );
+    }
+
     /// The behaviour this exists for: a locally superior force far from the
     /// emergency keeps prosecuting its campaign, while one close enough to
     /// matter halts. Before this, one threatened city anywhere held every
@@ -21637,6 +21929,111 @@ mod tests {
                 .unwrap()
                 .posture,
             ForcePosture::Hold,
+        );
+    }
+
+    /// The defect this exists for: a walled enemy capital the army cannot
+    /// currently see scored identically to an empty meadow, because
+    /// `local_strength_ratio` reached its `hostile <= 0.0` sentinel and
+    /// returned 3.0 — four times the superiority floor. One lone warrior
+    /// therefore read itself as locally dominant over a city.
+    #[test]
+    fn a_fogged_objective_city_is_priced_from_the_last_sighting() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_103);
+        // An enemy city far enough away that nothing of ours can see it.
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        sites.sort_unstable();
+        game.current = 1;
+        for site in sites {
+            let settler = game.spawn_test_unit("settler", 1, site);
+            if game.apply(1, &Action::FoundCity { unit: settler }).is_ok() {
+                break;
+            }
+            game.remove_unit(settler);
+        }
+        game.current = 0;
+        let enemy_city = *game
+            .player_city_ids(1)
+            .first()
+            .expect("the enemy must have somewhere to be attacked");
+        let objective = game.cities[&enemy_city].pos;
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+
+        // Korea's Seoul was no frontier outpost, so neither is this: an empire
+        // fielding field cannons defends its cities at that standard.
+        game.players[1]
+            .counters
+            .insert("strongest_unit_built".to_string(), 60);
+
+        // One warrior, standing well outside its own sight range of the city.
+        let warrior = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 6));
+        assert!(
+            !game.player_can_see(0, objective),
+            "the setup must leave the objective fogged"
+        );
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(
+            !ai.blind_objective_strength,
+            "the shipped default must be unchanged"
+        );
+        assert_eq!(
+            ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective),
+            3.0,
+            "the shipped rule reads a fogged city as no enemy at all"
+        );
+
+        // A scout walks up, sees the city, and leaves. Nothing about the city
+        // changed — only what this controller has observed of it.
+        let watchtower = game
+            .nbrs(objective)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .expect("a tile beside the city");
+        let scout = game.spawn_test_unit("scout", 0, watchtower);
+        let in_sight = ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective);
+        ai.belief.observe(&game, 0);
+        game.remove_unit(scout);
+        assert!(
+            !game.player_can_see(0, objective),
+            "the city is fogged again once the scout is gone"
+        );
+        assert!(
+            ai.remembered_city(enemy_city).is_some(),
+            "the sighting must survive the fog"
+        );
+
+        ai.enable_blind_objective_strength();
+        let ratio = ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective);
+        assert_eq!(
+            ratio, in_sight,
+            "an unchanged city must read the same remembered as it did in sight"
+        );
+        assert!(
+            ratio < LOCAL_SUPERIORITY_FLOOR,
+            "one warrior is not locally superior to a city it remembers: {ratio}"
+        );
+
+        // Memory is the only new input: a city this controller has never seen
+        // still scores as absent, so the repair cannot become omniscience.
+        let mut unseen = AdvancedAi::targeting(VictoryTarget::Domination);
+        unseen.enable_blind_objective_strength();
+        assert_eq!(
+            unseen.local_strength_ratio(&game, 0, &[warrior], &[1], objective),
+            3.0,
+            "with no sighting on file the shipped behaviour is preserved"
         );
     }
 
