@@ -310,6 +310,24 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// threatened city's own tile. Behind the SAME `home_defense` flag, short-
 /// circuiting on it first, so this too is a compatibility re-pin.
 ///
+/// #962 gates faith military purchases on whether the empire can pay the GOLD
+/// upkeep the soldier incurs. Behind the new `solvent_faith_army` flag, which is
+/// `false` in `AdvancedAi::configured` (so `new()` and `legacy()` both have it
+/// off) and is turned on only by the Civilization VI bridge —
+/// `faith_military_is_affordable` returns `true` immediately on that flag, so
+/// every configured, legacy and Elo agent buys exactly what it always did.
+/// `the_default_controller_keeps_the_faith_army_ungated` asserts it on a board
+/// that DOES refuse once enabled. A compatibility re-pin.
+///
+/// #957 prices a fogged objective city from this controller's last sighting
+/// inside `local_strength_ratio`, behind `blind_objective_strength` — again
+/// `false` in `AdvancedAi::new()` and set only by `civvis_orders`.
+/// `remembered_objective_strength` returns `None` on that flag before it
+/// touches the belief state, and the fallback is only reachable at all once
+/// `battlefront_observation` is on. `advanced_v1` sets that to `false`, so the
+/// legacy anchor takes the same `Some(g.city_strength(city))` arm it always
+/// took and is byte-identical twice over. A compatibility re-pin.
+///
 /// #963 sizes the siege train against the target city's standing wall, behind
 /// `siege_tracks_the_wall` — `false` in `AdvancedAi::new()` and set only by
 /// `civvis_orders`. `siege_units_wanted` returns the shipped
@@ -317,7 +335,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// board, so the legacy anchor's production value is bit-for-bit what it was.
 /// A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf5b6_24d5_4be4_8ae9;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9a5c_eb6d_f086_bc92;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
