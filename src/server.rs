@@ -8712,6 +8712,24 @@ mod tests {
     }
 
     #[test]
+    fn unit_health_bars_only_label_damage() {
+        let renderer = EMBEDDED_INDEX
+            .split("function drawStrategicUnitHealth")
+            .nth(1)
+            .and_then(|tail| tail.split("// The Civ VI atlas cells").next())
+            .expect("strategic unit health renderer");
+        assert!(renderer.contains("Math.round(hp ?? 100)"));
+        assert!(renderer.contains("health >= 100"));
+        assert!(renderer.contains("cx.strokeText(String(health), x, by + bh / 2)"));
+        assert!(renderer.contains("cx.fillText(String(health), x, by + bh / 2)"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("drawStrategicUnitHealth(").count(),
+            3,
+            "the shared damage-only health renderer should serve the flat map and globe"
+        );
+    }
+
+    #[test]
     fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 500_000);
