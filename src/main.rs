@@ -424,8 +424,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `ranged_tile_is_blind` returns `false` on that flag before it reads the
 /// board, so every configured, legacy and Elo agent scores every tile exactly
 /// as it did. A compatibility re-pin.
+///
+/// #954 says why a settler was held instead of only that it was marching. The
+/// added block is inside `if !moved && self.journal().wants(Detail)` and every
+/// call it makes is a read: `Game::route_step` and `route_step_to_any` take
+/// `&self`, as do `can_move`, `units_at` and `wdist`, and `think!` writes to the
+/// reasoning journal, which is observer-only by contract. No RNG is drawn and no
+/// board state is touched, so the anchor plays the identical game and only its
+/// journal differs. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe878_c745_0830_3603;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe6dc_83fd_ebaa_c41d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
