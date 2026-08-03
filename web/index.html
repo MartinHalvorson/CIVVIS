@@ -3579,7 +3579,7 @@
          and this is the current answer. It names one civilization at a time —
          the standings table already carries every seat's doctrine in its PLAN
          column, and twenty research cards would bury the logs. -->
-    <details class="sidebar-section" id="strategysec" data-section="active-strategy" open>
+    <details class="sidebar-section" id="strategysec" data-section="active-strategy">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">◆</span><span>Active AI strategy</span></span>
         <span class="section-meta"><span class="event-scope" id="strategyscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -3605,7 +3605,7 @@
       </div>
     </details>
 
-    <details class="sidebar-section" id="reasonsec" data-section="ai-reasoning" open>
+    <details class="sidebar-section" id="reasonsec" data-section="ai-reasoning">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">◉</span><span>AI reasoning log</span></span>
         <span class="section-meta"><span class="event-scope" id="reasonscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -3634,7 +3634,7 @@
       </div>
     </details>
 
-    <details class="sidebar-section" id="warsec" data-section="war-log" open>
+    <details class="sidebar-section" id="warsec" data-section="war-log">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">⚔</span><span>War log</span></span>
         <span class="section-meta"><span class="event-scope" id="warscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -3658,7 +3658,7 @@
       </div>
     </details>
 
-    <details class="sidebar-section" id="eventsec" data-section="event-log" open>
+    <details class="sidebar-section" id="eventsec" data-section="event-log">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">☷</span><span>Game event log</span></span>
         <span class="section-meta"><span class="event-scope" id="eventscope"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -3680,7 +3680,7 @@
       </div>
     </details>
 
-    <details class="sidebar-section" id="govsec" data-section="government" style="display:none" open>
+    <details class="sidebar-section" id="govsec" data-section="government" style="display:none">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">♜</span><span>Government</span></span>
         <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
@@ -7350,12 +7350,18 @@ function reportSpecStatus() {
     body: JSON.stringify({paused: specPaused})}, 3000).catch(() => {});
 }
 function updateSpecPauseButtons() {
-  const action = specPaused ? "Resume" : "Pause";
+  // Turn 1 can already contain several completed seats, so the turn number
+  // alone does not mean the simulation has never run. Seat 0 still acting is
+  // the untouched opening position; a paused world there is started, not
+  // resumed. Every later paused position resumes in the ordinary sense.
+  const atStart = state?.turn === 1 && state?.current === 0 && state?.winner == null;
+  const action = specPaused ? (atStart ? "Start" : "Resume") : "Pause";
+  const icon = specPaused ? "▶" : "⏸";
   const main = document.getElementById("specpause");
   const collapsed = document.getElementById("collapsepause");
-  main.textContent = specPaused ? "▶ Resume" : "⏸ Pause";
+  main.textContent = `${icon} ${action}`;
   main.setAttribute("aria-pressed", String(specPaused));
-  collapsed.textContent = specPaused ? "▶" : "⏸";
+  collapsed.textContent = icon;
   collapsed.title = `${action} simulation`;
   collapsed.setAttribute("aria-label", `${action} simulation`);
   collapsed.setAttribute("aria-pressed", String(specPaused));
