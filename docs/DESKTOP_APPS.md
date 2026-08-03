@@ -30,10 +30,23 @@ installs the replacements, launches both, and verifies their live metadata and
 routes. A process lock prevents two cooperating installers from racing over the
 Desktop bundles.
 
+After installation, opening either desktop icon is immediate: it opens or
+focuses its installed channel. The same click also starts a locked background
+refresh. If GitHub `main` is newer, or either artifact is more than 30 minutes
+old, the refresh builds one exact revision, transactionally replaces both apps,
+and relaunches both channels. Clicking both icons still creates at most one
+build, and a minimized Chrome window is restored before its tab is focused.
+
 Build without installing:
 
 ```bash
 python3 tools/civvis_desktop_apps.py build --ref <commit>
+```
+
+Run the same cheap freshness check used by the launchers:
+
+```bash
+python3 tools/civvis_desktop_apps.py refresh
 ```
 
 Audit installed, live apps against current main and require artifact ages no
