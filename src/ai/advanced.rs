@@ -2003,6 +2003,12 @@ impl AdvancedAi {
 
     /// Require a faith-bought soldier's gold upkeep to be payable. Native
     /// tournament games leave this disabled so their ladders stay comparable.
+    /// Diagnostic only: suppress war declaration so the wars CIVVIS starts can
+    /// be priced. NOT part of `enable_live_bridge` — never enabled in play.
+    pub fn suppress_war_declaration(&mut self) {
+        self.base.no_war_declaration = true;
+    }
+
     pub fn enable_solvent_faith_army(&mut self) {
         self.solvent_faith_army = true;
     }

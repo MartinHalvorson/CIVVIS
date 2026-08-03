@@ -1310,6 +1310,9 @@ pub struct BasicAi {
     /// ladders would otherwise shift underneath them, and enabled explicitly
     /// by the Civilization VI bridge. See `besieged_military_floor`.
     siege_muster: bool,
+    /// Suppress war DECLARATION entirely. A diagnostic arm for pricing the wars
+    /// CIVVIS starts; never enabled by the bridge. See the note at its use.
+    no_war_declaration: bool,
     /// Let threats standing in our own territory claim units before the
     /// offensive does. Off for the frozen native controllers, whose recorded
     /// ladders would otherwise shift underneath them, and enabled explicitly by
@@ -2150,6 +2153,7 @@ impl BasicAi {
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
+            no_war_declaration: false,
             home_defense: false,
             recorded_tactical_step: false,
             w: Weights::default(),
@@ -2173,6 +2177,7 @@ impl BasicAi {
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
+            no_war_declaration: false,
             home_defense: false,
             recorded_tactical_step: false,
             w,
@@ -3441,6 +3446,31 @@ impl BasicAi {
                         .unwrap()
                 })
                 .unwrap();
+            // ★★★★★ CIVVIS DECLARED EVERY WAR IT HAS EVER BEEN IN, AND NEVER
+            // ENDED ONE. Across every recorded run on this machine, 17 runs
+            // reached a war and **all 17 declarations came from CIVVIS** — not
+            // one was declared on it. **Zero of the 17 wars ended before the
+            // game did**, median duration 126 turns of a 250-turn game (max
+            // 188), across which 182 peace requests were issued and none
+            // succeeded. Net city change from the declaration to the final
+            // state: **-13 across 17 runs**, 8 runs ending with fewer cities
+            // and 3 with more.
+            //
+            // The gate below is `my_power > 1.8 * weakest + 20`, and BOTH of its
+            // inputs are known to be wrong in deployment: our own military
+            // reads high because the metric is a max() rather than Civ 6's
+            // figure, and rival power does not reach the planner at all (a
+            // strongest rival reading 118 against an actual 2258). So the test
+            // passes on numbers that do not describe the board, every game.
+            //
+            // ⚠ `no_war_declaration` is a DIAGNOSTIC arm, not a policy. Never
+            // declaring cannot be right — domination needs war and so does
+            // taking a threatening neighbour off the board. It exists to price
+            // the wars we actually start, so that fixing the two power inputs
+            // has a measured target instead of an argument.
+            if self.no_war_declaration {
+                return;
+            }
             if my_power > self.w.war_ratio * g.military_power(weakest) + self.w.war_margin {
                 let formal = g.players[pid]
                     .denounced_until

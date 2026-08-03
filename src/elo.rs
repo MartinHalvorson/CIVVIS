@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 86] = [
+pub const EVAL_ONLY_AIS: [&str; 87] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -46,6 +46,7 @@ pub const EVAL_ONLY_AIS: [&str; 86] = [
     "live_without_home_defense",
     "live_without_solvent_faith_army",
     "live_without_siege_muster",
+    "live_never_declares_war",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -139,6 +140,21 @@ pub const EVAL_ONLY_AIS: [&str; 86] = [
 ///
 /// ⚠ Keep in step with `AdvancedAi::enable_live_bridge`. A flag added there and
 /// not here makes the arms claim a controlled comparison they are not running.
+/// The live bridge plus the war-declaration suppressor: a strict superset, so
+/// `differing_axes` against `live` names exactly `no-war-declaration`.
+const LIVE_BRIDGE_WITH_NO_WAR: [&str; 10] = [
+    "live-trader-route",
+    "live-religious-purchase",
+    "siege-muster",
+    "home-defense",
+    "recorded-tactical-step",
+    "bounded-recovery",
+    "siege-tracks-wall",
+    "blind-objective-strength",
+    "solvent-faith-army",
+    "no-war-declaration",
+];
+
 const LIVE_BRIDGE_TREATMENTS: [&str; 9] = [
     "live-trader-route",
     "live-religious-purchase",
@@ -185,6 +201,7 @@ define_arm_kinds! {
     LiveWithoutHomeDefense => "live_without_home_defense",
     LiveWithoutSolventFaithArmy => "live_without_solvent_faith_army",
     LiveWithoutSiegeMuster => "live_without_siege_muster",
+    LiveNeverDeclaresWar => "live_never_declares_war",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
     AdvancedBeliefPressure => "advanced_belief_pressure",
@@ -2031,6 +2048,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_siege_muster();
             Box::new(ai)
         }
+        "live_never_declares_war" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.suppress_war_declaration();
+            Box::new(ai)
+        }
         "random" => Box::new(RandomAi::new(seed)),
         // Exact netless fallback played by `neural` when the committed
         // champion is present. Naming it makes provenance collapse checks
@@ -2686,6 +2709,7 @@ impl ArmKind {
             Self::LiveWithoutHomeDefense => &["live-trader-route", "live-religious-purchase", "siege-muster", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
             Self::LiveWithoutSolventFaithArmy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength"],
             Self::LiveWithoutSiegeMuster => &["live-trader-route", "live-religious-purchase", "home-defense", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
+            Self::LiveNeverDeclaresWar => &LIVE_BRIDGE_WITH_NO_WAR,
             Self::AdvancedBeliefPressure => &["belief-pressure"],
             // `advanced` now owns the confirmed Live + infrastructure +
             // priority composite. The retained arms below are therefore
@@ -3201,6 +3225,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_home_defense" => (Vec::new(), "live_without_home_defense"),
         "live_without_solvent_faith_army" => (Vec::new(), "live_without_solvent_faith_army"),
         "live_without_siege_muster" => (Vec::new(), "live_without_siege_muster"),
+        "live_never_declares_war" => (Vec::new(), "live_never_declares_war"),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_belief_pressure" => (Vec::new(), "advanced_belief_pressure"),
         "advanced_policy_live_control" => (Vec::new(), "advanced_policy_live_control"),
@@ -4295,7 +4320,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 53] = [
+            const SCRIPTED: [&str; 54] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4351,6 +4376,7 @@ mod tests {
                 "live",
                 "live_without_home_defense",
                 "live_without_siege_muster",
+                "live_never_declares_war",
                 "live_without_solvent_faith_army",
                 "random",
             ];
