@@ -65,6 +65,25 @@ const LIVELOCK_STAND_DOWN_TURNS: u32 = 4;
 /// Unlevied city-state forces defend the state and its immediate approaches;
 /// ownership transfers to the Suzerain while levied, so those units naturally
 /// use the major civilization's unrestricted tactical doctrine instead.
+/// What a land unit gives up by taking its march across water instead of around.
+///
+/// `tactical_step`'s score is distance-to-objective plus adjacent threat and
+/// support, with no terrain term — and a sea tile is both closer to an
+/// objective across a bay and free of the adjacent-enemy penalty, because the
+/// enemies stand on land. Open water therefore scored as the fastest and
+/// safest road simultaneously. An embarked unit cannot attack, cannot fortify,
+/// and defends at the era's flat `embarked_strength`, so the true cost of that
+/// tile is most of the unit.
+///
+/// Ships fixed rather than as a gene: the genome is pinned at 40 with a
+/// committed champion on that length, so `from_vec` indexing `v[40]` would
+/// panic. Earn a gene on evidence.
+pub(crate) const WATER_MARCH_PENALTY: f64 = 18.0;
+
+/// Probe: how many times the deployed controller reaches `garrison_step`.
+pub static GARRISON_STEP_CALLS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 const MINOR_DEFENSE_RADIUS: i32 = 6;
 
 /// How near one of our own cities an enemy has to stand before the empire owes
@@ -94,7 +113,7 @@ const HOME_DEFENSE_RECALL_RANGE: i32 = 10;
 /// How near a city a hostile must come before that city wants somebody actually
 /// standing in it. Three tiles is one turn's move for most classical units, so a
 /// garrison ordered at this range is in place before the attacker arrives.
-const GARRISON_ALERT_RADIUS: i32 = 3;
+pub(crate) const GARRISON_ALERT_RADIUS: i32 = 3;
 
 /// How close a visible hostile must be before a city musters against it. A
 /// horseman three tiles out reaches the city next turn; a wanderer beyond that
@@ -1382,6 +1401,21 @@ pub struct BasicAi {
     /// Let the unit chooser ask for SIEGE as a role. Off for the frozen native
     /// controllers. See `best_military_role` and `siege_is_the_missing_arm`.
     siege_role: bool,
+    /// Keep the land army out of the water: exclude water from a land unit's
+    /// exploration goals, bring an already-embarked unit ashore whether or not
+    /// it has an upgrade waiting, and let `peacetime_step` know when
+    /// `military_step` fell through to it *at war*.
+    ///
+    /// Measured across 133 live runs: land combat units spend a mean 15% of
+    /// their unit-turns embarked (p90 48%, worst run 84%), and **21.7% mean —
+    /// 92.8% at worst — while one of our own cities is taking damage**. An
+    /// embarked unit cannot attack and defends at `embarked_strength`. See
+    /// `disembark_step`.
+    ///
+    /// Off for the frozen native controllers, whose recorded ladders would
+    /// otherwise shift underneath them, and enabled explicitly by the
+    /// Civilization VI bridge.
+    come_ashore: bool,
     /// Let threats standing in our own territory claim units before the
     /// offensive does. Off for the frozen native controllers, whose recorded
     /// ladders would otherwise shift underneath them, and enabled explicitly by
@@ -2478,6 +2512,7 @@ impl BasicAi {
             live_religious_purchase_guard: false,
             siege_muster: false,
             siege_role: false,
+            come_ashore: false,
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
@@ -2506,6 +2541,7 @@ impl BasicAi {
             live_religious_purchase_guard: false,
             siege_muster: false,
             siege_role: false,
+            come_ashore: false,
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
@@ -6090,9 +6126,29 @@ impl BasicAi {
         enemy_ids: &[usize],
         attack_range: i32,
     ) -> bool {
+        // Get out of the water before marching anywhere. The penalty in
+        // `score` below stops a unit WALKING INTO the sea, but it cannot
+        // recover one already out there: every neighbour of a tile in open
+        // water is also water, so a uniform penalty cancels and the unit keeps
+        // swimming toward the objective. This is the half that reaches the
+        // eleven-of-twelve afloat on run `civvis-20260803T130831Z`.
+        //
+        // It sits in `tactical_step` rather than `military_step` because the
+        // Advanced campaign path calls `tactical_step` directly and would
+        // otherwise miss the rule entirely — the same "reachable only on one
+        // path" mistake that left the #955 defence layer inert.
+        if self.come_ashore
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea")
+            && g.is_embarked(&g.units[&uid])
+            && self.disembark_step(g, pid, uid)
+        {
+            return true;
+        }
         let upos = g.units[&uid].pos;
         let u = &g.units[&uid];
         let my_def = effective_strength(g.unit_strength(u, true), u.hp);
+        let prefer_dry =
+            self.come_ashore && g.rules.units[u.kind].domain.as_deref() != Some("sea");
         let doctrine = Self::unit_doctrine(g, uid);
         let (preferred_range, progress, threat_caution) = match doctrine {
             UnitDoctrine::Recon => (2, 0.60, 1.35),
@@ -6143,6 +6199,29 @@ impl BasicAi {
             // refuse to leave their initial cluster even when a safe campaign
             // route is open.
             s += self.w.mv_support * adjacent_support.min(2) as f64;
+            // ⭐ The score above has no terrain term at all, and open water is
+            // doubly attractive because of it: a sea tile is usually the
+            // geometrically shorter road to an objective across a bay, AND it
+            // carries no adjacent-enemy threat because the enemies are on
+            // land. So the safest, fastest route was always the sea — and an
+            // embarked land unit cannot attack (`Game::apply` refuses it),
+            // cannot fortify, and defends at the era's flat
+            // `embarked_strength` instead of its own.
+            //
+            // This is the wartime mover, and it is the one that mattered: on
+            // live run `civvis-20260803T130831Z` at t174, eleven of twelve land
+            // combat units were afloat while the capital sat at 179/200 damage,
+            // and the journal read "A land force of 12 will advance | objective
+            // (22,21)" — an objective on our OWN landmass. They were not
+            // crossing to reach it; they were swimming along it.
+            //
+            // Sized to outweigh the few tiles of `depth_error` a detour around
+            // a bay costs, without removing the option: `route_step` below is
+            // untouched, so a real crossing still happens when the land route
+            // does not exist.
+            if prefer_dry && g.map.get(tile).is_some_and(|t| g.rules.is_water(t)) {
+                s -= WATER_MARCH_PENALTY;
+            }
             s + self.livelock_penalty(uid, tile)
         };
         let stay = score(g, upos);
@@ -6326,7 +6405,30 @@ impl BasicAi {
             .into_iter()
             .filter(|p| g.can_move(uid, *p))
             .collect();
-        local.sort_by_key(|p| (g.wdist(*p, target), *p));
+        // Dry land first for a land unit. This greedy step ranked neighbours on
+        // geometric distance alone, and `can_move` says yes to open water for
+        // every land unit once embarkation unlocks — so a straight line across
+        // a bay always beat walking around it, and the army marched into the
+        // sea. Embarked it cannot attack (`Game::apply` refuses it) or fortify.
+        //
+        // ⚠ The loop below `break`s on the first neighbour that fails to make
+        // progress, which is only sound while the order is by distance. So the
+        // non-improving neighbours are dropped here rather than re-sorted
+        // behind the dry ones — otherwise a dry tile that moves away from the
+        // target would cut off the improving water tiles behind it and the
+        // unit would simply stop. A water step is still reachable: it sorts
+        // last, and the A* fallback below is untouched, so a genuine ocean
+        // crossing still happens when no dry neighbour makes progress.
+        let prefer_dry = self.come_ashore
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea");
+        if prefer_dry {
+            let here = g.wdist(cur, target);
+            local.retain(|p| g.wdist(*p, target) < here);
+        }
+        local.sort_by_key(|p| {
+            let wet = prefer_dry && g.map.get(*p).is_some_and(|tile| g.rules.is_water(tile));
+            (wet, g.wdist(*p, target), *p)
+        });
         for next in local {
             if g.wdist(next, target) >= g.wdist(cur, target) {
                 break; // sorted: no remaining neighbor makes progress
@@ -7245,6 +7347,7 @@ impl BasicAi {
     /// Walk the assigned defender to its city and hold it. Standing on the tile
     /// IS the job, so arriving means fortifying rather than looking for a fight.
     fn garrison_step(&mut self, g: &mut Game, pid: usize, uid: u32, enemy_ids: &[usize]) -> bool {
+        GARRISON_STEP_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some((_, city)) = self
             .garrison_assignments(g, pid, enemy_ids)
             .into_iter()
@@ -7601,6 +7704,13 @@ impl BasicAi {
 
     fn explore_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let upos = g.units[&uid].pos;
+        // `unit_can_traverse` says yes to open water for every land unit the
+        // moment embarkation unlocks, so from that turn on the unexplored
+        // ocean is a legal exploration goal for the whole army. That is how a
+        // Crossbowman leaves the capital tile and spends the next 47 turns
+        // pacing between two sea hexes. A land unit explores land.
+        let dry_only = self.come_ashore
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea");
         // The nearest hidden tile is almost always a few hexes away, so walk
         // outward in rings and stop at the first one that holds a candidate
         // instead of testing all nine hundred tiles. The rings partition the
@@ -7627,7 +7737,10 @@ impl BasicAi {
                 found = ring
                     .into_iter()
                     .filter(|pos| {
-                        !g.players[pid].explored.contains(pos) && g.unit_can_traverse(uid, *pos)
+                        !g.players[pid].explored.contains(pos)
+                            && g.unit_can_traverse(uid, *pos)
+                            && (!dry_only
+                                || g.map.get(*pos).is_some_and(|tile| !g.rules.is_water(tile)))
                     })
                     .min();
                 radius += 1;
@@ -7651,8 +7764,10 @@ impl BasicAi {
             g.map
                 .tiles
                 .iter()
-                .filter(|(pos, _)| {
-                    !g.players[pid].explored.contains(pos) && g.unit_can_traverse(uid, **pos)
+                .filter(|(pos, tile)| {
+                    !g.players[pid].explored.contains(pos)
+                        && g.unit_can_traverse(uid, **pos)
+                        && (!dry_only || !g.rules.is_water(tile))
                 })
                 .map(|(pos, _)| *pos)
                 .collect()
@@ -7665,6 +7780,97 @@ impl BasicAi {
         // honour the same refusals — otherwise a Scout barred from retreading
         // its loop by the cheap path takes the identical step here.
         self.path_move(g, pid, uid, next)
+    }
+
+    /// Walk an embarked land unit back onto dry land, preferring our own
+    /// territory.
+    ///
+    /// The pre-existing come-ashore rule in `peacetime_step` is welded to
+    /// `modernization_step`, which returns `false` before it does anything at
+    /// all when `unit_upgrade_target` is `None`. So the only embarked units
+    /// ever told to land were the ones that happened to have an unlocked,
+    /// affordable successor waiting; everything else stayed at sea for the
+    /// rest of the game. Measured across 133 live runs, land combat units
+    /// spend a mean **15%** of their unit-turns embarked (p90 48%, worst run
+    /// 84%) — and **21.7% mean while one of our own cities is taking damage**,
+    /// 92.8% in the worst case. An embarked unit cannot attack at all and
+    /// defends at `embarked_strength`, so those turns are not merely
+    /// misplaced, they are spent as a non-combatant.
+    ///
+    /// The nearest shore is chosen by distance and walked with `step_toward`,
+    /// the same mover `modernization_step` uses to bring a unit home — the
+    /// exhaustive `route_step_to_any` is only the fallback, because a
+    /// water-to-land step is a disembarkation and the cheap route search
+    /// handles that transition where a raw goal-set flood does not.
+    pub(crate) fn disembark_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
+        if g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
+            || !g.is_embarked(&g.units[&uid])
+        {
+            return false;
+        }
+        // A landing site has to be one the unit can actually end its move on.
+        // Occupied tiles are excluded deliberately: our own territory is
+        // usually one small city whose tile the garrison already holds, and
+        // aiming at it parks the castaway one hex offshore forever — closing
+        // to shore distance 1 and never landing, which is the defect wearing
+        // a different hat.
+        let (home, any): (HashSet<Pos>, HashSet<Pos>) = {
+            let _memo = g.query_memo();
+            let landable: Vec<(Pos, bool)> = g
+                .map
+                .tiles
+                .iter()
+                .filter(|(pos, tile)| {
+                    !g.rules.is_water(tile)
+                        && g.rules.is_passable(tile)
+                        && g.unit_can_traverse(uid, **pos)
+                        && g.units_at(**pos).is_empty()
+                })
+                .map(|(pos, tile)| {
+                    let ours = tile
+                        .owner_city
+                        .and_then(|cid| g.cities.get(&cid))
+                        .is_some_and(|city| city.owner == pid);
+                    (*pos, ours)
+                })
+                .collect();
+            (
+                landable
+                    .iter()
+                    .filter(|(_, ours)| *ours)
+                    .map(|(pos, _)| *pos)
+                    .collect(),
+                landable.iter().map(|(pos, _)| *pos).collect(),
+            )
+        };
+        // Home first, then any shore at all — a castaway whose territory is
+        // unreachable still has to get out of the water before it can do
+        // anything, so the fallback runs when the preferred set fails to move
+        // it, not merely when that set is empty.
+        for goals in [home, any] {
+            if goals.is_empty() {
+                continue;
+            }
+            let upos = g.units[&uid].pos;
+            if let Some(shore) = goals
+                .iter()
+                .copied()
+                .min_by_key(|pos| (g.wdist(upos, *pos), *pos))
+            {
+                if self.step_toward(g, pid, uid, shore) && g.units[&uid].pos != upos {
+                    return true;
+                }
+            }
+            if let Some(next) = g
+                .route_step_to_any(uid, &goals)
+                .filter(|pos| g.can_move(uid, *pos))
+            {
+                if self.path_move(g, pid, uid, next) {
+                    return true;
+                }
+            }
+        }
+        false
     }
 
     fn patrol_tile(&self, g: &Game, pid: usize, uid: u32, pos: Pos) -> bool {
@@ -8013,10 +8219,10 @@ impl BasicAi {
                 .or_else(|| self.nearest_enemy_for_unit(g, pid, uid, &enemy_ids))
             {
                 Some(t) => self.tactical_step(g, pid, uid, t, &enemy_ids, radius),
-                None => self.peacetime_step(g, pid, uid),
+                None => self.peacetime_step(g, pid, uid, true),
             };
         }
-        self.peacetime_step(g, pid, uid)
+        self.peacetime_step(g, pid, uid, false)
     }
 
     /// Civilian capture is movement, not combat. Feeding an undefended
@@ -8072,8 +8278,17 @@ impl BasicAi {
     }
 
     /// Minors guard home; majors explore, then garrison the nearest city.
-    fn peacetime_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
+    ///
+    /// `at_war` is threaded in because `military_step` *falls through to here*
+    /// when it can find no objective — which at war is the common case, since
+    /// `nearest_enemy_for_unit` needs a visible enemy and a besieging stack is
+    /// routinely fogged. The old call site passed a hardcoded `false`, so
+    /// `should_explore`'s opening `if at_war { return false }` was dead by
+    /// construction and a unit whose homeland was under attack went
+    /// exploring. Off, the historical `false` is preserved exactly.
+    fn peacetime_step(&mut self, g: &mut Game, pid: usize, uid: u32, at_war: bool) -> bool {
         let upos = g.units[&uid].pos;
+        let at_war = at_war && self.come_ashore;
         if self.minor {
             let cities = g.player_city_ids(pid);
             if cities.is_empty() {
@@ -8108,7 +8323,13 @@ impl BasicAi {
         if g.is_embarked(&g.units[&uid]) && self.modernization_step(g, pid, uid) {
             return true;
         }
-        if self.should_explore(g, pid, uid, false) && self.explore_step(g, pid, uid) {
+        // ...and coming ashore has to outrank exploring for the units that
+        // have no upgrade waiting too, which is most of them. See
+        // `disembark_step`.
+        if self.come_ashore && self.disembark_step(g, pid, uid) {
+            return true;
+        }
+        if self.should_explore(g, pid, uid, at_war) && self.explore_step(g, pid, uid) {
             return true;
         }
         if self.modernization_step(g, pid, uid) {
@@ -8724,7 +8945,7 @@ mod tests {
         let before = g.wdist(target, source);
 
         let mut ai = BasicAi::new();
-        ai.peacetime_step(&mut g, 0, stranded);
+        ai.peacetime_step(&mut g, 0, stranded, false);
 
         let after = g.wdist(g.units[&stranded].pos, source);
         assert!(after < before, "before={before} after={after}");
@@ -8769,11 +8990,104 @@ mod tests {
         let before = g.wdist(at_sea, source);
 
         let mut ai = BasicAi::new();
-        ai.peacetime_step(&mut g, 0, castaway);
+        ai.peacetime_step(&mut g, 0, castaway, false);
 
         assert!(
             g.wdist(g.units[&castaway].pos, source) < before,
             "an embarked unit heads for shore instead of exploring on"
+        );
+    }
+
+    /// The come-ashore rule above only reaches units that have an upgrade
+    /// waiting: `modernization_step` returns before it does anything when
+    /// `unit_upgrade_target` is `None`. Everything else stayed at sea, where
+    /// it cannot attack at all and defends at `embarked_strength`. Measured
+    /// across 133 live runs, land combat units spend a mean 15% of their
+    /// unit-turns embarked and 21.7% while one of our own cities is taking
+    /// damage; on run `civvis-20260803T130831Z` a Crossbowman left the capital
+    /// tile and paced between two sea hexes for 47 turns while that capital
+    /// sat at 179/200 damage.
+    #[test]
+    fn a_castaway_with_no_upgrade_waiting_still_comes_ashore() {
+        let (mut g, source, _target) = island_colony_game(1);
+        grant_tech_with_prerequisites(&mut g, 0, "shipbuilding");
+        // No iron, no gold, no unlocked successor: the modernization path
+        // cannot fire, which is the whole point of the case.
+        g.players[0].gold = 0.0;
+        let at_sea = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| g.rules.is_water(&g.map.tiles[pos]))
+            .filter(|pos| g.wdist(*pos, source) >= 3)
+            .min_by_key(|pos| (g.wdist(*pos, source), *pos))
+            .expect("the colony sits in an ocean");
+        // The claim is "heads for shore", so measure distance to the nearest
+        // dry tile — not to the city, which a unit rounding a headland can
+        // move away from while still doing exactly the right thing.
+        let dry_tiles: Vec<Pos> = g
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !g.rules.is_water(tile) && g.rules.is_passable(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        assert!(!dry_tiles.is_empty(), "the island has land on it");
+        let to_shore = |g: &Game, pos: Pos| {
+            dry_tiles
+                .iter()
+                .map(|dry| g.wdist(pos, *dry))
+                .min()
+                .expect("dry_tiles is non-empty")
+        };
+        let before = to_shore(&g, at_sea);
+
+        // The two arms get their own unit: a step spends `moves_left`, so
+        // replaying one unit through both would measure an exhausted turn
+        // rather than the flag.
+        let frozen_unit = g.spawn_test_unit("warrior", 0, at_sea);
+        assert!(
+            g.is_embarked(&g.units[&frozen_unit]),
+            "the case needs a unit at sea"
+        );
+        let mut frozen = BasicAi::new();
+        // The pre-existing come-ashore path is unreachable here — that is the
+        // defect, not an artifact of the setup.
+        assert!(!frozen.modernization_step(&mut g, 0, frozen_unit));
+
+        let castaway = g.spawn_test_unit("warrior", 0, at_sea);
+        let mut ai = BasicAi::new();
+        ai.come_ashore = true;
+
+        // Walk both arms the same number of turns. One step is not the claim —
+        // rounding a headland can leave shore distance flat for a turn — so
+        // give each the same budget and compare where they end up.
+        for _ in 0..12 {
+            g.turn += 1;
+            for uid in [frozen_unit, castaway] {
+                let unit = g.units.get_mut(&uid).expect("arm alive");
+                unit.moves_left = 2.0;
+                unit.moved = false;
+                unit.acted = false;
+                unit.fortified = false;
+            }
+            frozen.peacetime_step(&mut g, 0, frozen_unit, false);
+            ai.peacetime_step(&mut g, 0, castaway, false);
+        }
+
+        let swam = g.units[&frozen_unit].pos;
+        let landed = g.units[&castaway].pos;
+        assert!(
+            g.is_embarked(&g.units[&frozen_unit]),
+            "frozen behaviour keeps the castaway at sea; it reached {swam:?}"
+        );
+        assert!(
+            !g.is_embarked(&g.units[&castaway]),
+            "a castaway with nothing to upgrade into still comes ashore: \
+             went {at_sea:?} -> {landed:?} (shore distance was {before}, now {}); \
+             its frozen twin swam to {swam:?}",
+            to_shore(&g, landed)
         );
     }
 

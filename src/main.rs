@@ -452,6 +452,29 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// flag before it reads a unit, so every configured, legacy and Elo agent
 /// promotes exactly when it always did. A compatibility re-pin.
 ///
+/// #1026 keeps the land army out of the water, behind `come_ashore` — `false`
+/// in both `BasicAi` constructors and set only by `enable_live_bridge`. Every
+/// one of its paths short-circuits on the flag before reading anything:
+/// `explore_step`'s `dry_only` and `step_toward_range`'s and
+/// `coordinated_tactical_step`'s `prefer_dry` are each `come_ashore && …`, both
+/// `disembark_step` call sites are guarded by `if …come_ashore`, and
+/// `peacetime_step`'s new `at_war` parameter is folded through
+/// `at_war && self.come_ashore`, which reproduces the historical hardcoded
+/// `false` exactly. So every configured, legacy and Elo agent explores and
+/// moves exactly as it always did. A compatibility re-pin.
+///
+/// ⚠ Re-pinned twice in this PR. The first version was inert — it patched
+/// `BasicAi::tactical_step`, which a live probe showed the deployed controller
+/// never calls; the working change is in
+/// `AdvancedAi::coordinated_tactical_step`. Both edits touch anchored source,
+/// so both moved this hash.
+///
+/// ⚠ And a third time on merging `origin/main`, which had re-pinned the same
+/// constant for the `tactical_strategy` branch documented below. Neither hash
+/// survives a merge of the two — the anchored source is now different from
+/// both — so the value here is the one the test computes over the merged tree.
+/// Both gating arguments still hold independently, which is what makes the
+/// re-pin a compatibility one rather than a ledger break.
 /// The tactical-role branch adds class assignments, projected return-fire,
 /// wall/support coordination, and cavalry action priority behind
 /// `BasicAi::tactical_strategy`. Both Basic constructors leave it `false`, and
@@ -459,7 +482,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// controller, so frozen Basic, configured, legacy and `advanced_v1` entrants
 /// retain their old branches. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8c5f_2db8_1c90_bc1c;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3f7a_b902_62c6_e98b;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
