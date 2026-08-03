@@ -13532,6 +13532,7 @@ type GreatWorksByCity = BTreeMap<u32, BTreeMap<String, usize>>;
 type HousedWorksByPlayer = BTreeMap<usize, GreatWorksByCity>;
 type GreatWorkSlotsByPlayer = BTreeMap<usize, Vec<(u32, String)>>;
 type GreatWorkHousing = BTreeMap<(usize, String, usize), bool>;
+type OwnedIdsCache = BTreeMap<usize, (u64, Vec<u32>)>;
 
 #[derive(Default)]
 pub struct QueryCache {
@@ -13542,8 +13543,8 @@ pub struct QueryCache {
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
     // even when a read-only phase asks for the same empire repeatedly.
-    unit_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
-    city_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
+    unit_ids: std::cell::RefCell<Option<OwnedIdsCache>>,
+    city_ids: std::cell::RefCell<Option<OwnedIdsCache>>,
     // Three empire-wide derivations that callers reach for one city at a
     // time. Each is keyed by player, because that is the scope it is
     // computed over, not the scope it is read at.
@@ -13619,6 +13620,95 @@ impl Game {
         let depth = self.query_memo.depth.get();
         debug_assert!(depth > 0);
         self.query_memo.depth.set(depth - 1);
+    }
+
+    fn ensure_owner_cache_capacity(&mut self, pid: usize) {
+        if pid >= self.unit_owner_versions.len() {
+            self.unit_owner_versions.resize(pid + 1, 1);
+            self.city_owner_versions.resize(pid + 1, 1);
+        }
+    }
+
+    fn ensure_owner_cache_capacity_for_all(&mut self) {
+        let needed = self.players.len();
+        self.unit_owner_versions.resize(needed, 1);
+        self.city_owner_versions.resize(needed, 1);
+    }
+
+    fn unit_owner_version(&self, pid: usize) -> u64 {
+        self.unit_owner_versions.get(pid).copied().unwrap_or(1)
+    }
+
+    fn city_owner_version(&self, pid: usize) -> u64 {
+        self.city_owner_versions.get(pid).copied().unwrap_or(1)
+    }
+
+    fn bump_unit_owner_version(&mut self, pid: usize) {
+        self.ensure_owner_cache_capacity(pid);
+        self.unit_owner_versions[pid] = self.unit_owner_versions[pid].wrapping_add(1);
+    }
+
+    fn bump_city_owner_version(&mut self, pid: usize) {
+        self.ensure_owner_cache_capacity(pid);
+        self.city_owner_versions[pid] = self.city_owner_versions[pid].wrapping_add(1);
+    }
+
+    fn clear_unit_owner_cache(&self, pid: usize) {
+        if let Some(memo) = self.query_memo.unit_ids.borrow_mut().as_mut() {
+            memo.remove(&pid);
+        }
+    }
+
+    fn clear_city_owner_cache(&self, pid: usize) {
+        if let Some(memo) = self.query_memo.city_ids.borrow_mut().as_mut() {
+            memo.remove(&pid);
+        }
+    }
+
+    fn set_unit_owner(&mut self, uid: u32, owner: usize) {
+        let old_owner = self.units[&uid].owner;
+        if old_owner == owner {
+            return;
+        }
+        self.ensure_owner_cache_capacity(owner);
+        self.ensure_owner_cache_capacity(old_owner);
+        self.units.get_mut(&uid).unwrap().owner = owner;
+        self.bump_unit_owner_version(old_owner);
+        self.bump_unit_owner_version(owner);
+        self.clear_unit_owner_cache(old_owner);
+        self.clear_unit_owner_cache(owner);
+    }
+
+    fn set_city_owner(&mut self, cid: u32, owner: usize) {
+        let old_owner = self.cities[&cid].owner;
+        if old_owner == owner {
+            return;
+        }
+        self.ensure_owner_cache_capacity(owner);
+        self.ensure_owner_cache_capacity(old_owner);
+        self.cities.get_mut(&cid).unwrap().owner = owner;
+        self.bump_city_owner_version(old_owner);
+        self.bump_city_owner_version(owner);
+        self.clear_city_owner_cache(old_owner);
+        self.clear_city_owner_cache(owner);
+        self.invalidate_query_memo();
+    }
+
+    fn note_unit_owner_changed(&mut self, owner: usize) {
+        self.bump_unit_owner_version(owner);
+        self.clear_unit_owner_cache(owner);
+    }
+
+    fn note_city_owner_changed(&mut self, owner: usize) {
+        self.bump_city_owner_version(owner);
+        self.clear_city_owner_cache(owner);
+        self.invalidate_query_memo();
+    }
+
+    fn register_player(&mut self, player: Player) {
+        let pid = player.id;
+        self.players.push(player);
+        self.ensure_owner_cache_capacity(pid);
     }
 }
 
@@ -16231,6 +16321,13 @@ pub struct Game {
     /// cleared by a successful action; empty in any clone.
     #[serde(skip)]
     query_memo: QueryCache,
+    /// Per-owner versions for cached unit/city IDs. A world mutation that
+    /// adds, removes, or reassigns ownership increments one or both owners and
+    /// naturally invalidates only affected cached slices.
+    #[serde(skip)]
+    unit_owner_versions: Vec<u64>,
+    #[serde(skip)]
+    city_owner_versions: Vec<u64>,
     /// The state of the world each seat's remembered map was last taken
     /// under — the whole of it, then the narrower part the tile memory is
     /// drawn from — and the tiles it was taken over. Empty means "assume
@@ -16783,6 +16880,8 @@ impl From<GameSer> for Game {
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
             query_memo: QueryCache::default(),
+            unit_owner_versions: Vec::new(),
+            city_owner_versions: Vec::new(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
             visibility_batch: VisibilityBatch::default(),
@@ -16873,6 +16972,7 @@ impl From<GameSer> for Game {
         // Saves from before the two-stage Loyalty model have no Free Cities
         // seat. Appending it preserves every existing player id.
         g.ensure_free_city_player();
+        g.ensure_owner_cache_capacity_for_all();
         for u in g.units.values() {
             g.occ.entry(u.pos).or_default().push(u.id);
         }
@@ -17073,8 +17173,9 @@ impl Game {
     /// Reconcile an authoritative external city roster without firing conquest
     /// rewards, grievances, population loss, or any other simulated transition.
     pub(crate) fn mirror_set_city_owner(&mut self, cid: u32, owner: usize) {
-        if let Some(city) = self.cities.get_mut(&cid) {
-            city.owner = owner;
+        if self.cities.contains_key(&cid) {
+            self.set_city_owner(cid, owner);
+            return;
         }
         self.invalidate_query_memo();
     }
@@ -17118,6 +17219,7 @@ impl Game {
         for player in self.players.iter_mut() {
             player.city_directives.remove(&cid);
         }
+        self.note_city_owner_changed(city.owner);
         self.invalidate_query_memo();
     }
 
@@ -17240,6 +17342,8 @@ impl Game {
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
             query_memo: QueryCache::default(),
+            unit_owner_versions: Vec::new(),
+            city_owner_versions: Vec::new(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
             visibility_batch: VisibilityBatch::default(),
@@ -17325,6 +17429,7 @@ impl Game {
             log: crate::actionlog::ActionLog::new(),
             events: EventLog::default(),
         };
+        g.ensure_owner_cache_capacity_for_all();
         let known_civs = g.rules.civs.keys().cloned().collect::<BTreeSet<_>>();
         let seated = if randomize_civs {
             let mut roster_rng = Rng::new(seed ^ 0x4349_5656_4953_4349);
@@ -17346,7 +17451,7 @@ impl Game {
         for (i, civ) in seated.iter().take(num_players).enumerate() {
             let mut player = Player::new(i, civ, false);
             player.team = teams.get(i).copied().flatten();
-            g.players.push(player);
+            g.register_player(player);
         }
         for (i, pos) in spawns.iter().take(num_players).enumerate() {
             g.spawn_unit("settler", i, *pos);
@@ -17391,7 +17496,7 @@ impl Game {
             };
             let pid = g.players.len();
             let name = seating[pid - num_players].clone();
-            g.players.push(Player::new(pid, &name, true));
+            g.register_player(Player::new(pid, &name, true));
             let city = g.found_city_for(pid, pos, Some(name.clone()));
             // Gathering Storm's Ancient-era minor start is two Warriors, with
             // one more per difficulty step from Emperor onward. City-states do
@@ -17420,7 +17525,7 @@ impl Game {
             let pid = g.players.len();
             let mut barb = Player::new(pid, "Barbarians", true);
             barb.is_barbarian = true;
-            g.players.push(barb);
+            g.register_player(barb);
             g.barb_pid = Some(pid);
             // BARBARIAN_CAMP_FIRST_TURN_PERCENT_OF_TARGET_TO_ADD: a third of
             // the world's camp target is already on the map when the game
@@ -17539,7 +17644,7 @@ impl Game {
         player.alive = false;
         player.is_barbarian = true;
         player.is_free_city = true;
-        self.players.push(player);
+        self.register_player(player);
         pid
     }
 
@@ -17557,7 +17662,7 @@ impl Game {
             return player.id;
         }
         let pid = self.players.len();
-        self.players.push(Player::new(pid, civ, true));
+        self.register_player(Player::new(pid, civ, true));
         pid
     }
 
@@ -18717,6 +18822,7 @@ impl Game {
     }
 
     pub fn player_unit_ids(&self, pid: usize) -> Vec<u32> {
+        let cached_version = self.unit_owner_version(pid);
         if let Some(ids) = self
             .query_memo
             .unit_ids
@@ -18724,16 +18830,8 @@ impl Game {
             .as_ref()
             .and_then(|memo| memo.get(&pid))
         {
-            let stale = ids.iter().any(|uid| {
-                self.units
-                    .get(uid)
-                    .is_none_or(|unit| unit.owner != pid)
-            });
-            if !stale {
-                let count = self.units.values().filter(|unit| unit.owner == pid).count();
-                if count == ids.len() {
-                    return ids.clone();
-                }
+            if ids.0 == cached_version {
+                return ids.1.clone();
             }
         }
         let ids: Vec<u32> = self
@@ -18743,12 +18841,13 @@ impl Game {
             .map(|u| u.id)
             .collect();
         if let Some(memo) = self.query_memo.unit_ids.borrow_mut().as_mut() {
-            memo.insert(pid, ids.clone());
+            memo.insert(pid, (cached_version, ids.clone()));
         }
         ids
     }
 
     pub fn player_city_ids(&self, pid: usize) -> Vec<u32> {
+        let cached_version = self.city_owner_version(pid);
         if let Some(ids) = self
             .query_memo
             .city_ids
@@ -18756,16 +18855,8 @@ impl Game {
             .as_ref()
             .and_then(|memo| memo.get(&pid))
         {
-            let stale = ids.iter().any(|cid| {
-                self.cities
-                    .get(cid)
-                    .is_none_or(|city| city.owner != pid)
-            });
-            if !stale {
-                let count = self.cities.values().filter(|city| city.owner == pid).count();
-                if count == ids.len() {
-                    return ids.clone();
-                }
+            if ids.0 == cached_version {
+                return ids.1.clone();
             }
         }
         let ids: Vec<u32> = self
@@ -18775,7 +18866,7 @@ impl Game {
             .map(|c| c.id)
             .collect();
         if let Some(memo) = self.query_memo.city_ids.borrow_mut().as_mut() {
-            memo.insert(pid, ids.clone());
+            memo.insert(pid, (cached_version, ids.clone()));
         }
         ids
     }
@@ -22697,7 +22788,7 @@ impl Game {
             return Err("no adjacent Barbarian units".into());
         }
         for target in targets {
-            self.units.get_mut(&target).unwrap().owner = pid;
+            self.set_unit_owner(target, pid);
         }
         let apostle = self.units.get_mut(&uid).unwrap();
         apostle.charges -= 1;
@@ -24529,11 +24620,11 @@ impl Game {
         let levied_until = self.turn + self.standard_duration(STANDARD_DEAL_TURNS);
         for unit_id in units {
             let unit = self.units.get_mut(&unit_id).unwrap();
-            unit.owner = pid;
             unit.levied_from = Some(minor);
             unit.levied_until = levied_until;
             unit.moves_left = 0.0;
             unit.acted = true;
+            self.set_unit_owner(unit_id, pid);
         }
         let near_enemy = self.player_city_ids(minor).into_iter().any(|city_id| {
             let city = &self.cities[&city_id];
@@ -24584,13 +24675,13 @@ impl Game {
             }
             let (class, current_pos) = {
                 let unit = self.units.get_mut(&unit_id).unwrap();
-                unit.owner = minor;
                 unit.levied_from = None;
                 unit.levied_until = 0;
                 unit.moves_left = 0.0;
                 unit.acted = true;
                 (self.rules.units[unit.kind].class.clone(), unit.pos)
             };
+            self.set_unit_owner(unit_id, minor);
             let occupied = self.units_at(current_pos).into_iter().any(|other| {
                 other != unit_id
                     && self.units[&other].owner == minor
@@ -29227,6 +29318,7 @@ impl Game {
         let sight = spec.sight;
         self.occ.entry(pos).or_default().push(id);
         self.units.insert(id, u);
+        self.note_unit_owner_changed(owner);
         self.reveal(owner, pos, sight);
         self.note_unit_created_moments(owner, kind);
         id
@@ -29257,6 +29349,7 @@ impl Game {
             })
             .unwrap_or_default();
         if let Some(u) = self.units.remove(&uid) {
+            self.note_unit_owner_changed(u.owner);
             if let Some(other) = u.linked_to {
                 if let Some(peer) = self.units.get_mut(&other) {
                     peer.linked_to = None;
@@ -40454,7 +40547,7 @@ impl Game {
             let class = self.rules.units[kind].class.as_str();
             if can_capture && matches!(kind.as_str(), "builder" | "settler") {
                 affected_owners.insert(self.units[&oid].owner);
-                self.units.get_mut(&oid).unwrap().owner = owner;
+                self.set_unit_owner(oid, owner);
             } else if matches!(class, "civilian" | "support") {
                 affected_owners.insert(self.units[&oid].owner);
                 self.remove_unit(oid);
@@ -40819,6 +40912,7 @@ impl Game {
         self.city_by_pos.insert(pos, cid);
         let founded = city.name.clone();
         self.cities.insert(cid, city);
+        self.note_city_owner_changed(pid);
         if is_capital {
             if let Some(continent) = self.map.tiles[&pos].continent {
                 self.players[pid]
@@ -53179,7 +53273,6 @@ impl Game {
             && !self.players[old].techs.contains(&crate::name!("steel"));
         {
             let city = self.cities.get_mut(&cid).unwrap();
-            city.owner = new_owner;
             city.queue.clear();
             city.production_progress
                 .retain(|item, _| !item.starts_with("district:"));
@@ -53302,13 +53395,14 @@ impl Game {
             for oid in self.units_at(position) {
                 if self.units[&oid].owner == old {
                     if matches!(self.units[&oid].kind.as_str(), "builder" | "settler") {
-                        self.units.get_mut(&oid).unwrap().owner = new_owner;
+                        self.set_unit_owner(oid, new_owner);
                     } else {
                         self.remove_unit(oid);
                     }
                 }
             }
         }
+        self.set_city_owner(cid, new_owner);
         for p in self.players.iter_mut() {
             p.governors.retain(|g| *g != cid);
             for governor in p.governor_roster.values_mut() {
@@ -53597,9 +53691,9 @@ impl Game {
             })
             .collect();
         let restored_to_game = !self.players[original_owner].alive;
+        self.set_city_owner(cid, original_owner);
         {
             let city = self.cities.get_mut(&cid).unwrap();
-            city.owner = original_owner;
             city.captured_from = None;
             city.occupied_from = None;
             city.occupation_grievance = None;
