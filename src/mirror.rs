@@ -6044,6 +6044,15 @@ where
     enum MapOrSequence {
         Map(BTreeMap<String, f64>),
         /// Only ever empty in practice; a populated array has no key to carry.
+        ///
+        /// The payload is never read, and rustc offers to replace it with `()`
+        /// to say so. **Taking that suggestion puts the outage above back.**
+        /// In an untagged enum the field's *type* is the matcher: only
+        /// `Vec<_>` accepts a JSON array, and `()` accepts `null` — which the
+        /// `Null` variant below already claims. Change it and `[]` matches no
+        /// variant, the whole `StateSnapshot` fails, and the board is lost
+        /// again. The field earns its place by its type, not its value.
+        #[allow(dead_code)]
         Sequence(Vec<serde_json::Value>),
         Null,
     }

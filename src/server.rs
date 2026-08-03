@@ -25,9 +25,9 @@ use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
 use crate::rules::Rules;
 use crate::setup::{
-    start_era_from_id, start_era_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize,
-    MapTopology, BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES,
-    MAP_TOPOLOGIES, START_ERAS,
+    future_era_from_id, future_era_id, start_era_from_id, start_era_id, BaseRuleset, FutureEra,
+    GameSpeed, MapPoles, MapScript, MapSize, MapTopology, BASE_RULESETS, CIV6_GAME_SPEEDS,
+    CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, FUTURE_ERAS, MAP_POLES, MAP_TOPOLOGIES, START_ERAS,
 };
 use crate::Pos;
 
@@ -190,6 +190,9 @@ pub struct Params {
     /// [`crate::rules::ERA_NAMES`]. Only a rung the rules have a tree for ever
     /// reaches here; see [`new_game_params`].
     pub start_era: usize,
+    /// Which rules the far end of the game is played by. Only an era somebody
+    /// has built ever reaches here; see [`new_game_params`].
+    pub future_era: FutureEra,
     pub map_script: MapScript,
     /// What shape the world is, chosen independently of what fills it.
     pub map_topology: MapTopology,
@@ -1842,6 +1845,7 @@ impl Session {
         let mut game = Game::new_with(GameOptions {
             base_ruleset: params.base_ruleset,
             start_era: params.start_era,
+            future_era: params.future_era,
             map_script: params.map_script,
             map_topology: params.map_topology,
             map_poles: params.map_poles,
@@ -1928,6 +1932,7 @@ impl Session {
         params.seed = game.seed;
         params.base_ruleset = game.base_ruleset;
         params.start_era = game.start_era;
+        params.future_era = game.future_era;
         params.map_script = game.map_script;
         params.map_topology = if game.map.topology == crate::world::Topology::Cylinder {
             MapTopology::Flat
@@ -3077,6 +3082,7 @@ fn simulation_settings(params: &Params) -> Value {
         "turns": params.max_turns,
         "base_ruleset": params.base_ruleset.id(),
         "start_era": start_era_id(params.start_era),
+        "future_era": future_era_id(params.future_era),
         "map": params.map_script.id(),
         "shape": params.map_topology.id(),
         "poles": params.map_poles.id(),
@@ -3156,6 +3162,11 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     // stands and the client can see it did.
     if let Some(era) = request["start_era"].as_str().and_then(start_era_from_id) {
         p.start_era = era;
+    }
+    // Same contract for the other end of the game: an era nobody has built is
+    // refused rather than quietly played as the classic one.
+    if let Some(era) = request["future_era"].as_str().and_then(future_era_from_id) {
+        p.future_era = era;
     }
     if let Some(v) = request["map_script"].as_str().and_then(MapScript::from_id) {
         p.map_script = v;
@@ -3941,6 +3952,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "difficulties": r.difficulties, "speeds": r.speeds,
                     "base_rulesets": BASE_RULESETS,
                     "start_eras": START_ERAS,
+                    "future_eras": FUTURE_ERAS,
                     "map_scripts": CIV6_MAP_SCRIPTS,
                     "map_topologies": MAP_TOPOLOGIES,
                     "map_poles": MAP_POLES,
@@ -4332,7 +4344,8 @@ mod tests {
     };
     use crate::server::{generated_ai_name, simulation_settings};
     use crate::setup::{
-        start_era_from_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapTopology, MAP_POLES,
+        future_era_from_id, start_era_from_id, BaseRuleset, FutureEra, GameSpeed, MapPoles,
+        MapScript, MapTopology, MAP_POLES,
     };
     use serde_json::{json, Value};
     use std::io::{Read, Write};
@@ -6547,6 +6560,7 @@ mod tests {
             map_poles: MapPoles::Poles,
             base_ruleset: BaseRuleset::Civ6,
             start_era: 0,
+            future_era: FutureEra::Classic,
             num_players: 2,
             width: 20,
             height: 14,
@@ -6759,6 +6773,40 @@ mod tests {
             );
             assert_eq!(simulation_settings(&asked)["start_era"], "medieval");
         }
+    }
+
+    /// The other end of the game is asked for the same way, is refused the
+    /// same way, and — unlike the start era — changes the rules rather than
+    /// the world, so the ruleset the session ends up holding is the test.
+    #[test]
+    fn the_lobby_can_ask_for_the_modified_future_era() {
+        let stock = current();
+        assert_eq!(stock.future_era, FutureEra::Classic);
+        assert_eq!(simulation_settings(&stock)["future_era"], "classic");
+
+        let modified = new_game_params(&stock, &json!({"future_era": "modified"}));
+        assert_eq!(modified.future_era, future_era_from_id("modified").unwrap());
+        assert_eq!(simulation_settings(&modified)["future_era"], "modified");
+
+        for refused in ["martin", "gathering_storm", ""] {
+            let asked = new_game_params(&modified, &json!({"future_era": refused}));
+            assert_eq!(
+                asked.future_era, modified.future_era,
+                "{refused:?} moved the Future Era"
+            );
+            assert_eq!(simulation_settings(&asked)["future_era"], "modified");
+        }
+
+        // And the setting reaches the rules: the Moon has ore on it and there
+        // is something to throw the ore with.
+        let session = Session::new(modified);
+        assert_eq!(session.game.future_era, FutureEra::Modified);
+        assert!(session.game.rules.projects.contains_key("mass_driver"));
+        assert!(!session.game.moon_deposits.is_empty());
+
+        let classic = Session::new(new_game_params(&stock, &json!({})));
+        assert!(!classic.game.rules.projects.contains_key("mass_driver"));
+        assert!(classic.game.moon_deposits.is_empty());
     }
 
     /// The setting has to reach the world, survive being read back off it, and
@@ -9112,6 +9160,7 @@ mod tests {
                 "turns": 330,
                 "base_ruleset": "civ6",
                 "start_era": "ancient",
+                "future_era": "classic",
                 "map": "continents",
                 "shape": "flat",
                 "poles": "poles",
@@ -9268,6 +9317,7 @@ mod tests {
                 "turns": 330,
                 "base_ruleset": "civ6",
                 "start_era": "ancient",
+                "future_era": "classic",
                 "map": "continents",
                 "shape": "flat",
                 "poles": "poles",

@@ -3534,7 +3534,6 @@
         </div>
         <label class="small game-advanced-setting civ6-hidden" data-advanced-order="70">Future Era<select id="futureera" style="margin-top:4px">
           <option value="classic" selected>Classic Future Era</option>
-          <option value="martin" disabled>Martin's Future Era · later</option>
         </select></label>
         <div class="mod-options game-advanced-setting civ6-hidden" data-advanced-order="90"
              role="group" aria-labelledby="mod-options-title">
@@ -7376,6 +7375,22 @@ async function boot() {
       ).join("");
       const stock = RULES.start_eras.find(era => era.playable);
       eras.value = RULES.start_eras.some(era => era.playable && era.id === chosen)
+        ? chosen : (stock ? stock.id : "");
+    }
+    if (Array.isArray(RULES.future_eras)) {
+      // The other end of the game, listed the same way the start era is: an
+      // era nobody has built is shown as what is coming and cannot be chosen.
+      // Unlike the start era this one selects a *ruleset*, so what it changes
+      // is what the late game contains rather than where the early game opens.
+      const futures = document.getElementById("futureera");
+      const chosen = futures.value;
+      futures.innerHTML = RULES.future_eras.map(era =>
+        `<option value="${era.id}" title="${escapeAttr(era.description)}"` +
+        `${era.playable ? "" : " disabled"}>${era.name}` +
+        `${era.playable ? "" : " · later"}</option>`
+      ).join("");
+      const stock = RULES.future_eras.find(era => era.playable);
+      futures.value = RULES.future_eras.some(era => era.playable && era.id === chosen)
         ? chosen : (stock ? stock.id : "");
     }
     if (Array.isArray(RULES.map_sizes)) {
@@ -25022,6 +25037,7 @@ function selectedSimulationSettings() {
   const leaderPool = readSetting("leaderpool");
   const baseRuleset = readSetting("baseruleset");
   const startEra = readSetting("startera");
+  const futureEra = readSetting("futureera");
   const victoryConditions = Object.fromEntries(VICTORY_TRACKS.map(track =>
     [track.id, readVictorySetting(`victory-${track.id}`)]));
   const leader = readSetting("leader");
@@ -25040,6 +25056,7 @@ function selectedSimulationSettings() {
           map_poles: mapPoles, game_speed: gameSpeed,
           leader_pool: leaderPool,
           base_ruleset: baseRuleset, start_era: startEra,
+          future_era: futureEra,
           // The control holds the rule; the server is handed the seat-by-seat
           // assignment that rule makes of this many civilizations.
           teams: teamAssignment(np, readSetting("teams")),
@@ -25086,6 +25103,12 @@ function selectedSimulationSummary(settings = null) {
   const stockEra = [...(eras?.options || [])]
     .find(option => option.value && !option.disabled)?.value;
   const era = startEra && startEra !== stockEra ? chosenText("startera", startEra) : "";
+  const futures = document.getElementById("futureera");
+  const futureEra = settings ? settings.future_era : futures?.value;
+  const stockFuture = [...(futures?.options || [])]
+    .find(option => option.value && !option.disabled)?.value;
+  const future = futureEra && futureEra !== stockFuture
+    ? chosenText("futureera", futureEra) : "";
   // Free-for-all is what you get by choosing nothing, so only a real division
   // is worth a clause — and it is named by its split, which is the part that
   // depends on a size this line has already reported.
@@ -25094,7 +25117,7 @@ function selectedSimulationSummary(settings = null) {
     ? teamRuleFromArray(settings.teams)
     : document.getElementById("teams")?.value;
   const teams = teamRule && teamRule !== "ffa" ? teamPhrase(players, teamRule) : "";
-  return [mode, size, map, speed, era, teams].filter(Boolean).join(" · ");
+  return [mode, size, map, speed, era, future, teams].filter(Boolean).join(" · ");
 }
 function simulationSettingsKey(settings) {
   return JSON.stringify(settings);
@@ -25120,6 +25143,7 @@ function applyQueuedSimulationSettings(settings) {
   syncLeaderPool();
   document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
   if (settings.start_era) document.getElementById("startera").value = settings.start_era;
+  if (settings.future_era) document.getElementById("futureera").value = settings.future_era;
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);

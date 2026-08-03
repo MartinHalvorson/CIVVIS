@@ -168,6 +168,96 @@ pub fn playable_start_eras() -> impl Iterator<Item = &'static StartEraSpec> {
     START_ERAS.iter().filter(|spec| spec.is_playable())
 }
 
+/// Which rules the far end of the game is played by.
+///
+/// The start era says where a game opens; this says what it opens *onto*. The
+/// classic era is Gathering Storm's: the Future tree, the space race, and a
+/// Moon that is a milestone rather than a place. The modified one keeps all of
+/// that and adds the Moon's ore and the mass driver that throws it down.
+///
+/// It is a rules choice rather than a world one, which is why it is resolved
+/// in [`crate::rules::Rules::for_game`] and recorded on the save: a match runs
+/// on the rules it started under, whatever a later build ships.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FutureEra {
+    #[default]
+    Classic,
+    Modified,
+}
+
+impl FutureEra {
+    pub const fn id(self) -> &'static str {
+        match self {
+            Self::Classic => "classic",
+            Self::Modified => "modified",
+        }
+    }
+}
+
+/// One Future Era the lobby can offer. Same contract as [`StartEraSpec`]: an
+/// era nobody has built carries `None` and is listed as what is coming rather
+/// than hidden.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct FutureEraSpec {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    /// The rules this era resolves to, or `None` for one that is declared but
+    /// not built.
+    pub era: Option<FutureEra>,
+}
+
+impl FutureEraSpec {
+    pub const fn is_playable(&self) -> bool {
+        self.era.is_some()
+    }
+}
+
+/// The lobby is told whether an era can be chosen, not which variant of the
+/// rules it selects — that is this crate's business.
+impl Serialize for FutureEraSpec {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut spec = serializer.serialize_struct("FutureEraSpec", 4)?;
+        spec.serialize_field("id", &self.id)?;
+        spec.serialize_field("name", &self.name)?;
+        spec.serialize_field("description", &self.description)?;
+        spec.serialize_field("playable", &self.is_playable())?;
+        spec.end()
+    }
+}
+
+pub const FUTURE_ERAS: [FutureEraSpec; 2] = [
+    FutureEraSpec {
+        id: "classic",
+        name: "Classic Future Era",
+        description: "Gathering Storm's own: two random research columns, the space race, and a Moon that is a milestone you pass rather than a place you go back to.",
+        era: Some(FutureEra::Classic),
+    },
+    FutureEraSpec {
+        id: "modified",
+        name: "Modified Future Era",
+        description: "The Moon is a body with ore in it — one set of piles, shared by everybody who gets there — and a mass driver on its surface throws that ore down a gravity well onto a tile you name.",
+        era: Some(FutureEra::Modified),
+    },
+];
+
+/// Resolve a Future Era id to the rules it names. An id that is not on the
+/// list — or one naming an era nobody has built — resolves to nothing rather
+/// than to the classic rules, so the caller decides what to say about it
+/// instead of the player quietly getting a different game.
+pub fn future_era_from_id(id: &str) -> Option<FutureEra> {
+    FUTURE_ERAS
+        .iter()
+        .find(|spec| spec.id == id)
+        .and_then(|spec| spec.era)
+}
+
+/// The Future Era a game is played under, as the lobby names it.
+pub fn future_era_id(era: FutureEra) -> &'static str {
+    era.id()
+}
+
 /// Resolve a start era id to the era its trees are cut at.
 ///
 /// An id that is not on the ladder — or one naming a rung nobody has built yet

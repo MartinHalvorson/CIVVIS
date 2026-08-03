@@ -640,6 +640,34 @@ fn terrain_and_improvements(check: &mut Check) {
         if spec.terrain.is_empty() && spec.feature.is_empty() {
             check.warn(&subject, "can appear on no terrain or feature, so it never spawns");
         }
+        if let Some(lunar) = spec.lunar {
+            // The Moon's ore is drawn into a stockpile, and only strategic
+            // resources have one.
+            if spec.class != "strategic" {
+                check.error(
+                    &subject,
+                    format!(
+                        "has a lunar deposit but is {:?}, and only a strategic resource \
+                         is stockpiled",
+                        spec.class
+                    ),
+                );
+            }
+            if lunar.min < 0.0 || lunar.max < lunar.min {
+                check.error(
+                    &subject,
+                    format!(
+                        "lunar deposit {}..{} is not a range a game can roll from",
+                        lunar.min, lunar.max
+                    ),
+                );
+            } else if lunar.max < 1.0 {
+                check.warn(
+                    &subject,
+                    "lunar deposit rounds to nothing, so the Moon never pays a slug of it",
+                );
+            }
+        }
     }
 }
 
