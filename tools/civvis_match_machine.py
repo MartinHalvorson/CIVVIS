@@ -743,6 +743,7 @@ class MatchMachine:
         log_path.parent.mkdir(parents=True, exist_ok=True)
         started = time.monotonic()
         paused = False
+        admission_pending = False
         cpu_throttled = purpose == "build"
         pressure_paused = False
         with log_path.open("w", encoding="utf-8") as output:
@@ -755,11 +756,20 @@ class MatchMachine:
                 start_new_session=True,
                 text=True,
             )
-            if cpu_throttled and process.poll() is None:
+            # Popen begins executing immediately. Stop every resource-capped
+            # process before the first host sample so even a validator cannot
+            # burst past the ceiling during its admission check. A very short
+            # command may finish in the race between poll and SIGSTOP; that is
+            # already complete work, not a failed safety gate.
+            if process.poll() is None:
                 if not set_paused(process, True):
-                    stop_process(process, timeout=2)
-                    raise RuntimeError("cannot engage the build CPU throttle")
-                paused = True
+                    if process.poll() is None:
+                        stop_process(process, timeout=2)
+                        raise RuntimeError("cannot engage the initial resource gate")
+                else:
+                    paused = True
+                    admission_pending = True
+            if cpu_throttled and paused:
                 self.event(
                     "work_cpu_throttle_started",
                     purpose=purpose,
@@ -810,6 +820,25 @@ class MatchMachine:
                             )
                         time.sleep(self.args.poll)
                         continue
+                    comfortable = sample.comfortably_below(
+                        self.args.limit, margin=RESUME_MARGIN
+                    )
+                    if (pressure_paused or admission_pending) and not comfortable:
+                        # Once pressure trips the gate, require the same
+                        # recovery headroom as the game governor. The initial
+                        # admission gate uses that headroom too. Resuming at the
+                        # shed threshold creates stop/start oscillation and
+                        # leaves no room for the next build pulse.
+                        if not pressure_paused:
+                            pressure_paused = True
+                            self.event(
+                                "work_paused_for_resources",
+                                purpose=purpose,
+                                pid=process.pid,
+                                resources=asdict(sample),
+                            )
+                        time.sleep(self.args.poll)
+                        continue
                     if pressure_paused:
                         pressure_paused = False
                         self.event(
@@ -818,6 +847,7 @@ class MatchMachine:
                             pid=process.pid,
                             resources=asdict(sample),
                         )
+                    admission_pending = False
                     if paused:
                         if not set_paused(process, False):
                             if process.poll() is None:
@@ -833,26 +863,43 @@ class MatchMachine:
                         paused = True
                     time.sleep(BUILD_CPU_DUTY_CYCLE_SECONDS * (1.0 - duty))
                     continue
-                if must_pause and not paused and set_paused(process, True):
-                    paused = True
-                    self.event(
-                        "work_paused_for_resources",
-                        purpose=purpose,
-                        pid=process.pid,
-                        resources=asdict(sample),
-                    )
-                elif (
-                    paused
-                    and sample.comfortably_below(self.args.limit, margin=RESUME_MARGIN)
-                    and set_paused(process, False)
+                comfortable = sample.comfortably_below(
+                    self.args.limit, margin=RESUME_MARGIN
+                )
+                if must_pause or (
+                    (pressure_paused or admission_pending) and not comfortable
                 ):
+                    if not paused:
+                        if not set_paused(process, True):
+                            if process.poll() is None:
+                                stop_process(process, timeout=2)
+                                raise RuntimeError("cannot pause resource-capped work")
+                            continue
+                        paused = True
+                    if not pressure_paused:
+                        pressure_paused = True
+                        self.event(
+                            "work_paused_for_resources",
+                            purpose=purpose,
+                            pid=process.pid,
+                            resources=asdict(sample),
+                        )
+                elif paused and comfortable:
+                    if not set_paused(process, False):
+                        if process.poll() is None:
+                            stop_process(process, timeout=2)
+                            raise RuntimeError("cannot resume resource-capped work")
+                        continue
                     paused = False
-                    self.event(
-                        "work_resumed",
-                        purpose=purpose,
-                        pid=process.pid,
-                        resources=asdict(sample),
-                    )
+                    admission_pending = False
+                    if pressure_paused:
+                        pressure_paused = False
+                        self.event(
+                            "work_resumed",
+                            purpose=purpose,
+                            pid=process.pid,
+                            resources=asdict(sample),
+                        )
                 time.sleep(self.args.poll)
             returncode = process.returncode
 
