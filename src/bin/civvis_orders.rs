@@ -448,9 +448,38 @@ fn host_city_target(
 /// unit workflow. The host supplies both the current activation verdict and every
 /// legal activation plot; choosing the nearest legal plot is path actuation, not a
 /// second strategy layer.
-fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, usize) {
+/// Why a Great Person standing on the board produced no order this turn.
+///
+/// ⚠ These are not the same thing and the single counter they replace could not
+/// tell them apart. `on_cooldown` is the deliberate, benign case documented
+/// below: the person already occupies an activation plot and Firaxis has not
+/// re-offered the command yet, so waiting is correct and the next export will
+/// activate them. `no_activation_plot` is a **loss** — the host offers nowhere
+/// at all to use this individual, and they will stand there for the rest of the
+/// game unless the empire builds the district their class needs.
+///
+/// The distinction is not cosmetic for the science question. A Great Scientist
+/// activates on a Campus; an empire with one Campus and two Scientists has one
+/// of them permanently stranded, and the merged counter reported that
+/// identically to a Writer waiting a single frame. Live brain logs show this
+/// reaching 3 and 6, and nothing said which kind.
+#[derive(Default, Clone, Copy)]
+struct GreatPersonStall {
+    on_cooldown: usize,
+    no_activation_plot: usize,
+}
+
+impl GreatPersonStall {
+    fn total(self) -> usize {
+        self.on_cooldown + self.no_activation_plot
+    }
+}
+
+fn great_person_orders(
+    state: &civvis::mirror::StateSnapshot,
+) -> (Vec<Order>, GreatPersonStall) {
     let mut orders = Vec::new();
-    let mut waiting_without_target = 0;
+    let mut stall = GreatPersonStall::default();
     for unit in &state.units {
         let Some(person) = &unit.great_person else {
             continue;
@@ -475,7 +504,7 @@ fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, us
         // different city. Qu Yuan otherwise bounced Theater -> capital on the
         // cooldown frame after creating his first work.
         if person.activation_plots.iter().any(|plot| plot.distance == 0) {
-            waiting_without_target += 1;
+            stall.on_cooldown += 1;
             continue;
         }
         let target = person
@@ -490,10 +519,12 @@ fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, us
                 pos: Some((target.x, target.y)),
             });
         } else {
-            waiting_without_target += 1;
+            // The host offered no plot anywhere. This individual has nothing to
+            // do until the empire builds the district their class activates on.
+            stall.no_activation_plot += 1;
         }
     }
-    (orders, waiting_without_target)
+    (orders, stall)
 }
 
 /// Keep every physical Great Person hex clear for the current Lua batch.
@@ -972,14 +1003,20 @@ fn decide(
         orders.push(policy_deck_order(&planned_game, 0));
     }
 
-    let (person_orders, great_people_without_target) = great_person_orders(state);
+    let (person_orders, great_person_stall) = great_person_orders(state);
     if !person_orders.is_empty() {
         note_bits.push(format!("great_people_orders={}", person_orders.len()));
         orders.extend(person_orders);
     }
-    if great_people_without_target > 0 {
+    if great_person_stall.total() > 0 {
+        // Kept under the old key so existing log readers still find it, with the
+        // split alongside: one of these two numbers is a cooldown frame and the
+        // other is a Great Person the empire cannot use at all.
         note_bits.push(format!(
-            "great_people_without_activation_target={great_people_without_target}"
+            "great_people_without_activation_target={} (cooldown={} no_plot={})",
+            great_person_stall.total(),
+            great_person_stall.on_cooldown,
+            great_person_stall.no_activation_plot,
         ));
     }
 
@@ -2601,9 +2638,9 @@ mod tests {
             ..StateSnapshot::default()
         };
 
-        let (orders, waiting) = great_person_orders(&state);
+        let (orders, stall) = great_person_orders(&state);
 
-        assert_eq!(waiting, 0);
+        assert_eq!(stall.total(), 0);
         assert_eq!(orders.len(), 2);
         assert_eq!(orders[0].subject, Some(70));
         assert_eq!(orders[0].verb.as_deref(), Some("ACTIVATE_GREAT_PERSON"));
@@ -2640,10 +2677,47 @@ mod tests {
             ..StateSnapshot::default()
         };
 
-        let (orders, waiting) = great_person_orders(&state);
+        let (orders, stall) = great_person_orders(&state);
 
         assert!(orders.is_empty());
-        assert_eq!(waiting, 1);
+        assert_eq!(stall.on_cooldown, 1, "standing on a plot is the benign wait");
+        assert_eq!(
+            stall.no_activation_plot, 0,
+            "and must not be reported as an unusable Great Person"
+        );
+    }
+
+    /// The case the merged counter hid. A Great Person the host offers nowhere
+    /// to activate is not waiting a frame — they are stranded until the empire
+    /// builds the district their class needs, which for a Great Scientist is a
+    /// Campus. Live brain logs reached 3 and 6 under the old key with no way to
+    /// tell this apart from a Writer pausing for one export.
+    #[test]
+    fn a_great_person_with_nowhere_to_activate_is_named_separately() {
+        let state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 73,
+                kind: "UNIT_GREAT_SCIENTIST".to_string(),
+                great_person: Some(StateGreatPerson {
+                    charges: 1,
+                    can_activate: false,
+                    activation_plots: Vec::new(),
+                    ..StateGreatPerson::default()
+                }),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let (orders, stall) = great_person_orders(&state);
+
+        assert!(orders.is_empty(), "there is nowhere to send them");
+        assert_eq!(
+            stall.no_activation_plot, 1,
+            "a Great Scientist with no Campus to use is a loss, not a wait"
+        );
+        assert_eq!(stall.on_cooldown, 0);
+        assert_eq!(stall.total(), 1, "the old key keeps its meaning");
     }
 
     #[test]
