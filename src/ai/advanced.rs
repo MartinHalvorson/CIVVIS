@@ -29,6 +29,13 @@ const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
 /// -15.0, so contact becomes worth considering without becoming automatic —
 /// the shipped caution is reduced, not removed.
 const STRIKE_OPENING_SCALE: f64 = 0.6;
+/// Charged to a tile that would leave a ranged unit in range of a target and
+/// unable to see it, by [`AdvancedAi::ranged_tile_is_blind`]. Sized to beat the
+/// depth preference decisively — `role_spacing` is 2.0 and a Ranged unit scales
+/// it by 1.5, so one hex of depth error costs 3.0 — while staying under
+/// `mv_threat`'s 15.0 at parity, so a blind tile loses to a sighted one a hex
+/// out of position without the unit fleeing contact altogether.
+const BLIND_RANGED_TILE: f64 = 12.0;
 /// Most the wartime army target may be multiplied by when the enemy outweighs
 /// us, used by [`AdvancedAi::wartime_army_target`]. Two doublings would be an
 /// empire of nothing but soldiers; 2.0 asks a six-city empire at war to want
@@ -780,6 +787,12 @@ pub struct AdvancedAi {
     /// [`AdvancedAi::strike_opening_value`] for the arithmetic and the
     /// 7-melee-attacks-in-188-turns measurement behind it.
     pub strike_opening: bool,
+    /// Stop a ranged unit choosing a tile from which it is in range of a target
+    /// and cannot see it.
+    ///
+    /// **Off by default, live-bridge only.** See
+    /// [`AdvancedAi::ranged_tile_is_blind`] for the refusal census behind it.
+    pub ranged_needs_line_of_sight: bool,
     /// Raise the wartime army target when the enemy outweighs us, instead of
     /// keeping a headcount that only ever looks at our own city count.
     ///
@@ -1804,6 +1817,7 @@ impl AdvancedAi {
             battlefront_frame: None,
             scoped_relief_hold: false,
             strike_opening: false,
+            ranged_needs_line_of_sight: false,
             army_target_weighs_the_enemy: false,
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
@@ -1914,6 +1928,13 @@ impl AdvancedAi {
     /// leave this disabled so their recorded ladders stay comparable.
     pub fn enable_strike_opening(&mut self) {
         self.strike_opening = true;
+    }
+
+    /// Let a ranged unit prefer tiles it can actually shoot from. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_ranged_needs_line_of_sight(&mut self) {
+        self.ranged_needs_line_of_sight = true;
     }
 
     /// Let the army target account for the enemy it has to beat. Native
@@ -2034,6 +2055,14 @@ impl AdvancedAi {
         // tournament controller stays frozen so its recorded ladders remain
         // comparable.
         self.enable_strike_opening();
+        // ⚠ And the largest single reason the army does not shoot. Of 87
+        // declined attacks on a replay of run `civvis-20260803T005930Z`, 45
+        // were the forward model refusing outright and **line of sight blocked
+        // was 25 of those** — 27 of the 45 a Field Cannon. Movement picks a
+        // ranged unit's tile by distance and preferred depth and never asks
+        // whether the target is visible from it, so the unit marches exactly
+        // into range and cannot fire.
+        self.enable_ranged_needs_line_of_sight();
         self.enable_blind_objective_strength();
         // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
         // `military_faith_spending` never asks about gold — it gates on the faith
@@ -10038,6 +10067,109 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether a ranged unit standing on `tile` would be in range of something
+    /// and unable to shoot any of it.
+    ///
+    /// `Game::do_ranged` refuses a shot with `"line of sight blocked"`, and
+    /// **that is the single largest reason CIVVIS's army does not attack.**
+    /// PR #989 made the forward model's refusals name themselves; replaying
+    /// run `civvis-20260803T005930Z` (Kongo vs Korea, 188 turns of war), of 87
+    /// declined attacks **45 were the model refusing the action outright**,
+    /// and they broke down as:
+    ///
+    /// ```text
+    /// line of sight blocked                          25
+    /// cannot attack while embarked                   19
+    /// nothing to attack                               9
+    /// siege units cannot move and attack in one turn  5
+    /// no combat target                                4
+    /// not enough movement to attack                   3
+    /// ```
+    ///
+    /// 27 of the 45 were a Field Cannon. The cause is that the movement
+    /// scorer picks a tile by `wdist` to the target and by `preferred_depth`
+    /// — which for a ranged unit *is* its attack range — and **never asks
+    /// whether the target can be seen from there.** So the unit marches
+    /// exactly into range and then cannot fire.
+    ///
+    /// Line of sight binds at exactly distance 2: `has_line_of_sight` returns
+    /// true unconditionally at 1 (adjacent fire) and at 3+ (lobbed shots).
+    /// Range-2 units are therefore the whole population, which is why Field
+    /// Cannons, Crossbowmen and Trebuchets dominate the census and Archers
+    /// barely appear.
+    ///
+    /// A tile is only blind if it is in range of at least one hostile *and*
+    /// sighted on none of them — a tile out of range entirely is not blind, it
+    /// is just far, and [`AdvancedAi::strike_opening_value`] and the depth
+    /// term already speak to that.
+    /// How many candidate tiles the blind-ranged penalty has charged this
+    /// process. Diagnostic only: a treatment that measures null is only
+    /// informative once it is known to have fired at all.
+    fn blind_tile_tally() -> &'static std::sync::atomic::AtomicUsize {
+        static SEEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        &SEEN
+    }
+
+    fn note_blind_tile() {
+        Self::blind_tile_tally().fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Candidate tiles rejected so far for having no line of sight.
+    pub fn blind_tiles_charged() -> usize {
+        Self::blind_tile_tally().load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn ranged_tile_is_blind(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        tile: Pos,
+        enemies: &[usize],
+        visible: Option<&crate::world::TileBits>,
+    ) -> bool {
+        if !self.ranged_needs_line_of_sight {
+            return false;
+        }
+        let unit = &g.units[&uid];
+        let spec = &g.rules.units[unit.kind];
+        if spec.class != "military" || !spec.has_ranged_attack() {
+            return false;
+        }
+        let reach = g.unit_attack_range(uid).max(1);
+        let mut in_range = false;
+        for enemy in g.units.values() {
+            if !enemies.contains(&enemy.owner)
+                || g.rules.units[enemy.kind].class != "military"
+                || g.wdist(tile, enemy.pos) > reach
+            {
+                continue;
+            }
+            if visible.is_some_and(|visible| {
+                !(g.sees(visible, enemy.pos) && self.battlefront_unit_visible(g, pid, enemy.id))
+            }) {
+                continue;
+            }
+            in_range = true;
+            if g.line_of_sight_from(tile, enemy.pos) {
+                return false;
+            }
+        }
+        for city in g.cities.values() {
+            if !enemies.contains(&city.owner) || g.wdist(tile, city.pos) > reach {
+                continue;
+            }
+            if visible.is_some_and(|visible| !g.sees(visible, city.pos)) {
+                continue;
+            }
+            in_range = true;
+            if g.line_of_sight_from(tile, city.pos) {
+                return false;
+            }
+        }
+        in_range
+    }
+
     /// What a tile is worth for the attack it opens.
     ///
     /// `src/ai/tactics.rs` names this as the fourth and largest defect in the
@@ -14241,6 +14373,10 @@ impl AdvancedAi {
                 }
             }
             value += self.strike_opening_value(g, pid, uid, tile, group, &enemies, visible.as_ref());
+            if self.ranged_tile_is_blind(g, pid, uid, tile, &enemies, visible.as_ref()) {
+                value -= BLIND_RANGED_TILE;
+                Self::note_blind_tile();
+            }
             if g.wdist(tile, target) <= 5 {
                 value -= self.base.w.role_spacing
                     * spacing

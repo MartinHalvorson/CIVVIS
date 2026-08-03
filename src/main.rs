@@ -406,8 +406,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `enable_live_bridge`. `strike_opening_value` returns 0.0 on that flag
 /// before it reads the board, so every configured, legacy and Elo agent scores
 /// every tile exactly as it did. A compatibility re-pin.
+///
+/// #991 makes a ranged unit prefer a movement tile it can actually see the
+/// target from, behind `ranged_needs_line_of_sight` — `false` in
+/// `AdvancedAi::new()` and set only by `enable_live_bridge`.
+/// `ranged_tile_is_blind` returns `false` on that flag before it reads the
+/// board, so every configured, legacy and Elo agent scores every tile exactly
+/// as it did. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x07d8_de22_7c72_0b3f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0c18_e0d1_a033_3e3f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -845,6 +845,12 @@ fn decide(
         std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
+    {
+        let blind = civvis::ai::AdvancedAi::blind_tiles_charged();
+        if blind > 0 {
+            note_bits.push(format!("blind_ranged_tiles_charged={blind}"));
+        }
+    }
     let mut policy_changed = false;
     if !pre_traders.is_empty() {
         note_bits.push(format!(
