@@ -424,8 +424,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `ranged_tile_is_blind` returns `false` on that flag before it reads the
 /// board, so every configured, legacy and Elo agent scores every tile exactly
 /// as it did. A compatibility re-pin.
+///
+/// #999 gives the research chooser a goal for a Campus building the empire is
+/// already equipped for but cannot reach, behind `research_economy`. That field
+/// is `false` in `AdvancedAi::configured`, and `unreachable_science_building_tech`
+/// returns `None` on it before reading the board at all, so `advanced_v1` picks
+/// the technology it always picked. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe878_c745_0830_3603;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xcc72_4414_a932_0edc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
