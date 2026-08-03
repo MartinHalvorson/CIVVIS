@@ -1,0 +1,99 @@
+#!/bin/zsh
+
+set -u
+
+readonly civvis_label="$1"
+readonly civvis_mode="$2"
+readonly civvis_base_url="$3"
+readonly civvis_port="$4"
+readonly civvis_state_dir="$5"
+readonly watcher_pid_file="${civvis_state_dir}/${civvis_mode}-tab-watcher.pid"
+
+/bin/mkdir -p "${civvis_state_dir}"
+if [[ -f "${watcher_pid_file}" ]]; then
+    previous_pid="$(/bin/cat "${watcher_pid_file}" 2>/dev/null || true)"
+    previous_command=""
+    if [[ "${previous_pid}" == <-> ]]; then
+        previous_command="$(/bin/ps -p "${previous_pid}" -o command= 2>/dev/null || true)"
+    fi
+    if [[ "${previous_command}" == *"CIVVIS Tab Watcher.zsh"*"${civvis_mode}"* ]]; then
+        exit 0
+    fi
+fi
+print -r -- "$$" >| "${watcher_pid_file}"
+
+clear_watcher_pid() {
+    if [[ "$(/bin/cat "${watcher_pid_file}" 2>/dev/null || true)" == "$$" ]]; then
+        /bin/rm -f "${watcher_pid_file}"
+    fi
+}
+trap clear_watcher_pid EXIT INT TERM
+
+chrome_has_tab() {
+    /usr/bin/osascript - "${civvis_base_url}" <<'APPLESCRIPT' 2>/dev/null
+on run argv
+    set base_url to item 1 of argv
+    if application "Google Chrome" is not running then return "no"
+    tell application "Google Chrome"
+        repeat with chrome_window in windows
+            repeat with chrome_tab in tabs of chrome_window
+                try
+                    if (URL of chrome_tab) starts with base_url then return "yes"
+                end try
+            end repeat
+        end repeat
+    end tell
+    return "no"
+end run
+APPLESCRIPT
+}
+
+stop_owned_processes() {
+    local supervisor_file="${civvis_state_dir}/${civvis_mode}-supervisor.pid"
+    local supervisor_pid command listeners listener_pid
+    supervisor_pid="$(/bin/cat "${supervisor_file}" 2>/dev/null || true)"
+    if [[ "${supervisor_pid}" == <-> ]]; then
+        command="$(/bin/ps -p "${supervisor_pid}" -o command= 2>/dev/null || true)"
+        if [[ "${command}" == *"spectator_supervisor.py"*"--port ${civvis_port}"* ]]; then
+            /bin/kill -TERM "${supervisor_pid}" 2>/dev/null || true
+        fi
+    fi
+
+    listeners="$(/usr/sbin/lsof -nP -t -iTCP:"${civvis_port}" -sTCP:LISTEN 2>/dev/null || true)"
+    for listener_pid in ${(f)listeners}; do
+        command="$(/bin/ps -p "${listener_pid}" -o command= 2>/dev/null || true)"
+        if [[ "${civvis_mode}" == "rust" ]]; then
+            [[ "${command}" != *"${civvis_state_dir}/rust-runtime/target/spectator/civvis play"* ]] && continue
+        else
+            [[ "${command}" != *"/CIVVIS Wasm.app/Contents/Resources/serve.py "* ]] && continue
+        fi
+        /bin/kill -TERM "${listener_pid}" 2>/dev/null || true
+    done
+
+    for stop_check in {1..50}; do
+        /usr/sbin/lsof -nP -iTCP:"${civvis_port}" -sTCP:LISTEN >/dev/null 2>&1 || break
+        /bin/sleep 0.1
+    done
+    /bin/rm -f "${supervisor_file}"
+}
+
+# The launcher starts this only after it has asked Chrome to show the page, but
+# leave a full minute for a cold Chrome start before deciding no viewer exists.
+for attach_check in {1..60}; do
+    [[ "$(chrome_has_tab)" == "yes" ]] && break
+    /bin/sleep 1
+done
+
+misses=0
+while true; do
+    if [[ "$(chrome_has_tab)" == "yes" ]]; then
+        misses=0
+    else
+        misses=$((misses + 1))
+        if (( misses >= 5 )); then
+            stop_owned_processes
+            exit 0
+        fi
+    fi
+    /bin/sleep 2
+done
