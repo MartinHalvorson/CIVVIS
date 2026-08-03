@@ -2148,6 +2148,32 @@ def _play(args: argparse.Namespace) -> int:
     # board, while the old agreement checker compared only the two stale files
     # and reported success. Stop the process before publishing the summary so a
     # completed run has one unambiguous last frame.
+    # ⚠⚠⚠ HOLD THE FINAL SCREEN HERE, NOT IN THE MOD — THE MOD CANNOT DO IT.
+    #
+    # `CivvisControlAutoClose` gained an `EndGameSeconds` clock for `EndGameMenu` in
+    # #1041 and it is INERT. Measured across every run on this machine:
+    #
+    #     250 runs, 145 `autoclose_armed` for EndGameMenu, ZERO `autoclose`
+    #
+    # The shim never closes that screen, and the reason is structural: Civilization
+    # VI halts the Game Core when it shows the end-of-game screen, so the shim is
+    # ticking off a frame loop that has just stopped. A Lua clock cannot run there.
+    #
+    # ⚠ The same absent event is what `civ6_civvis_climb.outcome_of` keys
+    # `reached_end_screen` on, which is why that column has been `None` on all 250
+    # runs while claiming to record whether the game reached its end screen.
+    #
+    # So the thing that actually decides how long the operator sees the result is
+    # THIS gap — between `finished()` breaking the loop above and `launcher.stop()`
+    # killing the game below. Unheld it is a second or two.
+    #
+    # ⚠ Only when the game actually ENDED. A stall, a timeout, or a wrong-modes
+    # refusal has nothing on screen worth looking at, and holding there would add
+    # ten seconds to every failure in a batch.
+    if state["outcome"] and args.end_game_seconds > 0:
+        print(f"holding the final screen for {args.end_game_seconds:.0f}s",
+              flush=True)
+        time.sleep(args.end_game_seconds)
     game_stopped = launcher.stop()
     stop_brain()
     if not game_stopped:
