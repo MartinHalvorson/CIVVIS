@@ -16600,22 +16600,25 @@ function draw() {
         cx.beginPath(); cx.arc(x + dx, y + dy, r, 0, 7); cx.fill();
       }
     } else if (t.feature === "geothermal_fissure") {
-      // Two mineral pools and one vertical geyser: three discrete landmarks
-      // read more clearly than the former single pond with two steam curls.
+      // Lift the whole landmark clear of the hills beneath it. The pools keep
+      // their heights but are exactly 30% wider, so they read at survey zoom
+      // without making the fissure taller or pushing it farther down the tile.
+      const gy = y - 4;
       cx.fillStyle = "#66b6b3"; cx.strokeStyle = "#286f72"; cx.lineWidth = 1.1;
-      for (const [dx, dy, rx, ry] of [[-7, 5, 6, 2.8], [7, 7, 5, 2.3]]) {
-        cx.beginPath(); cx.ellipse(x + dx, y + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
+      for (const [dx, dy, rx, ry] of [[-7, 5, 7.8, 2.8], [7, 7, 6.5, 2.3]]) {
+        cx.beginPath(); cx.ellipse(x + dx, gy + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
       }
       cx.fillStyle = "#dcece8";
-      cx.beginPath(); cx.moveTo(x - 2.2, y + 3);
-      cx.bezierCurveTo(x - 1.4, y - 3, x - 1.1, y - 10, x, y - 16);
-      cx.bezierCurveTo(x + 1.2, y - 10, x + 1.6, y - 3, x + 2.2, y + 3);
-      cx.closePath(); cx.fill();
+      cx.strokeStyle = "#8fbfc4"; cx.lineWidth = .9;
+      cx.beginPath(); cx.moveTo(x - 2.2, gy + 3);
+      cx.bezierCurveTo(x - 1.4, gy - 3, x - 1.1, gy - 10, x, gy - 16);
+      cx.bezierCurveTo(x + 1.2, gy - 10, x + 1.6, gy - 3, x + 2.2, gy + 3);
+      cx.closePath(); cx.fill(); cx.stroke();
       cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.5;
       cx.beginPath();
-      cx.arc(x, y - 14, 4.5, 3.55, 5.9);
-      cx.moveTo(x - 1, y - 12); cx.lineTo(x - 4, y - 8);
-      cx.moveTo(x + 1, y - 12); cx.lineTo(x + 4, y - 8);
+      cx.arc(x, gy - 14, 4.5, 3.55, 5.9);
+      cx.moveTo(x - 1, gy - 12); cx.lineTo(x - 4, gy - 8);
+      cx.moveTo(x + 1, gy - 12); cx.lineTo(x + 4, gy - 8);
       cx.stroke();
     } else if (t.feature === "ice") {
       cx.fillStyle = "#dfeff3"; cx.strokeStyle = "#7db3c5"; cx.lineWidth = 1.4;
