@@ -1690,6 +1690,9 @@ impl AdvancedAi {
         ai.adjacency_site_planning = true;
         ai.settler_commit = true;
         ai.research_economy = true;
+        // The baseline governor makes most of this agent's builds, and it
+        // cannot repair an Amenity deficit without this.
+        ai.base.amenity_districts = true;
         ai.city_target_floor = PRODUCTION_CITY_TARGET_FLOOR;
         ai.plan_city_target = true;
         // Expansion is allowed only behind the existing production floors;
@@ -1947,6 +1950,16 @@ impl AdvancedAi {
     /// Let the siege train be sized by the wall it has to breach. Native
     /// tournament games leave this disabled so their recorded ladders stay
     /// comparable.
+    /// Let the unit chooser ask for siege as a role. Native tournament games
+    /// leave this disabled.
+    pub fn enable_siege_role(&mut self) {
+        self.base.siege_role = true;
+    }
+
+    pub fn disable_siege_role(&mut self) {
+        self.base.siege_role = false;
+    }
+
     pub fn enable_siege_tracks_the_wall(&mut self) {
         self.siege_tracks_the_wall = true;
     }
@@ -2033,6 +2046,14 @@ impl AdvancedAi {
         // siege units across 251 turns against a Korea holding five walled cities;
         // 27 turns in contact with Jinju and Jeonju removed 12 and 9 points of a
         // 400-point wall, while Korea stripped Kwango's 400 in six.
+        // ⚠ And the appetite is useless if the chooser cannot offer a siege
+        // unit at all. `best_military` split the world into melee and ranged;
+        // every siege unit has a ranged attack, so it competed on raw strength
+        // and lost to a Field Cannon. Measured on run `civvis-20260803T082856Z`
+        // — a game CIVVIS was WINNING — 151 turns at war at 10:1, ZERO cities
+        // taken, zero siege units built in 251 turns with every siege tech in
+        // hand. The tournament controller stays frozen.
+        self.enable_siege_role();
         self.enable_siege_tracks_the_wall();
         // ⚠ `local_strength_ratio` prices an objective city only while it is
         // currently in sight, and returns its `hostile <= 0.0` sentinel of 3.0 —

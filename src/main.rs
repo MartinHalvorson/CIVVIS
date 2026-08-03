@@ -431,6 +431,20 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// returns `None` on it before reading the board at all, so `advanced_v1` picks
 /// the technology it always picked. A compatibility re-pin.
 ///
+/// #1003 lets the baseline governor build an Entertainment Complex when the
+/// host reports the city paying the Amenity band, behind
+/// `BasicAi::amenity_districts`. That field is `false` in both `BasicAi`
+/// constructors and is set only by `AdvancedAi::promoted_policy_envoy`; the
+/// added block short-circuits on it before reading the board, so `advanced_v1`
+/// ranks the same four district families in the same order. A compatibility
+///
+/// The siege-role branch adds `best_military_role`, `siege_is_the_missing_arm`
+/// and a `missing_siege_arm` term on the army floor, all behind the new
+/// `siege_role` flag. It is `false` in both `BasicAi` constructors and every
+/// new path short-circuits on it before reading anything, so every configured,
+/// legacy and Elo agent picks exactly what it always picked. A compatibility
+/// re-pin.
+///
 /// #954 says why a settler was held instead of only that it was marching. The
 /// added block is inside `if !moved && self.journal().wants(Detail)` and every
 /// call it makes is a read: `Game::route_step` and `route_step_to_any` take
@@ -439,7 +453,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// board state is touched, so the anchor plays the identical game and only its
 /// journal differs. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xcdae_4564_9a29_ea26;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf285_126b_9a03_45d4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

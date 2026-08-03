@@ -5282,6 +5282,25 @@ pub struct StateCity {
     /// Food stockpiled toward the next citizen.
     #[serde(default)]
     pub food: f64,
+    /// Firaxis's own Housing for this city, and the part of it that comes from
+    /// improvements.
+    ///
+    /// Population is the term every yield is a linear function of — five
+    /// completed live games put science at **1.16 x pop**, with city *count*
+    /// predicting nothing — and `Game::housing_growth_mult` gates growth on the
+    /// headroom over population: `>= 2` full, `>= 1` **half**, below `-4`
+    /// **zero**.
+    ///
+    /// ⚠ CIVVIS has been deriving this from its own rules on the reconstructed
+    /// board with no way to check it — the position Amenities were in before
+    /// #967, where a claim made from the model had to be retracted as
+    /// unverifiable. This carries the number so the model can be **checked**.
+    /// It is not a claim that the model is wrong.
+    #[serde(default)]
+    pub housing: Option<f64>,
+    #[serde(default)]
+    pub housing_from_improvements: Option<f64>,
+
     /// Civilization VI's own amenity ledger for this city, and the multiplier it
     /// puts on every non-food yield.
     ///
@@ -6497,7 +6516,7 @@ const CITY_KEYS: &[&str] = &[
     "yields", "producing", "producing_hash", "production_progress", "production",
     "production_cost", "production_turns", "food", "loyalty_per_turn", "falls_to",
     "x", "y", "pop", "capital", "defense", "damage", "max_damage", "wall_damage",
-    "max_wall_damage", "loyalty",
+    "max_wall_damage", "loyalty", "housing", "housing_from_improvements",
     // The host's own amenity ledger and the multiplier it puts on every non-food
     // yield. `the_schema_allowlists_cover_every_declared_field` caught these missing
     // on the first run, which is the whole reason that test exists.
@@ -9660,6 +9679,43 @@ impl LiveMirror {
         }
     }
 
+    /// ★★★★★ CARRY THE TREASURY BASELINE ACROSS A `--fresh-board` REBUILD.
+    ///
+    /// `mirror_net_income` differences the treasury between CONSECUTIVE turns and
+    /// `last_treasury` lives on this struct — but the bridge runs
+    /// `civvis_orders --serve --fresh-board`, which builds a NEW `LiveMirror`
+    /// every turn and reaches `decide` without ever calling `sync`. So the only
+    /// place the rate is derived is never executed, `last_treasury` is re-seeded
+    /// to the current turn on every construction, and `gold_per_turn` keeps its
+    /// `0.0` default for the whole game.
+    ///
+    /// Measured by instrumenting `faith_military_is_affordable` and replaying run
+    /// `civvis-20260803T044538Z`: **`gold_per_turn` was 0.00 in 963 of 963 live
+    /// decisions.** Nothing that reads it can work:
+    ///
+    /// - `economic_recovery` in `BasicAi::product_for` needs `gold_per_turn < -0.5`,
+    ///   so the entire bankruptcy response **cannot fire in deployment** — which is
+    ///   the standing explanation for `civvis-civ6-the-treasury-confiscates-the-army`
+    ///   recurring after it was called fixed.
+    /// - the income arm of `#962`'s faith-purchase gate allowed **0 of 737**
+    ///   decisions; every allowance came from its balance arm instead.
+    ///
+    /// `src/bin/civvis_orders.rs` already carries `ours` and the unit-id memory
+    /// across the same rebuild for the same reason. This is the treasury's turn.
+    pub fn carry_treasury_baseline(&mut self, previous: Option<(u32, f64)>) {
+        let Some(previous) = previous else { return };
+        self.last_treasury = Some(previous);
+        let gold = self.game.players[0].gold;
+        if let Some(net) = self.mirror_net_income(self.game.turn, gold) {
+            self.game.players[0].gold_per_turn = net;
+        }
+    }
+
+    /// The baseline to hand to the next board built over this one.
+    pub fn treasury_baseline(&self) -> Option<(u32, f64)> {
+        self.last_treasury
+    }
+
     /// Net gold per turn, derived from the treasury balance because the export
     /// carries no rate.
     ///
@@ -10660,6 +10716,36 @@ mod host_fact_tests {
         let absent: StateSnapshot =
             serde_json::from_str(r#"{"turn": 3}"#).expect("an absent field parses");
         assert_eq!(absent.great_person_points, None);
+    }
+
+    /// Housing must survive the wire, including the empty and absent forms.
+    ///
+    /// This is the field that gates the population every yield is a linear
+    /// function of, so it is worth pinning that it parses rather than assuming
+    /// it — the last host field I added took every live game down because an
+    /// empty value serialised in a shape serde would not read (#983 → #996).
+    #[test]
+    fn housing_reaches_the_planner_from_the_host() {
+        let raw = r#"{"id": 1, "x": 3, "y": 4, "pop": 12,
+                      "housing": 14.0, "housing_from_improvements": 5.0}"#;
+        let city: StateCity = serde_json::from_str(raw).expect("housing parses");
+        assert_eq!(city.housing, Some(14.0));
+        assert_eq!(city.housing_from_improvements, Some(5.0));
+        assert_eq!(city.pop, 12, "and the rest of the city survives it");
+
+        // A host that cannot answer sends -1 through `try`, and an older mod
+        // sends nothing at all. Neither may cost us the city.
+        let refused: StateCity =
+            serde_json::from_str(r#"{"id": 1, "x": 3, "y": 4, "pop": 12, "housing": -1}"#)
+                .expect("a refused housing read still parses");
+        assert_eq!(refused.housing, Some(-1.0));
+        assert_eq!(refused.pop, 12);
+
+        let absent: StateCity =
+            serde_json::from_str(r#"{"id": 1, "x": 3, "y": 4, "pop": 12}"#)
+                .expect("an older mod that sends no housing still parses");
+        assert_eq!(absent.housing, None);
+        assert_eq!(absent.pop, 12);
     }
 
     /// The Great Person race the planner prices against must actually exist.
