@@ -318,8 +318,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// every configured, legacy and Elo agent buys exactly what it always did.
 /// `the_default_controller_keeps_the_faith_army_ungated` asserts it on a board
 /// that DOES refuse once enabled. A compatibility re-pin.
+///
+/// #957 prices a fogged objective city from this controller's last sighting
+/// inside `local_strength_ratio`, behind `blind_objective_strength` — again
+/// `false` in `AdvancedAi::new()` and set only by `civvis_orders`.
+/// `remembered_objective_strength` returns `None` on that flag before it
+/// touches the belief state, and the fallback is only reachable at all once
+/// `battlefront_observation` is on. `advanced_v1` sets that to `false`, so the
+/// legacy anchor takes the same `Some(g.city_strength(city))` arm it always
+/// took and is byte-identical twice over. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfa3d_df3c_792b_d1f6;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x46a6_74b0_6d99_278c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
