@@ -295,8 +295,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// (`major_war_since`). Still behind `bounded_recovery`, still short-circuiting
 /// on the flag before anything is read, so every configured, legacy and Elo
 /// agent is byte-identical. Another compatibility re-pin.
+///
+/// #957 prices a fogged objective city from this controller's last sighting
+/// inside `local_strength_ratio`, behind `blind_objective_strength` — again
+/// `false` in `AdvancedAi::new()` and set only by `civvis_orders`.
+/// `remembered_objective_strength` returns `None` on that flag before it
+/// touches the belief state, and the fallback is only reachable at all once
+/// `battlefront_observation` is on. `advanced_v1` sets that to `false`, so the
+/// legacy anchor takes the same `Some(g.city_strength(city))` arm it always
+/// took and is byte-identical twice over. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3ff9_fbfa_5d2f_bbff;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2a95_1602_86c6_6423;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
