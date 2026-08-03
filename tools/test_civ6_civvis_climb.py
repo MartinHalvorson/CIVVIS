@@ -517,8 +517,7 @@ class OneDeciderTests(_Harness, unittest.TestCase):
 
         climb.subprocess.Popen = Recording
         try:
-            self.climb_with([{"last_turn": 40}], attempts=1,
-                            argv_extra=("--war-from-plan",))
+            self.climb_with([{"last_turn": 40}], attempts=1)
         finally:
             climb.subprocess.Popen = FakeProc
         return seen
@@ -538,9 +537,11 @@ class OneDeciderTests(_Harness, unittest.TestCase):
                     if any("civ6_play.py" in str(word) for word in argv))
         words = [str(word) for word in play]
         self.assertIn("--civvis-decides", words)
-        # ⚠ The one that was actually lost. `--war-from-plan` had no route through
-        # `civ6_play`, so the only way to apply it was a second brain.
-        self.assertIn("--civvis-war-from-plan", words)
+        # ⚠ NOT `--civvis-war-from-plan`. That is the one setting the climb must
+        # NOT pass: `civ6_play` refuses it as replay-only, the climb's own second
+        # brain was the only thing that ever applied it live, and asking for it is
+        # now refused before any of this runs. See `WarFromPlanGuardTests`.
+        self.assertNotIn("--civvis-war-from-plan", words)
         self.assertIn("--civvis-victory", words)
         self.assertIn("--civvis-strategy", words)
         # `--orders-bin` used to reach only the climb's own brain, so `civ6_play`
@@ -558,3 +559,36 @@ class OneDeciderTests(_Harness, unittest.TestCase):
         self.assertIn('"--civvis-war-from-plan"', source)
         self.assertIn("if args.civvis_war_from_plan:", source)
         self.assertIn('command.append("--war-from-plan")', source)
+
+
+class WarFromPlanGuardTests(_Harness, unittest.TestCase):
+    """`--war-from-plan` must not reach a live game behind `civ6_play`'s back.
+
+    ⚠⚠⚠ `civ6_play.main` refuses `--civvis-war-from-plan` and says why: the override
+    declares on a plan's preferred rival even when the planner DECLINED war, and
+    live run `live-loop-rome-20260802-0800` forced one under a Religion plan on turn
+    37, spent 213 turns in Recovery asking for peace, and finished 400-1081.
+
+    The climb bypassed that guard for a day — not deliberately, but because it ran
+    its OWN `civ6_brain.py`, which takes the flag directly. Removing the second
+    decider is what made the conflict visible; this keeps it visible.
+    """
+
+    def test_asking_for_war_from_plan_refuses_the_batch(self):
+        code, rows = self.climb_with([{"last_turn": 40}], attempts=1,
+                                     argv_extra=("--war-from-plan",))
+        self.assertEqual(code, 4, "a refused configuration is not a played batch")
+        self.assertEqual(rows, [], "and it must not spend a rung or write a row")
+
+    def test_the_default_batch_still_runs(self):
+        """⚠ A guard that refuses everything is not a guard. Silence is the healthy case."""
+        code, rows = self.climb_with([{"last_turn": 40}], attempts=1)
+        self.assertEqual(code, 1)
+        self.assertEqual(len(rows), 1)
+
+    def test_civ6_play_still_holds_the_guard_this_one_defers_to(self):
+        """If that guard is ever lifted, this refusal is stale and must go with it."""
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn('if "--civvis-war-from-plan" in raw_argv:', source)
+        self.assertIn("replay-only", source)

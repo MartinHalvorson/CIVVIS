@@ -746,11 +746,17 @@ def main() -> int:
     # `code_rev`, but the code_rev boundary at this commit also carries a
     # configuration change — do not read a before/after difference as a code
     # effect.
+    # ⚠⚠ DEFAULT FLIPPED TO OFF 2026-08-03, and the flip is the whole point: this
+    # defaulted to TRUE, so every live batch carried an override that `civ6_play`
+    # refuses outright as replay-only. It only worked because this script ran its own
+    # decider; with one decider it cannot work, and defaulting to a value that always
+    # aborts the batch would be a worse failure than the one being fixed. Passing it
+    # explicitly is refused, loudly, by the check at the top of `main`.
     ap.add_argument("--war-from-plan", action=argparse.BooleanOptionalAction,
-                    default=True,
-                    help="declare when the PLAN names a target, since a board "
-                         "rebuilt each turn can never mature a casus belli; "
-                         "--no-war-from-plan restores the old refusal")
+                    default=False,
+                    help="REFUSED for live games; see the guard in civ6_play.main. "
+                         "Kept so a batch that asks for it fails instead of quietly "
+                         "measuring something else")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--orders-bin", default=str(HERE.parent / "target" / "release" / "civvis_orders"))
@@ -762,6 +768,39 @@ def main() -> int:
 
     logs = Path(args.logs).expanduser() if args.logs else Path.cwd() / "civvis-climb-logs"
     logs.mkdir(parents=True, exist_ok=True)
+    # ⚠⚠⚠ THE SECOND DECIDER WAS ROUTING AROUND A DELIBERATE SAFETY GUARD.
+    #
+    # `civ6_play.main` refuses `--civvis-war-from-plan` outright, and its comment
+    # gives the evidence: the override turns a plan's preferred rival into an
+    # immediate declaration even when the planner DECLINED war, and live run
+    # `live-loop-rome-20260802-0800` forced that declaration under a Religion plan
+    # on turn 37, spent the remaining 213 turns in Recovery asking for peace, and
+    # finished 400-1081. "A production launcher must not be able to bypass the
+    # decider whose behavior it claims to measure."
+    #
+    # This script bypassed it anyway — not on purpose, but because it started its
+    # OWN `civ6_brain.py`, which takes the flag directly and never sees that guard.
+    # So `--war-from-plan`, enabled here on 2026-08-03, has been doing live exactly
+    # what `civ6_play` forbids, and the guard has been reading as enforced.
+    #
+    # Now that there is one decider, the conflict cannot hide, and it is not this
+    # script's to settle: one of the two deliberate decisions has to be withdrawn by
+    # whoever owns them. Refusing is the honest failure — silently dropping the flag
+    # would change what a batch measures without saying so, and silently keeping it
+    # is what got us here.
+    if args.war_from_plan:
+        print("--war-from-plan is refused for live games by civ6_play.main, which "
+              "calls it replay-only:\n"
+              "  'the override turns a plan's preferred rival into an immediate "
+              "declaration even when\n   the planner declined war' — live run "
+              "live-loop-rome-20260802-0800 forced one under a\n   Religion plan on "
+              "turn 37, spent 213 turns in Recovery, and finished 400-1081.\n"
+              "This script used to bypass that guard by running a second decider. It "
+              "no longer does.\n"
+              "Run with --no-war-from-plan, or lift the guard in civ6_play.main "
+              "deliberately.", file=sys.stderr)
+        return 4
+
     orders_bin = Path(args.orders_bin)
     if not orders_bin.exists():
         print(f"no civvis-orders binary at {orders_bin}", file=sys.stderr)
