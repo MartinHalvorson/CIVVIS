@@ -15,7 +15,9 @@ use crate::rules::{
 };
 use crate::specmap::SpecMap;
 
-use crate::setup::{BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
+use crate::setup::{
+    BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
+};
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
 
@@ -2888,6 +2890,9 @@ mod city_trade_tests;
 
 #[cfg(test)]
 mod great_person_runtime_tests;
+
+#[cfg(test)]
+mod mass_driver_tests;
 
 #[cfg(test)]
 mod religious_purchase_tests;
@@ -15179,6 +15184,20 @@ pub struct Player {
     /// then; `None` until then, and on a save written before targets existed.
     #[serde(default)]
     pub exoplanet_target: Option<String>,
+    /// Where this civilization's mass drivers put their slugs down: a tile in
+    /// its own territory, standing until it names another. `None` means the
+    /// drivers are built but nothing has been aimed, and nothing falls.
+    #[serde(default)]
+    pub mass_driver_site: Option<Pos>,
+    /// Which of the Moon's ores those drivers are mining. Set with the site,
+    /// by the same order, because a driver aimed at nothing in particular is
+    /// not a state worth having.
+    #[serde(default)]
+    pub mass_driver_ore: Option<Name>,
+    /// Drivers that threw their slug at something this turn instead of
+    /// delivering it. Reset at the start of every turn.
+    #[serde(default)]
+    pub mass_driver_shots: i64,
     #[serde(default)]
     pub envoys: Vec<(usize, i64)>, // (city-state pid, envoys placed)
     #[serde(default)]
@@ -15289,6 +15308,9 @@ impl Player {
             science_projects: BTreeSet::new(),
             exoplanet_distance: 0.0,
             exoplanet_target: None,
+            mass_driver_site: None,
+            mass_driver_ore: None,
+            mass_driver_shots: 0,
             envoys: Vec::new(),
             counters: BTreeMap::new(),
             great_work_pieces: Vec::new(),
@@ -15637,6 +15659,19 @@ pub enum Action {
         target: Pos,
         thermonuclear: bool,
     },
+    /// Point every mass driver on the Moon at one ore and one landing site in
+    /// your own territory. A standing order: it holds until it is given again,
+    /// and until it is given nothing falls.
+    AimMassDriver {
+        site: Pos,
+        ore: Name,
+    },
+    /// Throw one slug at a revealed tile instead of landing it as cargo. It
+    /// costs one unit of the aimed ore out of the stockpile — the slug is the
+    /// metal — and one driver's turn.
+    MassDriverStrike {
+        target: Pos,
+    },
     /// A Military Engineer lays a Railroad on its tile: engineer-built
     /// only, no build charge, 1 Iron and 1 Coal from the stockpile per
     /// tile (Routes_XP2 and Route_ResourceCosts).
@@ -15775,6 +15810,10 @@ pub struct GameOptions {
     /// Advanced Start — the earlier eras are already researched. The rungs of
     /// the ladder this is chosen from live in [`crate::setup::START_ERAS`].
     pub start_era: usize,
+    /// Which rules the far end of the game is played by. The classic era is
+    /// Gathering Storm's own and the default; the modified one puts ore on the
+    /// Moon and a mass driver over it. See [`crate::setup::FUTURE_ERAS`].
+    pub future_era: FutureEra,
     pub map_script: MapScript,
     /// What shape the world is, asked separately from what fills it: every
     /// world type can be laid out flat or closed into a globe.
@@ -15829,6 +15868,7 @@ impl GameOptions {
             barbarians: true,
             base_ruleset: BaseRuleset::default(),
             start_era: 0,
+            future_era: FutureEra::default(),
             map_script: MapScript::Pangaea,
             map_topology: MapTopology::default(),
             map_poles: MapPoles::default(),
@@ -16178,6 +16218,17 @@ pub struct Game {
     /// setup so a restart offers what was actually played.
     #[serde(default)]
     pub start_era: usize,
+    /// Which rules the far end of this game is played by. Kept on the save
+    /// because it selects the ruleset itself: a match loaded on a later build
+    /// must be rebuilt on the rules it was started under.
+    #[serde(default)]
+    pub future_era: FutureEra,
+    /// The Moon's ore, by resource: one body, one set of piles, shared by
+    /// everybody who gets a mass driver over it. Rolled at setup only when the
+    /// ruleset gives a resource a lunar deposit, so a classic game carries an
+    /// empty map here and never looks at the Moon at all.
+    #[serde(default)]
+    pub moon_deposits: BTreeMap<Name, f64>,
     pub map_script: MapScript,
     /// Random-leader roster chosen when this world was created. It remains on
     /// the save so a restart can faithfully offer the same setup.
@@ -16618,6 +16669,14 @@ struct GameSer {
     /// Ancient era, which is exactly what the default is.
     #[serde(default)]
     start_era: usize,
+    /// Absent in saves written before the Future Era was a choice, all of
+    /// which were played on the classic one.
+    #[serde(default)]
+    future_era: FutureEra,
+    /// Absent in every classic save, and in a modified one that has not been
+    /// rolled yet.
+    #[serde(default)]
+    moon_deposits: BTreeMap<Name, f64>,
     #[serde(default)]
     map_script: MapScript,
     #[serde(default)]
@@ -16736,7 +16795,7 @@ impl From<GameSer> for Game {
     fn from(s: GameSer) -> Game {
         let needs_visibility_backfill = s.visibility_memory_version == 0;
         let has_unknown_terrain = s.map.tiles.values().any(|tile| tile.terrain == "unknown");
-        let mut rules = Rules::for_game(s.seed, s.future_tree_layout.as_ref());
+        let mut rules = Rules::for_game(s.seed, s.future_tree_layout.as_ref(), s.future_era);
         if has_unknown_terrain {
             // Mirror-only terrain is injected after normal ruleset loading so it
             // survives a save round trip without changing the audited fingerprint.
@@ -16769,6 +16828,8 @@ impl From<GameSer> for Game {
             events: s.events.into(),
             base_ruleset: s.base_ruleset,
             start_era: s.start_era,
+            future_era: s.future_era,
+            moon_deposits: s.moon_deposits,
             map_script: s.map_script,
             leader_pool: s.leader_pool,
             map_poles: s.map_poles,
@@ -16949,6 +17010,8 @@ impl From<Game> for GameSer {
             events: g.events.into(),
             base_ruleset: g.base_ruleset,
             start_era: g.start_era,
+            future_era: g.future_era,
+            moon_deposits: g.moon_deposits,
             map_script: g.map_script,
             leader_pool: g.leader_pool,
             map_poles: g.map_poles,
@@ -17161,6 +17224,7 @@ impl Game {
             barbarians,
             base_ruleset,
             start_era,
+            future_era,
             map_script,
             map_topology,
             map_poles,
@@ -17182,7 +17246,7 @@ impl Game {
             teams.is_empty() || teams.len() == num_players,
             "team assignments must be empty or contain one entry per major player"
         );
-        let rules = Rules::for_game(seed, None);
+        let rules = Rules::for_game(seed, None, future_era);
         assert!(
             rules.difficulties.contains_key(&difficulty),
             "unknown difficulty {difficulty}"
@@ -17204,6 +17268,10 @@ impl Game {
             map_poles,
             &mut rng,
         );
+        // After the world, deliberately: a ruleset with nothing on the Moon
+        // draws no numbers here, so a classic game rolls exactly the map it
+        // always did from a given seed.
+        let moon_deposits = Self::roll_moon_deposits(&rules, &mut rng);
         let game_speed = GameSpeed::from_id(&speed).unwrap_or(GameSpeed::Standard);
         let mut g = Game {
             rules,
@@ -17221,6 +17289,8 @@ impl Game {
             human_seats,
             base_ruleset,
             start_era,
+            future_era,
+            moon_deposits,
             map_script,
             leader_pool,
             map_poles,
@@ -28692,6 +28762,261 @@ impl Game {
         self.process_power(pid);
     }
 
+    // ------------------------------------------------------------- the Moon
+
+    /// Roll what the Moon is made of.
+    ///
+    /// There is one Moon, so this runs once at setup rather than once per
+    /// civilization, and what a mass driver takes out of a pile is gone for
+    /// everybody. A ruleset that puts nothing up there — every classic game —
+    /// rolls nothing and consumes no randomness at all, so a seed still makes
+    /// exactly the world it always made.
+    fn roll_moon_deposits(rules: &Rules, rng: &mut Rng) -> BTreeMap<Name, f64> {
+        rules
+            .resources
+            .iter()
+            .filter_map(|(ore, spec)| spec.lunar.map(|lunar| (*ore, lunar)))
+            .map(|(ore, lunar)| {
+                let low = lunar.min.min(lunar.max).max(0.0);
+                let high = lunar.max.max(lunar.min).max(low);
+                (ore, rng.uniform(low, high).round())
+            })
+            .collect()
+    }
+
+    /// What is left of one of the Moon's piles. Zero for an ore the Moon was
+    /// never rolled with, which is all of them in a classic game.
+    pub fn moon_deposit(&self, ore: impl AsName) -> f64 {
+        self.moon_deposits
+            .get(&ore.as_name())
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    /// The ores this world's Moon was rolled with, in ruleset order, whether
+    /// or not any of each is left.
+    pub fn moon_ores(&self) -> Vec<Name> {
+        self.moon_deposits.keys().copied().collect()
+    }
+
+    /// How many mass drivers this civilization has standing on the Moon.
+    pub fn mass_drivers(&self, pid: usize) -> i64 {
+        self.players[pid]
+            .counters
+            .get("project_effect:mass_drivers")
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Whose borders a tile is inside, if anybody's.
+    fn tile_owner(&self, position: Pos) -> Option<usize> {
+        self.map
+            .get(position)?
+            .owner_city
+            .and_then(|city| self.cities.get(&city))
+            .map(|city| city.owner)
+    }
+
+    /// Take up to `wanted` units out of one lunar pile and report what the
+    /// Moon actually had. The piles are shared, so this is the single place
+    /// they are drawn down.
+    fn draw_from_moon(&mut self, ore: Name, wanted: f64) -> f64 {
+        let Some(pile) = self.moon_deposits.get_mut(&ore) else {
+            return 0.0;
+        };
+        let drawn = pile.min(wanted).max(0.0).floor();
+        *pile -= drawn;
+        drawn
+    }
+
+    /// Land this turn's cargo.
+    ///
+    /// Every driver throws one unit of the aimed ore down onto the aimed site
+    /// and the Moon is one unit lighter for it — the whole of the mechanic is
+    /// that a pile somewhere else pays for a stockpile here. Nothing is drawn
+    /// that the stockpile has no room to hold: the ore is finite and shared,
+    /// and spilling a rival's share onto a full warehouse is not worth
+    /// modelling.
+    ///
+    /// A driver that fired at something during the previous turn still
+    /// delivers now. Firing already cost a unit of the same ore out of the
+    /// stockpile — the slug *is* the metal — so a strike is a turn's cargo
+    /// spent on a target rather than a separate magazine.
+    fn process_mass_drivers(&mut self, pid: usize) {
+        self.players[pid].mass_driver_shots = 0;
+        let drivers = self.mass_drivers(pid);
+        if drivers <= 0 || self.players[pid].is_barbarian {
+            return;
+        }
+        let (Some(ore), Some(site)) = (
+            self.players[pid].mass_driver_ore,
+            self.players[pid].mass_driver_site,
+        ) else {
+            return;
+        };
+        // Ground that has been taken, or lost with the city that held it,
+        // catches nothing until the drivers are aimed somewhere else.
+        if self.tile_owner(site) != Some(pid) {
+            return;
+        }
+        let room =
+            (self.strategic_stockpile_capacity(pid) - self.strategic_stockpile(pid, ore)).max(0.0);
+        let landed = self.draw_from_moon(ore, (drivers as f64).min(room.floor()));
+        if landed <= 0.0 {
+            return;
+        }
+        let stock = self.strategic_stockpile(pid, ore) + landed;
+        self.players[pid].strategic_resources.insert(ore, stock);
+        *self.players[pid]
+            .counters
+            .entry("mass_driver_landings".to_string())
+            .or_insert(0) += landed as i64;
+    }
+
+    /// Aim every mass driver at one ore and one landing site.
+    ///
+    /// A standing order rather than a shot: it holds until it is given again,
+    /// which is what makes the drivers infrastructure instead of an action to
+    /// repeat every turn. Until one is given, nothing falls.
+    fn do_aim_mass_driver(&mut self, pid: usize, site: Pos, ore: Name) -> Result<(), String> {
+        if self.mass_drivers(pid) <= 0 {
+            return Err("no mass driver on the Moon".into());
+        }
+        if self.moon_deposit(ore) <= 0.0 {
+            return Err("the Moon has none of that ore left".into());
+        }
+        if !self.resource_visible_to(pid, ore.as_str()) {
+            return Err("that resource is not known to this civilization".into());
+        }
+        if self.tile_owner(site) != Some(pid) {
+            return Err("the landing site must be inside your own borders".into());
+        }
+        self.players[pid].mass_driver_site = Some(site);
+        self.players[pid].mass_driver_ore = Some(ore);
+        Ok(())
+    }
+
+    /// Throw a slug at a tile instead of landing it as cargo.
+    ///
+    /// A mass driver on the Moon needs no launcher on the ground and no range
+    /// to speak of — a rock leaving lunar orbit reaches anywhere on the world
+    /// this civilization can see. What bounds it is the number of drivers and
+    /// the ore: one shot per driver per turn, one unit of the aimed ore out of
+    /// the stockpile per shot. It leaves no fallout and it is not a device, so
+    /// unlike a detonation it earns a war's ordinary grievances rather than
+    /// the world's lasting horror.
+    fn do_mass_driver_strike(&mut self, pid: usize, target: Pos) -> Result<(), String> {
+        let drivers = self.mass_drivers(pid);
+        if drivers <= 0 {
+            return Err("no mass driver on the Moon".into());
+        }
+        if self.players[pid].mass_driver_shots >= drivers {
+            return Err("every mass driver has already fired this turn".into());
+        }
+        let ore = self.players[pid]
+            .mass_driver_ore
+            .ok_or_else(|| "the mass drivers are not aimed at an ore".to_string())?;
+        if self.strategic_stockpile(pid, ore) < 1.0 {
+            return Err("no slug in the stockpile to throw".into());
+        }
+        if !self.map.tiles.contains_key(&target) {
+            return Err("no such tile".into());
+        }
+        if !self.players[pid].explored.contains(&target) {
+            return Err("target tile is unrevealed".into());
+        }
+        // Same rule a detonation is held to: whatever is standing under it
+        // decides whether the order is legal, and dropping a rock on somebody
+        // you are at peace with is not.
+        let mut aggrieved = BTreeSet::new();
+        let owners = self
+            .units_at(target)
+            .into_iter()
+            .map(|uid| self.units[&uid].owner)
+            .chain(self.city_at(target).map(|city| self.cities[&city].owner))
+            .chain(
+                self.encampment_at(target)
+                    .map(|city| self.cities[&city].owner),
+            )
+            .chain(self.tile_owner(target));
+        for owner in owners {
+            if owner == pid || self.players[owner].is_barbarian {
+                continue;
+            }
+            if !self.is_at_war(pid, owner) {
+                return Err("cannot strike a civilization you are at peace with".into());
+            }
+            aggrieved.insert(owner);
+        }
+        let struck_city = self
+            .city_at(target)
+            .filter(|city| self.cities[city].owner != pid);
+        let exposed: Vec<u32> = self.units_at(target);
+        for defender in exposed
+            .iter()
+            .filter_map(|uid| self.units.get(uid))
+            .filter(|unit| unit.owner != pid)
+            .cloned()
+            .collect::<Vec<_>>()
+        {
+            self.record_war_unit_participation(&defender, pid);
+        }
+        let spent = self.strategic_stockpile(pid, ore) - 1.0;
+        self.players[pid].strategic_resources.insert(ore, spent);
+        self.players[pid].mass_driver_shots += 1;
+        bump(&mut self.players[pid], "mass_driver_strikes");
+        // One tile, no blast radius: a slug is aimed, not detonated. It hits
+        // as hard as a nuclear ground zero because it arrives with the whole
+        // of a gravity well behind it, and it does it to exactly one hexagon.
+        self.damage_tile_area(target, 100, Some(pid));
+        if let Some(city) = struck_city {
+            let city = self.cities.get_mut(&city).unwrap();
+            city.wall_hp = 0;
+            city.pop = (city.pop - 1).max(1);
+        }
+        let name = struck_city.map(|city| self.cities[&city].name.clone());
+        for owner in aggrieved.iter().copied() {
+            self.add_grievances(owner, pid, 50.0);
+            self.record_war_moment(pid, owner, "mass_driver_strike", name.clone(), Some(target));
+        }
+        let destroyed = exposed
+            .into_iter()
+            .filter(|uid| !self.units.contains_key(uid))
+            .count();
+        let toll = match destroyed {
+            0 => String::new(),
+            1 => " · 1 unit lost".to_string(),
+            count => format!(" · {count} units lost"),
+        };
+        let place = name
+            .clone()
+            .or_else(|| {
+                aggrieved
+                    .iter()
+                    .next()
+                    .map(|owner| format!("{} territory", self.civ_name(*owner)))
+            })
+            .unwrap_or_else(|| "open ground".to_string());
+        self.note_important(
+            pid,
+            "War",
+            format!("dropped a mass driver slug on {place}{toll}"),
+            Some(target),
+        );
+        for owner in aggrieved {
+            self.note_important(
+                owner,
+                "War",
+                format!("{} dropped a slug from the Moon", self.civ_name(pid)),
+                Some(target),
+            );
+        }
+        // Throwing rocks at people from orbit is not free at home either,
+        // though it is nothing like the price of a detonation.
+        self.add_war_weariness(pid, 2.0);
+        Ok(())
+    }
+
     /// Connected native copies before temporary deal imports and exports.
     pub fn connected_resource_count(&self, pid: usize, res: &str) -> i32 {
         if !self.resource_visible_to(pid, res) {
@@ -38779,6 +39104,46 @@ impl Game {
                     }
                 }
             }
+            // The Moon, when the Modified Future Era put ore on it. Aiming is
+            // offered as one order per ore per city center and a strike as one
+            // per enemy city center: a driver can land on or hit any tile at
+            // all, and the arbitrary ones stay legal through `apply`, but a
+            // catalog with every owned hexagon in it several times over is not
+            // a decision anybody — person, agent or search — can read.
+            if self.mass_drivers(pid) > 0 {
+                let ores: Vec<Name> = self
+                    .moon_ores()
+                    .into_iter()
+                    .filter(|ore| {
+                        self.moon_deposit(ore) >= 1.0 && self.resource_visible_to(pid, ore.as_str())
+                    })
+                    .collect();
+                if !ores.is_empty() {
+                    for city in self.cities.values().filter(|city| city.owner == pid) {
+                        for ore in &ores {
+                            if p.mass_driver_site == Some(city.pos)
+                                && p.mass_driver_ore.as_ref() == Some(ore)
+                            {
+                                continue;
+                            }
+                            acts.push(Action::AimMassDriver {
+                                site: city.pos,
+                                ore: *ore,
+                            });
+                        }
+                    }
+                }
+                let armed = p
+                    .mass_driver_ore
+                    .is_some_and(|ore| self.strategic_stockpile(pid, ore) >= 1.0);
+                if armed && p.mass_driver_shots < self.mass_drivers(pid) {
+                    for enemy in self.cities.values() {
+                        if self.is_at_war(pid, enemy.owner) && p.explored.contains(&enemy.pos) {
+                            acts.push(Action::MassDriverStrike { target: enemy.pos });
+                        }
+                    }
+                }
+            }
             let gp_kinds: BTreeSet<String> = self
                 .rules
                 .great_people
@@ -39523,6 +39888,8 @@ impl Game {
                 // WAR_WEARINESS_PER_WMD_LAUNCHED: launching is the single
                 // most expensive thing you can do to your own people.
                 .inspect(|()| self.add_war_weariness(pid, 10.0)),
+            Action::AimMassDriver { site, ore } => self.do_aim_mass_driver(pid, *site, *ore),
+            Action::MassDriverStrike { target } => self.do_mass_driver_strike(pid, *target),
             Action::BuildRailroad { unit } => self.do_build_railroad(pid, *unit),
             Action::EncampmentStrike { city, target } => {
                 self.do_encampment_strike(pid, *city, *target)
@@ -39574,6 +39941,7 @@ impl Game {
                     | Action::ConvertBarbarians { .. }
                     | Action::CityStrike { .. }
                     | Action::WmdStrike { .. }
+                    | Action::MassDriverStrike { .. }
                     | Action::EncampmentStrike { .. }
                     | Action::KeepCity { .. }
                     | Action::RazeCity { .. }
@@ -51004,6 +51372,10 @@ impl Game {
         }
         self.check_boosts(pid);
         self.process_trade_deals(pid);
+        // Before the ordinary accumulation, so a turn's cargo is subject to
+        // the same stockpile ceiling as a turn's mining rather than sitting
+        // outside it.
+        self.process_mass_drivers(pid);
         self.process_strategic_resources(pid);
         self.process_reactors(pid);
         self.process_diplomacy(pid);

@@ -72,6 +72,9 @@ fn opening_params() -> Params {
         seed: OPENING_SEED.with(Cell::get),
         base_ruleset: BaseRuleset::Civ6,
         start_era: 0,
+        // The world a visitor arrives on is the stock game, at both ends of
+        // it: the lobby is where a different Future Era is asked for.
+        future_era: FutureEra::Classic,
         map_script: MapScript::Continents,
         map_topology: MapTopology::Flat,
         map_poles: MapPoles::Poles,

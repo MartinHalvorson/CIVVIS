@@ -703,6 +703,25 @@ fn start_era(args: &[String]) -> usize {
     })
 }
 
+/// Which rules the far end of the game is played by.
+///
+/// Same contract as `--start-era`: an era that is declared but not built is
+/// refused rather than quietly played as the classic one. The Modified Future
+/// Era can also be had as what it is made of — `--mods
+/// mods/modified-future-era` loads the same overlay off disk.
+fn future_era(args: &[String]) -> setup::FutureEra {
+    let id = arg_text(args, "--future-era", setup::FutureEra::default().id());
+    setup::future_era_from_id(&id).unwrap_or_else(|| {
+        let playable: Vec<&str> = setup::FUTURE_ERAS
+            .iter()
+            .filter(|spec| spec.is_playable())
+            .map(|spec| spec.id)
+            .collect();
+        eprintln!("unknown Future Era {id:?}; choose one of: {}", playable.join(", "));
+        std::process::exit(2);
+    })
+}
+
 /// Difficulty and speed are chosen the same way everywhere: by name, against
 /// the shipped ruleset, with the stock levels as defaults.
 fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
@@ -762,6 +781,7 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
     GameOptions {
         base_ruleset: base_ruleset(args),
         start_era: start_era(args),
+        future_era: future_era(args),
         map_script: MapScript::from_id(&arg_text(args, "--map", "pangaea"))
             .unwrap_or(MapScript::Pangaea),
         map_topology: map_topology(args),
@@ -1862,6 +1882,7 @@ fn main() {
                     seed,
                     base_ruleset: play_options.base_ruleset,
                     start_era: play_options.start_era,
+                    future_era: play_options.future_era,
                     map_script,
                     map_topology,
                     map_poles,

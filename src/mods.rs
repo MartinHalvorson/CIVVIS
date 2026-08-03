@@ -45,6 +45,12 @@ pub fn load(paths: &[PathBuf]) -> Result<(Rules, Vec<ModInfo>), String> {
     for path in paths {
         loaded.push(apply(&mut values, path)?);
     }
+    Ok((validated(values)?, loaded))
+}
+
+/// Build a ruleset from merged JSON and refuse it if it does not validate,
+/// which is the point of having written the validator first.
+fn validated(values: BTreeMap<String, Value>) -> Result<Rules, String> {
     let rules = Rules::from_values(values)?;
     let findings = validate::validate(&rules);
     let errors: Vec<String> = findings
@@ -58,7 +64,7 @@ pub fn load(paths: &[PathBuf]) -> Result<(Rules, Vec<ModInfo>), String> {
             errors.join("\n")
         ));
     }
-    Ok((rules, loaded))
+    Ok(rules)
 }
 
 /// Names of the mods currently installed, in load order. Every new game
@@ -72,7 +78,16 @@ pub fn active_names() -> Vec<String> {
 /// Read, merge, validate and install mods as the active ruleset. Must happen
 /// before any game exists.
 pub fn activate(paths: &[PathBuf]) -> Result<Vec<ModInfo>, String> {
-    let (rules, loaded) = load(paths)?;
+    let mut values = Rules::shipped_values();
+    let mut loaded = Vec::new();
+    for path in paths {
+        loaded.push(apply(&mut values, path)?);
+    }
+    let rules = validated(values.clone())?;
+    // Kept so a per-game overlay — the Modified Future Era is the only one —
+    // merges onto what this mod set produced instead of onto the shipped files
+    // underneath it.
+    Rules::record_active_values(values);
     Rules::install(rules)?;
     let _ = ACTIVE_NAMES.set(loaded.iter().map(|info| info.name.clone()).collect());
     Ok(loaded)
@@ -156,8 +171,9 @@ fn apply(values: &mut BTreeMap<String, Value>, path: &Path) -> Result<ModInfo, S
 }
 
 /// Merge `overlay` into `base`: objects deep-merge, `null` removes, and
-/// anything else replaces outright.
-fn merge(base: &mut Value, overlay: Value) -> Result<(), String> {
+/// anything else replaces outright. Shared with the embedded Future Era
+/// overlay, which is the same kind of thing a mod folder is.
+pub(crate) fn merge(base: &mut Value, overlay: Value) -> Result<(), String> {
     let (Some(base_map), Value::Object(overlay_map)) = (base.as_object_mut(), overlay) else {
         return Err("a ruleset file must be a JSON object".to_string());
     };
@@ -283,5 +299,31 @@ mod tests {
         let mut base = json!({"a": {"x": 1, "y": 2}, "b": 3});
         merge(&mut base, json!({"a": {"y": 9, "z": 10}, "b": 4, "c": 5})).unwrap();
         assert_eq!(base, json!({"a": {"x": 1, "y": 9, "z": 10}, "b": 4, "c": 5}));
+    }
+
+    /// The Modified Future Era ships as a mod folder as well as a lobby
+    /// setting, and the folder on disk is the same bytes the setting embeds.
+    /// If the two ever part company, one of the two doors leads somewhere
+    /// else, so this checks both that it loads and that it is the same thing.
+    #[test]
+    fn the_modified_future_era_folder_loads_and_validates() {
+        let folder = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("mods/modified-future-era");
+        let (rules, loaded) = load(std::slice::from_ref(&folder)).expect("the shipped era loads");
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].name, "Modified Future Era");
+        assert!(rules.projects.contains_key("mass_driver"));
+        assert!(rules.resources["iron"].lunar.is_some());
+
+        let embedded = crate::rules::Rules::modified_future_era();
+        for ore in ["iron", "aluminum", "uranium"] {
+            assert_eq!(
+                rules.resources[ore].lunar, embedded.resources[ore].lunar,
+                "the folder and the embedded overlay disagree about {ore}"
+            );
+        }
+        assert_eq!(
+            rules.projects["mass_driver"].cost,
+            embedded.projects["mass_driver"].cost
+        );
     }
 }
