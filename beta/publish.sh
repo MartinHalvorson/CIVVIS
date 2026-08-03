@@ -48,12 +48,13 @@ fi
 
 commit="$(git -C "$source_tree" rev-parse HEAD)"
 short="$(git -C "$source_tree" rev-parse --short HEAD)"
+commit_time="$(git -C "$source_tree" show -s --format=%cI "$commit")"
 built_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 echo "==> building the engine for wasm32 from $short"
 (
   cd "$source_tree"
-  CIVVIS_COMMIT="$short" cargo rustc --lib \
+  CIVVIS_COMMIT="$commit" CIVVIS_COMMIT_TIME="$commit_time" cargo rustc --lib \
     --target wasm32-unknown-unknown --release --crate-type cdylib
 )
 
@@ -175,6 +176,7 @@ cat > "$out/beta/build.json" <<JSON
 {
   "commit": "$commit",
   "short": "$short",
+  "commit_time": "$commit_time",
   "built_at": "$built_at",
   "wasm_bytes": $wasm_bytes,
   "bundle_bytes": $bundle_bytes
