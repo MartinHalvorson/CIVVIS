@@ -1539,6 +1539,13 @@ const RESEARCH_CAMPUS_COVERAGE: f64 = 300.0;
 /// which pays the same shape only while the empire is fighting.
 const RESEARCH_BUILDING_DEBT: f64 = 240.0;
 
+/// Where the Campus policy multipliers enter a lane's own preference list.
+///
+/// Behind the lane's leading cards, not in front of them: a Religion empire
+/// must keep its opening, and the deck is longer than the slot count, so this
+/// only wins a slot that would otherwise have gone to the tail of the list.
+const RESEARCH_DECK_INSERT: usize = 4;
+
 impl Default for AdvancedAi {
     fn default() -> Self {
         Self::new()
@@ -4832,6 +4839,35 @@ impl AdvancedAi {
             ];
             desired.retain(|card| !WARTIME_ECONOMY.contains(card));
             desired.splice(0..0, WARTIME_ECONOMY);
+        }
+        // The deck has the same lane-keyed shape as every other science term.
+        // Counted over the six lists above, the Campus multipliers appear in
+        // exactly two: Science and Expansion. **The Religion and Culture decks
+        // contain no science card at all** — and the deployment genome is
+        // `adv-religious`, so in the live game Rationalism and Natural
+        // Philosophy are unreachable unless a Conquest army happens to saturate
+        // and trigger `WARTIME_ECONOMY` above. That is exactly what the two
+        // recorded runs show: the religion-heavy `civvis-20260803T005930Z`
+        // finished with all three science cards *available and unslotted*,
+        // while `civvis-20260802T220818Z` had Rationalism and Natural
+        // Philosophy in and reached 60.9 science against the other's 12.3.
+        //
+        // Both cards multiply Campus buildings, so the empire must own a Campus
+        // for them to mean anything — that gate is the whole precondition, and
+        // it is why this cannot fire in a seat these cards would be wasted in.
+        // Inserted after the lane's own leading cards rather than in front of
+        // them: a Religion empire keeps its opening, and picks these up with a
+        // slot it would otherwise fill from the tail of its list.
+        if self.research_economy {
+            const RESEARCH_MULTIPLIERS: [&str; 2] = ["rationalism", "natural_philosophy"];
+            let has_campus = city_ids.iter().any(|city| {
+                g.city_has_district_family(&g.cities[city], crate::name!("campus"))
+            });
+            if has_campus {
+                desired.retain(|card| !RESEARCH_MULTIPLIERS.contains(card));
+                let at = desired.len().min(RESEARCH_DECK_INSERT);
+                desired.splice(at..at, RESEARCH_MULTIPLIERS);
+            }
         }
         let elite_active = g.players[pid].policies.contains(&crate::name!("elite_forces"));
         let elite_affordable = if elite_active {
@@ -16740,6 +16776,83 @@ mod tests {
         );
     }
 
+    /// The policy deck carried the same lane-keyed defect as the yield weights:
+    /// the Religion list contains no science card, and the deployment genome is
+    /// `adv-religious`. The live religion-heavy run finished with Rationalism,
+    /// Natural Philosophy and Military Research all *available and unslotted*.
+    #[test]
+    fn a_religion_empire_can_reach_the_campus_policy_multipliers() {
+        let build = |research_economy: bool| {
+            let mut game = Game::new(2, 32, 24, 5_415, 250, 0);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("starting settler");
+            game.apply(0, &Action::FoundCity { unit: settler })
+                .expect("found city");
+            let city = game.player_city_ids(0)[0];
+            install_ai_test_district(&mut game, city, "campus");
+            game.cities.get_mut(&city).unwrap().buildings =
+                vec![crate::name!("library"), crate::name!("university")];
+            game.players[0].government = Some("theocracy".to_string());
+            game.players[0].civics.extend([
+                crate::name!("recorded_history"),
+                crate::name!("medieval_faires"),
+                crate::name!("the_enlightenment"),
+                crate::name!("opera_ballet"),
+                crate::name!("theology"),
+            ]);
+            game.players[0].policies.clear();
+            let mut ai = AdvancedAi::new();
+            ai.research_economy = research_economy;
+            ai.refresh_research_weight(&game);
+            ai.strategic_policies(&mut game, 0, GrandStrategy::Religion);
+            game.players[0].policies.clone()
+        };
+
+        let treated = build(true);
+        let control = build(false);
+        assert!(
+            !control.contains(&crate::name!("rationalism")),
+            "the untreated Religion deck has no science card at all: {control:?}"
+        );
+        assert!(
+            treated.contains(&crate::name!("rationalism")),
+            "a Religion empire holding a Campus must be able to multiply it: {treated:?}"
+        );
+    }
+
+    /// The multipliers are Campus cards. A seat with no Campus must not spend a
+    /// slot on one, or the treatment buys a religion empire nothing and costs
+    /// it a card it was using.
+    #[test]
+    fn the_campus_policy_multipliers_need_a_campus() {
+        let mut game = Game::new(2, 32, 24, 5_416, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        game.players[0].government = Some("theocracy".to_string());
+        game.players[0].civics.extend([
+            crate::name!("recorded_history"),
+            crate::name!("medieval_faires"),
+            crate::name!("the_enlightenment"),
+            crate::name!("theology"),
+        ]);
+        game.players[0].policies.clear();
+        let mut ai = AdvancedAi::new();
+        ai.refresh_research_weight(&game);
+        ai.strategic_policies(&mut game, 0, GrandStrategy::Religion);
+        assert!(
+            !game.players[0].policies.contains(&crate::name!("rationalism")),
+            "Rationalism multiplies Campus buildings this empire does not have"
+        );
+    }
+
     /// The live run's second city held an Industrial Zone and a Mbanza and
     /// never built a Campus, because a Religion empire's Campus bonus is zero.
     #[test]
@@ -28644,5 +28757,66 @@ mod tests {
             }
         }
         println!();
+    }
+}
+
+#[cfg(test)]
+mod research_probe {
+    use super::*;
+    use crate::ai::Ai;
+    use crate::game::{Action, Game};
+    use crate::setup::GameSpeed;
+
+    /// Paired A/B at the *deployment* shape, not the unit-test shape: six
+    /// players, Online speed, 250 turns, a Small world. Ignored; run by hand.
+    #[test]
+    #[ignore]
+    fn research_economy_ab_at_deployment_scale() {
+        let play = |seed: u64, treated: bool| {
+            let mut g = Game::new(6, 74, 46, seed, 250, 9);
+            g.game_speed = GameSpeed::Online;
+            let mut me = AdvancedAi::new();
+            me.research_economy = treated;
+            let mut others = AdvancedAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 {
+                    me.take_turn(&mut g, pid);
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            let cities = g.player_city_ids(0);
+            let science: f64 = cities.iter().map(|c| g.city_yields(*c).science).sum();
+            let campuses = cities
+                .iter()
+                .filter(|c| {
+                    g.cities[c]
+                        .districts
+                        .keys()
+                        .any(|d| g.district_family(*d) == crate::name!("campus"))
+                })
+                .count();
+            (cities.len(), campuses, g.players[0].techs.len(), science, g.score(0))
+        };
+        let (mut n, mut ts, mut cs, mut tt, mut tc, mut tsc, mut csc, mut tcp, mut ccp) =
+            (0, 0.0, 0.0, 0, 0, 0i64, 0i64, 0, 0);
+        for seed in 9_200..9_208u64 {
+            let t = play(seed, true);
+            let c = play(seed, false);
+            println!(
+                "seed {seed}: treated cities={} campus={} techs={} sci={:.1} score={} | control cities={} campus={} techs={} sci={:.1} score={}",
+                t.0, t.1, t.2, t.3, t.4, c.0, c.1, c.2, c.3, c.4
+            );
+            n += 1;
+            ts += t.3; cs += c.3; tt += t.2; tc += c.2;
+            tsc += t.4 as i64; csc += c.4 as i64; tcp += t.1; ccp += c.1;
+        }
+        println!(
+            "TOTALS n={n} science {ts:.1} vs {cs:.1} | techs {tt} vs {tc} | campuses {tcp} vs {ccp} | score {tsc} vs {csc}"
+        );
     }
 }
