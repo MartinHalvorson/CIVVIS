@@ -3497,6 +3497,11 @@ fn staged_next_game_params(base: &Params, request: &Value) -> Params {
 fn decorate(o: &mut Value, sh: &Shared) {
     let r = sh.restart_in.load(Ordering::Relaxed);
     if r != u64::MAX {
+        // `restart_in` remains the compact, backwards-compatible display
+        // value. The browser also needs the unrounded remainder so it can
+        // paint the seconds between these expensive full-state responses
+        // instead of using their one-second long-poll cadence as a clock.
+        o["restart_in_ms"] = json!(r);
         o["restart_in"] = json!(r.div_ceil(1000));
     }
     o["pace"] = json!(sh.pace_ms.load(Ordering::Relaxed));
@@ -5521,6 +5526,15 @@ mod tests {
             json!(RESULT_COUNTDOWN_MS / 1_000),
             "a result was published without the ten seconds it is owed"
         );
+        let restart_in_ms = decided["restart_in_ms"]
+            .as_u64()
+            .expect("the page receives an unrounded remainder");
+        assert!(restart_in_ms > 0 && restart_in_ms <= RESULT_COUNTDOWN_MS);
+        assert_eq!(
+            restart_in_ms.div_ceil(1_000),
+            decided["restart_in"].as_u64().unwrap(),
+            "the precise and backwards-compatible countdowns describe one deadline"
+        );
 
         let played_on: Value = serde_json::from_str(
             &http_post(
@@ -5548,6 +5562,7 @@ mod tests {
             json!("until_next_victory")
         );
         assert!(played_on["restart_in"].is_null());
+        assert!(played_on["restart_in_ms"].is_null());
         assert!(played_on["turn_limit"].is_null(), "there is no new cap");
         assert_eq!(played_on["max_turns"], json!(3), "setup stays intact");
         assert_eq!(played_on["seed"], decided["seed"], "the same world");
@@ -5838,6 +5853,29 @@ mod tests {
             )),
             "the browser's finale countdown must be the server's countdown"
         );
+    }
+
+    /// A full spectator state intentionally waits for either the next frame or
+    /// a one-second cap. That transport cadence cannot also be the visible
+    /// clock: boundary jitter made 10 linger for two seconds and skipped other
+    /// numbers. The page paints from the precise server remainder between
+    /// snapshots, while duplicate or delayed replies can only shorten its
+    /// deadline.
+    #[test]
+    fn exhibition_countdown_paints_between_full_state_responses() {
+        let sync = EMBEDDED_INDEX
+            .split_once("function syncExhibitionCountdown(st) {")
+            .expect("exhibition countdown synchronizer")
+            .1
+            .split_once("\n}\n\nfor (const gesture")
+            .expect("end of exhibition countdown synchronizer")
+            .0;
+        assert!(sync.contains("Number(st.restart_in_ms)"));
+        assert!(sync.contains("Math.min(exhibitionCountdownDeadline, candidateDeadline)"));
+        assert!(sync.contains("setInterval(paintExhibitionCountdown, 100)"));
+        assert!(EMBEDDED_INDEX.contains("Math.ceil(milliseconds / 1000)"));
+        assert!(EMBEDDED_INDEX.contains("The next world is beginning"));
+        assert!(!EMBEDDED_INDEX.contains("countdownTime.textContent = `${st.restart_in}s`;"));
     }
 
     #[test]
