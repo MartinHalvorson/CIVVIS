@@ -81,3 +81,29 @@ jobs:
           restore-keys: |
             cargo-wasm-${{ runner.os }}-
       - run: cargo check --lib --locked --target wasm32-unknown-unknown
+
+  # The control mod is ~7k lines of Lua that no gate has ever compiled. It runs
+  # inside Civ 6, so a syntax error does not fail a build — it fails a GAME, on
+  # a machine with a 45-minute feedback loop, and the run just wedges. Cheap
+  # insurance: `luac -p` every mod script, then run the one piece of agent logic
+  # that has an argument rather than an engine call.
+  control-mod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      # ⚠⚠ 5.1 SPECIFICALLY, NOT "SOME LUA". Civilization VI's script runtime is
+      # Lua 5.1, and the gap is not academic: `goto`/labels arrived in 5.2, so a
+      # `goto continue` passes `luac5.4 -p` cleanly and then silently refuses to
+      # load in the game. That exact mistake cost run settler-20260729T224210Z,
+      # which sat in a configured game for half an hour emitting only autoclose
+      # events because CivvisControlAgent.lua never loaded. A gate on the wrong
+      # version would have called that commit green.
+      - run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - name: Compile every mod script under the game's Lua version
+        run: |
+          set -eu
+          find tools/civ6_control/mod tools/civ6_mod -name '*.lua' -print0 \
+            | xargs -0 -n1 luac5.1 -p
+      - name: Envoy spend order
+        run: lua5.1 tools/civ6_control/mod/envoy_spend_test.lua

@@ -3957,10 +3957,58 @@ local MIN_ENVOY_TOKENS_SUZERAIN = 3;
 -- placed, suzerainties held, and levies taken, separately.
 local envoyTally = { placed = 0, suzerainties = 0, levies = 0, met_minors = 0 };
 
+-- The spend order, lifted out of `chooseEnvoy` so it can be tested without a
+-- running Civ 6. Everything above it is engine accessors and everything below
+-- it is `UI.RequestPlayerOperation`; this is the only part with an argument.
+--
+-- Takes the surveyed minors and returns them cheapest-flip-first, dropping the
+-- ones we already hold and the ones that cannot legally take a token. Ties go
+-- to the claim we have most invested in, so a part-built claim finishes instead
+-- of a new one starting, and `id` breaks the remaining ties so the order is
+-- deterministic across turns rather than dependent on survey order.
+--
+-- ⚠ Returns the FULL order, not one target. The caller spends `need` on each in
+-- turn against a live token count -- the plan says what to buy, the engine says
+-- what is still affordable.
+local function envoySpendOrder(seen)
+	local order = {};
+	for _, minor in ipairs(seen) do
+		if minor.takes and not minor.ours then order[#order + 1] = minor; end
+	end
+	table.sort(order, function(a, b)
+		if a.need ~= b.need then return a.need < b.need; end
+		if a.mine ~= b.mine then return a.mine > b.mine; end
+		return a.id < b.id;
+	end);
+	-- Nothing flippable: top up somewhere legal anyway rather than forfeit the
+	-- token. A held envoy expires with the game, so a partial claim beats a
+	-- full purse.
+	if #order == 0 then
+		for _, minor in ipairs(seen) do
+			if minor.takes then order[#order + 1] = minor; end
+		end
+	end
+	return order;
+end
+
+-- Exposed for the offline test only; nothing in the agent reads it back.
+_G.CivvisEnvoySpendOrder = envoySpendOrder;
+
 local function chooseEnvoy(player, pid, turn)
 	local influence = try(function() return player:GetInfluence(); end);
 	local oneParam = try(function() return PlayerOperations.PARAM_PLAYER_ONE; end);
 	if influence == nil or oneParam == nil then return nil; end
+	-- ⚠⚠ NEVER read or write this handle across a `UI.RequestPlayerOperation`.
+	-- Step 3 below already re-fetches, and the comment there explains why: a
+	-- gameplay sub-object pointer held across operations that rewrite it is the
+	-- best explanation on record for the three delayed EXC_BAD_ACCESS faults
+	-- that took this whole lane out of deployment. But that fix only covered
+	-- step 3. Steps 1 and 2 -- the levy scan and the placement loop, the two
+	-- places that actually ISSUE the operations -- kept reading through the
+	-- handle fetched above, so the defect was still live on the exact path the
+	-- crash was recorded on. `inf()` is the re-fetch, and every read below goes
+	-- through it.
+	local function inf() return try(function() return player:GetInfluence(); end); end
 	local giveOp = try(function() return PlayerOperations.GIVE_INFLUENCE_TOKEN; end);
 	local levyOp = try(function() return PlayerOperations.LEVY_MILITARY; end);
 
@@ -4024,10 +4072,10 @@ local function chooseEnvoy(player, pid, turn)
 		end, 0) or 0;
 		for _, minor in ipairs(seen) do
 			if levied == nil and minor.ours
-				and try(function() return influence:CanLevyMilitary(minor.id); end, false)
+				and try(function() return inf():CanLevyMilitary(minor.id); end, false)
 			then
 				local cost = try(function()
-					return influence:GetLevyMilitaryCost(minor.id);
+					return inf():GetLevyMilitaryCost(minor.id);
 				end, -1) or -1;
 				if cost >= 0 and purse >= cost then
 					local params = {};
@@ -4041,37 +4089,48 @@ local function chooseEnvoy(player, pid, turn)
 		end
 	end
 
-	-- 2. Place every envoy on ONE target: the cheapest city-state to flip that
-	--    we do not already hold. Ties go to the one we have most invested in, so
-	--    a part-built claim finishes instead of a new one starting.
+	-- 2. Buy suzerainties cheapest-first, spending only what each flip COSTS.
+	--
+	-- ⚠⚠ THE OLD LOOP PUT EVERY HELD TOKEN ON ONE CITY-STATE. `for _ = 1, tokens`
+	-- against a single `best` is correct only when the purse is about the size of
+	-- one claim. It is not. A live game (`civvis-20260803T191900Z`, turn 231) sat
+	-- on **56 unspent envoys** against four met city-states needing 14, 13, 7 and
+	-- 7 to flip -- 41 for the whole map, with 15 to spare. The old loop would
+	-- have bought exactly ONE suzerainty and forfeited the other 42 envoys into
+	-- the same minor, which stops paying the moment the lead is safe.
+	--
+	-- "Concentrate, do not spread" is right about not dribbling one envoy into
+	-- six minors. It is not an argument for one target: the unit of value is a
+	-- FLIP, so fill the cheapest claim exactly, then take the next cheapest with
+	-- what is left. Same principle, correct granularity.
 	local placed, target = 0, nil;
 	if giveOp ~= nil and canGive and tokens > 0 and cfg.EnvoyPlace ~= false then
-		local best = nil;
-		for _, minor in ipairs(seen) do
-			if minor.takes and not minor.ours then
-				if best == nil or minor.need < best.need
-					or (minor.need == best.need and minor.mine > best.mine) then
-					best = minor;
+		for _, minor in ipairs(envoySpendOrder(seen)) do
+			-- ⚠ The purse is re-read from a FRESH handle every target, and it is
+			-- the loop bound. `tokens` above was read before the levy and before
+			-- our own gives, so trusting it here would both over-issue and read
+			-- through the stale pointer this function's crash is blamed on.
+			local live = inf();
+			if live == nil then break; end
+			local left = try(function() return live:GetTokensToGive(); end, 0) or 0;
+			if left < 1 then break; end
+			if not try(function() return live:CanGiveInfluence(); end, false) then break; end
+			if try(function() return live:CanGiveTokensToPlayer(minor.id); end, false) then
+				-- Spend the flip price, or everything left when the flip is out
+				-- of reach -- an envoy still held at the end of the game bought
+				-- nothing, so the remainder goes into the cheapest partial claim.
+				local want = minor.need;
+				if want < 1 or want > left then want = left; end
+				for _ = 1, want do
+					local params = {};
+					params[oneParam] = minor.id;
+					local ok = pcall(function()
+						UI.RequestPlayerOperation(pid, giveOp, params);
+					end);
+					if not ok then break; end
+					placed = placed + 1;
+					if target == nil then target = minor.id; end
 				end
-			end
-		end
-		-- Nothing flippable: top up somewhere legal anyway rather than forfeit
-		-- the token. A held envoy expires with the game.
-		if best == nil then
-			for _, minor in ipairs(seen) do
-				if minor.takes and best == nil then best = minor; end
-			end
-		end
-		if best ~= nil then
-			target = best.id;
-			for _ = 1, tokens do
-				local params = {};
-				params[oneParam] = best.id;
-				local ok = pcall(function()
-					UI.RequestPlayerOperation(pid, giveOp, params);
-				end);
-				if not ok then break; end
-				placed = placed + 1;
 			end
 		end
 	end
