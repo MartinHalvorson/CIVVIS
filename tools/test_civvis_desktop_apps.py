@@ -72,7 +72,12 @@ class DesktopAppsTests(unittest.TestCase):
         self.addCleanup(held.cleanup)
         desktop_dir = pathlib.Path(held.name)
         for app in desktop.APPS:
-            launcher = desktop_dir / app.bundle_name / "Contents/MacOS" / app.executable_name
+            launcher = (
+                desktop_dir
+                / app.bundle_name
+                / "Contents/MacOS"
+                / app.launcher_script_name
+            )
             launcher.parent.mkdir(parents=True)
             launcher.touch()
         current = {
@@ -124,9 +129,42 @@ class DesktopAppsTests(unittest.TestCase):
                     info = plistlib.load(source)
                 identifiers.add(info["CFBundleIdentifier"])
                 self.assertEqual(info["CFBundleDisplayName"], app.label)
+                self.assertEqual(info["CFBundleExecutable"], "CIVVISLauncher")
                 self.assertEqual(info["CFBundleVersion"], self.revision.short)
                 self.assertTrue(info["LSUIElement"])
             self.assertEqual(len(identifiers), 2)
+
+    def test_native_launcher_executes_the_adjacent_zsh_script(self):
+        source = ROOT / "tools/desktop/CIVVIS Launcher.c"
+        with tempfile.TemporaryDirectory() as held:
+            macos = pathlib.Path(held)
+            executable = macos / "CIVVISLauncher"
+            marker = macos / "marker"
+            script = macos / desktop.APPS[0].launcher_script_name
+            script.write_text(
+                "#!/bin/zsh\nprint -r -- native-wrapper > \"${0:A:h}/marker\"\n",
+                encoding="utf-8",
+            )
+            script.chmod(0o755)
+            subprocess.run(
+                (
+                    "/usr/bin/xcrun",
+                    "--sdk",
+                    "macosx",
+                    "clang",
+                    "-Os",
+                    "-Wall",
+                    "-Wextra",
+                    "-Werror",
+                    "-mmacosx-version-min=13.0",
+                    str(source),
+                    "-o",
+                    str(executable),
+                ),
+                check=True,
+            )
+            subprocess.run((str(executable),), check=True)
+            self.assertEqual(marker.read_text(encoding="utf-8"), "native-wrapper\n")
 
     def test_install_archives_both_apps_before_replacing_them(self):
         with tempfile.TemporaryDirectory() as held:
