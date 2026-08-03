@@ -437,9 +437,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// constructors and is set only by `AdvancedAi::promoted_policy_envoy`; the
 /// added block short-circuits on it before reading the board, so `advanced_v1`
 /// ranks the same four district families in the same order. A compatibility
+///
+/// The siege-role branch adds `best_military_role`, `siege_is_the_missing_arm`
+/// and a `missing_siege_arm` term on the army floor, all behind the new
+/// `siege_role` flag. It is `false` in both `BasicAi` constructors and every
+/// new path short-circuits on it before reading anything, so every configured,
+/// legacy and Elo agent picks exactly what it always picked. A compatibility
 /// re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf87f_8983_b56b_b05c;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x109d_ff8e_cc0e_9578;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
