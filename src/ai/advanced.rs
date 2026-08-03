@@ -1897,6 +1897,16 @@ impl AdvancedAi {
         // steps recorded.
         self.enable_recorded_tactical_step();
         self.enable_bounded_recovery();
+        // ⚠ `desired_military` is `2 * city_count` at war — a headcount keyed to
+        // OUR empire that never asks how strong the rival is. Once it is met,
+        // `force_gap` hits zero and the military arm of `production_value` drops
+        // from a 4.0 multiplier to 0.65, so units lose to buildings. Measured on
+        // run `civvis-20260803T005930Z`: 94 of 188 war turns had the target
+        // already satisfied, CIVVIS ordered 17 military units in the whole war
+        // (8 land combat, 2 siege) against Korea's five walled cities, and at t240
+        // the rival fielded 1050 military against our 658 while the target still
+        // read satisfied at 11 against a wanted 10.
+        self.enable_army_target_weighs_the_enemy();
         // ⚠ The siege appetite was one unit for any target city at all, walled
         // or not. The engine halves a non-siege unit's wall damage
         // (`mult = if spec.siege { 1.0 } else { 0.5 }`) and docks a non-siege
