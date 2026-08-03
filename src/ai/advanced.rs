@@ -1979,6 +1979,16 @@ impl AdvancedAi {
         self.base.siege_role = false;
     }
 
+    /// Keep the land army out of the water. Native tournament games leave this
+    /// disabled so their recorded ladders stay comparable.
+    pub fn enable_come_ashore(&mut self) {
+        self.base.come_ashore = true;
+    }
+
+    pub fn disable_come_ashore(&mut self) {
+        self.base.come_ashore = false;
+    }
+
     pub fn enable_siege_tracks_the_wall(&mut self) {
         self.siege_tracks_the_wall = true;
     }
@@ -2073,6 +2083,18 @@ impl AdvancedAi {
         // taken, zero siege units built in 251 turns with every siege tech in
         // hand. The tournament controller stays frozen.
         self.enable_siege_role();
+        // ⚠ `unit_can_traverse` says yes to open water for every land unit as
+        // soon as embarkation unlocks, so the unexplored ocean becomes a legal
+        // exploration goal for the whole army — and the only rule that brought
+        // a unit back was welded to `modernization_step`, which does nothing
+        // for a unit with no upgrade waiting. Measured across 133 live runs:
+        // land combat units spend a mean 15% of their unit-turns embarked, and
+        // 21.7% while one of our own cities is taking damage (92.8% in the
+        // worst run). An embarked unit cannot attack. On run
+        // `civvis-20260803T130831Z` the capital sat at 179/200 damage for 38
+        // turns while 11 of 12 land combat units swam. The tournament
+        // controller stays frozen.
+        self.enable_come_ashore();
         self.enable_siege_tracks_the_wall();
         // ⚠ `local_strength_ratio` prices an objective city only while it is
         // currently in sight, and returns its `hostile <= 0.0` sentinel of 3.0 —
@@ -16177,7 +16199,9 @@ impl AdvancedAi {
                 .tactical_step(g, pid, uid, target, &enemies, radius),
             // Nothing this unit is willing to fight: explore or garrison
             // rather than shadowing a raider it will never strike.
-            None => self.base.peacetime_step(g, pid, uid),
+            None => self
+                .base
+                .peacetime_step(g, pid, uid, !enemies.is_empty()),
         }
     }
 
