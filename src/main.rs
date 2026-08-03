@@ -425,6 +425,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// board, so every configured, legacy and Elo agent scores every tile exactly
 /// as it did. A compatibility re-pin.
 ///
+/// #999 gives the research chooser a goal for a Campus building the empire is
+/// already equipped for but cannot reach, behind `research_economy`. That field
+/// is `false` in `AdvancedAi::configured`, and `unreachable_science_building_tech`
+/// returns `None` on it before reading the board at all, so `advanced_v1` picks
+/// the technology it always picked. A compatibility re-pin.
+///
 /// The siege-role branch adds `best_military_role`, `siege_is_the_missing_arm`
 /// and a `missing_siege_arm` term on the army floor, all behind the new
 /// `siege_role` flag. It is `false` in both `BasicAi` constructors and every
@@ -432,7 +438,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy and Elo agent picks exactly what it always picked. A compatibility
 /// re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd66b_4301_ef64_ad8d;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa584_8d15_f936_fa02;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -2101,6 +2101,20 @@ impl AdvancedAi {
         // frozen so its recorded ladders remain comparable.
         self.enable_loyalty_rate_alarm();
         self.enable_solvent_faith_army();
+        // ⚠ PENDING MEASUREMENT. First arm at deployment shape (74x46, 9 city-states,
+        // 16 games, 200 turns) read +35 Elo (CI -61..+130), direction 7-2, sign
+        // p=0.1797 — inconclusive, the promotion gate did not fire, terminal score
+        // flat at 23-22. A weak positive is not a result. A 40-game arm is running;
+        // if it does not clear, this call and its `live_without_` arm come back out
+        // rather than sitting here unpriced.
+        //
+        // ⚠ It cannot be parked "off but registered": `each_live_without_arm_holds_
+        // exactly_one_treatment_off` and `live_bridge_treatments_name_every_flag_
+        // the_helper_sets` (#988) require the treatment list, the arms and this
+        // helper to agree exactly. A flag the deployment does not set has no
+        // `live_without_` arm — which is the invariant working, and the reason a
+        // gated-off flag here would be dead code of the `culture_focus` kind.
+        self.enable_district_coverage();
     }
 
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
@@ -2116,6 +2130,22 @@ impl AdvancedAi {
 
     pub fn disable_siege_muster(&mut self) {
         self.base.siege_muster = false;
+    }
+
+    /// Rank district families by how much of the empire still lacks them.
+    ///
+    /// ⚠ `d_theater` is the lowest of the four district weights in all 51 league
+    /// genomes and the picker only skips a family THIS CITY holds, so every city
+    /// works down the same constant list and the fourth entry is never reached.
+    /// Live run `civvis-20260803T090911Z`: 28 `DISTRICT_CAMPUS` orders, **zero**
+    /// `DISTRICT_THEATER`, and no Theatre Square anywhere in a 5-city empire — which
+    /// makes the whole culture chain unreachable by construction.
+    pub fn enable_district_coverage(&mut self) {
+        self.base.district_coverage = true;
+    }
+
+    pub fn disable_district_coverage(&mut self) {
+        self.base.district_coverage = false;
     }
 
     /// Require a faith-bought soldier's gold upkeep to be payable. Native
@@ -4564,6 +4594,95 @@ impl AdvancedAi {
         let _ = g.apply(pid, &Action::MoveProduct { from, to, product: Name::new(&product) });
     }
 
+    /// The technology behind the best Campus building this empire is already
+    /// equipped to use and cannot research its way to on merit.
+    ///
+    /// ## Why a goal is needed and a weight is not enough
+    ///
+    /// `advanced_research`'s ordinary path is an argmax of `tech_value` over
+    /// `available_techs` — **the nodes whose prerequisites are already met.** A
+    /// node one step further out is not scored low, it is *not present*. So a
+    /// valuable technology sitting behind a worthless one is unreachable no
+    /// matter what it is worth.
+    ///
+    /// That is exactly what the live games do, and #958 is the control that
+    /// proves it. Run `civvis-20260803T082856Z` finished turn 251 with **seven
+    /// cities, six Campuses, six Universities and zero Research Labs**:
+    ///
+    /// | tech | held | unlocks |
+    /// |---|---|---|
+    /// | `scientific_theory` | yes | — |
+    /// | **`sanitation`** | **no** | Sewer, Medic — nothing this planner wants |
+    /// | **`chemistry`** | **no, and never *available*** | **`research_lab`** |
+    /// | `replaceable_parts` | yes | — |
+    ///
+    /// The empire took Replaceable Parts — one of Chemistry's two prerequisites
+    /// — and went on to Composites, Plastics and Combined Arms, while Chemistry
+    /// stayed out of reach behind a Sewer. #958 raised what a Research Lab is
+    /// worth to `tech_value` by 2.1-2.5x and changed nothing, because the node
+    /// was never in the list being scored.
+    ///
+    /// ## What this returns
+    ///
+    /// The most valuable science building whose **district and prerequisite
+    /// building the empire already owns** and whose technology it does not.
+    /// Owning the Campus and the University is the whole qualification: it means
+    /// the empire has already paid for everything except the node, so the node
+    /// is worth a detour. An empire with no Campus is not sent shopping for
+    /// Chemistry.
+    ///
+    /// Data-driven rather than naming Chemistry, so the same rule reaches
+    /// Education for a Library-only empire and keeps working if the ruleset
+    /// moves a building to a different node.
+    fn unreachable_science_building_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if !self.research_economy {
+            return None;
+        }
+        let campus = crate::name!("campus");
+        let equipped: Vec<&crate::game::City> = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .filter(|city| {
+                city.districts
+                    .keys()
+                    .any(|district| g.district_family(*district) == campus)
+            })
+            .collect();
+        if equipped.is_empty() {
+            return None;
+        }
+        let mut best: Option<(f64, &str)> = None;
+        for (name, spec) in &g.rules.buildings {
+            if spec.wonder || spec.yields.science <= 0.0 {
+                continue;
+            }
+            if spec.district.map(|d| g.district_family(d)) != Some(campus) {
+                continue;
+            }
+            let Some(tech) = spec.tech.as_deref() else {
+                continue;
+            };
+            if g.players[pid].techs.contains(&Name::new(tech)) {
+                continue;
+            }
+            // Every prerequisite building must already stand somewhere the
+            // district does, or this is a goal the empire cannot cash in.
+            let ready = equipped.iter().any(|city| {
+                spec.requires
+                    .iter()
+                    .all(|needed| city.buildings.iter().any(|built| built == needed))
+            });
+            if !ready {
+                continue;
+            }
+            if best.is_none_or(|(science, _)| spec.yields.science > science) {
+                best = Some((spec.yields.science, tech));
+            }
+        }
+        best.map(|(_, tech)| Box::leak(tech.to_string().into_boxed_str()) as &'static str)
+    }
+
     fn advanced_research(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         // Explicit evaluator targets and the adaptive live plan must drive the
         // same prerequisite search.  Previously only `victory_target` enabled
@@ -4622,6 +4741,15 @@ impl AdvancedAi {
                 }
                 _ => None,
             };
+            // Last, so no lane loses its own opening to it: a Campus building
+            // the empire is already equipped for but cannot reach. This is the
+            // only goal here that exists because the target is **absent from
+            // the candidate list**, not because it ranks below something else —
+            // see `unreachable_science_building_tech`. `goal_pick` below walks
+            // the cheapest legal step toward it, which is what crosses the
+            // worthless prerequisite the argmax will never take on merit.
+            let forced_goal =
+                forced_goal.or_else(|| self.unreachable_science_building_tech(g, pid));
             let goal_pick = forced_goal.and_then(|goal| {
                 available
                     .iter()
@@ -17883,6 +18011,85 @@ mod tests {
             AdvancedAi::lane_emphasis(GrandStrategy::Science, RESEARCH_CITIZEN_TILT).science,
             0.50,
             "the Science lane keeps its own larger appetite"
+        );
+    }
+
+    /// The defect this repairs, reproduced from the live board that showed it.
+    ///
+    /// Run `civvis-20260803T082856Z` finished turn 251 with seven cities, six
+    /// Campuses, six Universities and **zero Research Labs**, holding
+    /// Replaceable Parts (one of Chemistry's two prerequisites), Composites,
+    /// Plastics and Combined Arms — and not Sanitation, which unlocks only a
+    /// Sewer and a Medic. Chemistry was therefore never in `available_techs`,
+    /// so `tech_value` never scored it, so #958's 2.1-2.5x weight increase on
+    /// the Research Lab could not and did not change the outcome.
+    #[test]
+    fn a_university_empire_reaches_for_the_research_lab_across_a_worthless_prerequisite() {
+        let mut game = Game::new(2, 32, 24, 8_801, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        let city = game.player_city_ids(0)[0];
+        install_ai_test_district(&mut game, city, "campus");
+        game.cities.get_mut(&city).unwrap().buildings =
+            vec![crate::name!("library"), crate::name!("university")];
+        // Everything Chemistry needs except Sanitation, exactly as the live
+        // empire held it.
+        for tech in ["writing", "education", "scientific_theory", "economics", "replaceable_parts"] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+
+        let ai = AdvancedAi::new();
+        assert_eq!(
+            ai.unreachable_science_building_tech(&game, 0),
+            Some("chemistry"),
+            "a Campus with a University and no Research Lab wants Chemistry"
+        );
+        assert!(
+            !game.available_techs(0).iter().any(|tech| tech == "chemistry"),
+            "and the argmax cannot see it: Chemistry is not an available tech"
+        );
+        assert!(
+            ai.tech_leads_to(&game, "sanitation", "chemistry"),
+            "the bridge runs through Sanitation, which unlocks only a Sewer"
+        );
+
+        // The legacy anchor must not acquire the goal.
+        assert_eq!(
+            AdvancedAi::legacy().unreachable_science_building_tech(&game, 0),
+            None
+        );
+    }
+
+    /// It must not send an empire shopping for a building it cannot use.
+    #[test]
+    fn an_empire_without_the_campus_chain_is_not_sent_after_chemistry() {
+        let mut game = Game::new(2, 32, 24, 8_802, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        let ai = AdvancedAi::new();
+        assert_eq!(
+            ai.unreachable_science_building_tech(&game, 0),
+            None,
+            "no Campus, no goal"
+        );
+
+        let city = game.player_city_ids(0)[0];
+        install_ai_test_district(&mut game, city, "campus");
+        game.players[0].techs.insert(crate::name!("writing"));
+        assert_eq!(
+            ai.unreachable_science_building_tech(&game, 0),
+            None,
+            "a bare Campus has no University, so the Research Lab is not the next step"
         );
     }
 
