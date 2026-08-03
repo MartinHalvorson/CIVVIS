@@ -344,8 +344,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the historical raw apply on the flag before it reaches `path_move` at all,
 /// so `advanced_v1` takes byte-for-byte the arm it always took. A
 /// compatibility re-pin.
+///
+/// #974 adds a `Cities/Decision` journal line to `advanced_production`, which
+/// had none. It is inside `if self.journal().wants(Decision)` and writes only
+/// to the reasoning journal — no board state is read or changed, and the
+/// legacy anchor's chosen item is bit-for-bit what it was. A compatibility
+/// re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe537_003c_0d86_8e47;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa25c_f26b_6d5c_e6b3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
