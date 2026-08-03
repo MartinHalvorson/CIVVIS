@@ -91,6 +91,13 @@ class MatchMachineTests(unittest.TestCase):
         self.assertEqual((standard.speed, standard.turns), ("standard", 500))
         self.assertEqual(online.visible_pace, 0)
 
+    def test_cli_accepts_a_timezone_aware_absolute_deadline(self):
+        args = machine.parse_args(
+            ["--watch-pid", "1", "--deadline-utc", "2026-08-02T15:50:48Z"]
+        )
+
+        self.assertEqual(args.deadline_utc.isoformat(), "2026-08-02T15:50:48+00:00")
+
     def test_first_visible_game_opens_browser_and_replacements_reuse_tab(self):
         visible = machine.game_command(Path("civvis"), Path("league"), 1, 2, visible=True)
         replacement = machine.game_command(
@@ -200,6 +207,80 @@ class MatchMachineTests(unittest.TestCase):
             )
         )
 
+    def test_terminal_watcher_compares_the_original_process_identity(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(watch_pid=42)
+        subject.watch_identity = "started-at"
+
+        with mock.patch.object(machine, "process_is_same", return_value=True):
+            self.assertFalse(subject.watched_terminal_closed())
+        with mock.patch.object(machine, "process_is_same", return_value=False):
+            self.assertTrue(subject.watched_terminal_closed())
+
+    def test_capacity_wait_returns_cleanly_when_the_watched_terminal_closes(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(watch_pid=42, resource_log_interval=60, poll=1)
+        subject.watch_identity = "started-at"
+        subject.deadline = machine.time.monotonic() + 60
+        subject.stopping = False
+        subject.event = mock.Mock()
+        subject.watched_terminal_closed = mock.Mock(return_value=True)
+
+        self.assertIsNone(subject.wait_for_capacity("initial build"))
+
+        self.assertTrue(subject.stopping)
+        subject.event.assert_called_once_with("terminal_closed", watch_pid=42)
+
+    def test_closed_terminal_before_initial_build_cleans_up_without_starting_work(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(duration=60, watch_pid=42, headless=6, limit=70)
+        subject.stopping = False
+        subject.games = []
+        subject.caffeinate = None
+        subject.build_future = None
+        subject.build_executor = mock.Mock()
+        subject.completed = 0
+        subject.failed = 0
+        subject.event = mock.Mock()
+        subject.keep_awake = mock.Mock()
+        subject.ensure_source = mock.Mock()
+        subject.refresh_ranking = mock.Mock()
+        subject.persist = mock.Mock()
+        subject.watched_terminal_closed = mock.Mock(return_value=True)
+
+        self.assertEqual(subject.run(), 0)
+
+        subject.keep_awake.assert_not_called()
+        subject.ensure_source.assert_not_called()
+        subject.build_executor.shutdown.assert_called_once_with(wait=True)
+        subject.event.assert_any_call("terminal_closed", watch_pid=42)
+
+    def test_expired_window_before_initial_build_cleans_up_without_starting_work(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(duration=60, watch_pid=42, headless=6, limit=70)
+        subject.deadline = 10.0
+        subject.stopping = False
+        subject.games = []
+        subject.caffeinate = None
+        subject.build_future = None
+        subject.build_executor = mock.Mock()
+        subject.completed = 0
+        subject.failed = 0
+        subject.event = mock.Mock()
+        subject.keep_awake = mock.Mock()
+        subject.ensure_source = mock.Mock()
+        subject.refresh_ranking = mock.Mock()
+        subject.persist = mock.Mock()
+        subject.watched_terminal_closed = mock.Mock(return_value=False)
+
+        with mock.patch.object(machine.time, "monotonic", return_value=10.0):
+            self.assertEqual(subject.run(), 0)
+
+        subject.keep_awake.assert_not_called()
+        subject.ensure_source.assert_not_called()
+        subject.build_executor.shutdown.assert_called_once_with(wait=True)
+        subject.event.assert_any_call("operator_window_ended", purpose="startup")
+
     def test_completed_background_build_is_activated_on_operator_thread(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
         future = machine.Future()
@@ -214,6 +295,390 @@ class MatchMachineTests(unittest.TestCase):
         subject.activate_build.assert_called_once_with("new-head", promoted)
         self.assertIsNone(subject.build_future)
         self.assertIsNone(subject.build_revision)
+
+    def test_long_work_pauses_and_resumes_as_host_pressure_changes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=70, poll=1)
+            subject.deadline = machine.time.monotonic() + 60
+            subject.stopping = False
+            # A HEAD build must get a recovery slot even when the game
+            # governor has shed part of the fleet. Requiring every game to
+            # resume first can starve promotion under steady moderate load.
+            subject.games = [SimpleNamespace(paused=True)]
+            subject.watched_terminal_closed = mock.Mock(return_value=False)
+            subject.event = mock.Mock()
+            process = mock.Mock(pid=1234, returncode=0)
+            process.poll.side_effect = [None, None, None, 0]
+            samples = [
+                machine.Resources(60, 20, 12, 0, False),
+                machine.Resources(20, 20, 12, 0, False),
+            ]
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ) as launch, mock.patch.object(
+                machine, "resources", side_effect=samples
+            ), mock.patch.object(
+                machine, "set_paused", return_value=True
+            ) as pause, mock.patch.object(machine.time, "sleep"):
+                result = subject.resource_capped_command(
+                    "civvis",
+                    "validate",
+                    cwd=root,
+                    env=None,
+                    timeout=30,
+                    purpose="validation",
+                    log_path=root / "build.log",
+                )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(
+                pause.call_args_list,
+                [mock.call(process, True), mock.call(process, False)],
+            )
+            self.assertEqual(
+                [call.args[0] for call in subject.event.call_args_list],
+                ["work_paused_for_resources", "work_resumed"],
+            )
+            self.assertTrue(launch.call_args.kwargs["start_new_session"])
+
+    def test_validation_is_stopped_before_its_first_resource_sample(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=70, poll=1)
+            subject.deadline = machine.time.monotonic() + 60
+            subject.stopping = False
+            subject.watched_terminal_closed = mock.Mock(return_value=False)
+            subject.event = mock.Mock()
+            process = mock.Mock(pid=1234, returncode=0)
+            process.poll.side_effect = [None, None, 0]
+            order = []
+
+            def pause_process(candidate, paused):
+                order.append(("pause", paused))
+                return True
+
+            def sample_resources(runtime):
+                order.append(("sample", runtime))
+                return machine.Resources(20, 20, 12, 0, False)
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ), mock.patch.object(
+                machine, "resources", side_effect=sample_resources
+            ), mock.patch.object(
+                machine, "set_paused", side_effect=pause_process
+            ), mock.patch.object(machine.time, "sleep"):
+                result = subject.resource_capped_command(
+                    "civvis",
+                    "validate",
+                    cwd=root,
+                    env=None,
+                    timeout=30,
+                    purpose="validation",
+                    log_path=root / "build.log",
+                )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(
+                order,
+                [("pause", True), ("sample", root), ("pause", False)],
+            )
+
+    def test_build_cpu_duty_cycle_bounds_a_saturating_worker(self):
+        self.assertEqual(machine.build_cpu_duty_cycle(None, 60), 0.0)
+        self.assertEqual(machine.build_cpu_duty_cycle(43, 60), 0.0)
+        self.assertEqual(machine.build_cpu_duty_cycle(10, 60), 0.35)
+
+        duty = machine.build_cpu_duty_cycle(30, 60)
+        worst_case_average = 30 + (100 - 30) * duty
+        self.assertAlmostEqual(worst_case_average, 43.0)
+
+    def test_build_is_stopped_before_resource_sample_and_runs_in_bounded_pulses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=60, poll=1)
+            subject.deadline = machine.time.monotonic() + 60
+            subject.stopping = False
+            subject.watched_terminal_closed = mock.Mock(return_value=False)
+            subject.event = mock.Mock()
+            process = mock.Mock(pid=1234, returncode=0)
+            process.poll.side_effect = [None, None, None, 0]
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ), mock.patch.object(
+                machine, "resources", return_value=machine.Resources(20, 20, 12, 0, False)
+            ), mock.patch.object(
+                machine, "set_paused", return_value=True
+            ) as pause, mock.patch.object(machine.time, "sleep") as sleep:
+                result = subject.resource_capped_command(
+                    "cargo",
+                    "build",
+                    cwd=root,
+                    env=None,
+                    timeout=30,
+                    purpose="build",
+                    log_path=root / "build.log",
+                )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(
+                pause.call_args_list,
+                [
+                    mock.call(process, True),
+                    mock.call(process, False),
+                    mock.call(process, True),
+                ],
+            )
+            duty = machine.build_cpu_duty_cycle(20, 60)
+            self.assertEqual(
+                sleep.call_args_list,
+                [
+                    mock.call(machine.BUILD_CPU_DUTY_CYCLE_SECONDS * duty),
+                    mock.call(machine.BUILD_CPU_DUTY_CYCLE_SECONDS * (1.0 - duty)),
+                ],
+            )
+            subject.event.assert_called_once_with(
+                "work_cpu_throttle_started",
+                purpose="build",
+                pid=1234,
+                cycle_seconds=machine.BUILD_CPU_DUTY_CYCLE_SECONDS,
+                max_duty=machine.BUILD_CPU_MAX_DUTY,
+            )
+
+    def test_build_throttle_fails_closed_if_a_pulse_cannot_be_stopped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=60, poll=1)
+            subject.deadline = machine.time.monotonic() + 60
+            subject.stopping = False
+            subject.watched_terminal_closed = mock.Mock(return_value=False)
+            subject.event = mock.Mock()
+            process = mock.Mock(pid=1234)
+            process.poll.side_effect = [None, None, None]
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ), mock.patch.object(
+                machine, "resources", return_value=machine.Resources(20, 20, 12, 0, False)
+            ), mock.patch.object(
+                machine, "set_paused", side_effect=[True, True, False]
+            ), mock.patch.object(
+                machine, "stop_process"
+            ) as stop, mock.patch.object(machine.time, "sleep"):
+                with self.assertRaisesRegex(RuntimeError, "cannot re-pause"):
+                    subject.resource_capped_command(
+                        "cargo",
+                        "build",
+                        cwd=root,
+                        env=None,
+                        timeout=30,
+                        purpose="build",
+                        log_path=root / "build.log",
+                    )
+
+            stop.assert_called_once_with(process, timeout=2)
+
+    def test_build_pressure_requires_recovery_headroom_before_resuming(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=60, poll=1)
+            subject.deadline = machine.time.monotonic() + 60
+            subject.stopping = False
+            subject.watched_terminal_closed = mock.Mock(return_value=False)
+            subject.event = mock.Mock()
+            process = mock.Mock(pid=1234, returncode=0)
+            process.poll.side_effect = [None, None, None, None, 0, 0]
+            samples = [
+                machine.Resources(48, 20, 12, 0, False),
+                machine.Resources(44, 20, 12, 0, False),
+                machine.Resources(30, 20, 12, 0, False),
+            ]
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ), mock.patch.object(
+                machine, "resources", side_effect=samples
+            ), mock.patch.object(
+                machine, "set_paused", return_value=True
+            ) as pause, mock.patch.object(machine.time, "sleep") as sleep:
+                result = subject.resource_capped_command(
+                    "cargo",
+                    "build",
+                    cwd=root,
+                    env=None,
+                    timeout=30,
+                    purpose="build",
+                    log_path=root / "build.log",
+                )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(
+                pause.call_args_list,
+                [mock.call(process, True), mock.call(process, False)],
+            )
+            self.assertEqual(
+                [call.args[0] for call in subject.event.call_args_list],
+                [
+                    "work_cpu_throttle_started",
+                    "work_paused_for_resources",
+                    "work_resumed",
+                ],
+            )
+            self.assertEqual(sleep.call_args_list[:2], [mock.call(1), mock.call(1)])
+            resumed = subject.event.call_args_list[-1]
+            self.assertEqual(resumed.kwargs["resources"]["cpu"], 30)
+
+    def test_terminal_close_cancels_resource_capped_work(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=70, poll=1)
+            subject.deadline = machine.time.monotonic() + 60
+            subject.stopping = False
+            subject.watched_terminal_closed = mock.Mock(return_value=True)
+            subject.stop_for_terminal_close = mock.Mock()
+            process = mock.Mock(pid=1234)
+            process.poll.return_value = None
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ), mock.patch.object(
+                machine, "set_paused", return_value=True
+            ), mock.patch.object(machine, "stop_process") as stop:
+                result = subject.resource_capped_command(
+                    "civvis",
+                    "validate",
+                    cwd=root,
+                    env=None,
+                    timeout=30,
+                    purpose="validation",
+                    log_path=root / "build.log",
+                )
+
+            self.assertIsNone(result)
+            subject.stop_for_terminal_close.assert_called_once_with()
+            stop.assert_called_once_with(process, timeout=2)
+
+    def test_refresh_ranking_uses_a_runtime_snapshot_while_source_can_build(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            runtime = root / "runtime"
+            league = runtime / "league"
+            source_tools = source / "tools"
+            source_tools.mkdir(parents=True)
+            league.mkdir(parents=True)
+            (league / "league.json").write_text("{}", encoding="utf-8")
+            source_script = source_tools / "update_ai_player_elo_rankings.py"
+            source_script.write_text("source", encoding="utf-8")
+            runtime.mkdir(exist_ok=True)
+            cached_script = runtime / "update_ai_player_elo_rankings.py"
+            cached_script.write_text("cached", encoding="utf-8")
+
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.source = source
+            subject.runtime = runtime
+            subject.league = league
+            subject.ranking = runtime / "AI_PLAYER_ELO_RANKINGS.md"
+            subject.ranking_updater = cached_script
+            subject.event = mock.Mock()
+
+            completed = SimpleNamespace(returncode=0, stdout="")
+            with mock.patch.object(machine, "command", return_value=completed) as run:
+                subject.refresh_ranking()
+
+            self.assertEqual(run.call_args.args[1], str(cached_script))
+            self.assertEqual(run.call_args.kwargs["cwd"], runtime)
+            subject.event.assert_not_called()
+
+    def test_cache_ranking_updater_snapshots_the_post_build_source_script(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            runtime = root / "runtime"
+            source_script = source / "tools" / "update_ai_player_elo_rankings.py"
+            source_script.parent.mkdir(parents=True)
+            source_script.write_text("post-build updater", encoding="utf-8")
+            runtime.mkdir()
+
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.source = source
+            subject.runtime = runtime
+            subject.ranking_updater = runtime / "update_ai_player_elo_rankings.py"
+            subject.event = mock.Mock()
+
+            subject.cache_ranking_updater()
+
+            self.assertEqual(
+                subject.ranking_updater.read_text(encoding="utf-8"), "post-build updater"
+            )
+            subject.event.assert_not_called()
+
+    def test_activate_build_snapshots_the_ranking_updater_before_refreshing(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(sync_interval=300)
+        subject.pending_revision = "new-head"
+        subject.next_sync = 1.0
+        subject.cache_ranking_updater = mock.Mock()
+        subject.initialize_league = mock.Mock()
+        subject.refresh_ranking = mock.Mock()
+        subject.event = mock.Mock()
+
+        promoted = Path("/tmp/civvis-new")
+        with mock.patch.object(machine.time, "monotonic", return_value=100.0):
+            subject.activate_build("new-head", promoted)
+
+        subject.cache_ranking_updater.assert_called_once_with()
+        subject.initialize_league.assert_called_once_with()
+        subject.refresh_ranking.assert_called_once_with()
+        self.assertIsNone(subject.pending_revision)
+        self.assertEqual(subject.next_sync, 400.0)
+
+    def test_sync_replaces_a_stale_pending_revision_before_a_build(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(sync_interval=300)
+        subject.current_revision = "current-head"
+        subject.pending_revision = "stale-head"
+        subject.fetch = mock.Mock(return_value="fresh-head")
+        subject.event = mock.Mock()
+
+        with mock.patch.object(machine.time, "monotonic", return_value=100.0):
+            subject.sync()
+
+        self.assertEqual(subject.pending_revision, "fresh-head")
+        self.assertEqual(subject.next_sync, 400.0)
+        subject.event.assert_called_once_with(
+            "head_changed", current="current-head", target="fresh-head"
+        )
+
+    def test_sync_clears_a_queued_revision_when_head_returns_to_current(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.args = SimpleNamespace(sync_interval=300)
+        subject.current_revision = "current-head"
+        subject.pending_revision = "stale-head"
+        subject.fetch = mock.Mock(return_value="current-head")
+        subject.event = mock.Mock()
+
+        with mock.patch.object(machine.time, "monotonic", return_value=100.0):
+            subject.sync()
+
+        self.assertIsNone(subject.pending_revision)
+        self.assertEqual(subject.next_sync, 400.0)
+        subject.event.assert_not_called()
 
     def test_fill_slots_resumes_paused_work_before_admitting_a_new_game(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)
@@ -230,6 +695,50 @@ class MatchMachineTests(unittest.TestCase):
         report = "CPU usage: 10.0% user, 5.0% sys, 85.0% idle\nCPU usage: 20.0% user, 9.5% sys, 70.5% idle"
         self.assertEqual(machine.parse_top_cpu(report), 29.5)
         self.assertIsNone(machine.parse_top_cpu("not top"))
+
+    def test_cpu_sampling_timeout_fails_closed_without_crashing_the_machine(self):
+        with mock.patch.object(machine.sys, "platform", "darwin"), mock.patch.object(
+            machine, "darwin_cpu_percent", return_value=None
+        ), mock.patch.object(
+            machine,
+            "command",
+            side_effect=subprocess.TimeoutExpired(["top"], 4),
+        ):
+            self.assertIsNone(machine.cpu_percent())
+
+        missing_cpu = machine.Resources(None, 20, 12, 0, False)
+        self.assertTrue(missing_cpu.overloaded(70))
+        self.assertFalse(missing_cpu.comfortably_below(70))
+        self.assertEqual(machine.resource_action(missing_cpu, 70), "shed_all")
+
+    def test_darwin_cpu_tick_sampler_bootstraps_and_measures_idle_delta(self):
+        first = (100, 50, 850, 0)
+        second = (106, 55, 869, 0)
+        with mock.patch.object(machine, "_darwin_cpu_ticks", None), mock.patch.object(
+            machine, "darwin_cpu_ticks", side_effect=[first, second]
+        ), mock.patch.object(machine.time, "sleep") as pause:
+            self.assertAlmostEqual(machine.darwin_cpu_percent(), 100.0 * 11.0 / 30.0)
+
+        pause.assert_called_once_with(0.2)
+
+    def test_macos_cpu_sampling_uses_native_ticks_before_top(self):
+        with mock.patch.object(machine.sys, "platform", "darwin"), mock.patch.object(
+            machine, "darwin_cpu_percent", return_value=20.0
+        ), mock.patch.object(machine, "command") as run:
+            self.assertEqual(machine.cpu_percent(), 20.0)
+
+        run.assert_not_called()
+
+    def test_macos_cpu_sampling_falls_back_to_one_immediate_top_snapshot(self):
+        report = "CPU usage: 12.0% user, 8.0% sys, 80.0% idle\n"
+        completed = subprocess.CompletedProcess(["top"], 0, report)
+        with mock.patch.object(machine.sys, "platform", "darwin"), mock.patch.object(
+            machine, "darwin_cpu_percent", return_value=None
+        ), mock.patch.object(machine, "command", return_value=completed
+        ) as run:
+            self.assertEqual(machine.cpu_percent(), 20.0)
+
+        run.assert_called_once_with("top", "-l", "1", "-n", "0", timeout=4)
 
     def test_resource_ceiling_is_hard_and_resume_has_headroom(self):
         safe = machine.Resources(59.0, 20.0, 12.0, 0.0, False)
@@ -304,8 +813,9 @@ class MatchMachineTests(unittest.TestCase):
 
             with mock.patch.object(machine, "game_port", return_value=8870), mock.patch.object(
                 machine.subprocess, "Popen", return_value=process
-            ):
+            ) as launch:
                 subject.launch(visible=True)
+            self.assertEqual(launch.call_args.kwargs["env"]["CIVVIS_COMMIT"], "abc123")
             subject.games[0].last_status = {
                 "turn": 435,
                 "winner": 1,
@@ -321,16 +831,52 @@ class MatchMachineTests(unittest.TestCase):
                     "placements": "a@Trajan@Rome@0|b@Cleopatra@Egypt@1",
                 },
             ):
-                subject.finish(subject.games[0], failed=False, reason="winner recorded")
+                subject.finish(
+                    subject.games[0],
+                    failed=True,
+                    reason="match machine stopped before result",
+                )
 
             self.assertEqual(events[0][0], "game_started")
             self.assertEqual(events[0][1]["game_kind"], "visible")
             self.assertEqual(events[1][0], "game_completed")
             self.assertEqual(events[1][1]["game_kind"], "visible")
+            self.assertEqual(events[1][1]["reason"], "rated result recorded before process stopped")
             self.assertEqual(events[1][1]["turn"], "423")
             self.assertEqual(events[1][1]["victory"], "science")
             self.assertIsNone(events[1][1]["winner"])
             self.assertEqual(events[1][1]["winner_placement"], "a@Trajan@Rome@0")
+            self.assertEqual(subject.completed, 1)
+            self.assertEqual(subject.failed, 0)
+
+    def test_compile_build_excludes_inherited_commit_from_cargo(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            built = source / "target" / "release" / "civvis"
+            built.parent.mkdir(parents=True)
+            built.write_text("binary", encoding="utf-8")
+
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.source = source
+            subject.runtime = root / "runtime"
+            subject.args = SimpleNamespace(build_jobs=1, build_timeout=30)
+            subject.event = mock.Mock()
+            complete = subprocess.CompletedProcess([], 0, "")
+
+            with mock.patch.dict(
+                machine.os.environ, {"CIVVIS_COMMIT": "inherited"}, clear=False
+            ), mock.patch.object(
+                machine, "command", return_value=complete
+            ), mock.patch.object(
+                subject, "resource_capped_command", side_effect=[complete, complete]
+            ) as run:
+                promoted = subject.compile_build("current-head")
+
+            cargo_call = run.call_args_list[0]
+            self.assertEqual(cargo_call.args[0], "cargo")
+            self.assertNotIn("CIVVIS_COMMIT", cargo_call.kwargs["env"])
+            self.assertTrue(promoted.exists())
 
     def test_visible_successor_reuses_process_and_records_both_lifecycle_events(self):
         subject = machine.MatchMachine.__new__(machine.MatchMachine)

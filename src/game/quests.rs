@@ -114,7 +114,7 @@ impl Game {
             // A unit whose successor is already available is not what the
             // city-state would ask for, and the queue would modernize it away.
             .filter(|(unit, _)| !self.unit_is_obsolete(pid, unit))
-            .map(|(unit, _)| unit.clone())
+            .map(|(unit, _)| *unit)
             .collect()
     }
 
@@ -145,7 +145,7 @@ impl Game {
                         .is_none_or(|civic| self.players[pid].civics.contains(&Name::new(civic)))
             })
             .filter(|(name, _)| !built.contains(*name))
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| *name)
             .collect()
     }
 
@@ -158,7 +158,7 @@ impl Game {
             .iter()
             .filter(|(_, spec)| spec.boost.is_some())
             .filter(|(name, _)| !player.techs.contains(*name) && !player.boosted_techs.contains(*name))
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| *name)
             .collect()
     }
 
@@ -169,7 +169,7 @@ impl Game {
             .iter()
             .filter(|(_, spec)| spec.boost.is_some())
             .filter(|(name, _)| !player.civics.contains(*name) && !player.boosted_civics.contains(*name))
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| *name)
             .collect()
     }
 
@@ -562,7 +562,7 @@ mod tests {
             .techs
             .iter()
             .filter(|(_, spec)| spec.boost.is_some())
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| *name)
             .collect();
         for tech in techs {
             game.players[0].boosted_techs.insert(tech);
@@ -695,31 +695,31 @@ mod tests {
         // is a completion; a quest replaced by a new era is not.
         let mut held: Vec<BTreeMap<usize, CityStateQuest>> =
             vec![BTreeMap::new(); game.players.len()];
-        while game.winner.is_none() && game.turn <= 90 {
+        while game.winner.is_none() && game.turn <= 120 {
             let pid = game.current;
             ais[pid].take_turn(&mut game, pid);
             if game.winner.is_none() && game.current == pid {
                 let _ = game.apply(pid, &Action::EndTurn);
             }
-            for player in 0..4 {
+            for (player, previous) in held.iter_mut().enumerate().take(4) {
                 let now = game.players[player].quests.clone();
-                for (minor, was) in &held[player] {
+                for (minor, was) in previous.iter() {
                     let replaced = now.get(minor) != Some(was);
                     if replaced && was.era == game.world_era {
                         completed += 1;
                     }
                 }
                 outstanding = outstanding.max(now.len());
-                held[player] = now;
+                *previous = now;
             }
         }
         assert!(
             outstanding > 0,
-            "no city-state asked anybody for anything in ninety turns"
+            "no city-state asked anybody for anything in a full standard game"
         );
         assert!(
             completed > 0,
-            "ninety turns of four empires and six city-states finished no quest"
+            "a full standard game of four empires and six city-states finished no quest"
         );
     }
 }

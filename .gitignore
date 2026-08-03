@@ -14,6 +14,9 @@ bin-run/
 exhibition-supervisor.log
 tools/__pycache__/
 tools/*/__pycache__/
+# beta/worker_test.py imports beta/verify.py for its browser plumbing, which
+# byte-compiles it here.
+beta/__pycache__/
 
 # A published build is assembled, never committed: it is 6MB of engine plus a
 # copy of the viewer, all of it reproducible from the revision it names.

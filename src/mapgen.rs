@@ -1091,11 +1091,13 @@ fn flat_land(
             scatter_islands(
                 wm,
                 &mut open,
-                target,
-                MIN_LANDMASS_FOR_A_START,
-                24,
-                ISLAND_CHANNEL,
-                seats,
+                IslandScatterPlan {
+                    target,
+                    min_size: MIN_LANDMASS_FOR_A_START,
+                    max_size: 24,
+                    channel: ISLAND_CHANNEL,
+                    min_bodies: seats,
+                },
                 rng,
             )
         }
@@ -1112,11 +1114,13 @@ fn flat_land(
             scatter_islands(
                 wm,
                 &mut open,
-                target,
-                WATER_WORLD_TILES_PER_SEAT,
-                15,
-                ISLAND_CHANNEL,
-                seats,
+                IslandScatterPlan {
+                    target,
+                    min_size: WATER_WORLD_TILES_PER_SEAT,
+                    max_size: 15,
+                    channel: ISLAND_CHANNEL,
+                    min_bodies: seats,
+                },
                 rng,
             )
         }
@@ -1146,6 +1150,15 @@ const WATER_WORLD_TILES_PER_SEAT: usize = MIN_LANDMASS_FOR_A_START;
 /// archipelago from seating civilizations closer than any other world type.
 const ISLAND_CHANNEL: i32 = 3;
 
+#[derive(Clone, Copy)]
+struct IslandScatterPlan {
+    target: usize,
+    min_size: usize,
+    max_size: usize,
+    channel: i32,
+    min_bodies: usize,
+}
+
 /// Scatter separated landmasses through open water until about `target` tiles
 /// of it are land, and until at least `min_bodies` of them exist.
 ///
@@ -1169,14 +1182,10 @@ const ISLAND_CHANNEL: i32 = 3;
 fn scatter_islands(
     wm: &WorldMap,
     open: &mut BTreeSet<Pos>,
-    target: usize,
-    min_size: usize,
-    max_size: usize,
-    channel: i32,
-    min_bodies: usize,
+    plan: IslandScatterPlan,
     rng: &mut Rng,
 ) -> BTreeSet<Pos> {
-    let span = (max_size + 1).saturating_sub(min_size).max(1);
+    let span = (plan.max_size + 1).saturating_sub(plan.min_size).max(1);
     let mut seeds: Vec<Pos> = open.iter().copied().collect();
     for index in (1..seeds.len()).rev() {
         let other = rng.below(index + 1);
@@ -1184,7 +1193,7 @@ fn scatter_islands(
     }
     let mut land = BTreeSet::new();
     let mut bodies = 0;
-    while (land.len() < target || bodies < min_bodies) && !open.is_empty() {
+    while (land.len() < plan.target || bodies < plan.min_bodies) && !open.is_empty() {
         let Some(seed) = seeds.pop() else { break };
         if !open.contains(&seed) {
             continue;
@@ -1193,23 +1202,24 @@ fn scatter_islands(
         // owed, the remaining islands are kept to the smallest size that can
         // still hold a capital, so meeting the count costs the world as
         // little of its ocean as possible.
-        let wanted = if land.len() >= target {
-            min_size
+        let wanted = if land.len() >= plan.target {
+            plan.min_size
         } else {
-            (min_size + rng.below(span)).min((target - land.len()).max(min_size))
+            (plan.min_size + rng.below(span))
+                .min((plan.target - land.len()).max(plan.min_size))
         };
         let island = grow_blob(wm, open, seed, wanted.max(1), rng);
         // A gap that cannot hold the promised minimum stays water. Committing
         // it as a one-plot "island" made the body quota look satisfied while
         // leaving a civilization with nowhere to found its capital.
-        if island.len() < min_size {
+        if island.len() < plan.min_size {
             for pos in island {
                 open.remove(&pos);
             }
             continue;
         }
         bodies += 1;
-        close_off(wm, open, &island, channel);
+        close_off(wm, open, &island, plan.channel);
         land.extend(island);
     }
     land
@@ -1360,22 +1370,26 @@ fn globe_land(
             scatter_islands(
                 wm,
                 &mut field,
-                target,
-                MIN_LANDMASS_FOR_A_START,
-                24,
-                ISLAND_CHANNEL,
-                seats,
+                IslandScatterPlan {
+                    target,
+                    min_size: MIN_LANDMASS_FOR_A_START,
+                    max_size: 24,
+                    channel: ISLAND_CHANNEL,
+                    min_bodies: seats,
+                },
                 rng,
             )
         }
         MapScript::WaterWorld => scatter_islands(
             wm,
             &mut field,
-            target,
-            WATER_WORLD_TILES_PER_SEAT,
-            15,
-            ISLAND_CHANNEL,
-            seats,
+            IslandScatterPlan {
+                target,
+                min_size: WATER_WORLD_TILES_PER_SEAT,
+                max_size: 15,
+                channel: ISLAND_CHANNEL,
+                min_bodies: seats,
+            },
             rng,
         ),
         _ => {
@@ -1388,7 +1402,18 @@ fn globe_land(
             // Something in the open ocean to find, without turning the sea
             // lanes into an archipelago of their own.
             let islands = (target / 12).min(continents * 3);
-            land.extend(scatter_islands(wm, &mut field, islands * 6, 3, 11, 1, 0, rng));
+            land.extend(scatter_islands(
+                wm,
+                &mut field,
+                IslandScatterPlan {
+                    target: islands * 6,
+                    min_size: 3,
+                    max_size: 11,
+                    channel: 1,
+                    min_bodies: 0,
+                },
+                rng,
+            ));
             land
         }
     }
@@ -1930,8 +1955,8 @@ fn canal_blocks(wm: &WorldMap, poles: MapPoles, rng: &mut Rng) -> CanalBlocks {
             let (own, rival) = frame.nearest_two(&seeds, &reach, point);
             let toward = frame.toward_middle(point);
             let slot = &mut middles[own.0];
-            for axis in 0..3 {
-                slot.0[axis] += toward[axis];
+            for (axis, component) in toward.iter().enumerate() {
+                slot.0[axis] += *component;
             }
             slot.1 += 1;
             if canal_at(own, rival, salt).is_none() {
@@ -2829,7 +2854,7 @@ pub fn generate_with_script(
     for pos in all_pos {
         let (terrain, feature) = {
             let t = &wm.tiles[&pos];
-            (t.terrain.clone(), t.feature.clone())
+            (t.terrain, t.feature)
         };
         let natural_wonder = feature
             .as_ref()
@@ -2855,16 +2880,16 @@ pub fn generate_with_script(
                     // and hills-only spawns (Sheep) respect the tile's form.
                     let by_feature = feature
                         .as_ref()
-                        .map(|f| s.feature.iter().any(|want| *f == *want))
+                        .map(|feature| s.feature.contains(feature))
                         .unwrap_or(false);
-                    let by_terrain = feature.is_none() && s.terrain.iter().any(|want| terrain == *want);
+                    let by_terrain = feature.is_none() && s.terrain.contains(&terrain);
                     (by_feature || by_terrain) && s.hills.is_none_or(|want| want == hills)
                 })
-                .map(|(name, _)| name.clone())
+                .map(|(name, _)| *name)
                 .collect();
             if !valid.is_empty() {
-                let pick = valid[rng.below(valid.len())].clone();
-                wm.tiles.get_mut(&pos).unwrap().resource = Some(Name::new(&pick));
+                let pick = valid[rng.below(valid.len())];
+                wm.tiles.get_mut(&pos).unwrap().resource = Some(pick);
             }
         }
     }
@@ -3043,9 +3068,11 @@ pub fn generate_with_script(
             &major_regions,
             &major_pool,
             &fertility,
-            &[],
-            MAJOR_START_BUFFER,
-            MAJOR_START_BUFFER,
+            StartBuffers {
+                foreign: &[],
+                foreign_buffer: MAJOR_START_BUFFER,
+                own_buffer: MAJOR_START_BUFFER,
+            },
         );
         equalize_start_quality(
             rules,
@@ -3215,9 +3242,11 @@ pub fn generate_with_script(
         &minor_regions,
         &minor_pool,
         &fertility,
-        &majors,
-        MINOR_MAJOR_BUFFER,
-        MINOR_MINOR_BUFFER,
+        StartBuffers {
+            foreign: &majors,
+            foreign_buffer: MINOR_MAJOR_BUFFER,
+            own_buffer: MINOR_MINOR_BUFFER,
+        },
     );
     spawns.extend(minors.into_iter().map(|(_, start)| start));
     if spawns.len() < total_spawns {
@@ -3528,9 +3557,8 @@ fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
             } else {
                 tile.terrain = "mountain".into();
             }
-        } else if mountain_value >= foothills_threshold {
-            tile.hills = true;
-        } else if (hill_value >= low_band.0 && hill_value <= low_band.1)
+        } else if mountain_value >= foothills_threshold
+            || (hill_value >= low_band.0 && hill_value <= low_band.1)
             || (hill_value >= high_band.0 && hill_value <= high_band.1)
         {
             tile.hills = true;
@@ -3701,7 +3729,7 @@ fn add_features(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
             let (terrain, hills, river, has_feature) = {
                 let tile = &wm.tiles[&pos];
                 (
-                    tile.terrain.clone(),
+                    tile.terrain,
                     tile.hills,
                     tile.has_river(),
                     tile.feature.is_some(),
@@ -3922,8 +3950,7 @@ pub fn start_bias_score(rules: &Rules, wm: &WorldMap, pos: Pos, civ: &str) -> i3
 
     if !bias.terrain.is_empty() {
         let matched = nearby.iter().any(|tile| {
-            bias.terrain.iter().any(|wanted| tile.terrain == *wanted)
-                && (!bias.terrain_hills || tile.hills)
+            bias.terrain.contains(&tile.terrain) && (!bias.terrain_hills || tile.hills)
         });
         if matched {
             score += crate::rules::StartBias::weight(bias.terrain_tier);
@@ -4636,6 +4663,12 @@ fn archipelago_minor_regions(
     regions
 }
 
+struct StartBuffers<'a> {
+    foreign: &'a [Pos],
+    foreign_buffer: i32,
+    own_buffer: i32,
+}
+
 /// Give each region its start: the site that is both good and central, subject
 /// to the shipped clearance buffers against everything already on the map.
 ///
@@ -4653,18 +4686,17 @@ fn regional_starts(
     regions: &[Vec<Pos>],
     candidates: &BTreeSet<Pos>,
     fertility: &BTreeMap<Pos, i32>,
-    foreign: &[Pos],
-    foreign_buffer: i32,
-    own_buffer: i32,
+    buffers: StartBuffers<'_>,
 ) -> Vec<(usize, Pos)> {
     let mut seated: Vec<(usize, Pos)> = Vec::with_capacity(regions.len());
     let mut placed: Vec<Pos> = Vec::with_capacity(regions.len());
-    let relax_limit = foreign_buffer.max(own_buffer);
+    let relax_limit = buffers.foreign_buffer.max(buffers.own_buffer);
     let mut foreign_blocked: BTreeMap<i32, BTreeSet<Pos>> = BTreeMap::new();
     for relaxed in 0..=relax_limit {
-        let radius = (foreign_buffer - relaxed).max(MIN_START_SEPARATION - 1);
+        let radius = (buffers.foreign_buffer - relaxed).max(MIN_START_SEPARATION - 1);
         foreign_blocked.entry(radius).or_insert_with(|| {
-            foreign
+            buffers
+                .foreign
                 .iter()
                 .flat_map(|start| wm.disk(*start, radius))
                 .collect()
@@ -4686,8 +4718,9 @@ fn regional_starts(
         };
         let mut chosen = None;
         'search: for relaxed in 0..=relax_limit {
-            let foreign_want = (foreign_buffer - relaxed).max(MIN_START_SEPARATION - 1);
-            let own_want = (own_buffer - relaxed).max(MIN_START_SEPARATION - 1);
+            let foreign_want =
+                (buffers.foreign_buffer - relaxed).max(MIN_START_SEPARATION - 1);
+            let own_want = (buffers.own_buffer - relaxed).max(MIN_START_SEPARATION - 1);
             let blocked_by_placed: BTreeSet<Pos> = placed
                 .iter()
                 .flat_map(|start| wm.disk(*start, own_want))
@@ -5617,7 +5650,7 @@ fn place_strategic_quotas(
         .resources
         .iter()
         .filter(|(_, spec)| spec.class == "strategic")
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| *name)
         .collect();
     let land_list: Vec<Pos> = land.iter().cloned().collect();
     for resource in strategics {
@@ -5651,8 +5684,8 @@ fn place_strategic_quotas(
                 let by_feature = tile
                     .feature
                     .as_ref()
-                    .is_some_and(|feature| spec.feature.iter().any(|want| *feature == *want));
-                let by_terrain = tile.feature.is_none() && spec.terrain.iter().any(|want| tile.terrain == *want);
+                    .is_some_and(|feature| spec.feature.contains(feature));
+                let by_terrain = tile.feature.is_none() && spec.terrain.contains(&tile.terrain);
                 (by_feature || by_terrain) && spec.hills.is_none_or(|want| want == tile.hills)
             })
             .collect();
@@ -5690,7 +5723,7 @@ fn place_artifact_quotas(
         .resources
         .iter()
         .filter(|(_, spec)| spec.class == "artifact")
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| *name)
         .collect();
     let all: Vec<Pos> = wm.tiles.keys().copied().collect();
     for resource in artifacts {
@@ -5742,8 +5775,8 @@ fn place_artifact_quotas(
                 let by_feature = tile
                     .feature
                     .as_ref()
-                    .is_some_and(|feature| spec.feature.iter().any(|want| *feature == *want));
-                let by_terrain = tile.feature.is_none() && spec.terrain.iter().any(|want| tile.terrain == *want);
+                    .is_some_and(|feature| spec.feature.contains(feature));
+                let by_terrain = tile.feature.is_none() && spec.terrain.contains(&tile.terrain);
                 (by_feature || by_terrain) && spec.hills.is_none_or(|want| want == tile.hills)
             })
             .collect();
@@ -5756,58 +5789,124 @@ fn place_artifact_quotas(
     }
 }
 
-/// Divide land into the stock number of named geographic regions. Civ VI's
-/// continent count is not a promise of disconnected landmasses; a large
-/// landmass can span several continents, so farthest-point Voronoi regions
-/// are a closer model than equating one flood-fill component to one continent.
+/// Divide land into the stock number of named geographic regions. A landmass
+/// can contain several continents (Europe and Asia are the familiar example),
+/// but a continent boundary should not jump an ocean merely because a centre
+/// on another landmass happened to be closer in straight-line distance.
+///
+/// The substantial landmasses therefore receive their proportional share of
+/// the continent budget first and are divided independently. Small offshore
+/// islands do not consume that budget: each joins the nearest finished region
+/// as a whole, so a three-tile island cannot be striped between two continents.
 fn assign_continents(wm: &mut WorldMap, land: &BTreeSet<Pos>, requested: usize, rng: &mut Rng) {
     if land.is_empty() || requested == 0 {
         return;
     }
     let count = requested.min(land.len());
-    let land_vec: Vec<Pos> = land.iter().cloned().collect();
-    // One distance field per centre, carried rather than re-derived. On a
-    // globe `wm.distance` is a graph search, not arithmetic, so asking it once
-    // per (tile, centre) pair costs a search per pair: on the largest world
-    // that is fifty centres times sixteen thousand tiles times a search over
-    // fifty-eight thousand hexes, and the pass never finishes. A field is the
-    // same search answered for every tile at once, so the whole seeding costs
-    // one per centre and the answers are identical to the pair-wise ones.
-    let mut rows: Vec<MapDistanceRow> = Vec::with_capacity(count);
-    let mut centers: Vec<Pos> = Vec::with_capacity(count);
-    let mut nearest = vec![i32::MAX; land_vec.len()];
-    let mut next = land_vec[rng.below(land_vec.len())];
-    loop {
-        let row = MapDistanceRow::new(wm, next);
-        for (index, pos) in land_vec.iter().enumerate() {
-            nearest[index] = nearest[index].min(row.distance(*pos));
-        }
-        rows.push(row);
-        centers.push(next);
-        if centers.len() >= count {
+    let components = connected_components(wm, land);
+    let fair_share = land.len().div_ceil(count);
+    // Half of one continent's fair share is enough to be geography in its own
+    // right. Anything smaller is an offshore island, unless more landmasses
+    // are needed to hold all of the requested one-tile-minimum regions.
+    let minimum_primary = fair_share.div_ceil(2).max(1);
+    let mut primary: Vec<usize> = components
+        .iter()
+        .enumerate()
+        .filter(|(_, component)| component.len() >= minimum_primary)
+        .map(|(index, _)| index)
+        .take(count)
+        .collect();
+    if primary.is_empty() {
+        primary.push(0);
+    }
+    let mut primary_land: usize = primary.iter().map(|index| components[*index].len()).sum();
+    for index in 0..components.len() {
+        if primary_land >= count || primary.len() >= count {
             break;
         }
-        // The farthest tile from every centre so far becomes the next one,
-        // ties broken by position exactly as before.
-        let (index, _) = land_vec
-            .iter()
-            .enumerate()
-            .filter(|(_, pos)| !centers.contains(pos))
-            .max_by_key(|(index, pos)| (nearest[*index], **pos))
-            .expect("more land than centres");
-        next = land_vec[index];
+        if !primary.contains(&index) {
+            primary.push(index);
+            primary_land += components[index].len();
+        }
     }
-    let assigned: Vec<(Pos, Option<usize>)> = land
+
+    // Every primary landmass gets one name. Largest-remainder apportionment
+    // divides the remaining names by area, capped so no region can be empty.
+    let weights: Vec<i64> = primary
         .iter()
-        .map(|pos| {
-            let continent = rows
+        .map(|index| components[*index].len() as i64)
+        .collect();
+    let caps: Vec<usize> = primary
+        .iter()
+        .map(|index| components[*index].len().saturating_sub(1))
+        .collect();
+    let extra = apportion_capped(&weights, &caps, count - primary.len());
+    let allocation: Vec<usize> = extra.into_iter().map(|additional| additional + 1).collect();
+
+    // Consume exactly the one draw the former whole-world Voronoi pass used,
+    // so changing continent borders does not silently redraw later spawns.
+    let phase = rng.below(land.len());
+    let mut rows: Vec<(usize, MapDistanceRow<'_>)> = Vec::with_capacity(count);
+    let mut assigned: Vec<(Pos, Option<usize>)> = Vec::with_capacity(land.len());
+    let mut next_id = 0;
+    for (slot, component_index) in primary.iter().copied().enumerate() {
+        let component: Vec<Pos> = components[component_index].iter().copied().collect();
+        let region_count = allocation[slot];
+        let mut centers = Vec::with_capacity(region_count);
+        let mut local_rows = Vec::with_capacity(region_count);
+        let mut nearest = vec![i32::MAX; component.len()];
+        let mut next = component[phase.wrapping_add(component_index) % component.len()];
+        loop {
+            let row = MapDistanceRow::new(wm, next);
+            for (index, position) in component.iter().enumerate() {
+                nearest[index] = nearest[index].min(row.distance(*position));
+            }
+            centers.push(next);
+            local_rows.push((next_id + centers.len() - 1, row));
+            if centers.len() >= region_count {
+                break;
+            }
+            let (index, _) = component
                 .iter()
                 .enumerate()
-                .min_by_key(|(id, row)| (row.distance(*pos), *id))
-                .map(|(id, _)| id);
-            (*pos, continent)
-        })
-        .collect();
+                .filter(|(_, position)| !centers.contains(position))
+                .max_by_key(|(index, position)| (nearest[*index], **position))
+                .expect("a landmass has more tiles than assigned continents");
+            next = component[index];
+        }
+        for position in component {
+            let continent = local_rows
+                .iter()
+                .min_by_key(|(id, row)| (row.distance(position), *id))
+                .map(|(id, _)| *id);
+            assigned.push((position, continent));
+        }
+        next_id += region_count;
+        rows.extend(local_rows);
+    }
+
+    // Satellite islands inherit one nearby region wholesale. Comparing the
+    // closest shore tile, rather than the island centroid, also does the right
+    // thing for a long island following a continental coast.
+    for (index, component) in components.iter().enumerate() {
+        if primary.contains(&index) {
+            continue;
+        }
+        let continent = rows
+            .iter()
+            .min_by_key(|(id, row)| {
+                (
+                    component
+                        .iter()
+                        .map(|position| row.distance(*position))
+                        .min()
+                        .unwrap_or(i32::MAX),
+                    *id,
+                )
+            })
+            .map(|(id, _)| *id);
+        assigned.extend(component.iter().map(|position| (*position, continent)));
+    }
     drop(rows);
     for (pos, continent) in assigned {
         wm.tiles.get_mut(&pos).unwrap().continent = continent;
@@ -5894,6 +5993,118 @@ mod river_tests {
         connected_components(world, &land)
     }
 
+    #[test]
+    fn continents_follow_landmasses_before_dividing_them() {
+        let mut world = WorldMap::new(40, 20);
+        let rectangle = |left, right, top, bottom| {
+            (top..bottom)
+                .flat_map(|row| (left..right).map(move |column| hex::offset_to_axial(column, row)))
+                .collect::<BTreeSet<Pos>>()
+        };
+        let west = rectangle(3, 13, 4, 16);
+        let east = rectangle(26, 36, 4, 16);
+        let island = rectangle(16, 18, 8, 10);
+        let land: BTreeSet<Pos> = west.iter().chain(&east).chain(&island).copied().collect();
+        for position in &land {
+            world.tiles.get_mut(position).unwrap().terrain = crate::name!("plains");
+        }
+
+        let mut actual_rng = Rng::new(38_411);
+        assign_continents(&mut world, &land, 4, &mut actual_rng);
+
+        let ids = |component: &BTreeSet<Pos>| {
+            component
+                .iter()
+                .filter_map(|position| world.tiles[position].continent)
+                .collect::<BTreeSet<_>>()
+        };
+        let west_ids = ids(&west);
+        let east_ids = ids(&east);
+        let island_ids = ids(&island);
+        assert_eq!(
+            west_ids.len(),
+            2,
+            "the west landmass should receive two regions"
+        );
+        assert_eq!(
+            east_ids.len(),
+            2,
+            "the east landmass should receive two regions"
+        );
+        assert!(
+            west_ids.is_disjoint(&east_ids),
+            "a continent ID crossed the ocean: west {west_ids:?}, east {east_ids:?}"
+        );
+        assert_eq!(
+            island_ids.len(),
+            1,
+            "an offshore island was striped between continents"
+        );
+        assert!(
+            island_ids.is_subset(&west_ids),
+            "the island beside the west coast joined {island_ids:?}, not {west_ids:?}"
+        );
+        assert_eq!(
+            land.iter()
+                .filter_map(|position| world.tiles[position].continent)
+                .collect::<BTreeSet<_>>()
+                .len(),
+            4,
+            "the stock continent count changed"
+        );
+
+        let mut expected_rng = Rng::new(38_411);
+        expected_rng.below(land.len());
+        assert_eq!(
+            actual_rng.next_u64(),
+            expected_rng.next_u64(),
+            "continent alignment should not redraw later generated features"
+        );
+    }
+
+    #[test]
+    fn generated_continents_keep_major_landmasses_geographically_distinct() {
+        let rules = Rules::embedded();
+        for topology in [FLAT, GLOBE] {
+            let mut rng = Rng::new(38_412);
+            let (world, _) = generate_with_script(
+                &rules,
+                84,
+                54,
+                8,
+                12,
+                5,
+                4,
+                MapScript::Continents,
+                topology,
+                POLED,
+                &mut rng,
+            );
+            let components = land_components(&world, &rules);
+            assert!(
+                components.len() >= 2,
+                "{topology:?} did not build two major landmasses"
+            );
+            let mut already_seen = BTreeSet::new();
+            for component in components.iter().take(2) {
+                let here: BTreeSet<usize> = component
+                    .iter()
+                    .filter_map(|position| world.tiles[position].continent)
+                    .collect();
+                assert_eq!(
+                    here.len(),
+                    2,
+                    "{topology:?} did not divide a major landmass into two continents: {here:?}"
+                );
+                assert!(
+                    here.is_disjoint(&already_seen),
+                    "{topology:?} reused continent IDs {here:?} across major landmasses"
+                );
+                already_seen.extend(here);
+            }
+        }
+    }
+
     /// An archipelago's body count is only useful when those bodies are large
     /// enough to settle. Exercise the topology pass directly so a failure here
     /// cannot be hidden by the start placer's last-resort fallback.
@@ -5956,7 +6167,18 @@ mod river_tests {
             .collect();
         let mut field: BTreeSet<Pos> = large.union(&tiny).copied().collect();
         let mut rng = Rng::new(92_041);
-        let land = scatter_islands(&wm, &mut field, 11, 8, 8, 1, 2, &mut rng);
+        let land = scatter_islands(
+            &wm,
+            &mut field,
+            IslandScatterPlan {
+                target: 11,
+                min_size: 8,
+                max_size: 8,
+                channel: 1,
+                min_bodies: 2,
+            },
+            &mut rng,
+        );
         let components = connected_components(&wm, &land);
         assert_eq!(components.iter().map(BTreeSet::len).collect::<Vec<_>>(), vec![8]);
         assert!(
@@ -6845,8 +7067,8 @@ mod river_tests {
                     &rules, 60, 38, 4, 6, 3, 2, MapScript::Continents, topology, poles, &mut second,
                 );
                 assert_eq!(
-                    a.tiles.iter().map(|(_, t)| t.terrain.clone()).collect::<Vec<_>>(),
-                    b.tiles.iter().map(|(_, t)| t.terrain.clone()).collect::<Vec<_>>(),
+                    a.tiles.iter().map(|(_, t)| t.terrain).collect::<Vec<_>>(),
+                    b.tiles.iter().map(|(_, t)| t.terrain).collect::<Vec<_>>(),
                     "{topology:?}/{poles:?}: the same seed drew two different worlds"
                 );
                 assert_eq!(
@@ -8066,9 +8288,11 @@ mod river_tests {
             &regions,
             &candidates,
             &fertility,
-            &[],
-            MAJOR_START_BUFFER,
-            MAJOR_START_BUFFER,
+            StartBuffers {
+                foreign: &[],
+                foreign_buffer: MAJOR_START_BUFFER,
+                own_buffer: MAJOR_START_BUFFER,
+            },
         );
         assert_eq!(seated.len(), 6, "every region seated a civilization");
         let starts: Vec<Pos> = seated.iter().map(|(_, start)| *start).collect();
@@ -9284,4 +9508,3 @@ mod start_bias_tests {
             .is_empty());
     }
 }
-

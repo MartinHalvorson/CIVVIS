@@ -5,7 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::name::Name;
 use crate::game::{
-    City, Game, Item, RememberedCity, DIPLOMATIC_VICTORY_POINTS, EXOPLANET_DESTINATION,
+    City, Game, Item, RememberedCity, Unit, DIPLOMATIC_VICTORY_POINTS, EXOPLANET_DESTINATION,
     EXOPLANET_TARGETS,
 };
 use crate::world::Tile;
@@ -179,6 +179,14 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
     } else {
         g.player_visibility(pid)
     };
+    // `vis` is the exact frame used for rules and for the map's sight
+    // perimeter. During the acting player's turn, keep everything seen in an
+    // earlier frame in the lighter map region until End Turn; exact last-seen
+    // snapshots supply its contents without reading changing state under fog.
+    let mut turn_vis = vis.clone();
+    if !omniscient && g.current == pid {
+        turn_vis.extend(p.turn_visible.iter().copied());
+    }
     let mut explored = if omniscient {
         vis.clone()
     } else {
@@ -259,7 +267,7 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             ))
         })
         .collect();
-    let units: Vec<Value> = g
+    let mut known_units: BTreeMap<u32, &Unit> = g
         .units
         .values()
         .filter(|u| {
@@ -271,6 +279,18 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                         .iter()
                         .any(|viewer| g.unit_visible_to(u.id, *viewer)))
         })
+        .map(|unit| (unit.id, unit))
+        .collect();
+    if !omniscient && g.current == pid {
+        for unit in p.turn_units.values() {
+            let observed_pos = unit.air_patrol_pos.unwrap_or(unit.pos);
+            if !vis.contains(&observed_pos) {
+                known_units.entry(unit.id).or_insert(unit);
+            }
+        }
+    }
+    let units: Vec<Value> = known_units
+        .into_values()
         .map(|u| {
             let mut v = serde_json::to_value(u).unwrap();
             v["embarked"] = json!(g.is_embarked(u));
@@ -311,6 +331,14 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
         empire[3] += yields.science;
         empire[4] += yields.culture;
         empire[5] += yields.faith;
+    }
+    if let Some(adjustment) = g.observed_yield_adjustments.get(&pid) {
+        empire[0] += adjustment.food;
+        empire[1] += adjustment.production;
+        empire[2] += adjustment.gold;
+        empire[3] += adjustment.science;
+        empire[4] += adjustment.culture;
+        empire[5] += adjustment.faith;
     }
 
     enum KnownCity<'a> {
@@ -434,6 +462,8 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "tiles": tiles,
         },
         "visible": vis.iter().filter(|v| g.map.tiles.contains_key(v))
+            .map(|v| json!([v.0, v.1])).collect::<Vec<_>>(),
+        "turn_visible": turn_vis.iter().filter(|v| g.map.tiles.contains_key(v))
             .map(|v| json!([v.0, v.1])).collect::<Vec<_>>(),
         "camps": camps,
         "units": units,
@@ -645,6 +675,9 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             for &cid in &city_ids {
                 output.add(g.city_yields(cid));
             }
+            if let Some(adjustment) = g.observed_yield_adjustments.get(&o.id) {
+                output.add(*adjustment);
+            }
             let total_population: i32 = city_ids
                 .iter()
                 .map(|&cid| g.cities[&cid].pop)
@@ -662,7 +695,21 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             json!({
                 "id": o.id, "civ": o.civ,
                 "met": true,
-                "leader": g.rules.civs.get(&o.civ).map(|c| c.leader.clone()),
+                "leader": g.observed_leader_types.get(&o.id)
+                    .map(|leader| leader
+                        .trim_start_matches("LEADER_")
+                        .replace('_', " ")
+                        .to_lowercase()
+                        .split_whitespace()
+                        .map(|word| {
+                            let mut chars = word.chars();
+                            chars.next().map(|first| first.to_uppercase().collect::<String>()
+                                + chars.as_str()).unwrap_or_default()
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" "))
+                    .or_else(|| g.rules.civs.get(&o.civ).map(|c| c.leader.clone())),
+                "leader_type": g.observed_leader_types.get(&o.id),
                 // A leader's agenda is public knowledge in Civ VI once you
                 // have met them, and so is roughly how they feel about you.
                 "agenda": g.agenda_of(o.id).map(|agenda| json!({
@@ -1476,6 +1523,7 @@ fn live_city_json(g: &Game, pid: usize, city: &City, omniscient: bool) -> Value 
         "can_strike": g.city_can_strike(city),
         "loyalty": round1(city.loyalty),
         "loyalty_per_turn": round1(g.city_loyalty_per_turn(city)),
+        "defense": round1(g.city_strength(city.id)),
         "loyalty_state": Game::loyalty_state(city.loyalty),
         "free_city": g.players[city.owner].is_free_city,
         "governor": g.players[city.owner].governors.contains(&city.id),
@@ -1617,6 +1665,7 @@ mod tests {
             .expect("the tile hover builder ends before its event handler");
         let hover = &INDEX[start..end];
         let ordered = [
+            "for (const unit of state.units)",
             "tileOwnershipTipLine(t)",
             "lines.push(\"Terrain: \"",
             "if (t.resource)",
@@ -1627,7 +1676,6 @@ mod tests {
             "if (t.district)",
             "if (t.wonder)",
             "const city = state.cities.find",
-            "for (const unit of state.units)",
         ];
         let mut previous = 0;
         for marker in ordered {
@@ -2104,19 +2152,59 @@ mod tests {
         // The ground track itself: the orbit's own latitude and longitude, less
         // the turn the world made under it.
         assert!(INDEX.contains("const FLAT_SAT_DRIFT = .1;"));
+        assert!(INDEX.contains("const FLAT_SAT_TAIL_SCALE = .3;"));
+        assert!(INDEX.contains("const FLAT_SAT_HORIZON_RADIUS = .024;"));
         assert!(INDEX.contains("function flatSatelliteGround(orbit, theta) {"));
         assert!(
             INDEX.contains("- FLAT_SAT_DRIFT * theta;"),
             "a ground track without the world's own turn under it is a sine wave",
         );
+        assert!(INDEX.contains("track(-1.35 * FLAT_SAT_TAIL_SCALE, 0, 1, .2, false);"));
+        assert!(INDEX.contains("track(-.38 * FLAT_SAT_TAIL_SCALE, 0, 1.4, .45, false);"));
+        assert!(INDEX.contains("const horizon = WW() * FLAT_SAT_HORIZON_RADIUS;"));
         // Overhead is only in the picture once the camera is off the ground,
         // and the board keeps painting while a craft is up there — a strategic
         // map is otherwise perfectly still between turns.
         assert!(INDEX.contains("if (!state || planetMap()) return 0;"));
         assert!(INDEX.contains("return Math.max(0, Math.min(1, (.86 - cam.scale) / .34));"));
-        assert!(INDEX.contains("return flatSkyShown() > .02 && skyCrews().satellite.length > 0;"));
+        assert!(INDEX.contains("flatSkyShown() > .02 && skyCrews().satellite.length > 0"));
         assert!(INDEX.contains("|| planetSkyAnimating() || flatSkyAnimating();"));
-        assert!(INDEX.contains("  drawFlatSatellites(now0);\n  drawNuclearBlasts(now0);"));
+        assert!(INDEX.contains("  drawFlatSatellites(now0);\n  drawFlatLaunches(now0);"));
+    }
+
+    #[test]
+    fn space_race_launches_use_mission_specific_rockets_on_both_maps() {
+        const INDEX: &str = include_str!("../web/index.html");
+
+        // Apollo 11 flew Saturn V, Mars gets the Starship silhouette, and the
+        // exoplanet mission gets the explicitly oversized version of it.
+        assert!(INDEX.contains(
+            "moon:{project:SKY_CHAIN.moon, duration:2800, body:\"moon\", rocket:\"saturn_v\"}"
+        ));
+        assert!(INDEX.contains(
+            "mars:{project:SKY_CHAIN.mars, duration:3600, body:\"mars\", rocket:\"starship\"}"
+        ));
+        assert!(INDEX.contains(
+            "expedition:{project:SKY_CHAIN.expedition, duration:3000, body:\"exo\", rocket:\"starship_xl\"}"
+        ));
+        assert!(INDEX.contains("function drawMissionRocket(rocket, player, size, now"));
+        assert!(INDEX.contains("length:starshipLength * 2"));
+        assert!(INDEX.contains("halfWidth:starshipHalfWidth * 4"));
+
+        // State-diff detection is shared, then each projection owns a flight
+        // path while both call the same rocket-art renderer.
+        assert!(INDEX.contains("function queueSkyLaunches(prev, next"));
+        assert!(INDEX.contains("function drawSkyLaunches(crews, placements"));
+        assert!(INDEX.contains("drawMissionRocket(flight.rocket, player, size, now);"));
+        assert!(INDEX.contains("function flatLaunchRoute(launch, player)"));
+        assert!(INDEX.contains("function drawFlatLaunches(now)"));
+        assert!(INDEX.contains("drawMissionRocket(flight.rocket, player, size, now, pixel);"));
+        assert!(INDEX.contains(
+            "drawFlatSatellites(now0);\n  drawFlatLaunches(now0);\n  drawNuclearBlasts(now0);"
+        ));
+        assert!(
+            INDEX.contains("return activeSkyLaunches().length > 0 ||\n    (flatSkyShown() > .02")
+        );
     }
 
     #[test]

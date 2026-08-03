@@ -23,6 +23,21 @@
 const COOKIE = "civvis_beta";
 const WEEK = 60 * 60 * 24 * 7;
 
+/// Where `civvis.ai` itself sends people.
+///
+/// The domain's job is to be the channel's address: somebody who types
+/// `civvis.ai` wants the videos, not a page about them. So `/` forwards, and
+/// the landing page — which is still the only thing linking `/beta` and
+/// `/download` — lives at `/home`.
+///
+/// The forward is a **302**, not a 301. A permanent redirect is cached by
+/// browsers effectively for ever, so a 301 here would strand every past
+/// visitor on YouTube on the day this becomes a real front page. Set
+/// `ROOT_REDIRECT` in the Pages environment to another URL to send `/`
+/// somewhere else, or to `off` to serve the landing page at `/` instead —
+/// either way without a deploy.
+const CHANNEL = "https://www.youtube.com/@civvis";
+
 /// What the cookie carries: proof of the password rather than the password.
 async function token(password) {
   const digest = await crypto.subtle.digest(
@@ -128,12 +143,54 @@ async function asset(request, env, gated) {
   return new Response(response.body, { status: response.status, headers });
 }
 
+/// Serve one of the site's own files under a different path.
+///
+/// `ASSETS.fetch` keys off the URL it is handed, so the landing page can be
+/// deployed once as `index.html` and still answer at `/home` — no second copy
+/// to keep in step with the first.
+function assetAt(request, path) {
+  const url = new URL(request.url);
+  url.pathname = path;
+  return new Request(url, request);
+}
+
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+
+    if (url.pathname === "/" || url.pathname === "/index.html") {
+      const destination = env.ROOT_REDIRECT || CHANNEL;
+      if (destination !== "off") {
+        return new Response(null, {
+          status: 302,
+          headers: { Location: destination, "Cache-Control": "no-store" },
+        });
+      }
+    }
+    if (url.pathname === "/home" || url.pathname === "/home/") {
+      return asset(assetAt(request, "/index.html"), env, false);
+    }
+
     if (!url.pathname.startsWith("/beta")) return asset(request, env, false);
 
-    const password = env.BETA_PASSWORD || "2008";
+    // The beta is open.
+    //
+    // It was behind a shared password while it was a thing not meant to be
+    // found. It is now the thing the channel points people at, so the door is
+    // only there if somebody puts it there: set `BETA_PASSWORD` in the Pages
+    // environment and it closes again, with no deploy.
+    //
+    // There is deliberately **no fallback password**. The old one was a
+    // literal in this file, in a public repository, which is not a password —
+    // it is a speed bump with a published height. Either the environment
+    // names a secret or there is no gate, and both of those are honest.
+    //
+    // What stays either way is `X-Robots-Tag: noindex` on everything under
+    // /beta: open to anyone following a link is not the same as wanting an
+    // unfinished build to be the first search result for the project's name.
+    const password = env.BETA_PASSWORD;
+    if (!password) return asset(request, env, true);
+
     const expected = await token(password);
 
     if (sameToken(cookieValue(request, COOKIE), expected)) {

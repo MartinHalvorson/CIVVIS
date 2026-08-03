@@ -38,6 +38,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import civ6_env as env  # noqa: E402
+from civ6_control import macos_input  # noqa: E402
 
 # The LaunchPad's PLAY button, as a fraction of the launcher window. The button
 # sits in the upper right of the artwork; these are measured from the shipped
@@ -107,11 +108,9 @@ def click(x: int, y: int) -> None:
     The same coordinates clicked by hand with `dd:`/`du:` started it in under twenty
     seconds.
     """
-    run(["cliclick", f"m:{x},{y}"])
+    macos_input.move(x, y, check=True)
     time.sleep(0.35)
-    run(["cliclick", f"dd:{x},{y}"])
-    time.sleep(0.25)
-    run(["cliclick", f"du:{x},{y}"])
+    macos_input.click(x, y, hold_s=0.25, check=True)
 
 
 def press_play(timeout_s: float = 90.0) -> bool:

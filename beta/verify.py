@@ -35,6 +35,7 @@ import json
 import os
 import pathlib
 import queue
+import re
 import shutil
 import socket
 import socketserver
@@ -47,16 +48,47 @@ import time
 import urllib.error
 import urllib.request
 
-CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
+# Where Chrome is, on whichever machine is cutting the build.
+#
+# Builds get published from a Mac and checked from the Windows box that runs
+# the spectator, so a single hard-coded path means the check simply does not
+# run on one of them — and a check that silently does not run is worse than
+# no check.
+CHROME_CANDIDATES = [
+    "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+    os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+    "/usr/bin/google-chrome",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+]
+
+
+def find_chrome() -> str:
+    for candidate in CHROME_CANDIDATES:
+        if candidate and pathlib.Path(candidate).exists():
+            return candidate
+    for name in ("google-chrome", "chromium", "chrome"):
+        found = shutil.which(name)
+        if found:
+            return found
+    return CHROME_CANDIDATES[0]
+
+
+# The atlases are republished as WebP when Pillow is available and stay PNG
+# when it is not, so the required-files list asks for the terrain atlas in
+# whichever form this build actually chose.
 REQUIRED = [
     "index.html",
+    "download/index.html",
     "beta/index.html",
     "beta/civvis.wasm",
     "beta/shim.js",
     "beta/worker.js",
     "beta/cinematic3d.js",
     "beta/build.json",
-    "beta/assets/terrain-atlas.png",
+    ("beta/assets/terrain-atlas.webp", "beta/assets/terrain-atlas.png"),
     "_worker.js",
 ]
 
@@ -70,6 +102,7 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         ".wasm": "application/wasm",
         ".js": "text/javascript",
         ".json": "application/json",
+        ".webp": "image/webp",
     }
 
     def end_headers(self):
@@ -249,14 +282,21 @@ class Devtools:
 
 
 def check_gate(dist: pathlib.Path) -> list[str]:
-    """Prove the published directory actually challenges for the password.
+    """Prove the published directory routes the way it is meant to.
 
-    This exists because the gate has already been lost once, silently. Written
-    as a Pages `functions/` directory it was resolved against the *working
-    directory* rather than the directory being deployed, so a deploy from one
-    level up uploaded a perfectly working, completely open beta. Nothing failed;
-    there was simply no door. So the door is opened and walked through here
-    rather than assumed to be there.
+    Everything the site does before a file is served lives in `_worker.js`, and
+    that file has already been lost once, silently: written as a Pages
+    `functions/` directory it was resolved against the *working directory*
+    rather than the directory being deployed, so a deploy from one level up
+    uploaded a site with no routing at all. Nothing failed. So the routing is
+    asked rather than assumed, against the real runtime under wrangler.
+
+    What it asserts changed when the beta was opened. It used to prove the
+    door was shut; it now proves it is *open*, which is the property that
+    matters when a channel is pointing people at it — a stray `BETA_PASSWORD`
+    left in the Pages environment would be just as invisible, and just as
+    wrong, as the missing door was. `beta/worker_test.py` covers the same
+    ground plus the password path without needing Node.
     """
     port = free_port()
     log = tempfile.NamedTemporaryFile(prefix="wrangler-", suffix=".log", delete=False)
@@ -274,7 +314,10 @@ def check_gate(dist: pathlib.Path) -> list[str]:
             if dev.poll() is not None:
                 return [f"wrangler exited before serving anything (see {log.name})"]
             try:
-                urllib.request.urlopen(f"http://127.0.0.1:{port}/", timeout=2).read()
+                # `/home`, not `/`: the root is a redirect to YouTube, and
+                # `urlopen` follows redirects, so probing it would make this
+                # loop's readiness depend on reaching youtube.com.
+                urllib.request.urlopen(f"http://127.0.0.1:{port}/home", timeout=2).read()
                 ready = True
             except Exception:
                 time.sleep(1)
@@ -290,48 +333,48 @@ def check_gate(dist: pathlib.Path) -> list[str]:
                 request.add_header("Cookie", cookie)
             return urllib.request.urlopen(request, timeout=15)
 
-        # The landing page is public.
-        if b"Watch on YouTube" not in get("/").read():
-            problems.append("the landing page is not being served at /")
-
-        # The beta is not.
-        closed = get("/beta/").read()
-        if b"shim.js" in closed:
-            problems.append("/beta/ served the viewer without asking for the password")
-        if b"Beta build" not in closed:
-            problems.append("/beta/ did not serve the password page")
-
-        # The engine itself is behind the same door, not just the page.
-        if b"asm" in get("/beta/civvis.wasm").read()[:8]:
-            problems.append("/beta/civvis.wasm is downloadable without the password")
-
-        # A wrong password is refused.
-        wrong = urllib.request.Request(
-            base + "/beta/", data=b"password=0000", method="POST"
-        )
+        # The domain forwards to the channel. This is the one thing on the
+        # site that only exists as edge logic, so it is checked the same way
+        # the password is: by asking, not by reading `_worker.js` and
+        # believing it.
+        blind = urllib.request.build_opener(NoRedirect)
         try:
-            urllib.request.urlopen(wrong, timeout=15)
-            problems.append("a wrong password was accepted")
-        except urllib.error.HTTPError as refused:
-            if refused.code != 401:
-                problems.append(f"a wrong password answered HTTP {refused.code}, wanted 401")
+            blind.open(base + "/", timeout=15)
+            problems.append("/ served a page instead of forwarding to the channel")
+        except urllib.error.HTTPError as forwarded:
+            if forwarded.code not in (301, 302, 303, 307, 308):
+                problems.append(f"/ answered HTTP {forwarded.code} rather than a redirect")
+            elif "youtube.com/@civvis" not in (forwarded.headers.get("Location") or ""):
+                problems.append(f"/ forwards to {forwarded.headers.get('Location')!r}, not the channel")
+            elif forwarded.code == 301:
+                problems.append("/ forwards permanently; a 301 here is cached for ever")
 
-        # The right one is not, and hands back a cookie that opens the door.
-        opener = urllib.request.build_opener(NoRedirect())
-        right = urllib.request.Request(
-            base + "/beta/", data=b"password=2008", method="POST"
-        )
-        try:
-            answer = opener.open(right, timeout=15)
-            code, cookie = answer.code, answer.headers.get("Set-Cookie")
-        except urllib.error.HTTPError as refused:
-            code, cookie = refused.code, refused.headers.get("Set-Cookie")
-        if code != 303 or not cookie:
-            problems.append(f"the password answered HTTP {code} with cookie {cookie!r}")
-        else:
-            opened = get("/beta/", cookie=cookie.split(";")[0]).read()
-            if b"shim.js" not in opened:
-                problems.append("the password did not open /beta/")
+        # The landing page is public, one door in.
+        if b"Watch on YouTube" not in get("/home").read():
+            problems.append("the landing page is not being served at /home")
+
+        # So is the downloads page.
+        if b"releases/latest/download/" not in get("/download/").read():
+            problems.append("/download/ is not serving the downloads page")
+
+        # And so is the beta. A `BETA_PASSWORD` left in the Pages environment
+        # would put a door back in front of everyone the channel sends here,
+        # and would look exactly like a working site from every other angle.
+        beta = get("/beta/").read()
+        if b"Beta build" in beta and b"shim.js" not in beta:
+            problems.append("/beta/ is asking for a password; is BETA_PASSWORD set?")
+        elif b"shim.js" not in beta:
+            problems.append("/beta/ is not serving the viewer")
+
+        # The engine reaches the page as a module, not as an HTML apology.
+        module = get("/beta/civvis.wasm")
+        if module.read(4) != b"\x00asm":
+            problems.append("/beta/civvis.wasm is not being served as a WebAssembly module")
+        if module.headers.get("Content-Type") != "application/wasm":
+            problems.append(
+                "/beta/civvis.wasm is served as "
+                f"{module.headers.get('Content-Type')!r}; instantiateStreaming refuses it"
+            )
         return problems
     finally:
         dev.terminate()
@@ -359,11 +402,12 @@ def main(argv: list[str] | None = None) -> int:
     # dist/ is deployed, and a check's own screenshot has no business on
     # civvis.ai.
     parser.add_argument("--screenshot", default=str(here / "verify.png"))
-    parser.add_argument("--chrome", default=CHROME)
+    parser.add_argument("--chrome", default=find_chrome())
     parser.add_argument(
         "--no-gate",
         action="store_true",
-        help="skip the password check (it needs wrangler, and takes half a minute)",
+        help="skip the routing check (it needs npx wrangler, and takes half a minute; "
+             "beta/worker_test.py covers the same ground with only Chrome)",
     )
     args = parser.parse_args(argv)
 
@@ -373,10 +417,14 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(f"==> checking the bundle at {dist}")
-    missing = [name for name in REQUIRED if not (dist / name).exists()]
+    missing = [
+        entry
+        for entry in REQUIRED
+        if not any((dist / name).exists() for name in ((entry,) if isinstance(entry, str) else entry))
+    ]
     if missing:
-        for name in missing:
-            print(f"    MISSING {name}", file=sys.stderr)
+        for entry in missing:
+            print(f"    MISSING {entry if isinstance(entry, str) else ' or '.join(entry)}", file=sys.stderr)
         return 1
     build = json.loads((dist / "beta" / "build.json").read_text())
     print(f"    {len(REQUIRED)} required files present, build {build['short']}")
@@ -391,15 +439,37 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     print("    the viewer is rewritten for /beta/ and loads the shim")
 
+    # The download page names its binaries; the release workflow builds
+    # binaries under names it chooses. Nothing connects the two but agreement,
+    # and a disagreement is a 404 on the only page whose whole job is handing
+    # somebody a program. Renaming an asset must therefore fail here rather
+    # than on a visitor's click.
+    downloads = (dist / "download" / "index.html").read_text(encoding="utf-8")
+    linked = set(re.findall(r"releases/latest/download/([^\"']+)", downloads))
+    workflow = here.parent / ".github" / "workflows" / "release.yml"
+    if not linked:
+        print("    the download page links no release assets at all", file=sys.stderr)
+        return 1
+    if workflow.exists():
+        built = set(re.findall(r"^\s*asset:\s*(\S+)\s*$", workflow.read_text(encoding="utf-8"), re.M))
+        orphans = sorted(linked - built)
+        if orphans:
+            for name in orphans:
+                print(f"    the download page links {name}, which no release job builds", file=sys.stderr)
+            return 1
+        print(f"    {len(linked)} downloads, every one of them built by release.yml")
+    else:
+        print(f"    {len(linked)} downloads linked (no release.yml here to check them against)")
+
     if not args.no_gate:
-        print("==> opening the password gate on the exact directory to be deployed")
+        print("==> routing the exact directory to be deployed, under wrangler")
         gate_problems = check_gate(dist)
         for problem in gate_problems:
             print(f"    {problem}", file=sys.stderr)
         if gate_problems:
-            print("\nFAILED: the beta would be published unprotected", file=sys.stderr)
+            print("\nFAILED: the site would not route correctly", file=sys.stderr)
             return 1
-        print("    /beta asks for the password; the password opens it")
+        print("    / forwards to the channel; /home, /download and /beta are all open")
 
     if not pathlib.Path(args.chrome).exists():
         print(f"    no Chrome at {args.chrome}; skipping the browser check", file=sys.stderr)

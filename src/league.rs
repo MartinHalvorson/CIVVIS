@@ -28,6 +28,7 @@ use serde::{Deserialize, Serialize};
 use crate::ai::{run_game, AdvancedAi, Ai, VictoryTarget, Weights};
 use crate::game::{default_speed, Game, GameOptions};
 use crate::rng::Rng;
+use crate::server::runtime_commit;
 use crate::setup::MapSize;
 
 /// Glicko-2 works on an internal scale; ratings are stored and shown on the
@@ -66,6 +67,10 @@ const WORKER_DISCOVERY_MILLIS: u64 = 250;
 const MANAGED_ROSTER_MARKER: &str = ".civvis-managed-roster";
 
 /// How a seat materializes an `Ai`.
+#[allow(
+    clippy::large_enum_variant,
+    reason = "the bounded persisted roster intentionally keeps a genome movable by value; boxing it would add allocation and indirection to its archive path"
+)]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum StrategyKind {
     /// One of `elo::BUILTIN_AIS`.
@@ -642,7 +647,7 @@ fn work_engine() -> String {
     format!(
         "civvis-{}-{}-league-work-{WORK_SCHEMA_VERSION}",
         env!("CARGO_PKG_VERSION"),
-        option_env!("CIVVIS_COMMIT").unwrap_or("development")
+        runtime_commit("development")
     )
 }
 
@@ -1083,7 +1088,7 @@ fn ensure_usernames(league: &mut League) {
                     .name
                     .bytes()
                     .fold(0xcbf2_9ce4_8422_2325_u64, |h, b| {
-                        (h ^ b as u64).wrapping_mul(0x1_0000_0001_b3)
+                        (h ^ b as u64).wrapping_mul(0x0100_0000_01b3)
                     });
                 let pool = username_pool(lane_of(&league.strategies[i].kind).as_deref());
                 pool[Rng::new(seed).below(pool.len())].to_string()
@@ -1467,7 +1472,7 @@ fn validate_manifest(manifest: &RoundManifest, league: &League) -> io::Result<()
         }
     }
     let players = manifest.config.players_per_game;
-    if manifest.jobs.len() % players != 0 {
+    if !manifest.jobs.len().is_multiple_of(players) {
         return Err(io::Error::new(
             ErrorKind::InvalidData,
             "manifest ends with a partial mirror series",
@@ -1825,20 +1830,76 @@ pub fn strongest_strategy<'a>(league: &'a League, civ: Option<&str>) -> Option<&
 /// Falls back to the global bound when the pair is unplayed — which is the common
 /// case, because the league has only ever rated a handful of civilizations while
 /// Civilization VI deals from its whole roster.
+/// How many games a (strategy, civilization) pair needs before its own record is
+/// allowed to speak for it.
+///
+/// ★★★★★ `games > 0` WAS THE THRESHOLD, AND IT MADE HAVING RELEVANT HISTORY A
+/// HANDICAP. The Wilson bound is conservative by construction, so at n=1 it is
+/// dominated by the uncertainty term rather than the observed rate: one game with
+/// no win bounds at **exactly 0.0**, and even 1-from-1 bounds near 0.21. A single
+/// game therefore almost always DROPS a strategy below its own global record, and
+/// a strategy that has never touched the dealt civ keeps its full global bound and
+/// wins the comparison.
+///
+/// Measured on `data/league/league.json`, 2026-08-02 — 923 per-civ rows with any
+/// history at all:
+///
+/// | rows | share | |
+/// |---|---|---|
+/// | exactly 1 game | 286 | **31%** |
+/// | fewer than 5 games | 356 | 39% |
+/// | per-civ bound BELOW the strategy's global bound | 786 | **85%** |
+///
+/// The live case that exposed it: Civilization VI dealt Canada, `adv-religious`
+/// held **1 Canada game, 0 wins → bound 0.0** against a 123-game global record
+/// bounding at **0.393**, while `g4-10` had no Canada history at all and kept its
+/// global **0.267**. The weaker strategy was selected, and the run played it.
+///
+/// Ten, because that is where this data's own mass sits — 502 of the 923 rows have
+/// ten or more — and because below it the bound is reporting sample size rather
+/// than skill. Narrowing still happens wherever the pair has really been played,
+/// which is the whole point of [`strongest_strategy`]'s `civ` argument.
+pub const MIN_CIV_GAMES: u32 = 10;
+
 pub fn strategy_strength(strategy: &Strategy, civ: Option<&str>) -> f64 {
+    let global = strategy.strength_bound();
     if let Some(civ) = civ {
-        let rated = strategy
+        let best = strategy
             .leader_elo
             .values()
             .filter_map(|civs| civs.get(civ))
             .filter(|rating| rating.games > 0)
-            .map(|rating| rating.strength_bound())
-            .fold(f64::NEG_INFINITY, f64::max);
-        if rated.is_finite() {
-            return rated;
+            .map(|rating| (rating.strength_bound(), rating.games))
+            .fold(None::<(f64, u32)>, |best, row| match best {
+                Some((b, _)) if b >= row.0 => best,
+                _ => Some(row),
+            });
+        if let Some((rated, games)) = best {
+            // ★★★★★ A THIN PER-CIV SAMPLE MAY ONLY RAISE THE ESTIMATE, NEVER LOWER IT.
+            //
+            // The asymmetry is the whole fix, and it falls out of what a Wilson
+            // bound is. On the UPSIDE the bound already protects itself: it is
+            // conservative, so a high lower bound is hard to reach without either
+            // many games or a near-perfect record — a thin row bounding at 0.510
+            // has earned it. On the DOWNSIDE it does not: 0-from-1 bounds at
+            // exactly 0.0, which is a true statement about one game and a useless
+            // one about a civilization.
+            //
+            // Replacing the global record with that 0.0 is what made HISTORY A
+            // HANDICAP — a strategy that had played the dealt civ once ranked
+            // below one that had never played it at all.
+            //
+            // ⚠ I first fixed this with a symmetric `games >= MIN_CIV_GAMES` gate
+            // and MEASURED A REGRESSION: on Rome it discarded `g56-48`'s genuine
+            // thin-but-excellent 0.510 and selected a 0.393 instead. A gate that
+            // drops good evidence to avoid bad evidence is the wrong trade.
+            if games >= MIN_CIV_GAMES {
+                return rated;
+            }
+            return rated.max(global);
         }
     }
-    strategy.strength_bound()
+    global
 }
 
 /// The genome and victory lane a named strategy plays with, if it has one.
@@ -2404,16 +2465,16 @@ fn apply_round(league: &mut League, outcomes: &[Outcome], age_idle: bool) {
         rating.vol = updated.sigma;
     }
     let empty = Vec::new();
-    for i in 0..league.strategies.len() {
-        if league.strategies[i].retired {
+    for (i, (strategy, previous)) in league.strategies.iter_mut().zip(pre).enumerate() {
+        if strategy.retired {
             continue;
         }
         let played = results.get(&i);
         if played.is_none() && !age_idle {
             continue;
         }
-        let updated = rate(pre[i], played.unwrap_or(&empty));
-        apply_internal(&mut league.strategies[i], updated);
+        let updated = rate(previous, played.unwrap_or(&empty));
+        apply_internal(strategy, updated);
     }
 }
 
@@ -2933,7 +2994,7 @@ pub fn make_send_ai(kind: &StrategyKind, seed: u64) -> Box<dyn Ai + Send> {
             "advanced_evolved" | "evolved" => Box::new(
                 crate::evolve::load_champion("evolved")
                     .map(AdvancedAi::with_weights)
-                    .unwrap_or_else(AdvancedAi::new),
+                    .unwrap_or_default(),
             ),
             "strategic" => Box::new(crate::strategic::StrategicAi::with_weights(
                 crate::evolve::load_champion("evolved").unwrap_or_default(),
@@ -3458,6 +3519,77 @@ pub fn run_league(cfg: &LeagueCfg) -> League {
 mod tests {
     use super::*;
 
+    /// ★★★★★ ONE GAME ON A CIVILIZATION MUST NOT OUTWEIGH A HUNDRED OVERALL.
+    ///
+    /// The Wilson bound is conservative, so a single game is dominated by the
+    /// uncertainty term: 0-from-1 bounds at exactly 0.0. Under the old
+    /// `games > 0` filter that number REPLACED the strategy's global bound, so a
+    /// strategy that had played the dealt civilization once was ranked below one
+    /// that had never played it at all — history was a handicap.
+    ///
+    /// Reproduces the live case that exposed it. Civilization VI dealt Canada;
+    /// `adv-religious` held 1 Canada game / 0 wins against a 123-game global
+    /// record, and lost selection to a strategy with no Canada history.
+    #[test]
+    fn a_single_civ_game_does_not_outweigh_the_global_record() {
+        let mut strong = Strategy::new(
+            "adv-religious",
+            StrategyKind::Builtin { ai: "advanced".to_string() },
+            1,
+        );
+        strong.games = 123;
+        strong.wins = 59;
+        let global = strong.strength_bound();
+        assert!(global > 0.3, "the global record should be strong: {global}");
+
+        strong.leader_elo.entry("Wilfrid Laurier".to_string()).or_default().insert(
+            "Canada".to_string(),
+            CivRating { games: 1, wins: 0, ..CivRating::default() },
+        );
+
+        // The one-game row must NOT drag the estimate below the global record.
+        let narrowed = strategy_strength(&strong, Some("Canada"));
+        assert_eq!(
+            narrowed, global,
+            "a 1-game row replaced a 123-game record and drove selection"
+        );
+
+        // ⚠ But a thin row that is GOOD must still be allowed to raise it. A
+        // symmetric minimum-sample gate regressed Rome, discarding g56-48's
+        // genuine thin-but-excellent record — measured, not hypothesised.
+        let mut lucky = Strategy::new(
+            "g56-48",
+            StrategyKind::Builtin { ai: "advanced".to_string() },
+            1,
+        );
+        lucky.games = 100;
+        lucky.wins = 20;
+        let lucky_global = lucky.strength_bound();
+        lucky.leader_elo.entry("Trajan".to_string()).or_default().insert(
+            "Rome".to_string(),
+            CivRating { games: 5, wins: 5, ..CivRating::default() },
+        );
+        let raised = strategy_strength(&lucky, Some("Rome"));
+        assert!(
+            raised > lucky_global,
+            "a thin but perfect per-civ record must still narrow upward: \
+             {raised} vs {lucky_global}"
+        );
+
+        // ⚠ But a real sample MUST still narrow — that is the whole point of the
+        // `civ` argument, and a fix that disabled narrowing would be worse than
+        // the defect.
+        strong.leader_elo.get_mut("Wilfrid Laurier").unwrap().insert(
+            "Canada".to_string(),
+            CivRating { games: MIN_CIV_GAMES, wins: 0, ..CivRating::default() },
+        );
+        let real = strategy_strength(&strong, Some("Canada"));
+        assert!(
+            real < global,
+            "ten losses on a civ must still count against it: {real} vs {global}"
+        );
+    }
+
     /// Nobody is without a rating.
     ///
     /// "Unrated" is a claim about a player's *record*, not about whether they
@@ -3740,7 +3872,7 @@ mod tests {
         assert!(egypt.rating < BASE_RATING && egypt.games == 1 && egypt.wins == 0);
         assert_eq!(rome.last_played.as_deref(), Some("2026-07-23"));
         assert_eq!(egypt.last_played.as_deref(), Some("2026-07-23"));
-        assert!(league.strategies[0].leader_elo.get("Cleopatra").is_none());
+        assert!(!league.strategies[0].leader_elo.contains_key("Cleopatra"));
     }
 
     #[test]
@@ -4510,11 +4642,11 @@ mod tests {
         // (wins, games, lower, upper)
         let golden: [(u32, u32, f64, f64); 6] = [
             (0, 5, 0.0, 0.434_491_494_752_081_04),
-            (1, 6, 0.030_052_585_871_730_285, 0.563_509_436_563_646_05),
-            (3, 27, 0.038_519_647_894_987_241, 0.280_581_825_439_729_48),
-            (161, 314, 0.457_633_149_634_529_78, 0.567_536_620_464_790_14),
-            (230, 625, 0.331_104_141_281_536_26, 0.406_508_637_516_812_99),
-            (8, 43, 0.097_416_355_801_059_812, 0.326_172_932_353_059_61),
+            (1, 6, 0.030_052_585_871_730_285, 0.563_509_436_563_646),
+            (3, 27, 0.038_519_647_894_987_24, 0.280_581_825_439_729_5),
+            (161, 314, 0.457_633_149_634_529_8, 0.567_536_620_464_790_1),
+            (230, 625, 0.331_104_141_281_536_26, 0.406_508_637_516_813),
+            (8, 43, 0.097_416_355_801_059_81, 0.326_172_932_353_059_6),
         ];
         for (wins, games, lower, upper) in golden {
             let rating = CivRating {

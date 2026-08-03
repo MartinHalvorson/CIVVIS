@@ -10,6 +10,8 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
+#[cfg(not(target_arch = "wasm32"))]
+use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -52,6 +54,47 @@ fn process_identity() -> u32 {
     #[cfg(not(target_arch = "wasm32"))]
     {
         std::process::id()
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+static LAUNCHED_COMMIT: OnceLock<Option<String>> = OnceLock::new();
+
+#[cfg(not(target_arch = "wasm32"))]
+fn promoted_binary_commit(name: &str) -> Option<String> {
+    let commit = name.strip_prefix("civvis-")?;
+    (commit.len() == 40 && commit.bytes().all(|byte| byte.is_ascii_hexdigit()))
+        .then(|| commit.to_owned())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn launched_commit() -> Option<String> {
+    std::env::var("CIVVIS_COMMIT")
+        .ok()
+        .filter(|commit| !commit.is_empty())
+        .or_else(|| {
+            let executable = std::env::current_exe().ok()?;
+            let name = executable.file_name()?.to_str()?;
+            promoted_binary_commit(name)
+        })
+}
+
+/// The revision of the code a supervisor selected for this process.
+///
+/// This deliberately reads the launch environment or promoted executable name
+/// instead of `option_env!`: a compile-time revision would force a complete
+/// optimized rebuild even when the source code itself has not changed.
+pub(crate) fn runtime_commit(fallback: &str) -> String {
+    #[cfg(target_arch = "wasm32")]
+    {
+        fallback.to_owned()
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        LAUNCHED_COMMIT
+            .get_or_init(launched_commit)
+            .clone()
+            .unwrap_or_else(|| fallback.to_owned())
     }
 }
 
@@ -876,6 +919,13 @@ pub struct Shared {
     pub turn_us: AtomicU64,
     /// The same turn with the sleeps taken out: what the unlimited pace costs.
     pub turn_compute_us: AtomicU64,
+    /// Monotonic identity of the last spectator frame the stepper completed.
+    ///
+    /// `turn` alone is not enough once Blitz and slower paces publish after
+    /// every player's turn: every seat in a round shares the same world turn.
+    /// This counter advances only when a frame is actually published, so the
+    /// unpaced Lightning loop can still play a whole round into one frame.
+    frame_sequence: AtomicU64,
     frame_delivery: Mutex<FrameDelivery>,
     frame_painted: Condvar,
     /// Serializes a displayed-state handoff with the start of an automatic AI
@@ -905,6 +955,9 @@ struct SpectatorFrame {
     /// A victory may be decided by a seat in the middle of a round, without
     /// advancing `turn`. That terminal state is still a distinct frame.
     finished: bool,
+    /// A server-local, monotonic publication sequence. Several player-turn
+    /// frames can share `turn`; skipped Lightning seat steps share this value.
+    sequence: u64,
 }
 
 /// One page, tracked apart from every other page.
@@ -1026,8 +1079,8 @@ impl FrameDelivery {
         }
         let mut lost = 0;
         if let Some(previous) = seat.painted {
-            if attached && previous.seed == frame.seed && frame.turn > previous.turn {
-                lost = u64::from(frame.turn - previous.turn - 1);
+            if attached && previous.seed == frame.seed && frame.sequence > previous.sequence {
+                lost = frame.sequence - previous.sequence - 1;
                 seat.missed += lost;
             }
         }
@@ -1119,8 +1172,36 @@ const STATE_LONG_POLL: Duration = Duration::from_millis(1_000);
 /// The unlimited pace still hands the accept loop a slot this often, so the
 /// page keeps loading state while the stepper saturates a core.
 const UNLIMITED_BREATH_MS: u64 = 100;
+/// Blitz is the first watch pace where every player's completed turn becomes
+/// its own frame. Faster custom paces retain Lightning's one-frame-per-round
+/// throughput; every offered pace at or above this threshold is seat-by-seat.
+const PLAYER_TURN_FRAME_MIN_PACE_MS: u64 = 1_000;
 /// Minor civilizations and barbarians take a quarter of a major's slice.
 const MINOR_SHARE: f64 = 0.25;
+
+fn publishes_player_turn_frames(pace_ms: u64) -> bool {
+    pace_ms >= PLAYER_TURN_FRAME_MIN_PACE_MS
+}
+
+fn spectator_frame(game: &Game, sequence: u64) -> SpectatorFrame {
+    SpectatorFrame {
+        seed: game.seed,
+        turn: game.turn,
+        finished: game.winner.is_some(),
+        sequence,
+    }
+}
+
+fn spectator_step_completes_frame(
+    pace_ms: u64,
+    turn_before: u32,
+    finished_before: bool,
+    game: &Game,
+) -> bool {
+    publishes_player_turn_frames(pace_ms)
+        || game.turn != turn_before
+        || game.winner.is_some() != finished_before
+}
 
 /// Ten seconds, whatever anybody asked for. Kept as a function so the two
 /// places that arm the countdown cannot each grow their own idea of it.
@@ -1219,11 +1300,10 @@ impl Shared {
             // while ringing it, so taking them in this order is safe.
             let current = {
                 let session = self.session.lock().unwrap();
-                SpectatorFrame {
-                    seed: session.game.seed,
-                    turn: session.game.turn,
-                    finished: session.game.winner.is_some(),
-                }
+                spectator_frame(
+                    &session.game,
+                    self.frame_sequence.load(Ordering::Relaxed),
+                )
             };
             if current != held {
                 return;
@@ -1253,22 +1333,21 @@ impl Shared {
         self.frame_painted.notify_all();
     }
 
-    /// Turns this server simulated that some viewer never drew, the last turn
-    /// one reported drawing, and how many pages are watching. The second reads
-    /// the first: no painted turn at all means nobody was watching, which is a
-    /// different thing from a promise being kept. The third says how many
-    /// pages that "no turns missed" is a promise to. The fourth is auto-play's
-    /// own denominator: turns it has simulated, so that its zero can be told
-    /// apart from a game where nobody ever pressed it.
-    fn frame_audit(&self) -> (u64, Option<u32>, usize, u64) {
+    /// Frames this server published that some viewer never drew, the newest
+    /// exact frame one reported drawing, and how many pages are watching. No
+    /// painted frame at all means nobody was watching, which is a different
+    /// thing from a promise being kept. The fourth result is auto-play's own
+    /// denominator: turns it simulated, so zero can be told apart from a game
+    /// where nobody ever pressed it.
+    fn frame_audit(&self) -> (u64, Option<SpectatorFrame>, usize, u64) {
         let mut delivery = self.frame_delivery.lock().unwrap();
         delivery.retire_departed(Instant::now());
         let missed = delivery.missed;
         let painted = delivery
             .seats
             .values()
-            .filter_map(|seat| seat.painted.map(|frame| frame.turn))
-            .max();
+            .filter_map(|seat| seat.painted)
+            .max_by_key(|frame| frame.sequence);
         (missed, painted, delivery.seats.len(), delivery.autoplayed)
     }
 
@@ -1490,6 +1569,23 @@ impl Shared {
             delivery = result.0;
         }
     }
+}
+
+/// Derive the next unattended-world seed without leaving JavaScript's exact
+/// integer range.
+///
+/// Spectator pages return the seed in `world=` when acknowledging a painted
+/// frame. JSON parses an integer above 2^53 - 1 as a rounded JavaScript
+/// `Number`, so a full-width successor seed can never match the server's u64
+/// and the opening frame remains gated. The low 53 bits of this full-period
+/// LCG are themselves a full-period sequence, retaining deterministic variety
+/// while keeping the browser/server identity round-trip exact.
+const MAX_EXACT_JAVASCRIPT_INTEGER: u64 = (1_u64 << 53) - 1;
+
+fn automatic_successor_seed(seed: u64) -> u64 {
+    seed.wrapping_mul(6364136223846793005)
+        .wrapping_add(1442695040888963407)
+        & MAX_EXACT_JAVASCRIPT_INTEGER
 }
 
 impl Session {
@@ -1935,11 +2031,7 @@ impl Session {
     /// setup control that must never wait on the simulation, so it lives
     /// beside the session rather than inside it.
     fn start_automatic_next_game(&mut self, queued: Option<Params>) {
-        let next_seed = self
-            .params
-            .seed
-            .wrapping_mul(6364136223846793005)
-            .wrapping_add(1442695040888963407);
+        let next_seed = automatic_successor_seed(self.params.seed);
         let mut params = queued.unwrap_or_else(|| self.params.clone());
         params.seed = next_seed;
         *self = Session::new(params);
@@ -2299,7 +2391,7 @@ impl Session {
             // Lets a long-running spectator notice that its server was
             // rebuilt/restarted between games and reload the latest UI.
             o["server_instance"] = json!(process_identity());
-            o["server_commit"] = json!(option_env!("CIVVIS_COMMIT").unwrap_or("unknown"));
+            o["server_commit"] = json!(runtime_commit("unknown"));
             return o;
         }
         let mut o = observation(&self.game, 0);
@@ -2318,7 +2410,7 @@ impl Session {
         o["victory_conditions"] = json!(self.game.victory_conditions);
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
         o["server_instance"] = json!(process_identity());
-        o["server_commit"] = json!(option_env!("CIVVIS_COMMIT").unwrap_or("unknown"));
+        o["server_commit"] = json!(runtime_commit("unknown"));
         o
     }
 
@@ -2881,11 +2973,12 @@ fn tile_mark(tile: &Value) -> u64 {
 }
 
 /// The frame a page says its own copy of the tiles is built from, written
-/// `world:turn:finished`. All three parts matter: a victory may be decided
-/// during a seat's step without incrementing the turn, and the terminal map is
-/// not the non-terminal map from the same turn. Legacy two-part tokens remain
-/// valid non-terminal baselines. Anything unparseable simply means no
-/// baseline, and the page is sent the whole map.
+/// `world:turn:finished:sequence`. All four parts matter: a victory may be
+/// decided during a seat's step without incrementing the turn, and at Blitz
+/// and slower several completed player turns share one world turn. Legacy
+/// two- and three-part tokens name sequence zero, which remains the opening
+/// frame of a process. Anything unparseable simply means no baseline, and the
+/// page is sent the whole map.
 fn held_frame(token: &str) -> Option<SpectatorFrame> {
     let mut fields = token.split(':');
     let seed = fields.next()?.parse().ok()?;
@@ -2895,6 +2988,10 @@ fn held_frame(token: &str) -> Option<SpectatorFrame> {
         Some("1") => true,
         Some(_) => return None,
     };
+    let sequence = match fields.next() {
+        None => 0,
+        Some(sequence) => sequence.parse().ok()?,
+    };
     if fields.next().is_some() {
         return None;
     }
@@ -2902,6 +2999,7 @@ fn held_frame(token: &str) -> Option<SpectatorFrame> {
         seed,
         turn,
         finished,
+        sequence,
     })
 }
 
@@ -3201,11 +3299,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
         let simulation_frame_gate = loop {
             let current_frame = {
                 let s = sh.session.lock().unwrap();
-                SpectatorFrame {
-                    seed: s.game.seed,
-                    turn: s.game.turn,
-                    finished: s.game.winner.is_some(),
-                }
+                spectator_frame(&s.game, sh.frame_sequence.load(Ordering::Relaxed))
             };
             sh.wait_for_turn_frame(current_frame);
             let gate = sh.simulation_frame_gate.lock().unwrap();
@@ -3257,11 +3351,8 @@ fn auto_step_loop(sh: Arc<Shared>) {
                     // starting position — settlers before their capitals —
                     // and the first thing a viewer ever sees of a new world is
                     // already several turns into it.
-                    completed_frame = Some(SpectatorFrame {
-                        seed: s.game.seed,
-                        turn: s.game.turn,
-                        finished: false,
-                    });
+                    let sequence = sh.frame_sequence.fetch_add(1, Ordering::Relaxed) + 1;
+                    completed_frame = Some(spectator_frame(&s.game, sequence));
                 }
                 delay = 200;
                 waiting = true;
@@ -3269,20 +3360,13 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 over_since = None;
                 sh.restart_in.store(u64::MAX, Ordering::Relaxed);
                 let step_started = Instant::now();
-                let frame_before = SpectatorFrame {
-                    seed: s.game.seed,
-                    turn: s.game.turn,
-                    finished: false,
-                };
+                let turn_before = s.game.turn;
+                let finished_before = s.game.winner.is_some();
                 let (pid, _) = s.step();
                 turn_compute_us += step_started.elapsed().as_micros() as u64;
-                let frame_after = SpectatorFrame {
-                    seed: s.game.seed,
-                    turn: s.game.turn,
-                    finished: s.game.winner.is_some(),
-                };
-                if frame_after != frame_before {
-                    completed_frame = Some(frame_after);
+                if spectator_step_completes_frame(pace, turn_before, finished_before, &s.game) {
+                    let sequence = sh.frame_sequence.fetch_add(1, Ordering::Relaxed) + 1;
+                    completed_frame = Some(spectator_frame(&s.game, sequence));
                 }
                 // The step that ends a game has to hand the viewer its
                 // countdown in the same breath. Arming it on the next pass
@@ -3321,11 +3405,9 @@ fn auto_step_loop(sh: Arc<Shared>) {
             }
         }
         // An active browser paints exactly one complete, same-snapshot frame
-        // before the next round starts, at every pace. This makes Lightning as
-        // fast as the viewer can paint without letting it skip whole turns,
-        // and it stops the paced settings from skipping them too — a turn
-        // budget says how long a turn lasts, not that anyone saw its updated
-        // HUD, victory tracker, map, and remaining turn-bound surfaces.
+        // before simulation continues. Lightning publishes at the end of the
+        // round; Blitz and slower publish here after every player's turn, so
+        // majors move one frame at a time before city-states and barbarians do.
         //
         // The wait comes before the cadence sleep on purpose. `elapsed_ms`
         // below measures from the top of the step, so a viewer who answers
@@ -3379,6 +3461,7 @@ fn decorate(o: &mut Value, sh: &Shared) {
     }
     o["pace"] = json!(sh.pace_ms.load(Ordering::Relaxed));
     o["paused"] = json!(sh.paused.load(Ordering::Relaxed));
+    o["frame_sequence"] = json!(sh.frame_sequence.load(Ordering::Relaxed));
     // Both in milliseconds per game turn: what the current pace is actually
     // delivering, and what it would cost with every wait removed.
     let measured = sh.turn_us.load(Ordering::Relaxed);
@@ -3477,7 +3560,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 &json!({
                     "server_instance": process_identity(),
                     "seed": sh.current_seed.load(Ordering::Relaxed),
-                    "commit": option_env!("CIVVIS_COMMIT").unwrap_or("unknown"),
+                    "commit": runtime_commit("unknown"),
                     // The supervisor's only view of a restart used to be
                     // `/state`, which is exactly what a long AI turn makes
                     // unavailable. This probe takes no lock the simulation
@@ -3525,16 +3608,19 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     reported.parse::<u32>(),
                     query_value(&request_target, "world").map(str::parse::<u64>),
                     query_value(&request_target, "finished"),
+                    query_value(&request_target, "frame").map(str::parse::<u64>),
                 ) {
-                    (Ok(turn), Some(Ok(seed)), Some("0") | None) => Some(SpectatorFrame {
+                    (Ok(turn), Some(Ok(seed)), Some("0") | None, Some(Ok(sequence))) => Some(SpectatorFrame {
                         seed,
                         turn,
                         finished: false,
+                        sequence,
                     }),
-                    (Ok(turn), Some(Ok(seed)), Some("1")) => Some(SpectatorFrame {
+                    (Ok(turn), Some(Ok(seed)), Some("1"), Some(Ok(sequence))) => Some(SpectatorFrame {
                         seed,
                         turn,
                         finished: true,
+                        sequence,
                     }),
                     _ => None, // a page that has painted nothing yet
                 };
@@ -3552,12 +3638,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 .map(|cursor| cursor.parse::<u64>().unwrap_or(0));
             let (mut o, frame) = {
                 let session = sh.session.lock().unwrap();
-                let frame = SpectatorFrame {
-                    seed: session.game.seed,
-                    turn: session.game.turn,
-                    finished: session.game.winner.is_some(),
-                };
+                let frame = spectator_frame(
+                    &session.game,
+                    sh.frame_sequence.load(Ordering::Relaxed),
+                );
                 let mut observed = session.state();
+                observed["frame_sequence"] = json!(frame.sequence);
                 if wants_planet {
                     if let Some(geometry) = crate::obs::planet_geometry(&session.game) {
                         observed["map"]["planet"] = geometry;
@@ -3596,16 +3682,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "winner": game.winner,
                     "victory_type": game.victory_type,
                     "spectate": session.params.spectate,
-                    // Turns this server simulated that no viewer ever drew.
-                    // Every turn is supposed to reach the page as one whole
-                    // frame, and the page reports the turns it paints, so the
-                    // promise is measured rather than assumed. A healthy
-                    // exhibition holds this at zero.
+                    // Published frames no viewer ever drew. At Blitz and
+                    // slower this counts player turns, not only round turns.
                     "frames_missed": frames_missed,
                     // The last turn a viewer reported drawing; null when
                     // nobody is watching, which is why zero misses on its own
                     // is not yet good news.
-                    "frames_painted": frames_painted,
+                    "frames_painted": frames_painted.map(|frame| frame.turn),
+                    "frames_painted_sequence": frames_painted.map(|frame| frame.sequence),
+                    "frame_sequence": sh.frame_sequence.load(Ordering::Relaxed),
                     // How many pages that promise is being kept to. Each is
                     // waited for separately, so this is also the number of
                     // paints a turn now costs before the next one starts.
@@ -3623,9 +3708,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // happens between games, so a running server is always
                     // somewhat behind origin/main and there was no way to see
                     // by how much - "is it running old code" could only be
-                    // guessed at from file timestamps. The build stamps this
-                    // in; an unstamped build reports unknown.
-                    "commit": option_env!("CIVVIS_COMMIT").unwrap_or("unknown"),
+                    // guessed at from file timestamps. The supervisor passes
+                    // it when it launches the promoted binary; an unstamped
+                    // build reports unknown.
+                    "commit": runtime_commit("unknown"),
                 }),
             );
         }
@@ -3972,9 +4058,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("POST", "/step") => {
             let mut session = sh.session.lock().unwrap();
             let mut out;
+            let mut completed_frame = None;
             if session.params.spectate {
                 let count = parsed["count"].as_u64().unwrap_or(1) as usize;
                 let steps = session.step_many(count);
+                if !steps.is_empty() {
+                    let sequence = sh.frame_sequence.fetch_add(1, Ordering::Relaxed) + 1;
+                    completed_frame = Some(spectator_frame(&session.game, sequence));
+                }
                 out = session.state();
                 // An omniscient observer can narrate every AI decision. A
                 // civilization view only receives that civilization's own
@@ -4015,6 +4106,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 out["error"] = json!("not in spectate mode");
             }
             drop(session);
+            if let Some(frame) = completed_frame {
+                sh.note_turn_ready(frame);
+            }
             decorate(&mut out, sh);
             respond_json(stream, &out);
         }
@@ -4193,13 +4287,14 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
 #[allow(clippy::items_after_test_module)]
 mod tests {
     use super::{
-        chronicle_world_events, final_countdown_ms, held_frame, new_game_params, query_value,
-        request_path, save_path, seat_delay_ms, strategy_roster, tile_mark, ChronicleSnapshot,
-        ChronicleState, FrameDelivery, Params,
-        Session, Shared, SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_CIV6_UNIT_FLAGS,
-        EMBEDDED_INDEX, RESULT_COUNTDOWN_MS,
+        automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
+        new_game_params, publishes_player_turn_frames, query_value, request_path, save_path,
+        seat_delay_ms, spectator_frame, spectator_step_completes_frame, strategy_roster,
+        tile_mark, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session, Shared,
+        SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_INDEX,
+        RESULT_COUNTDOWN_MS,
         EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL,
-        VIEWER_ACTIVE,
+        MAX_EXACT_JAVASCRIPT_INTEGER, VIEWER_ACTIVE,
     };
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
@@ -4236,6 +4331,123 @@ mod tests {
         // Minors take a quarter of a major's slice, and unlimited never waits.
         assert_eq!(seat_delay_ms(1_000, 4, 4, false) / 4, seat_delay_ms(1_000, 4, 4, true));
         assert_eq!(seat_delay_ms(0, 8, 12, false), 0);
+    }
+
+    #[test]
+    fn player_turn_frames_begin_at_blitz() {
+        assert!(!publishes_player_turn_frames(0), "Lightning stays round-by-round");
+        assert!(!publishes_player_turn_frames(999));
+        for pace in [1_000, 2_000, 4_000, 10_000, 60_000] {
+            assert!(
+                publishes_player_turn_frames(pace),
+                "{pace}ms is Blitz or slower"
+            );
+        }
+    }
+
+    /// The simulation already seats Civ-style: majors first, then
+    /// city-states, then its barbarian seat. At Blitz every one of those
+    /// `Session::step` boundaries must become a distinct frame, while
+    /// Lightning waits for the wrap. Capturing unit positions around the same
+    /// boundary proves a movement is present in the acting player's frame,
+    /// not deferred into the next civilization's paint.
+    #[test]
+    fn blitz_frames_follow_major_city_state_barbarian_turn_order() {
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 3;
+        params.num_city_states = 2;
+        params.width = 30;
+        params.height = 20;
+        params.seed = 20_260_802;
+        let mut session = Session::new(params);
+
+        let expected: Vec<usize> = session
+            .game
+            .players
+            .iter()
+            .filter(|player| player.alive)
+            .map(|player| player.id)
+            .collect();
+        let kinds: Vec<&str> = expected
+            .iter()
+            .map(|pid| {
+                let player = &session.game.players[*pid];
+                if !player.is_minor && !player.is_barbarian {
+                    "major"
+                } else if player.is_minor && !player.is_barbarian {
+                    "city-state"
+                } else {
+                    "barbarian"
+                }
+            })
+            .collect();
+        assert_eq!(
+            kinds,
+            ["major", "major", "major", "city-state", "city-state", "barbarian"],
+            "the live roster itself must follow Civilization's phase order"
+        );
+
+        let opening_turn = session.game.turn;
+        let mut seen = Vec::new();
+        let mut sequence = 0;
+        let mut frames = Vec::new();
+        let mut movement_seen = false;
+        while session.game.turn == opening_turn && session.game.winner.is_none() {
+            let acting = session.game.current;
+            let positions = session
+                .game
+                .units
+                .iter()
+                .map(|(id, unit)| (*id, (unit.owner, unit.pos)))
+                .collect::<std::collections::BTreeMap<_, _>>();
+            let turn_before = session.game.turn;
+            let finished_before = session.game.winner.is_some();
+            let (stepped, _) = session.step();
+            assert_eq!(stepped, acting);
+            seen.push(stepped);
+
+            assert!(spectator_step_completes_frame(
+                1_000,
+                turn_before,
+                finished_before,
+                &session.game,
+            ));
+            sequence += 1;
+            frames.push(spectator_frame(&session.game, sequence));
+
+            for (id, unit) in &session.game.units {
+                if positions
+                    .get(id)
+                    .is_some_and(|(_, before)| *before != unit.pos)
+                {
+                    assert_eq!(
+                        unit.owner, acting,
+                        "seat {acting}'s frame included another player's unit movement"
+                    );
+                    movement_seen = true;
+                }
+            }
+
+            let lightning_boundary = spectator_step_completes_frame(
+                0,
+                turn_before,
+                finished_before,
+                &session.game,
+            );
+            assert_eq!(
+                lightning_boundary,
+                session.game.turn != turn_before || session.game.winner.is_some(),
+                "Lightning should publish only the round/result boundary"
+            );
+        }
+
+        assert_eq!(seen, expected);
+        assert!(
+            frames.windows(2).all(|pair| pair[1].sequence == pair[0].sequence + 1),
+            "each completed seat must receive its own frame identity"
+        );
+        assert!(movement_seen, "the opening round exercised no unit movement");
     }
 
     /// Ten seconds, and nothing can ask for anything else.
@@ -4282,16 +4494,25 @@ mod tests {
             seed: 41,
             turn: 7,
             finished: false,
+            sequence: 0,
         };
         let won = SpectatorFrame {
             seed: 41,
             turn: 7,
             finished: true,
+            sequence: 0,
         };
         assert_ne!(playing, won);
         assert_eq!(held_frame("41:7"), Some(playing));
         assert_eq!(held_frame("41:7:0"), Some(playing));
         assert_eq!(held_frame("41:7:1"), Some(won));
+        assert_eq!(
+            held_frame("41:7:0:23"),
+            Some(SpectatorFrame {
+                sequence: 23,
+                ..playing
+            })
+        );
         assert_eq!(held_frame("41:7:maybe"), None);
     }
 
@@ -4312,6 +4533,7 @@ mod tests {
             restart_in: AtomicU64::new(u64::MAX),
             turn_us: AtomicU64::new(0),
             turn_compute_us: AtomicU64::new(0),
+            frame_sequence: AtomicU64::new(0),
             frame_delivery: Mutex::new(FrameDelivery::default()),
             frame_painted: Condvar::new(),
             simulation_frame_gate: Mutex::new(()),
@@ -4322,6 +4544,7 @@ mod tests {
             seed,
             turn: 7,
             finished: false,
+            sequence: 0,
         };
         let won = SpectatorFrame {
             finished: true,
@@ -4356,16 +4579,19 @@ mod tests {
             seed: 41,
             turn: 7,
             finished: false,
+            sequence: 7,
         };
         let turn_8 = SpectatorFrame {
             seed: 41,
             turn: 8,
             finished: false,
+            sequence: 8,
         };
         let next_world = SpectatorFrame {
             seed: 42,
             turn: 7,
             finished: false,
+            sequence: 0,
         };
         let final_turn_7 = SpectatorFrame {
             finished: true,
@@ -4414,6 +4640,7 @@ mod tests {
             seed: 41,
             turn: 7,
             finished: false,
+            sequence: 7,
         };
         let mut delivery = FrameDelivery::default();
 
@@ -4445,6 +4672,7 @@ mod tests {
             seed: 41,
             turn: 8,
             finished: false,
+            sequence: 8,
         };
         delivery.viewer_request("one", None, later);
         delivery.frame_delivered("one", turn_8, later);
@@ -4460,16 +4688,19 @@ mod tests {
             seed: 41,
             turn: 7,
             finished: false,
+            sequence: 7,
         };
         let turn_8 = SpectatorFrame {
             seed: 41,
             turn: 8,
             finished: false,
+            sequence: 8,
         };
         let other_world = SpectatorFrame {
             seed: 42,
             turn: 7,
             finished: false,
+            sequence: 0,
         };
         let mut delivery = FrameDelivery::default();
 
@@ -4621,6 +4852,7 @@ mod tests {
                 seed: 41,
                 turn,
                 finished: false,
+                sequence: turn as u64,
             })
         };
         let mut now = Instant::now();
@@ -4651,6 +4883,7 @@ mod tests {
                 seed: 41,
                 turn,
                 finished: false,
+                sequence: turn as u64,
             })
         };
         let mut now = Instant::now();
@@ -4693,6 +4926,7 @@ mod tests {
                 seed: 42,
                 turn: 40,
                 finished: false,
+                sequence: 40,
             }),
             beat,
         );
@@ -4702,6 +4936,7 @@ mod tests {
                 seed: 42,
                 turn: 40,
                 finished: false,
+                sequence: 40,
             }),
             beat,
         );
@@ -4711,10 +4946,32 @@ mod tests {
                 seed: 42,
                 turn: 41,
                 finished: false,
+                sequence: 41,
             }),
             beat,
         );
         assert_eq!(missed(&delivery), 3);
+    }
+
+    #[test]
+    fn audit_counts_a_missing_player_frame_inside_one_turn() {
+        let now = Instant::now();
+        let first = SpectatorFrame {
+            seed: 41,
+            turn: 12,
+            finished: false,
+            sequence: 40,
+        };
+        let third = SpectatorFrame {
+            sequence: 42,
+            ..first
+        };
+        let mut delivery = FrameDelivery::default();
+        delivery.frame_delivered("tab", first, now);
+        delivery.viewer_request("tab", Some(first), now);
+        delivery.frame_delivered("tab", third, now + Duration::from_millis(50));
+        delivery.viewer_request("tab", Some(third), now + Duration::from_millis(50));
+        assert_eq!(delivery.missed, 1, "sequence 41 was never painted");
     }
 
     /// Only a page that paints holds the simulation to a turn. The keeper's
@@ -4770,6 +5027,17 @@ mod tests {
         )
     }
 
+    fn next_painted_state(viewer: &str, state: &Value) -> String {
+        let seed = state["seed"].as_u64().expect("a world");
+        let turn = state["turn"].as_u64().expect("a turn");
+        let finished = u8::from(!state["winner"].is_null());
+        let frame = state["frame_sequence"].as_u64().expect("a frame sequence");
+        format!(
+            "/state?painted={turn}&world={seed}&finished={finished}&frame={frame}\
+             &viewer={viewer}&have={seed}:{turn}:{finished}:{frame}"
+        )
+    }
+
     /// The promise itself, end to end, against a real server over a real
     /// socket. A page that paints slower than the turn budget is the case that
     /// used to lose turns silently — five of twenty-eight on the default pace
@@ -4802,22 +5070,21 @@ mod tests {
         // The browser's loop at its worst: one request in flight at a time,
         // and a paint that costs twice what the whole turn was budgeted.
         let mut seen: Vec<u32> = Vec::new();
-        let mut painted: Option<(u64, u32)> = None;
+        let mut painted: Option<Value> = None;
         for _ in 0..24 {
-            let target = match painted {
-                None => "/state?painted=".to_string(),
-                Some((seed, turn)) => format!("/state?painted={turn}&world={seed}"),
+            let target = match painted.as_ref() {
+                None => "/state?painted=&viewer=slow-paint".to_string(),
+                Some(state) => next_painted_state("slow-paint", state),
             };
             let body = http_get(port, &target).expect("a state to draw");
             let state: Value = serde_json::from_str(&body).expect("state is JSON");
             let turn = state["turn"].as_u64().expect("a turn") as u32;
-            let seed = state["seed"].as_u64().expect("a world");
             std::thread::sleep(Duration::from_millis(250)); // the paint
             seen.push(turn);
-            painted = Some((seed, turn));
+            painted = Some(state);
         }
-        if let Some((seed, turn)) = painted {
-            http_get(port, &format!("/state?painted={turn}&world={seed}"));
+        if let Some(state) = painted.as_ref() {
+            http_get(port, &next_painted_state("slow-paint", state));
         }
         http_post(port, "/pace", "{\"paused\":true}"); // stop stepping this game
 
@@ -4876,23 +5143,18 @@ mod tests {
         // this viewer every turn and will wait for it; the question is only
         // whether it waits with the door held shut behind it.
         let watcher = std::thread::spawn(move || {
-            let mut painted: Option<(u64, u32)> = None;
+            let mut painted: Option<Value> = None;
             for _ in 0..8 {
-                let target = match painted {
+                let target = match painted.as_ref() {
                     None => "/state?painted=&viewer=watcher".to_string(),
-                    Some((seed, turn)) => {
-                        format!("/state?painted={turn}&world={seed}&viewer=watcher")
-                    }
+                    Some(state) => next_painted_state("watcher", state),
                 };
                 let Some(body) = http_get(port, &target) else {
                     return;
                 };
                 let state: Value = serde_json::from_str(&body).expect("state is JSON");
                 std::thread::sleep(Duration::from_millis(1_500)); // the paint
-                painted = Some((
-                    state["seed"].as_u64().expect("a world"),
-                    state["turn"].as_u64().expect("a turn") as u32,
-                ));
+                painted = Some(state);
             }
         });
         std::thread::sleep(Duration::from_millis(600)); // let it take its seat
@@ -4937,6 +5199,7 @@ mod tests {
         .expect("state is JSON");
         let seed = first["seed"].as_u64().expect("a world");
         let turn = first["turn"].as_u64().expect("a turn") as u32;
+        let frame = first["frame_sequence"].as_u64().expect("a frame sequence");
         http_post(port, "/pace", "{\"ms\":0,\"paused\":false}").expect("set unlimited pace");
 
         // The response has been delivered, but the test viewer deliberately
@@ -4956,13 +5219,99 @@ mod tests {
         let next: Value = serde_json::from_str(
             &http_get(
                 port,
-                &format!("/state?painted={turn}&world={seed}&viewer=paint-gate&have={seed}:{turn}"),
+                &format!(
+                    "/state?painted={turn}&world={seed}&finished=0&frame={frame}\
+                     &viewer=paint-gate&have={seed}:{turn}:0:{frame}"
+                ),
             )
             .expect("the next state"),
         )
         .expect("state is JSON");
         assert_eq!(next["turn"], json!(turn + 1));
         http_post(port, "/pace", "{\"paused\":true}");
+    }
+
+    /// The socket path, not only the helper that decides its policy: at Blitz
+    /// each response is the state immediately after the seat named by the
+    /// preceding response's `current` field acted. The sequence advances by
+    /// one, player ids advance in the roster's Civ-style order, and any unit
+    /// that changed position belongs to that acting seat.
+    #[test]
+    fn blitz_server_posts_each_players_completed_turn() {
+        let port = exhibition(20_260_802);
+        http_post(port, "/pace", "{\"paused\":true}").expect("pause before attaching");
+        std::thread::sleep(Duration::from_millis(200));
+        let mut state: Value = serde_json::from_str(
+            &http_get(port, "/state?painted=&viewer=player-turns").expect("opening frame"),
+        )
+        .expect("state is JSON");
+        let living: Vec<usize> = state["players"]
+            .as_array()
+            .expect("players")
+            .iter()
+            .filter(|player| player["alive"].as_bool().unwrap_or(false))
+            .map(|player| player["id"].as_u64().expect("player id") as usize)
+            .collect();
+        assert!(living.len() >= 5, "the exhibition roster is too small: {living:?}");
+        http_post(port, "/pace", "{\"ms\":1000,\"paused\":false}")
+            .expect("run at Blitz");
+
+        let mut movement_seen = false;
+        for _ in 0..living.len() * 2 {
+            let acting = state["current"].as_u64().expect("acting player") as usize;
+            let sequence = state["frame_sequence"].as_u64().expect("frame sequence");
+            let positions = state["units"]
+                .as_array()
+                .expect("units")
+                .iter()
+                .filter_map(|unit| {
+                    Some((
+                        unit["id"].as_u64()?,
+                        (
+                            unit["owner"].as_u64()? as usize,
+                            unit["pos"].clone(),
+                        ),
+                    ))
+                })
+                .collect::<std::collections::BTreeMap<_, _>>();
+            let next: Value = serde_json::from_str(
+                &http_get(port, &next_painted_state("player-turns", &state))
+                    .expect("the next player-turn frame"),
+            )
+            .expect("state is JSON");
+            assert_eq!(
+                next["frame_sequence"],
+                json!(sequence + 1),
+                "one Blitz seat must produce exactly one new frame"
+            );
+            let at = living.iter().position(|pid| *pid == acting).expect("living seat");
+            let expected_next = living[(at + 1) % living.len()];
+            assert_eq!(
+                next["current"],
+                json!(expected_next),
+                "the frame after player {acting} skipped or reordered a seat"
+            );
+            for unit in next["units"].as_array().expect("units") {
+                let Some(id) = unit["id"].as_u64() else { continue };
+                if positions
+                    .get(&id)
+                    .is_some_and(|(_, before)| *before != unit["pos"])
+                {
+                    assert_eq!(
+                        unit["owner"],
+                        json!(acting),
+                        "player {acting}'s frame moved another player's unit"
+                    );
+                    movement_seen = true;
+                }
+            }
+            state = next;
+        }
+        http_post(port, "/pace", "{\"paused\":true}");
+        assert!(movement_seen, "two complete rounds showed no unit movement");
+        let status: Value = serde_json::from_str(&http_get(port, "/status").expect("status"))
+            .expect("status is JSON");
+        assert_eq!(status["frames_missed"], json!(0));
     }
 
     /// Start a spectator on its own port and wait for it to answer.
@@ -5071,6 +5420,18 @@ mod tests {
             runtime_body.len() * 10 < state_body.len(),
             "the identity probe should not resemble a full observation"
         );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn promoted_binary_name_carries_the_runtime_revision() {
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        assert_eq!(
+            super::promoted_binary_commit(&format!("civvis-{commit}")),
+            Some(commit.to_owned())
+        );
+        assert_eq!(super::promoted_binary_commit("civvis-brief"), None);
+        assert_eq!(super::promoted_binary_commit("civvis-zzzz"), None);
     }
 
     /// A result has to arrive with the window it promises, and that window has
@@ -5188,23 +5549,20 @@ mod tests {
         let watch = |name: &'static str, paint: u64| {
             std::thread::spawn(move || {
                 let mut seen: Vec<u32> = Vec::new();
-                let mut painted: Option<(u64, u32)> = None;
+                let mut painted: Option<Value> = None;
                 while Instant::now() < until {
-                    let target = match painted {
+                    let target = match painted.as_ref() {
                         None => format!("/state?painted=&viewer={name}"),
-                        Some((seed, turn)) => {
-                            format!("/state?painted={turn}&world={seed}&viewer={name}")
-                        }
+                        Some(state) => next_painted_state(name, state),
                     };
                     let Some(body) = http_get(port, &target) else {
                         continue;
                     };
                     let state: Value = serde_json::from_str(&body).expect("state is JSON");
                     let turn = state["turn"].as_u64().expect("a turn") as u32;
-                    let seed = state["seed"].as_u64().expect("a world");
                     std::thread::sleep(Duration::from_millis(paint)); // the paint
                     seen.push(turn);
-                    painted = Some((seed, turn));
+                    painted = Some(state);
                 }
                 seen
             })
@@ -5290,8 +5648,11 @@ mod tests {
         let now = read("/state?painted=&viewer=one");
         let seed = now["seed"].as_u64().expect("a world");
         let turn = now["turn"].as_u64().expect("a turn") as u32;
-        let holding =
-            format!("/state?painted={turn}&world={seed}&viewer=one&have={seed}:{turn}");
+        let frame = now["frame_sequence"].as_u64().expect("a frame sequence");
+        let holding = format!(
+            "/state?painted={turn}&world={seed}&finished=0&frame={frame}\
+             &viewer=one&have={seed}:{turn}:0:{frame}"
+        );
 
         // Nothing is being simulated, so a page holding the current turn is
         // held until the cap and then answered with what it already had.
@@ -5343,6 +5704,7 @@ mod tests {
         let first = read("/state?painted=&viewer=one");
         let seed = first["seed"].as_u64().expect("a world");
         let base = first["turn"].as_u64().expect("a turn") as u32;
+        let frame = first["frame_sequence"].as_u64().expect("a frame sequence");
         let mut held: Vec<Value> = first["map"]["tiles"]
             .as_array()
             .expect("the whole map, the first time")
@@ -5356,7 +5718,8 @@ mod tests {
         }
 
         let patched = read(&format!(
-            "/state?painted={base}&world={seed}&viewer=one&have={seed}:{base}"
+            "/state?painted={base}&world={seed}&finished=0&frame={frame}\
+             &viewer=one&have={seed}:{base}:0:{frame}"
         ));
         assert!(
             patched["map"]["tiles"].is_null(),
@@ -5391,8 +5754,9 @@ mod tests {
         // And a page whose baseline the server does not share gets the map
         // back whole rather than a patch it cannot apply.
         let stale = read(&format!(
-            "/state?painted={base}&world={seed}&viewer=one&have={seed}:{}",
-            base + 9_000
+            "/state?painted={base}&world={seed}&finished=0&frame={frame}\
+             &viewer=one&have={seed}:{}:0:{frame}",
+            base + 9_000,
         ));
         assert!(stale["map"]["tiles"].is_array());
         assert!(stale["map"]["tiles_changed"].is_null());
@@ -5552,21 +5916,21 @@ mod tests {
             "a new turn must repaint the side panel whatever the clock says"
         );
 
-        // And the page tells the server which turn it painted, both so that
-        // only a painting page holds the simulation to a turn and so that
-        // turns nobody drew can be counted instead of assumed away.
+        // And the page tells the server which exact frame it painted. The
+        // sequence distinguishes several player-turn frames inside one turn,
+        // both for the simulation gate and for the missed-frame audit.
         assert!(EMBEDDED_INDEX.contains("paintedFrame = {seed:st.seed, turn:st.turn,"));
         assert!(EMBEDDED_INDEX
             .contains("finished:st.winner !== null && st.winner !== undefined"));
         assert!(EMBEDDED_INDEX
-            .contains("`&finished=${paintedFrame.finished ? 1 : 0}`"));
+            .contains("&frame=${paintedFrame.sequence}"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery())"));
         // Two tabs are two promises, so a page says which one it is, and what
         // it holds is asked separately from what it drew — a state can arrive,
         // patch the tiles and still fail to paint.
         assert!(EMBEDDED_INDEX.contains("&viewer=${VIEWER_ID}"));
         assert!(EMBEDDED_INDEX
-            .contains("&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}"));
+            .contains("&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}:${tileStore.sequence}"));
 
         // And it draws one turn per animation frame, on the display's clock
         // rather than a timer of its own. Two turns painted inside one refresh
@@ -6650,7 +7014,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_orders_settings_event_log_and_strategy() {
+    fn browser_orders_setup_controls_logs_and_display() {
         // Readability is a shared interface contract, not a collection of
         // one-off enlargements. Panels inherit one system stack and a named
         // scale with a 9px floor; map labels use the same platform-native
@@ -7058,11 +7422,20 @@ mod tests {
             );
         }
 
+        let title = EMBEDDED_INDEX
+            .find("<div class=\"side-head\">")
+            .expect("sidebar title");
+        let sidebar = EMBEDDED_INDEX
+            .find("<div class=\"side-scroll\">")
+            .expect("scrolling sidebar");
         let game_settings = EMBEDDED_INDEX
-            .find("id=\"game-settings\"")
+            .find("<details class=\"sidebar-section\" id=\"setupsec\"")
             .expect("game settings panel");
+        let simulation_controls = EMBEDDED_INDEX
+            .find("<div class=\"side-actions\" aria-label=\"Simulation controls\">")
+            .expect("simulation controls");
         let display_settings = EMBEDDED_INDEX
-            .find("id=\"display-settings\"")
+            .find("<details class=\"sidebar-section\" data-section=\"display-settings\">")
             .expect("display settings panel");
         let event_log = EMBEDDED_INDEX
             .find("<span>Game event log</span>")
@@ -7076,6 +7449,16 @@ mod tests {
         let strategy = EMBEDDED_INDEX
             .find("<span>Active AI strategy</span>")
             .expect("active strategy section");
+        let government = EMBEDDED_INDEX
+            .find("data-section=\"government\"")
+            .expect("government section");
+        let keyboard_shortcuts = EMBEDDED_INDEX
+            .find("<summary>Keyboard shortcuts</summary>")
+            .expect("keyboard shortcuts");
+        // Game setup is the first thing below the title. The controls that act
+        // on those choices follow it directly, before the observation panels.
+        assert!(title < sidebar && sidebar < game_settings);
+        assert!(game_settings < simulation_controls && simulation_controls < strategy);
         // The column runs deepest-cause first — what a civilization is trying
         // to do now, why it acted, the wars that reasoning started, then the
         // world's record of what happened — so reading the column downward
@@ -7084,13 +7467,14 @@ mod tests {
         // of: the reasoning log is an account over turns, and this is the
         // current answer.
         assert!(
-            game_settings < display_settings
-                && display_settings < strategy
-                && strategy < reasoning_log
+            strategy < reasoning_log
                 && reasoning_log < war_log
-                && war_log < event_log,
-            "left panel should show game setup, display settings, \
-             the active AI strategy and then the three logs"
+                && war_log < event_log
+                && event_log < government
+                && government < display_settings
+                && display_settings < keyboard_shortcuts,
+            "left panel should show game setup, controls, strategy, the three logs, \
+             government, display settings and then keyboard shortcuts"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
         for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
@@ -7278,11 +7662,16 @@ mod tests {
         // share would undo a dragged column on the next window resize, so no
         // media rule may set either track list or either enclosing track.
         assert!(EMBEDDED_INDEX.contains(
-            "--hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 76px;"
+            "--hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;"
         ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
-            "the figure floor is declared once and holds at every width: four \
-             digits need the same room on a laptop as on a wall");
+            "the Elo floor is declared once and holds at every width: a full \
+             score needs the same room on a laptop as on a wall");
+        assert!(EMBEDDED_INDEX.contains("const HUD_ELO_MIN_FLOOR = 60;"));
+        assert!(EMBEDDED_INDEX.contains("function syncPlayerHudEloFloor()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "hud.style.setProperty(\"--hud-ident-num-min\", floor);"
+        ), "a rating longer than the signed five-digit floor raises its shared track");
         assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-odds-min:").count(), 1,
             "and so does the two-category odds cell's own floor");
         assert!(EMBEDDED_INDEX.contains(
@@ -7364,7 +7753,7 @@ mod tests {
         // same tracks, not a copy of their ratios. A copy is what shipped
         // before, and it came apart in both directions a copy can: it carried
         // `minmax(0, …)` where the heads carry the 30px label floor and the
-        // 38px figure floor, so on a 1280px screen the ELO head stood at 38px
+        // 60px figure floor, so on a 1280px screen the ELO head stood at 60px
         // over a 27.5px figure and every "1703" rendered as "1…"; and it never
         // heard about a drag, so moving the ELO/odds bar 26px at 1920px moved
         // the head 21px and left the figures where they were.
@@ -7373,7 +7762,7 @@ mod tests {
         ), "the five identity columns inside one button are the parent's own tracks");
         assert!(!EMBEDDED_INDEX.contains("minmax(0, .55fr) minmax(0, .55fr)"),
             "a second copy of the identity ratios is exactly what subgrid replaced");
-        // The rows carry a 1px border that says allied, at war or defeated, and
+        // The rows carry a 1px border that says at war or defeated, and
         // both boxes are border-box — so the heading carries a transparent one
         // or it divides two more pixels than a row does and every head sits off
         // its own figures by up to a pixel, in opposite directions at the two
@@ -7393,7 +7782,7 @@ mod tests {
         // `clip`, not `ellipsis`: the fitter compares integral scrollWidth with
         // integral clientWidth while the browser applies text-overflow on any
         // sub-pixel overflow, so ellipsis spends a character on a head that
-        // renders whole. Measured at 1600px: ELO in its 38px column.
+        // renders whole. Measured at 1600px: ELO in its 60px column.
         assert!(EMBEDDED_INDEX.contains(
             "border-left: 1px solid #ffffff10; text-overflow: clip; white-space: nowrap;"
         ));
@@ -7621,7 +8010,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const SHOT_KIND = {"));
         assert!(EMBEDDED_INDEX.contains("const SHOT_STYLE = {"));
         assert!(EMBEDDED_INDEX.contains("function drawAtmosphere("));
-        assert!(EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-card.at-war"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
         assert!(EMBEDDED_INDEX.contains("const focusBounds = mapFocusBounds();"));
@@ -8000,6 +8389,38 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
     }
 
+    /// Player-row color is reserved for a current war. Friendships and
+    /// alliances remain available in the row's text and dossier, but must not
+    /// paint green state frames that compete with the red danger signal. The
+    /// omniscient spectator uses the public conflict ledger so both sides —
+    /// including active allied parties — stay red regardless of whose turn it
+    /// is, while a played or Watch-as view remains relative to that seat.
+    #[test]
+    fn browser_player_rows_use_relationship_color_only_for_active_wars() {
+        assert!(!EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
+        assert!(!EMBEDDED_INDEX.contains(".diplomacy-card.friend"));
+        assert!(!EMBEDDED_INDEX.contains("const relationClass ="));
+        assert!(EMBEDDED_INDEX.contains("function activeWarPlayerIds()"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (war.ended !== null && war.ended !== undefined) continue;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (party.exited === null || party.exited === undefined) players.add(party.player);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const activeWarPlayers = SPEC && !Number.isInteger(state.view_player)"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const atWar = activeWarPlayers ? activeWarPlayers.has(p.id) : p.at_war_with_me;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const stateClass = `${atWar ? \"at-war\" : \"\"} ${p.alive ? \"\" : \"dead\"}`;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-card.expanded:not(.at-war)"));
+        assert!(EMBEDDED_INDEX.contains(".diplomacy-card:hover:not(.at-war)"));
+        assert!(EMBEDDED_INDEX.contains("#playerhud .diplomacy-card.pinned.at-war"));
+    }
+
     /// A defeated civilization all but disappears from the masthead — its row
     /// keeps only a faded, greyed-out line — but the one action left on that
     /// row still has somewhere to go. A capital survives capture with both
@@ -8128,12 +8549,38 @@ mod tests {
         }
         assert!(EMBEDDED_INDEX.contains("{id: \"Diplomacy\", key: \"F8\""));
 
-        // Movement: Civ 6 pans with a left drag, moves with the right button,
-        // centres with the middle one, and walks the camera at the map's edge.
-        assert!(EMBEDDED_INDEX.contains("function updateEdgePan(clientX, clientY)"));
-        assert!(EMBEDDED_INDEX.contains("id=\"edgepanchk\""));
+        // Movement: a left click only selects, a left drag pans, a secondary
+        // press/release moves units, and the middle button centres. This is the
+        // event split in Civ 6's shipped WorldInput.lua.
+        assert!(!EMBEDDED_INDEX.contains("updateEdgePan"));
+        assert!(!EMBEDDED_INDEX.contains("edgepanchk"));
+        assert!(!EMBEDDED_INDEX.contains("civvis-edge-pan"));
+        assert!(EMBEDDED_INDEX.contains("const MAC_POINTER_PLATFORM = /mac/i.test("));
+        assert!(EMBEDDED_INDEX.contains("function isSecondaryMapButton(ev)"));
+        assert!(EMBEDDED_INDEX.contains("function issueSelectedUnitOrder(pos)"));
+        assert!(EMBEDDED_INDEX.contains("issueSelectedUnitOrder(pos);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "for (const p of (sel.reachable || [])) hl[key(p)] = 1;"
+        ));
+        let ordinary_click = EMBEDDED_INDEX
+            .split_once("cv.addEventListener(\"click\", ev => {")
+            .expect("the map must have an ordinary click handler")
+            .1
+            .split_once("\n});\n\n// Civ 6's ordinary unit order gesture")
+            .expect("the selection handler must end before the movement handler")
+            .0;
+        assert!(!ordinary_click.contains("move_to"));
+        assert!(!ordinary_click.contains("orderTravel("));
+        assert!(ordinary_click.contains("const here = state.units.filter"));
+        assert!(!EMBEDDED_INDEX.contains(
+            "sel = here.find(u => u.moves_left > 0) || here[0]"
+        ));
         assert!(EMBEDDED_INDEX.contains("else if (ev.button === 1) {"));
-        // Command belongs to the browser on a Mac; only Control chords are ours.
+        // macOS Control-click is a platform secondary click; Command belongs to
+        // the browser, and never becomes a map binding.
+        assert!(EMBEDDED_INDEX.contains(
+            "(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"
+        ));
         assert!(EMBEDDED_INDEX.contains("if (ev.metaKey) return undefined;"));
     }
 
@@ -8306,9 +8753,20 @@ mod tests {
     #[test]
     fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
-        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 1_000_000);
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 500_000);
+        assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() < 1_000_000);
+        assert_eq!(
+            u32::from_be_bytes(EMBEDDED_HIDDEN_MAP_MONSTERS[16..20].try_into().unwrap()),
+            1536
+        );
+        assert_eq!(
+            u32::from_be_bytes(EMBEDDED_HIDDEN_MAP_MONSTERS[20..24].try_into().unwrap()),
+            1280
+        );
         assert!(EMBEDDED_INDEX
             .contains("HIDDEN_MAP_MONSTER_ATLAS.src = \"/assets/hidden-map-monsters.png\""));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_MONSTER_CELL = 256"));
+        assert!(EMBEDDED_INDEX.contains("HIDDEN_MAP_MONSTER_VARIANTS = 30"));
 
         let parchment = EMBEDDED_INDEX
             .split("function drawHiddenMapParchment")
@@ -8325,7 +8783,40 @@ mod tests {
             .and_then(|tail| tail.split("function drawHiddenMapFrontier").next())
             .expect("hidden-map monster placement");
         assert!(monsters.contains("hiddenMapIsDeep"));
-        assert!(monsters.contains("MODE.painted ? .48 : .41"));
+        assert!(monsters.contains("hiddenMapMonsterSeat"));
+        assert!(!monsters.contains("strideColumns"));
+        assert!(!monsters.contains("cam.scale"), "zoom must not thin stable tale seats");
+        assert!(!monsters.contains("const lod"));
+        assert!(monsters.contains("cell.x +"));
+        assert!(monsters.contains("cell.y +"));
+        assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_MIN"));
+        assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_RANGE"));
+        assert!(monsters.contains("HIDDEN_MAP_MONSTER_VARIANTS"));
+        assert!(monsters.contains("MODE.painted ? .30 : .26"));
+
+        let seating = EMBEDDED_INDEX
+            .split("function hiddenMapMonsterSeat")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawHiddenMapMonster").next())
+            .expect("minimum-distance hidden-map monster seating");
+        assert!(seating.contains("radius = 8"));
+        assert!(seating.contains("priority >= .04"));
+        assert!(seating.contains("hiddenMapMonsterPriority"));
+        assert!(seating.contains("other < priority"));
+        let viewport = EMBEDDED_INDEX
+            .split("function hiddenMapViewport")
+            .nth(1)
+            .and_then(|tail| tail.split("function hiddenMapSeedWords").next())
+            .expect("hidden-map viewport and stable large-tale margin");
+        assert!(viewport.contains("monsterCells"));
+        assert!(viewport.contains("HIDDEN_MAP_TALE_REACH"));
+        let planet_tales = EMBEDDED_INDEX
+            .split("function drawPlanetChartMarginalia")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetMap").next())
+            .expect("pre-globe chart marginalia");
+        assert!(planet_tales.contains("candidates.slice(0, 1)"));
+        assert!(planet_tales.contains("const size = 3 *"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
         assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
@@ -8364,8 +8855,8 @@ mod tests {
         );
         assert!(hidden.contains("const veiled = !open && mapEdgeVeiled();"));
         assert!(
-            hidden.contains("const span = open || veiled ? framedHexBounds(3)"),
-            "a veiled sheet is spanned by the frame, not by the map's rectangle"
+            hidden.contains("const span = open || veiled ? framedHexBounds(12)"),
+            "a veiled sheet and its large marginalia are spanned by the frame, not by the map's rectangle"
         );
         assert!(hidden.contains("const [x, y] = open || veiled ? hexXYRaw(q, row) : hexXY(q, row);"));
         // Only one copy of a wrapping world is drawn, so the background either
@@ -8375,7 +8866,7 @@ mod tests {
         assert!(hidden.contains("const test = veiled ? (q, r) => !veilDrawsGroundAt(q, r)"));
         // A canvas compound path costs quadratic time in its own size, so a
         // sheet that covers a whole frame has to be drawn as its rectangle.
-        assert!(hidden.contains("return {open, solid:veiled, cells, test};"));
+        assert!(hidden.contains("return {open, solid:veiled, cells, monsterCells, test};"));
         assert!(EMBEDDED_INDEX
             .contains("if (layer.solid) cx.rect(minX, minY, maxX - minX, maxY - minY);"));
 
@@ -8522,6 +9013,125 @@ mod tests {
     }
 
     #[test]
+    fn browser_draws_one_perimeter_around_each_natural_wonder_footprint() {
+        let continuation = EMBEDDED_INDEX
+            .split("function naturalWonderContinues")
+            .nth(1)
+            .and_then(|tail| tail.split("const NATURAL_WONDER_ATLAS").next())
+            .expect("natural wonder adjacency rule");
+        assert!(continuation.contains("neighbor.feature === tile.feature"));
+
+        let flat = EMBEDDED_INDEX
+            .split("function drawNaturalWonderPerimeters")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawTileYields").next())
+            .expect("flat natural wonder perimeter renderer");
+        assert!(flat.contains("if (naturalWonderContinues(tile, neighbor)) continue;"));
+        assert!(flat.contains("EDGE_CORNERS[side]"));
+
+        let planet = EMBEDDED_INDEX
+            .split("function drawPlanetNaturalWonderPerimeters")
+            .nth(1)
+            .and_then(|tail| tail.split("function planetFeatureGlyph").next())
+            .expect("planet natural wonder perimeter renderer");
+        assert!(planet.contains("TMAP.get(cell.nbrs[side])"));
+        assert!(planet.contains("if (naturalWonderContinues(tile, neighbor)) continue;"));
+
+        let mini = EMBEDDED_INDEX
+            .split("function drawMiniNaturalWonderPerimeters")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawMini()").next())
+            .expect("flat minimap natural wonder perimeter renderer");
+        assert!(mini.contains("if (naturalWonderContinues(tile, neighbor)) continue;"));
+
+        let planet_mini = EMBEDDED_INDEX
+            .split("function drawPlanetMiniNaturalWonderPerimeters")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawPlanetMini()").next())
+            .expect("planet minimap natural wonder perimeter renderer");
+        assert!(planet_mini.contains("TMAP.get(cell.nbrs[side])"));
+        assert!(planet_mini.contains(
+            "if (naturalWonderContinues(tile, neighbor)) continue;"
+        ));
+
+        assert_eq!(
+            EMBEDDED_INDEX.matches("drawNaturalWonderPerimeters(tiles);").count(),
+            1,
+            "the flat map must paint the landmark perimeter exactly once"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("drawPlanetNaturalWonderPerimeters(cells);")
+                .count(),
+            1,
+            "the planet map must paint the landmark perimeter exactly once"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("drawMiniNaturalWonderPerimeters(tiles, layout);")
+                .count(),
+            1,
+            "the flat minimap must paint the landmark perimeter exactly once"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("drawPlanetMiniNaturalWonderPerimeters(cells);")
+                .count(),
+            1,
+            "the planet minimap must paint the landmark perimeter exactly once"
+        );
+    }
+
+    #[test]
+    fn strategic_volcanic_soil_splats_from_the_volcano_facing_edge() {
+        let splat = EMBEDDED_INDEX
+            .split("function drawStrategicVolcanicSoil")
+            .nth(1)
+            .and_then(|tail| tail.split("const STRATEGIC_MOUNTAIN_ICON_SCALE").next())
+            .expect("strategic Volcanic Soil renderer");
+        assert!(splat.contains("nbrTile(t.pos, DIRS[side])"));
+        assert!(splat.contains("neighbor?.feature === \"volcano\""));
+        assert!(splat.contains("cx.rotate(Math.atan2(sourceY, sourceX))"));
+        assert!(splat.contains("hexPath(x, y, S); cx.clip();"));
+        assert!(splat.contains("cx.moveTo(S + 2, -S)"));
+        assert!(splat.contains("cx.bezierCurveTo(6, -9, 2, -5, 0, 0)"));
+        assert!(splat.contains("cx.bezierCurveTo(18, 13, 25, 18, S + 2, S)"));
+        assert!(!splat.contains("performance.now"));
+        assert!(!splat.contains("requestAnimationFrame"));
+
+        let ground_overlay = EMBEDDED_INDEX
+            .split("// Volcanic Soil is part of the ground")
+            .nth(1)
+            .and_then(|tail| tail.split("// --- hex grid (G)").next())
+            .expect("strategic Volcanic Soil ground-overlay pass");
+        assert!(ground_overlay.contains("if (t.feature !== \"volcanic_soil\") continue;"));
+        assert!(ground_overlay.contains("drawStrategicVolcanicSoil(t, x, y0 - elev(t))"));
+        assert!(ground_overlay.contains("hexPath(x, y0 - elev(t))"));
+
+        let decorations = EMBEDDED_INDEX
+            .split("// --- decorations")
+            .nth(1)
+            .expect("strategic decoration pass");
+        assert!(!decorations.contains("drawStrategicVolcanicSoil(t, x, y)"));
+    }
+
+    #[test]
+    fn strategic_mountains_and_volcanoes_share_a_fifty_percent_larger_icon() {
+        let icon = EMBEDDED_INDEX
+            .split("const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawFeatureEffects").next())
+            .expect("shared strategic mountain icon renderer");
+        assert!(icon.contains(
+            "cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE)"
+        ));
+        assert!(icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
+        assert!(icon.contains("cx.ellipse(0, -9, 4.5, 2.2"));
+        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
+        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false)"));
+    }
+
+    #[test]
     fn painted_planet_blends_terrain_without_revealing_the_hex_mesh() {
         let underpaint = EMBEDDED_INDEX
             .split("function planetTerrainUnderpaint")
@@ -8663,6 +9273,23 @@ mod tests {
         assert!(decorated_state(&shared)["next_game_settings"].is_null());
     }
 
+    #[test]
+    fn automatic_successor_seed_round_trips_exactly_through_javascript() {
+        // This is the predecessor from the live failure. Its old full-width
+        // successor was 7_959_629_191_918_103_844, which JavaScript rounded
+        // before returning it in the painted-frame acknowledgement.
+        let predecessor: u64 = 1_785_694_281;
+        let old_full_width = predecessor
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        assert!(old_full_width > MAX_EXACT_JAVASCRIPT_INTEGER);
+
+        let successor = automatic_successor_seed(predecessor);
+        assert_eq!(successor, old_full_width & MAX_EXACT_JAVASCRIPT_INTEGER);
+        assert!(successor <= MAX_EXACT_JAVASCRIPT_INTEGER);
+        assert_eq!(successor as f64 as u64, successor);
+    }
+
     /// The setup panel writes on every `change`, and `startNewSimulation`
     /// waits for that write before it asks for the restart — so a settings
     /// control that queued behind an AI turn put the restart behind it too.
@@ -8702,6 +9329,7 @@ mod tests {
             restart_in: AtomicU64::new(u64::MAX),
             turn_us: AtomicU64::new(0),
             turn_compute_us: AtomicU64::new(0),
+            frame_sequence: AtomicU64::new(0),
             frame_delivery: Mutex::new(FrameDelivery::default()),
             frame_painted: Condvar::new(),
             simulation_frame_gate: Mutex::new(()),
@@ -9764,12 +10392,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("openCityScreen(city.id);"));
     }
 
-    /// Clicking a distant tile is Civ 6's "go there", and it cannot be built
-    /// on `move_to`: `path_to` seeds its search with the unit's remaining
-    /// movement, so anything further is `"unreachable"`. `/route` exposes the
-    /// long-range router the AI already uses, one step at a time, and the
-    /// client still sends a normal Move for that step — so the engine stays
-    /// the authority on whether the move is legal now.
+    /// Secondary-clicking a distant tile is Civ 6's "go there", and it cannot
+    /// be built on `move_to`: `path_to` seeds its search with the unit's
+    /// remaining movement, so anything further is `"unreachable"`. `/route`
+    /// exposes the long-range router the AI already uses, one step at a time,
+    /// and the client still sends a normal Move for that step — so the engine
+    /// stays the authority on whether the move is legal now.
     #[test]
     fn route_offers_one_step_of_a_journey_the_current_turn_cannot_finish() {
         let session = Session::new(current());
@@ -11220,6 +11848,7 @@ pub fn serve_with_game(
         restart_in: AtomicU64::new(u64::MAX),
         turn_us: AtomicU64::new(0),
         turn_compute_us: AtomicU64::new(0),
+        frame_sequence: AtomicU64::new(0),
         frame_delivery: Mutex::new(FrameDelivery::default()),
         frame_painted: Condvar::new(),
         simulation_frame_gate: Mutex::new(()),

@@ -614,10 +614,20 @@
     color: var(--track); background: #ffffff03; border-top: 1px solid #ffffff0b;
   }
   .victory-track:first-child { border-top-color: transparent; }
-  .victory-heading { display: flex; align-items: center; gap: 4px; margin-bottom: 2px; color: var(--track); }
-  .victory-heading b { overflow: hidden; color: #dde5e1; font-size: var(--type-small); letter-spacing: .03em; text-overflow: ellipsis; white-space: nowrap; }
+  /* Keep the path name directly above the civilization column. Its eight-pixel
+     inset lands just left of the names' ten-pixel dot gutter, so the label and
+     the race beneath it read as one left-aligned block. */
+  .victory-heading {
+    min-width: 0; display: flex; align-items: center; margin: 0 0 3px 8px;
+    color: var(--track);
+  }
+  .victory-heading b {
+    min-width: 0; overflow: hidden; color: #dde5e1; font-size: var(--type-small);
+    letter-spacing: .03em; line-height: 1; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .victory-body { min-width: 0; align-self: stretch; }
   .victory-none-note {
-    margin: 3px 0 0 9px; color: #8ea099; font-size: var(--type-small); font-weight: 650;
+    margin: 3px 0 0 8px; color: #8ea099; font-size: var(--type-small); font-weight: 650;
     line-height: 1.45; text-wrap: pretty;
   }
   .victory-subheading {
@@ -643,13 +653,32 @@
      is worth more as civilization name, which is what actually truncates. */
   .victory-line { display: grid; grid-template-columns: 6px minmax(0, 1fr) auto; align-items: center; gap: 4px; min-width: 0; height: 15px; }
   .victory-civ-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--civ); box-shadow: 0 0 5px color-mix(in srgb, var(--civ) 70%, transparent); }
-  .victory-civ { overflow: hidden; color: #e6ede9; font-size: var(--type-secondary); font-weight: 750; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
+  .victory-civ {
+    min-width: 0; overflow: hidden; margin: 0; padding: 0; border: 0; border-radius: 0;
+    color: #edf3f0; background: none; font-family: inherit;
+    font-size: var(--type-secondary); font-weight: 600; letter-spacing: .005em;
+    line-height: 1.1; text-align: left; text-decoration: underline;
+    text-decoration-color: color-mix(in srgb, currentColor 36%, transparent);
+    text-underline-offset: 2px; text-overflow: ellipsis; white-space: nowrap;
+    transition: color .12s ease, text-decoration-color .12s ease;
+  }
+  .victory-civ:hover {
+    transform: none; color: #fff; background: none; border-color: transparent;
+    text-decoration-color: currentColor;
+  }
+  .victory-civ:focus-visible { outline: 1px solid var(--track); outline-offset: 2px; }
+  .victory-civ:disabled {
+    opacity: 1; color: #edf3f0; cursor: default; pointer-events: none;
+    text-decoration: none;
+  }
   .victory-value {
     width: 42px; color: #c2d0ca; font-size: var(--type-small); line-height: 1; text-align: right;
     font-variant-numeric: tabular-nums; white-space: nowrap;
   }
   .victory-value.single { font-size: var(--type-secondary); }
-  .victory-meter { height: 3px; margin: 0 0 0 9px; border-radius: 3px; }
+  #victoryhud .victory-meter { height: 4.5px; margin: 0 0 0 9px; border-radius: 3px; }
+  #victoryhud .victory-meter.split { height: 6px; }
+  #victoryhud .victory-half { height: 4.5px; }
   .diplomacy-ribbon { min-width: max-content; display: flex; align-items: stretch; gap: 4px; padding-bottom: 1px; }
   .diplomacy-card {
     flex: 0 0 clamp(350px, 24vw, 390px); display: grid;
@@ -661,11 +690,10 @@
     text-align: left; transition: border-color .12s ease, background .12s ease;
   }
   .diplomacy-card:hover { transform: none; border-color: #718b81; background: linear-gradient(100deg, #0e1b17f7, #1a302af2); }
-  .diplomacy-card.allied { border-color: #4f9488; box-shadow: inset 3px 0 #6bc0ae, inset 0 1px #fff1; }
-  .diplomacy-card.friend { border-color: #708d62; box-shadow: inset 3px 0 #9dbb7d, inset 0 1px #fff1; }
   .diplomacy-card.at-war {
-    /* Keep the row geometry stable, but move the red border 30% toward the
-       danger color so wars stand out sooner in the standings scan. */
+    /* War is the only relationship state carried by the row frame. Alliances
+       and friendships remain in the words of the dossier instead of painting
+       green around a civilization. */
     border-color: color-mix(in srgb, #a65450 70%, var(--danger));
     box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1;
   }
@@ -719,8 +747,7 @@
      number, so it is the same figure in the same cell — only unfilled, the
      way an unearned thing should look. Opacity and nothing else: a marker
      character would widen the narrowest column in the table, and italics
-     would push a four-digit rating into the ellipsis this cell already
-     carries. */
+     would compete with the protected width reserved for the full score. */
   .diplomacy-elo-value.provisional { opacity: 0.62; }
   .diplomacy-expected { flex: 0 0 auto; color: #8fd6a4; font-weight: 850; }
   /* Start and Now are two numeric categories on matching tracks. The narrow
@@ -795,7 +822,7 @@
   /* An open dossier leaves a quiet highlight on its player row. The dossier
      itself is a separate map window, so several civilizations can stay open
      without changing the height or scroll position of the standings. */
-  .diplomacy-card.expanded { border-color: #8ba79b; }
+  .diplomacy-card.expanded:not(.at-war) { border-color: #697176; }
   #dossier-windows {
     position: absolute; inset: 0; z-index: 12; overflow: hidden;
     pointer-events: none;
@@ -2432,16 +2459,18 @@
        of the columns inside it, which is what lets one bar move width out of
        the last identity column and into the first value column. */
     /* The label floor narrows with the screen; the figure floors do not. Elo is
-       four digits and 38px is what that needs whatever size the window is — a
-       label that gives up width ellipsizes and keeps its tooltip, where a figure
-       that gives up width becomes a smaller number that is simply wrong. The
-       odds cell carries two separately aligned figures and the arrow between
-       them, so it stands on a wider floor of its own: 76px keeps the longer
-       START label and both numeric tracks whole at the fitter's 9px floor. Each
-       breakpoint below moves the label floor only, and keeps
-       5 labels + 2 figure cells adding up to what the identity block claims at
-       that width. */
-    --hud-ident-min: 30px; --hud-ident-num-min: 38px; --hud-ident-odds-min: 76px;
+       a signed score, not a four-digit display: 60px keeps five digits, a
+       possible minus sign, the cell inset and its divider whole at the fitter's
+       13px ceiling. `syncPlayerHudEloFloor()` raises that floor before layout
+       when a live rating needs more. A label that gives up width ellipsizes and
+       keeps its tooltip, where a figure that gives up width becomes a smaller
+       number that is simply wrong. The odds cell carries two separately aligned
+       figures and the arrow between them, so it stands on a wider floor of its
+       own: 76px keeps the longer START label and both numeric tracks whole at
+       the fitter's 9px floor. Each breakpoint below moves the label floor only,
+       and keeps 5 labels + 2 figure cells adding up to what the identity block
+       claims at that width. */
+    --hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;
     /* How much of the flexible width the identity block asks for relative to
        the values, over and above the sum of its own columns. A wide panel can
        afford whole names; a narrow one gives the identity up first, because a
@@ -2526,7 +2555,7 @@
      which are integers, while the browser applies text-overflow on any
      sub-pixel overflow at all — so a head the fitter has correctly settled at
      its exact width overflows by a third of a pixel, and `ellipsis` spends a
-     whole character saying so. Measured at 1600px: ELO in its 38px column
+     whole character saying so. Measured at 1600px: ELO in its 60px column
      renders whole under `clip` and as "EL…" under `ellipsis`. Every head is
      short enough to stand at its own floor, and each carries a title. */
   .diplomacy-identity-head > span {
@@ -2692,10 +2721,10 @@
      the shares here are `1 : .55 : .55 : .7 : 1.1`, which is the same proportion
      the heading uses, and the columns still came apart in two ways that a
      reading of the stylesheet does not show.
-     - **Floors.** The heads carry the 30px label floor and the 38px figure
+     - **Floors.** The heads carry the 30px label floor and the 60px figure
        floor; a copy carrying `minmax(0, …)` keeps shrinking after the heads
        have stopped. Measured on a 1280px screen: the ELO head stood at its
-       38px floor over a 27.5px figure, and the value under the WIN% head was
+       60px floor over a 27.5px figure, and the value under the WIN% head was
        11.5px to the left of it.
      - **The seam bars.** A drag rewrites `--hud-identity-tracks`, which is
        the heading's list *and* this block's parent — but a copy of the old
@@ -2751,7 +2780,7 @@
     border-left: 0; border-top: 0;
   }
   /* A truncated name still reads; a truncated number lies. The identity column
-     is allowed to ellipsize and gives up width first, so four digits stay whole
+     is allowed to ellipsize and gives up width first, so every Elo score stays whole
      down to a narrow desktop. */
   /* A flat number on a dark panel is easier to read than a glowing one. The
      8px currentColor bloom this used to carry haloed every figure in its own
@@ -3031,7 +3060,7 @@
       grid-template-rows: minmax(0, 1fr);
       grid-template-columns: repeat(var(--victory-rows, 6), minmax(84px, 1fr));
     }
-    .victory-track { display: block; border-top: 0; border-left: 1px solid #ffffff0b; }
+    .victory-track { border-top: 0; border-left: 1px solid #ffffff0b; }
     .victory-track:first-child { border-left-color: transparent; }
     body.cinema-mode #victoryhud {
       top: 36px; left: 16px; right: auto; width: calc(100% - 32px);
@@ -3119,7 +3148,7 @@
     grid-template-columns: repeat(var(--victory-rows, 6), minmax(112px, 1fr));
   }
   #victoryhud[data-type-shape="wide"] .victory-track {
-    display: block; border-top: 0; border-left: 1px solid #ffffff0b;
+    border-top: 0; border-left: 1px solid #ffffff0b;
   }
   #victoryhud[data-type-shape="wide"] .victory-track:first-child { border-left-color: transparent; }
   #victoryhud[data-type-shape="rail"] .hud-rail {
@@ -3131,7 +3160,7 @@
     grid-template-rows: repeat(var(--victory-rows, 6), minmax(64px, 1fr));
   }
   #victoryhud[data-type-shape="rail"] .victory-track {
-    display: flex; border-left: 0; border-top: 1px solid #ffffff0b;
+    border-left: 0; border-top: 1px solid #ffffff0b;
   }
   #victoryhud[data-type-shape="rail"] .victory-track:first-child { border-top-color: transparent; }
   #victoryhud[data-type-size="compact"] > .hud-section-heading { padding-left: 10px; }
@@ -3310,14 +3339,21 @@
   #victoryhud > .hud-section-heading { color: #c4c9c6; }
   .diplomacy-card, #playerhud .diplomacy-card.pinned {
     background: linear-gradient(105deg, #0b0d0ff5, #171a1cee);
+  }
+  .diplomacy-card:not(.at-war), #playerhud .diplomacy-card.pinned:not(.at-war) {
     border-color: #42494d;
   }
-  .diplomacy-card:hover {
+  .diplomacy-card:hover:not(.at-war) {
     border-color: #626a6f;
     background: linear-gradient(100deg, #101315f7, #202428f2);
   }
   #playerhud .diplomacy-card.pinned {
     box-shadow: inset 0 1px #ffffff10, 0 0 0 1px #caa45633,
+                0 var(--hud-row-gap) 0 #090b0d, 0 5px 14px #0009;
+  }
+  #playerhud .diplomacy-card.pinned.at-war {
+    box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1,
+                0 0 0 1px #caa45633,
                 0 var(--hud-row-gap) 0 #090b0d, 0 5px 14px #0009;
   }
   .victory-turn { background: linear-gradient(155deg, #caa45618, #caa45606); }
@@ -3718,7 +3754,7 @@
         <div class="brand-title-row">
           <h1>CIVVIS<span class="brand-suffix">.ai</span></h1>
           <nav class="brand-links" aria-label="CIVVIS links">
-            <a href="https://www.youtube.com/@MartinHalvorson" target="_blank" rel="noopener noreferrer" aria-label="Martin Halvorson on YouTube" title="CIVVIS on YouTube">
+            <a href="https://www.youtube.com/@civvis" target="_blank" rel="noopener noreferrer" aria-label="CIVVIS on YouTube" title="CIVVIS on YouTube">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M23.5 6.19a3.02 3.02 0 0 0-2.12-2.14C19.5 3.54 12 3.54 12 3.54s-7.5 0-9.38.51A3.02 3.02 0 0 0 .5 6.19C0 8.08 0 12 0 12s0 3.92.5 5.81a3.02 3.02 0 0 0 2.12 2.14c1.88.51 9.38.51 9.38.51s7.5 0 9.38-.51a3.02 3.02 0 0 0 2.12-2.14C24 15.92 24 12 24 12s0-3.92-.5-5.81ZM9.55 15.57V8.43L15.82 12l-6.27 3.57Z"/></svg>
             </a>
             <a href="https://github.com/MartinHalvorson/CIVVIS" target="_blank" rel="noopener noreferrer" aria-label="CIVVIS on GitHub" title="CIVVIS on GitHub">
@@ -3731,55 +3767,6 @@
     </div>
   </div>
   <div class="side-scroll">
-    <div class="side-actions" aria-label="Simulation controls">
-      <div class="footer-actions" id="humanfooter">
-        <button class="primary" id="endturn">End turn · Enter</button>
-        <div class="autoplay-bar" id="autoplaybar">
-          <div class="autoplay-fields">
-            <label class="autoplay-field"><span>Agent</span>
-              <select id="autoplaystrategy" title="Which of our strategies plays your seat"></select></label>
-            <label class="autoplay-field"><span>Turns</span>
-              <select id="autoplayturns" title="How many turns it plays before handing the seat back">
-                <option value="1" selected>1</option>
-                <option value="2">2</option>
-                <option value="3">3</option>
-                <option value="4">4</option>
-                <option value="5">5</option>
-                <option value="10">10</option>
-                <option value="20">20</option>
-                <option value="30">30</option>
-                <option value="40">40</option>
-                <option value="50">50</option>
-                <option value="100">100</option>
-                <option value="150">150</option>
-                <option value="200">200</option>
-                <option value="250">250</option>
-                <option value="all">All</option>
-              </select></label>
-          </div>
-          <button id="autoplaybtn" title="Hand your seat to the selected strategy (Ctrl+A · press again to stop)">▶▶ Auto-play · ^A</button>
-          <div class="autoplay-note" id="autoplaynote"></div>
-        </div>
-      </div>
-      <div id="specbar" style="display:none">
-        <div class="spec-controls">
-          <button class="primary" id="specpause">⏸ Pause</button>
-          <button id="restart-sim" title="Restart with the same settings"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>
-        </div>
-        <script>
-          // A supervised restart replaces this whole page. Restore the label
-          // beside the button so the default Pause text is never painted while
-          // a paused simulation is coming back as paused.
-          try {
-            const paused = window.CIVVIS_RESTART_HANDOFF?.paused ??
-              (sessionStorage.getItem("civvis-restart-paused-v1") === "1" ? true : null);
-            if (paused !== null)
-              document.getElementById("specpause").textContent =
-                paused ? "▶ Resume" : "⏸ Pause";
-          } catch (e) {}
-        </script>
-      </div>
-    </div>
     <details class="sidebar-section" id="setupsec" data-section="game-settings">
       <summary class="section-label">
         <span class="section-title"><span class="section-icon" aria-hidden="true">⚙</span><span>Game setup</span></span>
@@ -3910,71 +3897,55 @@
       </div>
       </div>
     </details>
-
-    <details class="sidebar-section" data-section="display-settings">
-      <summary class="section-label" id="display-settings-header">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◈</span><span>Display settings</span></span>
-        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
-      </summary>
-      <div class="sec settings-sec" id="display-settings">
-      <div class="utility-group">
-        <div class="view-row"><span>Terrain</span>
-          <select id="viewsel" aria-label="Map style">
-            <option value="strategic">Strategic</option>
-            <option value="balanced">Painted 2D</option>
-            <option value="cinematic">Cinematic 3D</option>
-          </select>
-        </div>
-        <div class="observer-settings" id="observer-settings">
-          <div class="view-row"><span>Watch as</span>
-            <select id="viewplayer" aria-label="Observation perspective">
-              <option value="spectator">Spectator - Full Map Visablity</option>
-            </select>
+    <div class="side-actions" aria-label="Simulation controls">
+      <div class="footer-actions" id="humanfooter">
+        <button class="primary" id="endturn">End turn · Enter</button>
+        <div class="autoplay-bar" id="autoplaybar">
+          <div class="autoplay-fields">
+            <label class="autoplay-field"><span>Agent</span>
+              <select id="autoplaystrategy" title="Which of our strategies plays your seat"></select></label>
+            <label class="autoplay-field"><span>Turns</span>
+              <select id="autoplayturns" title="How many turns it plays before handing the seat back">
+                <option value="1" selected>1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+                <option value="5">5</option>
+                <option value="10">10</option>
+                <option value="20">20</option>
+                <option value="30">30</option>
+                <option value="40">40</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="150">150</option>
+                <option value="200">200</option>
+                <option value="250">250</option>
+                <option value="all">All</option>
+              </select></label>
           </div>
-          <div class="speed-row"><span>Watch pace</span>
-            <select id="specspeed" title="Simulation watch pace">
-              <option value="0">Lightning</option>
-              <option value="1000" selected>Blitz</option>
-              <option value="2000">Fast</option>
-              <option value="4000">Standard</option>
-              <option value="10000">Slow</option>
-            </select>
-          </div>
-          <label class="setting-row" id="cinema-setting" hidden><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
+          <button id="autoplaybtn" title="Hand your seat to the selected strategy (Ctrl+A · press again to stop)">▶▶ Auto-play · ^A</button>
+          <div class="autoplay-note" id="autoplaynote"></div>
         </div>
-        <div class="overlay-options display-advanced-setting" data-advanced-order="10" role="group" aria-labelledby="overlay-options-title">
-          <h2 id="overlay-options-title">Map overlays</h2>
-          <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
-          <div class="small overlay-layout-help">In the standings, drag a thin bar in the column heading to divide two columns differently; double-click one to put that pair back. Widths are shares of the panel, so they follow it as the window resizes. ◉ locks a row: it stays in view while the rest of the table scrolls past it. Two seats of the same civilization lock separately, and a lock is remembered into the next game.</div>
-          <div class="overlay-option-grid">
-            <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
-          </div>
-          <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
-        </div>
-        <div class="overlay-options display-advanced-setting" data-advanced-order="20" id="flat-map-wrap-settings" role="group"
-             aria-labelledby="flat-map-wrap-title">
-          <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
-          <div class="overlay-option-grid">
-            <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
-            <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
-          </div>
-        </div>
-        <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
-        <label class="setting-row"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
-        <label class="setting-row"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
-        <label class="setting-row display-advanced-setting" data-advanced-order="30"><span><input type="checkbox" id="edgepanchk"> Pan when the pointer reaches a map edge</span></label>
-        <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
-        <details class="advanced-settings" id="display-advanced-settings" data-advanced-settings="display">
-          <summary><span class="advanced-settings-summary">Advanced Settings<small>Overlay layout, map edges &amp; archaeology</small></span></summary>
-          <div class="advanced-settings-body" id="display-advanced-settings-body"></div>
-        </details>
       </div>
+      <div id="specbar" style="display:none">
+        <div class="spec-controls">
+          <button class="primary" id="specpause">⏸ Pause</button>
+          <button id="restart-sim" title="Restart with the same settings"><span class="lbl">Restart sim</span><span class="sub">same settings</span></button>
+        </div>
+        <script>
+          // A supervised restart replaces this whole page. Restore the label
+          // beside the button so the default Pause text is never painted while
+          // a paused simulation is coming back as paused.
+          try {
+            const paused = window.CIVVIS_RESTART_HANDOFF?.paused ??
+              (sessionStorage.getItem("civvis-restart-paused-v1") === "1" ? true : null);
+            if (paused !== null)
+              document.getElementById("specpause").textContent =
+                paused ? "▶ Resume" : "⏸ Pause";
+          } catch (e) {}
+        </script>
       </div>
-    </details>
+    </div>
 
     <!-- The column runs deepest-cause first: what a civilization is trying to
          do *now*, then why it acted, then the wars that reasoning started, then
@@ -4094,6 +4065,70 @@
       </summary>
       <div class="sec"><div id="gov"></div></div>
     </details>
+
+    <details class="sidebar-section" data-section="display-settings">
+      <summary class="section-label" id="display-settings-header">
+        <span class="section-title"><span class="section-icon" aria-hidden="true">◈</span><span>Display settings</span></span>
+        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
+      </summary>
+      <div class="sec settings-sec" id="display-settings">
+      <div class="utility-group">
+        <div class="view-row"><span>Terrain</span>
+          <select id="viewsel" aria-label="Map style">
+            <option value="strategic">Strategic</option>
+            <option value="balanced">Painted 2D</option>
+            <option value="cinematic">Cinematic 3D</option>
+          </select>
+        </div>
+        <div class="observer-settings" id="observer-settings">
+          <div class="view-row"><span>Watch as</span>
+            <select id="viewplayer" aria-label="Observation perspective">
+              <option value="spectator">Spectator - Full Map Visablity</option>
+            </select>
+          </div>
+          <div class="speed-row"><span>Watch pace</span>
+            <select id="specspeed" title="Simulation watch pace">
+              <option value="0">Lightning</option>
+              <option value="1000" selected>Blitz</option>
+              <option value="2000">Fast</option>
+              <option value="4000">Standard</option>
+              <option value="10000">Slow</option>
+            </select>
+          </div>
+          <label class="setting-row" id="cinema-setting" hidden><span><input type="checkbox" id="cinemachk" checked> Cinema presentation</span><kbd>C</kbd></label>
+        </div>
+        <div class="overlay-options display-advanced-setting" data-advanced-order="10" role="group" aria-labelledby="overlay-options-title">
+          <h2 id="overlay-options-title">Map overlays</h2>
+          <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
+          <div class="small overlay-layout-help">In the standings, drag a thin bar in the column heading to divide two columns differently; double-click one to put that pair back. Widths are shares of the panel, so they follow it as the window resizes. ◉ locks a row: it stays in view while the rest of the table scrolls past it. Two seats of the same civilization lock separately, and a lock is remembered into the next game.</div>
+          <div class="overlay-option-grid">
+            <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
+          </div>
+          <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
+        </div>
+        <div class="overlay-options display-advanced-setting" data-advanced-order="20" id="flat-map-wrap-settings" role="group"
+             aria-labelledby="flat-map-wrap-title">
+          <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
+          <div class="overlay-option-grid">
+            <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
+            <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
+          </div>
+        </div>
+        <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
+        <label class="setting-row"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
+        <label class="setting-row"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
+        <details class="advanced-settings" id="display-advanced-settings" data-advanced-settings="display">
+          <summary><span class="advanced-settings-summary">Advanced Settings<small>Overlay layout, map edges &amp; archaeology</small></span></summary>
+          <div class="advanced-settings-body" id="display-advanced-settings-body"></div>
+        </details>
+      </div>
+      </div>
+    </details>
   </div>
   <details class="shortcut-panel">
     <summary>Keyboard shortcuts</summary>
@@ -4121,7 +4156,7 @@
       <span><kbd>Y</kbd>Tile yields</span><span><kbd>G</kbd>Hex grid</span>
       <span><kbd>Q</kbd>Resource icons</span><span><kbd>+</kbd>Flat 2D view</span>
       <span><kbd>End</kbd>Full-screen map</span><span><kbd>Esc</kbd>Close · cancel</span>
-      <span><kbd>Drag</kbd>Pan</span><span><kbd>Right-drag</kbd>Move the selected unit</span>
+      <span><kbd>Drag</kbd>Pan</span><span><kbd>Right / ^-click</kbd>Move the selected unit</span>
       <span><kbd>Middle-click</kbd>Centre on that tile</span><span><kbd>Scroll</kbd>Zoom · double-click to dive</span>
       <span class="shortcut-head">CIVVIS additions</span>
       <span><kbd>1</kbd>Next action</span><span><kbd>2</kbd>Settler lens</span>
@@ -4330,6 +4365,15 @@ function isNaturalWonder(feature) {
   return !!(RULES && RULES.features && RULES.features[feature]
             && RULES.features[feature].natural_wonder);
 }
+// A footprint continues only through the same named Natural Wonder. This is
+// deliberately stricter than "another wonder": two different landmarks that
+// happen to touch still keep the line that distinguishes them, while every
+// shared edge inside Great Barrier Reef, Pantanal, and the other multi-tile
+// wonders disappears.
+function naturalWonderContinues(tile, neighbor) {
+  return !!(tile && neighbor && isNaturalWonder(tile.feature)
+            && neighbor.feature === tile.feature);
+}
 const NATURAL_WONDER_ATLAS = new Image();
 let NATURAL_WONDER_ATLAS_READY = false;
 NATURAL_WONDER_ATLAS.onload = () => { NATURAL_WONDER_ATLAS_READY = true; if (state) draw(); };
@@ -4366,16 +4410,25 @@ let MOUNTAIN_ATLAS_READY = false;
 MOUNTAIN_ATLAS.onload = () => { MOUNTAIN_ATLAS_READY = true; if (state) draw(); };
 MOUNTAIN_ATLAS.src = "/assets/mountain-atlas.png";
 // The blank reaches of a player's chart are an illustrated object, not a dark
-// mask. Four period-map creatures share one transparent atlas cell apiece and
-// are always painted *under* known ground, so decoration can never disclose a
-// hidden coast, biome or resource.
+// mask. Thirty period-map sea and land tales share one transparent atlas cell
+// apiece and are always painted *under* known ground, so decoration can never
+// disclose a hidden coast, biome or resource. Baba Yaga, the headless horseman,
+// a sleeping giant, a dragon hoard, a beanstalk castle and woodland fairies
+// keep the marginalia from making every unknown place another ocean story.
 const HIDDEN_MAP_MONSTER_ATLAS = new Image();
 let HIDDEN_MAP_MONSTER_ATLAS_READY = false;
 HIDDEN_MAP_MONSTER_ATLAS.onload = () => {
   HIDDEN_MAP_MONSTER_ATLAS_READY = true; if (state) draw();
 };
 HIDDEN_MAP_MONSTER_ATLAS.src = "/assets/hidden-map-monsters.png";
-const HIDDEN_MAP_MONSTER_CELL = 627;
+const HIDDEN_MAP_MONSTER_CELL = 256, HIDDEN_MAP_MONSTER_COLUMNS = 6,
+      HIDDEN_MAP_MONSTER_VARIANTS = 30;
+// These are rare, full marginal scenes now, not tile-sized stamps. The seat
+// radius below makes them almost exactly one sixth as numerous as the former
+// radius-three distribution; this reach keeps a scene whose centre is just
+// outside the frame alive until its last visible pixels have left the canvas.
+const HIDDEN_MAP_TALE_SIZE_MIN = 13.5, HIDDEN_MAP_TALE_SIZE_RANGE = 2.7,
+      HIDDEN_MAP_TALE_REACH = S * 9;
 const PARCH = "#c7b58a", PARCH_LIGHT = "#dfcea2",
       PARCH_GRID = "#8a795533", PARCH_INK = "#6d5c3a";
 const FEATURE_LABEL = {
@@ -4429,18 +4482,16 @@ const RESOURCE_PICTOGRAM = {
   turtles:"turtle", whales:"whale", antiquity_site:"amphora",
   shipwreck:"wreck"
 };
-// Which screen-relative badge slot a class uses: strategics lower-left,
-// bonuses at the bottom, luxuries lower-right. These are annotation positions,
-// not geographic corners: the world can open at an unknown bearing or turn
-// under the camera without scrambling the positional class cue.
-const RESOURCE_BADGE_SLOT = { strategic:3, bonus:2, luxury:1 };
+// Every deposit uses the screen-relative bottom corner. The world can open at
+// an unknown bearing or turn under the camera, but the resource annotation
+// remains in the same easy-to-scan place inside its tile.
 // The badge was drawn at a radius of 8.2 with a 12px symbol inside it, which is
 // a 16px disc on a hex 62 across: legible only if you already knew what you
 // were looking for. Disc, rim, survey dot and pictogram share one scale, so the
 // badge remains one coherent annotation rather than independently sized parts.
 const RES_BADGE_K = 1.5;
 const RES_BADGE_R = 8.2 * RES_BADGE_K;
-// How far out along its class's corner ray the badge is seated, as a fraction
+// How far out along the bottom-corner ray the badge is seated, as a fraction
 // of S. Derived rather than tuned: a seat `d` out along a corner ray stands
 // (S - d) * SQ3/2 from either of the two edges that meet at that corner, and
 // that has to clear the badge's own outer radius — the disc plus half the rim
@@ -4465,16 +4516,17 @@ const CIV6_UNIT_ICON_TYPES = [
   "drone", "eagle_warrior", "field_cannon", "fighter", "frigate", "galley",
   "giant_death_robot", "guru", "heavy_chariot", "helicopter", "hoplite",
   "horseman", "infantry", "inquisitor", "ironclad", "jet_bomber",
-  "jet_fighter", "knight", "legion", "line_infantry", "machine_gun",
+  "jet_fighter", "keshig", "knight", "kongo_shield_bearer", "legion",
+  "line_infantry", "machine_gun",
   "man_at_arms", "maryannu_chariot_archer", "mechanized_infantry", "medic",
   "military_engineer", "missile_cruiser", "missionary", "mobile_sam",
   "modern_armor", "modern_at", "musketman", "naturalist",
-  "nuclear_submarine", "observation_balloon", "pike_and_shot", "pikeman",
+  "nuclear_submarine", "observation_balloon", "oromo_cavalry", "pike_and_shot", "pikeman",
   "pitati_archer", "privateer", "quadrireme", "ranger", "rock_band",
   "rocket_artillery", "saka_horse_archer", "scout", "settler", "siege_tower",
   "skirmisher", "slinger", "spearman", "spec_ops", "spy", "submarine",
   "supply_convoy", "swordsman", "tagma", "tank", "trader", "trebuchet",
-  "war_cart", "warrior", "warrior_monk"
+  "war_cart", "warrior", "winged_hussar", "warrior_monk"
 ];
 const CIV6_UNIT_ICON_INDEX = new Map(
   CIV6_UNIT_ICON_TYPES.map((type, index) => [type, index]));
@@ -4752,6 +4804,11 @@ const MAP_CIV_HIERARCHY = Object.freeze({
   minimapMajor:.76,
   minimapCityState:.18,
 });
+// Territory colour should identify ownership without replacing the terrain
+// beneath it. Keep the authored relative weights above, but moderate every
+// interior ownership wash by half. Frontier ribbons and city markers do not
+// use this scale, so empire perimeters retain their existing strength.
+const TERRITORY_TINT_SCALE = .5;
 const EDGE_CORNERS = [[0,1],[5,0],[4,5],[3,4],[2,3],[1,2]]; // matches DIRS order
 const DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
 const ERA_NAMES = ["ancient", "classical", "medieval", "renaissance",
@@ -4957,11 +5014,6 @@ let SHOW_RESOURCES = localStorage.getItem("civvis-show-resources") !== "0";
 // their literal top and bottom until somebody explicitly asks for a torus.
 let FLAT_MAP_WRAP_X = localStorage.getItem("civvis-flat-map-wrap-x") !== "0";
 let FLAT_MAP_WRAP_Y = localStorage.getItem("civvis-flat-map-wrap-y") === "1";
-// Civ 6's Gameplay > Edge Pan, which ships on: the camera walks when the
-// pointer reaches the edge of the map. It is a setting there and a setting
-// here, because a windowed browser map is a different proposition from a
-// fullscreen game and some players will want it off.
-let EDGE_PAN = localStorage.getItem("civvis-edge-pan") !== "0";
 const OVERLAY_STORAGE_KEY = "civvis-map-overlays-v1";
 const OVERLAY_NAMES = ["players", "victory", "minimap", "controls", "lenses"];
 let OVERLAY_VISIBILITY = Object.fromEntries(OVERLAY_NAMES.map(name => [name, true]));
@@ -6327,8 +6379,13 @@ const HUD_RESIZE_EDGES = [
 //
 // The floors are the other half of the contract and stay in the stylesheet,
 // where the width breakpoints can lower them together: a column may be dragged
-// down to its floor and no further, so four digits stay four digits.
+// down to its floor and no further, so an Elo score never loses digits.
 const HUD_COLUMN_STORAGE_KEY = "civvis-hud-columns-v1";
+// This is the CSS floor for a signed five-digit rating. A live value can be
+// longer, so syncPlayerHudEloFloor() measures it at the ELO type ceiling and
+// raises the same floor before the shared grid tracks are laid out.
+const HUD_ELO_MIN_FLOOR = 60;
+const HUD_ELO_MAX_TYPE_SIZE = 13;
 // Reading order, left to right. `min` names the custom property carrying this
 // column's floor, and `head` is its index among the heading cells of the block
 // it sits in — which is how a column is *measured* during a drag rather than
@@ -6429,6 +6486,48 @@ function syncPlayerHudColumns(placeGrips = true) {
     scheduleResponsiveType(hud);
   }
   if (placeGrips) syncPlayerHudColumnGrips();
+}
+
+// The ELO track is one shared column, so its floor has to cover the widest
+// score the table is showing. Measure at the text fitter's maximum rather than
+// at its current fitted size: a wider panel must never let a score grow back
+// into an ellipsis. The field's own inset and divider live inside its grid
+// track, and therefore belong in the floor too.
+function syncPlayerHudEloFloor() {
+  const hud = document.getElementById("playerhud");
+  const scores = [...(hud?.querySelectorAll(".diplomacy-elo-value") || [])];
+  if (!hud || !scores.length) return;
+  const probe = document.createElement("span");
+  probe.style.cssText = "position:fixed; visibility:hidden; inset:auto; display:inline-block; " +
+    "width:max-content; min-width:max-content; max-width:none; overflow:visible; " +
+    "white-space:nowrap; pointer-events:none; line-height:1;";
+  document.body.append(probe);
+  let minimum = HUD_ELO_MIN_FLOOR;
+  for (const score of scores) {
+    const style = getComputedStyle(score);
+    probe.style.fontFamily = style.fontFamily;
+    probe.style.fontWeight = style.fontWeight;
+    probe.style.fontStyle = style.fontStyle;
+    probe.style.fontStretch = style.fontStretch;
+    probe.style.fontVariant = style.fontVariant;
+    probe.style.fontKerning = style.fontKerning;
+    probe.style.fontOpticalSizing = style.fontOpticalSizing;
+    probe.style.fontVariantNumeric = style.fontVariantNumeric;
+    probe.style.letterSpacing = style.letterSpacing;
+    probe.style.fontSize = `${HUD_ELO_MAX_TYPE_SIZE}px`;
+    probe.textContent = score.textContent;
+    const fieldStyle = getComputedStyle(score.parentElement);
+    const inset = (parseFloat(fieldStyle.paddingLeft) || 0) +
+      (parseFloat(fieldStyle.paddingRight) || 0) +
+      (parseFloat(fieldStyle.borderLeftWidth) || 0) +
+      (parseFloat(fieldStyle.borderRightWidth) || 0);
+    minimum = Math.max(minimum, Math.ceil(probe.getBoundingClientRect().width + inset + 1));
+  }
+  probe.remove();
+  const floor = `${minimum}px`;
+  if (hud.style.getPropertyValue("--hud-ident-num-min") === floor) return;
+  hud.style.setProperty("--hud-ident-num-min", floor);
+  syncPlayerHudColumns(false);
 }
 
 function playerHudHeadingCells(heading) {
@@ -6680,7 +6779,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-civ", min:9, max:13},
   {selector:"#playerhud .diplomacy-leader-name", min:9, max:13},
   {selector:"#playerhud .diplomacy-player", min:9, max:13},
-  {selector:"#playerhud .diplomacy-elo-value", min:9, max:13},
+  {selector:"#playerhud .diplomacy-elo-value", min:9, max:HUD_ELO_MAX_TYPE_SIZE},
   {selector:"#playerhud .diplomacy-expected-value", min:9, max:13},
   {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
   {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
@@ -6706,7 +6805,7 @@ const RESPONSIVE_TEXT_RULES = [
   // four adjacent settings looking like one instrument.
   {selector:"#playerhud .turn-settings", min:8.5, max:12, slack:4},
   {selector:"#victoryhud > .hud-section-heading > span", min:9, max:14, parentWidth:true},
-  {selector:"#victoryhud .victory-heading b", min:10, max:14},
+  {selector:"#victoryhud .victory-heading b", min:8.5, max:12},
   {selector:"#victoryhud .victory-subheading span", min:9, max:11},
   {selector:"#victoryhud .victory-civ", min:10, max:14},
   {selector:"#victoryhud .victory-value", min:10, max:14},
@@ -7769,13 +7868,12 @@ function corner(x, y, s, i) {
   const a = Math.PI / 180 * (60 * i - 30) + cam.rot;
   return [x + s * Math.cos(a), y + s * Math.sin(a) * YS];
 }
-// Resource badges are labels over the board, so their three class slots stay
-// aligned with the screen while the world-facing geometry above rotates. The
-// vertical component still follows the active projection so a badge remains
-// seated inside the visible tile at every tilt.
-function resourceBadgeSlot(x, y, s, i) {
-  const a = Math.PI / 180 * (60 * i - 30);
-  return [x + s * Math.cos(a), y + s * Math.sin(a) * YS];
+// Resource badges are labels over the board, so the bottom slot stays aligned
+// with the screen while the world-facing geometry above rotates. The vertical
+// component still follows the active projection so a badge remains seated
+// inside the visible tile at every tilt.
+function resourceBadgeSlot(x, y, s) {
+  return [x, y + s * YS];
 }
 function hexDist(a, b) {
   const dq = a[0]-b[0], dr = a[1]-b[1];
@@ -9149,12 +9247,18 @@ const VIEWER_ID = `${Date.now().toString(36)}${Math.random().toString(36).slice(
 // state drawn last turn keeps the tile objects it was drawn from, which is
 // what anything comparing one turn against the previous one relies on.
 let tileStore = null;
+function stateFrameSequence(st) {
+  const sequence = Number(st?.frame_sequence);
+  if (Number.isSafeInteger(sequence) && sequence >= 0) return sequence;
+  return tileStore?.sequence ?? paintedFrame?.sequence ?? 0;
+}
 function adoptTiles(st) {
   const map = st && st.map;
   if (!map) return st;
   if (Array.isArray(map.tiles)) {
     tileStore = {seed: st.seed, turn: st.turn,
                  finished:st.winner !== null && st.winner !== undefined,
+                 sequence:stateFrameSequence(st),
                  tiles: map.tiles};
     return st;
   }
@@ -9165,15 +9269,17 @@ function adoptTiles(st) {
   const tiles = tileStore.tiles.slice();
   for (const [at, tile] of patch) tiles[at] = tile;
   tileStore = {seed: st.seed, turn: st.turn,
-               finished:st.winner !== null && st.winner !== undefined, tiles};
+               finished:st.winner !== null && st.winner !== undefined,
+               sequence:stateFrameSequence(st), tiles};
   map.tiles = tiles;
   return st;
 }
-// Martin-requested simulation requirement: every turn is owed at least one
-// complete frame from one snapshot — updated HUD, victory tracker, map,
-// minimap, units, sidebars, controls, and everything else bound to that turn.
-// The server holds a finished turn until an active viewer acknowledges that
-// complete paint. Only a page that actually paints
+// Martin-requested simulation requirement: every published boundary is owed
+// one complete frame from one snapshot — updated HUD, victory tracker, map,
+// minimap, units, sidebars, controls, and everything else bound to that frame.
+// At Blitz and slower, a boundary follows every player's turn; Lightning uses
+// the end of the round. The server holds each boundary until an active viewer
+// acknowledges that complete paint. Only a page that actually paints
 // counts as one: the keeper's refresh check and any curl read /state as well,
 // and a reader that draws nothing must not slow the simulation to its own
 // cadence. Saying which turn was last painted is how this page announces
@@ -9225,7 +9331,7 @@ function paintedQuery() {
   // server to hold the answer back until there is a next turn, and the human
   // game's one-off boot read wants the state that exists now.
   const held = SPEC && tileStore
-    ? `&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}` : "";
+    ? `&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}:${tileStore.sequence}` : "";
   const who = `&viewer=${VIEWER_ID}`;
   // The last thought this page holds. Naming it is what asks for the AI
   // reasoning delta and what keeps it to the handful of lines recorded since,
@@ -9233,9 +9339,10 @@ function paintedQuery() {
   const thinking = `&think=${reasoningLog.cursor}`;
   return (paintedFrame === null ? "?painted="
     : `?painted=${paintedFrame.turn}&world=${paintedFrame.seed}` +
-      `&finished=${paintedFrame.finished ? 1 : 0}`) + who + held + thinking;
+      `&finished=${paintedFrame.finished ? 1 : 0}&frame=${paintedFrame.sequence}`) +
+      who + held + thinking;
 }
-// One turn, one frame on the glass.
+// One published boundary, one frame on the glass.
 //
 // The server holds a finished turn until this page acknowledges painting it,
 // so the exhibition runs at whatever rate this page paints — which quietly
@@ -9250,9 +9357,10 @@ function paintedQuery() {
 // delivered, drawn, and still never appear on a screen — which is what "some
 // turns are still being skipped" looks like from the far side of the glass.
 //
-// So the loop runs on the display's own clock. At most one turn is painted per
-// animation frame, which is what makes each turn a frame somebody can see; the
-// fetch for the next one is the paint acknowledgement: it goes out only after
+// So the loop runs on the display's own clock. At most one state is painted per
+// animation frame, which makes every published player-turn or round boundary
+// a frame somebody can see; the fetch for the next one is the paint
+// acknowledgement: it goes out only after
 // render() has updated the map, HUD, victory tracker, and all other turn-bound
 // surfaces. Nothing is ever dropped — a state that has arrived is always
 // painted — and the gate upstream will not simulate past the turn this page
@@ -10114,7 +10222,8 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
     paintedFrame = {seed:st.seed, turn:st.turn,
-                    finished:st.winner !== null && st.winner !== undefined};
+                    finished:st.winner !== null && st.winner !== undefined,
+                    sequence:stateFrameSequence(st)};
   finishWorldTransition(st);
 }
 
@@ -10161,10 +10270,6 @@ function hexPath(x, y, s) {
   appendHexPath(x, y, s);
 }
 
-function positiveMod(value, period) {
-  return ((value % period) + period) % period;
-}
-
 // Whether a coordinate belongs to blank chart rather than known ground. An
 // open chart deliberately treats everything beyond its surveyed copy as
 // parchment too: outlining the storage rectangle would reveal the world's
@@ -10202,28 +10307,35 @@ function veilDrawsGroundAt(q, r) {
 }
 
 function hiddenMapViewport(halfWidth, top, bottom) {
-  if (!state) return {open:false, solid:false, cells:[], test:hiddenMapCellAt};
+  if (!state) return {open:false, solid:false, cells:[], monsterCells:[],
+                      test:hiddenMapCellAt};
   const open = chartIsOpen();
   // A veiled sheet is covered out to the frame on every side, not out to a
   // fixed margin: a margin has an end and the end can be zoomed out to.
   const veiled = !open && mapEdgeVeiled();
-  const span = open || veiled ? framedHexBounds(3)
+  const span = open || veiled ? framedHexBounds(12)
     : {left:0, right:state.map.width - 1, top:0, bottom:state.map.height - 1};
   const test = veiled ? (q, r) => !veilDrawsGroundAt(q, r)
                       : (q, r) => hiddenMapCellAt(q, r, open);
-  const cells = [];
+  const cells = [], monsterCells = [];
   for (let row = span.top; row <= span.bottom; row++) {
     for (let col = span.left; col <= span.right; col++) {
       const q = col - ((row - (row & 1)) >> 1);
       if (!test(q, row)) continue;
       const [x, y] = open || veiled ? hexXYRaw(q, row) : hexXY(q, row);
-      if (x < -halfWidth || x > halfWidth || y < top || y > bottom) continue;
-      cells.push({q, r:row, col, x, y});
+      if (x < -halfWidth - HIDDEN_MAP_TALE_REACH ||
+          x > halfWidth + HIDDEN_MAP_TALE_REACH ||
+          y < top - HIDDEN_MAP_TALE_REACH ||
+          y > bottom + HIDDEN_MAP_TALE_REACH) continue;
+      const cell = {q, r:row, col, x, y};
+      monsterCells.push(cell);
+      if (x >= -halfWidth && x <= halfWidth && y >= top && y <= bottom)
+        cells.push(cell);
     }
   }
   // Everything in the frame is then either this sheet or ground painted over
   // the top of it, which is what lets the sheet be drawn as one rectangle.
-  return {open, solid:veiled, cells, test};
+  return {open, solid:veiled, cells, monsterCells, test};
 }
 
 function hiddenMapSeedWords() {
@@ -10241,10 +10353,40 @@ function hiddenMapIsDeep(q, r, test, radius = 3) {
   return true;
 }
 
+function hiddenMapMonsterPriority(q, r, seedA, seedB) {
+  return hash2(
+    Math.imul(q, 71) + Math.imul(seedA, 3) + Math.imul(seedB, 17),
+    Math.imul(r, 73) + Math.imul(seedB, 5) + Math.imul(seedA, 19)
+  );
+}
+
+// A point survives only when it has the lowest seeded priority in its local
+// hex neighborhood. This is a deterministic blue-noise distribution: seats
+// cannot bunch together, yet they do not share rows, columns, phases, or a
+// visible coarse grid. Radius eight has 217 possible cells versus 37 at radius
+// three, making these seats 5.86 times rarer while retaining organic spacing.
+// The quick threshold skips almost every full neighbor walk without materially
+// changing which local minima survive.
+function hiddenMapMonsterSeat(q, r, seedA, seedB, radius = 8) {
+  const priority = hiddenMapMonsterPriority(q, r, seedA, seedB);
+  if (priority >= .04) return false;
+  for (let dq = -radius; dq <= radius; dq++) {
+    const from = Math.max(-radius, -dq - radius);
+    const to = Math.min(radius, -dq + radius);
+    for (let dr = from; dr <= to; dr++) {
+      if (!dq && !dr) continue;
+      const other = hiddenMapMonsterPriority(q + dq, r + dr, seedA, seedB);
+      if (other < priority ||
+          (other === priority && (dq < 0 || (!dq && dr < 0)))) return false;
+    }
+  }
+  return true;
+}
+
 function drawHiddenMapMonster(x, y, size, variant, angle, mirrored, alpha) {
   if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
-  const sourceX = (variant & 1) * HIDDEN_MAP_MONSTER_CELL;
-  const sourceY = (variant >> 1) * HIDDEN_MAP_MONSTER_CELL;
+  const sourceX = (variant % HIDDEN_MAP_MONSTER_COLUMNS) * HIDDEN_MAP_MONSTER_CELL;
+  const sourceY = Math.floor(variant / HIDDEN_MAP_MONSTER_COLUMNS) * HIDDEN_MAP_MONSTER_CELL;
   cx.save();
   cx.translate(x, y); cx.rotate(angle);
   if (mirrored) cx.scale(-1, 1);
@@ -10303,29 +10445,24 @@ function drawHiddenMapParchment(layer) {
 }
 
 function drawHiddenMapMonsters(layer) {
-  if (!HIDDEN_MAP_MONSTER_ATLAS_READY || !layer.cells.length) return;
+  const cells = layer.monsterCells || layer.cells;
+  if (!HIDDEN_MAP_MONSTER_ATLAS_READY || !cells.length) return;
   const [seedA, seedB] = hiddenMapSeedWords();
-  // Exactly one possible seat per coarse chart block keeps the creatures
-  // reliably present in an ordinary camera view while the spacing itself
-  // prevents an atlas full of monsters from becoming a wallpaper pattern.
-  const strideColumns = 8, strideRows = 5;
-  const phaseColumn = Math.floor(hash2(seedA, seedB + 41) * strideColumns);
-  const phaseRow = Math.floor(hash2(seedB, seedA + 53) * strideRows);
-  for (const cell of layer.cells) {
-    if (positiveMod(cell.col - phaseColumn, strideColumns) ||
-        positiveMod(cell.r - phaseRow, strideRows)) continue;
-    if (!hiddenMapIsDeep(cell.q, cell.r, layer.test)) continue;
-    // At an atlas-scale zoom, thin the fixed seats rather than shrinking every
-    // engraving into visual grit. Close views keep the fuller old-chart read.
-    const lod = hash2(cell.col + seedA * 3, cell.r + seedB * 5);
-    if (cam.scale < .45 ? lod < .68 : cam.scale < .72 && lod < .38) continue;
+  for (const cell of cells) {
+    if (!hiddenMapMonsterSeat(cell.q, cell.r, seedA, seedB)) continue;
+    if (!hiddenMapIsDeep(cell.q, cell.r, layer.test, 6)) continue;
+    // Size, variant and jitter are functions only of the world and this map
+    // coordinate. Zoom changes neither the chosen tale nor its map position.
     const detail = hash2(cell.col * 17 + seedB, cell.r * 19 + seedA);
     drawHiddenMapMonster(
-      cell.x, cell.y, S * (4.8 + detail * 1.15),
-      Math.floor(hash2(cell.col * 29 + seedA, cell.r * 31 + seedB) * 4),
+      cell.x + (hash2(cell.col * 43 + seedB, cell.r * 47 + seedA) - .5) * S * 1.5,
+      cell.y + (hash2(cell.col * 53 + seedA, cell.r * 59 + seedB) - .5) * S * .95,
+      S * (HIDDEN_MAP_TALE_SIZE_MIN + detail * HIDDEN_MAP_TALE_SIZE_RANGE),
+      Math.floor(hash2(cell.col * 29 + seedA, cell.r * 31 + seedB) *
+                 HIDDEN_MAP_MONSTER_VARIANTS),
       (hash2(cell.col * 7 + seedB, cell.r * 11 + seedA) - .5) * .28,
       hash2(cell.col * 37 + seedA, cell.r * 41 + seedB) > .5,
-      MODE.painted ? .48 : .41
+      MODE.painted ? .30 : .26
     );
   }
 }
@@ -11601,6 +11738,77 @@ function drawEnvironment3D(kind, t, x, y, span = 1) {
   return drawn;
 }
 
+// Volcanic Soil is fallout, not three unrelated stones. In Strategic, anchor
+// the deposit to the entire edge shared with its volcano, then let it taper to
+// the tile centre. The fallback covers old saves and second-ring eruption
+// deposits: it is coordinate-seeded, so the mark remains static while still
+// entering through a deliberate edge instead of floating in the hex.
+function drawStrategicVolcanicSoil(t, x, y) {
+  let sourceSide = -1;
+  for (let side = 0; side < DIRS.length; side++) {
+    const neighbor = nbrTile(t.pos, DIRS[side]);
+    if (neighbor?.feature === "volcano") { sourceSide = side; break; }
+  }
+  if (sourceSide < 0)
+    sourceSide = Math.floor(hash2(t.pos[0] * 29 + 7, t.pos[1] * 31 + 11) * DIRS.length);
+
+  const direction = DIRS[sourceSide];
+  const worldX = S * SQ3 * (direction[0] + direction[1] / 2);
+  const worldY = S * 1.5 * direction[1];
+  const sourceX = COSR * worldX - SINR * worldY;
+  const sourceY = (SINR * worldX + COSR * worldY) * YS;
+
+  cx.save();
+  hexPath(x, y, S); cx.clip();
+  cx.translate(x, y);
+  // Local +x points into the volcano. The ash therefore occupies the whole
+  // shared edge at +x and ends at the tile centre, regardless of map bearing
+  // or dimetric projection.
+  cx.rotate(Math.atan2(sourceY, sourceX));
+  cx.lineJoin = "round"; cx.lineCap = "round";
+
+  cx.fillStyle = "#2d2926";
+  cx.beginPath();
+  cx.moveTo(S + 2, -S);
+  cx.bezierCurveTo(24, -18, 17, -13, 11, -11);
+  cx.bezierCurveTo(6, -9, 2, -5, 0, 0);
+  cx.bezierCurveTo(3, 5, 7, 9, 12, 10.5);
+  cx.bezierCurveTo(18, 13, 25, 18, S + 2, S);
+  cx.closePath(); cx.fill();
+
+  // Iron-rich earth showing through the charcoal gives the compact symbol a
+  // soil read, while the forked seams preserve the force and direction of the
+  // eruption without making a dormant deposit look like live lava.
+  cx.fillStyle = "#5b3b2d";
+  for (const [dx, dy, radius] of [[4, -4, 3], [8, 7, 2.5], [14, -10, 2]]) {
+    cx.beginPath(); cx.arc(dx, dy, radius, 0, 7); cx.fill();
+  }
+  cx.strokeStyle = "#845039"; cx.lineWidth = 1.35;
+  cx.beginPath();
+  cx.moveTo(29, 0); cx.bezierCurveTo(20, -1, 10, 2, 1, 0);
+  cx.moveTo(14, 1); cx.lineTo(8, 6); cx.lineTo(2, 5);
+  cx.moveTo(19, -2); cx.lineTo(12, -7); cx.lineTo(5, -6);
+  cx.stroke();
+  cx.restore();
+}
+
+const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;
+function drawStrategicMountainIcon(x, y, volcano) {
+  cx.save();
+  cx.translate(x, y);
+  cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE);
+  cx.fillStyle = volcano ? "#4a4140" : "#6f747c";
+  tri(-14, 10, 0, -14, 14, 10);
+  if (volcano) {
+    cx.fillStyle = "#ef6b2e";
+    cx.beginPath(); cx.ellipse(0, -9, 4.5, 2.2, 0, 0, 7); cx.fill();
+  } else {
+    cx.fillStyle = "#555a61";
+    tri(0, -14, 0, 10, 14, 10);
+  }
+  cx.restore();
+}
+
 function drawFeatureEffects(t, x, y) {
   const burning = t.feature === "burning_forest" || t.feature === "burning_jungle";
   const burnt = t.feature === "burnt_forest" || t.feature === "burnt_jungle";
@@ -11696,6 +11904,66 @@ function drawFeatureEffects(t, x, y) {
     cx.arc(x + 7, y + 5, 6.5, 3.5, 5.9);
     cx.stroke();
   }
+}
+
+// Strategic terrain marks are tiny map symbols, not reduced illustrations.
+// Marsh uses a shallow inverse-hill silhouette: a broad, low W that reads as
+// wet ground without competing with units, yields, or improvements.
+function drawStrategicMarsh(x, y) {
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  cx.fillStyle = "#86cddd";
+  cx.strokeStyle = "#285f79";
+  cx.lineWidth = 1.8;
+  cx.beginPath();
+  cx.moveTo(x - 15, y - 7);
+  cx.bezierCurveTo(x - 13, y - 1, x - 12, y + 5, x - 7, y + 5);
+  cx.bezierCurveTo(x - 3.5, y + 5, x - 3, y - 1, x, y - 1);
+  cx.bezierCurveTo(x + 3, y - 1, x + 3.5, y + 5, x + 7, y + 5);
+  cx.bezierCurveTo(x + 12, y + 5, x + 13, y - 1, x + 15, y - 7);
+  cx.lineTo(x + 15, y - 2);
+  cx.bezierCurveTo(x + 12.5, y + 5, x + 11, y + 8, x + 7, y + 8);
+  cx.bezierCurveTo(x + 3.5, y + 8, x + 3, y + 2, x, y + 2);
+  cx.bezierCurveTo(x - 3, y + 2, x - 3.5, y + 8, x - 7, y + 8);
+  cx.bezierCurveTo(x - 11, y + 8, x - 12.5, y + 5, x - 15, y - 2);
+  cx.closePath();
+  cx.fill(); cx.stroke();
+  cx.restore();
+}
+
+// Floodplains belong to a river, so their strategic mark follows the river
+// sides of this tile instead of floating as three generic waves in its centre.
+// The paired inset bands read as a broad overflow margin while leaving the
+// ground colour visible — especially important for the three floodplain biomes.
+function drawStrategicFloodplains(t, x, y) {
+  const riverSides = [];
+  for (let side = 0; side < 6; side++) {
+    if (t.river_edges?.[side]) riverSides.push(side);
+  }
+  // Imported or old observations can identify the feature without carrying
+  // edge metadata. Give those tiles one stable bank rather than reverting to
+  // a centred symbol that means something different.
+  if (!riverSides.length)
+    riverSides.push(Math.floor(hash2(t.pos[0] * 31 + 5, t.pos[1] * 37 + 9) * 6));
+
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const side of riverSides) {
+    const [first, second] = EDGE_CORNERS[side];
+    for (const [radius, color, width] of [
+      [S * .67, "#346f8c", 1.9],
+      [S * .45, "#72aec0", 1.25],
+    ]) {
+      const [ax, ay] = corner(x, y, radius, first);
+      const [bx, by] = corner(x, y, radius, second);
+      const mx = (ax + bx) / 2, my = (ay + by) / 2;
+      cx.strokeStyle = color; cx.lineWidth = width;
+      cx.beginPath(); cx.moveTo(ax, ay);
+      cx.quadraticCurveTo(mx + (mx - x) * .12, my + (my - y) * .12, bx, by);
+      cx.stroke();
+    }
+  }
+  cx.restore();
 }
 
 // A disaster is a regional event, not a decal repeated once per affected hex.
@@ -11961,6 +12229,41 @@ function buildNaturalWonderPlacements(tiles) {
     });
   }
   return placements;
+}
+
+// Natural Wonders are landmarks at every zoom, so their footprint gets its
+// own engraved gold edge. Build that edge from exposed *sides*, not outlined
+// tiles: a two- or three-tile wonder then has one perimeter and no honeycomb
+// through its middle.
+function drawNaturalWonderPerimeters(tiles) {
+  const segments = [];
+  for (const tile of tiles) {
+    if (!isNaturalWonder(tile.feature)) continue;
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    for (let side = 0; side < 6; side++) {
+      const neighbor = nbrTile(tile.pos, DIRS[side]);
+      if (naturalWonderContinues(tile, neighbor)) continue;
+      const [first, second] = EDGE_CORNERS[side];
+      segments.push([...corner(x, y, S, first), ...corner(x, y, S, second)]);
+    }
+  }
+  if (!segments.length) return;
+  const weight = MODE.painted ? 1 : UI_K();
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [color, width, alpha] of [
+    ["#201707", 6.2 * weight, .86],
+    ["#d7a928", 3.6 * weight, .98],
+    ["#fff0a6", 1.15 * weight, .96],
+  ]) {
+    cx.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+    cx.strokeStyle = color; cx.lineWidth = width; cx.globalAlpha = alpha; cx.stroke();
+  }
+  cx.restore();
 }
 
 // ---------------------------------------------------------------- tile yields
@@ -15087,12 +15390,7 @@ function drawResourceBadge(t, x, y) {
     ? RULES.resources[t.resource].class : "bonus";
   const rim = rc === "strategic" ? "#ff9d5c"
     : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
-  // The class cue belongs to the annotation layer rather than the world's
-  // unknown bearing: strategics remain lower-left, bonuses bottom, and
-  // luxuries lower-right however the board is facing.
-  const slot = RESOURCE_BADGE_SLOT[rc] === undefined
-    ? RESOURCE_BADGE_SLOT.bonus : RESOURCE_BADGE_SLOT[rc];
-  const [rx, ry] = resourceBadgeSlot(x, y, S * RES_BADGE_SEAT, slot);
+  const [rx, ry] = resourceBadgeSlot(x, y, S * RES_BADGE_SEAT);
   // A cinema establishing shot covers a continent: rendering every deposit as a
   // full dark badge there freckles the landscape with hundreds of holes. Detail
   // resolves with the camera instead. Manual/player views keep the established
@@ -15114,6 +15412,76 @@ function drawResourceBadge(t, x, y) {
     cx.beginPath(); cx.arc(rx, ry, 3.6 * RES_BADGE_K, 0, 7); cx.fill();
     cx.strokeStyle = "#161c14bb"; cx.lineWidth = 1.2 * RES_BADGE_K; cx.stroke();
   }
+}
+
+// Barbarian camps are hostile little fortifications, not tents. The sharpened
+// palisade is deliberately the largest part of the silhouette so it survives
+// strategic zoom; the fire and broken front gate make the ring read as an
+// occupied encampment instead of a generic fence.
+function drawBarbarianCamp(x, y) {
+  cx.save();
+  cx.lineJoin = "round"; cx.lineCap = "round";
+  const dir = -LITF;
+  if (MODE.painted) castShadow(x, y + 7, 11, 15, .34);
+  contactAO(x, y + 7.5, 15, 5, .34);
+
+  // Trampled, fire-darkened ground contained by the palisade ring.
+  cx.fillStyle = "rgba(48,31,24,.82)";
+  cx.beginPath(); cx.ellipse(x, y + 2.5, 14, 7.5, 0, 0, 7); cx.fill();
+
+  const stake = (dx, base, tip, width, col) => {
+    const p = new Path2D();
+    p.moveTo(x + dx - width / 2, y + base);
+    p.lineTo(x + dx - width * .38, y + tip + 3.2);
+    p.lineTo(x + dx, y + tip);
+    p.lineTo(x + dx + width * .38, y + tip + 3.2);
+    p.lineTo(x + dx + width / 2, y + base);
+    p.closePath();
+    cx.fillStyle = col; cx.fill(p);
+    cx.strokeStyle = "rgba(35,21,15,.9)"; cx.lineWidth = 1; cx.stroke(p);
+    if (FINE()) {
+      cx.strokeStyle = "rgba(242,190,112,.32)"; cx.lineWidth = .65;
+      cx.beginPath();
+      cx.moveTo(x + dx + dir * width * .16, y + tip + 3.2);
+      cx.lineTo(x + dx + dir * width * .16, y + base - 1); cx.stroke();
+    }
+  };
+
+  // Tall rear stakes establish the jagged skyline.
+  const rear = [[-12,3,-6],[-8,1,-10],[-3,0,-13],[3,0,-12],[8,1,-9],[12,3,-6]];
+  for (let i = 0; i < rear.length; i++) {
+    const [dx, base, tip] = rear[i];
+    stake(dx, base, tip, 4.2, i % 2 ? "#765033" : "#8a5c38");
+  }
+  cx.strokeStyle = "#3b281d"; cx.lineWidth = 2.2;
+  cx.beginPath();
+  cx.moveTo(x - 13, y - 1); cx.quadraticCurveTo(x, y - 5, x + 13, y - 1); cx.stroke();
+
+  // A live fire glows through the open front gate.
+  shaft(x - 4.5, y + 5.5, x + 4, y + 2, 1.9, dir, "#5c3924");
+  shaft(x + 4.5, y + 5.5, x - 4, y + 2, 1.9, dir, "#5c3924");
+  cx.fillStyle = "#d44b26";
+  cx.beginPath();
+  cx.moveTo(x - 4, y + 3); cx.quadraticCurveTo(x - 1, y - 4, x, y - 7);
+  cx.quadraticCurveTo(x + 2, y - 2, x + 4, y + 3); cx.closePath(); cx.fill();
+  cx.fillStyle = "#ffbc45";
+  cx.beginPath();
+  cx.moveTo(x - 1.8, y + 2.5); cx.quadraticCurveTo(x, y - 1, x + .5, y - 3);
+  cx.quadraticCurveTo(x + 2.2, y, x + 2.2, y + 2.5); cx.closePath(); cx.fill();
+
+  // Shorter foreground stakes close the ring while leaving a threatening,
+  // firelit entrance in the middle.
+  const front = [[-12,7,-1],[-7,8,-4],[7,8,-4],[12,7,-1]];
+  for (let i = 0; i < front.length; i++) {
+    const [dx, base, tip] = front[i];
+    stake(dx, base, tip, 4.5, i % 2 ? "#805433" : "#69452e");
+  }
+  cx.strokeStyle = "#39261b"; cx.lineWidth = 2.3;
+  cx.beginPath();
+  cx.moveTo(x - 14, y + 3); cx.quadraticCurveTo(x - 10, y + 5, x - 5, y + 5.5);
+  cx.moveTo(x + 5, y + 5.5); cx.quadraticCurveTo(x + 10, y + 5, x + 14, y + 3);
+  cx.stroke();
+  cx.restore();
 }
 
 function drawImprovement(t, x, y) {
@@ -15317,13 +15685,42 @@ function drawImprovement(t, x, y) {
     cx.moveTo(x - 3.6, y - 5); cx.lineTo(x + 1, y - 10.4); cx.lineTo(x + 5.6, y - 5);
     cx.closePath(); cx.fill(); cx.stroke();
   } else if (imp === "goody_hut") {
-    cx.fillStyle = "#b8925c"; cx.strokeStyle = "#4a3722"; cx.lineWidth = 1;
-    cx.beginPath(); cx.arc(x, y + 4, 7.5, Math.PI, 0); cx.fill(); cx.stroke();
-    cx.fillStyle = "#f2dfa0";                        // something worth finding
+    // A small shelter: broad pitched thatch gives it the familiar tent shape,
+    // while the low wattle walls and doorway keep it unmistakably hut-like.
+    const walls = new Path2D();
+    walls.moveTo(x - 7.5, y - 1); walls.lineTo(x + 7.5, y - 1);
+    walls.lineTo(x + 7, y + 8); walls.lineTo(x - 7, y + 8); walls.closePath();
+    volume(walls, matteMat("#9b7146", dir, 7.5), dir,
+           "#d0a66d", "rgba(45,29,17,.72)", 1);
+
+    const roofSun = new Path2D();
+    roofSun.moveTo(x, y - 10); roofSun.lineTo(x + dir * 11, y + 1);
+    roofSun.lineTo(x, y + 1); roofSun.closePath();
+    const roofShade = new Path2D();
+    roofShade.moveTo(x, y - 10); roofShade.lineTo(x - dir * 11, y + 1);
+    roofShade.lineTo(x, y + 1); roofShade.closePath();
+    cx.fillStyle = tone("#c89e54", 1.2); cx.fill(roofSun);
+    cx.fillStyle = tone("#c89e54", .68); cx.fill(roofShade);
+    cx.strokeStyle = "rgba(61,42,22,.84)"; cx.lineWidth = 1.1;
     cx.beginPath();
-    cx.moveTo(x, y - 9); cx.lineTo(x + 1.7, y - 5.6); cx.lineTo(x + 5, y - 4.6);
-    cx.lineTo(x + 1.7, y - 3.4); cx.lineTo(x, y); cx.lineTo(x - 1.7, y - 3.4);
-    cx.lineTo(x - 5, y - 4.6); cx.lineTo(x - 1.7, y - 5.6);
+    cx.moveTo(x - 11, y + 1); cx.lineTo(x, y - 10); cx.lineTo(x + 11, y + 1);
+    cx.stroke();
+    if (FINE()) {                                    // loose thatch at the eaves
+      cx.strokeStyle = "rgba(89,59,27,.7)"; cx.lineWidth = .8;
+      cx.beginPath();
+      for (const ex of [-8,-4,4,8]) {
+        cx.moveTo(x + ex, y + .2); cx.lineTo(x + ex + Math.sign(ex), y + 2.8);
+      }
+      cx.stroke();
+    }
+    cx.fillStyle = "#2d2016";                       // sheltered doorway
+    cx.beginPath(); cx.roundRect(x - 2.4, y + 2, 4.8, 6, [2.4,2.4,0,0]); cx.fill();
+
+    cx.fillStyle = "#f4dc84";                       // something worth finding
+    cx.beginPath();
+    cx.moveTo(x + 7.4, y - 7); cx.lineTo(x + 8.4, y - 4.8); cx.lineTo(x + 10.8, y - 4.2);
+    cx.lineTo(x + 8.4, y - 3.4); cx.lineTo(x + 7.4, y - 1.2); cx.lineTo(x + 6.5, y - 3.4);
+    cx.lineTo(x + 4, y - 4.2); cx.lineTo(x + 6.5, y - 4.8);
     cx.closePath(); cx.fill();
   } else {
     // Everything rarer still reads as a built installation rather than a smear
@@ -15538,9 +15935,9 @@ function strategicUnitFill(scale = cam.scale) {
   return STRATEGIC_UNIT_FILL_OUT +
     (STRATEGIC_UNIT_FILL_IN - STRATEGIC_UNIT_FILL_OUT) * at;
 }
-// The outer edge of a command token is the useful radius of a hex. A stack
-// packs several such circles into that same disk; retaining this as a separate
-// value means an outline never makes the layout quietly cross a tile boundary.
+// The outer edge of a singleton command token is the useful radius of a hex.
+// Stack sizes and offsets are expressed from this same reference radius, which
+// keeps their intentional overlap and overflow proportional at every zoom.
 function strategicUnitOuterRadius(hexInradius) {
   return Math.max(0, hexInradius * strategicUnitFill());
 }
@@ -15553,7 +15950,7 @@ function strategicUnitRadius(hexInradius, outlineWidth = 0) {
 function flatStrategicUnitInradius() {
   // A rotated, vertically projected hex can only promise its shortest
   // center-to-edge span. This is the exact lower bound for every bearing, so a
-  // circular token never crosses a neighboring cell.
+  // singleton circular token never crosses a neighboring cell.
   return S * SQ3 / 2 * Math.min(1, YS);
 }
 
@@ -15561,12 +15958,18 @@ function flatStrategicUnitInradius() {
 //
 // A tile may legitimately hold a military unit, civilian, support unit, and
 // more. The command map used to draw every one at its centre, leaving only the
-// last icon visible. Slots below describe equal circles packed inside a unit
-// disk: `x` and `y` are centre offsets in disk radii, and `r` is each token's
-// outer radius in the same units. A singleton therefore remains exactly the
-// authored size, while a pair sits side-by-side and a trio is a triangle.
+// last icon visible. Stacks keep most of the authored token size and trade a
+// little overlap plus a little tile overflow for legibility: `x` and `y` are
+// centre offsets in singleton radii, and `r` is the token radius in those same
+// units. A singleton remains exactly the authored size, while every member of
+// a stack is 80% of it and keeps a stable seat in the group.
 const UNIT_STACK_SLOT_CACHE = new Map();
 const UNIT_STACK_SINGLE_SLOT = Object.freeze({x:0, y:0, r:1});
+const UNIT_STACK_TOKEN_SCALE = 0.80;
+// Source layouts put neighbouring centres two units apart. Bringing that down
+// to .9 singleton radii leaves a deliberate overlap between 80%-size tokens,
+// but enough offset for both pictograms and owner colours to remain distinct.
+const UNIT_STACK_CENTER_SEPARATION = 0.90;
 
 function unitStackCircleContains(circle, point) {
   const dx = point.x - circle.x, dy = point.y - circle.y;
@@ -15613,13 +16016,10 @@ function unitStackMinimumEnclosingCircle(points) {
 }
 function unitStackSlotsFromPoints(points) {
   const circle = unitStackMinimumEnclosingCircle(points);
-  // Every source point is one token-radius from its nearest neighbour. Adding
-  // one to the enclosing circle is exactly the space needed to keep each
-  // token's complete outline inside the tile's safe disk.
-  const span = Math.max(1e-7, circle.r + 1);
-  return points.map(point => ({x:(point.x - circle.x) / span,
-                               y:(point.y - circle.y) / span,
-                               r:1 / span}));
+  const offsetScale = UNIT_STACK_CENTER_SEPARATION / 2;
+  return points.map(point => ({x:(point.x - circle.x) * offsetScale,
+                               y:(point.y - circle.y) * offsetScale,
+                               r:UNIT_STACK_TOKEN_SCALE}));
 }
 function unitStackRingSlots(count, withCentre = false) {
   const ringCount = count - (withCentre ? 1 : 0);
@@ -15637,8 +16037,8 @@ function unitStackRingSlots(count, withCentre = false) {
 }
 function unitStackLatticeSlots(count) {
   // A compact hexagonal lattice is the fallback for unusually large stacks.
-  // It is denser than extending one enormous ring, yet every neighbouring pair
-  // remains exactly two token radii apart.
+  // It is denser than extending one enormous ring, while the source points
+  // retain the same two-unit neighbour spacing as the ring layouts.
   const reach = Math.ceil(Math.sqrt(count)) + 2;
   const points = [];
   for (let q = -reach; q <= reach; q++) for (let r = -reach; r <= reach; r++) {
@@ -15682,10 +16082,12 @@ function unitStackSlots(count) {
   if (count >= 4) candidates.push(unitStackRingSlots(count, true));
   candidates.push(unitStackLatticeSlots(count));
   // Prefer the clean symmetric ring whenever it is effectively tied with a
-  // lattice. The lattice earns its less regular silhouette only when it can
-  // make every icon meaningfully larger.
+  // lattice. All stacked icons now share the same 80% size, so the lattice
+  // earns its less regular silhouette only when it makes the group tighter.
+  const layoutRadius = layout => layout.reduce((reach, slot) =>
+    Math.max(reach, Math.hypot(slot.x, slot.y) + slot.r), 0);
   const slots = candidates.reduce((best, candidate) =>
-    candidate[0].r > best[0].r + 1e-7 ? candidate : best);
+    layoutRadius(candidate) < layoutRadius(best) - 1e-7 ? candidate : best);
   UNIT_STACK_SLOT_CACHE.set(count, slots);
   return slots;
 }
@@ -15719,8 +16121,9 @@ function strategicUnitStackPlacement(slots, unit, hexInradius, outlineWidth = 0)
   return {
     x:outerRadius * slot.x,
     y:outerRadius * slot.y,
+    stacked:slot !== UNIT_STACK_SINGLE_SLOT,
     // Keep the singleton on the pre-stack size path exactly; stacked tokens
-    // receive the same outline allowance after their packing scale is applied.
+    // receive the same outline allowance after their 80% scale is applied.
     r:slot === UNIT_STACK_SINGLE_SLOT
       ? strategicUnitRadius(hexInradius, outlineWidth)
       : Math.max(0, outerRadius * slot.r - outlineWidth / 2)
@@ -16868,6 +17271,75 @@ function drawPlanetFrontiers(cells) {
   cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
 }
 
+// The globe has pentagons as well as hexagons, so its Natural Wonder outline
+// follows each projected cell's real sides. As on the flat board, a side shared
+// with the same named wonder is interior and never enters the stroke network.
+function drawPlanetNaturalWonderPerimeters(cells) {
+  const byWeight = new Map();
+  for (const entry of cells) {
+    const {tile, cell, points} = entry;
+    if (!cell || !isNaturalWonder(tile.feature)) continue;
+    const inradius = planetCellInradius(entry);
+    const weight = Math.max(.35, Math.min(1.25,
+      Math.round(4 * inradius / PLANET_LANE_TILE) / 4));
+    let segments = byWeight.get(weight);
+    if (!segments) { segments = []; byWeight.set(weight, segments); }
+    for (let side = 0; side < points.length; side++) {
+      const neighbor = TMAP.get(cell.nbrs[side]);
+      if (naturalWonderContinues(tile, neighbor)) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      segments.push([a.x, a.y, b.x, b.y]);
+    }
+  }
+  if (!byWeight.size) return;
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [color, width, alpha] of [
+    ["#201707", 6.2, .86], ["#d7a928", 3.6, .98], ["#fff0a6", 1.15, .96],
+  ]) {
+    cx.strokeStyle = color; cx.globalAlpha = alpha;
+    for (const [weight, segments] of byWeight) {
+      cx.lineWidth = width * weight;
+      cx.beginPath();
+      for (const [ax, ay, bx, by] of segments) {
+        cx.moveTo(ax, ay); cx.lineTo(bx, by);
+      }
+      cx.stroke();
+    }
+  }
+  cx.restore();
+}
+
+// Exact sight is a moving shape, distinct from both explored ground and the
+// tiles retained for the rest of this player turn. Trace only seams whose
+// near side is visible now. Iterating every boundary seam naturally preserves
+// remote islands of sight from scouts, suzerain cities, and shared vision.
+function drawPlanetVisibilityPerimeter(cells, visible) {
+  const segments = [];
+  for (const {tile, cell, points} of cells) {
+    if (!cell || !visible.has(key(tile.pos))) continue;
+    for (let side = 0; side < points.length; side++) {
+      const across = cell.nbrs[side];
+      if (across && visible.has(across)) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      segments.push([a.x, a.y, b.x, b.y]);
+    }
+  }
+  if (!segments.length) return;
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [width, color] of [
+    [3.0, "rgba(5,10,15,.68)"],
+    [1.15, "rgba(213,244,255,.94)"],
+  ]) {
+    cx.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+    cx.strokeStyle = color; cx.lineWidth = width; cx.stroke();
+  }
+  cx.restore();
+}
+
 function planetFeatureGlyph(tile) {
   if (tile.terrain === "mountain") return "▲";
   if (tile.feature === "forest") return "♠";
@@ -17319,9 +17791,9 @@ const SKY_CHAIN = {
 // Satellite already supplies its own perpetual orbital motion, so it does not
 // need a second launch layer here.
 const SKY_LAUNCH_FLIGHTS = {
-  moon:{project:SKY_CHAIN.moon, duration:2800, body:"moon"},
-  mars:{project:SKY_CHAIN.mars, duration:3600, body:"mars"},
-  expedition:{project:SKY_CHAIN.expedition, duration:3000, body:"exo"},
+  moon:{project:SKY_CHAIN.moon, duration:2800, body:"moon", rocket:"saturn_v"},
+  mars:{project:SKY_CHAIN.mars, duration:3600, body:"mars", rocket:"starship"},
+  expedition:{project:SKY_CHAIN.expedition, duration:3000, body:"exo", rocket:"starship_xl"},
 };
 function queueSkyLaunches(prev, next, now = performance.now()) {
   if (!prev || !next || prev.seed !== next.seed || REDUCED_MOTION_QUERY.matches) return;
@@ -19782,6 +20254,130 @@ function skyLaunchPoint(start, end, progress, bend) {
           y:start.y + dy * eased + dx / span * arc};
 }
 
+// All launch views use one silhouette vocabulary. Apollo 11's Saturn V is a
+// long, staged white stack; Mars uses the compact stainless Starship outline;
+// the exoplanet ship deliberately takes that same outline to monumental scale.
+// Keeping the dimensions here makes the promised 2x length and 4x width exact
+// in both projections rather than two hand-tuned approximations.
+function skyRocketGeometry(rocket, size) {
+  const starshipLength = size * 3.4;
+  const starshipHalfWidth = size * .55;
+  if (rocket === "starship_xl") return {
+    family:"starship", length:starshipLength * 2,
+    halfWidth:starshipHalfWidth * 4,
+  };
+  if (rocket === "starship") return {
+    family:"starship", length:starshipLength, halfWidth:starshipHalfWidth,
+  };
+  return {family:"saturn_v", length:size * 4.7, halfWidth:size * .52};
+}
+
+// Draw in a local frame whose +x axis is the flight direction. `pixel` is one
+// screen pixel in the caller's coordinate system: one on the globe, inverse
+// zoom on the flat board. The return value lets labels and culling respect the
+// very different silhouettes without duplicating their dimensions.
+function drawMissionRocket(rocket, player, size, now, pixel = 1, alpha = 1) {
+  const shape = skyRocketGeometry(rocket, size);
+  const nose = shape.length / 2, tail = -shape.length / 2;
+  const colour = pcol(player.id), dark = pcol2(player.id);
+  const flicker = size * (1.8 + .32 * Math.sin(now / 75 + player.id));
+  const flameHalf = Math.max(size * .42, shape.halfWidth * .32);
+
+  cx.save();
+  // A warm, transparent plume ties the diagrammatic craft to the rest of the
+  // game's effects without turning any of the three silhouettes into clip art.
+  const plume = cx.createLinearGradient(tail - flicker, 0, tail + size * .3, 0);
+  plume.addColorStop(0, "rgba(255,173,69,0)");
+  plume.addColorStop(.62, "rgba(255,176,70,.68)");
+  plume.addColorStop(1, "rgba(255,244,191,.94)");
+  cx.globalAlpha = alpha * .92; cx.fillStyle = plume;
+  cx.beginPath(); cx.moveTo(tail + size * .18, 0);
+  cx.lineTo(tail - flicker, -flameHalf);
+  cx.lineTo(tail - flicker * .82, flameHalf); cx.closePath(); cx.fill();
+
+  cx.globalAlpha = alpha;
+  cx.strokeStyle = "#071018"; cx.lineWidth = Math.max(.8 * pixel, size * .11);
+  if (shape.family === "saturn_v") {
+    // Apollo 11's Saturn V: command-module point, narrow staged cylinder,
+    // alternating roll bands, and the fins around the first-stage engines.
+    cx.fillStyle = "#edf1eb";
+    cx.beginPath(); cx.moveTo(nose, 0);
+    cx.lineTo(nose - shape.length * .14, -shape.halfWidth * .68);
+    cx.lineTo(tail + shape.length * .08, -shape.halfWidth);
+    cx.lineTo(tail, -shape.halfWidth * .72);
+    cx.lineTo(tail, shape.halfWidth * .72);
+    cx.lineTo(tail + shape.length * .08, shape.halfWidth);
+    cx.lineTo(nose - shape.length * .14, shape.halfWidth * .68);
+    cx.closePath(); cx.fill(); cx.stroke();
+    cx.fillStyle = "#111820";
+    for (const band of [.18, .43, .68])
+      cx.fillRect(tail + shape.length * band, -shape.halfWidth,
+                  shape.length * .075, shape.halfWidth * 2);
+    cx.fillStyle = colour;
+    cx.fillRect(tail + shape.length * .76, -shape.halfWidth * .7,
+                shape.length * .045, shape.halfWidth * 1.4);
+    cx.strokeStyle = "#58616a"; cx.lineWidth = Math.max(.55 * pixel, size * .055);
+    for (const seam of [.34, .61]) {
+      const x = tail + shape.length * seam;
+      cx.beginPath(); cx.moveTo(x, -shape.halfWidth); cx.lineTo(x, shape.halfWidth); cx.stroke();
+    }
+    cx.fillStyle = dark;
+    cx.beginPath(); cx.moveTo(tail + shape.length * .12, -shape.halfWidth * .75);
+    cx.lineTo(tail - shape.length * .055, -shape.halfWidth * 1.75);
+    cx.lineTo(tail + shape.length * .035, -.05 * pixel); cx.closePath(); cx.fill();
+    cx.beginPath(); cx.moveTo(tail + shape.length * .12, shape.halfWidth * .75);
+    cx.lineTo(tail - shape.length * .055, shape.halfWidth * 1.75);
+    cx.lineTo(tail + shape.length * .035, .05 * pixel); cx.closePath(); cx.fill();
+  } else {
+    // Starship: a stainless tapered hull, dark heat-shield belly, forward
+    // flaps and broad aft fins. The XL craft uses precisely the same drawing;
+    // only skyRocketGeometry makes it twice as long and four times as wide.
+    const steel = cx.createLinearGradient(0, -shape.halfWidth, 0, shape.halfWidth);
+    steel.addColorStop(0, "#f2f5f3"); steel.addColorStop(.48, "#aeb9bd");
+    steel.addColorStop(1, "#65737a");
+    cx.fillStyle = steel;
+    cx.beginPath(); cx.moveTo(nose, 0);
+    cx.quadraticCurveTo(nose - shape.length * .12, -shape.halfWidth,
+                        nose - shape.length * .25, -shape.halfWidth);
+    cx.lineTo(tail + shape.length * .08, -shape.halfWidth);
+    cx.lineTo(tail, -shape.halfWidth * .58);
+    cx.lineTo(tail, shape.halfWidth * .58);
+    cx.lineTo(tail + shape.length * .08, shape.halfWidth);
+    cx.lineTo(nose - shape.length * .25, shape.halfWidth);
+    cx.quadraticCurveTo(nose - shape.length * .12, shape.halfWidth, nose, 0);
+    cx.closePath(); cx.fill(); cx.stroke();
+    cx.globalAlpha = alpha * .58; cx.fillStyle = "#172129";
+    cx.beginPath(); cx.moveTo(tail + shape.length * .08, 0);
+    cx.lineTo(nose - shape.length * .2, 0);
+    cx.quadraticCurveTo(nose - shape.length * .1, shape.halfWidth * .42, nose, 0);
+    cx.lineTo(nose - shape.length * .25, shape.halfWidth);
+    cx.lineTo(tail + shape.length * .08, shape.halfWidth); cx.closePath(); cx.fill();
+    cx.globalAlpha = alpha; cx.fillStyle = dark;
+    const front = nose - shape.length * .28, rear = tail + shape.length * .13;
+    cx.beginPath(); cx.moveTo(front, -shape.halfWidth * .72);
+    cx.lineTo(front - shape.length * .13, -shape.halfWidth * 1.72);
+    cx.lineTo(front + shape.length * .04, -shape.halfWidth * .92); cx.closePath(); cx.fill();
+    cx.beginPath(); cx.moveTo(rear, -shape.halfWidth * .72);
+    cx.lineTo(tail - shape.length * .06, -shape.halfWidth * 1.62);
+    cx.lineTo(rear + shape.length * .1, -shape.halfWidth * .9); cx.closePath(); cx.fill();
+    cx.beginPath(); cx.moveTo(rear, shape.halfWidth * .72);
+    cx.lineTo(tail - shape.length * .06, shape.halfWidth * 1.62);
+    cx.lineTo(rear + shape.length * .1, shape.halfWidth * .9); cx.closePath(); cx.fill();
+    cx.fillStyle = colour;
+    cx.fillRect(tail + shape.length * .48, -shape.halfWidth,
+                shape.length * .055, shape.halfWidth * 2);
+    cx.fillStyle = "#1b313e";
+    const windows = rocket === "starship_xl" ? 5 : 3;
+    for (let index = 0; index < windows; index++) {
+      const x = nose - shape.length * (.2 + index * .035);
+      cx.beginPath(); cx.arc(x, -shape.halfWidth * .38,
+        Math.max(.5 * pixel, shape.halfWidth * .07), 0, 7); cx.fill();
+    }
+  }
+  cx.restore();
+  return shape;
+}
+
 function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
   const launches = activeSkyLaunches(now);
   if (!launches.length) return;
@@ -19796,12 +20392,13 @@ function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
                              radius, centerX, centerY);
     const bend = hash2(player.id, flight.body.length * 17) < .5 ? -.72 : .72;
     const at = skyLaunchPoint(start, end, progress, bend);
-    if (!skyOnStage(at.x, at.y, 36)) continue;
+    const size = Math.max(3, Math.min(7, radius * .065));
+    const rocket = skyRocketGeometry(flight.rocket, size);
+    if (!skyOnStage(at.x, at.y, Math.max(36, rocket.length))) continue;
     const ahead = skyLaunchPoint(start, end, Math.min(1, progress + .004), bend);
     const behind = skyLaunchPoint(start, end, Math.max(0, progress - .004), bend);
     const angle = Math.atan2(ahead.y - behind.y, ahead.x - behind.x);
-    const colour = pcol(player.id), dark = pcol2(player.id);
-    const size = Math.max(3, Math.min(7, radius * .065));
+    const colour = pcol(player.id);
     cx.save();
     // The complete flight plan is quiet; the travelled part is a continuous
     // bright stroke, so the eye can read both destination and motion at once.
@@ -19833,26 +20430,9 @@ function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
       cx.beginPath(); cx.arc(end.x, end.y, size * (2.2 - progress), 0, 7); cx.stroke();
     }
 
-    // A flickering plume points opposite the actual curved-flight tangent.
-    const flicker = size * (1.5 + .35 * Math.sin(now / 75 + player.id));
+    // The mission-specific craft and its plume point along the actual tangent.
     cx.translate(at.x, at.y); cx.rotate(angle);
-    const plume = cx.createLinearGradient(-size - flicker, 0, -size * .3, 0);
-    plume.addColorStop(0, "rgba(255,173,69,0)");
-    plume.addColorStop(.62, "rgba(255,176,70,.68)");
-    plume.addColorStop(1, "rgba(255,244,191,.92)");
-    cx.globalAlpha = .9; cx.fillStyle = plume;
-    cx.beginPath(); cx.moveTo(-size * .45, 0);
-    cx.lineTo(-size - flicker, -size * .42);
-    cx.lineTo(-size - flicker * .82, size * .42); cx.closePath(); cx.fill();
-    cx.globalAlpha = 1; cx.fillStyle = colour; cx.strokeStyle = "#071018"; cx.lineWidth = 1;
-    cx.beginPath(); cx.moveTo(size * 1.35, 0);
-    cx.lineTo(-size * .55, -size * .62); cx.lineTo(-size * .2, 0);
-    cx.lineTo(-size * .55, size * .62); cx.closePath(); cx.fill(); cx.stroke();
-    cx.fillStyle = dark;
-    cx.beginPath(); cx.moveTo(-size * .12, -size * .48);
-    cx.lineTo(-size * .75, -size * 1.02); cx.lineTo(-size * .55, -.08); cx.closePath(); cx.fill();
-    cx.beginPath(); cx.moveTo(-size * .12, size * .48);
-    cx.lineTo(-size * .75, size * 1.02); cx.lineTo(-size * .55, .08); cx.closePath(); cx.fill();
+    drawMissionRocket(flight.rocket, player, size, now);
     cx.restore();
 
     if (size >= 4.2) {
@@ -19862,8 +20442,9 @@ function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
       cx.strokeStyle = "#03070c"; cx.lineWidth = 3;
       const label = launch.mission === "expedition" ? "EXOPLANET LAUNCH"
         : `${launch.mission.toUpperCase()} LAUNCH`;
-      cx.strokeText(label, at.x, at.y - size * 1.8);
-      cx.fillStyle = "#e9f4f5"; cx.fillText(label, at.x, at.y - size * 1.8);
+      const labelY = at.y - Math.max(size * 1.8, rocket.halfWidth + 6);
+      cx.strokeText(label, at.x, labelY);
+      cx.fillStyle = "#e9f4f5"; cx.fillText(label, at.x, labelY);
       cx.restore();
     }
   }
@@ -20136,6 +20717,12 @@ function planetSkyAnimating() {
 const FLAT_SAT_DRIFT = .1;
 // One revolution in wall-clock milliseconds, before each craft's own pace.
 const FLAT_SAT_LAP = 27000;
+// Keep the orbital context without letting its tails dominate the board. This
+// multiplier preserves exactly thirty percent of each trailing sweep.
+const FLAT_SAT_TAIL_SCALE = .3;
+// The ground-visibility circle used to span .048 of the world's width from its
+// centre. Halving that radius keeps the cue close to the craft's ground point.
+const FLAT_SAT_HORIZON_RADIUS = .024;
 
 // How much of the sky is in the picture. Zoomed in, a map is a place you are
 // standing in and the four hundred kilometres above it are not part of that
@@ -20150,7 +20737,9 @@ function flatSkyShown() {
 // asking for frames while there is a craft up there and the camera is far
 // enough back to see it.
 function flatSkyAnimating() {
-  return flatSkyShown() > .02 && skyCrews().satellite.length > 0;
+  if (!state || planetMap()) return false;
+  return activeSkyLaunches().length > 0 ||
+    (flatSkyShown() > .02 && skyCrews().satellite.length > 0);
 }
 
 // Where the craft is over the world, `theta` round its orbit from the
@@ -20192,6 +20781,84 @@ function flatSkyProject(worldX, worldY) {
   return {copy:at, x:COSR * wx - SINR * wy, y:(SINR * wx + COSR * wy) * YS};
 }
 
+// A flat chart has no Moon or Mars to fly toward, but it does have the launch
+// city and an unambiguous direction: up and out of the picture. Keep that path
+// in screen proportions so the same completion is legible at every map zoom.
+function flatLaunchRoute(launch, player) {
+  const anchor = playerAnchor(player.id);
+  if (!anchor?.pos) return null;
+  const [x, y] = worldXY(anchor.pos);
+  const pixel = 1 / cam.scale;
+  const order = launch.mission === "moon" ? 0 : launch.mission === "mars" ? 1 : 2;
+  const direction = hash2(player.id, 131 + order * 17) < .5 ? -1 : 1;
+  return {
+    start:{x, y:y - 5 * pixel},
+    end:{x:x + direction * MAPW * (.08 + order * .025) * pixel,
+         y:y - MAPH * (.48 + order * .06) * pixel},
+    bend:direction * (.34 + order * .08), pixel,
+  };
+}
+
+function drawFlatLaunches(now) {
+  const launches = activeSkyLaunches(now);
+  if (!launches.length) return;
+  for (const launch of launches) {
+    const player = (state.players || []).find(candidate => candidate.id === launch.playerId);
+    const flight = SKY_LAUNCH_FLIGHTS[launch.mission];
+    if (!player || !flight) continue;
+    const route = flatLaunchRoute(launch, player);
+    if (!route) continue;
+    const {start, end, bend, pixel} = route;
+    const progress = Math.max(0, Math.min(1, (now - launch.t0) / launch.duration));
+    const at = skyLaunchPoint(start, end, progress, bend);
+    const ahead = skyLaunchPoint(start, end, Math.min(1, progress + .004), bend);
+    const behind = skyLaunchPoint(start, end, Math.max(0, progress - .004), bend);
+    const angle = Math.atan2(ahead.y - behind.y, ahead.x - behind.x);
+    const colour = pcol(player.id), size = 4.2 * pixel;
+    const rocket = skyRocketGeometry(flight.rocket, size);
+    cx.save();
+    cx.lineCap = "round";
+    // The planned ascent is quiet and dashed; the bright travelled stroke and
+    // flame make its direction clear without borrowing the satellite's tail.
+    cx.globalAlpha = .2; cx.strokeStyle = colour; cx.lineWidth = pixel;
+    cx.setLineDash([2 * pixel, 6 * pixel]); cx.beginPath();
+    for (let step = 0; step <= 28; step++) {
+      const point = skyLaunchPoint(start, end, step / 28, bend);
+      step ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y);
+    }
+    cx.stroke(); cx.setLineDash([]);
+    cx.globalAlpha = .72; cx.lineWidth = 1.6 * pixel; cx.beginPath();
+    const travelledSteps = Math.max(1, Math.ceil(progress * 28));
+    for (let step = 0; step <= travelledSteps; step++) {
+      const point = skyLaunchPoint(start, end, progress * step / travelledSteps, bend);
+      step ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y);
+    }
+    cx.stroke();
+    if (progress < .24) {
+      cx.globalAlpha = (1 - progress / .24) * .62;
+      cx.lineWidth = 1.4 * pixel;
+      cx.beginPath();
+      cx.ellipse(start.x, start.y, size * (1 + progress * 11),
+                 size * (1 + progress * 11) * YS, 0, 0, 7);
+      cx.stroke();
+    }
+    cx.translate(at.x, at.y); cx.rotate(angle);
+    drawMissionRocket(flight.rocket, player, size, now, pixel);
+    cx.restore();
+
+    cx.save(); cx.globalAlpha = .88;
+    cx.font = `800 ${9 * pixel}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+    cx.textAlign = "center"; cx.textBaseline = "bottom";
+    cx.strokeStyle = "#03070c"; cx.lineWidth = 3 * pixel;
+    const label = launch.mission === "expedition" ? "EXOPLANET LAUNCH"
+      : `${launch.mission.toUpperCase()} LAUNCH`;
+    const labelY = at.y - Math.max(8 * pixel, rocket.halfWidth + 5 * pixel);
+    cx.strokeText(label, at.x, labelY);
+    cx.fillStyle = "#e9f4f5"; cx.fillText(label, at.x, labelY);
+    cx.restore();
+  }
+}
+
 function drawFlatSatellites(now) {
   const shown = flatSkyShown();
   if (shown <= .02) return;
@@ -20204,7 +20871,7 @@ function drawFlatSatellites(now) {
   // are kept as fractions of the world's own width, so they zoom with it.
   const pixel = 1 / cam.scale;
   const lift = WW() * .012;
-  const horizon = WW() * .048;
+  const horizon = WW() * FLAT_SAT_HORIZON_RADIUS;
   const halfW = MAPW / 2 * pixel + horizon, halfH = MAPH / 2 * pixel + horizon;
   cx.save();
   cx.lineCap = "round";
@@ -20244,11 +20911,10 @@ function drawFlatSatellites(now) {
       }
       inked(colour, width, alpha);
     };
-    // A little over one revolution behind, so the pass before this one is
-    // still on the paper to be told apart from it, and a dashed quarter ahead
-    // to say the line goes on.
-    track(-1.35, 0, 1, .2, false);
-    track(-.38, 0, 1.4, .45, false);
+    // Thirty percent of the former trailing sweeps keeps a compact wake behind
+    // the craft, while a dashed segment ahead still says the line goes on.
+    track(-1.35 * FLAT_SAT_TAIL_SCALE, 0, 1, .2, false);
+    track(-.38 * FLAT_SAT_TAIL_SCALE, 0, 1.4, .45, false);
     track(0, .3, 1, .16, true);
 
     const here = flatSkyProject(...flatSatelliteGround(orbit, theta));
@@ -20579,13 +21245,13 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     if (owner === null || owner === undefined) continue;
     planetPaintPath(cx, cell, .22);
     const cityState = ownerIsCityState(owner);
-    cx.globalAlpha = empire
+    cx.globalAlpha = TERRITORY_TINT_SCALE * (empire
       ? (cityState ? .055 : .45)
       : cityState ? MAP_CIV_HIERARCHY.planetWashCityState
       : painted ? (MODE.atmosphere
           ? MAP_CIV_HIERARCHY.planetWashMajorCinematic
           : MAP_CIV_HIERARCHY.planetWashMajorBalanced)
-      : MAP_CIV_HIERARCHY.planetWashMajorStrategic;
+      : MAP_CIV_HIERARCHY.planetWashMajorStrategic);
     cx.fillStyle = pcol(owner);
     cx.fill();
   }
@@ -21008,34 +21674,59 @@ function drawEmpireDetailsPlanet(cells) {
   cx.restore();
 }
 
-function settleLensColor(quality, alpha) {
+const SETTLER_LENS_BANDS = [
+  {at:.78, fill:"#20df78", alpha:.91},
+  {at:.52, fill:"#61cd58", alpha:.87},
+  {at:.26, fill:"#c4c447", alpha:.83},
+  {at:0,   fill:"#db8c3f", alpha:.80},
+];
+function settleLensStyle(quality) {
   const q = Math.max(0, Math.min(1, quality));
-  const red = Math.round(205 - q * 142);
-  const green = Math.round(151 + q * 91);
-  const blue = Math.round(72 + q * 42);
-  return `rgba(${red},${green},${blue},${alpha})`;
+  return SETTLER_LENS_BANDS.find(band => q >= band.at) ||
+    SETTLER_LENS_BANDS[SETTLER_LENS_BANDS.length - 1];
 }
 function settleWaterColor(water) {
-  return water === "fresh" ? "#72d9ff" : water === "coast" ? "#89d8c7" : "#d2af68";
+  return water === "fresh" ? "#75ddff" : water === "coast" ? "#8de4cf" : "#edbb62";
+}
+function drawSettlerLensSite(path, site, lens, scale, center) {
+  const quality = settleSiteQuality(site, lens);
+  const style = settleLensStyle(quality);
+  path(); cx.fillStyle = style.fill; cx.globalAlpha = style.alpha; cx.fill();
+  // A dark keyline keeps the water-access color readable over every quality
+  // band instead of letting hundreds of pale outlines dissolve into terrain.
+  path(); cx.strokeStyle = "#10231d"; cx.globalAlpha = .92;
+  cx.lineWidth = 3.4 * scale; cx.stroke();
+  path(); cx.strokeStyle = settleWaterColor(site.water); cx.globalAlpha = 1;
+  cx.lineWidth = 1.8 * scale; cx.stroke();
+  cx.globalAlpha = 1;
+  if (!center || !settleSiteIsRecommended(site, lens)) return;
+  const [x, y, radius] = center;
+  cx.save();
+  cx.shadowColor = "#fff0a3"; cx.shadowBlur = 7 * scale;
+  cx.fillStyle = "#fff2ae"; cx.strokeStyle = "#12261e"; cx.lineWidth = 1.5 * scale;
+  cx.beginPath(); cx.arc(x, y, radius, 0, 7); cx.fill(); cx.stroke();
+  cx.shadowBlur = 0; cx.fillStyle = "#168c54";
+  cx.beginPath(); cx.arc(x, y, radius * .42, 0, 7); cx.fill();
+  cx.restore();
 }
 function drawPlanetSettlerLens(cells) {
   const lens = settlerLensSites();
+  cx.save();
   for (const cell of cells) {
     const site = lens.sites.get(key(cell.tile.pos));
     if (!site) {
       if (isWater(cell.tile)) continue;
       planetPaintPath(cx, cell, .15);
-      cx.fillStyle = "rgba(38,24,30,.48)"; cx.fill();
+      cx.fillStyle = "rgba(18,17,22,.76)"; cx.fill();
       continue;
     }
-    const quality = settleSiteQuality(site, lens);
-    planetPaintPath(cx, cell, .15);
-    cx.fillStyle = settleLensColor(quality, .26 + quality * .38); cx.fill();
-    planetPath(cx, cell.points);
-    cx.strokeStyle = settleWaterColor(site.water);
-    cx.lineWidth = quality > .76 ? 2.2 : 1.15;
-    cx.globalAlpha = .58 + quality * .4; cx.stroke(); cx.globalAlpha = 1;
+    const inradius = planetCellInradius(cell);
+    drawSettlerLensSite(
+      () => planetPaintPath(cx, cell, .15), site, lens,
+      Math.max(.62, Math.min(1.15, inradius / 12)),
+      [cell.center.x, cell.center.y, Math.max(2.6, Math.min(5.2, inradius * .29))]);
   }
+  cx.restore();
 }
 
 function drawSettlerLensFlat(tiles) {
@@ -21047,19 +21738,11 @@ function drawSettlerLensFlat(tiles) {
     const site = lens.sites.get(key(tile.pos));
     if (!site) {
       if (isWater(tile)) continue;
-      hexPath(x, y, S + .2); cx.fillStyle = "rgba(38,24,30,.48)"; cx.fill();
+      hexPath(x, y, S + .2); cx.fillStyle = "rgba(18,17,22,.76)"; cx.fill();
       continue;
     }
-    const quality = settleSiteQuality(site, lens);
-    hexPath(x, y, S + .2);
-    cx.fillStyle = settleLensColor(quality, .25 + quality * .42); cx.fill();
-    cx.strokeStyle = settleWaterColor(site.water);
-    cx.lineWidth = (quality > .76 ? 2.7 : 1.5) * UI_K();
-    cx.globalAlpha = .58 + quality * .4; cx.stroke(); cx.globalAlpha = 1;
-    if (quality > .84) {
-      cx.fillStyle = "#f8f0c8";
-      cx.beginPath(); cx.arc(x, y, 2.6 * UI_K(), 0, 7); cx.fill();
-    }
+    drawSettlerLensSite(() => hexPath(x, y, S + .2), site, lens, UI_K(),
+      [x, y, 4.6 * UI_K()]);
   }
   cx.restore();
 }
@@ -21067,8 +21750,8 @@ function drawSettlerLensFlat(tiles) {
 // Empire lens is deliberately a replacement ground pass. Painting it after
 // terrain, routes, improvements, resources and yields means every map style
 // collapses to the same two land/water materials without changing hit-testing
-// or the normal renderer. Major territory remains saturated; minor territory
-// is present at a fraction of that weight so the eye reads civilization-scale
+// or the normal renderer. Major territory remains legible; minor territory is
+// present at a fraction of that weight so the eye reads civilization-scale
 // frontiers first.
 function drawEmpireLensFlat(tiles) {
   cx.save();
@@ -21080,7 +21763,8 @@ function drawEmpireLensFlat(tiles) {
     if (tile.owner === null || tile.owner === undefined) continue;
     hexPath(x, y, S + .45);
     cx.fillStyle = pcol(tile.owner);
-    cx.globalAlpha = ownerIsCityState(tile.owner) ? .055 : .45;
+    cx.globalAlpha = TERRITORY_TINT_SCALE *
+      (ownerIsCityState(tile.owner) ? .055 : .45);
     cx.fill(); cx.globalAlpha = 1;
   }
 
@@ -21138,6 +21822,40 @@ function drawEmpireLensFlat(tiles) {
   cx.restore();
 }
 
+// A fine live-sight line, independent of the lighter turn-visible fill below
+// it. Each visible component contributes its own boundary, so a distant unit
+// or diplomatic reveal becomes another closed trace rather than being joined
+// to the capital by an invented corridor.
+function drawFlatVisibilityPerimeter(tiles, visible) {
+  const segments = [];
+  for (const tile of tiles) {
+    if (!visible.has(key(tile.pos))) continue;
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    const y = yy - elev(tile);
+    for (let side = 0; side < DIRS.length; side++) {
+      const direction = DIRS[side];
+      const across = canonPos([tile.pos[0] + direction[0], tile.pos[1] + direction[1]]);
+      if (visible.has(key(across))) continue;
+      const [a, b] = EDGE_CORNERS[side];
+      segments.push([...corner(x, y, S - .45, a), ...corner(x, y, S - .45, b)]);
+    }
+  }
+  if (!segments.length) return;
+  const k = UI_K();
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [width, color] of [
+    [3.0 * k, "rgba(5,10,15,.68)"],
+    [1.15 * k, "rgba(213,244,255,.94)"],
+  ]) {
+    cx.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+    cx.strokeStyle = color; cx.lineWidth = width; cx.stroke();
+  }
+  cx.restore();
+}
+
 function drawPlanetChartMarginalia() {
   if (!HIDDEN_MAP_MONSTER_ATLAS_READY) return;
   const [seedA, seedB] = hiddenMapSeedWords();
@@ -21146,17 +21864,25 @@ function drawPlanetChartMarginalia() {
   // projection is a sheet whose uncharted paper runs to the frame. Projected
   // known cells are painted next and cover every part of a creature that no
   // longer belongs to the unknown.
-  const seats = [[.17,.27],[.78,.24],[.25,.75],[.74,.72]];
+  // The former chart carried five small scenes. One seeded candidate keeps the
+  // requested roughly one-sixth density and can be a proper three-times-larger
+  // marginal illustration without turning the sheet into a collage.
+  const candidates = Array.from({length:48}, (_, i) => ({
+    x:(.09 + hash2(seedA + i * 37, seedB + 71) * .82) * width,
+    y:(.12 + hash2(seedB + i * 43, seedA + 83) * .76) * height,
+    rank:hash2(seedA + i * 47, seedB + i * 53)
+  })).sort((a, b) => a.rank - b.rank);
+  const seats = candidates.slice(0, 1);
   for (let i = 0; i < seats.length; i++) {
-    const [ux, uy] = seats[i];
+    const seat = seats[i];
     const h = hash2(seedA + i * 37, seedB + i * 43);
-    const size = Math.max(104, Math.min(210, Math.min(width, height) * (.19 + h * .055)));
+    const size = 3 * Math.max(104, Math.min(210,
+      Math.min(width, height) * (.19 + h * .055)));
     drawHiddenMapMonster(
-      ux * width + (hash2(seedB + i * 11, seedA) - .5) * width * .08,
-      uy * height + (hash2(seedA + i * 13, seedB) - .5) * height * .07,
-      size, Math.floor(hash2(seedB + i * 23, seedA + 17) * 4),
+      seat.x, seat.y, size,
+      Math.floor(hash2(seedB + i * 23, seedA + 17) * HIDDEN_MAP_MONSTER_VARIANTS),
       (hash2(seedA + i * 29, seedB + 19) - .5) * .2,
-      hash2(seedB + i * 31, seedA + 29) > .5, .38
+      hash2(seedB + i * 31, seedA + 29) > .5, .25
     );
   }
 }
@@ -21183,6 +21909,7 @@ function drawPlanetMap() {
   // around the middle of the window.
   const [centerX, centerY] = planetEarthCenter(radius);
   const visible = new Set(state.visible.map(key));
+  const turnVisible = new Set((state.turn_visible || state.visible).map(key));
   const spectator = !Number.isInteger(state.view_player);
   const empireLens = mapLens === "empire";
   PLANET_HIT_CELLS = [];
@@ -21261,9 +21988,9 @@ function drawPlanetMap() {
 
   const baseCells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
   const cells = planetReliefCells(baseCells, camera, radius, centerX, centerY,
-                                  visible, spectator);
-  drawPlanetReliefSides(cells, radius, centerX, centerY, visible, spectator);
-  drawPlanetGround(cells, camera, scale, radius, centerX, centerY, visible, spectator);
+                                  turnVisible, spectator);
+  drawPlanetReliefSides(cells, radius, centerX, centerY, turnVisible, spectator);
+  drawPlanetGround(cells, camera, scale, radius, centerX, centerY, turnVisible, spectator);
   for (const {tile, points, center} of cells)
     PLANET_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
 
@@ -21296,7 +22023,7 @@ function drawPlanetMap() {
   // use landform paint clipped to each real spherical face instead.
   if (!empireLens && MODE.painted && radius >= SKY_MARKERS) {
     for (const cell of cells) {
-      if ((!spectator && !visible.has(key(cell.tile.pos))) ||
+      if ((!spectator && !turnVisible.has(key(cell.tile.pos))) ||
           cell.center.z < (onSheet ?? .04)) continue;
       drawPlanetSurfaceDetail(cell, centerX, centerY);
     }
@@ -21320,6 +22047,9 @@ function drawPlanetMap() {
   if (mapLens === "settler") drawPlanetSettlerLens(cells);
   else if (mapLens === "empire") drawEmpireDetailsPlanet(cells);
   else if (mapLens) drawThematicLensPlanet(cells);
+  if (radius >= SKY_MARKERS) drawPlanetNaturalWonderPerimeters(cells);
+  if (!spectator && radius >= SKY_MARKERS)
+    drawPlanetVisibilityPerimeter(cells, visible);
   // Cities and armies are drawn at a floor size so they stay clickable, and a
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
@@ -21386,7 +22116,7 @@ function drawPlanetMap() {
   // map script, globe frequency and chart scale retains a readable army.
   const paintedFigureIds = MODE.painted
     ? drawPlanetPaintedUnits(visibleUnits, cellByKey, centerX, centerY,
-                              visible, spectator, onSheet, camera)
+                              turnVisible, spectator, onSheet, camera)
     : null;
   for (const unit of visibleUnits) {
     // A painting replaces its overview dot only when the cell is wide enough
@@ -21408,14 +22138,16 @@ function drawPlanetMap() {
     const r = commandToken
       ? stack.r
       : Math.max(3.5, Math.min(7, 4.5 * Math.sqrt(scale)));
-    // A singleton stays centred; a stack takes its own compact, non-overlapping
-    // seat in the same cell. Each token is still clipped to that real face.
+    // A singleton stays centred; a stack takes stable, gently overlapping
+    // seats around it. Let stacked tokens cross the individual face edge a
+    // little instead of cutting their already-reduced silhouettes flat.
     const ux = cell.center.x + (stack?.x || 0), uy = cell.center.y + (stack?.y || 0);
     const civilian = CIVILIAN_UNITS.has(unit.type);
     const tokenInk = unitTokenInk(unit.owner);
     cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : tokenInk;
     cx.lineWidth = outline;
-    if (commandToken) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
+    const commandTokenClip = commandToken && !stack.stacked;
+    if (commandTokenClip) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
     if (commandToken) strategicUnitTokenPath(civilian, ux, uy, r);
     else { cx.beginPath(); cx.arc(ux, uy, r, 0, 7); }
     cx.fill(); cx.stroke();
@@ -21423,8 +22155,8 @@ function drawPlanetMap() {
       drawUnitPictogram(unit.embarked ? "galley" : unit.type, ux, uy,
                         r * 1.48, tokenInk);
       drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
-      cx.restore();
     }
+    if (commandTokenClip) cx.restore();
   }
   for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
@@ -21515,7 +22247,8 @@ function draw() {
   onscreen.sort((a, b) => a[0] - b[0]);
   const tiles = onscreen.map(v => v[1]);
   const naturalWonderPlacements = buildNaturalWonderPlacements(tiles);
-  const visSet = new Set(state.visible.map(key));
+  const visible = new Set(state.visible.map(key));
+  const visSet = new Set((state.turn_visible || state.visible).map(key));
   const campSet = new Set(state.camps.map(key));
   const cityTiles = new Set(state.cities.map(c => key(c.pos)));
   const workedSet = new Set(state.cities.flatMap(c =>
@@ -21568,7 +22301,21 @@ function draw() {
       cx.fill();
     }
     cx.fill();
-    if (!beau) { hexPath(x, y); cx.strokeStyle = "#00000038"; cx.lineWidth = 1; cx.stroke(); }
+  }
+  // Volcanic Soil is part of the ground: it sits over the terrain color but
+  // under outlines, borders, roads, landforms, features, improvements,
+  // resources, districts, cities, and units.
+  if (!beau) {
+    for (const t of tiles) {
+      if (t.feature !== "volcanic_soil") continue;
+      const [x, y0] = hexXY(t.pos[0], t.pos[1]);
+      drawStrategicVolcanicSoil(t, x, y0 - elev(t));
+    }
+    for (const t of tiles) {
+      const [x, y0] = hexXY(t.pos[0], t.pos[1]);
+      hexPath(x, y0 - elev(t));
+      cx.strokeStyle = "#00000038"; cx.lineWidth = 1; cx.stroke();
+    }
   }
   // --- hex grid (G)
   // The painted views spend real effort dissolving the grid, so this is not
@@ -21619,7 +22366,7 @@ function draw() {
     // landscape; strategic mode intentionally keeps tile identity explicit.
     if (!beau && t.owner !== null && t.owner !== undefined) {
       hexPath(x, y, S + 0.15);
-      cx.globalAlpha = 0.11;
+      cx.globalAlpha = TERRITORY_TINT_SCALE * 0.11;
       cx.fillStyle = pcol(t.owner);
       cx.fill();
     }
@@ -21726,10 +22473,10 @@ function draw() {
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     hexPath(x, yy - elev(t), S - 0.5);
     cx.fillStyle = pcol(t.owner);
-    cx.globalAlpha = ownerIsCityState(t.owner)
+    cx.globalAlpha = TERRITORY_TINT_SCALE * (ownerIsCityState(t.owner)
       ? MAP_CIV_HIERARCHY.flatWashCityState
       : beau ? MAP_CIV_HIERARCHY.flatWashMajorPainted
-             : MAP_CIV_HIERARCHY.flatWashMajorStrategic;
+             : MAP_CIV_HIERARCHY.flatWashMajorStrategic);
     cx.fill();
   }
   cx.globalAlpha = 1;
@@ -22043,10 +22790,7 @@ function draw() {
       if (beau) {
         if (!drawEnvironment3D("volcano", t, x, y)) drawFeatureSprite(t, x, y);
       } else {
-        cx.fillStyle = "#4a4140";
-        tri(x - 14, y + 10, x, y - 14, x + 14, y + 10);
-        cx.fillStyle = "#ef6b2e";
-        cx.beginPath(); cx.ellipse(x, y - 9, 4.5, 2.2, 0, 0, 7); cx.fill();
+        drawStrategicMountainIcon(x, y, true);
       }
       drawFeatureEffects(t, x, y);
       continue;
@@ -22057,10 +22801,7 @@ function draw() {
         else if (!drawEnvironment3D("mountain", t, x, y) && !drawMountainSprite(t, x, y))
           drawMountainRange(t, x, y);
       } else {
-        cx.fillStyle = "#6f747c";
-        tri(x - 13, y + 9, x - 3, y - 11, x + 5, y + 9);
-        cx.fillStyle = "#555a61";
-        tri(x - 1, y + 9, x + 7, y - 5, x + 14, y + 9);
+        drawStrategicMountainIcon(x, y, false);
       }
       continue;
     }
@@ -22094,15 +22835,19 @@ function draw() {
                       11 + eh * 3, 2.6 + eh * 0.8);
       }
     } else if (t.hills && !beau) {
-      // Centred, and low: two half-circles stood up like croquet hoops and
-      // fought every other mark the tile carries for the middle of the face.
-      // At two fifths of the height they are swells in the ground — the same
-      // width, so hill country still reads as hill country from across the
-      // map, but nothing has to be drawn around them.
-      cx.strokeStyle = "#00000066"; cx.lineWidth = 2.4;
+      // Keep the 20%-wider footprint and fixed lower-corner baseline, but draw
+      // the lobes twice as tall so the landform reads clearly at survey zoom.
+      const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
+      // Seat the base on the horizontal through the hex's two lower outside
+      // corners. Deriving it from the projected hex keeps the glyph aligned if
+      // tile size or Strategic's pitch ever changes.
+      const hillBaseY = y + S * YS / 2;
+      cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
       cx.beginPath();
-      cx.ellipse(x - 7, y + 3, 6.5, 2.6, 0, Math.PI, 0);
-      cx.ellipse(x + 6, y + 3, 6.5, 2.6, 0, Math.PI, 0);
+      cx.ellipse(x - 7 * hillWidth, hillBaseY,
+                 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
+      cx.ellipse(x + 6 * hillWidth, hillBaseY,
+                 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
       cx.stroke();
     }
     if (t.terrain === "desert" && !t.feature && beau) {
@@ -22153,18 +22898,20 @@ function draw() {
         }
       }
     } else if (t.feature === "marsh") {
-      cx.strokeStyle = "#2c6b4f"; cx.lineWidth = 2.2;
-      for (let i = -1; i <= 1; i++) { cx.beginPath();
-        cx.moveTo(x + i * 8, y + 9); cx.lineTo(x + i * 8, y - 3); cx.stroke(); }
+      drawStrategicMarsh(x, y);
     } else if (t.feature === "oasis") {
+      // The original 17 x 11 pond and 13 px palm formed a roughly 22 x 20
+      // mark whose visual midpoint was (2.5, -1.5) from the hex centre. Scale
+      // that whole composition by the requested 2.5, then subtract its old
+      // midpoint so the enlarged oasis remains centred in its owning tile.
+      cx.save();
+      cx.translate(x, y); cx.scale(2.5, 2.5); cx.translate(-2.5, 1.5);
       cx.fillStyle = "#3d7aa6"; cx.beginPath();
-      cx.ellipse(x, y + 3, 8.5, 5.5, 0, 0, 7); cx.fill();
-      cx.font = "13px sans-serif"; cx.fillText("🌴", x + 7, y - 5);
+      cx.ellipse(0, 3, 8.5, 5.5, 0, 0, 7); cx.fill();
+      cx.font = "13px sans-serif"; cx.fillText("🌴", 7, -5);
+      cx.restore();
     } else if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(t.feature)) {
-      cx.strokeStyle = "#4c83a2"; cx.lineWidth = 2;
-      for (let i = -1; i <= 1; i++) {
-        cx.beginPath(); cx.moveTo(x - 12, y + i * 5); cx.quadraticCurveTo(x, y + i * 5 - 4, x + 12, y + i * 5); cx.stroke();
-      }
+      drawStrategicFloodplains(t, x, y);
     } else if (t.feature === "reef") {
       cx.fillStyle = "#72d3c2";
       for (const [dx,dy,r] of [[-7,2,4],[1,-3,5],[8,5,3]]) {
@@ -22179,18 +22926,13 @@ function draw() {
       cx.beginPath(); cx.moveTo(x - 15, y - 3); cx.lineTo(x - 5, y - 12);
       cx.lineTo(x + 13, y - 8); cx.lineTo(x + 16, y + 7); cx.lineTo(x, y + 11);
       cx.lineTo(x - 13, y + 6); cx.closePath(); cx.fill(); cx.stroke();
-    } else if (t.feature === "volcanic_soil") {
-      cx.fillStyle = "#332f2b";
-      for (const [dx,dy,r] of [[-9,3,4],[0,-4,5],[9,5,3]]) {
-        cx.beginPath(); cx.arc(x + dx, y + dy, r, 0, 7); cx.fill();
-      }
     } else if (t.feature === "impact_zone") {
       cx.fillStyle = "#292523"; cx.strokeStyle = "#d16a2f"; cx.lineWidth = 2;
       cx.beginPath(); cx.arc(x, y, 11, 0, 7); cx.fill(); cx.stroke();
     }
     drawFeatureEffects(t, x, y);
     if (t.improvement === "barbarian_camp" || campSet.has(k)) {
-      cx.font = "18px sans-serif"; cx.fillText("⛺", x, y);
+      drawBarbarianCamp(x, y);
     } else if (t.improvement) {
       drawImprovement(t, x, y);
     }
@@ -22221,6 +22963,7 @@ function draw() {
     drawEmpireDetailsFlat(tiles);
   } else if (mapLens === "settler") drawSettlerLensFlat(tiles);
   else if (mapLens) drawThematicLensFlat(tiles);
+  drawNaturalWonderPerimeters(tiles);
   // --- raids in the making. A barbarian camp that finds a city goes on alert
   // and starts throwing raiders at it, and the wire has said so all along —
   // which camp, which city, and for how long — while the map drew a tent
@@ -22291,12 +23034,13 @@ function draw() {
       cx.strokeStyle = "#ffffff8c"; cx.lineWidth = 1.6; cx.stroke(); }
     else { cx.strokeStyle = "#ff5050c4"; cx.lineWidth = 3; cx.stroke(); }
   }
-  // --- fog: parchment wash over explored-but-not-visible tiles
+  // --- fog: parchment wash over explored tiles not seen this player turn
   for (const t of tiles) {
     if (visSet.has(key(t.pos))) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
-    // A fogged tile that still touches sight gets a lighter wash, so knowledge
+    // A fogged tile that still touches this turn's seen region gets a lighter
+    // wash, so knowledge
     // falls off over two steps rather than one hard hex cut. The penumbra is
     // put on the fogged side only — bleeding haze onto a visible tile would
     // make it ambiguous which tiles the player can actually see.
@@ -22346,7 +23090,9 @@ function draw() {
     // hex, and disappears one segment at a time as that ground is explored.
     drawHiddenMapFrontier(tiles);
   }
-  // --- right-drag order line
+  if (Number.isInteger(state.view_player))
+    drawFlatVisibilityPerimeter(tiles, visible);
+  // --- secondary-press order line
   if (rdrag && rdragTo && sel) {
     const ts = TMAP.get(key(sel.pos)), tt = TMAP.get(key(rdragTo));
     const [x1, yy1] = hexXY(sel.pos[0], sel.pos[1]);
@@ -22752,11 +23498,10 @@ function draw() {
       : null;
     if (stack) { x += stack.x; y += stack.y; }
     const rr = beau ? 10.5 : stack.r;
-    // A moving unit is deliberately between its two cells; every stationary
-    // strategic unit is clipped to the exact hex it occupies. This also keeps
-    // an icon's longest weapon, health strip, promotion pips, and selection
-    // cue from escaping the cell at any map bearing.
-    const strategicTokenClip = !beau && !moving;
+    // Stacked command tokens may cross a tile edge slightly. Their stable
+    // overlap is more legible than clipping each reduced token back to the hex;
+    // singleton sizing and moving-unit behavior remain unchanged.
+    const strategicTokenClip = !beau && !moving && !stack.stacked;
     if (strategicTokenClip) { cx.save(); hexPath(tileX, tileY); cx.clip(); }
     if (beau) {
       drawCinematicSubjectMarker(u, x, y, now);
@@ -22800,9 +23545,9 @@ function draw() {
     }
     // Flat strategic tokens always carry their health state. The strip is
     // built from the same hex-relative radius as the token and seated in its
-    // lower interior, so it becomes larger on screen with zoom but never
-    // crosses the boundary of the unit's assigned tile. Painted figures keep
-    // their existing, damage-only bar above the model.
+    // lower interior, so it becomes larger on screen with zoom without adding
+    // more overflow than the token itself. Painted figures keep their existing,
+    // damage-only bar above the model.
     if (!beau) {
       drawStrategicUnitHealth(x, y, rr, u.hp, now);
     } else if (u.hp < 100) {
@@ -22852,8 +23597,8 @@ function draw() {
     if (sel && sel.id === u.id) {
       cx.strokeStyle = "#f0c674"; cx.lineWidth = 2.4;
       cx.setLineDash([5, 4]);
-      // The strategic selection cue lives inside its token rather than growing
-      // beyond the hex boundary at survey zoom.
+      // The strategic selection cue lives inside its token rather than adding
+      // another ring outside the stack footprint at survey zoom.
       const selectionRadius = beau ? ur + 6 * us : Math.max(0, rr - 1.2);
       cx.beginPath(); cx.arc(x, y, selectionRadius, 0, 7); cx.stroke();
       cx.setLineDash([]);
@@ -23045,6 +23790,7 @@ function draw() {
   // the weather and the flash, which are the frame itself rather than things in
   // the world.
   drawFlatSatellites(now0);
+  drawFlatLaunches(now0);
   drawNuclearBlasts(now0);
   lastSmokeBucket = smokeBucket;
   if (MODE.atmosphere) drawAtmosphere(now0);
@@ -23442,6 +24188,28 @@ function planetMiniScale(width, height) {
   return knowsGlobe() ? Math.min(width, height) * .44
                       : Math.hypot(width, height) / 2 / CHART_LIMIT;
 }
+function drawPlanetMiniNaturalWonderPerimeters(cells) {
+  const segments = [];
+  for (const {tile, cell, points} of cells) {
+    if (!cell || !isNaturalWonder(tile.feature)) continue;
+    for (let side = 0; side < points.length; side++) {
+      const neighbor = TMAP.get(cell.nbrs[side]);
+      if (naturalWonderContinues(tile, neighbor)) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      segments.push([a.x, a.y, b.x, b.y]);
+    }
+  }
+  if (!segments.length) return;
+  mx2.save(); mx2.lineCap = "round"; mx2.lineJoin = "round";
+  for (const [color, width] of [["#201707", 2.5], ["#f0c94e", 1.15]]) {
+    mx2.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      mx2.moveTo(ax, ay); mx2.lineTo(bx, by);
+    }
+    mx2.strokeStyle = color; mx2.lineWidth = width; mx2.stroke();
+  }
+  mx2.restore();
+}
 function drawPlanetMini() {
   if (!planetReady()) return planetMap();
   const {width, height} = syncMiniCanvas();
@@ -23455,7 +24223,7 @@ function drawPlanetMini() {
     mx2.fillStyle = "#123b55";
     mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.fill();
   }
-  const visible = new Set(state.visible.map(key));
+  const visible = new Set((state.turn_visible || state.visible).map(key));
   const spectator = !Number.isInteger(state.view_player);
   const reach = Math.hypot(width, height) / 2;
   const cells = planetCells(camera, scale, centerX, centerY, reach);
@@ -23465,12 +24233,13 @@ function drawPlanetMini() {
     mx2.fillStyle = spectator || visible.has(key(cell.tile.pos)) ? base : shade(base, .35);
     mx2.fill();
     if (cell.tile.owner !== null && cell.tile.owner !== undefined) {
-      mx2.globalAlpha = ownerIsCityState(cell.tile.owner)
-        ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor;
+      mx2.globalAlpha = TERRITORY_TINT_SCALE * (ownerIsCityState(cell.tile.owner)
+        ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor);
       mx2.fillStyle = cityBannerColor(cell.tile.owner); mx2.fill();
       mx2.globalAlpha = 1;
     }
   }
+  drawPlanetMiniNaturalWonderPerimeters(cells);
   if (!camera.chart) {
     mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
     mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.stroke();
@@ -23586,6 +24355,34 @@ function miniHexPath(x, y, size) {
   }
   mx2.closePath();
 }
+function miniHexCorner(x, y, size, cornerIndex) {
+  const angle = Math.PI / 180 * (60 * cornerIndex - 30);
+  return [x + size * Math.cos(angle), y + size * Math.sin(angle)];
+}
+function drawMiniNaturalWonderPerimeters(tiles, layout) {
+  const segments = [];
+  for (const tile of tiles) {
+    if (!isNaturalWonder(tile.feature)) continue;
+    const [x, y] = miniHexCenter(tile.pos, layout);
+    for (let side = 0; side < 6; side++) {
+      const neighbor = nbrTile(tile.pos, DIRS[side]);
+      if (naturalWonderContinues(tile, neighbor)) continue;
+      const [first, second] = EDGE_CORNERS[side];
+      segments.push([...miniHexCorner(x, y, layout.size, first),
+                     ...miniHexCorner(x, y, layout.size, second)]);
+    }
+  }
+  if (!segments.length) return;
+  mx2.save(); mx2.lineCap = "round"; mx2.lineJoin = "round";
+  for (const [color, width] of [["#201707", 2.5], ["#f0c94e", 1.15]]) {
+    mx2.beginPath();
+    for (const [ax, ay, bx, by] of segments) {
+      mx2.moveTo(ax, ay); mx2.lineTo(bx, by);
+    }
+    mx2.strokeStyle = color; mx2.lineWidth = width; mx2.stroke();
+  }
+  mx2.restore();
+}
 function drawMini() {
   if (!state) return;
   if (drawPlanetMini()) return;
@@ -23604,7 +24401,7 @@ function drawMini() {
     mx2.translate(-miniWidth / 2, -miniHeight / 2);
   }
   const layout = miniLayout(miniWidth, miniHeight);
-  const visible = new Set(state.visible.map(key));
+  const visible = new Set((state.turn_visible || state.visible).map(key));
   for (const t of tiles) {
     const [x, y] = miniHexCenter(t.pos, layout);
     const terrainColor = TERRAIN[t.terrain] || "#333";
@@ -23625,11 +24422,12 @@ function drawMini() {
     // ground at minimap strength. The banner colour carries their TYPE instead,
     // and matches the hex already drawn for their capital.
     mx2.fillStyle = cityBannerColor(t.owner);
-    mx2.globalAlpha = ownerIsCityState(t.owner)
-      ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor;
+    mx2.globalAlpha = TERRITORY_TINT_SCALE * (ownerIsCityState(t.owner)
+      ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor);
     miniHexPath(x, y, layout.size + 0.12); mx2.fill();
   }
   mx2.globalAlpha = 1;
+  drawMiniNaturalWonderPerimeters(tiles, layout);
   for (const c of state.cities) {
     const [x, y] = miniHexCenter(c.pos, layout);
     const cityState = ownerIsCityState(c.owner);
@@ -23979,6 +24777,7 @@ function hudTurnPlate() {
 function playerHudOverview() {
   const contenders = state.players
     .filter(p => p.alive && !p.is_minor && !p.is_barbarian && metPlayer(p));
+  const capitals = capitalIndex();
   const focusId = SPEC ? state.view_player : state.player;
   const focusPlayer = Number.isInteger(focusId)
     ? contenders.find(player => player.id === focusId)
@@ -24004,19 +24803,26 @@ function playerHudOverview() {
     defaultVictoryRows = Math.max(defaultVictoryRows,
       Math.min(DEFAULT_VICTORY_LEADERS, ranked.length) + (focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0));
     return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
-      `<div class="victory-heading"><span>${track.icon}</span><b>${track.label}</b></div>` +
+      `<div class="victory-heading"><b>${track.label}</b></div>` +
+      `<div class="victory-body">` +
       `<div class="victory-subheading${track.id === "score" ? " score" : ""}">${victoryTrackerSubheading(track.id)}</div>` +
       `<div class="victory-list">` + ranked.map((player, index) => {
         const metric = victoryMetric(player, track.id);
         const progress = Math.max(0, Math.min(100, +metric.progress || 0));
         const isFocus = player.id === focusPlayer?.id;
         const focusLabel = isFocus ? (SPEC ? "Viewed civilization · " : "Your civilization · ") : "";
+        const capital = empireCapitalFrom(capitals, player.id);
+        const empireTitle = capital
+          ? `View ${player.civ}'s empire from its capital, ${capital.name}`
+          : `${player.civ} has no capital to view`;
         return `<div class="victory-entry${isFocus ? " focus-player" : ""}" data-victory-focus="${isFocus}" ` +
           `style="--civ:${pcol(player.id)}" title="${focusLabel}#${index + 1} ${player.civ}: ${victoryDescription(track.id, metric)}">` +
           `<div class="victory-line"><span class="victory-civ-dot"></span>` +
-          `<span class="victory-civ">${player.civ}</span><span class="victory-value${track.id === "score" ? " single" : ""}">${victoryTrackerStats(track.id, metric)}</span></div>` +
+          `<button type="button" class="victory-civ" data-hud-action="capital" data-hud-civ="${player.id}" ` +
+          `title="${escapeAttr(empireTitle)}" aria-label="${escapeAttr(empireTitle)}"${capital ? "" : " disabled"}>` +
+          `${player.civ}</button><span class="victory-value${track.id === "score" ? " single" : ""}">${victoryTrackerStats(track.id, metric)}</span></div>` +
           victoryMeter(track.id, metric, progress) + `</div>`;
-      }).join("") + `</div></section>`;
+      }).join("") + `</div></div></section>`;
   }).join("");
   // The lobby lets every victory condition be switched off, and then there is
   // genuinely nothing to track: `set_winner` is gated on the condition being
@@ -24024,18 +24830,18 @@ function playerHudOverview() {
   // having won. Say that instead of standing an empty panel down the rail.
   const victoryBody = victoryTracks ||
     `<section class="victory-track victory-none" aria-label="No victory conditions">` +
-    `<div class="victory-heading"><span>◌</span><b>No victory conditions</b></div>` +
-    `<p class="victory-none-note">Every path is switched off in Game setup, so this ` +
-    `world plays to turn ${turnCapLabel()} and ends without a winner.</p></section>`;
+    `<div class="victory-heading"><b>No victory conditions</b></div>` +
+    `<div class="victory-body"><p class="victory-none-note">Every path is switched off in Game setup, so this ` +
+    `world plays to turn ${turnCapLabel()} and ends without a winner.</p></div></section>`;
   const victoryCount = Math.max(1, enabledVictoryTracks.length);
   // Two floors for two orientations: one band per row down the rail, and one
   // row of columns on a viewport too narrow to have a rail at all.
   // One contender needs only a compact band. Three leaders take a taller one,
   // and a watched player outside them adds exactly one more row. The outer
   // tracker follows that content until the map/minimap seam caps it.
-  const victoryTrackHeight = Math.max(64, 50 + defaultVictoryRows * 18);
+  const victoryTrackHeight = Math.max(64, 50 + defaultVictoryRows * 20);
   const victoryMinHeight = victoryCount * victoryTrackHeight + Math.max(0, victoryCount - 1) * 2;
-  const victoryMinWidth = victoryCount * 128 + Math.max(0, victoryCount - 1) * 2;
+  const victoryMinWidth = victoryCount * 148 + Math.max(0, victoryCount - 1) * 2;
   const victoryHudHeight = victoryMinHeight + 35;
   document.getElementById("maparea").style.setProperty("--victory-hud-height", `${victoryHudHeight}px`);
   const overview =
@@ -24233,6 +25039,12 @@ function drawPlayerHud() {
   syncVictoryLeaderCapacity(victoryHud);
   const acting = SPEC ? state.current : 0;
   const highlightActing = highlightActingPlayerInHud();
+  // The omniscient standings describe the world, not whichever seat happens
+  // to be taking its turn. Use the public war ledger there so every current
+  // belligerent is red at once; a played or Watch-as view keeps the familiar
+  // relationship-to-me meaning supplied by `at_war_with_me`.
+  const activeWarPlayers = SPEC && !Number.isInteger(state.view_player)
+    ? activeWarPlayerIds() : null;
   const majors = state.players
     .filter(p => !p.is_minor && !p.is_barbarian && metPlayer(p))
     .sort((a, b) => b.score - a.score || a.id - b.id);
@@ -24327,11 +25139,12 @@ function drawPlayerHud() {
           (capitalHolder ? ` — now held by ${capitalHolder.civ}` : " — now in other hands")
         : `View ${p.civ}'s empire from its capital, ${capital.name}`;
       const alliance = p.alliance;
+      const atWar = activeWarPlayers ? activeWarPlayers.has(p.id) : p.at_war_with_me;
       const strategy = p.ai_strategy || "";
       const strategyText = strategy ? `${titleCase(strategy)} plan` : "";
       const relation = !p.alive ? "Defeated"
+        : atWar ? "At war"
         : p.id === acting ? "Acting civilization"
-        : p.at_war_with_me ? "At war"
         : alliance ? `${titleCase(alliance.kind)} Alliance · Level ${alliance.level}`
         : p.friend ? "Declared Friend"
         : "Neutral standing";
@@ -24389,7 +25202,7 @@ function drawPlayerHud() {
         ? `${eloValue} ELO${eloProvisional ? ` (${provisionalNote})` : ""}`
         : "Unrated";
       // The column heading already supplies the unit, so keep its cells to the
-      // rating itself. This makes a four-digit ELO fit without truncation, so
+      // rating itself. The protected ELO track keeps the full score visible, so
       // a provisional one is marked by its class rather than by a character
       // that would push the value over the column's width.
       const playerElo = eloKnown ? `${eloValue}` : "—";
@@ -24407,8 +25220,7 @@ function drawPlayerHud() {
         : `${p.ai_name || "AI player"} · ${eloKnown
             ? `${eloProvisional ? "provisional " : ""}ELO ${eloValue} ±${eloRd}` : "unrated"}` +
           ` · ${strategy ? `${titleCase(strategy)} active strategy` : "no active strategy"}`;
-      const relationClass = alliance ? "allied" : p.friend ? "friend" : "";
-      const stateClass = `${relationClass} ${p.at_war_with_me ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
+      const stateClass = `${atWar ? "at-war" : ""} ${p.alive ? "" : "dead"}`;
       const stats = statsByPlayer.get(p.id);
       const watchTitle = `Watch ${p.civ} through its fog of war · ${relationSummary}${agendaText}`;
       const expanded = hudOpenDossiers.includes(p.id);
@@ -24487,6 +25299,7 @@ function drawPlayerHud() {
   }
   hudHtml = html;
   hud.innerHTML = html;
+  syncPlayerHudEloFloor();
   const playerRibbon = hud.querySelector(".diplomacy-ribbon");
   if (playerRibbon) playerRibbon.scrollTop = playerScroll;
   // innerHTML replaced the elements the observer was watching.
@@ -24615,6 +25428,22 @@ hudRibbon.addEventListener("click", ev => {
   if (target) runHudAction(target);
 });
 
+// The tracker is rebuilt from every changed turn snapshot just like the
+// standings ribbon. Handle pointer activation on press so a fast spectator
+// repaint cannot replace a civilization link between mousedown and click;
+// retain click for keyboard activation, whose detail is zero.
+const victoryHudRibbon = document.getElementById("victoryhud");
+victoryHudRibbon.addEventListener("mousedown", ev => {
+  if (ev.button !== 0) return;
+  const target = ev.target.closest?.("[data-hud-action]");
+  if (target) runHudAction(target);
+});
+victoryHudRibbon.addEventListener("click", ev => {
+  if (ev.detail !== 0) return;
+  const target = ev.target.closest?.("[data-hud-action]");
+  if (target) runHudAction(target);
+});
+
 const dossierWindows = document.getElementById("dossier-windows");
 dossierWindows.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
@@ -24629,6 +25458,26 @@ dossierWindows.addEventListener("click", ev => {
 
 function civName(id) {
   return state.players.find(player => player.id === id)?.civ || `Player ${id}`;
+}
+
+// The war log is public knowledge and retains alliance and city-state parties,
+// including when one leaves a conflict that continues without it. Only parties
+// whose latest interval is still open count; the principals are the fallback
+// for legacy records that predate the party list.
+function activeWarPlayerIds() {
+  const players = new Set();
+  for (const war of (state.wars || [])) {
+    if (war.ended !== null && war.ended !== undefined) continue;
+    const parties = Array.isArray(war.parties) ? war.parties : [];
+    if (parties.length) {
+      for (const party of parties)
+        if (party.exited === null || party.exited === undefined) players.add(party.player);
+    } else {
+      for (const player of [war.aggressor, war.defender])
+        if (player !== null && player !== undefined) players.add(player);
+    }
+  }
+  return players;
 }
 
 // Wars this civilization is still fighting, longest-running first, with what
@@ -27738,7 +28587,7 @@ const MAP_LENS_INFO = {
   religion:"RELIGION LENS — territory follows its majority faith · city rings show pressure distribution",
   continent:"CONTINENT LENS — each geographic continent has one color · water remains blue",
   appeal:"APPEAL LENS — dark green Breathtaking · green Charming · gray Average · orange Uninviting · red Disgusting",
-  settler:"SETTLER LENS — green is stronger · blue edge fresh water · teal coast · ochre dry (2 to exit)",
+  settler:"SETTLER — orange→green quality · blue/teal/ochre: fresh/coast/dry · targets: best",
   government:"GOVERNMENT LENS — territory is grouped by its civilization's current government",
   political:"POLITICAL LENS — territory uses civilization colors · city-states are dark",
   tourism:"TOURISM LENS — highlighted tiles show exact current Tourism per turn",
@@ -27783,7 +28632,9 @@ function validSettle(t) {
   for (const c of state.cities) if (whexDist(t.pos, c.pos) < 4) return false;
   return true;
 }
-let settleLensCache = { state:null, rules:null, sites:new Map(), low:0, high:1 };
+let settleLensCache = {
+  state:null, rules:null, sites:new Map(), recommended:new Set(), low:0, high:1,
+};
 function settlerLensSites() {
   if (settleLensCache.state === state && settleLensCache.rules === RULES) return settleLensCache;
   const sites = new Map();
@@ -27798,11 +28649,33 @@ function settlerLensSites() {
   const at = fraction => values[Math.min(values.length - 1,
     Math.max(0, Math.floor((values.length - 1) * fraction)))] ?? 0;
   const low = at(.12), high = Math.max(low + 1, at(.92));
-  settleLensCache = {state, rules:RULES, sites, low, high};
+  const recommended = new Set();
+  const lens = {state, rules:RULES, sites, recommended, low, high};
+  for (const site of sites.values()) {
+    if (settleSiteQuality(site, lens) < .68) continue;
+    const siteKey = key(site.tile.pos);
+    let localBest = true;
+    for (const offset of SETTLE_DISK) {
+      if (offset[0] === 0 && offset[1] === 0) continue;
+      const neighbor = nbrTile(site.tile.pos, offset);
+      const candidate = neighbor && sites.get(key(neighbor.pos));
+      if (!candidate) continue;
+      if (candidate.value > site.value + 1e-6 ||
+          (Math.abs(candidate.value - site.value) <= 1e-6 &&
+           key(candidate.tile.pos) < siteKey)) {
+        localBest = false; break;
+      }
+    }
+    if (localBest) recommended.add(siteKey);
+  }
+  settleLensCache = lens;
   return settleLensCache;
 }
 function settleSiteQuality(site, lens = settlerLensSites()) {
   return Math.max(0, Math.min(1, (site.value - lens.low) / (lens.high - lens.low)));
+}
+function settleSiteIsRecommended(site, lens = settlerLensSites()) {
+  return lens.recommended.has(key(site.tile.pos));
 }
 function tackStoreKey() { return "civvis-tacks-" + (lastSeed === null ? "x" : lastSeed); }
 function loadTacks() {
@@ -28236,18 +29109,6 @@ function advanceUserCameraMotion(now = performance.now()) {
   const dt = Math.max(1, Math.min(50, now - (cameraMotionLast || now - 16)));
   cameraMotionLast = now;
   let active = false;
-  // Edge pan — Civ 6's Gameplay > Edge Pan. While the pointer rests against a
-  // side of the map the camera walks that way for as long as it stays there.
-  // It is a velocity and not a flight, so it does not fight the eased camera
-  // moves the rest of the client asks for; it just cancels one that is running.
-  if (edgePanVector && !dragState && !cameraZoom) {
-    cameraFlight = null;
-    const step = EDGE_PAN_SPEED * dt / 1000 / Math.max(.25, cam.scale);
-    const vx = edgePanVector.x * step, vy = edgePanVector.y * step / YS;
-    cam.x = clampCameraX(cam.x + COSR * vx + SINR * vy);
-    cam.y = clampCameraY(cam.y - SINR * vx + COSR * vy);
-    active = true;
-  }
   if (cameraZoom) {
     const ease = 1 - Math.pow(.012, dt / 1000);
     if (cameraZoom.kind === "planet" && cameraZoom.path) {
@@ -28988,26 +29849,17 @@ bindHeldZoom("zout", () => { takeCameraControl(true); zoomAt(skyZoomStep(1 / 1.3
 
 // ---------------------------------------------------------------- input
 let dragState = null, dragMoved = false, rdrag = null, rdragTo = null;
+let suppressControlClick = false;
 let altTap = false; // tapping Alt (no drag) resets the map's viewing angles
-// How near the pointer has to come to a side of the map before the camera
-// starts walking, and how fast it walks there in screen pixels a second.
-const EDGE_PAN_BAND = 28, EDGE_PAN_SPEED = 760;
-let edgePanVector = null;
-// Nothing pans under a pointer that is over an open screen, mid-drag, or on a
-// board the player is not driving.
-function updateEdgePan(clientX, clientY) {
-  if (!EDGE_PAN || SPEC || dragState || cinemaActive() || anyScreenOpen()) {
-    edgePanVector = null; return;
-  }
-  const r = cv.getBoundingClientRect();
-  const left = clientX - r.left, right = r.right - clientX;
-  const top = clientY - r.top, bottom = r.bottom - clientY;
-  if (left < 0 || right < 0 || top < 0 || bottom < 0) { edgePanVector = null; return; }
-  const x = left < EDGE_PAN_BAND ? -1 : right < EDGE_PAN_BAND ? 1 : 0;
-  const y = top < EDGE_PAN_BAND ? -1 : bottom < EDGE_PAN_BAND ? 1 : 0;
-  if (!x && !y) { edgePanVector = null; return; }
-  if (!edgePanVector) takeCameraControl(true);
-  edgePanVector = {x, y};
+// Civ 6 listens to the platform's secondary mouse button. Browsers expose a
+// real right/two-finger click as button 2; macOS also defines Control-click as
+// the secondary-click gesture, but exposes that compatibility gesture as a
+// modified primary button. Command-click is deliberately left to the browser.
+const MAC_POINTER_PLATFORM = /mac/i.test(
+  navigator.userAgentData?.platform || navigator.platform || "");
+function isSecondaryMapButton(ev) {
+  return ev.button === 2 ||
+    (MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey);
 }
 cv.addEventListener("pointerdown", ev => {
   // Touch has its own one/two-finger path below. Mouse and pen share this
@@ -29015,7 +29867,18 @@ cv.addEventListener("pointerdown", ev => {
   // events and keeps moving when the pointer leaves the canvas.
   if (ev.pointerType === "touch") return;
   const r = cv.getBoundingClientRect();
-  if (ev.button === 0) {
+  const secondary = isSecondaryMapButton(ev);
+  if (secondary) {
+    ev.preventDefault();
+    const pos = state && !SPEC
+      ? pixelToHex(ev.clientX - r.left, ev.clientY - r.top) : null;
+    rdrag = {pointerId: ev.pointerId};
+    rdragTo = pos;
+    // A native right click does not dispatch `click`; Control-click can. Eat
+    // only that compatibility click, never the next ordinary selection.
+    suppressControlClick = ev.button === 0;
+    if (sel && pos) draw();
+  } else if (ev.button === 0) {
     ev.preventDefault();
     cameraFlight = null; cameraZoom = null; clearCameraInertia();
     dragState = { pointerId:ev.pointerId, x: ev.clientX, y: ev.clientY,
@@ -29030,15 +29893,6 @@ cv.addEventListener("pointerdown", ev => {
                   lastPX:ev.clientX, lastPY:ev.clientY, vpx:0, vpy:0,
                   controlled:false };
     dragMoved = false;
-  } else if (ev.button === 2 && state && !SPEC) {
-    const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
-    if (!pos) return;
-    const here = state.units.filter(u => u.owner === 0 && key(u.pos) === key(pos));
-    if (here.length) {
-      sel = here.find(u => u.moves_left > 0) || here[0];
-      selCity = null; drawSide(); drawUbar();
-    }
-    if (sel) { rdrag = true; rdragTo = pos; draw(); }
   }
   // Civ 6's middle button snaps the camera to whatever plot the cursor is on.
   else if (ev.button === 1) {
@@ -29046,7 +29900,7 @@ cv.addEventListener("pointerdown", ev => {
     const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
     if (pos) { takeCameraControl(true); centerOn(pos); }
   }
-  if (ev.button === 0 || ev.button === 2) {
+  if ((ev.button === 0 && !secondary) || rdrag?.pointerId === ev.pointerId) {
     try { cv.setPointerCapture?.(ev.pointerId); } catch (_) {}
   }
 });
@@ -29102,7 +29956,7 @@ window.addEventListener("pointermove", ev => {
       draw(); drawMini();
     }
   }
-  if (rdrag) {
+  if (rdrag && ev.pointerId === rdrag.pointerId) {
     const r = cv.getBoundingClientRect();
     const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
     if (pos && (!rdragTo || key(pos) !== key(rdragTo))) { rdragTo = pos; draw(); }
@@ -29110,6 +29964,18 @@ window.addEventListener("pointermove", ev => {
 });
 function endMapPointer(ev) {
   if (ev.pointerType === "touch") return;
+  // Finish the gesture that began as a secondary press even if the user lets
+  // go of Control before releasing the primary mouse button on macOS.
+  if (rdrag && ev.pointerId === rdrag.pointerId) {
+    const r = cv.getBoundingClientRect();
+    const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
+    rdrag = null; rdragTo = null;
+    if (suppressControlClick)
+      setTimeout(() => { suppressControlClick = false; }, 0);
+    if (!pos || !sel) { draw(); return; }
+    issueSelectedUnitOrder(pos);
+    return;
+  }
   if (ev.button === 0) {
     if (dragState && ev.pointerId !== dragState.pointerId) return;
     const released = dragState;
@@ -29137,27 +30003,16 @@ function endMapPointer(ev) {
     }
     return;
   }
-  if (ev.button !== 2 || !rdrag) return;
-  const r = cv.getBoundingClientRect();
-  const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
-  rdrag = null; rdragTo = null;
-  if (!pos || !sel) { draw(); return; }
-  const k = key(pos);
-  if (key(sel.pos) === k) { draw(); return; }
-  const atk = state.legal_actions.find(a => a.unit === sel.id &&
-    (a.type === "attack" || a.type === "ranged" || a.type === "theological_attack") && key(a.target) === k);
-  if (atk) { send(atk); return; }
-  if ((sel.reachable || []).some(p => key(p) === k)) {
-    send({type: "move_to", unit: sel.id, to: [pos[0], pos[1]]});
-    return;
-  }
-  draw();
 }
 window.addEventListener("pointerup", endMapPointer);
 window.addEventListener("pointercancel", ev => {
   if (ev.pointerType === "touch") return;
   if (dragState?.pointerId === ev.pointerId) dragState = null;
-  rdrag = null; rdragTo = null;
+  if (rdrag?.pointerId === ev.pointerId) {
+    rdrag = null; rdragTo = null;
+    if (suppressControlClick)
+      setTimeout(() => { suppressControlClick = false; }, 0);
+  }
   draw();
 });
 
@@ -29321,6 +30176,7 @@ cv.addEventListener("dblclick", ev => {
   zoomAt(skyZoomStep(ev.shiftKey ? 1 / 1.8 : 1.8), ev.clientX - r.left, ev.clientY - r.top);
 });
 cv.addEventListener("click", ev => {
+  if (suppressControlClick) { suppressControlClick = false; ev.preventDefault(); return; }
   if (dragMoved) { dragMoved = false; return; }
   const r = cv.getBoundingClientRect();
   const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
@@ -29341,22 +30197,6 @@ cv.addEventListener("click", ev => {
     selCity = city || null;
     drawSide();
     return;
-  }
-  if (sel) {
-    const atk = state.legal_actions.find(a => a.unit === sel.id &&
-      (a.type === "attack" || a.type === "ranged" || a.type === "theological_attack") && key(a.target) === k);
-    if (atk) { send(atk); return; }
-    if ((sel.reachable || []).some(p => key(p) === k)) {
-      send({type: "move_to", unit: sel.id, to: [pos[0], pos[1]]});
-      return;
-    }
-    // Out of range this turn is an order to travel, not a misclick. The
-    // engine paths the whole way and walks as far as the movement allows;
-    // the order carries the unit the rest of the way over later turns.
-    if (sel.moves_left > 0 && !TMAP.get(k)?.unknown) {
-      orderTravel(sel.id, [pos[0], pos[1]]);
-      return;
-    }
   }
   if (selCity && selCity._striking) {
     const sa = state.legal_actions.find(a => a.type === "city_strike" &&
@@ -29379,6 +30219,31 @@ cv.addEventListener("click", ev => {
   } else { sel = null; selCity = null; }
   draw(); drawSide(); drawUbar();
 });
+
+// Civ 6's ordinary unit order gesture: right/secondary press previews the
+// destination, and release commits the move or attack. Left click never comes
+// through here; it stays a pure selection gesture unless M/A/R armed a mode.
+function issueSelectedUnitOrder(pos) {
+  if (!sel || SPEC || !state) return false;
+  const k = key(pos);
+  if (key(sel.pos) === k) { draw(); return false; }
+  const attack = state.legal_actions.find(action => action.unit === sel.id &&
+    ["attack", "ranged", "theological_attack"].includes(action.type) &&
+    key(action.target) === k);
+  if (attack) { send(attack); return true; }
+  if ((sel.reachable || []).some(reachable => key(reachable) === k)) {
+    send({type: "move_to", unit: sel.id, to: [pos[0], pos[1]]});
+    return true;
+  }
+  // Civ 6 queues a path beyond the movement remaining this turn. CIVVIS's
+  // long-range route order provides the same contract across later turns.
+  if (sel.moves_left > 0 && !TMAP.get(k)?.unknown) {
+    orderTravel(sel.id, [pos[0], pos[1]]);
+    return true;
+  }
+  draw();
+  return false;
+}
 
 // Adjacency decides where districts go, but the map only ever said "campus
 // here" — never that the campus was worth four science, and never which
@@ -29526,6 +30391,16 @@ function tileOwnershipTipLine(t) {
 }
 function tileTipLines(t, pos, tileKey) {
   const lines = [];
+  // Who is standing here is what a hover over an occupied tile is asking, so
+  // the units lead and the ground they are standing on follows them.
+  for (const unit of state.units) {
+    if (key(unit.pos) !== tileKey) continue;
+    const civ = state.players[unit.owner]?.civ || `Player ${unit.owner}`;
+    lines.push(`<span class="tip-unit">● ${civAdjective(civ)} ${titleCase(unit.type)} — ` +
+      fmtYield(unit.hp) + " HP, " + fmtYield(unit.moves_left) + " MP" +
+      (unit.level > 1 ? ", level " + unit.level : "") + (unit.embarked ? ", embarked" : "") +
+      (unit.fortified ? ", fortified" : "") + "</span>");
+  }
   const owner = tileOwnershipTipLine(t);
   if (owner) lines.push(owner);
   if (mapLens === "government" && t.owner !== null && t.owner !== undefined) {
@@ -29595,9 +30470,11 @@ function tileTipLines(t, pos, tileKey) {
       " · " + appealBand(t.appeal));
   if (movement.length) lines.push("Movement: " + movement.join(" · "));
   if (mapLens === "settler") {
-    const site = settlerLensSites().sites.get(tileKey);
-    if (site) lines.push(`⌂ Settlement quality ${Math.round(settleSiteQuality(site) * 100)}/100 · ` +
-      (site.water === "fresh" ? "fresh water" : site.water === "coast" ? "coastal water" : "no water"));
+    const lens = settlerLensSites();
+    const site = lens.sites.get(tileKey);
+    if (site) lines.push(`⌂ Settlement quality ${Math.round(settleSiteQuality(site, lens) * 100)}/100 · ` +
+      (site.water === "fresh" ? "fresh water" : site.water === "coast" ? "coastal water" : "no water") +
+      (settleSiteIsRecommended(site, lens) ? " · local best" : ""));
     else lines.push("⌂ Settlement unavailable");
   }
 
@@ -29617,15 +30494,6 @@ function tileTipLines(t, pos, tileKey) {
         `${entry.religion ? titleCase(entry.religion) : "No religion"} ` +
         `${Math.round(entry.pressure * 100 / total)}%`).join(" · "));
     }
-  }
-
-  for (const unit of state.units) {
-    if (key(unit.pos) !== tileKey) continue;
-    const civ = state.players[unit.owner]?.civ || `Player ${unit.owner}`;
-    lines.push(`<span class="tip-unit">● ${civAdjective(civ)} ${titleCase(unit.type)} — ` +
-      fmtYield(unit.hp) + " HP, " + fmtYield(unit.moves_left) + " MP" +
-      (unit.level > 1 ? ", level " + unit.level : "") + (unit.embarked ? ", embarked" : "") +
-      (unit.fortified ? ", fortified" : "") + "</span>");
   }
   return lines;
 }
@@ -29679,11 +30547,6 @@ function queueTileTip(clientX, clientY) {
     if (tileTipPointer === pointer) refreshTileTip(true);
   }, TILE_TIP_DELAY_MS);
 }
-// The overlays — player standings across the top, the victory rail, the
-// minimap — sit *on* the map, so the canvas never sees a pointer parked at the
-// edges that matter. Watch the window and measure against the map's own box.
-window.addEventListener("mousemove", ev => updateEdgePan(ev.clientX, ev.clientY), {passive: true});
-window.addEventListener("mouseout", ev => { if (!ev.relatedTarget) edgePanVector = null; });
 cv.addEventListener("mousemove", ev => {
   // `dragMoved` outlives the drag: it is cleared by the click that follows, and
   // a drag released off the canvas never gets one. Hovering must ask whether a
@@ -29692,7 +30555,7 @@ cv.addEventListener("mousemove", ev => {
   queueTileTip(ev.clientX, ev.clientY);
 });
 cv.addEventListener("mouseleave", () => hideTileTip(true));
-window.addEventListener("blur", () => { edgePanVector = null; hideTileTip(true); });
+window.addEventListener("blur", () => hideTileTip(true));
 
 // ----------------------------------------------------------- the turn loop
 // A Civ 6 turn is a loop around one button: the game names what it is waiting
@@ -29775,10 +30638,10 @@ function advanceToNextUnit(force = false) {
   draw(); drawSide(); drawUbar(); drawTurnLoop();
 }
 // ------------------------------------------------------- multi-turn travel
-// Clicking a tile outside a unit's remaining movement used to clear the
-// selection and nothing else, so crossing a continent meant finding the same
-// unit again once a turn for twenty turns. Civ 6 takes the click as an order
-// and the unit walks there over as many turns as it takes.
+// Secondary-clicking a tile outside a unit's remaining movement used to clear
+// the selection and nothing else, so crossing a continent meant finding the
+// same unit again once a turn for twenty turns. Civ 6 takes the click as an
+// order and the unit walks there over as many turns as it takes.
 //
 // `move_to` cannot express that: `path_to` seeds its search with the unit's
 // remaining movement, so anything further comes back "unreachable". The
@@ -30162,13 +31025,6 @@ function setShowResources(on) {
   const box = document.getElementById("reschk");
   if (box) box.checked = SHOW_RESOURCES;
   if (state) draw();
-}
-function setEdgePan(on) {
-  EDGE_PAN = !!on;
-  localStorage.setItem("civvis-edge-pan", EDGE_PAN ? "1" : "0");
-  const box = document.getElementById("edgepanchk");
-  if (box) box.checked = EDGE_PAN;
-  if (!EDGE_PAN) edgePanVector = null;
 }
 function syncFlatMapWrapControls() {
   const group = document.getElementById("flat-map-wrap-settings");
@@ -31521,11 +32377,6 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   const res = document.getElementById("reschk");
   res.checked = SHOW_RESOURCES;
   res.onchange = () => setShowResources(res.checked);
-}
-{
-  const edge = document.getElementById("edgepanchk");
-  edge.checked = EDGE_PAN;
-  edge.onchange = () => setEdgePan(edge.checked);
 }
 {
   const wrapXBox = document.getElementById("wrapxchk");

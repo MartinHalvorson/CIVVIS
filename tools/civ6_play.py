@@ -17,11 +17,14 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
+import os
 import subprocess
 import sys
 import tempfile
 import time
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -29,9 +32,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
-from civ6_control import gamelock, launcher, vision, watch  # noqa: E402
+from civ6_control import (gamelock, launcher, macos_input, macos_ocr,
+                          popup_clear, vision, watch)  # noqa: E402
+from civ6_control.orders import orders_db_path, reset_orders_db  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
+REPO_ROOT = Path(__file__).resolve().parent.parent
 
 # The ladder, weakest first. These are the game's own handicap type names; the
 # ladder is climbed in this order and each rung is only claimed by a win.
@@ -81,6 +87,31 @@ def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def hold_macos_awake() -> bool:
+    """Keep an active live run awake even when the console is locked.
+
+    The assertion is tied to this process, so macOS releases it automatically
+    on normal exit, interruption, or a crash. It prevents idle display/system
+    sleep; a MacBook's hardware lid-close sleep still pauses execution unless
+    macOS is already in a supported clamshell configuration, and the run then
+    resumes from its persisted files after wake.
+    """
+    if sys.platform != "darwin":
+        return False
+    try:
+        subprocess.Popen(
+            ["/usr/bin/caffeinate", "-dims", "-w", str(os.getpid())],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+        )
+    except OSError as exc:
+        print(f"[session] could not hold macOS awake: {exc}", file=sys.stderr)
+        return False
+    return True
+
+
 def load_settle_plan(path: str | None) -> list[dict] | None:
     """CIVVIS's ranked sites, or None when the agent should use its own search."""
     if not path:
@@ -99,8 +130,17 @@ def load_settle_plan(path: str | None) -> list[dict] | None:
     return sites or None
 
 
+def state_export_enabled(args: argparse.Namespace) -> bool:
+    """Whether this run must publish an authoritative board each turn."""
+    # A CIVVIS decision worker cannot make an informed decision without a state
+    # event.  Keeping this derived here, where the baked mod config is made,
+    # makes `--civvis-decides` self-contained instead of relying on callers to
+    # remember a second, otherwise optional diagnostic flag.
+    return bool(args.export_state or args.civvis_decides)
+
+
 def build_config(args: argparse.Namespace) -> dict:
-    return {
+    config = {
         "RunTag": args.tag,
         "AutoStart": True,
         "Play": True,
@@ -194,7 +234,7 @@ def build_config(args: argparse.Namespace) -> dict:
         "GarrisonPerCity": args.garrison_per_city,
         # Mirror the board into the log once a turn so CIVVIS can be the engine
         # that decides. Off by default: it is the largest emit in the mod.
-        "ExportState": args.export_state,
+        "ExportState": state_export_enabled(args),
         # Ask every candidate inbound API what it holds, once a turn, and emit the
         # answer. Paired with `probe_channel.py`, which writes a changing nonce into
         # each sink from outside: the channel is whichever field reports the nonce
@@ -248,10 +288,15 @@ def build_config(args: argparse.Namespace) -> dict:
         "SettlePlan": load_settle_plan(args.settle_plan),
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
-        "Leader": args.leader,
         "StartDelayFrames": args.start_delay_frames,
         "TickFrames": args.tick_frames,
     }
+    # The Create Game automation selects this from the rendered, DLC-dependent
+    # list. The installed config also carries it so the requested setup remains
+    # explicit in the run artefacts and any usable FrontEnd context.
+    if args.leader:
+        config["Leader"] = args.leader
+    return config
 
 
 # Main-menu items as fractions of the *game window*, not the screen. The menu
@@ -285,16 +330,31 @@ BOOTSTRAP_ATTEMPTS = 16
 # GameConfiguration.SetToDefaults() on entry, and reconfiguring from inside a
 # running game and hosting again either loses the mod, loses the turn limit, or
 # takes the application down.
-START_GAME = (0.500, 0.982)
-BACK = (0.730, 0.144)
+START_GAME = (0.500, 0.978)
+# Measured in the required half-height window. 0.144 lands above the rendered
+# button there, so a failed setup stayed open and the next main-menu click hit
+# Choose Map Type instead.
+BACK = (0.730, 0.174)
 SETUP_X = 0.500
+
+# The civilization control is one fixed Firaxis setup row above difficulty.
+# Expressing that relationship keeps it aligned when a different window height
+# changes the normalized coordinate (measured at 0.277 on 1474x949 and 0.294 on
+# the taller full-screen setup).
+LEADER_PICKER_OFFSET = 0.056
+LEADER_SCROLL_STEPS = 100
+LEADER_SCROLL_RESET = 10_000
+LEADER_SCROLL_AMOUNT = -30
 
 # Each dropdown's closed box, as a fraction of window height.
 DROPDOWN = {
-    "difficulty": 0.3203,
-    "speed": 0.3753,
-    "map_type": 0.4304,
-    "map_size": 0.4841,
+    # The Create Game panel reflows in the required 756x480 quadrant. These
+    # are the observed value-row centers in that window; the old tall-window
+    # ratios landed 5-10 pixels above each closed control.
+    "difficulty": 0.3520,
+    "speed": 0.4040,
+    "map_type": 0.4600,
+    "map_size": 0.5150,
 }
 # An open dropdown lists its options directly below the box: the first option
 # sits a fixed distance under it and the rest step evenly. Measured on the
@@ -350,6 +410,35 @@ def game_window() -> tuple[int, int, int, int] | None:
         return None
     x, y, w, h = (int(p) for p in parts)
     return (x, y, w, h) if w > 400 and h > 300 else None
+
+
+def screen_locked() -> bool:
+    """Return whether the active macOS console session is locked."""
+    try:
+        result = subprocess.run(
+            ["ioreg", "-n", "Root", "-d1"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return False
+    return 'CGSSessionScreenIsLocked"=Yes' in result.stdout
+
+
+def wait_for_unlocked_session(poll_s: float = 2.0) -> None:
+    """Wait at the macOS authentication boundary instead of aborting the run.
+
+    GUI scripting cannot operate the protected lock screen.  Waiting here keeps
+    the requested run alive without trying to bypass that boundary, and lets a
+    launch requested while locked continue as soon as the operator unlocks.
+    """
+    if not screen_locked():
+        return
+    print("[session] macOS is locked; waiting to continue after unlock", flush=True)
+    while screen_locked():
+        time.sleep(poll_s)
+    print("[session] macOS unlocked; continuing", flush=True)
 
 
 # Which half of the screen the game gets. Set from --window-side/--window-frac
@@ -416,8 +505,10 @@ def place_game(side: str = "left", fraction: float = 0.5,
     script = (
         'tell application "System Events" to tell '
         '(first process whose name contains "Civ6") to tell window 1\n'
-        f'  set position to {{{x}, {y}}}\n'
         f'  set size to {{{width}, {height}}}\n'
+        # Aspyr constrains the existing origin while applying the smaller size.
+        # Position last or a requested upper quadrant lands at the bottom.
+        f'  set position to {{{x}, {y}}}\n'
         'end tell')
     subprocess.run(["osascript", "-e", script], capture_output=True)
 
@@ -464,11 +555,9 @@ def click_at(px: int, py: int) -> None:
     # ⚠ n = 1, and the harness's own stall watchdog had not fired yet when the held
     # press landed, so nothing else can account for the recovery. Worth re-checking on
     # the next stuck screen before treating it as settled.
-    subprocess.run(["cliclick", f"m:{px},{py}"], capture_output=True)
+    macos_input.move(px, py)
     time.sleep(0.5)
-    subprocess.run(["cliclick", f"dd:{px},{py}"], capture_output=True)
-    time.sleep(0.12)
-    subprocess.run(["cliclick", f"du:{px},{py}"], capture_output=True)
+    macos_input.click(px, py, hold_s=0.12)
 
 
 def click_menu(item: str, bounds: tuple[int, int, int, int]) -> None:
@@ -530,76 +619,610 @@ def list_opened(before: Path, after: Path, rect: tuple[int, int, int, int]) -> b
     return changed > 0.10 * (diff.size[0] * diff.size[1])
 
 
+def _setup_option_label(value: str) -> str:
+    """Return the English value Firaxis renders in a setup dropdown."""
+    label = value.removesuffix(".lua")
+    for prefix in ("DIFFICULTY_", "GAMESPEED_", "MAPSIZE_"):
+        label = label.removeprefix(prefix)
+    return label.replace("_", " ").title()
+
+
+# The heading Civilization VI renders directly above each setup dropdown.  These
+# are what a row is identified BY; see `_setup_current_value`.
+SETUP_HEADINGS = {
+    "difficulty": "Choose Game Difficulty",
+    "speed": "Choose Game Speed",
+    "map_type": "Choose Map Type",
+    "map_size": "Choose Map Size",
+}
+
+# Top-to-bottom order of the rows in the Create Game panel.  Used to place a heading
+# an open dropdown is covering; see `_setup_rows`.
+SETUP_ROW_ORDER = ["difficulty", "speed", "map_type", "map_size"]
+
+# Fallback only, for a panel whose headings did not survive OCR.  ⚠ These bands
+# OVERLAP each other and cannot separate the rows on their own -- that is the whole
+# reason they are no longer the primary mechanism.
+SETUP_BANDS = {
+    "difficulty": (0.20, 0.38),
+    "speed": (0.24, 0.44),
+    "map_type": (0.28, 0.50),
+    "map_size": (0.34, 0.56),
+}
+
+# The values occupy the narrow central setup column.  Rejects an identical word from
+# the news artwork or another desktop window.
+SETUP_COLUMN = (0.38, 0.62)
+
+
+def _setup_rows(observations: list[dict], bounds: tuple[int, int, int, int],
+                screen: tuple[int, int]) -> dict[str, int]:
+    """Screen y of each setup heading that is legible in this shot."""
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    rows: dict[str, int] = {}
+    for observation in observations:
+        text = str(observation.get("text", ""))
+        for name, heading in SETUP_HEADINGS.items():
+            if name in rows or not _menu_label_matches(text, heading):
+                continue
+            point = _observation_point(observation)
+            if point is None:
+                continue
+            px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+            if x <= px <= x + w and y <= py <= y + h:
+                rows[name] = py
+    return _with_covered_headings(rows)
+
+
+def _with_covered_headings(rows: dict[str, int]) -> dict[str, int]:
+    """Place the headings an open dropdown is sitting on top of.
+
+    An open list covers the rows beneath it, so a shot taken while one is down reads
+    only the headings above it -- on a live map-size list, `Choose Map Type` and
+    `Choose Map Size` both vanished and only difficulty and speed came back.  Without
+    this the reader would fall through to the overlapping bands, which is exactly the
+    mechanism that read the speed row as the map size in the first place.
+
+    The panel is a fixed, evenly spaced column, so a covered heading is not a guess:
+    fit a line through the ones that ARE legible against their row index and read off
+    the missing one.  Measured on `civvis-20260802T131519Z`, difficulty=205 and
+    speed=234 give a pitch of 29, predicting map_size (two rows below speed) at 292 --
+    which is where it actually is when nothing covers it.
+
+    Needs two legible headings to establish a pitch; with fewer, the caller keeps its
+    band fallback rather than inventing a scale from one point.
+    """
+    known = [(SETUP_ROW_ORDER.index(name), py)
+             for name, py in rows.items() if name in SETUP_ROW_ORDER]
+    if len(known) < 2 or len(known) == len(SETUP_ROW_ORDER):
+        return rows
+    known.sort()
+    first, last = known[0], known[-1]
+    span = last[0] - first[0]
+    if span <= 0:
+        return rows
+    pitch = (last[1] - first[1]) / span
+    if pitch <= 0:
+        # Rows must descend down the screen.  Anything else means these are not the
+        # panel's headings, and extrapolating from them would be worse than nothing.
+        return rows
+    filled = dict(rows)
+    for index, name in enumerate(SETUP_ROW_ORDER):
+        if name not in filled:
+            filled[name] = int(round(first[1] + (index - first[0]) * pitch))
+    return filled
+
+
+def _setup_current_value(path: Path, bounds: tuple[int, int, int, int],
+                         name: str) -> tuple[str, tuple[int, int]] | None:
+    """Read a closed setup dropdown's value and exact screen position.
+
+    ★★★★★ THE ROW IS IDENTIFIED BY ITS HEADING, NOT BY WHERE IT SITS.
+
+    This used to pick the first option-shaped word inside a fixed vertical band, and
+    the bands OVERLAP -- `map_size` spanned 0.34-0.56 while `speed` spanned
+    0.24-0.44.  That is only survivable while no value is legal for two rows, and
+    "Standard" is legal for both.  Measured on a live Create Game screen
+    (`civvis-20260802T131519Z`, game window 864x528 logical points), three matches
+    fell inside the map-size band at once:
+
+        Standard    ry=0.377   <- the GAME SPEED row, and the one that won
+        Continents  ry=0.432   <- the MAP TYPE row, skipped: not a map size
+        Small       ry=0.487   <- the actual MAP SIZE row, never reached
+
+    So `map_size` read `MAPSIZE_STANDARD` off a screen that plainly said Small.
+    `set_dropdown` then clicked the speed row to "fix" it, never read Small back, and
+    gave up with "refusing to start an unverified game" -- on a game that was already
+    configured exactly as asked.  Every attempt in every batch on 2026-08-02 died
+    this way: 0 games from 4 ledger rows, while the ledger's own screenshots show a
+    correct panel.  ⚠ The instrument was wrong; the game was right.  A wider band or
+    a nudged constant would have moved the collision, not removed it.
+
+    Firaxis renders a heading directly above each dropdown, so a row can be named
+    instead of located: find "Choose Map Size", then take the option between it and
+    whichever heading comes next.  That survives the panel reflowing, the window
+    being resized, and two rows sharing a value -- none of which a constant can.
+    """
+    screen = desktop_size()
+    if screen is None:
+        return None
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    allowed = {
+        _normalized_label(_setup_option_label(option)): option
+        for option in OPTIONS[name]
+    }
+    observations = macos_ocr.recognize(path)
+    observations.extend(_menu_crop_ocr(path, bounds))
+
+    left, right = SETUP_COLUMN
+    candidates: list[tuple[int, str, tuple[int, int]]] = []
+    for observation in observations:
+        option = allowed.get(_normalized_label(str(observation.get("text", ""))))
+        if option is None:
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+        if not left <= (px - x) / w <= right:
+            continue
+        candidates.append((py, option, (px, py)))
+    if not candidates:
+        return None
+    candidates.sort()
+
+    rows = _setup_rows(observations, bounds, screen)
+    heading_y = rows.get(name)
+    if heading_y is not None:
+        # The row owns the strip between its own heading and the next one down.
+        below = [row_y for row_y in rows.values() if row_y > heading_y]
+        limit = min(below) if below else None
+        for py, option, point in candidates:
+            if py <= heading_y:
+                continue
+            if limit is not None and py >= limit:
+                break
+            return option, point
+        # The heading was legible and nothing sits under it. Say nothing rather than
+        # fall through to the bands: the caller retries and then refuses, which is
+        # the correct outcome, and a band guess here is exactly the wrong answer that
+        # cost every game above.
+        return None
+
+    # No heading survived OCR. Fall back to the historical band, which is better than
+    # nothing on a panel this reader cannot otherwise locate at all.
+    top, bottom = SETUP_BANDS[name]
+    for py, option, point in candidates:
+        if top <= (py - y) / h <= bottom:
+            return option, point
+    return None
+
+
 def set_dropdown(bounds: tuple[int, int, int, int], name: str, value: str,
                  run_dir: Path | None = None) -> bool:
-    """Open one Create Game dropdown and pick a value by its position in the list.
+    """Select and read back one visible Create Game dropdown value.
 
-    ★★★★★ **THE SECOND CLICK USED TO GO OUT BLIND, AND ON A SMALL MAP IT LANDED ON
-    THE DRAMATIC AGES TOGGLE.**
-
-    This function used to click the box, sleep, and click the option without ever
-    checking that a list had appeared — the comment on `configure_and_start` said so
-    outright, on the reasoning that the agent's readback from inside the game catches
-    a wrong setting. It does. What it cannot undo is a click that changed something
-    *else*, and there is something else directly underneath:
-
-    ```
-    MAPSIZE_SMALL is option index 2
-      fy = 0.4841 + 0.02174 + 2*0.018637 = 0.5431
-    GAME MODES row 1, measured on screen
-      fy = 0.5433 at 1728x1084, 0.5498 at the harness's own 864x542
-    ```
-
-    and `SETUP_X = 0.500` is icon 3 of that row, whose tooltip is *"Players in Dark
-    Ages will have a portion of their empire immediately fall into Free Cities"* —
-    Dramatic Ages. Verified by experiment, not by arithmetic: one held click there
-    put a checkmark in the box, a second cleared it, and a difference of the two
-    screenshots over the whole GAME MODES block changed in exactly that one square.
-
-    ⚠ The collision belongs to **Small**, and Small is the tournament requirement.
-    Duel is option 0 (fy 0.5058) and never reached the row, so every earlier run was
-    safe and #701 — which moved the launchers to `MAPSIZE_SMALL` to make the game
-    tournament-shaped — is what aimed the click at the toggle.
-
-    The failure mode that gets it there is ordinary: a click on the closed box does
-    not always open the list (the first click on an unfocused window only hovers),
-    and then the option click has nothing above the modes row to land on.
-
-    **So the list is now verified, retried once, and — if it still will not open —
-    NOT clicked.** Leaving the setting at its default is strictly better than
-    clicking blind: a wrong difficulty or map size is reported by the `seat` event
-    and refused, while a toggled game mode arms a whole run of the wrong game.
-    Returns False when it gave up, so the caller can say so.
+    The setup panel reflowed in a live 756x480 window: the rendered Prince box
+    was at y=167 while the old measured ratio clicked y=202.  A pixel-difference
+    test correctly said the list had not opened, but retrying the same stale
+    coordinate could never recover.  Read the current value, click that exact
+    rendered row, then read and click the requested option from the opened list.
+    No option position is assumed, and success requires a final OCR readback.
     """
     if value not in OPTIONS[name]:
         return False
-    x, y, w, h = bounds
-    box = DROPDOWN[name]
-    index = OPTIONS[name].index(value)
-    rect = option_strip(bounds, name)
     shots = run_dir if run_dir is not None else Path(tempfile.gettempdir())
     before = shots / f"dropdown-{name}-closed.png"
     after = shots / f"dropdown-{name}-open.png"
+    verified = shots / f"dropdown-{name}-selected.png"
 
     for attempt in (1, 2):
         screenshot(before)
-        click_at(int(x + w * SETUP_X), int(y + h * box))
+        current = _setup_current_value(before, bounds, name)
+        if current is None:
+            print(f"[setup] {name}: current value was not readable (attempt {attempt})",
+                  flush=True)
+            continue
+        current_value, current_point = current
+        if current_value == value:
+            print(f"[setup] {name}: already verified {_setup_option_label(value)}",
+                  flush=True)
+            return True
+
+        click_at(*current_point)
         time.sleep(1.2)
         screenshot(after)
-        if list_opened(before, after, rect):
-            click_at(int(x + w * SETUP_X),
-                     int(y + h * (box + OPTION_FIRST + index * OPTION_STEP)))
-            time.sleep(1.2)
+        target = _observed_label_point(after, _setup_option_label(value), bounds)
+        if target is None:
+            print(f"[setup] {name}: requested option was not visible (attempt {attempt})",
+                  flush=True)
+            continue
+
+        click_at(*target)
+        time.sleep(1.2)
+        screenshot(verified)
+        selected = _setup_current_value(verified, bounds, name)
+        if selected is not None and selected[0] == value:
+            print(f"[setup] {name}: selected and verified {_setup_option_label(value)}",
+                  flush=True)
             return True
-        print(f"[setup] {name}: list did not open (attempt {attempt})", flush=True)
-    # ⚠ Deliberately no click. See the docstring: the blind click is the defect.
-    print(f"[setup] {name}: LEAVING AT DEFAULT rather than clicking blind — "
-          f"a stray click here toggles a game mode", flush=True)
+        print(f"[setup] {name}: selection did not read back (attempt {attempt})",
+              flush=True)
+
+    print(f"[setup] {name}: refusing to click an unverified coordinate", flush=True)
     return False
 
 
+def _normalized_label(value: str) -> str:
+    ascii_value = unicodedata.normalize("NFKD", value).encode("ascii", "ignore").decode()
+    return "".join(character for character in ascii_value.casefold() if character.isalnum())
+
+
+def _menu_label_matches(observed: str, wanted: str) -> bool:
+    """Tolerate a small OCR edit distance in a long menu label.
+
+    In the required 756-point-wide game quadrant Vision has returned both
+    ``Single Plaver`` (one substitution) and ``Single Plave`` (a substitution
+    plus a missing final glyph) for ``Single Player``.  Menu labels remain
+    constrained to the game window, so two edits in a ten-character label are
+    conservative enough to recover the visible row without a coordinate guess.
+    """
+    observed = _normalized_label(observed)
+    wanted = _normalized_label(wanted)
+    if observed == wanted:
+        return True
+    if len(wanted) < 10 or abs(len(observed) - len(wanted)) > 2:
+        return False
+    previous = list(range(len(wanted) + 1))
+    for row, left in enumerate(observed, 1):
+        current = [row]
+        for column, right in enumerate(wanted, 1):
+            current.append(min(
+                current[-1] + 1,
+                previous[column] + 1,
+                previous[column - 1] + (left != right),
+            ))
+        previous = current
+    return previous[-1] <= 2
+
+
+def leader_display_name(leader: str) -> str:
+    """Resolve a Firaxis leader type to the label CIVVIS expects on the picker."""
+    requested = _normalized_label(leader.removeprefix("LEADER_"))
+    try:
+        roster = json.loads((REPO_ROOT / "data" / "civs.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        roster = {}
+    for civilization in roster.values() if isinstance(roster, dict) else ():
+        name = civilization.get("leader") if isinstance(civilization, dict) else None
+        if isinstance(name, str) and _normalized_label(name) == requested:
+            return name
+    return leader.removeprefix("LEADER_").replace("_", " ").title()
+
+
+def _setup_current_leader(path: Path, bounds: tuple[int, int, int, int]
+                          ) -> tuple[str, tuple[int, int]] | None:
+    """Read the current civilization-picker value and its screen position."""
+    screen = desktop_size()
+    if screen is None:
+        return None
+    labels = {"randomleader": "Random Leader"}
+    try:
+        roster = json.loads((REPO_ROOT / "data" / "civs.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        roster = {}
+    for civilization in roster.values() if isinstance(roster, dict) else ():
+        label = civilization.get("leader") if isinstance(civilization, dict) else None
+        if isinstance(label, str):
+            labels[_normalized_label(label)] = label
+
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    observations = macos_ocr.recognize(path)
+    observations.extend(_menu_crop_ocr(path, bounds))
+    for observation in observations:
+        label = labels.get(_normalized_label(str(observation.get("text", ""))))
+        if label is None:
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+        rx, ry = (px - x) / w, (py - y) / h
+        if 0.38 <= rx <= 0.62 and 0.12 <= ry <= 0.34:
+            return label, (px, py)
+    return None
+
+
+def _observation_point(observation: dict) -> tuple[float, float] | None:
+    try:
+        return (
+            float(observation["x"]) + float(observation["width"]) / 2.0,
+            float(observation["y"]) + float(observation["height"]) / 2.0,
+        )
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
+def _menu_crop_ocr(path: Path, bounds: tuple[int, int, int, int]) -> list[dict]:
+    """Read the small main-menu columns from an enlarged crop.
+
+    At 756x480 Vision can read the main row inconsistently and omit every
+    Single Player submenu row from a full desktop capture.  The pixels are
+    present: cropping the two menu columns and enlarging them is the same
+    recovery already required by the DLC-dependent leader picker below.
+    Returned boxes are mapped back to full-desktop normalized coordinates.
+    """
+    try:
+        from PIL import Image
+
+        screen = desktop_size()
+        if screen is None:
+            return []
+        image = Image.open(path)
+        screen_w, screen_h = screen
+        x, y, w, h = bounds
+        scale_x, scale_y = image.width / screen_w, image.height / screen_h
+        rect = (
+            int((x + w * 0.18) * scale_x),
+            int((y + h * 0.22) * scale_y),
+            int((x + w * 0.82) * scale_x),
+            int((y + h * 0.72) * scale_y),
+        )
+        crop = image.crop(rect)
+        crop = crop.resize((crop.width * 4, crop.height * 4))
+        crop_path = path.with_name(path.stem + "-menu-crop.png")
+        crop.save(crop_path)
+        observations = macos_ocr.recognize(crop_path)
+    except (OSError, ValueError):
+        return []
+
+    left, crop_top, right, crop_bottom = rect
+    crop_w, crop_h = right - left, crop_bottom - crop_top
+    mapped = []
+    for observation in observations:
+        item = dict(observation)
+        try:
+            item["x"] = (left + float(observation["x"]) * crop_w) / image.width
+            item["y"] = (crop_top + float(observation["y"]) * crop_h) / image.height
+            item["width"] = float(observation["width"]) * crop_w / image.width
+            item["height"] = float(observation["height"]) * crop_h / image.height
+        except (KeyError, TypeError, ValueError):
+            continue
+        mapped.append(item)
+    return mapped
+
+
+def _leader_observation(observations: list[dict], label: str,
+                        bounds: tuple[int, int, int, int],
+                        *, selected: bool = False) -> dict | None:
+    screen = desktop_size()
+    if screen is None:
+        return None
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    wanted = _normalized_label(label)
+    for observation in observations:
+        if _normalized_label(str(observation.get("text", ""))) != wanted:
+            continue
+        point = _observation_point(observation)
+        if point is None:
+            continue
+        px, py = point[0] * screen_w, point[1] * screen_h
+        rx, ry = (px - x) / w, (py - y) / h
+        if 0.40 <= rx <= 0.62 and (
+            0.23 <= ry <= 0.31 if selected else 0.30 <= ry <= 0.76
+        ):
+            return observation
+    return None
+
+
+def _leader_ocr(path: Path, bounds: tuple[int, int, int, int],
+                *, top: float = 0.30, bottom: float = 0.76) -> list[dict]:
+    """Recognize the narrow leader column at readable scale.
+
+    Vision skipped Jadwiga in the full 3024x1964 desktop capture even though
+    it read the adjacent Hojo and Jayavarman rows. A 4x crop of the same pixels
+    reads it consistently. Map the normalized crop observations back into full
+    desktop coordinates so the existing click validation remains unchanged.
+    """
+    try:
+        from PIL import Image
+
+        screen = desktop_size()
+        if screen is None:
+            raise ValueError("desktop size unavailable")
+        image = Image.open(path)
+        screen_w, screen_h = screen
+        x, y, w, h = bounds
+        scale_x, scale_y = image.width / screen_w, image.height / screen_h
+        rect = (
+            int((x + w * 0.40) * scale_x),
+            int((y + h * top) * scale_y),
+            int((x + w * 0.62) * scale_x),
+            int((y + h * bottom) * scale_y),
+        )
+        crop = image.crop(rect)
+        crop = crop.resize((crop.width * 4, crop.height * 4))
+        crop_path = path.with_name(path.stem + "-leader-crop.png")
+        crop.save(crop_path)
+        observations = macos_ocr.recognize(crop_path)
+    except (OSError, ValueError):
+        return macos_ocr.recognize(path)
+
+    left, crop_top, right, crop_bottom = rect
+    crop_w, crop_h = right - left, crop_bottom - crop_top
+    mapped = []
+    for observation in observations:
+        item = dict(observation)
+        try:
+            item["x"] = (left + float(observation["x"]) * crop_w) / image.width
+            item["y"] = (crop_top + float(observation["y"]) * crop_h) / image.height
+            item["width"] = float(observation["width"]) * crop_w / image.width
+            item["height"] = float(observation["height"]) * crop_h / image.height
+        except (KeyError, TypeError, ValueError):
+            continue
+        mapped.append(item)
+    return mapped
+
+
+def _leader_picker_open(path: Path, bounds: tuple[int, int, int, int]) -> bool:
+    """Prove the picker is open by reading a real roster entry from it."""
+    try:
+        roster = json.loads((REPO_ROOT / "data" / "civs.json").read_text())
+    except (OSError, json.JSONDecodeError):
+        roster = {}
+    names = {
+        _normalized_label(civilization.get("leader", ""))
+        for civilization in roster.values() if isinstance(civilization, dict)
+    }
+    names.discard("")
+    return any(
+        _normalized_label(str(observation.get("text", ""))) in names
+        for observation in _leader_ocr(path, bounds, top=0.15, bottom=0.80)
+    )
+
+
+def select_requested_leader(bounds: tuple[int, int, int, int], leader: str | None,
+                            run_dir: Path) -> bool:
+    """Select and visually verify a leader from Firaxis's DLC-dependent list."""
+    if leader is None:
+        return True
+    label = leader_display_name(leader)
+    x, y, w, h = bounds
+    closed_shot = run_dir / "leader-picker-closed.png"
+    open_shot = run_dir / "leader-picker-open.png"
+
+    for attempt in (1, 2):
+        screenshot(closed_shot)
+        current = _setup_current_leader(closed_shot, bounds)
+        if current is None:
+            print(f"[setup] leader value was not readable (attempt {attempt})",
+                  flush=True)
+            continue
+        current_label, current_point = current
+        if _normalized_label(current_label) == _normalized_label(label):
+            print(f"[setup] leader: already verified {label} ({leader})", flush=True)
+            return True
+        click_at(*current_point)
+        time.sleep(1.2)
+        screenshot(open_shot)
+        if _leader_picker_open(open_shot, bounds):
+            break
+        print(f"[setup] leader list did not open (attempt {attempt})", flush=True)
+    else:
+        return False
+
+    # Firaxis retains the list's scroll position between openings. Reset to A
+    # first; otherwise a retry can begin at Victoria and never encounter
+    # Jadwiga. Thirteen -30 wheel ticks only reached Harald on this install, so
+    # retain that overlapping step but cover the entire installed roster.
+    macos_input.move(int(x + w * SETUP_X), int(y + h * 0.55))
+    macos_input.scroll(LEADER_SCROLL_RESET)
+    time.sleep(1.0)
+    for scroll_step in range(LEADER_SCROLL_STEPS):
+        shot = run_dir / f"leader-picker-{scroll_step:02d}.png"
+        screenshot(shot)
+        observations = _leader_ocr(shot, bounds)
+        match = _leader_observation(observations, label, bounds)
+        if match is not None:
+            point = _observation_point(match)
+            screen = desktop_size()
+            if point is None or screen is None:
+                return False
+            # Use the stable centre of the picker column and only OCR's row.
+            click_at(int(x + w * SETUP_X), int(point[1] * screen[1]))
+            time.sleep(1.2)
+            selected_shot = run_dir / "leader-selected.png"
+            screenshot(selected_shot)
+            selected = _leader_ocr(selected_shot, bounds, top=0.20, bottom=0.36)
+            if _leader_observation(selected, label, bounds, selected=True) is not None:
+                print(f"[setup] leader: selected and verified {label} ({leader})", flush=True)
+                return True
+            print(f"[setup] leader click did not select {label}", flush=True)
+            return False
+        macos_input.move(int(x + w * SETUP_X), int(y + h * 0.55))
+        macos_input.scroll(LEADER_SCROLL_AMOUNT)
+        time.sleep(0.8)
+
+    press_escape(1)
+    print(f"[setup] requested leader {label} ({leader}) was not in the picker", flush=True)
+    return False
+
+
+def _main_menu_visible(path: Path) -> bool:
+    """Return whether a screenshot visibly contains Firaxis's Single Player row."""
+    return any(
+        _menu_label_matches(str(observation.get("text", "")), "Single Player")
+        for observation in macos_ocr.recognize(path)
+    )
+
+
+def _observed_label_point(path: Path, label: str,
+                          bounds: tuple[int, int, int, int]) -> tuple[int, int] | None:
+    """Read a visible menu label center inside the game window."""
+    points = _observed_label_points(path, label, bounds)
+    return points[0] if points else None
+
+
+def _observed_label_points(path: Path, label: str,
+                           bounds: tuple[int, int, int, int]) -> list[tuple[int, int]]:
+    """Read every matching visible label center inside the game window."""
+    screen = desktop_size()
+    if screen is None:
+        return []
+    screen_w, screen_h = screen
+    x, y, w, h = bounds
+    def collect(observations: list[dict]) -> list[tuple[int, int]]:
+        found = []
+        for observation in observations:
+            if not _menu_label_matches(str(observation.get("text", "")), label):
+                continue
+            point = _observation_point(observation)
+            if point is None:
+                continue
+            px, py = int(point[0] * screen_w), int(point[1] * screen_h)
+            if x <= px <= x + w and y <= py <= y + h:
+                found.append((px, py))
+        return found
+
+    points = collect(macos_ocr.recognize(path))
+    if not points:
+        points = collect(_menu_crop_ocr(path, bounds))
+    return points
+
+
+def _main_menu_point(path: Path, bounds: tuple[int, int, int, int]) -> tuple[int, int] | None:
+    """Read the Single Player row center instead of assuming a window-height ratio."""
+    return _observed_label_point(path, "Single Player", bounds)
+
+
+def return_to_main_menu(bounds: tuple[int, int, int, int], run_dir: Path,
+                        attempt: int) -> bool:
+    """Back out of setup dialogs and prove the main menu is visible.
+
+    A setup failure may leave the leader list, map picker, or Create Game page
+    open. Retrying the main-menu coordinates from any of those screens changes
+    an unrelated setting. Only a screenshot containing Single Player licenses
+    another bootstrap attempt.
+    """
+    x, y, w, h = bounds
+    for depth in range(4):
+        shot = run_dir / f"recover-attempt{attempt}-{depth}.png"
+        screenshot(shot)
+        if _main_menu_visible(shot):
+            return True
+        click_at(int(x + w * BACK[0]), int(y + h * BACK[1]))
+        time.sleep(1.5)
+    shot = run_dir / f"recover-attempt{attempt}-final.png"
+    screenshot(shot)
+    return _main_menu_visible(shot)
+
+
 def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namespace,
-                        run_dir: Path) -> None:
+                        run_dir: Path) -> bool:
     """Set this run's game up on the Create Game screen and start it.
 
     The agent's first report from inside the game remains the check on the VALUES
@@ -617,8 +1240,12 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
                         ("map_size", args.map_size),
                         ("speed", args.speed)):
         if not set_dropdown(bounds, name, value, run_dir):
-            print(f"[setup] {name} was NOT set; the seat event will report what the "
-                  f"game actually has", flush=True)
+            print(f"[setup] {name} was NOT set; refusing to start an unverified game",
+                  flush=True)
+            return False
+    if not select_requested_leader(bounds, args.leader, run_dir):
+        print("[setup] requested leader was NOT selected; refusing to start", flush=True)
+        return False
     # The map has to be chosen HERE. `MapScript` in the baked config is ignored,
     # because the FrontEnd context that would read it never loads, so every game so
     # far has been Continents whatever was asked for. On Continents a seat can start
@@ -638,12 +1265,14 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
     # Continents, and on Continents a seat can start ALONE — one run reached turn 118
     # with `met = 0`. Fixing it properly needs OCR on the dropdown rows, or reading
     # the selected value back off the screen before committing to Start Game.
-    if args.map in OPTIONS["map_type"]:
-        print(f"map selection is disabled pending verification; the game will "
-              f"generate its default rather than {args.map}", file=sys.stderr)
+    if args.map != "Continents.lua":
+        print(f"map selection is disabled pending verification; refusing to claim "
+              f"the default Continents map is {args.map}", file=sys.stderr)
+        return False
     screenshot(run_dir / "setup.png")
     x, y, w, h = bounds
     click_at(int(x + w * START_GAME[0]), int(y + h * START_GAME[1]))
+    return True
 
 
 def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
@@ -663,8 +1292,8 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     anything at all is the proof that a game exists.
     """
     def started(seconds: float) -> bool:
-        deadline = time.time() + seconds
-        while time.time() < deadline:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
             saw = False
             for event in tail.poll():
                 on_event(event)
@@ -713,19 +1342,38 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         # when the read fails, so a vision-less host behaves exactly as before.
         menushot = run_dir / f"menu-attempt{attempt}.png"
         screenshot(menushot)
+        menu_point = _main_menu_point(menushot, bounds)
         toprows = vision.menu_rows(menushot, bounds) if vision.available() else []
         sp_y = MENU["single_player"][1]
         pitch = 0.029
-        if len(toprows) >= 4:
+        if menu_point is not None:
+            sp_y = (menu_point[1] - y) / h
+            if len(toprows) >= 2:
+                pitch = toprows[1] - toprows[0]
+            print(f"attempt {attempt}: Single Player label read at {menu_point}",
+                  file=sys.stderr)
+        elif len(toprows) >= 4:
             sp_y = toprows[0]
             pitch = toprows[1] - toprows[0]
+            menu_point = (int(x + w * MENU["single_player"][0]),
+                          int(y + h * sp_y))
             print(f"attempt {attempt}: menu read at {sp_y:.3f} "
                   f"(pitch {pitch:.3f}, {len(toprows)} rows)", file=sys.stderr)
         else:
             print(f"attempt {attempt}: top menu not readable "
-                  f"({len(toprows)} rows) -- using the fixed fraction",
+                  f"({len(toprows)} rows) -- refusing a blind menu click",
                   file=sys.stderr)
-        click_at(int(x + w * MENU["single_player"][0]), int(y + h * sp_y))
+            blind_strikes += 1
+            if blind_strikes >= 3:
+                print("three blind attempts -- assuming a stuck full screen "
+                      "and clicking BACK", file=sys.stderr)
+                click_at(int(x + w * 0.723), int(y + h * 0.177))
+                blind_strikes = 0
+                time.sleep(3.0)
+            else:
+                time.sleep(20.0)
+            continue
+        click_at(*menu_point)
         time.sleep(2.5)
         # Read the submenu rather than assume its shape. Which entries it has
         # depends on whether there is a save and a game to resume, so where
@@ -733,9 +1381,10 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         # menu position for the same reason the aim does.
         submenu = run_dir / f"submenu-attempt{attempt}.png"
         screenshot(submenu)
+        target = _observed_label_point(submenu, "Create Game", bounds)
         rows = (vision.submenu_rows(submenu, bounds, near=sp_y, pitch=pitch)
                 if vision.available() else [])
-        if len(rows) < 3:
+        if target is None and len(rows) < 3:
             blind_strikes = blind_strikes + 1 if len(toprows) < 4 else 0
             print(f"attempt {attempt}: no submenu ({len(rows)} rows) -- "
                   f"the menu is not ready yet (blind strike {blind_strikes})",
@@ -764,24 +1413,139 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             click_at(int(x + w * 0.723), int(y + h * 0.177))
             time.sleep(2.0)
             continue
-        target = rows[-3]
-        print(f"create game row: {target:.4f} (read from {len(rows)} submenu rows)")
-        click_at(int(x + w * SUBMENU_X), int(y + h * target))
+        if target is None and len(rows) >= 3:
+            target = (int(x + w * SUBMENU_X), int(y + h * rows[-3]))
+        if target is None:
+            print(f"attempt {attempt}: Create Game is not visible yet",
+                  file=sys.stderr)
+            if not env.game_pids():
+                print("the game exited while starting", file=sys.stderr)
+                return False
+            time.sleep(20.0)
+            continue
+        print(f"create game point: {target} (read from the visible label)")
+        click_at(*target)
         time.sleep(2.5)
         screenshot(run_dir / f"create-attempt{attempt}.png")
-        configure_and_start(bounds, args, run_dir)
+        if not configure_and_start(bounds, args, run_dir):
+            print(f"attempt {attempt}: setup could not be verified; backing out",
+                  file=sys.stderr)
+            if not return_to_main_menu(bounds, run_dir, attempt):
+                print("setup recovery could not verify the main menu; refusing "
+                      "unsafe coordinate retries", file=sys.stderr)
+                return False
+            continue
         if started(verify_s):
             return True
         if not env.game_pids():
             print("the game exited while starting", file=sys.stderr)
             return False
         # Back out of whatever that opened and try again.
-        click_at(int(x + w * BACK[0]), int(y + h * BACK[1]))
-        time.sleep(1.0)
-        press_escape(1)
-        time.sleep(1.5)
-        print(f"attempt {attempt}: no game started from row {target:.4f}",
+        if not return_to_main_menu(bounds, run_dir, attempt):
+            print("start recovery could not verify the main menu; refusing "
+                  "unsafe coordinate retries", file=sys.stderr)
+            return False
+        print(f"attempt {attempt}: no game started after Create Game",
               file=sys.stderr)
+    return False
+
+
+def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
+                         args: argparse.Namespace, verify_s: float = 120.0) -> bool:
+    """Load a named save after proving each rendered menu target.
+
+    A save replay is the shortest reliable regression test for behavior that
+    appeared late in a real game. The file must already be in Firaxis's Single
+    Player save directory; the path supplies the exact rendered filename to
+    select, so this never guesses which row happens to be first.
+    """
+    def started(seconds: float) -> bool:
+        deadline = time.monotonic() + seconds
+        while time.monotonic() < deadline:
+            saw = False
+            for event in tail.poll():
+                on_event(event)
+                saw = True
+            if saw:
+                return True
+            if not env.game_pids():
+                return False
+            time.sleep(2.0)
+        return False
+
+    save_label = Path(args.load_save).stem
+    for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
+        focus_game(GAME_SIDE, GAME_FRACTION)
+        time.sleep(2.0)
+        bounds = game_window()
+        if bounds is None:
+            time.sleep(20.0)
+            continue
+        x, y, w, h = bounds
+        click_at(int(x + w * 0.15), int(y + h * 0.85))
+        time.sleep(1.5)
+
+        menu = run_dir / f"load-menu-attempt{attempt}.png"
+        screenshot(menu)
+        target = _observed_label_point(menu, "Load Game", bounds)
+        menu_point = _main_menu_point(menu, bounds)
+        if target is None and menu_point is not None:
+            click_at(*menu_point)
+            time.sleep(2.5)
+            submenu = run_dir / f"load-submenu-attempt{attempt}.png"
+            screenshot(submenu)
+            target = _observed_label_point(submenu, "Load Game", bounds)
+        if target is None:
+            print(f"attempt {attempt}: Load Game is not visible yet", file=sys.stderr)
+            if not env.game_pids():
+                return False
+            time.sleep(20.0)
+            continue
+
+        click_at(*target)
+        time.sleep(3.0)
+        panel = run_dir / f"load-panel-attempt{attempt}.png"
+        screenshot(panel)
+        save_target = _observed_label_point(panel, save_label, bounds)
+        if save_target is None:
+            print(f"saved game {save_label!r} is not visible; refusing to select a row",
+                  file=sys.stderr)
+            return False
+        click_at(*save_target)
+        time.sleep(1.5)
+
+        selected = run_dir / f"load-selected-attempt{attempt}.png"
+        screenshot(selected)
+        # The screen contains a LOAD GAME heading and a lower action button.
+        # The button is the lowest matching label; selecting the first match
+        # would click the inert heading and wait forever.
+        action_points = _observed_label_points(selected, "Load Game", bounds)
+        if not action_points:
+            print("the saved-game action button is not visible", file=sys.stderr)
+            return False
+        action = max(action_points, key=lambda point: point[1])
+        if action[1] < y + int(h * 0.75):
+            print("only the Load Game heading is visible; refusing to click it",
+                  file=sys.stderr)
+            return False
+        print(f"loading saved game {save_label} from observed row {save_target}")
+        click_at(*action)
+
+        # A save made with an older revision of the same mod can produce a
+        # compatibility confirmation. Give a normal load a head start, then
+        # acknowledge only a visibly read YES button.
+        if started(min(10.0, verify_s)):
+            return True
+        confirmation = run_dir / f"load-confirmation-attempt{attempt}.png"
+        screenshot(confirmation)
+        yes = _observed_label_point(confirmation, "Yes", bounds)
+        if yes is not None:
+            click_at(*yes)
+        if started(verify_s):
+            return True
+        if not env.game_pids():
+            return False
+        print(f"attempt {attempt}: saved game emitted no agent state", file=sys.stderr)
     return False
 
 
@@ -888,7 +1652,7 @@ def dismiss_leader_dialogue(clicks: int = 6) -> bool:
     # at that spot the five extra clicks do nothing, and when one is, the statement it
     # opens is somewhere else by the time the next click lands. Walking the whole
     # column once per pass advances a chain one link per pass, which is what a person
-    # does. Same number of clicks, and the sweep now finishes in about 23s of a 240s
+    # does. Same number of clicks, and the sweep now finishes in about 6s of a 240s
     # stall budget instead of 46s.
     passes = max(1, clicks // 2)
     for attempt in range(passes):
@@ -896,8 +1660,29 @@ def dismiss_leader_dialogue(clicks: int = 6) -> bool:
         for name, fx, fy in targets:
             x, y = int(wx + ww * fx), int(wy + wh * fy)
             click_at(x, y)
-            time.sleep(0.4)
+            time.sleep(0.1)
     return True
+
+
+def dismiss_visually_confirmed_popup() -> tuple[bool, str]:
+    """Click one safe target only when the current pixels prove a modal exists."""
+    rect = game_window()
+    if rect is None:
+        return False, "game window unavailable"
+    focus_game(GAME_SIDE, GAME_FRACTION)
+    time.sleep(0.25)
+    try:
+        window, scale = popup_clear.capture(rect)
+        surface, targets, _dark = popup_clear.classify(window)
+    except (OSError, subprocess.SubprocessError):
+        return False, "popup classification failed"
+    if surface not in ("leader", "notice"):
+        return False, f"no safe visible dialogue ({surface})"
+    target = popup_clear.click_target(surface, targets, window.size[0])
+    if target is None:
+        return False, f"visible {surface} has no confirmed button"
+    popup_clear.held_click(target, rect, scale)
+    return True, f"confirmed {surface} button"
 
 
 def press_escape(times: int = 2) -> bool:
@@ -912,16 +1697,40 @@ def press_escape(times: int = 2) -> bool:
     time.sleep(1.0)
     ok = True
     for _ in range(times):
-        result = subprocess.run(["cliclick", "kp:esc"], capture_output=True)
+        result = macos_input.press_key("escape")
         ok = ok and result.returncode == 0
         time.sleep(0.8)
     return ok
+
+
+def dismiss_world_congress_between_turns() -> bool:
+    """Click the shipped close control on the between-turns Congress screen."""
+    focus_game(GAME_SIDE, GAME_FRACTION)
+    bounds = game_window()
+    if bounds is None:
+        return False
+    wx, wy, ww, wh = bounds
+    # Measured against the stock Gathering Storm context: its close button is
+    # inset six points from the right and seven percent of the window height
+    # below the title-bar origin. This is window-relative so the mandated
+    # upper-right layout and a different Retina scale do not change the target.
+    click_at(wx + ww - 6, wy + int(wh * 0.07))
+    return True
 
 
 def play(args: argparse.Namespace) -> int:
     # One run at a time against this installation. Two harnesses share one mod
     # directory, one log and one process; the second one's install lands in the
     # middle of the first one's game and neither notices.
+    if not vision.available():
+        print(
+            "Pillow is required for verified Civ VI menu navigation; install it with "
+            "python3 -m pip install --user Pillow",
+            file=sys.stderr,
+        )
+        return 2
+    hold_macos_awake()
+    wait_for_unlocked_session()
     if not gamelock.acquire(args.tag, wait_s=args.lock_wait):
         foreign = gamelock.foreign_run(args.tag)
         print(f"another run holds the game: {foreign or gamelock.describe()}",
@@ -930,33 +1739,117 @@ def play(args: argparse.Namespace) -> int:
     try:
         return _play(args)
     finally:
+        # The installation is exclusively ours while this lock is held. An
+        # interrupt or unexpected exception must not leave the game advancing
+        # after its event stream and mirror have stopped.
+        launcher.stop()
         gamelock.release()
 
 
+def seat_matches_requested(event: dict, args: argparse.Namespace) -> tuple[bool, bool]:
+    """Return (full_config_match, modes_match) from the game's own seat report."""
+    modes = event.get("modes")
+    modes_match = modes is not None and sorted(modes) == sorted(args.game_mode)
+    return (
+        event.get("difficulty") == args.difficulty
+        and event.get("size") == args.map_size
+        and event.get("speed") == args.speed
+        and event.get("map") == args.map
+        and (args.leader is None or event.get("leader") == args.leader)
+        and modes_match,
+        modes_match,
+    )
+
+
 def _play(args: argparse.Namespace) -> int:
-    config = build_config(args)
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
+    if args.load_save and not Path(args.load_save).is_file():
+        print(f"saved game does not exist: {args.load_save}", file=sys.stderr)
+        return 8
+    using_default_orders_db = not args.orders_db
+    orders_db = orders_db_path(run_dir, args.orders_db)
+    args.orders_db = str(orders_db)
+    config = build_config(args)
     events_path = run_dir / "events.jsonl"
     events = events_path.open("a")
 
+    if not launcher.stop():
+        print("could not stop the previous Civilization VI process", file=sys.stderr)
+        return 3
+    if using_default_orders_db:
+        # The game is stopped above, so this removes only a prior incarnation of
+        # this tag.  Never reset an explicitly shared path behind an operator's
+        # back: an attached SQLite handle would keep reading the old inode.
+        reset_orders_db(orders_db)
     target = modinstall.install(config)
     print(f"installed {target}")
     print(f"  difficulty {config['Difficulty']}  map {config['MapSize']}"
           f"  speed {config['GameSpeed']}  max turns {config['MaxTurns']}")
 
-    launcher.stop()
+    brain = None
+    brain_log = None
+    if args.civvis_decides:
+        binary = Path(args.civvis_bin).expanduser() if args.civvis_bin else (
+            REPO_ROOT / "target" / "release" / "civvis_orders"
+        )
+        if not binary.is_file():
+            print(f"CIVVIS decision binary does not exist: {binary}", file=sys.stderr)
+            return 4
+        brain_log = (run_dir / "brain.log").open("a", buffering=1)
+        command = [
+            sys.executable,
+            str(REPO_ROOT / "tools" / "civ6_brain.py"),
+            "--run-dir", str(run_dir),
+            "--orders-db", str(orders_db),
+            "--mode", "civvis",
+            "--bin", str(binary),
+            "--victory", args.civvis_victory,
+            "--strategy", args.civvis_strategy,
+            "--seconds", str(max(21600.0, args.timeout + 3600.0)),
+        ]
+        brain = subprocess.Popen(
+            command,
+            cwd=REPO_ROOT,
+            stdout=brain_log,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+        print(f"CIVVIS decision worker pid={brain.pid} strategy={args.civvis_strategy} "
+              f"victory={args.civvis_victory}")
+
+    def stop_brain() -> None:
+        nonlocal brain, brain_log
+        if brain is not None and brain.poll() is None:
+            brain.terminate()
+            try:
+                brain.wait(timeout=15)
+            except subprocess.TimeoutExpired:
+                brain.kill()
+                brain.wait(timeout=5)
+        if brain_log is not None:
+            brain_log.close()
+            brain_log = None
+
+    # Covers KeyboardInterrupt and unexpected exceptions between the explicit
+    # cleanup sites below. Calling it again after a normal run is harmless.
+    atexit.register(stop_brain)
+
     launcher.clear_run_logs()
     launcher.launch(stdout=run_dir / "stdout.log")
     if not launcher.wait_for_main_menu(args.startup_timeout):
+        stop_brain()
         print("the game did not reach the main menu", file=sys.stderr)
         return 3
+    # Establish the requested operator layout before taking any measurements.
+    # Menu rows and setup controls are now read from this final geometry.
+    place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
     print("main menu reached; the setup context should host the game now")
 
     tail = watch.LogTail()
     state = {
         "hosted": False, "seat": None, "turn": -1, "score": -1,
-        "outcome": None, "last_progress": time.time(), "configured": False,
+        "outcome": None, "last_progress": time.monotonic(), "configured": False,
         "modes": None, "mode_mismatch": False,
     }
 
@@ -992,15 +1885,11 @@ def _play(args: argparse.Namespace) -> int:
             # field is not the same answer as an empty list: it means nobody
             # looked. Treat it as unknown rather than as clean, or this gate
             # passes for exactly the runs it was added to catch.
+            configured, modes_match = seat_matches_requested(event, args)
             modes = event.get("modes")
             state["modes"] = modes
-            modes_match = modes is not None and sorted(modes) == sorted(args.game_mode)
             state["mode_mismatch"] = not modes_match
-            state["configured"] = (
-                event.get("difficulty") == args.difficulty
-                and event.get("size") == args.map_size
-                and event.get("speed") == args.speed
-                and modes_match)
+            state["configured"] = configured
             if not state["configured"]:
                 print("[agent] the game does not match what was asked for",
                       file=sys.stderr)
@@ -1016,7 +1905,7 @@ def _play(args: argparse.Namespace) -> int:
         elif kind == "turn":
             state["turn"] = event.get("turn", -1)
             state["score"] = event.get("score", -1)
-            state["last_progress"] = time.time()
+            state["last_progress"] = time.monotonic()
             if state["turn"] % args.report_every == 0:
                 actions = event.get("actions") or {}
                 summary = " ".join(f"{k}={v}" for k, v in sorted(actions.items()))
@@ -1028,22 +1917,29 @@ def _play(args: argparse.Namespace) -> int:
         elif kind == "blocked":
             print(f"[turn {event.get('turn')}] blocked on {event.get('blocker')} "
                   f"({event.get('attempts')} attempts)")
-        elif kind == "autoclose_stuck":
-            # ⚠ THE SHIM HAS GIVEN UP, so press the key a person would.
+        elif kind in ("autoclose_desktop", "autoclose_stuck"):
+            # Every desktop request is pixel-classified before any click. A
+            # DiplomacyActionView context can remain technically visible while
+            # the ordinary map is in front; treating its counter alone as proof
+            # caused a live t68 fallback to sweep clicks across an uncovered map.
             #
-            # `autoclose_stuck` means twenty close attempts failed and the screen
-            # called ClearUpdate, so it will never try again — the screen is up
-            # for the rest of the game. Run settler-20260730T021107Z halted at
-            # turn 121 on one, with four cities and a score of 126, the best of
-            # the session.
+            # `autoclose_stuck` means twenty close attempts failed. Photograph the
+            # exact variant before clicking: dialogue geometry has changed several
+            # times, and without the frame a miss cannot be repaired honestly.
             #
             # A leader conversation needs a dialogue option CHOSEN; everything
             # else on this list just needs dismissing. Escape was tried for the
             # conversation case and does nothing at all on it — verified by hand
             # against a live stuck screen — so the two get different treatment.
             screen = event.get("screen")
-            print(f"[autoclose_stuck] {screen} gave up after "
-                  f"{event.get('attempts')} attempts")
+            shot = run_dir / f"autoclose-stuck-turn-{state['turn']}.png"
+            screenshot(shot)
+            reason = (
+                "requested desktop help after"
+                if kind == "autoclose_desktop" else "gave up after"
+            )
+            print(f"[{kind}] {screen} {reason} "
+                  f"{event.get('attempts')} attempts; photographed to {shot}")
             # ⚠⚠ ESCAPE WITH NOTHING TO CLOSE OPENS THE PAUSE MENU, AND THAT KILLS THE
             # RUN. Photographed at the moment of a stall (run civvis-20260730T181327Z,
             # turn 69, three healthy cities at loyalty 100): Civilization VI showing
@@ -1063,17 +1959,20 @@ def _play(args: argparse.Namespace) -> int:
                         "WorldCongressBetweenTurns", "GreatWorkShowcase",
                         "ChooseArtifact")
             if screen in ("DiplomacyActionView", "LeaderView", "DiplomacyDealView"):
-                ok = dismiss_leader_dialogue()
-                how = "dialogue clicks"
+                ok, how = dismiss_visually_confirmed_popup()
+            elif screen == "WorldCongressBetweenTurns":
+                ok = dismiss_world_congress_between_turns()
+                how = "World Congress close control"
             elif screen in BLOCKING:
                 ok = press_escape()
                 how = "escape"
             else:
                 ok = True
                 how = "left alone (not a blocking screen)"
-            print(f"[autoclose_stuck] {how} "
-                  f"{'sent' if ok else 'FAILED'} for {screen}",
-                  file=sys.stderr if not ok else sys.stdout)
+            safe_skip = not ok and how.startswith("no safe visible dialogue")
+            result = "sent" if ok else "skipped safely" if safe_skip else "FAILED"
+            print(f"[{kind}] {how} {result} for {screen}",
+                  file=sys.stderr if not ok and not safe_skip else sys.stdout)
         elif kind in ("victory", "defeat", "error"):
             print(f"[{kind}] {json.dumps(event, sort_keys=True)}")
             if kind in ("victory", "defeat"):
@@ -1108,12 +2007,19 @@ def _play(args: argparse.Namespace) -> int:
         # absent on all twenty recent runs -- so the modes are whatever the
         # Create Game screen carries, and nothing drives its Advanced Setup
         # tab. Detection is the guarantee here; setting is best effort.
-        if kind == "seat" and state["mode_mismatch"]:
+        if kind == "seat" and not state["configured"]:
             return True
         return False
 
-    if not bootstrap_game(tail, record, run_dir, args):
-        print("could not start a game from the main menu", file=sys.stderr)
+    if args.load_save:
+        bootstrapped = bootstrap_saved_game(tail, record, run_dir, args,
+                                            verify_s=args.load_wait)
+    else:
+        bootstrapped = bootstrap_game(tail, record, run_dir, args)
+    if not bootstrapped:
+        stop_brain()
+        print("could not load the saved game" if args.load_save else
+              "could not start a game from the main menu", file=sys.stderr)
         return 5
     print("in a configured game; the agent holds the seat from here")
 
@@ -1122,9 +2028,22 @@ def _play(args: argparse.Namespace) -> int:
     # frames, and the turn loop runs off game-core events, so the run stops
     # without a single log line saying why.
     last_focus = [0.0]
+    session_was_locked = [False]
+
+    def console_locked() -> bool:
+        locked = screen_locked()
+        if locked and not session_was_locked[0]:
+            print("[session] macOS locked; GUI upkeep paused while the live "
+                  "event/decision loop continues", flush=True)
+        elif not locked and session_was_locked[0]:
+            print("[session] macOS unlocked; refocusing Firaxis and continuing",
+                  flush=True)
+            last_focus[0] = 0.0
+        session_was_locked[0] = locked
+        return locked
 
     def keep_foreground() -> None:
-        now = time.time()
+        now = time.monotonic()
         if now - last_focus[0] < args.focus_every:
             return
         last_focus[0] = now
@@ -1148,7 +2067,9 @@ def _play(args: argparse.Namespace) -> int:
     # the contention note — so it is a flag, not a constant.
     reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                           each_poll=keep_foreground, poll_s=poll_s,
-                          stall_s=args.stall_seconds)
+                          stall_s=args.stall_seconds,
+                          frozen_s=args.frozen_seconds,
+                          pause_when=console_locked)
     # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
     # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
     # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
@@ -1191,11 +2112,23 @@ def _play(args: argparse.Namespace) -> int:
         dismiss_leader_dialogue()
         reason = watch.follow(tail, args.timeout, record, stop_when=finished,
                               each_poll=keep_foreground, poll_s=poll_s,
-                              stall_s=args.stall_seconds)
+                              stall_s=args.stall_seconds,
+                              frozen_s=args.frozen_seconds,
+                              pause_when=console_locked)
         if not reason.startswith("stalled"):
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
     events.close()
+
+    # A terminal run must not leave a live game advancing beside a frozen event
+    # stream. That produced a turn-259 Firaxis window next to a turn-191 CIVVIS
+    # board, while the old agreement checker compared only the two stale files
+    # and reported success. Stop the process before publishing the summary so a
+    # completed run has one unambiguous last frame.
+    game_stopped = launcher.stop()
+    stop_brain()
+    if not game_stopped:
+        print("could not stop Civilization VI after the run", file=sys.stderr)
 
     outcome = state["outcome"] or {}
     summary = {
@@ -1209,7 +2142,9 @@ def _play(args: argparse.Namespace) -> int:
         # A run stopped because the game had the wrong modes never played; it
         # is a refusal, not a result. Recording it as `stopped` would file it
         # beside games that were played and lost.
-        "reason": "wrong_game_modes" if state["mode_mismatch"] else reason,
+        "reason": ("wrong_game_modes" if state["mode_mismatch"]
+                   else "wrong_game_configuration" if state["seat"] and not state["configured"]
+                   else reason),
         # Whether the game actually played was the one this run asked for.
         # A summary that reports the requested difficulty without this is a
         # claim about the command line, not about the game.
@@ -1223,6 +2158,7 @@ def _play(args: argparse.Namespace) -> int:
         "last_score": state["score"],
         "seat": state["seat"],
         "outcome": outcome or None,
+        "game_stopped": game_stopped,
     }
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True))
     print(json.dumps(summary, indent=2, sort_keys=True))
@@ -1250,6 +2186,22 @@ def status() -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    raw_argv = sys.argv[1:] if argv is None else argv
+    # `--war-from-plan` is still available on the lower-level replay tools, where
+    # comparing the bridge override with CIVVIS's actual decision is useful.  It is
+    # deliberately not a live-game option.  The override turns a plan's preferred
+    # rival into an immediate declaration even when the planner declined war: live
+    # run `live-loop-rome-20260802-0800` forced that declaration under a Religion
+    # plan on turn 37, spent the remaining 213 turns in Recovery asking for peace,
+    # and finished 400-1081.  A production launcher must not be able to bypass the
+    # decider whose behavior it claims to measure.
+    if "--civvis-war-from-plan" in raw_argv:
+        print(
+            "--civvis-war-from-plan is replay-only: it bypasses CIVVIS's war "
+            "decision and cannot be used for a live game",
+            file=sys.stderr,
+        )
+        return 2
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--tag", default=None, help="run tag; names the run directory")
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER", choices=LADDER)
@@ -1275,12 +2227,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--seed", type=int, default=424242)
     ap.add_argument("--max-turns", type=int, default=150)
     ap.add_argument("--city-target", type=int, default=6)
-    # Standardise the civilization so two attempts are comparable. Rome's free
-    # monument and road on every founding is a different game from a random
-    # leader's, and a ladder climbed by a different civ each rung measures
-    # nothing. Takes effect only when the setup context hosts the game; the
-    # `seat` event reports the leader actually granted.
-    ap.add_argument("--leader", default="LEADER_TRAJAN")
+    ap.add_argument("--leader", help="exact Firaxis leader type to select and verify")
     # The game must stay frontmost to get frames, which makes it unwatchable if
     # it also owns the whole screen. Half is enough for the agent and leaves the
     # other half for a terminal.
@@ -1310,8 +2257,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--export-state", action="store_true", default=False)
     ap.add_argument("--probe-channels", action="store_true", default=False,
                     help="ask every candidate inbound API what it holds, once a turn")
-    ap.add_argument("--orders-db", default=str(Path.home() / "civvis-civ6-runs" / "orders.sqlite"),
-                    help="SQLite file offered to the mod via ATTACH as the inbound channel")
+    ap.add_argument("--orders-db", default=None,
+                    help="SQLite file offered to the mod via ATTACH as the inbound channel; "
+                         "defaults to <run-dir>/orders.sqlite")
     ap.add_argument("--tile-export-every", type=int, default=25,
                     help="turns between map exports (turn 1 always exports)")
     ap.add_argument("--no-explore-unassigned", dest="explore_unassigned",
@@ -1335,8 +2283,27 @@ def main(argv: list[str] | None = None) -> int:
     # being clicks landing on a live game.
     ap.add_argument("--stall-seconds", type=float, default=420.0,
                     help="give up on a run that has emitted nothing for this long")
+    # ⚠ A DIFFERENT DEATH FROM `--stall-seconds`, and now the common one. That flag
+    # watches for SILENCE; this one watches for a turn that stops advancing while
+    # events keep arriving. Run civvis-20260802T033552Z wedged on the World Congress
+    # at turn 209 with `events.jsonl` still growing every poll, so the silence
+    # watchdog could never fire and the attempt sat until a human looked at it.
+    #
+    # 480s rather than the 420s of its sibling: a real turn can legitimately take a
+    # while late in a large game (rival AI turns, a long animation), and this one
+    # kills a run that is still emitting, so it must be the more patient of the two.
+    ap.add_argument("--frozen-seconds", type=float, default=480.0,
+                    help="give up on a run whose TURN has not advanced for this "
+                         "long, even though it is still emitting events")
     ap.add_argument("--civvis-decides", action="store_true", default=False,
                     help="CIVVIS makes every decision; the mod only actuates")
+    ap.add_argument("--civvis-bin", default=None,
+                    help="civvis_orders binary; defaults to target/release/civvis_orders")
+    ap.add_argument("--civvis-victory", default="civvis",
+                    choices=["domination", "science", "score", "civvis"],
+                    help="victory objective passed to the supervised CIVVIS worker")
+    ap.add_argument("--civvis-strategy", default="auto",
+                    help="rated CIVVIS strategy name; auto selects the strongest bound")
     ap.add_argument("--governor-appoint", action="store_true", default=False,
                     help="spend governor titles (KNOWN to segfault the Game Core)")
     ap.add_argument("--governor-assign", action="store_true", default=False,
@@ -1366,6 +2333,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--startup-timeout", type=float, default=420.0)
     ap.add_argument("--host-timeout", type=float, default=300.0)
     ap.add_argument("--load-wait", type=float, default=90.0)
+    ap.add_argument("--load-save", default=None,
+                    help="load this visible single-player save instead of creating a game")
     ap.add_argument("--timeout", type=float, default=7200.0)
     ap.add_argument("--report-every", type=int, default=5)
     ap.add_argument("--lock-wait", type=float, default=0.0,
@@ -1373,7 +2342,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--focus-every", type=float, default=15.0,
                     help="seconds between raising the game window (0 disables)")
     ap.add_argument("--status", action="store_true")
-    args = ap.parse_args(argv)
+    args = ap.parse_args(raw_argv)
     global GAME_SIDE, GAME_FRACTION, GAME_VFRACTION
     GAME_SIDE, GAME_FRACTION = args.window_side, args.window_frac
     GAME_VFRACTION = args.window_vfrac

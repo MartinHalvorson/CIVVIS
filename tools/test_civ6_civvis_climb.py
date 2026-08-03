@@ -325,3 +325,159 @@ class CodeStateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class WedgedAttempt(unittest.TestCase):
+    """★★★★★ An attempt whose harness is blocked must be killed FROM OUTSIDE.
+
+    `civ6_play --frozen-seconds` watches the turn from inside its own poll loop.
+    On 2026-08-02 that did not save run civvis-20260802T064240Z: it wedged at
+    turn 206 on `WorldCongressBetweenTurns` for over ten minutes with the flag
+    armed, and never fired — no rescue line, no summary.json, so `follow` had
+    not returned. Replaying that run's events shows the in-loop logic WOULD have
+    fired, so it was right and simply never ran.
+
+    ⚠ The mod appends to events.jsonl from inside the GAME. A growing file proves
+    the game is alive, not the harness. Only another process can see that.
+    """
+
+    class _Play:
+        """A subprocess that never exits until it is signalled."""
+
+        def __init__(self):
+            self.signalled = None
+            self._dead = False
+
+        def wait(self, timeout=None):
+            if self._dead:
+                return 0
+            raise climb.subprocess.TimeoutExpired("play", timeout or 0)
+
+        def send_signal(self, sig):
+            self.signalled = sig
+            self._dead = True
+
+        def kill(self):
+            self._dead = True
+
+    def _run(self, turns, frozen_s):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / "run").mkdir()
+            events = root / "run" / "events.jsonl"
+            events.write_text("".join(
+                json.dumps({"kind": "turn", "turn": t}) + "\n" for t in turns))
+            original = climb.RUN_ROOT
+            climb.RUN_ROOT = root
+            try:
+                play = self._Play()
+                why = climb.wait_watching_the_turn(play, "run", 3.0, frozen_s)
+                return why, play.signalled
+            finally:
+                climb.RUN_ROOT = original
+
+    def test_a_frozen_turn_is_killed_from_outside(self):
+        why, signalled = self._run([1, 2, 206], frozen_s=0.0)
+        self.assertEqual(why, "frozen", "a stuck turn must end the attempt")
+        self.assertEqual(signalled, climb.signal.SIGTERM)
+
+    def test_setup_has_no_turn_and_must_not_be_killed(self):
+        """⚠ Killing every attempt before it starts is the failure this must not have."""
+        why, signalled = self._run([], frozen_s=0.0)
+        self.assertNotEqual(why, "frozen", "no turn seen yet is not a frozen turn")
+        self.assertIsNone(signalled)
+
+    def test_a_patient_setting_lets_a_slow_attempt_live(self):
+        why, signalled = self._run([1, 2, 3], frozen_s=600.0)
+        self.assertNotEqual(why, "frozen")
+        self.assertIsNone(signalled)
+
+
+class SettingsDealt(unittest.TestCase):
+    """★★★★★ A row dealt something other than what was asked must say so.
+
+    `is_win` refuses to count a VICTORY at the wrong rung. That check only ever
+    fires on a win, so every losing row — all of them, so far — was written with
+    `difficulty_asked: DIFFICULTY_SETTLER` beside a seat that said otherwise, and
+    nothing said a word.
+
+    Measured 2026-08-02: 25 consecutive runs dealt DIFFICULTY_SETTLER and the
+    26th dealt DIFFICULTY_PRINCE on identical setup code. Rare, not chronic —
+    which is why it has to be RECORDED rather than watched for.
+    """
+
+    @staticmethod
+    def _mismatch(asked, dealt):
+        """The comparison the climb performs, in the same shape."""
+        return {
+            field: {"asked": a, "dealt": dealt.get(key)}
+            for field, key, a in (
+                ("difficulty", "difficulty", asked["difficulty"]),
+                ("map_size", "size", asked["map_size"]),
+                ("speed", "speed", asked["speed"]),
+            )
+            if dealt.get(key) is not None and dealt.get(key) != a
+        }
+
+    ASKED = {"difficulty": "DIFFICULTY_SETTLER", "map_size": "MAPSIZE_SMALL",
+             "speed": "GAMESPEED_ONLINE"}
+
+    def test_the_rung_the_game_actually_dealt_is_recorded(self):
+        dealt = {"difficulty": "DIFFICULTY_PRINCE", "size": "MAPSIZE_SMALL",
+                 "speed": "GAMESPEED_ONLINE"}
+        found = self._mismatch(self.ASKED, dealt)
+        self.assertIn("difficulty", found)
+        self.assertEqual(found["difficulty"]["dealt"], "DIFFICULTY_PRINCE")
+        self.assertNotIn("map_size", found, "settings that matched must stay quiet")
+
+    def test_a_matching_game_records_nothing(self):
+        """⚠ A field that always fires says nothing. Silence is the healthy case."""
+        dealt = {"difficulty": "DIFFICULTY_SETTLER", "size": "MAPSIZE_SMALL",
+                 "speed": "GAMESPEED_ONLINE"}
+        self.assertEqual(self._mismatch(self.ASKED, dealt), {})
+
+    def test_a_seat_that_could_not_be_read_is_not_a_mismatch(self):
+        """⚠ Absent is not wrong. An old export naming nothing must not be
+        reported as the game having dealt the wrong rung."""
+        self.assertEqual(self._mismatch(self.ASKED, {}), {})
+
+
+class BatchPinStalenessTests(unittest.TestCase):
+    """The pin line must say when the tree is behind, or a stale tree is invisible.
+
+    On 2026-08-02 the batch tree ran hours behind `origin/main` with four merged
+    fixes unbuilt, and `batch pinned to 1000a13` read exactly as it would have on
+    main. Reporting is enough — pinning to an old commit is a legitimate way to keep
+    a batch comparable — but it must not be silent.
+    """
+
+    def test_the_helper_reports_rather_than_refuses(self) -> None:
+        source = (Path(__file__).resolve().parent
+                  / "civ6_civvis_climb.py").read_text(encoding="utf-8")
+        start = source.index("def commits_behind_main()")
+        whole = source[start:source.index("\ndef ", start + 10)]
+        # ⚠ Assert against CODE, not prose. The docstring says "does not fetch",
+        # and a substring check that reads the docstring is checking the comment.
+        opening = whole.index('"""')
+        code = whole[whole.index('"""', opening + 3) + 3:]
+        self.assertIn("rev-list", code)
+        self.assertIn("HEAD..origin/main", code)
+        # ⚠ Must never fetch: a batch cannot depend on the network.
+        self.assertNotIn("fetch", code)
+        # ⚠ Must never abort: an old pin is legitimate.
+        self.assertNotIn("sys.exit", code)
+
+    def test_the_pin_line_carries_the_staleness(self) -> None:
+        source = (Path(__file__).resolve().parent
+                  / "civ6_civvis_climb.py").read_text(encoding="utf-8")
+        # ⚠ Assert on the PRINT EXPRESSION, not the neighbourhood. The first version
+        # of this test read 700 characters either side, so it passed unchanged when
+        # the staleness was computed and then never concatenated — which is exactly
+        # the bug it exists to catch.
+        start = source.index('print(f"batch pinned to {pinned}"')
+        statement = source[start:source.index("flush=True)", start)]
+        self.assertIn("staleness", statement,
+                      f"the computed staleness must reach the printed line: {statement}")
+        before = source[start - 700:start]
+        self.assertIn("commits_behind_main()", before)
+        self.assertIn("behind origin/main", before)

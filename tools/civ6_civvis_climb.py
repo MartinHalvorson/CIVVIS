@@ -4,7 +4,7 @@
 cannot be used for a CIVVIS-driven attempt. This does one rung, repeatedly, with the
 decision loop attached, and keeps a ledger.
 
-    python3 tools/civ6_civvis_climb.py --attempts 12 --victory domination
+    python3 tools/civ6_civvis_climb.py --attempts 12 --victory civvis
 
 ⚠ ONE HARNESS AT A TIME. There is one installation, one mod directory, one log and
 one run lock. Two harnesses driving it interleave their installs and each reads the
@@ -74,6 +74,18 @@ def dismiss_crash_dialogs() -> None:
 
     ⚠ These are not cosmetic. Civilization VI segfaults (see the governor-appointment
     note) and every teardown `pkill`s it, so Steam and macOS both leave modal
+    ⚠⚠ THE PROCESS IS "Problem Reporter", NOT "ReportCrash", AND THAT ONE WORD
+    COST A BATCH. `ReportCrash` is the background daemon; it has no windows. The
+    dialog a human actually sees — titled "Problem Report for Civilization VI",
+    with buttons Hide Details / OK / Reopen — belongs to a process literally named
+    `Problem Reporter`. This list named only the daemon, so it walked windows that
+    never exist and the real modal was never closed.
+
+    Measured 2026-08-02: four Civ 6 segfaults left a Problem Reporter window up.
+    Every later attempt then reported "NO GAME — could not start a game from the
+    main menu", because the modal was taking the click the Create Game vision pass
+    was about to make. `pgrep -lf "Problem Reporter"` is how to confirm it.
+
     dialogs behind. A modal left on screen steals the click the NEXT attempt's
     vision pass is about to make on the Create Game screen — and this project has
     already had a stray click land on "Exit to Desktop".
@@ -83,7 +95,7 @@ def dismiss_crash_dialogs() -> None:
     """
     script = """
     tell application "System Events"
-        repeat with procName in {"Steam", "Civilization VI", "Civ6", "ReportCrash"}
+        repeat with procName in {"Steam", "Civilization VI", "Civ6", "ReportCrash", "Problem Reporter"}
             try
                 if exists (process procName) then
                     tell process procName
@@ -170,6 +182,134 @@ def teardown() -> None:
 def busy() -> str | None:
     out = run(["pgrep", "-f", "Civ6_Exe|civ6_play.py|civ6_brain.py"])
     return out.strip() or None
+
+
+def _detach(cmd: list[str], log_path: Path, what: str) -> None:
+    """Start a helper that must outlive this batch's process group.
+
+    `start_new_session` is the load-bearing argument. Without it the child joins
+    this batch's group and dies with it — which is exactly how the fifteen-turn
+    mirror hole described in `ensure_mirror` was opened.
+
+    Never fatal. A batch that cannot raise its helpers is still a batch that
+    measures play, and refusing to start one because a window is missing would
+    trade the measurement for the picture.
+    """
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        with log_path.open("a") as handle:
+            subprocess.Popen(
+                cmd, stdout=handle, stderr=subprocess.STDOUT,
+                stdin=subprocess.DEVNULL, start_new_session=True,
+            )
+        print(f"[{what}] started; it logs to {log_path}", flush=True)
+    except OSError as exc:
+        print(f"[{what}] could not start: {exc}", flush=True)
+
+
+def ensure_popup_clear() -> None:
+    """Back the mod's autoclose shim with the out-of-game clearer.
+
+    ⚠ **AUTOCLOSE GIVES UP PERMANENTLY.** The shim calls `ClearUpdate` on its
+    twentieth failed attempt at a screen, which kills the CONTEXT — so a screen it
+    cannot close stays on the map for the rest of the game and no later turn
+    retries it. `popup_clear.py` is the backstop written for precisely that, and
+    nothing has ever started it.
+
+    Measured 2026-08-02 on run civvis-20260802T014139Z: the shim closed 167 popups
+    across eight screens and reported `autoclose_stuck` twice — `DiplomacyActionView`
+    and `WorldCongressPopup`. The Diplomacy one was a Barbarossa leader scene, and it
+    sat over the whole game window until this was started by hand, at which point it
+    cleared in one held click and caught a second scene fifteen seconds later.
+
+    ⚠ A leader asking a QUESTION ignores every in-Lua rung and ignores Escape too —
+    a question needs an ANSWER, so only a held click on the dialogue button resolves
+    it. That is the case the mod structurally cannot reach.
+
+    2.5s rather than the 6s default: the operator watches this window, and six
+    seconds of a leader portrait over the map is the difference they notice. The
+    tool's own guards make a tight interval safe — it refuses to click unless
+    Civilization VI is frontmost AND the map is positively covered AND the harness
+    has already recorded a turn, so it cannot touch the setup screens.
+    """
+    if run(["pgrep", "-f", "popup_clear.py"]).strip():
+        print("[popups] clearer already running", flush=True)
+        return
+    clearer = HERE / "civ6_control" / "popup_clear.py"
+    if not clearer.exists():
+        print(f"[popups] no clearer at {clearer}; stuck screens will sit on the map",
+              flush=True)
+        return
+    _detach(
+        [sys.executable, "-u", str(clearer), "--interval", "2.5",
+         "--runs", str(RUN_ROOT), "--log", str(RUN_ROOT.parent / "popup_clear.log")],
+        RUN_ROOT.parent / "popup_clear.log", "popups",
+    )
+
+
+def ensure_mirror() -> None:
+    """Make sure something is FEEDING the mirror window, not just serving it.
+
+    ⚠⚠ THE SERVER BEING UP IS NOT THE MIRROR BEING LIVE, and the two failure modes
+    look identical from `/status`. `civvis play --serve` on :8610 reads a staged
+    board out of `civvis-civ6-mirror/stage`; `tools/follow.py` is what rebuilds that
+    stage from the running attempt's `events.jsonl`. The server is long-lived and
+    reparented to init, so it answers `/status` cheerfully with LAST NIGHT'S BOARD
+    while follow.py is dead — turn, frames_painted and frames_missed all stay frozen
+    at whatever they were, which reads as a healthy idle mirror.
+
+    Measured 2026-08-02 on run civvis-20260802T014139Z: follow.py exited, the game
+    ran on to turn 97, and :8610 kept reporting `turn 82, frames_painted 82,
+    frames_missed 0` — a fifteen-turn hole that no status field named. The operator
+    saw a CIVVIS window that had simply stopped agreeing with the game.
+
+    The batch has always relied on someone having started follow.py by hand, which
+    is the whole defect: "both games visible" is a REQUIREMENT of every run here and
+    nothing enforced it. Starting the stager costs one process launch per batch.
+
+    Deliberately not fatal. A batch that cannot raise the viewer is still a batch
+    that measures play, and refusing to start one because a window is missing would
+    trade the measurement for the picture.
+    """
+    if run(["pgrep", "-f", "tools/follow.py"]).strip():
+        print("[mirror] stager already running", flush=True)
+        return
+    follow = HERE / "follow.py"
+    if not follow.exists():
+        print(f"[mirror] no stager at {follow}; the window will not track the game",
+              flush=True)
+        return
+    _detach([sys.executable, "-u", str(follow)],
+            Path.home() / "civvis-civ6-mirror" / "follow.log", "mirror")
+
+
+def commits_behind_main() -> int | None:
+    """How many commits this tree is behind `origin/main`, or None if unknown.
+
+    ⚠⚠ WHY THIS EXISTS. On 2026-08-02 the batch tree spent hours at `#868` while
+    four merged fixes — including the two the session's whole diagnosis rested on —
+    sat unbuilt. It had briefly reached `#880` and was moved BACK. Nothing in the log
+    said so: `batch pinned to 1000a13` reads identically whether that commit is main
+    or eighteen behind it, and the resulting batch measured an engine nobody meant to
+    test.
+
+    Pinning to an old commit is legitimate — it is how a controlled batch stays
+    comparable — so this reports and never refuses. What it removes is the case where
+    a tree is stale by ACCIDENT and the log looks exactly the same.
+
+    ⚠ Does not fetch. A batch must not depend on the network, and a stale
+    `origin/main` ref simply under-reports rather than blocking anything.
+    """
+    # ⚠ The module's own `run()`, not `subprocess.run` — it merges stdout and stderr
+    # and never raises, which is what every other git call here relies on, and what
+    # the tests fake.
+    out = run(["git", "-C", str(HERE.parent), "rev-list", "--count",
+               "HEAD..origin/main"]).strip()
+    try:
+        return int(out)
+    except ValueError:
+        # No such ref, not a repository, or git said something else entirely.
+        return None
 
 
 def code_state() -> str:
@@ -383,6 +523,73 @@ def won(record: dict) -> bool:
     return False
 
 
+def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
+                           frozen_s: float) -> str:
+    """Wait for the attempt, and kill it if its TURN stops advancing.
+
+    ★★★★★ AN IN-LOOP WATCHDOG CANNOT CATCH A BLOCKED HARNESS. `civ6_play` has
+    `--frozen-seconds`, which watches the turn from inside its own poll loop —
+    and on 2026-08-02 that did not save run civvis-20260802T064240Z. It wedged
+    at turn 206 on `WorldCongressBetweenTurns` and sat there for over ten
+    minutes with the flag armed: no rescue line, no `summary.json`, so `follow`
+    had never returned. Replaying that run's own `events.jsonl` shows the in-loop
+    logic would have fired, so the logic was right and simply never ran.
+
+    ⚠ THE MOD APPENDS TO `events.jsonl` FROM INSIDE THE GAME, independently of
+    whether the Python harness is executing. A file that keeps growing proves the
+    GAME is alive, not the HARNESS. If `civ6_play`'s loop is blocked — in
+    `on_event`, in `keep_foreground`, in an AppleScript that never returns — the
+    code that would fire its watchdog is not running. Only a watcher in ANOTHER
+    process can see that, and the climb is already that process.
+
+    The attempt had to be cleared by hand. `play.wait(timeout=...)` would
+    otherwise have burned its full hundred minutes.
+
+    ⚠ Deliberately MORE PATIENT than the in-loop watchdog (480s). This is the
+    last resort, it kills a run that may merely be slow, and the cheaper guard
+    gets first refusal.
+
+    ⚠ Arms only once a turn has been SEEN — setup emits none, and killing every
+    attempt before it starts is the failure mode this guard must not have.
+    """
+    events = RUN_ROOT / tag / "events.jsonl"
+    deadline = time.time() + hard_timeout_s
+    last_turn, last_turn_at, offset = None, time.time(), 0
+    while time.time() < deadline:
+        try:
+            play.wait(timeout=20.0)
+            return "exited"
+        except subprocess.TimeoutExpired:
+            pass
+        # Read only what is new. The file reaches tens of megabytes on a long
+        # run and this loop runs every twenty seconds for the whole attempt.
+        try:
+            with events.open("rb") as handle:
+                handle.seek(offset)
+                fresh = handle.read()
+                offset = handle.tell()
+        except OSError:
+            continue
+        for line in fresh.splitlines():
+            try:
+                turn = json.loads(line).get("turn")
+            except (ValueError, AttributeError):
+                continue
+            if isinstance(turn, int) and (last_turn is None or turn > last_turn):
+                last_turn, last_turn_at = turn, time.time()
+        if last_turn is not None and time.time() - last_turn_at > frozen_s:
+            print(f"[watchdog] turn {last_turn} has not advanced in "
+                  f"{frozen_s:.0f}s and the harness has not noticed; killing the "
+                  f"attempt from outside", flush=True)
+            play.send_signal(signal.SIGTERM)
+            try:
+                play.wait(timeout=60.0)
+            except subprocess.TimeoutExpired:
+                play.kill()
+            return "frozen"
+    return "timeout"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
@@ -392,13 +599,58 @@ def main() -> int:
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
     ap.add_argument("--max-turns", type=int, default=250)
     ap.add_argument("--timeout", type=float, default=5400.0)
-    # ⚠ Passed straight to the brain, and domination is currently unreachable:
-    # `findWarTarget` needs a REVEALED rival city and meeting a civilization
-    # reveals none of its land, so the target set stays empty for the whole game.
-    # Measured 2026-07-31: `met: 1` with `cities_SEEN: 0` at t125 and zero
-    # declarations in every unforced run. A ladder left on this default measures a
-    # plan that cannot complete. See the note on `--victory` in civ6_brain.py.
-    ap.add_argument("--victory", default="domination")
+    # ⚠ The LAST resort, not the first. `civ6_play --frozen-seconds` (480s)
+    # watches the same thing from inside its own loop and gets first refusal;
+    # this one exists for when that loop is itself blocked and therefore cannot
+    # fire. More patient for exactly that reason.
+    ap.add_argument("--frozen-seconds", type=float, default=900.0,
+                    help="kill an attempt whose TURN has not advanced for this "
+                         "long, from outside its harness")
+    # ⚠⚠ THE DEFAULT WAS `domination`, AND THE COMMENT SAYING SO WAS ALREADY HERE.
+    #
+    # "A ladder left on this default measures a plan that cannot complete" was
+    # written on 2026-07-31 against a different mechanism — `findWarTarget` needs a
+    # REVEALED rival city, and meeting a civilization reveals none of its land, so
+    # the target set stayed empty (`met: 1`, `cities_SEEN: 0` at t125, zero
+    # declarations in every unforced run). The diagnosis landed; the default did
+    # not move. All 104 rows of `civvis_ladder.jsonl` then carried `domination`
+    # with ZERO wins, and the 21 `victory` events in them are RIVALS winning.
+    #
+    # ★★★★★ It is also out of budget, independently of that mechanism.
+    # `victory_eval`'s own per-target turn limits are 650 for Domination and 300
+    # for Score; this ladder runs `--max-turns 250`. Measured at exactly those
+    # settings (`victory_eval --target domination,score --games 8 --players 6
+    # --turns 250`): eight of eight domination-targeted games ended by score at the
+    # turn limit, none by conquest. Score is the only lane whose budget is near 250.
+    #
+    # ★★★★★ AND THE ANSWER IS NOT ANOTHER LANE — IT IS NOT PINNING ONE.
+    #
+    # Mirrored head-to-head at this ladder's own profile, 30 map pairs, 6 players,
+    # 250 turns, using the arms added in #857:
+    #
+    #     score-target   vs domination-target   68.3% / 70.0%   +147 Elo  CONFIRMED
+    #     adaptive       vs score-target        98.3%           -708 for score
+    #     adaptive       vs domination-target   100.0%  60-0    p=0.0000
+    #
+    # So the ordering is **adaptive >> score > domination**, and the deployed
+    # setting is the worst of the three: untargeted `advanced` beat it 60-0, with
+    # `advanced_target_domination` recording ZERO victories of any type in 60 games.
+    #
+    # ⚠ THE REASONING THAT MOTIVATED PINNING A LANE AT ALL DOES NOT HOLD. The note
+    # on `--victory` in civvis_orders.rs says that left to itself the agent "picked
+    # `religion` with `victory=None`, unreachable in 250 turns". Untargeted
+    # `advanced` wins 48 of its 60 BY RELIGION at a 250-turn cap in the run above.
+    # Whatever made religion look unreachable, it was not the turn budget.
+    #
+    # `civvis` is the value that restores letting the agent choose; it maps to a
+    # plain `AdvancedAi::new()` with no `VictoryTarget`, which is the `advanced`
+    # controller both evaluations above were run against.
+    #
+    # ⚠ `domination`, `score` and `science` stay available and unchanged; only the
+    # default moves. Anyone comparing against the 104 existing rows must pass
+    # `--victory domination` explicitly, and rows either side of this commit are
+    # NOT comparable.
+    ap.add_argument("--victory", default="civvis")
     # Passed straight through to the brain; see its `--strategy` note for why the
     # default changed from the built-in AdvancedAi and what would undo it.
     ap.add_argument("--strategy", default="auto",
@@ -448,11 +700,25 @@ def main() -> int:
 
     # A batch is a COMPARISON, so it is pinned to one program by default. Opting out
     # is a deliberate act with a name, not the silent default it used to be.
+    # Raise the viewer and the popup backstop before the first attempt, not after:
+    # the opening is the part of the game the operator most needs to see against the
+    # real one, and a stuck screen in it costs the whole attempt.
+    ensure_mirror()
+    ensure_popup_clear()
+
     pinned = None if args.no_pin else code_state()
     if pinned is not None:
+        behind = commits_behind_main()
+        # Loud above a handful, because that is where "deliberately pinned" stops
+        # being the likely explanation and "nobody rebuilt this tree" starts.
+        staleness = ""
+        if behind:
+            staleness = (f"  ⚠ {behind} commits behind origin/main"
+                         if behind >= 5 else f"  ({behind} behind origin/main)")
         print(f"batch pinned to {pinned}"
               + ("  ⚠ working tree is dirty; the fingerprint tracks it"
-                 if "+" in pinned else ""), flush=True)
+                 if "+" in pinned else "")
+              + staleness, flush=True)
 
     played = 0          # attempts that produced a MEASUREMENT — the only budget
     started = 0         # iterations, for the log line only
@@ -503,18 +769,17 @@ def main() -> int:
             return 4
         print(f"\n=== attempt {attempt}/{args.attempts}  {tag}  code={code_rev} ===",
               flush=True)
-        # A fresh orders database per attempt. Stale rows are keyed by run tag so
-        # they could not be actuated, but a growing file is a growing query.
-        for suffix in ("", "-wal", "-shm"):
-            path = Path.home() / "civvis-civ6-runs" / f"orders.sqlite{suffix}"
-            if path.exists():
-                path.unlink()
+        # The database path is as much part of a run as its event log.  SQLite
+        # keeps an ATTACH bound to an inode, so deleting a global path while a
+        # game still has it open creates a new, invisible order channel.
+        orders_db = RUN_ROOT / tag / "orders.sqlite"
 
         play_log = (logs / f"{tag}-play.log").open("w")
         brain_log = (logs / f"{tag}-brain.log").open("w")
         play = subprocess.Popen(
             [sys.executable, "-u", str(HERE / "civ6_play.py"),
              "--tag", tag,
+             "--orders-db", str(orders_db),
              "--difficulty", args.difficulty,
              "--map-size", args.map_size,
              "--speed", args.speed,
@@ -534,8 +799,18 @@ def main() -> int:
              "--tile-export-every", str(args.tile_export_every),
              # The operator's 2026-08-01 layout: the game owns the LOWER right
              # at 2/3 of the screen each way; CIVVIS holds the upper left.
-             "--window-side", "bottomright",
-             "--window-frac", "0.667", "--window-vfrac", "0.667"],
+             # The operator's 2026-08-02 layout is QUADRANTS: CIVVIS upper-left,
+             # Civilization VI upper-RIGHT, the terminal lower-left, and the
+             # lower-right deliberately empty for them to fill. `right` is
+             # top-anchored, so a half in each axis lands the game exactly in the
+             # upper-right quarter and nothing overlaps.
+             #
+             # ⚠ This has to be passed here rather than set by hand: the in-game
+             # loop re-places the window every turn, so any manual move is undone
+             # within seconds. It is also read at process start, so changing it
+             # needs a new attempt — not a live edit.
+             "--window-side", "right",
+             "--window-frac", "0.5", "--window-vfrac", "0.5"],
             stdout=play_log, stderr=subprocess.STDOUT,
         )
         time.sleep(3)
@@ -544,6 +819,7 @@ def main() -> int:
              "--run-dir", str(RUN_ROOT / tag),
              "--mode", "civvis",
              "--bin", str(orders_bin),
+             "--orders-db", str(orders_db),
              "--victory", args.victory,
              "--strategy", args.strategy]
             + (["--war-from-plan"] if args.war_from_plan else [])
@@ -553,10 +829,11 @@ def main() -> int:
         )
 
         try:
-            play.wait(timeout=args.timeout + 600)
-        except subprocess.TimeoutExpired:
-            print("attempt exceeded its own timeout; stopping it", flush=True)
-            play.send_signal(signal.SIGTERM)
+            why = wait_watching_the_turn(play, tag, args.timeout + 600,
+                                         args.frozen_seconds)
+            if why == "timeout":
+                print("attempt exceeded its own timeout; stopping it", flush=True)
+                play.send_signal(signal.SIGTERM)
         finally:
             if brain.poll() is None:
                 brain.send_signal(signal.SIGTERM)
@@ -569,6 +846,45 @@ def main() -> int:
         record["victory_target"] = args.victory
         record["difficulty_asked"] = args.difficulty
         record["code_rev"] = code_rev
+
+        # ★★★★★ A ROW THAT WAS DEALT SOMETHING ELSE MUST SAY SO, WIN OR NOT.
+        #
+        # `is_win` already refuses to count a VICTORY at the wrong rung, and the
+        # reasoning above it is right: `setup: "(absent)"` on this build means
+        # several requested settings never applied, so the `seat` event read back
+        # from inside the game is the only trustworthy witness.
+        #
+        # But that check only ever fires on a win. Every LOSING row — which is all
+        # of them so far — was written with `difficulty_asked: DIFFICULTY_SETTLER`
+        # beside a seat that said something else, and nothing said a word. Those
+        # rows then sit in the ledger being compared against each other as though
+        # they were the same experiment.
+        #
+        # Measured 2026-08-02: 25 consecutive runs dealt DIFFICULTY_SETTLER and the
+        # 26th dealt DIFFICULTY_PRINCE, on identical setup code. So this is rare,
+        # not chronic — which is exactly why it needs to be recorded rather than
+        # watched for. A one-in-twenty-six silent substitution is the kind of thing
+        # that is never noticed and quietly explains a whole batch.
+        #
+        # ⚠ Recorded, NOT fatal. A game at the wrong rung is still a game, and the
+        # data is still worth having; what it must not do is masquerade as the rung
+        # that was asked for. `settings_dealt` is the field a reader can filter on.
+        dealt = (record.get("seat") or {})
+        mismatch = {
+            field: {"asked": asked, "dealt": dealt.get(key)}
+            for field, key, asked in (
+                ("difficulty", "difficulty", args.difficulty),
+                ("map_size", "size", args.map_size),
+                ("speed", "speed", args.speed),
+            )
+            if dealt.get(key) is not None and dealt.get(key) != asked
+        }
+        if mismatch:
+            record["settings_mismatch"] = mismatch
+            for field, pair in mismatch.items():
+                print(f"  ⚠ {field}: asked {pair['asked']}, the game dealt "
+                      f"{pair['dealt']} — this row is NOT comparable with the rest "
+                      f"of the batch", flush=True)
 
         # ⚠ NO TURN WAS EVER OBSERVED, so this row is not a loss — it is a run that
         # did not happen. It is still written down, because a batch with holes in it

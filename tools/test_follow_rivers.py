@@ -1,14 +1,11 @@
 #!/usr/bin/env python3
 """The north-up reflection must carry the rivers with it.
 
-`rv` bit 1 is `IsWOfRiver` (river on the EAST edge), bit 2 `IsNWOfRiver`
-(SOUTH-EAST edge), bit 4 `IsNEOfRiver` (SOUTH-WEST edge). The reconstruction
-applies that table to staged coordinates, so after `flip_north_up` the two
-diagonal flags describe the vertically mirrored edge unless
-`remap_river_masks` has moved them to the plot that owns the segment on the
-flipped board. These tests pin the composition, not either half: consumer
+`rv` bits 1..32 describe E, SE, SW, W, NW and NE. The reconstruction applies
+that table to staged coordinates, so `remap_river_masks` must reflect the edge
+as well as the plot. These tests pin the composition, not either half: consumer
 semantics applied to the staged plots must equal the game's own segments with
-both endpoints flipped.
+both endpoints flipped, including a known edge whose opposite tile is hidden.
 """
 
 import importlib.util
@@ -27,14 +24,16 @@ SPEC.loader.exec_module(follow)
 def segments(masks, width):
     """The reconstruction's reading of `rv` at whatever coordinates it holds."""
     segs = set()
+    directions = ((1, 0), (1, -1), (0, -1),
+                  (-1, 0), (-1, 1), (0, 1))
     for (x, y), rv in masks.items():
-        par = y & 1
-        if rv & 1:
-            segs.add(frozenset(((x, y), ((x + 1) % width, y))))
-        if rv & 2:
-            segs.add(frozenset(((x, y), ((x + par) % width, y - 1))))
-        if rv & 4:
-            segs.add(frozenset(((x, y), ((x - 1 + par) % width, y - 1))))
+        start = follow.offset_to_axial(x, y)
+        for direction, bit in zip(directions, (1, 2, 4, 8, 16, 32)):
+            if not rv & bit:
+                continue
+            end = follow.axial_to_offset(start[0] + direction[0],
+                                         start[1] + direction[1])
+            segs.add(frozenset(((x, y), (end[0] % width, end[1]))))
     return segs
 
 
@@ -81,7 +80,7 @@ def tiles_event(plots, width=8, height=6, turn=4, chunk=1):
 
 
 class RiverFlipTests(unittest.TestCase):
-    WIDTH, HEIGHT = 8, 6      # height 6 -> top 4, row 5 is the dropped polar row
+    WIDTH, HEIGHT = 8, 6      # even height -> top 6, with one empty staging row
 
     def test_diagonal_segments_return_to_the_edge_the_game_reported(self):
         # Both parities, all three flags, a wrap across the east seam, and the
@@ -115,23 +114,44 @@ class RiverFlipTests(unittest.TestCase):
         self.assertEqual(staged, {(2, top - 2): 1})
         self.assertEqual(lost, 0)
 
-    def test_a_flag_with_no_carrier_is_counted_not_silent(self):
-        # A SE flag at the fog frontier: the plot below is not exported, so on
-        # the flipped board nothing can carry the segment. It must be counted,
-        # and it must NOT survive on the mirrored-wrong edge.
+    def test_a_known_edge_survives_when_the_opposite_plot_is_hidden(self):
+        # A SE flag at the fog frontier. Rust accepts all six directions and
+        # stores one-sided boundary edges, so the revealed plot itself carries
+        # the reflected fact; the hidden neighbour is not required.
         masks = {(3, 2): 2}
         top = follow.mirror_axis(self.HEIGHT)
         staged, lost = stage([tiles_event(masks, self.WIDTH, self.HEIGHT)], top)
-        self.assertEqual(staged, {}, "the mirrored-wrong edge is worse than absence")
-        self.assertEqual(lost, 1)
+        self.assertEqual(
+            segments(staged, self.WIDTH),
+            flipped_truth(masks, self.WIDTH, top),
+        )
+        self.assertEqual(lost, 0)
 
-    def test_the_dropped_polar_row_counts_its_east_segments(self):
-        # Row 5 falls off a 6-row board. Its E segment leaves with it; its SW
-        # flag is gathered by row 4 and survives as that plot's segment.
+    def test_all_six_exported_directions_survive_and_reciprocals_deduplicate(self):
+        masks = {
+            (3, 2): 1 | 2 | 4 | 8 | 16 | 32,
+            # Reciprocal copies exported from already-revealed neighbours.
+            (4, 2): 8,
+            (3, 1): 16,
+            (2, 1): 32,
+            (2, 2): 1,
+            (2, 3): 2,
+            (3, 3): 4,
+        }
+        top = follow.mirror_axis(self.HEIGHT)
+        staged, lost = stage([tiles_event(masks, self.WIDTH, self.HEIGHT)], top)
+        self.assertEqual(segments(staged, self.WIDTH),
+                         flipped_truth(masks, self.WIDTH, top))
+        self.assertEqual(lost, 0)
+
+    def test_even_height_staging_keeps_the_polar_row_and_its_edges(self):
+        # The extra staging row exists precisely so the final real row has a
+        # same-parity reflection partner. Both its in-row and diagonal edges
+        # must therefore survive.
         masks = {(3, 5): 1 | 4, (2, 4): 0, (3, 4): 0}
         top = follow.mirror_axis(self.HEIGHT)
         staged, lost = stage([tiles_event(masks, self.WIDTH, self.HEIGHT)], top)
-        self.assertEqual(lost, 1, "only the in-row E segment is unrepresentable")
+        self.assertEqual(lost, 0)
         self.assertEqual(
             segments(staged, self.WIDTH),
             flipped_truth(masks, self.WIDTH, top),

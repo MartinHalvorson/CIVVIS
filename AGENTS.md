@@ -27,8 +27,10 @@ After cloning on every computer, bootstrap the clone once:
 python3 tools/civvis_collab.py bootstrap
 ```
 
-This installs the repository guard and a five-minute, fetch-only Git freshness
-service. The task launcher repairs both on every task. Never bypass the guard
+This installs the repository guard and a five-minute Git synchronization
+service. The service force-updates the dedicated, clean `main` management
+worktree to GitHub `origin/main` while leaving task worktrees untouched. The
+task launcher repairs both safeguards on every task. Never bypass the guard
 with `--no-verify`.
 
 Start every task with the repository launcher; it creates the isolated
@@ -71,17 +73,25 @@ python3 tools/civvis_collab.py start <task-slug> --machine <machine-id> \
   shared repository.
 - Make descriptive checkpoint commits and push them to the task branch. A push
   is the cross-machine backup and handoff mechanism; `git stash` is not.
+- Name the computer in every commit. End the message with a `Computer:` trailer
+  carrying this device's own name (`scutil --get ComputerName` on macOS,
+  `hostname` elsewhere), so `git log` alone says which machine in the fleet
+  produced a commit. The device name is deliberately the whole identifier for
+  now; a richer computer ID can replace the value later without moving it. Put
+  the same `- Computer:` line in the PR ownership block too — squash merge
+  writes the PR body onto `main` and throws the branch's own messages away.
 - Do not force-push. Do not rebase a branch after it has been pushed. To update
   a task branch, fetch and merge `origin/main` into it once, resolve carefully,
   rerun validation, and push normally.
-- Never run a repository-wide daemon that stages, commits, pulls, rebases,
-  merges, or pushes development work. Automated builds may fetch and use a
-  private detached worktree based on `origin/main`; they must not mutate a
-  development checkout.
-- The managed Git freshness service is deliberately fetch-only. It updates
-  remote-tracking refs and a local heartbeat, then reports stale worktrees; it
-  never updates an active branch or changes files. `start` refuses to create a
-  task unless it has fetched current `origin/main` successfully.
+- Never run a repository-wide daemon that stages, commits, rebases, or pushes
+  development work. Automated builds may fetch and use a private detached
+  worktree based on `origin/main`; they must not mutate a development checkout.
+- The managed Git synchronization service fetches GitHub and force-aligns only
+  the dedicated `main` management worktree to exact `origin/main`. It never
+  changes task branches or their files. It refuses to overwrite a dirty `main`;
+  before repairing a clean divergent `main`, it preserves the old commit under
+  `refs/civvis/recovery/main/`. `start` refuses to create a task unless this
+  synchronization has succeeded.
 - Do not perform broad formatting, generated-file rewrites, or unrelated
   cleanup in a feature PR. CIVVIS has several large conflict hotspots, notably
   `src/game.rs`, `src/ai.rs`, and `web/index.html`.

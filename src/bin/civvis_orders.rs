@@ -19,12 +19,14 @@
 //! # What it is honest about
 //!
 //! ⚠ THE RECONSTRUCTION IS PARTIAL, and the partiality has a direction. Terrain,
-//! both empires' cities, our units and every VISIBLE rival unit cross over. Techs,
-//! civics, buildings, districts, promotions and treasuries do not. So CIVVIS is
-//! deciding with a correct map and a correct order of battle, and an empty research
-//! tree. Orders about ground and force are worth trusting; a `Produce` for a unit
-//! this seat cannot yet build will simply be refused by Civilization VI and counted
-//! as refused, which is the right failure.
+//! both empires' remembered cities, own units, visible hostile units, research,
+//! government, development, treasury and public aggregate strength cross over.
+//! Unit promotions, religious spread charges, and the religion a unit carries cross
+//! through the live mirror. Firaxis's physical Great Person units are bridged through
+//! its own activation verdict and legal activation plots, matching CIVVIS's
+//! immediate-effect semantics without reproducing those rules here. An
+//! untranslatable order or entity is refused or counted rather than guessed, so
+//! partiality stays visible in the run ledger.
 //!
 //! ⚠ `unmapped` is reported, not swallowed. A Civ 6 unit type with no CIVVIS
 //! counterpart is a unit CIVVIS cannot see, and a half-visible army produces
@@ -48,6 +50,25 @@ fn arg_text(args: &[String], flag: &str) -> Option<String> {
         .position(|value| value == flag)
         .and_then(|index| args.get(index + 1))
         .cloned()
+}
+
+fn mirror_setup(
+    state: &civvis::mirror::StateSnapshot,
+    fallback_players: usize,
+    fallback_turns: u32,
+) -> (usize, u32) {
+    (
+        if state.seat.players > 0 {
+            state.seat.players
+        } else {
+            fallback_players
+        },
+        if state.seat.max_turns > 0 {
+            state.seat.max_turns as u32
+        } else {
+            fallback_turns
+        },
+    )
 }
 
 /// JSON-escape the little that needs it. Order verbs are type names from the two
@@ -81,14 +102,135 @@ fn quote(text: &str) -> String {
 /// The mod resolves the final name against `GameInfo.Units`/`Buildings`/`Districts`/
 /// `Projects` and refuses what it cannot find, so a wrong guess here is reported as
 /// a refusal rather than acted on.
+fn civ6_unit_type(name: &civvis::name::Name) -> String {
+    let id = match name.as_str() {
+        "tagma" => "BYZANTINE_TAGMA",
+        "legion" => "ROMAN_LEGION",
+        "hoplite" => "GREEK_HOPLITE",
+        "eagle_warrior" => "AZTEC_EAGLE_WARRIOR",
+        "war_cart" => "SUMERIAN_WAR_CART",
+        "pitati_archer" => "NUBIAN_PITATI",
+        "maryannu_chariot_archer" => "EGYPTIAN_CHARIOT_ARCHER",
+        "saka_horse_archer" => "SCYTHIAN_HORSE_ARCHER",
+        "keshig" => "MONGOLIAN_KESHIG",
+        "winged_hussar" => "POLISH_HUSSAR",
+        "oromo_cavalry" => "ETHIOPIAN_OROMO_CAVALRY",
+        "crouching_tiger" => "CHINESE_CROUCHING_TIGER",
+        "anti_air_gun" => "ANTIAIR_GUN",
+        other => return format!("UNIT_{}", other.to_ascii_uppercase()),
+    };
+    format!("UNIT_{id}")
+}
+
+fn civ6_improvement_type(name: &civvis::name::Name) -> String {
+    let id = match name.as_str() {
+        "seaside_resort" => "BEACH_RESORT",
+        "nubian_pyramid" => "PYRAMID",
+        other => return format!("IMPROVEMENT_{}", other.to_ascii_uppercase()),
+    };
+    format!("IMPROVEMENT_{id}")
+}
+
+/// Civilization VI keeps the three wall tiers under internal implementation names.
+///
+/// The mirror already translates these names in the other direction.  Keep the
+/// outbound boundary symmetric: live turns 165-219 refused 200 production orders
+/// for the nonexistent `BUILDING_MEDIEVAL_WALLS`, leaving three or four queues idle
+/// per turn.  The shipped Buildings.xml names the tiers WALLS, CASTLE, and STAR_FORT.
+/// ⚠⚠ THE WALL TIERS WERE NOT THE ONLY THREE. `mirror::civvis_node_name` carries a
+/// nineteen-entry inbound alias table for exactly this vocabulary gap, and only the
+/// walls half of it was ever mirrored back out. Every other entry was still being
+/// uppercased into a name the shipped database does not contain, and the mod that
+/// resolves against `GameInfo.Buildings` refused each one. Counted over the runs under
+/// `civvis-civ6-runs/control` on 2026-08-02:
+///
+/// ```text
+/// unknown_BUILDING_ARCHAEOLOGICAL_MUSEUM  449
+/// unknown_DISTRICT_GOVERNMENT_PLAZA       310
+/// unknown_BUILDING_MEDIEVAL_WALLS         275   (already fixed; runs predate it)
+/// unknown_TECH_WHEEL                      110
+/// unknown_BUILDING_ART_MUSEUM             108
+/// unknown_DISTRICT_THEATER_SQUARE          24
+/// unknown_BUILDING_OIL_POWER_PLANT         10
+/// ```
+///
+/// The culture cost is direct and it is the whole reason this was found. A Museum is
+/// the third step of the only culture chain in the game — Theater Square →
+/// Amphitheater → Art/Archaeological Museum → Broadcast Center — and it carries +2
+/// Culture and **three Great Work slots**, the largest late-game culture source there
+/// is. Across 45 live runs that reached turn 150, **not one city ever finished a
+/// Museum**, and the empire held a median of **zero Great Works**. The order went out
+/// 507 times and was refused every time.
+///
+/// ⚠ Every replacement here was read out of the shipped
+/// `Cache/DebugGameplay.sqlite`, not inferred from the display name: there is no
+/// `BUILDING_ART_MUSEUM` in Civilization VI, the row is `BUILDING_MUSEUM_ART`, and the
+/// nine Government Plaza buildings are named for their *tier* (`BUILDING_GOV_TALL`)
+/// rather than their subject. Keep this table the exact inverse of
+/// `mirror::civvis_node_name`'s — a name that only translates one way is the defect
+/// this pair of tables exists to prevent.
+fn civ6_building_type(name: &civvis::name::Name) -> String {
+    let id = match name.as_str() {
+        "ancient_walls" => "WALLS",
+        "medieval_walls" => "CASTLE",
+        "renaissance_walls" => "STAR_FORT",
+        "art_museum" => "MUSEUM_ART",
+        "archaeological_museum" => "MUSEUM_ARTIFACT",
+        "oil_power_plant" => "FOSSIL_FUEL_POWER_PLANT",
+        "nuclear_power_plant" => "POWER_PLANT",
+        "mausoleum_at_halicarnassus" => "HALICARNASSUS_MAUSOLEUM",
+        "statue_of_liberty" => "STATUE_LIBERTY",
+        "university_of_sankore" => "UNIVERSITY_SANKORE",
+        // The Government Plaza tier buildings. Firaxis names the slot, not the
+        // building: `gov_culture` is the National History Museum.
+        "audience_chamber" => "GOV_TALL",
+        "ancestral_hall" => "GOV_WIDE",
+        "warlords_throne" => "GOV_CONQUEST",
+        "foreign_ministry" => "GOV_CITYSTATES",
+        "grand_masters_chapel" => "GOV_FAITH",
+        "intelligence_agency" => "GOV_SPIES",
+        "national_history_museum" => "GOV_CULTURE",
+        "royal_society" => "GOV_SCIENCE",
+        "war_department" => "GOV_MILITARY",
+        other => return format!("BUILDING_{}", other.to_ascii_uppercase()),
+    };
+    format!("BUILDING_{id}")
+}
+
+/// Civilization VI truncates two district names and spells a third differently.
+///
+/// `DISTRICT_THEATER_SQUARE` and `DISTRICT_GOVERNMENT_PLAZA` are CIVVIS spellings; the
+/// shipped rows are `DISTRICT_THEATER` and `DISTRICT_GOVERNMENT`. The inbound reader
+/// already recovers both — `civvis_node_name`'s unique-prefix rule was added for
+/// `DISTRICT_GOVERNMENT` specifically — so this is the missing outbound half.
+fn civ6_district_type(name: &civvis::name::Name) -> String {
+    let id = match name.as_str() {
+        "theater_square" => "THEATER",
+        "government_plaza" => "GOVERNMENT",
+        "water_park" => "WATER_ENTERTAINMENT_COMPLEX",
+        // Brazil's Water Park replacement; `data/districts.json` records
+        // `"replaces": "water_park"`, so it takes the water spelling.
+        "copacabana" => "WATER_STREET_CARNIVAL",
+        other => return format!("DISTRICT_{}", other.to_ascii_uppercase()),
+    };
+    format!("DISTRICT_{id}")
+}
+
 fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
     use civvis::game::Item;
     let upper = |name: &civvis::name::Name| name.as_str().to_ascii_uppercase();
     match item {
-        Item::Unit { unit } => Some(format!("UNIT_{}", upper(unit))),
-        Item::Building { building } => Some(format!("BUILDING_{}", upper(building))),
-        Item::District { district, .. } => Some(format!("DISTRICT_{}", upper(district))),
-        Item::Wonder { wonder, .. } => Some(format!("BUILDING_{}", upper(wonder))),
+        Item::Unit { unit } => Some(civ6_unit_type(unit)),
+        Item::Building { building } => Some(civ6_building_type(building)),
+        Item::District { district, .. } => Some(civ6_district_type(district)),
+        // ⚠ A WONDER IS A BUILDING AND MUST USE THE BUILDING TABLE. #959 put the
+        // divergent spellings in `civ6_building_type`, but this arm still formatted its
+        // own name, so the three wonders Civilization VI spells differently
+        // — `BUILDING_HALICARNASSUS_MAUSOLEUM`, `BUILDING_STATUE_LIBERTY`,
+        // `BUILDING_UNIVERSITY_SANKORE` — kept going out mechanically uppercased and
+        // kept being refused. Two arms formatting the same table one line apart is the
+        // shape that made this a bug twice.
+        Item::Wonder { wonder, .. } => Some(civ6_building_type(wonder)),
         // ⚠ CIVVIS'S DISTRICT PROJECTS ARE NOT NAMED LIKE CIVILIZATION VI'S, and the
         // mechanical uppercase below produced names the game has never heard of.
         //
@@ -109,20 +251,104 @@ fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
                 "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE".to_string()
             }
             "theater_square_festival" => "PROJECT_ENHANCE_DISTRICT_THEATER".to_string(),
+            // ⚠ The space-race projects diverge too, and in four different ways: the
+            // shipped rows are LAUNCH_EXOPLANET_EXPEDITION (CIVVIS drops the verb),
+            // LAUNCH_MARS_BASE (CIVVIS says colony), and the two lasers are
+            // TERRESTRIAL_LASER / ORBITAL_LASER with no "station" and no Lagrange.
+            "exoplanet_expedition" => "PROJECT_LAUNCH_EXOPLANET_EXPEDITION".to_string(),
+            "launch_mars_colony" => "PROJECT_LAUNCH_MARS_BASE".to_string(),
+            "terrestrial_laser_station" => "PROJECT_TERRESTRIAL_LASER".to_string(),
+            "lagrange_laser_station" => "PROJECT_ORBITAL_LASER".to_string(),
+            // ⚠ `repair_encampment` is DELIBERATELY not translated, though it is the
+            // second-largest refusal class at 342. Civilization VI has no encampment
+            // repair project — a pillaged Encampment is repaired by ordering the
+            // district again, which needs the plot this arm cannot see. Mapping it to
+            // `DISTRICT_ENCAMPMENT` here would only trade `unknown_` refusals for
+            // `build_no_plot` ones. It belongs on the `Item::Repair` path in
+            // `civ6_live_build_name`, which already recovers the plot from the mirror.
             // The rest ARE mechanical: `build_nuclear_device` really is
-            // `PROJECT_BUILD_NUCLEAR_DEVICE`. Only the district projects diverge.
+            // `PROJECT_BUILD_NUCLEAR_DEVICE`.
             _ => format!("PROJECT_{}", upper(project)),
         }),
         _ => None,
     }
 }
 
+/// Resolve a live production item that needs board context.
+///
+/// Firaxis repairs a pillaged district by building that already-placed district
+/// type again. CIVVIS names the repair operation and its plot, so recover the
+/// district type from the authoritative mirrored tile instead of inventing a
+/// `PROJECT_REPAIR_*` id that does not exist in the shipped database.
+fn civ6_live_build_name(
+    item: &civvis::game::Item,
+    game: &civvis::game::Game,
+) -> Option<String> {
+    use civvis::game::Item;
+    match item {
+        Item::Repair { repair, pos } if repair == "district" => game
+            .map
+            .get(*pos)
+            .and_then(|tile| tile.district.as_ref())
+            .map(|district| format!("DISTRICT_{}", district.as_str().to_ascii_uppercase())),
+        Item::Repair { repair, .. } => Some(civ6_building_type(repair)),
+        _ => civ6_build_name(item),
+    }
+}
+
+/// Preserve the plot CIVVIS selected for placeable production.
+///
+/// District and wonder placement is part of the decision, not an implementation
+/// detail. Firaxis expects offset coordinates while CIVVIS stores axial ones.
+fn civ6_build_pos(item: &civvis::game::Item) -> Option<(i32, i32)> {
+    use civvis::game::Item;
+    match item {
+        Item::District { pos, .. } | Item::Wonder { pos, .. } => {
+            Some(civvis::hex::axial_to_offset(pos.0, pos.1))
+        }
+        _ => None,
+    }
+}
+
+/// ⚠ THE TWO RULESETS DISAGREE ON ARTICLES, AND IT COSTS A WHOLE TECHNOLOGY.
+///
+/// `mirror::civvis_node_name` documents the inbound half: Civ 6's `TECH_THE_WHEEL` is
+/// CIVVIS's `wheel`, and it strips the leading article to cross. Outbound never put it
+/// back, so every research order for the Wheel went out as `TECH_WHEEL` and was
+/// refused — **110 times** across the runs under `civvis-civ6-runs/control`. The Wheel
+/// gates Horseback Riding, Bronze Working's siege line and the Water Mill, so a seat
+/// that could never select it was steering around a hole in its own tech tree.
+///
+/// The article is the only divergence in the 77-row technology table (audited against
+/// `Cache/DebugGameplay.sqlite` on 2026-08-02) and civics diverge nowhere, so this
+/// stays an exact list rather than a prefix rule.
 fn civ6_tech_name(civvis: &str) -> String {
-    format!("TECH_{}", civvis.to_ascii_uppercase())
+    match civvis {
+        "wheel" => "TECH_THE_WHEEL".to_string(),
+        other => format!("TECH_{}", other.to_ascii_uppercase()),
+    }
 }
 
 fn civ6_civic_name(civvis: &str) -> String {
     format!("CIVIC_{}", civvis.to_ascii_uppercase())
+}
+
+/// CIVVIS mostly uses Firaxis promotion identifiers without their prefix. Keep the
+/// few deliberate vocabulary contractions explicit in both directions rather than
+/// asking Lua to guess from localized display names.
+fn civ6_unit_promotion_name(civvis: &str) -> String {
+    let suffix = match civvis {
+        "cobra_strike" | "dancing_crane" | "disciples" | "exploding_palms" | "shadow_strike"
+        | "sweeping_wind" | "twilight_veil" => {
+            format!("MONK_{}", civvis.to_ascii_uppercase())
+        }
+        "supercarrier" => "SUPER_CARRIER".to_string(),
+        "goes_to_11" => "GOES_TO".to_string(),
+        "pop_star" => "POP".to_string(),
+        "surf_band" => "SURF_ROCK".to_string(),
+        other => other.to_ascii_uppercase(),
+    };
+    format!("PROMOTION_{suffix}")
 }
 
 struct Order {
@@ -130,6 +356,201 @@ struct Order {
     subject: Option<i64>,
     verb: Option<String>,
     pos: Option<(i32, i32)>,
+}
+
+/// Keep only commands whose preconditions belong to the observed Firaxis frame.
+///
+/// CIVVIS applies a unit's whole turn synchronously to its planning clone, so a
+/// builder can log MOVE_TO followed by IMPROVE and a military unit can log several
+/// path steps. Firaxis operations are asynchronous: when Lua submits that list in
+/// one callback, every later command still sees the unit at its original position.
+/// The next exported frame is the first point where another command for that unit
+/// can be evaluated honestly. Different units and non-unit orders remain independent.
+fn defer_unit_followups(orders: Vec<Order>) -> (Vec<Order>, usize) {
+    let mut seen = std::collections::BTreeSet::new();
+    let mut deferred = 0;
+    let orders = orders
+        .into_iter()
+        .filter(|order| {
+            if order.kind != "unit" {
+                return true;
+            }
+            let Some(subject) = order.subject else {
+                return true;
+            };
+            if seen.insert(subject) {
+                true
+            } else {
+                deferred += 1;
+                false
+            }
+        })
+        .collect();
+    (orders, deferred)
+}
+
+/// Firaxis resolves Governor operations asynchronously. CIVVIS can spend several
+/// titles in one simulated planning pass, but each later appointment/promotion was
+/// chosen against the result of the prior one. Send only the first and re-plan from
+/// the next authoritative host frame.
+fn defer_governor_followups(orders: Vec<Order>) -> (Vec<Order>, usize) {
+    let mut sent = false;
+    let mut deferred = 0;
+    let orders = orders
+        .into_iter()
+        .filter(|order| {
+            if !order.kind.starts_with("governor_") {
+                return true;
+            }
+            if sent {
+                deferred += 1;
+                false
+            } else {
+                sent = true;
+                true
+            }
+        })
+        .collect();
+    (orders, deferred)
+}
+
+/// Resolve a CIVVIS city back to Firaxis's owner/id pair through its exact plot.
+/// Firaxis city ids are only unique within a player, so id-only matching is unsafe.
+fn host_city_target(
+    mirror_state: &civvis::mirror::LiveMirror,
+    state: &civvis::mirror::StateSnapshot,
+    city: u32,
+) -> Option<(i64, i32)> {
+    let city = mirror_state.game.cities.get(&city)?;
+    let (x, y) = civvis::hex::axial_to_offset(city.pos.0, city.pos.1);
+    if let Some(host) = state.cities.iter().find(|host| (host.x, host.y) == (x, y)) {
+        let owner = if state.seat.local_player >= 0 {
+            state.seat.local_player
+        } else {
+            0
+        };
+        return Some((host.id, owner));
+    }
+    for rival in &state.rivals {
+        if let Some(host) = rival.cities.iter().find(|host| (host.x, host.y) == (x, y)) {
+            return Some((host.id, rival.player as i32));
+        }
+    }
+    for minor in &state.minors {
+        if let Some(host) = minor.cities.iter().find(|host| (host.x, host.y) == (x, y)) {
+            return Some((host.id, minor.player as i32));
+        }
+    }
+    None
+}
+
+/// Translate CIVVIS's immediate Great Person semantics into Firaxis's physical
+/// unit workflow. The host supplies both the current activation verdict and every
+/// legal activation plot; choosing the nearest legal plot is path actuation, not a
+/// second strategy layer.
+fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, usize) {
+    let mut orders = Vec::new();
+    let mut waiting_without_target = 0;
+    for unit in &state.units {
+        let Some(person) = &unit.great_person else {
+            continue;
+        };
+        // Firaxis's GetActionCharges is not the activation authority for every
+        // class. Great Writers report zero while CanStartCommand is true and
+        // still have works to create. Trust the host's command verdict first;
+        // the old charge gate left Qu Yuan in the capital for 76 turns and let
+        // a second Writer stack on top of him.
+        if person.can_activate {
+            orders.push(Order {
+                kind: "unit",
+                subject: Some(unit.id),
+                verb: Some("ACTIVATE_GREAT_PERSON".to_string()),
+                pos: None,
+            });
+            continue;
+        }
+        // A command that just resolved can remain unavailable for the rest of
+        // this Firaxis frame. If the person already occupies any activation
+        // plot, wait for the next export instead of sending them toward a
+        // different city. Qu Yuan otherwise bounced Theater -> capital on the
+        // cooldown frame after creating his first work.
+        if person.activation_plots.iter().any(|plot| plot.distance == 0) {
+            waiting_without_target += 1;
+            continue;
+        }
+        let target = person
+            .activation_plots
+            .iter()
+            .min_by_key(|plot| (plot.distance, plot.y, plot.x));
+        if let Some(target) = target {
+            orders.push(Order {
+                kind: "unit",
+                subject: Some(unit.id),
+                verb: Some("MOVE_TO".to_string()),
+                pos: Some((target.x, target.y)),
+            });
+        } else {
+            waiting_without_target += 1;
+        }
+    }
+    (orders, waiting_without_target)
+}
+
+/// Keep every physical Great Person hex clear for the current Lua batch.
+///
+/// Firaxis queues unit operations. `CanStartCommand` can therefore approve a Great
+/// Person retirement and a later move onto that person's hex even though the move
+/// will make the retirement illegal by the time the engine resolves it. Hanno the
+/// Navigator hit this exact race three times while a Galley oscillated through his
+/// Harbor. An inactive Great Person also blocks another civilian from entering its
+/// plot: Hildegard spent forty turns trying to enter a Holy Site occupied by an
+/// unspent Prophet. Reserve every observed Great Person hex and reconsider those
+/// moves after the next authoritative export.
+fn defer_great_person_plot_conflicts(
+    orders: Vec<Order>,
+    state: &civvis::mirror::StateSnapshot,
+) -> (Vec<Order>, usize) {
+    let people = state
+        .units
+        .iter()
+        .filter(|unit| unit.great_person.is_some())
+        .map(|unit| (unit.id, (unit.x, unit.y)))
+        .collect::<Vec<_>>();
+    let mut deferred = 0;
+    let orders = orders
+        .into_iter()
+        .filter(|order| {
+            let conflicts = order.kind == "unit"
+                && people.iter().any(|(person, pos)| {
+                    order.subject != Some(*person) && order.pos == Some(*pos)
+                });
+            if conflicts {
+                deferred += 1;
+            }
+            !conflicts
+        })
+        .collect();
+    (orders, deferred)
+}
+
+/// Send the complete post-plan policy set as one host transaction.
+///
+/// A replacement is two CIVVIS actions (`UnslotPolicy`, then `SlotPolicy`), but
+/// Firaxis accepts the government screen's clear/add lists atomically. Sending
+/// only the second action asks it to add a card to a deck that is still full.
+fn policy_deck_order(game: &civvis::game::Game, pid: usize) -> Order {
+    let policies = game.players[pid]
+        .policies
+        .iter()
+        .map(|policy| format!("POLICY_{}", policy.as_str().to_ascii_uppercase()))
+        .collect::<Vec<_>>()
+        .join(",");
+    Order {
+        kind: "policy_deck",
+        subject: None,
+        verb: Some(policies),
+        pos: None,
+    }
 }
 
 impl Order {
@@ -167,19 +588,267 @@ impl Order {
 /// ever went looking for the enemy, `met` stopped at 2, no rival city was ever seen,
 /// and an army of 23 had nothing to attack. The settler oscillating between two tiles
 /// for twenty turns is the same defect in miniature.
+fn remove_active_route_traders_from_plan(
+    planned_game: &mut civvis::game::Game,
+    mirror_state: &civvis::mirror::LiveMirror,
+) {
+    mirror_state.prune_active_trade_route_traders(planned_game);
+}
+
+/// Release the production queue of any city building something CIVVIS did not
+/// choose, so it decides afresh instead of adopting the mod's pick as its own.
+///
+/// ⚠⚠ THIS IS WHY THE LADDER STILL BUILDS 72% OF EVERYTHING. Measured on run
+/// `civvis-20260802T064240Z`, applied orders over 144 turns:
+///
+/// ```text
+/// unit 395    civic 144    research 144    produce 22    policy 16
+/// ```
+///
+/// Research and civic go out every single turn. Production goes out on **19 turns
+/// of 144 — 13%**. CIVVIS's build orders are not being refused any more (`no_params`
+/// is gone from the refusal ledger entirely); it is **not issuing them**.
+///
+/// The loop: `rebuild_from_state` seeds each city's queue from Civilization VI's
+/// `producing`, `--fresh-board` reruns that every turn, and CIVVIS produces only for
+/// a city whose queue it believes is empty. So when `driveProduction` answers
+/// `ENDTURN_BLOCKING_PRODUCTION` from its own ladder, the next turn hands CIVVIS that
+/// choice as work in progress, CIVVIS says nothing, the item completes, the queue
+/// empties, and the ladder picks again. CIVVIS never gets a word in.
+///
+/// ⚠ The seeding itself is correct and must stay — without it CIVVIS re-chooses from
+/// scratch every turn and alternates Builder / Monument / Campus, which is the defect
+/// the seed was added to fix. What was missing is that it cannot tell CIVVIS's own
+/// plan from the ladder's.
+///
+/// ⚠ Applied to the THROWAWAY planning board, not the authoritative mirror, so the
+/// board shown to the next decision stays the last exported Civ VI state.
+///
+/// **Self-limiting by construction.** The override only fires while the game is
+/// building something CIVVIS did not order; once its choice takes, `producing`
+/// matches and the queue is seeded normally again. A choice the host keeps refusing
+/// is already routed around by `blocked_production`, which `sync` refreshes.
+fn release_foreign_production(
+    planned_game: &mut civvis::game::Game,
+    cid_of: &std::collections::BTreeMap<i64, u32>,
+    state: &civvis::mirror::StateSnapshot,
+    ours: &std::collections::BTreeMap<i64, String>,
+) -> usize {
+    let mut released = 0;
+    for city in &state.cities {
+        let Some(producing) = city.producing.as_deref() else {
+            continue;
+        };
+        if ours.get(&city.id).map(String::as_str) == Some(producing) {
+            continue;
+        }
+        let Some(cid) = cid_of.get(&city.id).copied() else {
+            continue;
+        };
+        if let Some(built) = planned_game.cities.get_mut(&cid) {
+            if !built.queue.is_empty() {
+                built.queue.clear();
+                released += 1;
+            }
+        }
+    }
+    released
+}
+
+/// Keep enough live defenders committed to a nearby barbarian until Firaxis
+/// confirms that it died.
+///
+/// The order bridge sends one command per unit from a single exported frame,
+/// while CIVVIS normally applies combat serially to an exact native board. In
+/// the live game those are not equivalent: CIVVIS can predict that a Slinger
+/// and Warrior kill a damaged raider, remove it from the throwaway board, and
+/// send an adjacent Spearman away. If Firaxis's terrain/modifier calculation
+/// leaves the raider alive, the unused Spearman cannot be recalled and the
+/// raider gets a free turn.
+///
+/// When at least two units can attack it now, plan a visible barbarian inside
+/// the home-defense ring at full durability. A lone defender therefore keeps
+/// exact-HP kill judgment. This changes only the disposable planning clone;
+/// the authoritative mirror keeps the exported HP, and the next frame removes
+/// the reserve as soon as Firaxis reports the target gone. Rival wars keep
+/// their ordinary exact-HP planning because this repair is for the permanently
+/// hostile barbarian seat, not a blanket license to overcommit every campaign.
+fn reserve_live_barbarian_defenders(planned_game: &mut civvis::game::Game, pid: usize) -> usize {
+    let Some(barbarian) = planned_game.barb_pid else {
+        return 0;
+    };
+    let cities = planned_game
+        .player_city_ids(pid)
+        .into_iter()
+        .filter_map(|cid| planned_game.cities.get(&cid).map(|city| city.pos))
+        .collect::<Vec<_>>();
+    let targets = planned_game
+        .units
+        .values()
+        .filter(|unit| {
+            if unit.owner != barbarian
+                || planned_game.rules.units[unit.kind].class != "military"
+                || !cities
+                    .iter()
+                    .any(|city| planned_game.wdist(*city, unit.pos) <= 6)
+                || unit.hp >= 100
+            {
+                return false;
+            }
+            let direct_attackers = planned_game
+                .units
+                .values()
+                .filter(|friendly| {
+                    if friendly.owner != pid
+                        || friendly.moves_left <= 0.0
+                        || friendly.attacks_left <= 0
+                    {
+                        return false;
+                    }
+                    let spec = &planned_game.rules.units[friendly.kind];
+                    let distance = planned_game.wdist(friendly.pos, unit.pos);
+                    spec.class == "military"
+                        && ((spec.has_ranged_attack()
+                            && distance <= planned_game.unit_attack_range(friendly.id))
+                            || (spec.is_melee_capable() && distance == 1))
+                })
+                .take(2)
+                .count();
+            direct_attackers >= 2
+        })
+        .map(|unit| unit.id)
+        .collect::<Vec<_>>();
+    for target in &targets {
+        planned_game.units.get_mut(target).unwrap().hp = 100;
+    }
+    targets.len()
+}
+
+/// The skipped-reason key for a move whose destination is the unit's own tile.
+///
+/// ★★★★ NAME THE ANONYMOUS COUNT. `self_tile_move` is the largest single waste
+/// class on the ladder — **25,387 dropped orders across 43 live runs, on 3,803
+/// turns with at least one** — and as a bare total it cannot say whether that is
+/// one stuck Settler, the whole army, or a Trader with nowhere to go. Those are
+/// completely different repairs, and this project has three times found the
+/// standing hypothesis about an anonymous count to be wrong: `no_params` x221
+/// was one district, `move_refused` x33 was one trader, and 146 blocked upgrades
+/// were two resource gaps rather than gold.
+///
+/// It answered immediately. Replaying five finished runs through the fixed
+/// binary: **249 self-tile moves, 100% military** — warrior 59, heavy_chariot
+/// 53, field_cannon 52, pike_and_shot 32, archer 23, and a tail of galley,
+/// crossbowman, cuirassier, trebuchet, spec_ops and slinger. **Zero settlers,
+/// zero builders, zero traders**, against a prediction of ~2% settlers.
+///
+/// ⚠ Keep the `self_tile_move` PREFIX. Existing readers match on it, and the
+/// unit kind is a suffix so a total is still recoverable by prefix.
+fn self_tile_move_key(mirror_state: &civvis::mirror::LiveMirror, unit: u32) -> String {
+    mirror_state
+        .game
+        .units
+        .get(&unit)
+        .map(|unit| format!("self_tile_move:{}", unit.kind))
+        .unwrap_or_else(|| "self_tile_move".to_string())
+}
+
 fn decide(
     mirror_state: &mut civvis::mirror::LiveMirror,
     ai: &mut civvis::ai::AdvancedAi,
     snapshot: &civvis::mirror::Snapshot,
     state: &civvis::mirror::StateSnapshot,
     war_from_plan: bool,
+    ours: &mut std::collections::BTreeMap<i64, String>,
 ) -> String {
-    let before = mirror_state.game.log.len();
+    // Only the live bridge has Firaxis's non-walking Trader representation and
+    // host-city religious purchase rule. Enable those narrow adapters before
+    // the AI simulates its turn; the tournament controller stays frozen.
+    ai.enable_live_trader_route_adapter();
+    ai.enable_live_religious_purchase_guard();
+    // ⚠ Barbarians are excluded from `at_major_war` by design, so every defensive
+    // escalation in the production picker reads a barbarian siege as no threat at
+    // all: a one-city empire's standing-army floor stays at `mil_per_city` (1.0)
+    // and it cannot want a third defender while horsemen stand on its doorstep.
+    // Measured on run `civvis-20260802T202501Z` — four settlers built into that
+    // siege and captured, two on the capital tile without ever moving, one city
+    // until t80, score 140 against a best rival's 416. The tournament controller
+    // stays frozen so its recorded ladders remain comparable.
+    ai.enable_siege_muster();
+    // ⚠ And once it CAN want the defenders, something has to send them. Measured
+    // on run `civvis-20260803T005930Z` (Kongo, 154 turns): **116 of 154 turns had
+    // a hostile standing inside or beside our own territory**, including a
+    // full-health Crossbowman parked four tiles from two cities, unmoved and
+    // unengaged, for 21 consecutive turns, while the whole seven-unit army stood
+    // eight tiles away on a war front that had taken nothing in 75 turns. The
+    // cause is `nearest_enemy` ranking targets by distance FROM THE ASKING UNIT,
+    // which for a deployed army is always the enemy's cities. The tournament
+    // controller stays frozen so its recorded ladders remain comparable.
+    ai.enable_home_defense();
+    // ⚠ A tactical step applied raw records nothing, so when a unit with
+    // movement left is stepped a second time in the same turn, the reversal
+    // guard inside `path_move` cannot see where it came from — and round two
+    // walks straight back onto the tile round one just left. Net zero ground,
+    // two emitted orders, and Civilization VI refuses the second as a MOVE_TO
+    // of the unit's own tile. Measured on the replay of run
+    // `civvis-20260801T224944Z`: 217 of 217 refused moves were exactly that
+    // out-and-back pair, 88 same-turn pairs in all, of which 50 came from the
+    // Advanced force mover alone; self-tile orders fell 43 → 1 and pairs
+    // 88 → 1 with the steps recorded. The tournament controller stays frozen
+    // so its recorded ladders replay move-for-move.
+    ai.enable_recorded_tactical_step();
+    // ⚠ `assess` drops the empire into Recovery whenever it is at war and
+    // `my_power * 1.25 < strongest_rival`, and Recovery does not build an army —
+    // so the test stays true because of the choice it caused. Measured on run
+    // `civvis-20260802T205959Z`: the journal names that arm 160 times, the
+    // posture held from t65 to t229 (72% of the game), and the empire finished
+    // with ONE warrior at military 34 against the Mapuche's 1354. The bound
+    // releases only the power-gap half, and only after the posture has had
+    // `RECOVERY_POSTURE_LIMIT` standard turns to work.
+    ai.enable_bounded_recovery();
+    // ⚠ `local_strength_ratio` prices an objective city only while it is
+    // currently in sight, and returns its `hostile <= 0.0` sentinel of 3.0 —
+    // the maximum — otherwise. Under live fog that makes a walled enemy
+    // capital score identically to an empty meadow, four times over the
+    // superiority floor, so the army engages. Measured on run
+    // `civvis-20260803T005930Z`: Seoul (walled, 22 pop, defense 101) was the
+    // objective of 426 force-group decisions from t65 to t231 and 294 of them
+    // read exactly 3.00, 108 with a force of one. No Korean city ever passed
+    // 27% damage in 173 turns of war. The repair reads only this controller's
+    // own last sighting, which the defensive half already trusts.
+    ai.enable_blind_objective_strength();
+    // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
+    // `military_faith_spending` never asks about gold — it gates on the faith
+    // bank alone. Measured on run `civvis-20260803T014330Z`: faith military
+    // purchases walked down the gold curve (t124 at 60 gold, t141 at 48, t165 at
+    // 51), the treasury hit zero on t168, Civilization VI disbanded the army
+    // from 29 units to 19 by t173, and on t174 — at FIVE gold, one turn after
+    // losing a third of the army — CIVVIS bought another Field Cannon. The
+    // tournament controller stays frozen so its recorded ladders stay
+    // comparable.
+    ai.enable_solvent_faith_army();
+    // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
+    // resources, ends the turn, and can complete a queued unit.  None of those
+    // mutations happened in Firaxis merely because we asked for a recommendation.
+    // Keep the authoritative mirror as the last exported Civ VI state and plan on a
+    // throwaway clone instead.  Apart from preventing phantom units, this means the
+    // board shown to the next decision is never a mixture of one real game and one
+    // speculative CIVVIS turn.
+    let mut planned_game = mirror_state.game.clone();
+    let barbarian_reserve = reserve_live_barbarian_defenders(&mut planned_game, 0);
+    // Firaxis keeps a Trader visible while it is travelling an active route;
+    // CIVVIS's native model consumes it into `game.routes`.  The authoritative
+    // mirror carries both so the map remains faithful.  Remove only the busy
+    // trader from this throwaway planning board, otherwise a spare-capacity turn
+    // can send the same real unit a second `TRADE_ROUTE` request.
+    remove_active_route_traders_from_plan(&mut planned_game, mirror_state);
+    let released =
+        release_foreign_production(&mut planned_game, &mirror_state.cid_of, state, ours);
+    let before = planned_game.log.len();
     // ⚠ MEASURE LEGALITY BEFORE THE TURN IS TAKEN. Asking afterwards reported
     // `all_legal = 0` — the enumeration short-circuits once the seat has acted — which
     // would have been read as "CIVVIS cannot declare war" when it only meant "I asked
     // at the wrong moment".
-    let (pre_all_legal, pre_war_legal) = {
+    let (pre_all_legal, pre_war_legal, pre_traders) = {
         let legal = mirror_state.game.legal_actions(0);
         let wars = legal
             .iter()
@@ -190,7 +859,32 @@ fn decide(
                 )
             })
             .count();
-        (legal.len(), wars)
+        let traders = mirror_state
+            .game
+            .units
+            .iter()
+            .filter(|(_, unit)| unit.owner == 0 && unit.kind == "trader")
+            .map(|(uid, unit)| {
+                let routes = legal
+                    .iter()
+                    .filter(|action| matches!(action, Action::TradeRoute { unit: route, .. } if route == uid))
+                    .count();
+                let city = mirror_state
+                    .game
+                    .city_at(unit.pos)
+                    .and_then(|cid| mirror_state.game.cities.get(&cid))
+                    .map(|city| city.name.as_str())
+                    .unwrap_or("none");
+                let civ6 = mirror_state.civ6_of.get(uid).copied().unwrap_or_default();
+                let active = mirror_state.active_trade_route_traders.contains(&civ6);
+                let routes = if active { 0 } else { routes };
+                format!(
+                    "civ6={civ6} city={city} moves={:.1} active={active} routes={routes}",
+                    unit.moves_left
+                )
+            })
+            .collect::<Vec<_>>();
+        (legal.len(), wars, traders)
     };
     // ⚠ MEASURE MOVEMENT BEFORE THE TURN IS TAKEN, for the same reason as legality
     // above. Counted afterwards, `movable` reports what is left AFTER CIVVIS has
@@ -203,28 +897,73 @@ fn decide(
         .values()
         .filter(|u| u.owner == 0 && u.moves_left > 0.0)
         .count();
-    ai.take_turn(&mut mirror_state.game, 0);
+    ai.take_turn(&mut planned_game, 0);
 
     let mut orders: Vec<Order> = Vec::new();
     let mut skipped: std::collections::BTreeMap<String, usize> =
         std::collections::BTreeMap::new();
+    let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
+    let mut policy_changed = false;
+    if !pre_traders.is_empty() {
+        note_bits.push(format!(
+            "traders capacity={} active={} [{}]",
+            mirror_state.game.trade_capacity(0),
+            mirror_state.game.active_routes(0),
+            pre_traders.join("; ")
+        ));
+    }
+    if barbarian_reserve > 0 {
+        note_bits.push(format!("barbarian_defense_reserve={barbarian_reserve}"));
+    }
 
-    for (seat, action) in mirror_state.game.log.since(before) {
+    for (seat, action) in planned_game.log.since(before) {
         if *seat != 0 {
             continue;
         }
-        let order = translate(action, mirror_state, state, &mut skipped);
+        if matches!(
+            action,
+            Action::SlotPolicy { .. } | Action::UnslotPolicy { .. }
+        ) {
+            policy_changed = true;
+            continue;
+        }
+        let order = translate(action, mirror_state, state);
         match order {
-            Some(value) => orders.push(value),
+            Some(value) => {
+                // Remember what WE asked each city for, so next turn's override can
+                // tell our own plan from the ladder's. Keyed on the Civilization VI
+                // city id, which `translate` has already resolved.
+                if value.kind == "produce" {
+                    if let (Some(civ6), Some(name)) = (value.subject, value.verb.clone()) {
+                        ours.insert(civ6, name);
+                    }
+                }
+                orders.push(value)
+            }
             None => {
+                if skipped_examples.len() < 12 {
+                    skipped_examples.push(format!("{action:?}"));
+                }
                 // Which half failed: the action had no counterpart, or it named a unit
                 // or city this bridge could not map back to Civilization VI. Those are
                 // completely different repairs.
                 let why = match action {
-                    Action::MoveTo { unit, .. }
-                    | Action::Move { unit, .. }
-                    | Action::Attack { unit, .. }
+                    Action::MoveTo { unit, to } | Action::Move { unit, to } => {
+                        if mirror_state
+                            .game
+                            .units
+                            .get(unit)
+                            .is_some_and(|unit| unit.pos == *to)
+                        {
+                            "self_tile_move"
+                        } else if rebuilt_unit_missing(mirror_state, *unit) {
+                            "unit_not_mapped"
+                        } else {
+                            "unit_action_untranslated"
+                        }
+                    }
+                    Action::Attack { unit, .. }
                     | Action::Ranged { unit, .. }
                     | Action::FoundCity { unit }
                     | Action::Fortify { unit }
@@ -239,14 +978,58 @@ fn decide(
                     Action::Produce { .. } => "produce_not_mapped",
                     _ => "",
                 };
+                // ★★★★ NAME THE ANONYMOUS COUNT. `self_tile_move` is the largest
+                // single waste class on the ladder — **25,387 dropped orders across
+                // 43 live runs, on 3,803 turns with at least one** — and as a bare
+                // total it cannot say whether that is one stuck Settler, the whole
+                // army, or a Trader with nowhere to go. Those are completely
+                // different repairs, and this project has three times found that
+                // the standing hypothesis about an anonymous count was wrong:
+                // `no_params` x221 was one district, `move_refused` x33 was one
+                // trader, and 146 blocked upgrades were two resource gaps, not gold.
+                //
+                // The expansion half is already measured and it is worth naming:
+                // live settlers cross 0.78 tiles/turn on 2 movement points, stand
+                // still on 45% of their turn-transitions, and **0 of 1455** of those
+                // standstills carry a `move_refused` while 91% fall on a turn whose
+                // journal says the settler is marching. Whether the settler's own
+                // step is computing its own tile is exactly what this key answers.
                 let why = if why.is_empty() {
                     action_variant(action)
+                } else if why == "self_tile_move" {
+                    match action {
+                        Action::MoveTo { unit, .. } | Action::Move { unit, .. } => {
+                            self_tile_move_key(mirror_state, *unit)
+                        }
+                        _ => why.to_string(),
+                    }
                 } else {
                     why.to_string()
                 };
                 *skipped.entry(why).or_insert(0) += 1;
             }
         }
+    }
+    if policy_changed {
+        orders.push(policy_deck_order(&planned_game, 0));
+    }
+
+    let (person_orders, great_people_without_target) = great_person_orders(state);
+    if !person_orders.is_empty() {
+        note_bits.push(format!("great_people_orders={}", person_orders.len()));
+        orders.extend(person_orders);
+    }
+    if great_people_without_target > 0 {
+        note_bits.push(format!(
+            "great_people_without_activation_target={great_people_without_target}"
+        ));
+    }
+
+    // An override nothing reports does not exist. `released` is how many cities were
+    // handed back to CIVVIS this turn; if it stays high all game, CIVVIS's choices are
+    // not taking and the refusal ledger is the place to look.
+    if released > 0 {
+        note_bits.push(format!("released={released}"));
     }
 
     let plan = ai.plan_report();
@@ -290,8 +1073,56 @@ fn decide(
                 }
             }
         }
+        // ★ PEACE RIDES THE REPORT, NOT THE LOG — and unlike the retracted
+        // war-from-plan above this is NOT the bridge upgrading a preference:
+        // the planner DECIDED to offer (it journals "Offering peace" and
+        // applies `ProposeDeal { peace: true }`). What declines is CIVVIS's
+        // internal MODEL of the rival — winning, so the deal never reaches the
+        // applied-action log — but on a mirrored game that answer belongs to
+        // the real Civilization VI rival. Run civvis-20260801T221459Z: 106
+        // offer decisions from t118, zero orders, the losing war unexitable.
+        for seat in &report.peace_offers {
+            if let Some(rival) = state.rivals.get(seat.saturating_sub(1)) {
+                let subject = rival.player as i64;
+                let already = orders
+                    .iter()
+                    .any(|o| o.kind == "peace" && o.subject == Some(subject));
+                if rival.at_war && !already {
+                    orders.push(Order {
+                        kind: "peace",
+                        subject: Some(subject),
+                        verb: Some("MAKE_PEACE".to_string()),
+                        pos: None,
+                    });
+                    note_bits.push(format!("peace_from_plan={}", rival.player));
+                }
+            }
+        }
     } else {
         note_bits.push("plan=none".to_string());
+    }
+
+    let (activation_safe, deferred_activation_plot_conflicts) =
+        defer_great_person_plot_conflicts(orders, state);
+    orders = activation_safe;
+    if deferred_activation_plot_conflicts > 0 {
+        note_bits.push(format!(
+            "deferred_activation_plot_conflicts={deferred_activation_plot_conflicts}"
+        ));
+    }
+
+    let (causally_safe, deferred_unit_followups) = defer_unit_followups(orders);
+    orders = causally_safe;
+    if deferred_unit_followups > 0 {
+        note_bits.push(format!("deferred_unit_followups={deferred_unit_followups}"));
+    }
+
+    let (governor_safe, deferred_governor_followups) = defer_governor_followups(orders);
+    orders = governor_safe;
+    if deferred_governor_followups > 0 {
+        note_bits.push(format!(
+            "deferred_governor_followups={deferred_governor_followups}"
+        ));
     }
 
     if !mirror_state.unmapped.is_empty() {
@@ -325,6 +1156,7 @@ fn decide(
             .collect::<Vec<_>>()
             .join(" ");
         note_bits.push(format!("skipped {text}"));
+        note_bits.push(format!("skipped_examples [{}]", skipped_examples.join(" | ")));
     }
     // ⚠ Diagnostics for the "CIVVIS returned nothing" case, which is otherwise
     // indistinguishable from "CIVVIS chose to do nothing". Both a stopped game
@@ -438,11 +1270,35 @@ fn translate(
     action: &Action,
     mirror_state: &civvis::mirror::LiveMirror,
     state: &civvis::mirror::StateSnapshot,
-    skipped: &mut std::collections::BTreeMap<String, usize>,
 ) -> Option<Order> {
     let civ6_of = &mirror_state.civ6_of;
     match action {
         Action::MoveTo { unit, to } | Action::Move { unit, to } => {
+            // ★★★★ A MOVE ONTO THE TILE THE UNIT IS ALREADY STANDING ON IS A NO-OP
+            // THE ENGINE ALWAYS REFUSES, and it costs the unit its turn.
+            //
+            // Measured on run civvis-20260802T030910Z, 84 turns: **18 of 21
+            // `move_refused` events had `from_x,from_y` identical to `x,y`** — the
+            // destination WAS the origin. Seven different units, so it is not one
+            // stuck unit; the mod dutifully recorded each refusal with
+            // `dest_impassable: false` on ordinary grass, plains and tundra, which
+            // is why the terrain fields never explained them.
+            //
+            // ⚠ COUNTED, NOT SILENTLY DROPPED. If the AI meant "hold", emitting
+            // nothing is exactly right and the unit stays put either way. If it
+            // meant to go somewhere and computed its own tile, that is a real
+            // planning defect and swallowing the order would hide it — so this
+            // lands in `skipped`, the same map every other refusal reason uses,
+            // and shows up in the run's notes as `self_tile_move=N`.
+            //
+            // Compared in AXIAL, on CIVVIS's own board, so no coordinate conversion
+            // sits between the two values being tested. `axial_to_offset` still runs
+            // afterwards for the orders that survive.
+            if let Some(here) = mirror_state.game.units.get(unit).map(|u| u.pos) {
+                if (here.0, here.1) == (to.0, to.1) {
+                    return None;
+                }
+            }
             civ6_of.get(unit).map(|civ6| Order {
                 kind: "unit",
                 subject: Some(*civ6),
@@ -469,6 +1325,21 @@ fn translate(
             kind: "unit",
             subject: Some(*civ6),
             verb: Some("FOUND_CITY".to_string()),
+            pos: None,
+        }),
+        Action::LinkUnits { unit, with } => civ6_of.get(unit).and_then(|civ6| {
+            civ6_of.get(with).map(|target| Order {
+                kind: "unit",
+                subject: Some(*civ6),
+                verb: Some("ENTER_FORMATION".to_string()),
+                // This command is not positional: x/y are target owner/unit id.
+                pos: Some((state.seat.local_player, *target as i32)),
+            })
+        }),
+        Action::UnlinkUnits { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("EXIT_FORMATION".to_string()),
             pos: None,
         }),
         // ★★★ A TRADER THAT CANNOT BE GIVEN A ROUTE IS PRODUCTION AND GOLD SPENT ON A
@@ -499,27 +1370,64 @@ fn translate(
         }),
         // A builder improving the tile it stands on. Dropping this is what kept the
         // mirror looking undeveloped and made CIVVIS order builder after builder.
-        // Gold purchases. Dropping these both wastes the treasury and leaves CIVVIS
-        // believing it owns something it does not — the phantom-settler failure again.
-        Action::Buy { city, unit, currency, .. } if currency.as_str() == "gold" => mirror_state
+        // Preserve the currency and formation CIVVIS chose. The old bridge accepted
+        // only Gold and silently dropped every Faith purchase; two were lost on
+        // recorded turn 92 (the old diagnostic reported four because it counted each
+        // skip twice). For unit purchases `x` is the CIVVIS formation tier (0/1/2),
+        // while district purchases use x/y as their actual OFFSET placement. The item
+        // kind makes those meanings unambiguous.
+        Action::Buy {
+            city,
+            unit,
+            formation,
+            currency,
+        } if matches!(currency.as_str(), "gold" | "faith") => mirror_state
             .cid_of
             .iter()
             .find(|(_, cid)| **cid == *city)
             .map(|(civ6, _)| Order {
-                kind: "purchase",
+                kind: if currency == "faith" {
+                    "purchase_faith"
+                } else {
+                    "purchase"
+                },
                 subject: Some(*civ6),
-                verb: Some(format!("UNIT_{}", unit.as_str().to_ascii_uppercase())),
+                verb: Some(civ6_unit_type(unit)),
+                pos: Some((*formation as i32, -1)),
+            }),
+        Action::BuyBuilding { city, building, currency }
+            if matches!(currency.as_str(), "gold" | "faith") => mirror_state
+            .cid_of
+            .iter()
+            .find(|(_, cid)| **cid == *city)
+            .map(|(civ6, _)| Order {
+                kind: if currency == "faith" {
+                    "purchase_faith"
+                } else {
+                    "purchase"
+                },
+                subject: Some(*civ6),
+                verb: Some(civ6_building_type(building)),
                 pos: None,
             }),
-        Action::BuyBuilding { city, building, currency } if currency.as_str() == "gold" => mirror_state
+        Action::BuyDistrict {
+            city,
+            district,
+            pos,
+            currency,
+        } if matches!(currency.as_str(), "gold" | "faith") => mirror_state
             .cid_of
             .iter()
             .find(|(_, cid)| **cid == *city)
             .map(|(civ6, _)| Order {
-                kind: "purchase",
+                kind: if currency == "faith" {
+                    "purchase_faith"
+                } else {
+                    "purchase"
+                },
                 subject: Some(*civ6),
-                verb: Some(format!("BUILDING_{}", building.as_str().to_ascii_uppercase())),
-                pos: None,
+                verb: Some(format!("DISTRICT_{}", district.as_str().to_ascii_uppercase())),
+                pos: Some(civvis::hex::axial_to_offset(pos.0, pos.1)),
             }),
         // ★★★★★ BUYING GROUND. Discarded for the life of this bridge: `BuyPlot`
         // reached `translate` only to be counted in the `skipped` tally, 25 of them
@@ -552,7 +1460,7 @@ fn translate(
         .map(|mut order| {
             // The improvement name rides in `verb` alongside the operation, because the
             // order row has no spare column; the mod splits them.
-            order.verb = Some(format!("IMPROVE:IMPROVEMENT_{}", improvement.as_str().to_ascii_uppercase()));
+            order.verb = Some(format!("IMPROVE:{}", civ6_improvement_type(improvement)));
             order
         }),
         Action::Fortify { unit } => civ6_of.get(unit).map(|civ6| Order {
@@ -565,6 +1473,21 @@ fn translate(
             kind: "unit",
             subject: Some(*civ6),
             verb: Some("UPGRADE".to_string()),
+            pos: None,
+        }),
+        Action::Promote { unit, promotion } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some(format!(
+                "PROMOTE:{}",
+                civ6_unit_promotion_name(promotion.as_str())
+            )),
+            pos: None,
+        }),
+        Action::Spread { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("SPREAD_RELIGION".to_string()),
             pos: None,
         }),
         // ⚠⚠ A CASUS-BELLI WAR IS STILL A WAR, AND THIS DROPPED IT ON THE FLOOR.
@@ -584,6 +1507,39 @@ fn translate(
             verb: Some("DECLARE".to_string()),
             pos: None,
         }),
+        // ★★★★★ PEACE, WHICH HAD NO ARM AT ALL. A losing war could never be
+        // exited: run civvis-20260801T221459Z spent 93 turns emitting MakePeace
+        // — "Offering peace" in why.log every turn from t118 to the end — while
+        // every one fell through to the skipped tally and the harness fought
+        // on. Same seat-mapping as the war arm above; the Lua side gates on
+        // IsAtWarWith and answers with the shipped deal shape.
+        Action::MakePeace { player } => Some(Order {
+            kind: "peace",
+            subject: state
+                .rivals
+                .get(player.saturating_sub(1))
+                .map(|r| r.player as i64),
+            verb: Some("MAKE_PEACE".to_string()),
+            pos: None,
+        }),
+        // ⚠ THE PLANNER'S ACTUAL PEACE VEHICLE IS A DEAL, NOT MakePeace.
+        // `advanced.rs` deliberately proposes `ProposeDeal { peace: true, .. }`
+        // so the recipient's valuation answers, instead of the engine's direct
+        // MakePeace (which let a defender end a war the conqueror valued) —
+        // the replay of civvis-20260801T221459Z journals "Offering peace" 106
+        // times and every one was a ProposeDeal falling into the `deal` skip
+        // tally. Both variants funnel to the one Civilization VI peace order;
+        // a non-peace deal (open borders, friendship, gold) still has no
+        // counterpart and stays skipped.
+        Action::ProposeDeal { player, peace: true, .. } => Some(Order {
+            kind: "peace",
+            subject: state
+                .rivals
+                .get(player.saturating_sub(1))
+                .map(|r| r.player as i64),
+            verb: Some("MAKE_PEACE".to_string()),
+            pos: None,
+        }),
         Action::Research { tech, .. } => Some(Order {
             kind: "research",
             subject: None,
@@ -594,23 +1550,6 @@ fn translate(
             kind: "civic",
             subject: None,
             verb: Some(civ6_civic_name(civic.as_str())),
-            pos: None,
-        }),
-        // ★★★★★ POLICY CARDS, WHICH WERE BEING DROPPED WHOLESALE.
-        //
-        // CIVVIS issued `SlotPolicy` on every turn from t80 to t233 of run 233331Z --
-        // six a turn by the end -- and translate() had no arm, so every one was
-        // counted as `skipped` and thrown away. Meanwhile the mod filled the slots
-        // with its own crude "first unlocked card that fits" heuristic, which is
-        // precisely the arrangement this project was told to remove: the harness
-        // deciding while CIVVIS's decision is discarded.
-        //
-        // Policy cards are not a marginal lever here -- this project has already
-        // measured them as mattering (p=0.0023).
-        Action::SlotPolicy { policy } => Some(Order {
-            kind: "policy",
-            subject: None,
-            verb: Some(format!("POLICY_{}", policy.as_str().to_ascii_uppercase())),
             pos: None,
         }),
         Action::Government { government } => Some(Order {
@@ -625,22 +1564,60 @@ fn translate(
             verb: Some(format!("BELIEF_{}", belief.as_str().to_ascii_uppercase())),
             pos: None,
         }),
+        Action::AppointGovernor { governor, city } => {
+            let governor = mirror::civ6_governor_name(governor.as_str())?;
+            host_city_target(mirror_state, state, *city).map(|(city, owner)| Order {
+                kind: "governor_appoint",
+                subject: Some(city),
+                verb: Some(governor.to_string()),
+                pos: Some((owner, -1)),
+            })
+        }
+        Action::ReassignGovernor { governor, city } => {
+            let governor = mirror::civ6_governor_name(governor.as_str())?;
+            host_city_target(mirror_state, state, *city).map(|(city, owner)| Order {
+                kind: "governor_assign",
+                subject: Some(city),
+                verb: Some(governor.to_string()),
+                pos: Some((owner, -1)),
+            })
+        }
+        Action::PromoteGovernor {
+            governor,
+            promotion,
+        } => Some(Order {
+            kind: "governor_promote",
+            subject: None,
+            verb: Some(format!(
+                "{},{}",
+                mirror::civ6_governor_name(governor.as_str())?,
+                mirror::civ6_governor_promotion(promotion.as_str())?
+            )),
+            pos: None,
+        }),
+        Action::FoundReligion { follower, founder } => Some(Order {
+            kind: "religion",
+            subject: None,
+            verb: Some(format!(
+                "BELIEF_{},BELIEF_{}",
+                follower.as_str().to_ascii_uppercase(),
+                founder.as_str().to_ascii_uppercase()
+            )),
+            pos: None,
+        }),
         Action::Produce { city, item } => {
             mirror_state.cid_of.iter().find(|(_, cid)| **cid == *city).and_then(
                 |(civ6, _)| {
-                    civ6_build_name(item).map(|name| Order {
+                    civ6_live_build_name(item, &mirror_state.game).map(|name| Order {
                         kind: "produce",
                         subject: Some(*civ6),
                         verb: Some(name),
-                        pos: None,
+                        pos: civ6_build_pos(item),
                     })
                 },
             )
         }
-        other => {
-            *skipped.entry(action_variant(other)).or_insert(0) += 1;
-            None
-        }
+        _ => None,
     }
 }
 
@@ -837,9 +1814,13 @@ fn main() {
     // rebuild, which is the whole point of carrying it.
     //
     // ⚠ Bounded, and the bound is what makes it safe: `SETTLER_STALL_LIMIT`
-    // consecutive turns without moving releases the site, so an unreachable target
-    // cannot hold a settler hostage — which is the livelock #492 was merged to fix.
+    // consecutive turns without getting closer releases the site, so an unreachable
+    // target cannot hold a settler hostage — which is the livelock #492 was merged
+    // to fix. This must include a linked escort: the completed Rome comparator's
+    // escort moved legally while oscillating for 101 turns, and motion alone reset
+    // the old counter forever.
     ai.settler_commit = true;
+    ai.linked_settler_progress = true;
     // ⚠ NOT `parallel_settlers`. That widens the RATE at which settlers are produced
     // and it carries a measured null; this seat's constraint is settlers that never
     // arrive, not settlers that are never built. Turning both on at once would make
@@ -865,7 +1846,7 @@ fn main() {
 
     // Read the board fresh each time: the mod appends to this file every turn.
     let load = |want: Option<u32>| -> Option<(civvis::mirror::Snapshot, civvis::mirror::StateSnapshot)> {
-        let snapshot = mirror::snapshot_from_events(&events).ok()?;
+        let snapshot = mirror::snapshot_from_events_at(&events, want).ok()?;
         let state = mirror::state_from_events(&events, want)?;
         if snapshot.revealed_count() == 0 {
             return None;
@@ -907,8 +1888,9 @@ fn main() {
             println!("{{\"plots\":[],\"note\":\"no revealed terrain or no state yet\"}}");
             return;
         };
+        let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
         let live = civvis::mirror::LiveMirror::new(
-            &snapshot, &state, players, 1, max_turns, frontier,
+            &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
         );
         let game = &live.game;
         let vocab = civvis::mirror::Vocabulary::embedded();
@@ -955,9 +1937,14 @@ fn main() {
                     .owner_city
                     .and_then(|cid| game.cities.get(&cid))
                     .map(|city| city.owner as i64);
+                let foundation = tile
+                    .district_foundation
+                    .as_ref()
+                    .map(|placed| format!("\"{}\"", placed.district.as_str()))
+                    .unwrap_or_else(|| "null".to_string());
                 plots.push(format!(
                     "{{\"x\":{},\"y\":{},\"t\":\"{}\",\"h\":{},\"w\":{},\"f\":{},\"r\":{},\
-                     \"im\":{},\"own\":{},\"res\":{}}}",
+                     \"im\":{},\"d\":{},\"df\":{},\"wo\":{},\"p\":{},\"own\":{},\"res\":{}}}",
                     x,
                     y,
                     tile.terrain.as_str(),
@@ -966,6 +1953,10 @@ fn main() {
                     field(&tile.feature),
                     field(&tile.resource),
                     field(&tile.improvement),
+                    field(&tile.district),
+                    foundation,
+                    field(&tile.wonder),
+                    tile.pillaged,
                     owner.map(|o| o == 0).unwrap_or(false),
                     resolved,
                 ));
@@ -975,15 +1966,106 @@ fn main() {
             .iter()
             .map(|(name, count)| format!("\"{name}\":{count}"))
             .collect();
+        let mut cities = Vec::new();
+        for city in game.cities.values().filter(|city| city.owner == 0) {
+            let (x, y) = civvis::hex::axial_to_offset(city.pos.0, city.pos.1);
+            let plan = game.city_citizen_plan(city.id);
+            let worked = plan
+                .worked_tiles
+                .iter()
+                .map(|pos| {
+                    let (wx, wy) = civvis::hex::axial_to_offset(pos.0, pos.1);
+                    serde_json::json!({"x": wx, "y": wy})
+                })
+                .collect::<Vec<_>>();
+            cities.push(serde_json::json!({
+                "x": x,
+                "y": y,
+                "name": city.name,
+                "pop": city.pop,
+                "production_progress": city.production,
+                "worked": worked,
+                "specialists": plan.specialists,
+                "yields": game.city_yields(city.id),
+                "model_yields": game.city_yields_model(city.id),
+            }));
+        }
+        let great_works = [
+            "writing", "art", "religious_art", "artifact", "music", "relic",
+        ]
+        .into_iter()
+        .map(|kind| {
+            (
+                kind,
+                game.players[0]
+                    .counters
+                    .get(&format!("great_work:{kind}"))
+                    .copied()
+                    .unwrap_or(0),
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+        let governors = game.players[0]
+            .governor_roster
+            .iter()
+            .filter_map(|(name, governor)| {
+                let host_type = mirror::civ6_governor_name(name.as_str())?;
+                let city = governor.city.and_then(|cid| game.cities.get(&cid));
+                let (x, y) = city
+                    .map(|city| civvis::hex::axial_to_offset(city.pos.0, city.pos.1))
+                    .unwrap_or((-1, -1));
+                let establish_turns = game
+                    .rules
+                    .governors
+                    .get(name)
+                    .map(|spec| game.standard_duration(spec.establish_turns))
+                    .unwrap_or(0);
+                let mut promotions = governor
+                    .promotions
+                    .iter()
+                    .filter_map(|promotion| mirror::civ6_governor_promotion(promotion))
+                    .collect::<Vec<_>>();
+                promotions.sort_unstable();
+                Some(serde_json::json!({
+                    "type": host_type,
+                    "x": x,
+                    "y": y,
+                    "established": city.is_some()
+                        && game.turn >= governor.assigned_turn.saturating_add(establish_turns),
+                    "neutralized": game.turn < governor.disabled_until,
+                    "promotions": promotions,
+                }))
+            })
+            .collect::<Vec<_>>();
+        let mut empire_yields = civvis::rules::Yields::default();
+        let mut model_empire_yields = civvis::rules::Yields::default();
+        for city in game.cities.values().filter(|city| city.owner == 0) {
+            empire_yields.add(game.city_yields(city.id));
+            model_empire_yields.add(game.city_yields_model(city.id));
+        }
+        if let Some(adjustment) = game.observed_yield_adjustments.get(&0) {
+            empire_yields.add(*adjustment);
+        }
         println!(
             "{{\"turn\":{},\"width\":{},\"height\":{},\"revealed\":{},\
-             \"unresolved_terrain\":{{{}}},\"plots\":[{}]}}",
+             \"unresolved_terrain\":{{{}}},\"plots\":[{}],\"cities\":{},\
+             \"great_works\":{},\"governors\":{},\"governor_points\":{},\
+             \"governor_points_spent\":{},\"governor_points_available\":{},\
+             \"empire_yields\":{},\"model_empire_yields\":{}}}",
             state.turn,
             width,
             height,
             snapshot.revealed_count(),
             unresolved_json.join(","),
-            plots.join(",")
+            plots.join(","),
+            serde_json::to_string(&cities).unwrap(),
+            serde_json::to_string(&great_works).unwrap(),
+            serde_json::to_string(&governors).unwrap(),
+            game.governor_titles(0),
+            game.players[0].governor_titles_spent,
+            game.governor_titles_available(0),
+            serde_json::to_string(&empire_yields).unwrap(),
+            serde_json::to_string(&model_empire_yields).unwrap(),
         );
         return;
     }
@@ -994,10 +2076,14 @@ fn main() {
             println!("{{\"turn\":0,\"orders\":[],\"note\":\"no revealed terrain or no state yet\"}}");
             return;
         };
+        let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
         let mut live = civvis::mirror::LiveMirror::new(
-            &snapshot, &state, players, 1, max_turns, frontier,
+            &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
         );
-        let reply = decide(&mut live, &mut ai, &snapshot, &state, war_from_plan);
+        // One-shot: there is no next turn to be self-limiting against, so this starts
+        // empty and every foreign choice is released once.
+        let mut ours = std::collections::BTreeMap::new();
+        let reply = decide(&mut live, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
         // debug in. Replaying one recorded turn is the fast loop — seconds, no game,
         // no lock — and it was the one path that could not say why it chose anything.
@@ -1023,6 +2109,11 @@ fn main() {
     let stdin = std::io::stdin();
     let mut out = std::io::stdout();
     let mut live: Option<civvis::mirror::LiveMirror> = None;
+    // What CIVVIS itself last asked each city to build, by Civilization VI city id.
+    // Lives out here rather than on the mirror because `--fresh-board` rebuilds the
+    // mirror every turn and this must survive that, exactly like the unit memory
+    // carried through `remap_unit_memory` below. See `release_foreign_production`.
+    let mut ours: std::collections::BTreeMap<i64, String> = std::collections::BTreeMap::new();
     let mut explain_cursor: u64 = 0;
     for line in stdin.lock().lines() {
         let Ok(line) = line else { break };
@@ -1033,6 +2124,7 @@ fn main() {
                 want.unwrap_or(0)
             ),
             Some((snapshot, state)) => {
+                let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
                 // ★★★★★ FRESH BOARD, PERSISTENT AGENT — the one combination that works.
                 //
                 // Three of the four quadrants were measured: fresh board + fresh agent
@@ -1073,7 +2165,7 @@ fn main() {
                     let previous: Option<std::collections::BTreeMap<u32, i64>> =
                         live.as_ref().map(|board| board.civ6_of.clone());
                     let mut board = civvis::mirror::LiveMirror::new(
-                        &snapshot, &state, players, 1, max_turns, frontier,
+                        &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
                     );
                     match previous {
                         Some(old) => {
@@ -1087,16 +2179,16 @@ fn main() {
                         }
                         None => ai.forget_unit_memory(),
                     }
-                    let reply = decide(&mut board, &mut ai, &snapshot, &state, war_from_plan);
+                    let reply = decide(&mut board, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
                     live = Some(board);
                     reply
                 } else {
                 match live.as_mut() {
                     None => {
                         let mut fresh = civvis::mirror::LiveMirror::new(
-                            &snapshot, &state, players, 1, max_turns, frontier,
+                            &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
                         );
-                        let reply = decide(&mut fresh, &mut ai, &snapshot, &state, war_from_plan);
+                        let reply = decide(&mut fresh, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
                         live = Some(fresh);
                         reply
                     }
@@ -1117,9 +2209,9 @@ fn main() {
                                 _ => civvis::ai::AdvancedAi::targeting(
                                     civvis::ai::VictoryTarget::Domination),
                             };
-                            decide(existing, &mut throwaway, &snapshot, &state, war_from_plan)
+                            decide(existing, &mut throwaway, &snapshot, &state, war_from_plan, &mut ours)
                         } else {
-                            decide(existing, &mut ai, &snapshot, &state, war_from_plan)
+                            decide(existing, &mut ai, &snapshot, &state, war_from_plan, &mut ours)
                         }
                     }
                 }
@@ -1217,5 +2309,1494 @@ fn action_label(action: &Action) -> &'static str {
         Action::Trade { .. } => "trade",
         Action::CongressVote { .. } => "congress",
         _ => "other",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use civvis::mirror::{
+        Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGreatPerson,
+        StateGovernor, StateSnapshot, StateTradeRoute, StateUnit, TilesChunk,
+    };
+
+    /// One land patch is enough: the override reads cities, not terrain.
+    fn production_board() -> (Snapshot, StateSnapshot) {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 1,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            // `Plot` carries serde defaults for everything but the coordinates, so
+            // deserializing is cheaper than naming a dozen fields the test does not
+            // care about — and it cannot drift as new ones are added.
+            plots: (0..8)
+                .flat_map(|x| (0..8).map(move |y| (x, y)))
+                .map(|(x, y)| {
+                    serde_json::from_value::<Plot>(serde_json::json!({
+                        "x": x, "y": y, "t": "TERRAIN_GRASS"
+                    }))
+                    .expect("a plot with serde defaults deserializes")
+                })
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 1,
+            cities: vec![StateCity {
+                id: 7,
+                name: "Ottawa".to_string(),
+                x: 4,
+                y: 4,
+                pop: 4,
+                producing: Some("UNIT_WARRIOR".to_string()),
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        (snapshot, state)
+    }
+
+    /// ⚠⚠ The defect: the mod ladder answers `ENDTURN_BLOCKING_PRODUCTION`, the next
+    /// rebuild seeds that choice into CIVVIS's queue as work in progress, and CIVVIS —
+    /// which only produces for a city whose queue is empty — says nothing. Measured at
+    /// 13% of turns carrying a produce order against 100% carrying research and civic.
+    /// The largest waste class on the ladder must say WHICH unit it is.
+    ///
+    /// `self_tile_move` totalled 25,387 across 43 live runs as one anonymous
+    /// number. Named, five replayed runs answered it in one pass: 249 events,
+    /// **100% military**, zero settlers — which is the opposite of what the
+    /// expansion-tempo reading predicted and sends the repair somewhere else.
+    ///
+    /// ⚠ Two-sided: the key must carry the kind AND keep the `self_tile_move`
+    /// prefix, because existing readers match on that prefix and a bare total
+    /// has to stay recoverable.
+    #[test]
+    fn a_self_tile_move_names_the_unit_that_asked_for_it() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        // ⚠ DISCOVERED, not hardcoded: the point is that whatever unit the board
+        // carries, its kind reaches the key. Naming one would make this fail on a
+        // fixture change rather than on anything to do with the instrument.
+        let unit = *mirror
+            .game
+            .units
+            .keys()
+            .next()
+            .expect("this board carries units");
+        let kind = mirror.game.units[&unit].kind.to_string();
+        assert!(!kind.is_empty(), "fixture precondition: the unit has a kind");
+
+        let key = self_tile_move_key(&mirror, unit);
+        assert!(
+            key.starts_with("self_tile_move"),
+            "the prefix is load-bearing for every existing reader, got {key}"
+        );
+        assert_eq!(key, format!("self_tile_move:{kind}"));
+
+        // A unit the bridge cannot map back still has to be counted, not dropped:
+        // an unnamed refusal is the exact failure this key exists to end.
+        let missing = mirror.game.units.keys().copied().max().unwrap_or(0) + 1_000;
+        assert_eq!(self_tile_move_key(&mirror, missing), "self_tile_move");
+    }
+
+    #[test]
+    fn a_build_civvis_did_not_choose_is_handed_back_to_it() {
+        let (snapshot, state) = production_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = *mirror.cid_of.get(&7).expect("the exported city is mirrored");
+        let mut planned = mirror.game.clone();
+        assert!(
+            !planned.cities[&cid].queue.is_empty(),
+            "precondition: the rebuild seeds the queue from `producing`"
+        );
+
+        // Nothing recorded for this city, so the warrior is the ladder's pick.
+        let ours = std::collections::BTreeMap::new();
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            1
+        );
+        assert!(
+            planned.cities[&cid].queue.is_empty(),
+            "a choice CIVVIS did not make must not read as its own plan"
+        );
+        assert!(
+            !mirror.game.cities[&cid].queue.is_empty(),
+            "and the authoritative mirror must be left as the last exported state"
+        );
+    }
+
+    /// The other half, and what keeps this from re-creating the thrash the queue
+    /// seeding was added to fix: once CIVVIS's own choice is what the city is
+    /// building, the seed stands and it is left alone.
+    #[test]
+    fn civvis_own_choice_is_left_alone_so_the_override_is_self_limiting() {
+        let (snapshot, state) = production_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = *mirror.cid_of.get(&7).expect("the exported city is mirrored");
+        let mut planned = mirror.game.clone();
+
+        let mut ours = std::collections::BTreeMap::new();
+        ours.insert(7_i64, "UNIT_WARRIOR".to_string());
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            0
+        );
+        assert!(
+            !planned.cities[&cid].queue.is_empty(),
+            "work in progress CIVVIS asked for must survive, or it re-chooses every turn"
+        );
+    }
+
+    /// A city building nothing has nothing to hand back, and must not be counted.
+    #[test]
+    fn an_idle_city_is_not_reported_as_released() {
+        let (snapshot, mut state) = production_board();
+        state.cities[0].producing = None;
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let mut planned = mirror.game.clone();
+        let ours = std::collections::BTreeMap::new();
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            0
+        );
+    }
+
+    fn local_barbarian_defense_board() -> (Snapshot, StateSnapshot) {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 30,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| (x, y)))
+                .map(|(x, y)| {
+                    serde_json::from_value::<Plot>(serde_json::json!({
+                        "x": x, "y": y, "t": "TERRAIN_GRASS"
+                    }))
+                    .expect("a plot with serde defaults deserializes")
+                })
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 30,
+            cities: vec![StateCity {
+                id: 7,
+                name: "Rome".to_string(),
+                x: 4,
+                y: 4,
+                pop: 4,
+                ..StateCity::default()
+            }],
+            units: vec![
+                StateUnit {
+                    id: 100,
+                    kind: "UNIT_SLINGER".to_string(),
+                    x: 4,
+                    y: 5,
+                    hp: 100.0,
+                    moves: 2.0,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 101,
+                    kind: "UNIT_WARRIOR".to_string(),
+                    x: 5,
+                    y: 5,
+                    hp: 100.0,
+                    moves: 2.0,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 102,
+                    kind: "UNIT_SPEARMAN".to_string(),
+                    x: 6,
+                    y: 4,
+                    hp: 100.0,
+                    moves: 2.0,
+                    ..StateUnit::default()
+                },
+            ],
+            hostiles: vec![StateUnit {
+                kind: "UNIT_WARRIOR".to_string(),
+                x: 5,
+                y: 4,
+                hp: 64.0,
+                combat: 20.0,
+                moves: 0.0,
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        (snapshot, state)
+    }
+
+    #[test]
+    fn local_barbarian_reserve_changes_only_the_throwaway_planning_board() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let barbarian = mirror.game.barb_pid.unwrap();
+        let hostile = mirror
+            .game
+            .units
+            .values()
+            .find(|unit| unit.owner == barbarian)
+            .unwrap()
+            .id;
+        let mut planned = mirror.game.clone();
+
+        assert_eq!(reserve_live_barbarian_defenders(&mut planned, 0), 1);
+        assert_eq!(planned.units[&hostile].hp, 100);
+        assert_eq!(
+            mirror.game.units[&hostile].hp, 64,
+            "the exported board must retain Firaxis's actual damage"
+        );
+
+        let extra_defenders = planned
+            .player_unit_ids(0)
+            .into_iter()
+            .skip(1)
+            .collect::<Vec<_>>();
+        for defender in extra_defenders {
+            let unit = planned.units.get_mut(&defender).unwrap();
+            unit.moves_left = 0.0;
+            unit.attacks_left = 0;
+        }
+        planned.units.get_mut(&hostile).unwrap().hp = 64;
+        assert_eq!(reserve_live_barbarian_defenders(&mut planned, 0), 0);
+        assert_eq!(
+            planned.units[&hostile].hp, 64,
+            "a lone defender still judges the host's exact damaged target"
+        );
+    }
+
+    #[test]
+    fn adjacent_spearman_is_committed_until_firaxis_confirms_the_barbarian_died() {
+        let (snapshot, state) = local_barbarian_defense_board();
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let mut ai = civvis::ai::AdvancedAi::new();
+        let mut ours = std::collections::BTreeMap::new();
+
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &mut ours,
+        ))
+        .unwrap();
+        let spearman = reply["orders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|order| order["kind"] == "unit" && order["subject"] == 102)
+            .expect("the adjacent Spearman receives an order");
+
+        assert_eq!(spearman["verb"], "ATTACK");
+        assert_eq!(
+            (spearman["x"].as_i64(), spearman["y"].as_i64()),
+            (Some(5), Some(4))
+        );
+        assert!(reply["note"]
+            .as_str()
+            .unwrap()
+            .contains("barbarian_defense_reserve=1"));
+    }
+
+    #[test]
+    fn great_people_activate_or_move_to_the_nearest_firaxis_valid_plot() {
+        let state = StateSnapshot {
+            units: vec![
+                StateUnit {
+                    id: 70,
+                    kind: "UNIT_GREAT_SCIENTIST".to_string(),
+                    great_person: Some(StateGreatPerson {
+                        charges: 0,
+                        can_activate: true,
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 71,
+                    kind: "UNIT_GREAT_MERCHANT".to_string(),
+                    great_person: Some(StateGreatPerson {
+                        charges: 1,
+                        activation_plots: vec![
+                            StateActivationPlot {
+                                x: 30,
+                                y: 20,
+                                distance: 7,
+                            },
+                            StateActivationPlot {
+                                x: 11,
+                                y: 12,
+                                distance: 2,
+                            },
+                        ],
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+
+        let (orders, waiting) = great_person_orders(&state);
+
+        assert_eq!(waiting, 0);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].subject, Some(70));
+        assert_eq!(orders[0].verb.as_deref(), Some("ACTIVATE_GREAT_PERSON"));
+        assert_eq!(orders[1].subject, Some(71));
+        assert_eq!(orders[1].verb.as_deref(), Some("MOVE_TO"));
+        assert_eq!(orders[1].pos, Some((11, 12)));
+    }
+
+    #[test]
+    fn great_person_already_on_an_unusable_activation_plot_waits() {
+        let state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 72,
+                kind: "UNIT_GREAT_WRITER".to_string(),
+                great_person: Some(StateGreatPerson {
+                    charges: 0,
+                    can_activate: false,
+                    activation_plots: vec![
+                        StateActivationPlot {
+                            x: 11,
+                            y: 12,
+                            distance: 0,
+                        },
+                        StateActivationPlot {
+                            x: 20,
+                            y: 18,
+                            distance: 7,
+                        },
+                    ],
+                    ..StateGreatPerson::default()
+                }),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let (orders, waiting) = great_person_orders(&state);
+
+        assert!(orders.is_empty());
+        assert_eq!(waiting, 1);
+    }
+
+    #[test]
+    fn religious_promotions_and_spreads_reach_firaxis_unit_orders() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 93,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: vec![grass(5, 5)],
+        }]);
+        let state = StateSnapshot {
+            turn: 93,
+            units: vec![StateUnit {
+                id: 91,
+                kind: "UNIT_APOSTLE".to_string(),
+                x: 5,
+                y: 5,
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let unit = *mirror.uid_of.get(&91).expect("the Apostle is mirrored");
+
+        let promotion = translate(
+            &Action::Promote {
+                unit,
+                promotion: civvis::name!("translator"),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("the promotion crosses");
+        assert_eq!(promotion.kind, "unit");
+        assert_eq!(promotion.subject, Some(91));
+        assert_eq!(
+            promotion.verb.as_deref(),
+            Some("PROMOTE:PROMOTION_TRANSLATOR")
+        );
+
+        let spread =
+            translate(&Action::Spread { unit }, &mirror, &state).expect("the spread crosses");
+        assert_eq!(spread.kind, "unit");
+        assert_eq!(spread.subject, Some(91));
+        assert_eq!(spread.verb.as_deref(), Some("SPREAD_RELIGION"));
+    }
+
+    #[test]
+    fn contracted_promotion_names_expand_to_the_firaxis_database_ids() {
+        assert_eq!(
+            civ6_unit_promotion_name("cobra_strike"),
+            "PROMOTION_MONK_COBRA_STRIKE"
+        );
+        assert_eq!(
+            civ6_unit_promotion_name("supercarrier"),
+            "PROMOTION_SUPER_CARRIER"
+        );
+        assert_eq!(civ6_unit_promotion_name("surf_band"), "PROMOTION_SURF_ROCK");
+    }
+
+    #[test]
+    fn every_great_person_reserves_its_hex_for_the_firaxis_batch() {
+        let state = StateSnapshot {
+            units: vec![
+                StateUnit {
+                    id: 72,
+                    kind: "UNIT_GREAT_ADMIRAL".to_string(),
+                    x: 68,
+                    y: 27,
+                    great_person: Some(StateGreatPerson {
+                        charges: 1,
+                        can_activate: true,
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 73,
+                    kind: "UNIT_GREAT_PROPHET".to_string(),
+                    x: 68,
+                    y: 17,
+                    great_person: Some(StateGreatPerson {
+                        can_activate: false,
+                        ..StateGreatPerson::default()
+                    }),
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let (orders, deferred) = defer_great_person_plot_conflicts(
+            vec![
+                Order {
+                    kind: "unit",
+                    subject: Some(10),
+                    verb: Some("MOVE_TO".to_string()),
+                    pos: Some((68, 27)),
+                },
+                Order {
+                    kind: "unit",
+                    subject: Some(72),
+                    verb: Some("ACTIVATE_GREAT_PERSON".to_string()),
+                    pos: None,
+                },
+                Order {
+                    kind: "unit",
+                    subject: Some(11),
+                    verb: Some("MOVE_TO".to_string()),
+                    pos: Some((68, 17)),
+                },
+                Order {
+                    kind: "unit",
+                    subject: Some(12),
+                    verb: Some("MOVE_TO".to_string()),
+                    pos: Some((69, 27)),
+                },
+            ],
+            &state,
+        );
+
+        assert_eq!(deferred, 2);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].subject, Some(72));
+        assert_eq!(orders[1].subject, Some(12));
+    }
+
+    #[test]
+    fn firaxis_religion_state_reaches_a_found_religion_order() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 89,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 89,
+            pantheon: Some("BELIEF_DIVINE_SPARK".to_string()),
+            prophet_pending: true,
+            founded_religions: vec![
+                "RELIGION_ORTHODOXY".to_string(),
+                "RELIGION_CATHOLICISM".to_string(),
+                "RELIGION_ISLAM".to_string(),
+            ],
+            taken_religion_beliefs: vec![
+                "BELIEF_WORK_ETHIC".to_string(),
+                "BELIEF_TITHE".to_string(),
+            ],
+            cities: vec![StateCity {
+                id: 7,
+                name: "Krakow".to_string(),
+                x: 6,
+                y: 6,
+                pop: 3,
+                capital: true,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_HOLY_SITE".to_string(),
+                    x: 7,
+                    y: 6,
+                    pillaged: false,
+                    complete: true,
+                }],
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+
+        assert!(mirror.game.players[0].prophet_pending);
+        assert_eq!(mirror.game.religions_founded(), 3);
+        assert_eq!(mirror.game.max_religions(), 4);
+        assert!(mirror.game.players[1]
+            .religion_beliefs
+            .contains(&"work_ethic".to_string()));
+        assert!(mirror.game.players[1]
+            .religion_beliefs
+            .contains(&"tithe".to_string()));
+        let action = mirror
+            .game
+            .legal_actions(0)
+            .into_iter()
+            .find(|action| matches!(action, Action::FoundReligion { .. }))
+            .expect("a pending Firaxis Prophet must expose a religion choice");
+        let order = translate(&action, &mirror, &state)
+            .expect("a CIVVIS religion choice must reach Firaxis");
+
+        assert_eq!(order.kind, "religion");
+        assert_eq!(order.subject, None);
+        assert!(order
+            .verb
+            .as_deref()
+            .is_some_and(|verb| verb.starts_with("BELIEF_") && verb.contains(",BELIEF_")));
+    }
+
+    #[test]
+    fn purchases_preserve_currency_formation_and_district_plot() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 92,
+            cities: vec![StateCity {
+                id: 77,
+                name: "Wroclaw".to_string(),
+                x: 6,
+                y: 6,
+                pop: 4,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+        let city = mirror.game.player_city_ids(0)[0];
+        let unit = translate(
+            &Action::Buy {
+                city,
+                unit: civvis::name!("missionary"),
+                formation: 2,
+                currency: "faith".to_string(),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("faith unit purchase crosses");
+        assert_eq!(unit.kind, "purchase_faith");
+        assert_eq!(unit.subject, Some(77));
+        assert_eq!(unit.verb.as_deref(), Some("UNIT_MISSIONARY"));
+        assert_eq!(unit.pos, Some((2, -1)));
+
+        let walls = translate(
+            &Action::BuyBuilding {
+                city,
+                building: civvis::name!("medieval_walls"),
+                currency: "gold".to_string(),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a wall purchase crosses through the same building vocabulary");
+        assert_eq!(walls.kind, "purchase");
+        assert_eq!(walls.subject, Some(77));
+        assert_eq!(walls.verb.as_deref(), Some("BUILDING_CASTLE"));
+
+        let pos = (7, 6);
+        let district = translate(
+            &Action::BuyDistrict {
+                city,
+                district: civvis::name!("campus"),
+                pos,
+                currency: "gold".to_string(),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("placed district purchase crosses");
+        assert_eq!(district.kind, "purchase");
+        assert_eq!(district.verb.as_deref(), Some("DISTRICT_CAMPUS"));
+        assert_eq!(
+            district.pos,
+            Some(civvis::hex::axial_to_offset(pos.0, pos.1))
+        );
+    }
+
+    #[test]
+    fn pillaged_district_repair_reuses_the_firaxis_district_type() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 112,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 112,
+            cities: vec![StateCity {
+                id: 77,
+                name: "Ostia".to_string(),
+                x: 6,
+                y: 6,
+                pop: 4,
+                capital: true,
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_CAMPUS".to_string(),
+                    x: 7,
+                    y: 6,
+                    pillaged: true,
+                    complete: true,
+                }],
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+        let city = mirror.game.player_city_ids(0)[0];
+        let pos = civvis::hex::offset_to_axial(7, 6);
+        assert!(mirror.game.map.tiles[&pos].pillaged);
+
+        let order = translate(
+            &Action::Produce {
+                city,
+                item: civvis::game::Item::Repair {
+                    repair: civvis::name!("district"),
+                    pos,
+                },
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a CIVVIS district repair must reach Firaxis");
+
+        assert_eq!(order.kind, "produce");
+        assert_eq!(order.subject, Some(77));
+        assert_eq!(order.verb.as_deref(), Some("DISTRICT_CAMPUS"));
+        assert_eq!(order.pos, None);
+    }
+
+    #[test]
+    fn link_and_unlink_orders_preserve_both_firaxis_unit_ids() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 92,
+            seat: civvis::mirror::Seat {
+                local_player: 7,
+                ..civvis::mirror::Seat::default()
+            },
+            units: vec![
+                StateUnit {
+                    id: 501,
+                    kind: "UNIT_SETTLER".to_string(),
+                    x: 6,
+                    y: 6,
+                    hp: 100.0,
+                    ..StateUnit::default()
+                },
+                StateUnit {
+                    id: 502,
+                    kind: "UNIT_WARRIOR".to_string(),
+                    x: 6,
+                    y: 6,
+                    hp: 100.0,
+                    ..StateUnit::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 6, 1, 250, 0);
+        let settler = mirror.uid_of[&501];
+        let escort = mirror.uid_of[&502];
+
+        let link = translate(
+            &Action::LinkUnits {
+                unit: settler,
+                with: escort,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("formation order crosses");
+        assert_eq!(link.kind, "unit");
+        assert_eq!(link.subject, Some(501));
+        assert_eq!(link.verb.as_deref(), Some("ENTER_FORMATION"));
+        assert_eq!(link.pos, Some((7, 502)));
+
+        let unlink = translate(
+            &Action::UnlinkUnits { unit: settler },
+            &mirror,
+            &state,
+        )
+        .expect("formation exit crosses");
+        assert_eq!(unlink.subject, Some(501));
+        assert_eq!(unlink.verb.as_deref(), Some("EXIT_FORMATION"));
+        assert_eq!(unlink.pos, None);
+    }
+
+    #[test]
+    fn unit_followups_wait_for_the_next_observed_firaxis_frame() {
+        let (orders, deferred) = defer_unit_followups(vec![
+            Order {
+                kind: "unit",
+                subject: Some(42),
+                verb: Some("MOVE_TO".to_string()),
+                pos: Some((4, 5)),
+            },
+            Order {
+                kind: "unit",
+                subject: Some(42),
+                verb: Some("IMPROVE:IMPROVEMENT_FARM".to_string()),
+                pos: None,
+            },
+            Order {
+                kind: "unit",
+                subject: Some(99),
+                verb: Some("FORTIFY".to_string()),
+                pos: None,
+            },
+            Order {
+                kind: "research",
+                subject: None,
+                verb: Some("TECH_WRITING".to_string()),
+                pos: None,
+            },
+        ]);
+
+        assert_eq!(deferred, 1);
+        assert_eq!(orders.len(), 3);
+        assert_eq!(orders[0].subject, Some(42));
+        assert_eq!(orders[0].verb.as_deref(), Some("MOVE_TO"));
+        assert_eq!(orders[1].subject, Some(99));
+        assert_eq!(orders[2].kind, "research");
+    }
+
+    #[test]
+    fn governor_followups_wait_for_the_next_observed_firaxis_frame() {
+        let (orders, deferred) = defer_governor_followups(vec![
+            Order {
+                kind: "governor_appoint",
+                subject: Some(65_536),
+                verb: Some("GOVERNOR_THE_DEFENDER".to_string()),
+                pos: Some((0, -1)),
+            },
+            Order {
+                kind: "governor_promote",
+                subject: None,
+                verb: Some(
+                    "GOVERNOR_THE_DEFENDER,GOVERNOR_PROMOTION_GARRISON_COMMANDER"
+                        .to_string(),
+                ),
+                pos: None,
+            },
+            Order {
+                kind: "research",
+                subject: None,
+                verb: Some("TECH_WRITING".to_string()),
+                pos: None,
+            },
+        ]);
+
+        assert_eq!(deferred, 1);
+        assert_eq!(orders.len(), 2);
+        assert_eq!(orders[0].kind, "governor_appoint");
+        assert_eq!(orders[1].kind, "research");
+    }
+
+    #[test]
+    fn governor_actions_use_firaxis_types_and_city_owner_ids() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 40,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 40,
+            seat: civvis::mirror::Seat {
+                local_player: 7,
+                ..civvis::mirror::Seat::default()
+            },
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Capital".to_string(),
+                x: 6,
+                y: 6,
+                pop: 5,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let city = mirror.game.player_city_ids(0)[0];
+
+        let appoint = translate(
+            &Action::AppointGovernor {
+                governor: civvis::name!("victor"),
+                city,
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a known Governor and city translate");
+        assert_eq!(appoint.kind, "governor_appoint");
+        assert_eq!(appoint.subject, Some(65_536));
+        assert_eq!(appoint.verb.as_deref(), Some("GOVERNOR_THE_DEFENDER"));
+        assert_eq!(appoint.pos, Some((7, -1)));
+
+        let promote = translate(
+            &Action::PromoteGovernor {
+                governor: civvis::name!("victor"),
+                promotion: civvis::name!("garrison_commander"),
+            },
+            &mirror,
+            &state,
+        )
+        .expect("a known promotion translates");
+        assert_eq!(promote.kind, "governor_promote");
+        assert_eq!(
+            promote.verb.as_deref(),
+            Some("GOVERNOR_THE_DEFENDER,GOVERNOR_PROMOTION_GARRISON_COMMANDER")
+        );
+    }
+
+    #[test]
+    fn exact_spent_firaxis_titles_suppress_duplicate_governor_orders() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 92,
+            governor_points: Some(4),
+            governor_points_spent: Some(4),
+            governors: Some(vec![
+                StateGovernor {
+                    kind: "GOVERNOR_THE_DEFENDER".to_string(),
+                    city: 65_536,
+                    x: 6,
+                    y: 6,
+                    established: true,
+                    promotions: vec![
+                        "GOVERNOR_PROMOTION_GARRISON_COMMANDER".to_string(),
+                        "GOVERNOR_PROMOTION_DEFENSE_LOGISTICS".to_string(),
+                    ],
+                    ..StateGovernor::default()
+                },
+                StateGovernor {
+                    kind: "GOVERNOR_THE_RESOURCE_MANAGER".to_string(),
+                    city: -1,
+                    ..StateGovernor::default()
+                },
+            ]),
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Capital".to_string(),
+                x: 6,
+                y: 6,
+                pop: 5,
+                capital: true,
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let mut ai = civvis::ai::AdvancedAi::new();
+
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &mut Default::default(),
+        ))
+        .expect("the decision is JSON");
+
+        assert!(reply["orders"].as_array().unwrap().iter().all(|order| {
+            !order["kind"]
+                .as_str()
+                .is_some_and(|kind| kind.starts_with("governor_"))
+        }));
+    }
+
+    #[test]
+    fn policy_replacements_are_one_complete_host_deck() {
+        let mut game = civvis::game::Game::new(2, 12, 12, 1, 50, 0);
+        game.players[0].policies.insert(civvis::name!("urban_planning"));
+        game.players[0].policies.insert(civvis::name!("agoge"));
+
+        let order = policy_deck_order(&game, 0);
+        assert_eq!(order.kind, "policy_deck");
+        assert_eq!(
+            order.verb.as_deref(),
+            Some("POLICY_AGOGE,POLICY_URBAN_PLANNING")
+        );
+    }
+
+    #[test]
+    fn renamed_units_and_improvements_use_firaxis_type_ids() {
+        let winged_hussar = civvis::game::Item::Unit {
+            unit: civvis::name!("winged_hussar"),
+        };
+        let keshig = civvis::game::Item::Unit {
+            unit: civvis::name!("keshig"),
+        };
+        let oromo = civvis::game::Item::Unit {
+            unit: civvis::name!("oromo_cavalry"),
+        };
+        assert_eq!(
+            civ6_build_name(&winged_hussar).as_deref(),
+            Some("UNIT_POLISH_HUSSAR")
+        );
+        assert_eq!(
+            civ6_build_name(&keshig).as_deref(),
+            Some("UNIT_MONGOLIAN_KESHIG")
+        );
+        assert_eq!(
+            civ6_build_name(&oromo).as_deref(),
+            Some("UNIT_ETHIOPIAN_OROMO_CAVALRY")
+        );
+        assert_eq!(
+            civ6_improvement_type(&civvis::name!("seaside_resort")),
+            "IMPROVEMENT_BEACH_RESORT"
+        );
+
+        let district = civvis::game::Item::District {
+            district: civvis::name!("campus"),
+            pos: (7, 4),
+        };
+        let wonder = civvis::game::Item::Wonder {
+            wonder: civvis::name!("pyramids"),
+            pos: (3, 8),
+        };
+        assert_eq!(civ6_build_pos(&district), Some((9, 4)));
+        assert_eq!(civ6_build_pos(&wonder), Some((7, 8)));
+    }
+
+    #[test]
+    fn wall_production_and_repairs_use_firaxis_internal_type_ids() {
+        for (civvis, firaxis) in [
+            ("ancient_walls", "BUILDING_WALLS"),
+            ("medieval_walls", "BUILDING_CASTLE"),
+            ("renaissance_walls", "BUILDING_STAR_FORT"),
+        ] {
+            let building = civvis::game::Item::Building {
+                building: civvis::name::Name::new(civvis),
+            };
+            assert_eq!(civ6_build_name(&building).as_deref(), Some(firaxis));
+
+            let repair = civvis::game::Item::Repair {
+                repair: civvis::name::Name::new(civvis),
+                pos: (4, 4),
+            };
+            let game = civvis::game::Game::new(2, 12, 12, 1, 50, 0);
+            assert_eq!(
+                civ6_live_build_name(&repair, &game).as_deref(),
+                Some(firaxis)
+            );
+        }
+    }
+
+    #[test]
+    fn exported_lobby_size_and_horizon_override_cli_fallbacks() {
+        let state = StateSnapshot {
+            seat: civvis::mirror::Seat {
+                players: 6,
+                max_turns: 250,
+                ..civvis::mirror::Seat::default()
+            },
+            ..StateSnapshot::default()
+        };
+        assert_eq!(mirror_setup(&state, 4, 500), (6, 250));
+        assert_eq!(mirror_setup(&StateSnapshot::default(), 4, 500), (4, 500));
+    }
+
+    fn grass(x: i32, y: i32) -> Plot {
+        Plot {
+            x,
+            y,
+            t: Some("TERRAIN_GRASS".to_string()),
+            f: None,
+            r: None,
+            o: -1,
+            w: false,
+            i: false,
+            fw: false,
+            im: None,
+            rv: 0,
+            ri: false,
+            ct: None,
+            cl: -1,
+        }
+    }
+
+    #[test]
+    fn deciding_does_not_mutate_the_authoritative_live_mirror() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 4,
+            width: 12,
+            height: 12,
+            chunk: 1,
+            plots: (0..12)
+                .flat_map(|x| (0..12).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let mut state = StateSnapshot {
+            turn: 4,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 7,
+            name: "Roma".to_string(),
+            x: 6,
+            y: 6,
+            pop: 3,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 42,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 6,
+            y: 7,
+            ..StateUnit::default()
+        });
+
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let before = serde_json::to_value(&mirror.game).expect("mirror game serializes");
+        let mut ai = civvis::ai::AdvancedAi::new();
+
+        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &mut Default::default());
+
+        assert!(reply.contains("\"turn\":4"));
+        assert_eq!(
+            serde_json::to_value(&mirror.game).expect("mirror game serializes"),
+            before,
+            "planning must not leave an imagined end turn, queue, or produced unit on the live mirror"
+        );
+        assert_eq!(mirror.civ6_of.len(), 1);
+        assert_eq!(mirror.uid_of.len(), 1);
+    }
+
+    #[test]
+    fn converted_holy_site_never_emits_a_rival_missionary_purchase() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 151,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 151,
+            techs: vec!["TECH_ASTROLOGY".to_string()],
+            founded_religion: Some("RELIGION_CATHOLICISM".to_string()),
+            founded_religions: vec![
+                "RELIGION_CATHOLICISM".to_string(),
+                "RELIGION_ISLAM".to_string(),
+            ],
+            faith: 1_000,
+            cities: vec![StateCity {
+                id: 65_536,
+                name: "Rome".to_string(),
+                x: 8,
+                y: 8,
+                pop: 7,
+                capital: true,
+                religion: Some("RELIGION_ISLAM".to_string()),
+                buildings: vec!["BUILDING_SHRINE".to_string()],
+                districts: vec![StateDistrict {
+                    kind: "DISTRICT_HOLY_SITE".to_string(),
+                    x: 9,
+                    y: 8,
+                    pillaged: false,
+                    complete: true,
+                }],
+                producing: Some("PROJECT_HOLY_SITE_PRAYERS".to_string()),
+                ..StateCity::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        let city = mirror.game.player_city_ids(0)[0];
+        assert_eq!(
+            mirror.game.players[0].religion.as_deref(),
+            Some("Catholicism")
+        );
+        assert_eq!(
+            mirror.game.city_religion(&mirror.game.cities[&city]),
+            Some("Islam")
+        );
+
+        let mut ai = civvis::ai::AdvancedAi::new();
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut mirror,
+            &mut ai,
+            &snapshot,
+            &state,
+            false,
+            &mut Default::default(),
+        ))
+        .expect("the decision is JSON");
+
+        assert!(
+            reply["orders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .all(|order| order["verb"].as_str() != Some("UNIT_MISSIONARY")),
+            "a live recommendation must not buy the converted city's rival-faith Missionary"
+        );
+    }
+
+    #[test]
+    fn fresh_mirror_translates_a_zero_movement_trader_to_a_trade_route() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 20,
+            civics: vec!["CIVIC_FOREIGN_TRADE".to_string()],
+            cities: vec![
+                StateCity {
+                    id: 7,
+                    name: "Roma".to_string(),
+                    x: 6,
+                    y: 6,
+                    pop: 3,
+                    capital: true,
+                    ..StateCity::default()
+                },
+                StateCity {
+                    id: 8,
+                    name: "Antium".to_string(),
+                    x: 7,
+                    y: 7,
+                    pop: 3,
+                    ..StateCity::default()
+                },
+            ],
+            units: vec![StateUnit {
+                id: 42,
+                kind: "UNIT_TRADER".to_string(),
+                x: 7,
+                y: 7,
+                moves: 0.0,
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let trader = mirror.uid_of[&42];
+
+        assert_eq!(mirror.game.trade_capacity(0), 1);
+        assert!(mirror.game.legal_actions(0).iter().any(|action| {
+            matches!(action, Action::TradeRoute { unit, .. } if *unit == trader)
+        }));
+
+        let mut ai = civvis::ai::AdvancedAi::new();
+        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &mut Default::default());
+
+        assert!(
+            reply.contains("\"verb\":\"TRADE_ROUTE\"") && reply.contains("\"subject\":42"),
+            "a live trader cannot walk, but its legal route must still reach Civ VI: {reply}"
+        );
+    }
+
+    #[test]
+    fn active_firaxis_trade_route_keeps_the_trader_visible_but_out_of_the_plan() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 16,
+            height: 16,
+            chunk: 1,
+            plots: (0..16)
+                .flat_map(|x| (0..16).map(move |y| grass(x, y)))
+                .collect(),
+        }]);
+        let state = StateSnapshot {
+            turn: 20,
+            civics: vec!["CIVIC_FOREIGN_TRADE".to_string()],
+            cities: vec![
+                StateCity {
+                    id: 7,
+                    name: "Roma".to_string(),
+                    x: 6,
+                    y: 6,
+                    pop: 3,
+                    capital: true,
+                    ..StateCity::default()
+                },
+                StateCity {
+                    id: 8,
+                    name: "Antium".to_string(),
+                    x: 7,
+                    y: 7,
+                    pop: 3,
+                    ..StateCity::default()
+                },
+            ],
+            units: vec![StateUnit {
+                id: 42,
+                kind: "UNIT_TRADER".to_string(),
+                x: 7,
+                y: 7,
+                moves: 0.0,
+                ..StateUnit::default()
+            }],
+            trade_routes: vec![StateTradeRoute {
+                trader: 42,
+                origin: 8,
+                destination: 7,
+                origin_x: 7,
+                origin_y: 7,
+                destination_x: 6,
+                destination_y: 6,
+                ..StateTradeRoute::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let trader = mirror.uid_of[&42];
+
+        assert!(mirror.game.units.contains_key(&trader),
+            "the mirrored map must retain Firaxis's moving trader unit");
+        assert_eq!(mirror.game.active_routes(0), 1,
+            "the active route must occupy CIVVIS trade capacity and pay its yields");
+        assert!(mirror.active_trade_route_traders.contains(&42));
+
+        let mut planning = mirror.game.clone();
+        remove_active_route_traders_from_plan(&mut planning, &mirror);
+        assert!(
+            !planning.units.contains_key(&trader),
+            "only the planning clone may consume a trader that Firaxis reports as busy"
+        );
+        assert_eq!(planning.active_routes(0), 1,
+            "removing the visual stand-in must not erase the real route's economic state");
+    }
+
+    /// Every name here was refused by the live mod, and the count is from the ledger.
+    ///
+    /// The right-hand side is the row in `Cache/DebugGameplay.sqlite`, not a guess from
+    /// the display name — that distinction is the whole bug. `BUILDING_ART_MUSEUM` reads
+    /// perfectly and does not exist.
+    #[test]
+    fn a_build_order_names_the_row_civilization_vi_actually_ships() {
+        use civvis::game::Item;
+        use civvis::name::Name;
+
+        let building = |n: &str| civ6_building_type(&Name::new(n));
+        let district = |n: &str| {
+            civ6_build_name(&Item::District {
+                district: Name::new(n),
+                pos: (0, 0),
+            })
+            .expect("a district always names something")
+        };
+        let project = |n: &str| {
+            civ6_build_name(&Item::Project {
+                project: Name::new(n),
+            })
+            .expect("a project always names something")
+        };
+
+        // The culture chain. 507 Museum orders across 45 runs, every one refused, and
+        // not one city in any of them ever finished a Museum or held a Great Work.
+        assert_eq!(building("art_museum"), "BUILDING_MUSEUM_ART");
+        assert_eq!(building("archaeological_museum"), "BUILDING_MUSEUM_ARTIFACT");
+        assert_eq!(district("theater_square"), "DISTRICT_THEATER");
+        // 310 refusals, and the inbound reader already had to grow a unique-prefix
+        // rule to recover this one coming the other way.
+        assert_eq!(district("government_plaza"), "DISTRICT_GOVERNMENT");
+        assert_eq!(building("national_history_museum"), "BUILDING_GOV_CULTURE");
+        // 110 refusals: an entire technology the seat could never select.
+        assert_eq!(civ6_tech_name("wheel"), "TECH_THE_WHEEL");
+
+        // The rest of the Government Plaza tier, named for the slot not the subject.
+        assert_eq!(building("audience_chamber"), "BUILDING_GOV_TALL");
+        assert_eq!(building("ancestral_hall"), "BUILDING_GOV_WIDE");
+        assert_eq!(building("warlords_throne"), "BUILDING_GOV_CONQUEST");
+        assert_eq!(building("foreign_ministry"), "BUILDING_GOV_CITYSTATES");
+        assert_eq!(building("grand_masters_chapel"), "BUILDING_GOV_FAITH");
+        assert_eq!(building("intelligence_agency"), "BUILDING_GOV_SPIES");
+        assert_eq!(building("royal_society"), "BUILDING_GOV_SCIENCE");
+        assert_eq!(building("war_department"), "BUILDING_GOV_MILITARY");
+
+        assert_eq!(building("oil_power_plant"), "BUILDING_FOSSIL_FUEL_POWER_PLANT");
+        assert_eq!(building("nuclear_power_plant"), "BUILDING_POWER_PLANT");
+        assert_eq!(
+            building("mausoleum_at_halicarnassus"),
+            "BUILDING_HALICARNASSUS_MAUSOLEUM"
+        );
+        assert_eq!(building("statue_of_liberty"), "BUILDING_STATUE_LIBERTY");
+        assert_eq!(building("university_of_sankore"), "BUILDING_UNIVERSITY_SANKORE");
+
+        assert_eq!(district("water_park"), "DISTRICT_WATER_ENTERTAINMENT_COMPLEX");
+        assert_eq!(district("copacabana"), "DISTRICT_WATER_STREET_CARNIVAL");
+
+        assert_eq!(project("exoplanet_expedition"), "PROJECT_LAUNCH_EXOPLANET_EXPEDITION");
+        assert_eq!(project("launch_mars_colony"), "PROJECT_LAUNCH_MARS_BASE");
+        assert_eq!(project("terrestrial_laser_station"), "PROJECT_TERRESTRIAL_LASER");
+        assert_eq!(project("lagrange_laser_station"), "PROJECT_ORBITAL_LASER");
+
+        // ⚠ The mechanical path still has to carry the other ~230 names untouched. A
+        // translation table that starts rewriting things it was not asked to rewrite is
+        // the same defect pointed the other way.
+        assert_eq!(building("monument"), "BUILDING_MONUMENT");
+        assert_eq!(building("amphitheater"), "BUILDING_AMPHITHEATER");
+        assert_eq!(district("campus"), "DISTRICT_CAMPUS");
+        assert_eq!(civ6_tech_name("mining"), "TECH_MINING");
+        assert_eq!(civ6_civic_name("drama_poetry"), "CIVIC_DRAMA_POETRY");
+        assert_eq!(project("build_nuclear_device"), "PROJECT_BUILD_NUCLEAR_DEVICE");
+        // Already fixed before this change; keep it pinned so the table stays whole.
+        assert_eq!(building("medieval_walls"), "BUILDING_CASTLE");
+        assert_eq!(project("campus_research_grants"), "PROJECT_ENHANCE_DISTRICT_CAMPUS");
+    }
+
+    /// ⚠ A wonder reaches Civilization VI as a BUILDING, so it must use the building
+    /// table — #959 added the divergent spellings but left `Item::Wonder` formatting its
+    /// own name one line away, so all three kept going out wrong. This asserts the two
+    /// arms agree, which is the property that was actually missing.
+    #[test]
+    fn a_wonder_and_a_building_translate_through_the_same_table() {
+        use civvis::game::Item;
+        use civvis::name::Name;
+
+        for name in ["mausoleum_at_halicarnassus", "statue_of_liberty",
+                     "university_of_sankore", "stonehenge", "great_bath"] {
+            let as_wonder = civ6_build_name(&Item::Wonder {
+                wonder: Name::new(name),
+                pos: (0, 0),
+            })
+            .expect("a wonder always names something");
+            assert_eq!(
+                as_wonder,
+                civ6_building_type(&Name::new(name)),
+                "{name} must translate the same way whichever Item variant carries it"
+            );
+        }
+
+        assert_eq!(
+            civ6_build_name(&Item::Wonder {
+                wonder: Name::new("mausoleum_at_halicarnassus"),
+                pos: (0, 0)
+            })
+            .as_deref(),
+            Some("BUILDING_HALICARNASSUS_MAUSOLEUM")
+        );
+        // The plot is part of the decision and must survive the shared table.
+        assert_eq!(
+            civ6_build_pos(&Item::Wonder {
+                wonder: Name::new("stonehenge"),
+                pos: (3, 4)
+            }),
+            Some(civvis::hex::axial_to_offset(3, 4))
+        );
+    }
+
+    /// The outbound table must not silently shrink relative to CIVVIS's own ruleset.
+    ///
+    /// This is the check that would have caught the original defect: it walks every
+    /// building and district CIVVIS can order and fails on any whose translated name is
+    /// still the mechanical uppercase when the shipped database has no such row. The
+    /// known-divergent list is spelled out because CI has no Civilization VI install —
+    /// if a ruleset entry joins that list, this test is where it gets recorded.
+    #[test]
+    fn every_name_civilization_vi_spells_differently_is_translated() {
+        use civvis::name::Name;
+
+        // Read out of `Cache/DebugGameplay.sqlite` on 2026-08-02 by comparing every
+        // `data/*.json` key against Buildings/Districts/Projects/Technologies.
+        const DIVERGENT_BUILDINGS: &[&str] = &[
+            "ancient_walls", "medieval_walls", "renaissance_walls",
+            "art_museum", "archaeological_museum", "oil_power_plant", "nuclear_power_plant",
+            "mausoleum_at_halicarnassus", "statue_of_liberty", "university_of_sankore",
+            "audience_chamber", "ancestral_hall", "warlords_throne", "foreign_ministry",
+            "grand_masters_chapel", "intelligence_agency", "national_history_museum",
+            "royal_society", "war_department",
+        ];
+        const DIVERGENT_DISTRICTS: &[&str] =
+            &["theater_square", "government_plaza", "water_park", "copacabana"];
+
+        for name in DIVERGENT_BUILDINGS {
+            let mapped = civ6_building_type(&Name::new(name));
+            assert_ne!(
+                mapped,
+                format!("BUILDING_{}", name.to_ascii_uppercase()),
+                "{name} is known to be spelled differently in Civilization VI, so the \
+                 mechanical uppercase is exactly the name the mod refuses"
+            );
+        }
+        for name in DIVERGENT_DISTRICTS {
+            let mapped = civ6_district_type(&Name::new(name));
+            assert_ne!(
+                mapped,
+                format!("DISTRICT_{}", name.to_ascii_uppercase()),
+                "{name} is known to be spelled differently in Civilization VI"
+            );
+        }
     }
 }

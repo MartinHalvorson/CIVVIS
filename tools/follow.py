@@ -43,18 +43,38 @@ import time
 import urllib.error
 import urllib.request
 
-RIG = "/Users/martin/civvis-civ6-mirror"
-BIN = os.path.join(RIG, "civvis")
-RUNS = "/Users/martin/civvis-civ6-runs/control"
-PORT = int(os.environ.get("CIVVIS_MIRROR_PORT", "8610"))
-LOG = os.path.join(RIG, "follow.log")
-STATUS = os.path.join(RIG, "status.json")
-STAGE = os.path.join(RIG, "stage")
+RIG = os.environ.get(
+    "CIVVIS_RIG", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-POLL_SECONDS = 2.0
+def default_binary() -> str:
+    """Find a local CIVVIS executable without assuming one operator's home."""
+    configured = os.environ.get("CIVVIS_BIN")
+    if configured:
+        return configured
+    for candidate in (
+        os.path.join(RIG, "target", "release", "civvis"),
+        os.path.join(RIG, "target", "debug", "civvis"),
+        os.path.join(RIG, "civvis"),
+    ):
+        if os.path.isfile(candidate):
+            return candidate
+    # Keep a useful path in the diagnostic when the build has not happened yet.
+    return os.path.join(RIG, "target", "release", "civvis")
+
+
+BIN = default_binary()
+RUNS = os.environ.get(
+    "CIVVIS_RUNS", os.path.join(os.path.expanduser("~"), "civvis-civ6-runs", "control"))
+PORT = int(os.environ.get("CIVVIS_MIRROR_PORT", "8610"))
+LOG = os.environ.get("CIVVIS_FOLLOW_LOG", os.path.join(RIG, "follow.log"))
+STATUS = os.environ.get("CIVVIS_FOLLOW_STATUS", os.path.join(RIG, "status.json"))
+STAGE = os.environ.get("CIVVIS_FOLLOW_STAGE", os.path.join(RIG, "stage"))
+
+POLL_SECONDS = 1.0
 # A rebuild costs a process launch, so don't do it for every appended line; a
-# turn here takes minutes, and this still tracks units moving within a turn.
-MIN_REPUBLISH_SECONDS = 30.0
+# live Online-speed turn can take only a few seconds, and every completed state
+# export must reach the board before the next decision makes it stale.
+MIN_REPUBLISH_SECONDS = 1.0
 # Older than this and the run is finished or dead, not "the ongoing game".
 RUN_FRESH_SECONDS = 900.0
 
@@ -124,10 +144,12 @@ def mirror_axis(height):
     """The row to reflect about, as a row index doubled — see `flip_north_up`.
 
     Must be an EVEN offset from 0 so that row and reflected row keep the same
-    parity; the largest one that fits is `height - 1` rounded down to even.
+    parity. An even-height odd-r map has no in-bounds even axis: using
+    `height - 2` drops its last row. Give the display reconstruction one empty
+    staging row instead, so all real rows map bijectively onto `1..=height`.
+    This changes only the north-up spectator canvas; orders consume the raw run.
     """
-    top = height - 1
-    return top if top % 2 == 0 else top - 1
+    return height if height % 2 == 0 else height - 1
 
 
 def flip_north_up(event, top, dropped):
@@ -146,8 +168,9 @@ def flip_north_up(event, top, dropped):
     shoves odd rows half a hex right, so a row may only be mapped onto a row of
     the SAME parity; the obvious `(height - 1) - y` flips parity on an even
     height and shears the whole map half a hex, which looks plausible and is
-    wrong. Reflecting about row `top / 2` keeps parity, leaves the column
-    untouched, and costs only the single polar row that falls off the end.
+    wrong. Reflecting about row `top / 2` keeps parity and leaves the column
+    untouched. Even-height maps use one empty staging row so neither pole is
+    discarded.
     """
     if not isinstance(event, dict):
         if isinstance(event, list):
@@ -159,56 +182,76 @@ def flip_north_up(event, top, dropped):
             dropped.append(y)
             return None
         event["y"] = top - y
+    # Route endpoints and refusal origins are coordinate pairs too, but their
+    # field names are qualified because the same record carries two positions.
+    # Leaving these south-up while every city is flipped north-up makes an active
+    # route impossible to resolve, so it vanishes from CIVVIS's economy even
+    # though its Trader is still correctly marked busy.
+    for prefix in ("origin", "destination", "from"):
+        x_key, y_key = f"{prefix}_x", f"{prefix}_y"
+        special_y = event.get(y_key)
+        if (isinstance(special_y, int) and not isinstance(special_y, bool)
+                and isinstance(event.get(x_key), int)):
+            if special_y > top:
+                dropped.append(special_y)
+                # The id fields can still resolve a route whose endpoint lies on
+                # the unpaired polar row. Negative coordinates select that path.
+                event[x_key] = -1
+                event[y_key] = -1
+            elif special_y >= 0:
+                event[y_key] = top - special_y
     for key, value in list(event.items()):
         if isinstance(value, (dict, list)):
             event[key] = flip_north_up(value, top, dropped)
     return event
 
 
+def offset_to_axial(col, row):
+    return col - (row - (row & 1)) // 2, row
+
+
+def axial_to_offset(q, r):
+    return q + (r - (r & 1)) // 2, r
+
+
 def remap_river_masks(events, top):
-    """A vertical reflection must MOVE two of the three river flags between plots.
+    """Reflect every known river edge without requiring the opposite plot.
 
-    Civilization VI stores a river on three of a plot's six edges: `rv` bit 1 is
-    `IsWOfRiver` (river on the plot's EAST edge), bit 2 `IsNWOfRiver` (SOUTH-EAST
-    edge), bit 4 `IsNEOfRiver` (SOUTH-WEST edge). The reconstruction applies that
-    table to whatever coordinates it is handed. `flip_north_up` reflects the
-    plots about a row centre, and an E edge survives that on the same plot — but
-    a SE edge lands as a NE edge, and the flag vocabulary has no "river on my NE
-    edge" bit. The segment is still expressible, on the OTHER plot sharing it:
-    what was this plot's south-east segment is, after the flip, the flipped
-    SE-neighbour's south-west one.
+    Current exports carry all six edges on every revealed plot: bits 1..32 are
+    E, SE, SW, W, NW and NE in the mirror's axial frame. Older exports carried
+    only the first three. Either vocabulary is sufficient because the Rust
+    reconstruction accepts all six bits and preserves a one-sided edge when
+    the plot across a known boundary is still hidden.
 
-    Measured before this pass existed: 58 of 108 live river segments — every
-    diagonal one — were served on the vertically mirrored edge (run
-    civvis-20260801T184324Z, turn-80 export against /state on 8610).
+    The previous north-up pass still gathered only bits 1, 2 and 4 onto their
+    canonical Firaxis holders. That silently discarded the new 8, 16 and 32
+    boundary facts, then reported visible rivers as dry whenever the hidden
+    neighbour was the only possible old-style holder. A live turn-15 audit
+    reproduced it as `river@57,23 Civ6=True CIVVIS=False` while every other
+    field agreed.
 
-    Gather form, in PRE-flip coordinates (odd-r offset, y grows north, east-west
-    wrap), writing each plot's mask in place so `flip_north_up` can then move
-    the plots and the composition puts every segment back where the game put it:
+    Treat a river as an undirected segment instead. Reflect both endpoints and
+    encode the reflected direction on any revealed endpoint that survives the
+    display's polar-row crop. This keeps an exact one-sided boundary edge, works
+    for old three-bit archives, deduplicates the reciprocal six-bit export, and
+    loses a segment only when neither revealed endpoint can appear on screen.
 
-        new bit1(P) = old bit1(P)
-        new bit2(P) = old bit4(NE(P))    NE(x,y) = (x + (y&1),     y + 1)
-        new bit4(P) = old bit2(NW(P))    NW(x,y) = (x - 1 + (y&1), y + 1)
-
-    Returns the number of segments nothing can carry after the flip FOR THE
-    NEWEST EXPORT TURN — the board the mirror actually shows: a diagonal flag
-    whose gathering plot is not in the export (the fog frontier), or an E
-    segment lying wholly in the one polar row the reflection drops. Earlier
-    exports are remapped identically but not counted, because summing losses
-    over every historical fog frontier reads as a hole in the visible board
-    (141 "lost" on a board missing 4). Bounded, counted, and logged by the
-    caller — never silent.
+    Returns the number of genuinely unrepresentable segments on the newest
+    export turn. Earlier turns are transformed identically but are not summed
+    into the live diagnostic.
     """
+    directions = ((1, 0), (1, -1), (0, -1),
+                  (-1, 0), (-1, 1), (0, 1))
+    encoded = (1, 2, 4, 8, 16, 32)
     lost_by_turn = {}
     by_turn = {}
     for event in events:
         if isinstance(event, dict) and event.get("kind") == "tiles":
             by_turn.setdefault(event.get("turn"), []).append(event)
     for turn, chunks in by_turn.items():
-        lost = lost_by_turn.setdefault(turn, 0)
+        lost = 0
         width = next((c["width"] for c in chunks if isinstance(c.get("width"), int)), 0)
-        if width <= 0:
-            continue
+        wrap = (lambda x: x % width) if width > 0 else (lambda x: x)
         plots = {}
         for c in chunks:
             for p in c.get("plots", []):
@@ -218,24 +261,52 @@ def remap_river_masks(events, top):
         old = {xy: (p.get("rv") or 0) for xy, p in plots.items()}
         if not any(old.values()):
             continue
-        for (x, y), p in plots.items():
-            par = y & 1
-            ne = old.get(((x + par) % width, y + 1), 0)
-            nw = old.get(((x - 1 + par) % width, y + 1), 0)
-            new = (old[(x, y)] & 1) | (2 if ne & 4 else 0) | (4 if nw & 2 else 0)
-            if new or "rv" in p:
-                p["rv"] = new
-        for (x, y), rv in old.items():
-            par = y & 1
-            if y > top:
-                # The row the reflection drops: its E segments leave with it; its
-                # diagonal flags are gathered by the surviving row below.
-                lost += 1 if rv & 1 else 0
+        segments = {}
+        for start, mask in old.items():
+            axial = offset_to_axial(*start)
+            for direction, bit in enumerate(encoded):
+                if not mask & bit:
+                    continue
+                delta = directions[direction]
+                end = axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])
+                end = (wrap(end[0]), end[1])
+                key = tuple(sorted((start, end)))
+                carriers = segments.setdefault(key, [])
+                if start not in carriers:
+                    carriers.append(start)
+
+        for plot in plots.values():
+            if "rv" in plot:
+                plot["rv"] = 0
+
+        for endpoints, carriers in segments.items():
+            available = [point for point in carriers if point in plots and point[1] <= top]
+            if not available:
+                # A flag held by the cropped polar row can move to its revealed
+                # opposite endpoint as the reciprocal edge.
+                available = [
+                    point for point in endpoints
+                    if point in plots and point[1] <= top
+                ]
+            if not available:
+                lost += 1
                 continue
-            if rv & 2 and ((x + par) % width, y - 1) not in plots:
+            carrier = available[0]
+            other = endpoints[1] if endpoints[0] == carrier else endpoints[0]
+            reflected_carrier = (carrier[0], top - carrier[1])
+            reflected_other = (wrap(other[0]), top - other[1])
+            axial = offset_to_axial(*reflected_carrier)
+            direction = next((
+                index for index, delta in enumerate(directions)
+                if (
+                    wrap(axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])[0]),
+                    axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])[1],
+                ) == reflected_other
+            ), None)
+            if direction is None:
                 lost += 1
-            if rv & 4 and ((x - 1 + par) % width, y - 1) not in plots:
-                lost += 1
+                continue
+            plots[carrier]["rv"] = (plots[carrier].get("rv") or 0) | encoded[direction]
         lost_by_turn[turn] = lost
     return lost_by_turn[max(lost_by_turn)] if lost_by_turn else 0
 
@@ -262,6 +333,8 @@ def stage_events(lines, height):
     for event in events:
         flipped = flip_north_up(event, top, dropped)
         if flipped is not None:
+            if flipped.get("kind") == "tiles":
+                flipped["height"] = top + 1
             out.append(json.dumps(flipped).encode())
     if dropped:
         log(f"{len(dropped)} board object(s) on row {top + 1} dropped by the north-up "
@@ -365,7 +438,7 @@ def start_visible_server(run_dir, players):
     # turned north-up too, or the window is upside down until the first /load.
     lines, _, _, height = read_events(run_dir)
     staged = stage_events(lines or [], height)
-    subprocess.Popen(
+    process = subprocess.Popen(
         ["nice", "-n", "5", BIN, "play", "--mirror", staged,
          "--players", str(players), "--port", str(PORT), "--paused", "--no-open",
          "--spectate", "--speed", "online", "--turns", "250",
@@ -376,7 +449,16 @@ def start_visible_server(run_dir, players):
     for _ in range(60):
         if server_alive(PORT):
             hold_the_frame()
+            # Chrome reconnects after the server answers and may restore its
+            # default all-players spectator view after this first pin. Reassert
+            # once the page has completed that handoff; otherwise a fresh server
+            # can expose the generated world instead of the Firaxis seat's fog.
+            time.sleep(2.0)
+            hold_the_frame()
             return True
+        if process.poll() is not None:
+            log(f"mirror server exited during startup with status {process.returncode}")
+            return False
         time.sleep(1)
     return False
 
@@ -402,7 +484,7 @@ def hold_the_frame():
 MIRROR_URL = f"http://127.0.0.1:{PORT}/"
 # Left half of the display, beside the Civilization VI window the controller
 # parks on the right (`civ6_play --window-side right`).
-MIRROR_BOUNDS = "{0, 33, 864, 1117}"
+MIRROR_BOUNDS = os.environ.get("CIVVIS_MIRROR_BOUNDS", "{0, 33, 864, 1117}")
 
 
 def chrome(script):
@@ -429,6 +511,9 @@ def mirror_on_screen():
 def ensure_on_screen(misses):
     """Put the mirror back on the display if it has been closed.
 
+    Leave placement and sizing to the operator. The follower owns the mirror's
+    availability, not the desktop layout.
+
     Deliberately does NOT `activate` Chrome. Civilization VI runs its turn loop
     off frame-tied events and macOS starves a background app of frames, so
     stealing the foreground every few seconds would stop the very game this
@@ -444,7 +529,6 @@ def ensure_on_screen(misses):
     chrome(f'''tell application "Google Chrome"
       make new window
       set URL of active tab of window 1 to "{MIRROR_URL}"
-      set bounds of window 1 to {MIRROR_BOUNDS}
     end tell''')
     return 0
 

@@ -83,6 +83,10 @@ fn done_usize() -> usize {
 pub struct TerrainSpec {
     #[serde(default)]
     pub yields: Yields,
+    /// Synthetic terrain used only when an external partial-map source has not
+    /// disclosed what occupies a coordinate. It makes no land/water claim.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub unknown: bool,
     #[serde(default)]
     pub water: bool,
     #[serde(default = "dtrue")]
@@ -321,8 +325,20 @@ pub struct ImprovementSpec {
     pub requires_hills: bool,
     #[serde(default)]
     pub hills_or_resource: bool,
+    /// The plot must be Hills unless it qualifies through a valid feature.
+    /// Ethiopia's Rock-Hewn Church uses this for its Volcanic Soil route.
+    #[serde(default)]
+    pub hills_or_feature: bool,
     #[serde(default)]
     pub requires_flat: bool,
+    /// Resource classes at least one adjacent plot must carry. Firaxis's
+    /// `RequiresAdjacentBonusOrLuxury` uses both classes for the Mekewap.
+    #[serde(default)]
+    pub requires_adjacent_resource_classes: Vec<String>,
+    /// Firaxis `SameAdjacentValid`; false for improvements such as Sphinxes,
+    /// Ski Resorts, City Parks, and Rock-Hewn Churches.
+    #[serde(default = "default_true")]
+    pub same_adjacent_valid: bool,
     #[serde(default)]
     pub unique_to: Option<String>,
     #[serde(default)]
@@ -1027,7 +1043,7 @@ pub struct PolicySpec {
     /// by the *predecessor*, so a successor appears once per card it kills, and three
     /// of them kill two: Public Works (Bastions + Serfdom), Lightning Warfare (Limes
     /// + Maneuver) and Native Conquest (Discipline + Survey). A single `Option` could
-    /// only ever carry one of each pair, which is why this reads as a list.
+    ///   only ever carry one of each pair, which is why this reads as a list.
     ///
     /// A bare string is still accepted, so entries naming one card stay one line.
     #[serde(default, deserialize_with = "one_or_many_names")]
@@ -1483,7 +1499,7 @@ fn connect_random_layers(
             .get_mut(child)
             .ok_or_else(|| format!("randomized child {child:?} is not in the layout"))?;
         if !prerequisites.contains(parent) {
-            prerequisites.push(parent.clone());
+            prerequisites.push(*parent);
         }
     }
     Ok(())
@@ -1497,7 +1513,7 @@ fn random_tree_layout(
     let randomized: Vec<Name> = tree
         .iter()
         .filter(|(_, spec)| spec.random_prereqs)
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| *name)
         .collect();
     if randomized.is_empty() {
         return Ok(BTreeMap::new());
@@ -1533,11 +1549,11 @@ fn random_tree_layout(
                     "repeatable randomized {kind} {name:?} carries column costs"
                 ));
             }
-            terminals.push(name.clone());
+            terminals.push(*name);
         } else if spec.random_costs.is_empty() {
-            gateways.push(name.clone());
+            gateways.push(*name);
         } else if spec.random_costs.len() == 2 {
-            regular.push(name.clone());
+            regular.push(*name);
         } else {
             return Err(format!(
                 "randomized {kind} {name:?} needs exactly two column costs"
@@ -1561,12 +1577,12 @@ fn random_tree_layout(
     let fixed_parents: BTreeSet<Name> = tree
         .iter()
         .filter(|(_, spec)| !spec.random_prereqs)
-        .flat_map(|(_, spec)| spec.requires.iter().cloned())
+        .flat_map(|(_, spec)| spec.requires.iter().copied())
         .collect();
     let previous_leaves: Vec<Name> = tree
         .iter()
         .filter(|(name, spec)| spec.era == previous_era && !fixed_parents.contains(name))
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| *name)
         .collect();
     if previous_leaves.is_empty() {
         return Err(format!(
@@ -1586,17 +1602,17 @@ fn random_tree_layout(
     let (first, second) = regular.split_at(first_len);
     let mut requirements: BTreeMap<Name, Vec<Name>> = randomized
         .iter()
-        .map(|name| (name.clone(), Vec::new()))
+        .map(|name| (*name, Vec::new()))
         .collect();
     connect_random_layers(&previous_leaves, first, rng, &mut requirements)?;
     connect_random_layers(first, second, rng, &mut requirements)?;
 
     let terminal = terminals.pop().unwrap();
     if let Some(gateway) = gateways.pop() {
-        requirements.insert(gateway.clone(), second.to_vec());
+        requirements.insert(gateway, second.to_vec());
         requirements.insert(terminal, vec![gateway]);
     } else {
-        requirements.insert(terminal.clone(), second.to_vec());
+        requirements.insert(terminal, second.to_vec());
     }
 
     let first: BTreeSet<&str> = first.iter().map(|name| name.as_str()).collect();
@@ -1626,9 +1642,9 @@ fn apply_tree_layout(
     let expected: BTreeSet<Name> = tree
         .iter()
         .filter(|(_, spec)| spec.random_prereqs)
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| *name)
         .collect();
-    let actual: BTreeSet<Name> = layout.keys().cloned().collect();
+    let actual: BTreeSet<Name> = layout.keys().copied().collect();
     if expected != actual {
         return Err(format!(
             "saved randomized {kind} nodes do not match the active ruleset"
@@ -1656,7 +1672,7 @@ fn apply_tree_layout(
         .filter(|(name, spec)| {
             spec.era == previous_era && !fixed_parents.contains(*name)
         })
-        .map(|(name, _)| name.clone())
+        .map(|(name, _)| *name)
         .collect();
 
     let mut first = BTreeSet::new();
@@ -1680,7 +1696,7 @@ fn apply_tree_layout(
                     entry.cost
                 ));
             }
-            terminals.push(name.clone());
+            terminals.push(*name);
         } else if spec.random_costs.is_empty() {
             if entry.cost != spec.cost {
                 return Err(format!(
@@ -1688,15 +1704,15 @@ fn apply_tree_layout(
                     entry.cost
                 ));
             }
-            gateways.push(name.clone());
+            gateways.push(*name);
         } else if spec.random_costs.len() != 2 {
             return Err(format!(
                 "randomized {kind} {name:?} does not define exactly two column costs"
             ));
         } else if entry.cost == spec.random_costs[0] {
-            first.insert(name.clone());
+            first.insert(*name);
         } else if entry.cost == spec.random_costs[1] {
-            second.insert(name.clone());
+            second.insert(*name);
         } else {
             return Err(format!(
                 "saved randomized {kind} {name:?} has invalid cost {}",
@@ -2199,7 +2215,7 @@ impl Rules {
                 .filter(|(_, spec)| spec.random_prereqs)
                 .map(|(name, spec)| {
                     (
-                        name.clone(),
+                        *name,
                         TreeLayoutEntry {
                             cost: spec.cost,
                             requires: spec.requires.clone(),
@@ -2538,8 +2554,29 @@ impl Rules {
         ys
     }
 
+    /// Add the synthetic terrain used by an external partial-map reconstruction.
+    /// This deliberately happens after ruleset loading so a mirror-only knowledge
+    /// marker cannot change the audited source fingerprint or invalidate ratings.
+    pub(crate) fn enable_unknown_terrain(&mut self) {
+        self.terrains.insert(
+            "unknown".to_string(),
+            TerrainSpec {
+                yields: Yields::default(),
+                unknown: true,
+                water: false,
+                passable: false,
+                move_cost: 1.0,
+                defense: 0.0,
+            },
+        );
+    }
+
     pub fn is_water(&self, t: &Tile) -> bool {
         self.terrains[t.terrain].water
+    }
+
+    pub fn is_unknown(&self, t: &Tile) -> bool {
+        self.terrains[t.terrain].unknown
     }
 
     pub fn is_passable(&self, t: &Tile) -> bool {
@@ -2548,7 +2585,12 @@ impl Rules {
                 return false;
             }
         }
-        self.terrains[t.terrain].passable
+        let terrain = &self.terrains[t.terrain];
+        if terrain.unknown {
+            t.assumed_traversable
+        } else {
+            terrain.passable
+        }
     }
 
     pub fn move_cost(&self, t: &Tile) -> f64 {
@@ -2598,15 +2640,14 @@ mod tests {
     }
 
     #[test]
-    fn widening_replaces_does_not_move_the_ruleset_fingerprint() {
-        // ⚠ THE FINGERPRINT IS THE ELO LEDGER'S BINDING. `from_values` hashes the raw
-        // JSON, so a schema change cannot move it while the data is untouched — which
-        // is the whole reason this PR is separable from the data rows that follow.
-        // If this ever fails, the split was not as inert as it claims.
+    fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
+        // The fingerprint is the Elo ledger's binding. Firaxis-exact unique units,
+        // including the Shield Bearer, Oromo Cavalry, Pairidaeza, and Armagh's
+        // Monastery found by live replay, are real simulation changes; older ledgers
+        // retain their original fingerprint.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:3423bd46da2b8cd7",
-            "reading `replaces` as a list must not change what the data hashes to"
+            "fnv1a64:d9602d2bcdabd481"
         );
     }
 
@@ -2821,7 +2862,7 @@ mod tests {
             let before = reached.len();
             for (name, spec) in tree {
                 if spec.requires.iter().all(|node| reached.contains(node)) {
-                    reached.insert(name.clone());
+                    reached.insert(*name);
                 }
             }
             assert!(reached.len() > before, "tree contains a dependency cycle");
@@ -2984,14 +3025,14 @@ mod tests {
                 !rules.techs[*name].random_costs.is_empty()
                     && entry.cost == rules.techs[*name].random_costs[0]
             })
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| *name)
             .unwrap();
         layout.techs.get_mut(&first).unwrap().requires = vec![crate::name!("future_tech")];
         let error = apply_tree_layout("technology", &mut rules.techs, &layout.techs).unwrap_err();
         assert!(error.contains("outside the preceding column"), "{error}");
 
         let mut layout = FutureTreeLayout::generate(&rules, 919_191).unwrap();
-        let prerequisite = layout.techs[&first].requires[0].clone();
+        let prerequisite = layout.techs[&first].requires[0];
         layout
             .techs
             .get_mut(&first)
@@ -3018,6 +3059,7 @@ mod tests {
             ("slinger", "archer"),
             ("archer", "crossbowman"),
             ("crossbowman", "field_cannon"),
+            ("keshig", "field_cannon"),
             ("field_cannon", "machine_gun"),
             ("spearman", "pikeman"),
             ("pikeman", "pike_and_shot"),
@@ -3025,6 +3067,7 @@ mod tests {
             ("at_crew", "modern_at"),
             ("horseman", "courser"),
             ("courser", "cavalry"),
+            ("oromo_cavalry", "cavalry"),
             ("cavalry", "helicopter"),
             ("heavy_chariot", "knight"),
             ("knight", "cuirassier"),
@@ -3052,12 +3095,14 @@ mod tests {
             ("fighter", "jet_fighter"),
             ("bomber", "jet_bomber"),
             ("legion", "man_at_arms"),
+            ("kongo_shield_bearer", "man_at_arms"),
             ("hoplite", "pikeman"),
             ("eagle_warrior", "swordsman"),
             ("war_cart", "knight"),
             ("pitati_archer", "crossbowman"),
             ("maryannu_chariot_archer", "crossbowman"),
             ("saka_horse_archer", "crossbowman"),
+            ("winged_hussar", "tank"),
             ("crouching_tiger", "field_cannon"),
         ]
         .into_iter()
@@ -3076,7 +3121,7 @@ mod tests {
         for (source, target) in &actual {
             let target_spec = rules
                 .units
-                .get(*target)
+                .get(target)
                 .unwrap_or_else(|| panic!("{source} upgrades to missing unit {target}"));
             assert!(
                 target_spec.buildable,
@@ -3096,11 +3141,11 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 83);
+        assert_eq!(rules.units.len(), 87);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
-        assert_eq!(rules.improvements.len(), 36);
+        assert_eq!(rules.improvements.len(), 45);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
         // 118 civic-unlocked cards plus the seven Dark Age cards, which no
@@ -3604,7 +3649,7 @@ mod tests {
         let rules = Rules::shipped();
         let index = &rules.effect_index;
         let mut checked = 0usize;
-        let mut check = |family: &str, present: bool, in_any: bool, key: &str| {
+        let check = |family: &str, present: bool, in_any: bool, key: &str| {
             assert!(present, "{family} declares {key}, which its index omits");
             assert!(in_any, "{key} is declared by {family} but missing from the union");
         };

@@ -18,6 +18,12 @@ pub struct DistrictFoundation {
 pub struct Tile {
     pub pos: Pos,
     pub terrain: Name,
+    /// An external partial-map reconstruction may let pathfinding probe a tile
+    /// whose terrain is still `unknown`. This is an explicit planning prior,
+    /// separate from the terrain fact, and is never set by ordinary map
+    /// generation.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub assumed_traversable: bool,
     pub feature: Option<Name>,
     pub hills: bool,
     pub resource: Option<Name>,
@@ -198,6 +204,7 @@ impl Tile {
         Tile {
             pos,
             terrain: crate::name!("ocean"),
+            assumed_traversable: false,
             feature: None,
             hills: false,
             resource: None,

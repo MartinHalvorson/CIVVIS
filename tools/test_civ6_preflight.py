@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
-"""Preflight must be able to tell "Steam is running" from "Steam can launch a game".
-
-⚠ These are machine-independent on purpose. The bug being pinned was found on a
-host that was signed out, and a test that reads the live client would pass or fail
-for reasons that have nothing to do with the parsing.
-"""
+"""Regression tests for live CIV VI preflight checks."""
 
 from __future__ import annotations
 
@@ -19,12 +14,25 @@ import civ6_preflight  # noqa: E402
 
 
 def _helpers(text: str):
-    """Stand in for `pgrep -fl "Steam Helper"`."""
     return mock.patch.object(
         civ6_preflight.subprocess,
         "run",
         return_value=mock.Mock(stdout=text),
     )
+
+
+class InstalledSourceMatchesTest(unittest.TestCase):
+    def test_exact_worktree_source_matches(self) -> None:
+        self.assertTrue(civ6_preflight.installed_source_matches(b"print('ok')\n", b"print('ok')\n"))
+
+    def test_configured_install_prelude_matches_its_source_suffix(self) -> None:
+        source = b"print('ok')\n"
+        installed = b"CivvisControlConfig = { RunTag = 'live' }\n\n" + source
+
+        self.assertTrue(civ6_preflight.installed_source_matches(installed, source))
+
+    def test_different_installed_source_does_not_match(self) -> None:
+        self.assertFalse(civ6_preflight.installed_source_matches(b"print('old')\n", b"print('new')\n"))
 
 
 class SteamSignInTest(unittest.TestCase):

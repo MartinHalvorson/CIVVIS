@@ -12,9 +12,9 @@ The operator fetches ``origin/main`` into a private detached worktree, drains
 old headless games at a revision boundary, and builds the new HEAD in the
 background while keeping one visible match alive.  New games then use the
 immutable promoted binary.  It never edits or updates a development checkout.
-CPU, memory, disk and Apple-GPU use are sampled host-wide; game process groups
-are stopped and resumed before the configured ceiling.  macOS thermal pressure
-is an additional hard gate.
+CPU, memory, disk and Apple-GPU use are sampled host-wide; game and build
+process groups are stopped and resumed before the configured ceiling.  macOS
+thermal pressure is an additional hard gate.
 
 The process is intentionally foreground and watches the shell PID supplied by
 ``--watch-pid``.  Closing that terminal kills the fleet.  While it is alive,
@@ -26,6 +26,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import Future, ThreadPoolExecutor
 import csv
+import ctypes
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 import json
@@ -37,6 +38,7 @@ import signal
 import socket
 import subprocess
 import sys
+import threading
 import time
 from typing import Any
 from urllib.error import URLError
@@ -65,6 +67,10 @@ SHED_HEADLESS_MARGIN = 10.0
 RESUME_MARGIN = 20.0
 RESUME_COOLDOWN_SECONDS = 15.0
 RESUME_STEP_SECONDS = 5.0
+BUILD_CPU_DUTY_CYCLE_SECONDS = 0.4
+BUILD_CPU_MAX_DUTY = 0.35
+BUILD_CPU_TARGET_MARGIN = SHED_ONE_MARGIN + 2.0
+_resource_sample_lock = threading.Lock()
 
 
 def utc_now() -> str:
@@ -128,10 +134,75 @@ def parse_top_cpu(text: str) -> float | None:
     return max(0.0, min(100.0, 100.0 - float(matches[-1]))) if matches else None
 
 
+_darwin_cpu_ticks: tuple[int, int, int, int] | None = None
+_darwin_libsystem: Any | None = None
+_darwin_host_port: int | None = None
+DARWIN_CPU_STATE_IDLE = 2
+
+
+def darwin_cpu_ticks() -> tuple[int, int, int, int] | None:
+    """Return the host-wide user, system, idle, and nice tick totals on macOS."""
+    global _darwin_host_port, _darwin_libsystem
+    try:
+        if _darwin_libsystem is None:
+            _darwin_libsystem = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+            _darwin_libsystem.mach_host_self.restype = ctypes.c_uint
+            _darwin_libsystem.host_statistics.argtypes = [
+                ctypes.c_uint,
+                ctypes.c_int,
+                ctypes.POINTER(ctypes.c_int),
+                ctypes.POINTER(ctypes.c_uint),
+            ]
+            _darwin_libsystem.host_statistics.restype = ctypes.c_int
+        if _darwin_host_port is None:
+            _darwin_host_port = _darwin_libsystem.mach_host_self()
+        ticks = (ctypes.c_uint * 4)()
+        count = ctypes.c_uint(4)
+        status = _darwin_libsystem.host_statistics(
+            _darwin_host_port,
+            3,  # HOST_CPU_LOAD_INFO
+            ctypes.cast(ticks, ctypes.POINTER(ctypes.c_int)),
+            ctypes.byref(count),
+        )
+    except (AttributeError, OSError, TypeError):
+        return None
+    if status != 0 or count.value < 4:
+        return None
+    return tuple(int(tick) for tick in ticks)
+
+
+def darwin_cpu_percent() -> float | None:
+    """Measure aggregate CPU from native tick deltas without spawning ``top``."""
+    global _darwin_cpu_ticks
+    current = darwin_cpu_ticks()
+    if current is None:
+        return None
+    previous = _darwin_cpu_ticks
+    if previous is None:
+        # The host API is cumulative.  A short bootstrap interval gives the
+        # first resource gate a valid sample without the costly ``top`` fork.
+        time.sleep(0.2)
+        previous = current
+        current = darwin_cpu_ticks()
+        if current is None:
+            return None
+    _darwin_cpu_ticks = current
+    deltas = [((new - old) & 0xFFFFFFFF) for old, new in zip(previous, current)]
+    total = sum(deltas)
+    return 100.0 * (total - deltas[DARWIN_CPU_STATE_IDLE]) / total if total > 0 else None
+
+
 def cpu_percent() -> float | None:
     if sys.platform == "darwin":
-        # macOS top accepts only whole-second sample intervals.
-        result = command("top", "-l", "2", "-n", "0", "-s", "1", timeout=4)
+        native = darwin_cpu_percent()
+        if native is not None:
+            return native
+        # Keep the familiar command path as a conservative fallback if the
+        # native host API is unavailable on a future macOS release.
+        try:
+            result = command("top", "-l", "1", "-n", "0", timeout=4)
+        except (OSError, subprocess.TimeoutExpired):
+            return None
         return parse_top_cpu(result.stdout)
     try:
         first = Path("/proc/stat").read_text(encoding="utf-8").splitlines()[0].split()[1:]
@@ -206,21 +277,31 @@ class Resources:
         return max(values)
 
     def overloaded(self, limit: float) -> bool:
-        return self.thermal_pressure is True or self.maximum() >= limit
+        # CPU is the admission-critical signal.  If sampling it fails, pause
+        # safely rather than guessing that enough aggregate headroom remains.
+        return self.cpu is None or self.thermal_pressure is True or self.maximum() >= limit
 
     def comfortably_below(self, limit: float, margin: float = 10.0) -> bool:
-        return self.thermal_pressure is not True and self.maximum() < limit - margin
+        return (
+            self.cpu is not None
+            and self.thermal_pressure is not True
+            and self.maximum() < limit - margin
+        )
 
 
 def resources(runtime: Path) -> Resources:
-    usage = shutil.disk_usage(runtime)
-    return Resources(
-        cpu=cpu_percent(),
-        memory=memory_percent(),
-        disk=100.0 * usage.used / usage.total,
-        gpu=gpu_percent(),
-        thermal_pressure=thermal_pressure(),
-    )
+    # The background HEAD builder and operator loop can both govern work. Keep
+    # native CPU tick deltas ordered and avoid doubling the host-wide helper
+    # probes when their sampling windows overlap.
+    with _resource_sample_lock:
+        usage = shutil.disk_usage(runtime)
+        return Resources(
+            cpu=cpu_percent(),
+            memory=memory_percent(),
+            disk=100.0 * usage.used / usage.total,
+            gpu=gpu_percent(),
+            thermal_pressure=thermal_pressure(),
+        )
 
 
 def http_json(port: int, path: str, *, data: dict[str, Any] | None = None) -> dict[str, Any] | None:
@@ -362,6 +443,23 @@ def resource_action(sample: Resources, limit: float) -> str:
     return "hold"
 
 
+def build_cpu_duty_cycle(cpu: float | None, limit: float) -> float:
+    """Return a safe run fraction for a build that may saturate every CPU.
+
+    Cargo's job limit controls concurrent rustc processes, but one optimized
+    rustc invocation can still use every core.  Model that worst case and keep
+    its cycle-averaged host CPU below the normal shed-one threshold with a
+    small additional margin.
+    """
+    if cpu is None:
+        return 0.0
+    target = max(0.0, limit - BUILD_CPU_TARGET_MARGIN)
+    if cpu >= target:
+        return 0.0
+    available_fraction = (target - cpu) / max(1.0, 100.0 - cpu)
+    return min(BUILD_CPU_MAX_DUTY, max(0.0, available_fraction))
+
+
 @dataclass
 class GameProcess:
     process: subprocess.Popen[str]
@@ -391,6 +489,10 @@ class MatchMachine:
         self.resource_log = self.runtime / "resources.jsonl"
         self.state_path = self.runtime / "state.json"
         self.ranking = self.runtime / "AI_PLAYER_ELO_RANKINGS.md"
+        # Builds reset ``self.source`` in a background worker. Keep the
+        # self-contained ranking updater in the runtime so completed games can
+        # refresh their durable Elo view while a newer HEAD is compiling.
+        self.ranking_updater = self.runtime / "update_ai_player_elo_rankings.py"
         self.runtime.mkdir(parents=True, exist_ok=True)
         self.logs.mkdir(parents=True, exist_ok=True)
         self.games: list[GameProcess] = []
@@ -411,6 +513,10 @@ class MatchMachine:
         self.next_seed = args.seed
         self.started_monotonic = time.monotonic()
         self.deadline = self.started_monotonic + args.duration
+        absolute_deadline = getattr(args, "deadline_utc", None)
+        if absolute_deadline is not None:
+            remaining = (absolute_deadline - datetime.now(timezone.utc)).total_seconds()
+            self.deadline = self.started_monotonic + max(0.0, remaining)
         self.stopping = False
         self.watch_identity = process_identity(args.watch_pid) if args.watch_pid else None
         self.caffeinate: subprocess.Popen[str] | None = None
@@ -498,14 +604,33 @@ class MatchMachine:
             )
             self.event("sleep_prevention_started", pid=self.caffeinate.pid, mode="idle+AC-system")
 
-    def wait_for_capacity(self, purpose: str, *, cpu_reservation: float = 0.0) -> Resources:
+    def watched_terminal_closed(self) -> bool:
+        return bool(
+            self.args.watch_pid
+            and not process_is_same(self.args.watch_pid, self.watch_identity)
+        )
+
+    def stop_for_terminal_close(self) -> None:
+        if self.stopping:
+            return
+        self.stopping = True
+        self.event("terminal_closed", watch_pid=self.args.watch_pid)
+
+    def wait_for_capacity(
+        self, purpose: str, *, cpu_reservation: float = 0.0
+    ) -> Resources | None:
         """Wait without starting work until every measured resource has headroom."""
         next_notice = 0.0
         while True:
-            if self.stopping or time.monotonic() >= self.deadline:
-                raise RuntimeError("operator window ended while waiting for capacity")
-            if self.args.watch_pid and not process_is_same(self.args.watch_pid, self.watch_identity):
-                raise RuntimeError("watched terminal closed while waiting for capacity")
+            if self.stopping:
+                return None
+            if time.monotonic() >= self.deadline:
+                self.stopping = True
+                self.event("operator_window_ended", purpose=purpose)
+                return None
+            if self.watched_terminal_closed():
+                self.stop_for_terminal_close()
+                return None
             sample = resources(self.runtime)
             now = time.monotonic()
             if self.capacity_available(sample, cpu_reservation=cpu_reservation):
@@ -605,20 +730,200 @@ class MatchMachine:
         self.strategy_cursor += 1
         return strategy
 
-    def compile_build(self, revision: str) -> Path:
+    def resource_capped_command(
+        self,
+        *args: str,
+        cwd: Path,
+        env: dict[str, str] | None,
+        timeout: float,
+        purpose: str,
+        log_path: Path,
+    ) -> subprocess.CompletedProcess[str] | None:
+        """Run long work while preserving terminal, deadline, and host limits."""
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        started = time.monotonic()
+        paused = False
+        admission_pending = False
+        cpu_throttled = purpose == "build"
+        pressure_paused = False
+        with log_path.open("w", encoding="utf-8") as output:
+            process = subprocess.Popen(
+                args,
+                cwd=cwd,
+                env=env,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+                text=True,
+            )
+            # Popen begins executing immediately. Stop every resource-capped
+            # process before the first host sample so even a validator cannot
+            # burst past the ceiling during its admission check. A very short
+            # command may finish in the race between poll and SIGSTOP; that is
+            # already complete work, not a failed safety gate.
+            if process.poll() is None:
+                if not set_paused(process, True):
+                    if process.poll() is None:
+                        stop_process(process, timeout=2)
+                        raise RuntimeError("cannot engage the initial resource gate")
+                else:
+                    paused = True
+                    admission_pending = True
+            if cpu_throttled and paused:
+                self.event(
+                    "work_cpu_throttle_started",
+                    purpose=purpose,
+                    pid=process.pid,
+                    cycle_seconds=BUILD_CPU_DUTY_CYCLE_SECONDS,
+                    max_duty=BUILD_CPU_MAX_DUTY,
+                )
+            while process.poll() is None:
+                now = time.monotonic()
+                if self.stopping:
+                    stop_process(process, timeout=2)
+                    return None
+                if self.watched_terminal_closed():
+                    self.stop_for_terminal_close()
+                    stop_process(process, timeout=2)
+                    return None
+                if now >= self.deadline:
+                    self.stopping = True
+                    self.event("operator_window_ended", purpose=purpose)
+                    stop_process(process, timeout=2)
+                    return None
+                if now - started >= timeout:
+                    stop_process(process, timeout=2)
+                    raise subprocess.TimeoutExpired(args, timeout)
+
+                sample = resources(self.runtime)
+                must_pause = (
+                    sample.cpu is None
+                    or sample.thermal_pressure is True
+                    or sample.maximum() >= self.args.limit - SHED_ONE_MARGIN
+                )
+                if cpu_throttled:
+                    duty = build_cpu_duty_cycle(sample.cpu, self.args.limit)
+                    must_pause = must_pause or duty <= 0.0
+                    if must_pause:
+                        if not paused:
+                            if not set_paused(process, True):
+                                stop_process(process, timeout=2)
+                                raise RuntimeError("cannot pause resource-capped build")
+                            paused = True
+                        if not pressure_paused:
+                            pressure_paused = True
+                            self.event(
+                                "work_paused_for_resources",
+                                purpose=purpose,
+                                pid=process.pid,
+                                resources=asdict(sample),
+                            )
+                        time.sleep(self.args.poll)
+                        continue
+                    comfortable = sample.comfortably_below(
+                        self.args.limit, margin=RESUME_MARGIN
+                    )
+                    if (pressure_paused or admission_pending) and not comfortable:
+                        # Once pressure trips the gate, require the same
+                        # recovery headroom as the game governor. The initial
+                        # admission gate uses that headroom too. Resuming at the
+                        # shed threshold creates stop/start oscillation and
+                        # leaves no room for the next build pulse.
+                        if not pressure_paused:
+                            pressure_paused = True
+                            self.event(
+                                "work_paused_for_resources",
+                                purpose=purpose,
+                                pid=process.pid,
+                                resources=asdict(sample),
+                            )
+                        time.sleep(self.args.poll)
+                        continue
+                    if pressure_paused:
+                        pressure_paused = False
+                        self.event(
+                            "work_resumed",
+                            purpose=purpose,
+                            pid=process.pid,
+                            resources=asdict(sample),
+                        )
+                    admission_pending = False
+                    if paused:
+                        if not set_paused(process, False):
+                            if process.poll() is None:
+                                stop_process(process, timeout=2)
+                                raise RuntimeError("cannot resume resource-capped build")
+                            continue
+                        paused = False
+                    time.sleep(BUILD_CPU_DUTY_CYCLE_SECONDS * duty)
+                    if process.poll() is None:
+                        if not set_paused(process, True):
+                            stop_process(process, timeout=2)
+                            raise RuntimeError("cannot re-pause resource-capped build")
+                        paused = True
+                    time.sleep(BUILD_CPU_DUTY_CYCLE_SECONDS * (1.0 - duty))
+                    continue
+                comfortable = sample.comfortably_below(
+                    self.args.limit, margin=RESUME_MARGIN
+                )
+                if must_pause or (
+                    (pressure_paused or admission_pending) and not comfortable
+                ):
+                    if not paused:
+                        if not set_paused(process, True):
+                            if process.poll() is None:
+                                stop_process(process, timeout=2)
+                                raise RuntimeError("cannot pause resource-capped work")
+                            continue
+                        paused = True
+                    if not pressure_paused:
+                        pressure_paused = True
+                        self.event(
+                            "work_paused_for_resources",
+                            purpose=purpose,
+                            pid=process.pid,
+                            resources=asdict(sample),
+                        )
+                elif paused and comfortable:
+                    if not set_paused(process, False):
+                        if process.poll() is None:
+                            stop_process(process, timeout=2)
+                            raise RuntimeError("cannot resume resource-capped work")
+                        continue
+                    paused = False
+                    admission_pending = False
+                    if pressure_paused:
+                        pressure_paused = False
+                        self.event(
+                            "work_resumed",
+                            purpose=purpose,
+                            pid=process.pid,
+                            resources=asdict(sample),
+                        )
+                time.sleep(self.args.poll)
+            returncode = process.returncode
+
+        captured = log_path.read_text(encoding="utf-8", errors="replace")
+        return subprocess.CompletedProcess(args, returncode, captured)
+
+    def compile_build(self, revision: str) -> Path | None:
         self.event("build_started", revision=revision, jobs=self.args.build_jobs)
         reset = command("git", "reset", "--hard", revision, cwd=self.source)
         if reset.returncode != 0:
             raise RuntimeError(f"cannot reset private worktree: {reset.stdout}")
         environment = os.environ.copy()
         environment["CARGO_BUILD_JOBS"] = str(self.args.build_jobs)
-        environment["CIVVIS_COMMIT"] = revision
-        result = command(
+        environment.pop("CIVVIS_COMMIT", None)
+        result = self.resource_capped_command(
             "cargo", "build", "--release", "--locked", "--bin", "civvis",
             cwd=self.source,
             env=environment,
             timeout=self.args.build_timeout,
+            purpose="build",
+            log_path=self.runtime / "logs" / f"build-{revision[:12]}.log",
         )
+        if result is None:
+            return None
         if result.returncode != 0:
             self.event("build_failed", revision=revision, output=result.stdout[-4000:])
             raise RuntimeError(f"CIVVIS build failed at {revision[:12]}")
@@ -630,7 +935,18 @@ class MatchMachine:
         shutil.copy2(built, temporary)
         temporary.chmod(0o755)
         os.replace(temporary, promoted)
-        check = command(str(promoted), "validate", cwd=self.source, timeout=180)
+        check = self.resource_capped_command(
+            str(promoted),
+            "validate",
+            cwd=self.source,
+            env=None,
+            timeout=180,
+            purpose="validation",
+            log_path=self.runtime / "logs" / f"validation-{revision[:12]}.log",
+        )
+        if check is None:
+            promoted.unlink(missing_ok=True)
+            return None
         if check.returncode != 0:
             promoted.unlink(missing_ok=True)
             self.event("validation_failed", revision=revision, output=check.stdout[-4000:])
@@ -642,12 +958,20 @@ class MatchMachine:
         self.current_revision = revision
         if self.pending_revision == revision:
             self.pending_revision = None
+        self.cache_ranking_updater()
         self.initialize_league()
         self.refresh_ranking()
         self.event("build_ready", revision=revision, binary=str(promoted))
+        # A build can take longer than the regular sync interval.  Start that
+        # interval again only after a validated promotion so the new revision
+        # has time to fill the headless fleet before another HEAD transition
+        # begins its drain-and-build cycle.
+        self.next_sync = time.monotonic() + self.args.sync_interval
 
     def build(self, revision: str) -> None:
-        self.activate_build(revision, self.compile_build(revision))
+        promoted = self.compile_build(revision)
+        if promoted is not None:
+            self.activate_build(revision, promoted)
 
     def start_head_build(self, revision: str) -> None:
         self.build_revision = revision
@@ -661,7 +985,8 @@ class MatchMachine:
         assert revision is not None
         try:
             promoted = future.result()
-            self.activate_build(revision, promoted)
+            if promoted is not None:
+                self.activate_build(revision, promoted)
         except (OSError, RuntimeError, subprocess.TimeoutExpired) as error:
             self.event("revision_rejected", error=str(error))
             if self.pending_revision == revision:
@@ -671,8 +996,22 @@ class MatchMachine:
             self.build_future = None
             self.build_revision = None
 
+    def cache_ranking_updater(self) -> None:
+        """Snapshot the self-contained ranking script after a source reset."""
+        source_script = self.source / "tools" / "update_ai_player_elo_rankings.py"
+        if not source_script.exists():
+            return
+        temporary = self.ranking_updater.with_suffix(".tmp")
+        try:
+            shutil.copy2(source_script, temporary)
+            os.replace(temporary, self.ranking_updater)
+        except OSError as error:
+            temporary.unlink(missing_ok=True)
+            self.event("ranking_updater_cache_failed", error=str(error))
+
     def refresh_ranking(self) -> None:
-        script = self.source / "tools" / "update_ai_player_elo_rankings.py"
+        source_script = self.source / "tools" / "update_ai_player_elo_rankings.py"
+        script = self.ranking_updater if self.ranking_updater.exists() else source_script
         if not script.exists() or not (self.league / "league.json").exists():
             return
         result = command(
@@ -680,7 +1019,7 @@ class MatchMachine:
             str(script),
             "--league", str(self.league / "league.json"),
             "--output", str(self.ranking),
-            cwd=self.source,
+            cwd=self.runtime,
             timeout=60,
         )
         if result.returncode != 0:
@@ -701,6 +1040,8 @@ class MatchMachine:
         handle = log.open("w", encoding="utf-8")
         speed = getattr(self.args, "speed", DEFAULT_SPEED)
         turns = getattr(self.args, "turns", SPEED_TURNS[speed])
+        environment = os.environ.copy()
+        environment["CIVVIS_COMMIT"] = self.current_revision
         process = subprocess.Popen(
             game_command(
                 self.binary,
@@ -714,6 +1055,7 @@ class MatchMachine:
                 focus_strategy=focus_strategy,
             ),
             cwd=self.binary.parent,
+            env=environment,
             stdout=handle,
             stderr=subprocess.STDOUT,
             text=True,
@@ -779,6 +1121,13 @@ class MatchMachine:
 
     def finish(self, game: GameProcess, *, failed: bool, reason: str) -> None:
         row = match_row(self.league, game.seed)
+        # ``matches.csv`` is the authoritative, atomically recorded outcome.
+        # A shutdown can arrive during the brief result-hold window after that
+        # row has appeared, so never turn a rated result into a failure merely
+        # because its process is being stopped.
+        if row is not None and failed:
+            failed = False
+            reason = "rated result recorded before process stopped"
         stop_process(game.process)
         if game in self.games:
             self.games.remove(game)
@@ -977,30 +1326,46 @@ class MatchMachine:
     def sync(self) -> None:
         revision = self.fetch()
         self.next_sync = time.monotonic() + self.args.sync_interval
-        if revision != self.current_revision:
+        if revision == self.current_revision:
+            # A queued revision can become unnecessary if upstream is rebased
+            # or reverted while the old headless fleet is draining.
+            self.pending_revision = None
+        elif revision != self.pending_revision:
             self.pending_revision = revision
             self.event("head_changed", current=self.current_revision, target=revision)
 
     def run(self) -> int:
-        self.event(
-            "machine_started",
-            duration=self.args.duration,
-            watch_pid=self.args.watch_pid,
-            headless=self.args.headless,
-            limit=self.args.limit,
-        )
-        self.keep_awake()
-        self.ensure_source()
-        self.sync()
-        assert self.pending_revision is not None
-        build_reservation = 100.0 * self.args.build_jobs / max(1, os.cpu_count() or 1)
-        self.wait_for_capacity("initial build", cpu_reservation=build_reservation)
-        self.build(self.pending_revision)
-        last_sample = resources(self.runtime)
+        last_sample = Resources(None, None, 0.0, None, None)
         try:
+            self.event(
+                "machine_started",
+                duration=self.args.duration,
+                watch_pid=self.args.watch_pid,
+                headless=self.args.headless,
+                limit=self.args.limit,
+            )
+            if self.watched_terminal_closed():
+                self.stop_for_terminal_close()
+                return 0
+            if time.monotonic() >= self.deadline:
+                self.stopping = True
+                self.event("operator_window_ended", purpose="startup")
+                return 0
+            self.keep_awake()
+            self.ensure_source()
+            self.sync()
+            assert self.pending_revision is not None
+            build_reservation = 100.0 * self.args.build_jobs / max(1, os.cpu_count() or 1)
+            if self.wait_for_capacity("initial build", cpu_reservation=build_reservation) is None:
+                return 0
+            if self.watched_terminal_closed():
+                self.stop_for_terminal_close()
+                return 0
+            self.build(self.pending_revision)
+            last_sample = resources(self.runtime)
             while not self.stopping and time.monotonic() < self.deadline:
-                if self.args.watch_pid and not process_is_same(self.args.watch_pid, self.watch_identity):
-                    self.event("terminal_closed", watch_pid=self.args.watch_pid)
+                if self.watched_terminal_closed():
+                    self.stop_for_terminal_close()
                     break
                 now = time.monotonic()
                 if now >= self.next_sync and self.build_future is None:
@@ -1028,7 +1393,18 @@ class MatchMachine:
                     if self.capacity_available(
                         last_sample, cpu_reservation=build_reservation
                     ):
-                        self.start_head_build(self.pending_revision)
+                        # Draining a long game can take several minutes. Fetch
+                        # once more at the last safe boundary so we compile the
+                        # newest HEAD rather than a revision that was current
+                        # only when draining began. Re-sample after network
+                        # work before reserving build CPU.
+                        self.sync()
+                        last_sample = resources(self.runtime)
+                        self.govern(last_sample)
+                        if self.pending_revision and self.capacity_available(
+                            last_sample, cpu_reservation=build_reservation
+                        ):
+                            self.start_head_build(self.pending_revision)
                 self.fill_slots(last_sample)
                 # The promoted revision refreshes the ranking after the worker
                 # finishes.  Avoid executing a source-tree script while that
@@ -1067,6 +1443,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--runtime", type=Path, default=runtime, help="durable logs and league")
     parser.add_argument("--source", type=Path, default=source, help="private detached build worktree")
     parser.add_argument("--duration", type=float, default=24 * 60 * 60, help="seconds to operate")
+    parser.add_argument(
+        "--deadline-utc",
+        default=None,
+        help="absolute ISO-8601 UTC deadline; preserves the operator window across crash restarts",
+    )
     parser.add_argument("--watch-pid", type=int, required=True, help="terminal shell PID; its exit stops all games")
     parser.add_argument("--headless", type=int, default=8, help="concurrent headless games")
     parser.add_argument("--max-processes", type=int, default=8, help="visible plus headless hard cap")
@@ -1105,6 +1486,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8870)
     parser.add_argument("--seed", type=int, default=int(time.time()) & 0x7FFF_FFFF)
     args = parser.parse_args(argv)
+    if args.deadline_utc is not None:
+        try:
+            deadline = datetime.fromisoformat(args.deadline_utc.replace("Z", "+00:00"))
+        except ValueError:
+            parser.error("--deadline-utc must be an ISO-8601 timestamp")
+        if deadline.tzinfo is None:
+            parser.error("--deadline-utc must include a timezone")
+        args.deadline_utc = deadline.astimezone(timezone.utc)
     if args.turns is None:
         args.turns = SPEED_TURNS[args.speed]
     if not 0 < args.limit <= 70:

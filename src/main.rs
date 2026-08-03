@@ -124,6 +124,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// observed Advanced-v1 player-turns. The contract is re-pinned because the
 /// gated legacy path did not move; the Elo protocol does not change.
 ///
+/// The Civ VI bridge also needs to begin a route for an idle Firaxis Trader
+/// whose normal walking movement is zero. `start_zero_movement_trader_route`
+/// sits behind a default-off bridge flag enabled only by `civvis_orders` before
+/// `Ai::take_turn`; `advance_unit_serial`, which is the native tournament loop,
+/// is unchanged. The new code cannot run in an `advanced_v1` tournament game,
+/// so its historical agent and Elo protocol remain unchanged. Re-pin the source
+/// contract to make that reviewed exception explicit.
 /// #746 promotes the confirmed policy/envoy composite only through the public
 /// production constructors. `AdvancedAi::legacy()` still calls `configured`
 /// directly and cannot reach that wrapper. A release build of `e46d1b7` and a
@@ -200,7 +207,139 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
 /// 31337` reports. Another compatibility re-pin over the merged sources,
 /// not an Elo protocol change.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1272_c32a_1a6b_9143;
+///
+/// #808 records the planner's peace-offer decisions (`peace_offers`, a
+/// BTreeSet written at the offer site) and exposes them on `PlanReport`,
+/// which is observer-only by contract — nothing in play reads the field.
+/// Checked the same way: baseline and branch builds produced byte-identical
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed
+/// 31337 --jobs 1` reports. Another compatibility re-pin over the merged
+/// sources, not an Elo protocol change.
+///
+/// #838 bundles already-shared purchase-scoring inputs and replaces only
+/// `Copy`/iterator idioms in the Advanced source. The control on `main` and
+/// this branch produced byte-identical `ai_eval advanced_v1 basic --pairs 10
+/// --players 4 --turns 200 --seed 31337 --jobs 1 --deployment-comparison`
+/// reports. This is therefore a compatibility re-pin, not an Elo protocol
+/// change.
+///
+/// #840 adds population-four settlement forecasting, bounded travel,
+/// stalled-route recovery, and land escorts to the shared Advanced source.
+/// Every decision path is gated by `settlement_safety`, which
+/// `AdvancedAi::legacy()` disables. Clean `bc58acb` and candidate builds
+/// produced identical `ai_eval advanced_v1 basic --pairs 10 --players 4
+/// --turns 200 --seed 31337 --jobs 1 --deployment-comparison` reports:
+/// 18/20 Advanced wins, 119.2 average turns, and identical terminal tables.
+/// #848's progress-versus-motion tracker is now merged into the same path, but
+/// it returns through the prior code whenever `settler_commit` is disabled, as
+/// it is in `AdvancedAi::legacy()`. This is another compatibility re-pin, not
+/// an Elo protocol change.
+///
+/// The live Civ VI mirror's purchase-placement regression moves only a unit in
+/// a `cfg(test)` fixture. The compiled AdvancedAi implementation is unchanged;
+/// this is therefore another reviewed compatibility re-pin.
+///
+/// #896 keeps repeatable economic projects out of the live controller's
+/// wartime land-force gap. The new branch is gated by `victory_planning`,
+/// which `AdvancedAi::legacy()` disables. Clean `f114601` and candidate
+/// release builds produced byte-identical stdout from `ai_eval advanced_v1
+/// basic --pairs 10 --players 4 --turns 200 --seed 31337 --jobs 1
+/// --deployment-comparison`: 16/20 Advanced-v1 wins, 125.9 average turns, and
+/// identical terminal and strategy-transition tables. Compatibility re-pin;
+/// the Elo protocol does not change.
+///
+/// #879 replaces `filter(...).next()` with `find(...)` in one `cfg(test)`
+/// fixture and removes an unnecessary `mut` from another. Neither change is
+/// part of a compiled controller, so Advanced-v1 behavior and the Elo protocol
+/// remain unchanged. The source contract is deliberately re-pinned for this
+/// reviewed test-only diff.
+///
+/// #927 adds escort progress accounting behind `linked_settler_progress`,
+/// which is false for configured and legacy engine agents and enabled only by
+/// the live `civvis_orders` bridge. Engine and Elo trajectories therefore keep
+/// their prior behavior; this is a compatibility re-pin, not a protocol bump.
+///
+/// #911's escorted-settler correction remains behind `settlement_safety`,
+/// which `AdvancedAi::legacy()` disables. The live religious-purchase guard
+/// added afterward is likewise default-off in `BasicAi` and enabled only by
+/// `civvis_orders`; its focused test preserves the historical rival-faith
+/// purchase with the flag off. A matched 10-map, 20-game deployment comparison
+/// had identical substantive output across 3,801 observed Advanced-v1 turns.
+/// These are compatibility re-pins, not an Elo protocol change.
+///
+/// #930 adds `besieged_military_floor`, which lets a city under visible siege
+/// raise its standing-army floor against hostiles the empire has no diplomatic
+/// state with (Barbarians are excluded from `at_major_war` by design, so every
+/// defensive escalation in `pick_item` previously read a barbarian siege as no
+/// threat at all). It sits behind `siege_muster`, a `BasicAi` flag that is
+/// false in both constructors and is enabled only by the live `civvis_orders`
+/// bridge, so configured, legacy and Elo agents keep their prior behavior —
+/// `besieged_military_floor` returns 0.0 before reading the board when the flag
+/// is off. Unconditional, the same change perturbed
+/// `oracle::tests::the_modernity_grant_actually_fires`; gated, the full suite
+/// is unchanged. A compatibility re-pin, not a protocol bump. The same flag
+/// also gates `besieged_city_item`, which lets a city with a raiding party at
+/// its gates build walls or a defender ahead of the ordinary build order; both
+/// entry points return early on `!siege_muster` before reading the board.
+///
+/// #933 bounds the defensive-war Recovery posture behind `bounded_recovery`, a
+/// field that is `false` in `AdvancedAi::new()` and set only by
+/// `civvis_orders`. `recovery_is_stale` short-circuits on that flag before it
+/// reads the plan or the clock, so `assess` returns the identical strategy for
+/// configured, legacy and Elo agents. Headless confirmation: 24 paired seeds
+/// with the flag on and off are byte-identical on score, cities and the
+/// strategy census, because the sim reaches Recovery on only 8% of
+/// strategy-turns against the live ladder's 86%. A compatibility re-pin.
+///
+/// #934 re-keys that same bound from the plan's age to the WAR's age
+/// (`major_war_since`). Still behind `bounded_recovery`, still short-circuiting
+/// on the flag before anything is read, so every configured, legacy and Elo
+/// agent is byte-identical. Another compatibility re-pin.
+///
+/// #955 adds `home_defense_objective`, which lets a raider standing in our own
+/// territory claim a unit before the offensive does. Gated behind the new
+/// `home_defense` flag, which is `false` in BOTH `BasicAi` constructors and is
+/// turned on only by the Civilization VI bridge — exactly the contract
+/// `siege_muster` runs under. `home_defense_objective` short-circuits on that
+/// flag before it reads anything, so every configured, legacy and Elo agent is
+/// byte-identical and `the_default_controller_keeps_home_defense_off` asserts
+/// it on a board that DOES yield an objective once enabled. A compatibility
+/// re-pin.
+///
+/// #955 also adds `garrison_assignments`/`garrison_step`, which put a unit on a
+/// threatened city's own tile. Behind the SAME `home_defense` flag, short-
+/// circuiting on it first, so this too is a compatibility re-pin.
+///
+/// #962 gates faith military purchases on whether the empire can pay the GOLD
+/// upkeep the soldier incurs. Behind the new `solvent_faith_army` flag, which is
+/// `false` in `AdvancedAi::configured` (so `new()` and `legacy()` both have it
+/// off) and is turned on only by the Civilization VI bridge —
+/// `faith_military_is_affordable` returns `true` immediately on that flag, so
+/// every configured, legacy and Elo agent buys exactly what it always did.
+/// `the_default_controller_keeps_the_faith_army_ungated` asserts it on a board
+/// that DOES refuse once enabled. A compatibility re-pin.
+///
+/// #957 prices a fogged objective city from this controller's last sighting
+/// inside `local_strength_ratio`, behind `blind_objective_strength` — again
+/// `false` in `AdvancedAi::new()` and set only by `civvis_orders`.
+/// `remembered_objective_strength` returns `None` on that flag before it
+/// touches the belief state, and the fallback is only reachable at all once
+/// `battlefront_observation` is on. `advanced_v1` sets that to `false`, so the
+/// legacy anchor takes the same `Some(g.city_strength(city))` arm it always
+/// took and is byte-identical twice over. A compatibility re-pin.
+///
+/// #819 routes `BasicAi::tactical_step` and the Advanced force mover through
+/// `path_move` so a unit stepped twice in one turn cannot reverse its own
+/// first step, behind `recorded_tactical_step` — `false` at both `BasicAi`
+/// construction sites and set only by `civvis_orders`. Unlike the flags
+/// above, this one guards a call that can *refuse*: `path_move` rejects a
+/// reversal, a retread, or a minor leaving its defense area where the raw
+/// `g.apply(Move)` would have moved. `tactical_apply_move` therefore returns
+/// the historical raw apply on the flag before it reaches `path_move` at all,
+/// so `advanced_v1` takes byte-for-byte the arm it always took. A
+/// compatibility re-pin.
+#[cfg(test)]
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0c4b_4e0f_ec01_a4a3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -786,7 +925,7 @@ fn main() {
                             .filter(|unit| g.rules.units[unit.kind].class == "military")
                             .fold((0, 0, 0), |(obsolete, ancient, army), unit| {
                                 (
-                                    obsolete + g.unit_is_obsolete(unit.owner, &unit.kind) as i32,
+                                    obsolete + g.unit_is_obsolete(unit.owner, unit.kind) as i32,
                                     ancient
                                         + (g.world_era.saturating_sub(unit_era(&unit.kind)) >= 3)
                                             as i32,
@@ -1417,8 +1556,9 @@ fn main() {
             // control mod exports only revealed plots, so what appears here is
             // what the seat has earned and nothing more.
             //
-            // ⚠ Unrevealed ground arrives as ocean — see `mirror::rebuild_game`
-            // for why that is the least misleading filler and where it is wrong.
+            // Unrevealed ground remains explicit `unknown` terrain underneath
+            // the fog; see `mirror::rebuild_game` for the separate traversable
+            // frontier prior used by the live decider.
             let mirrored: Option<Game> = args
                 .iter()
                 .position(|value| value == "--mirror")

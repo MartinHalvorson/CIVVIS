@@ -54,6 +54,7 @@
    "liang_total_culture": 3
   },
   "civic": "games_recreation",
+  "same_adjacent_valid": false,
   "terrain": [
    "desert",
    "grassland",
@@ -61,6 +62,149 @@
    "snow",
    "tundra"
   ]
+ },
+ "alcazar": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "unique_to": "Granada",
+  "same_adjacent_valid": false,
+  "yields": {
+   "culture": 2
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "effects": {
+   "appeal_science_percent": 50,
+   "defense": 4,
+   "grant_fortification": 2
+  }
+ },
+ "batey": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "unique_to": "Caguana",
+  "same_adjacent_valid": false,
+  "yields": {
+   "culture": 1
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "requires_flat": true,
+  "effects": {
+   "adjacent_bonus_culture": 1,
+   "adjacent_entertainment_complex_culture": 1,
+   "adjacent_bonus_culture_after_exploration": 2,
+   "adjacent_entertainment_complex_culture_after_exploration": 2
+  }
+ },
+ "trading_dome": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
+  "unique_to": "Samarkand",
+  "same_adjacent_valid": false,
+  "yields": {
+   "gold": 2
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "effects": {
+   "adjacent_luxury_gold": 1,
+   "international_trade_gold_at_origin": 1
+  }
+ },
+ "mound": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
+  "unique_to": "Cahokia",
+  "same_adjacent_valid": false,
+  "yields": {
+   "gold": 3
+  },
+  "housing": 1,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "tundra"
+  ],
+  "feature": [
+   "floodplains",
+   "grassland_floodplains",
+   "plains_floodplains"
+  ],
+  "requires_flat": true,
+  "effects": {
+   "adjacent_district_pair_food_after_feudalism": 1,
+   "adjacent_district_food_after_replaceable_parts": 1,
+   "city_amenity": 1,
+   "city_amenity_limit": 1,
+   "city_amenity_limit_after_natural_history": 2,
+   "housing_after_cultural_heritage": 1
+  }
+ },
+ "monastery": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "unique_to": "Armagh",
+  "same_adjacent_valid": false,
+  "yields": {
+   "faith": 2
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "effects": {
+   "religious_unit_heal_rate": 15
+  }
+ },
+ "mekewap": {
+  "plunder_type": "heal",
+  "plunder_amount": 50,
+  "tech": "pottery",
+  "unique_to": "Cree",
+  "same_adjacent_valid": false,
+  "yields": {
+   "production": 1
+  },
+  "housing": 1,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "requires_adjacent_resource_classes": [
+   "bonus",
+   "luxury"
+  ],
+  "effects": {
+   "adjacent_luxury_gold": 1,
+   "adjacent_bonus_pair_food": 1,
+   "production_after_civil_service": 1,
+   "housing_after_civil_service": 1,
+   "adjacent_bonus_food_after_conservation": 1,
+   "adjacent_luxury_gold_after_cartography": 2
+  }
  },
  "mine": {
   "plunder_type": "gold",
@@ -344,6 +488,7 @@
  },
  "ski_resort": {
   "civic": "professional_sports",
+  "same_adjacent_valid": false,
   "yields": {},
   "terrain": [
    "mountain"
@@ -474,11 +619,36 @@
   "unbuildable": true,
   "unit_pillageable": false
  },
+ "pairidaeza": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "civic": "early_empire",
+  "unique_to": "Persia",
+  "same_adjacent_valid": false,
+  "yields": {
+   "culture": 1,
+   "gold": 2
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains"
+  ],
+  "effects": {
+   "adjacent_city_center_gold": 1,
+   "adjacent_commercial_hub_gold": 1,
+   "adjacent_holy_site_culture": 1,
+   "adjacent_theater_square_culture": 1,
+   "culture_after_diplomatic_service": 1,
+   "adjacent_appeal": 1
+  }
+ },
  "sphinx": {
   "plunder_type": "faith",
   "plunder_amount": 25,
   "civic": "craftsmanship",
   "unique_to": "Egypt",
+  "same_adjacent_valid": false,
   "yields": {
    "culture": 1,
    "faith": 1
@@ -498,6 +668,57 @@
    "floodplains_culture": 1,
    "adjacent_wonder_faith": 2,
    "adjacent_appeal": 2
+  }
+ },
+ "rock_hewn_church": {
+  "plunder_type": "faith",
+  "plunder_amount": 25,
+  "civic": "drama_poetry",
+  "unique_to": "Ethiopia",
+  "same_adjacent_valid": false,
+  "yields": {
+   "faith": 1
+  },
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "feature": [
+   "volcanic_soil"
+  ],
+  "hills_or_feature": true,
+  "effects": {
+   "appeal_faith": 1,
+   "adjacent_hill_mountain_faith": 1,
+   "faith_tourism_after_flight": 1,
+   "adjacent_appeal": 1
+  }
+ },
+ "ziggurat": {
+  "plunder_type": "gold",
+  "plunder_amount": 50,
+  "unique_to": "Sumeria",
+  "yields": {
+   "science": 2
+  },
+  "requires_flat": true,
+  "terrain": [
+   "desert",
+   "grassland",
+   "plains",
+   "snow",
+   "tundra"
+  ],
+  "feature": [
+   "floodplains",
+   "grassland_floodplains",
+   "plains_floodplains"
+  ],
+  "effects": {
+   "river_culture": 1
   }
  },
  "great_wall": {

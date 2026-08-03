@@ -1048,9 +1048,9 @@ mod tests {
 
     #[test]
     fn first_difference_handles_a_shorter_trace() {
-        let end = (0, Action::EndTurn);
-        assert_eq!(first_difference(&[end.clone()], &[]), 0);
-        assert_eq!(first_difference(&[end.clone()], &[end]), 1);
+        let trace = [(0, Action::EndTurn)];
+        assert_eq!(first_difference(&trace, &[]), 0);
+        assert_eq!(first_difference(&trace, &trace), 1);
     }
 
     #[test]

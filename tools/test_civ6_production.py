@@ -27,6 +27,11 @@ class ProductionActuatorTests(unittest.TestCase):
         cls.choose = cls.source[start:end]
         direct = cls.source.index('if kind == "produce" then')
         cls.direct = cls.source[direct:]
+        purchase = cls.source.index(
+            'if kind == "purchase" or kind == "purchase_faith" then'
+        )
+        purchase_end = cls.source.index('if kind == "unit" then', purchase)
+        cls.purchase = cls.source[purchase:purchase_end]
 
     def test_direct_orders_are_gated_before_they_are_requested(self) -> None:
         predicate = self.direct.index("CanProduce(row2.Hash, false, true)")
@@ -75,6 +80,62 @@ class ProductionActuatorTests(unittest.TestCase):
             "BUILDING_BROADCAST_CENTER",
         ):
             self.assertIn(f'"{item}"', self.choose)
+
+    def test_civilian_purchase_does_not_carry_a_military_formation(self) -> None:
+        self.assertIn(
+            "formationForCost = MilitaryFormationTypes.STANDARD_MILITARY_FORMATION",
+            self.purchase,
+        )
+        self.assertRegex(
+            self.purchase,
+            re.compile(
+                r"local militaryFormation = unitRow ~= nil.*?"
+                r"if formation == 0 and militaryFormation then.*?"
+                r"PARAM_MILITARY_FORMATION_TYPE\] = formationForCost",
+                re.DOTALL,
+            ),
+        )
+        self.assertRegex(
+            self.purchase,
+            re.compile(
+                r"if formation == 1 then.*?PARAM_MILITARY_FORMATION_TYPE.*?"
+                r"elseif formation == 2 then.*?PARAM_MILITARY_FORMATION_TYPE",
+                re.DOTALL,
+            ),
+        )
+
+    def test_standard_unit_eligibility_omits_the_request_formation(self) -> None:
+        self.assertRegex(
+            self.purchase,
+            re.compile(
+                r"local eligibilityParams = params;.*?"
+                r'if row2\.Kind == "KIND_UNIT" and \(tonumber\(x\) or 0\) == 0.*?'
+                r"key ~= CityCommandTypes\.PARAM_MILITARY_FORMATION_TYPE.*?"
+                r"eligibilityParams\[key\] = value",
+                re.DOTALL,
+            ),
+        )
+        predicate = self.purchase.index(
+            "false, eligibilityParams, true"
+        )
+        request = self.purchase.index(
+            "CityManager.RequestCommand(city, CityCommandTypes.PURCHASE, params)",
+            predicate,
+        )
+        self.assertLess(predicate, request)
+
+    def test_purchase_refusal_is_structured_feedback(self) -> None:
+        event = self.purchase.index('emit("purchase_refused"')
+        rejection = self.purchase.index('return false, "cannot_buy_"', event)
+        self.assertLess(event, rejection)
+        for field in (
+            "turn = turn",
+            "city = subject",
+            "item = resolved",
+            "currency = yieldName",
+            "cost = cost",
+        ):
+            self.assertIn(field, self.purchase[event:rejection])
 
 
 if __name__ == "__main__":

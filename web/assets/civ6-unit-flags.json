@@ -197,226 +197,246 @@
     },
     {
       "index" : 38,
+      "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Keshig_icon_(Civ6).png",
+      "type" : "keshig"
+    },
+    {
+      "index" : 39,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Knight_icon_(Civ6).png",
       "type" : "knight"
     },
     {
-      "index" : 39,
+      "index" : 40,
+      "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Ngao_Mbeba_icon_(Civ6).png",
+      "type" : "kongo_shield_bearer"
+    },
+    {
+      "index" : 41,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Legion_icon_(Civ6).png",
       "type" : "legion"
     },
     {
-      "index" : 40,
+      "index" : 42,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Line_Infantry_icon_(Civ6).png",
       "type" : "line_infantry"
     },
     {
-      "index" : 41,
+      "index" : 43,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Machine_Gun_icon_(Civ6).png",
       "type" : "machine_gun"
     },
     {
-      "index" : 42,
+      "index" : 44,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Man-At-Arms_icon_(Civ6).png",
       "type" : "man_at_arms"
     },
     {
-      "index" : 43,
+      "index" : 45,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Maryannu_Chariot_Archer_icon_(Civ6).png",
       "type" : "maryannu_chariot_archer"
     },
     {
-      "index" : 44,
+      "index" : 46,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Mechanized_Infantry_icon_(Civ6).png",
       "type" : "mechanized_infantry"
     },
     {
-      "index" : 45,
+      "index" : 47,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Medic_icon_(Civ6).png",
       "type" : "medic"
     },
     {
-      "index" : 46,
+      "index" : 48,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Military_Engineer_icon_(Civ6).png",
       "type" : "military_engineer"
     },
     {
-      "index" : 47,
+      "index" : 49,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Missile_Cruiser_icon_(Civ6).png",
       "type" : "missile_cruiser"
     },
     {
-      "index" : 48,
+      "index" : 50,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Missionary_icon_(Civ6).png",
       "type" : "missionary"
     },
     {
-      "index" : 49,
+      "index" : 51,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Mobile_SAM_icon_(Civ6).png",
       "type" : "mobile_sam"
     },
     {
-      "index" : 50,
+      "index" : 52,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Modern_Armor_icon_(Civ6).png",
       "type" : "modern_armor"
     },
     {
-      "index" : 51,
+      "index" : 53,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Modern_AT_icon_(Civ6).png",
       "type" : "modern_at"
     },
     {
-      "index" : 52,
+      "index" : 54,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Musketman_icon_(Civ6).png",
       "type" : "musketman"
     },
     {
-      "index" : 53,
+      "index" : 55,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Naturalist_icon_(Civ6).png",
       "type" : "naturalist"
     },
     {
-      "index" : 54,
+      "index" : 56,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Nuclear_Submarine_icon_(Civ6).png",
       "type" : "nuclear_submarine"
     },
     {
-      "index" : 55,
+      "index" : 57,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Observation_Balloon_icon_(Civ6).png",
       "type" : "observation_balloon"
     },
     {
-      "index" : 56,
+      "index" : 58,
+      "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Oromo_Cavalry_icon_(Civ6).png",
+      "type" : "oromo_cavalry"
+    },
+    {
+      "index" : 59,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Pike_and_Shot_icon_(Civ6).png",
       "type" : "pike_and_shot"
     },
     {
-      "index" : 57,
+      "index" : 60,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Pikeman_icon_(Civ6).png",
       "type" : "pikeman"
     },
     {
-      "index" : 58,
+      "index" : 61,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Pítati_Archer_icon_(Civ6).png",
       "type" : "pitati_archer"
     },
     {
-      "index" : 59,
+      "index" : 62,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Privateer_icon_(Civ6).png",
       "type" : "privateer"
     },
     {
-      "index" : 60,
+      "index" : 63,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Quadrireme_icon_(Civ6).png",
       "type" : "quadrireme"
     },
     {
-      "index" : 61,
+      "index" : 64,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Ranger_icon_(Civ6).png",
       "type" : "ranger"
     },
     {
-      "index" : 62,
+      "index" : 65,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Rock_Band_icon_(Civ6).png",
       "type" : "rock_band"
     },
     {
-      "index" : 63,
+      "index" : 66,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Rocket_Artillery_icon_(Civ6).png",
       "type" : "rocket_artillery"
     },
     {
-      "index" : 64,
+      "index" : 67,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Saka_Horse_Archer_icon_(Civ6).png",
       "type" : "saka_horse_archer"
     },
     {
-      "index" : 65,
+      "index" : 68,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Scout_icon_(Civ6).png",
       "type" : "scout"
     },
     {
-      "index" : 66,
+      "index" : 69,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Settler_icon_(Civ6).png",
       "type" : "settler"
     },
     {
-      "index" : 67,
+      "index" : 70,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Siege_Tower_icon_(Civ6).png",
       "type" : "siege_tower"
     },
     {
-      "index" : 68,
+      "index" : 71,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Skirmisher_icon_(Civ6).png",
       "type" : "skirmisher"
     },
     {
-      "index" : 69,
+      "index" : 72,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Slinger_icon_(Civ6).png",
       "type" : "slinger"
     },
     {
-      "index" : 70,
+      "index" : 73,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Spearman_icon_(Civ6).png",
       "type" : "spearman"
     },
     {
-      "index" : 71,
+      "index" : 74,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Spec_Ops_icon_(Civ6).png",
       "type" : "spec_ops"
     },
     {
-      "index" : 72,
+      "index" : 75,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Spy_icon_(Civ6).png",
       "type" : "spy"
     },
     {
-      "index" : 73,
+      "index" : 76,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Submarine_icon_(Civ6).png",
       "type" : "submarine"
     },
     {
-      "index" : 74,
+      "index" : 77,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Supply_Convoy_icon_(Civ6).png",
       "type" : "supply_convoy"
     },
     {
-      "index" : 75,
+      "index" : 78,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Swordsman_icon_(Civ6).png",
       "type" : "swordsman"
     },
     {
-      "index" : 76,
+      "index" : 79,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Tagma_icon_(Civ6).png",
       "type" : "tagma"
     },
     {
-      "index" : 77,
+      "index" : 80,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Tank_icon_(Civ6).png",
       "type" : "tank"
     },
     {
-      "index" : 78,
+      "index" : 81,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Trader_icon_(Civ6).png",
       "type" : "trader"
     },
     {
-      "index" : 79,
+      "index" : 82,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Trebuchet_icon_(Civ6).png",
       "type" : "trebuchet"
     },
     {
-      "index" : 80,
+      "index" : 83,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:War-Cart_icon_(Civ6).png",
       "type" : "war_cart"
     },
     {
-      "index" : 81,
+      "index" : 84,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Warrior_icon_(Civ6).png",
       "type" : "warrior"
     },
     {
-      "index" : 82,
+      "index" : 85,
+      "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Winged_Hussar_icon_(Civ6).png",
+      "type" : "winged_hussar"
+    },
+    {
+      "index" : 86,
       "source_page" : "https:\/\/civilization.fandom.com\/wiki\/File:Warrior_Monk_icon_(Civ6).png",
       "type" : "warrior_monk"
     }
