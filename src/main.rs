@@ -296,6 +296,29 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// on the flag before anything is read, so every configured, legacy and Elo
 /// agent is byte-identical. Another compatibility re-pin.
 ///
+/// #955 adds `home_defense_objective`, which lets a raider standing in our own
+/// territory claim a unit before the offensive does. Gated behind the new
+/// `home_defense` flag, which is `false` in BOTH `BasicAi` constructors and is
+/// turned on only by the Civilization VI bridge — exactly the contract
+/// `siege_muster` runs under. `home_defense_objective` short-circuits on that
+/// flag before it reads anything, so every configured, legacy and Elo agent is
+/// byte-identical and `the_default_controller_keeps_home_defense_off` asserts
+/// it on a board that DOES yield an objective once enabled. A compatibility
+/// re-pin.
+///
+/// #955 also adds `garrison_assignments`/`garrison_step`, which put a unit on a
+/// threatened city's own tile. Behind the SAME `home_defense` flag, short-
+/// circuiting on it first, so this too is a compatibility re-pin.
+///
+/// #962 gates faith military purchases on whether the empire can pay the GOLD
+/// upkeep the soldier incurs. Behind the new `solvent_faith_army` flag, which is
+/// `false` in `AdvancedAi::configured` (so `new()` and `legacy()` both have it
+/// off) and is turned on only by the Civilization VI bridge —
+/// `faith_military_is_affordable` returns `true` immediately on that flag, so
+/// every configured, legacy and Elo agent buys exactly what it always did.
+/// `the_default_controller_keeps_the_faith_army_ungated` asserts it on a board
+/// that DOES refuse once enabled. A compatibility re-pin.
+///
 /// #957 prices a fogged objective city from this controller's last sighting
 /// inside `local_strength_ratio`, behind `blind_objective_strength` — again
 /// `false` in `AdvancedAi::new()` and set only by `civvis_orders`.
@@ -305,7 +328,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy anchor takes the same `Some(g.city_strength(city))` arm it always
 /// took and is byte-identical twice over. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2a95_1602_86c6_6423;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x46a6_74b0_6d99_278c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
