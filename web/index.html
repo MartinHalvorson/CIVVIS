@@ -4135,7 +4135,7 @@
       <span><kbd>Y</kbd>Tile yields</span><span><kbd>G</kbd>Hex grid</span>
       <span><kbd>Q</kbd>Resource icons</span><span><kbd>+</kbd>Flat 2D view</span>
       <span><kbd>End</kbd>Full-screen map</span><span><kbd>Esc</kbd>Close · cancel</span>
-      <span><kbd>Drag</kbd>Pan</span><span><kbd>Right-drag</kbd>Move the selected unit</span>
+      <span><kbd>Drag</kbd>Pan</span><span><kbd>Right / ^-click</kbd>Move the selected unit</span>
       <span><kbd>Middle-click</kbd>Centre on that tile</span><span><kbd>Scroll</kbd>Zoom · double-click to dive</span>
       <span class="shortcut-head">CIVVIS additions</span>
       <span><kbd>1</kbd>Next action</span><span><kbd>2</kbd>Settler lens</span>
@@ -23042,7 +23042,7 @@ function draw() {
   }
   if (Number.isInteger(state.view_player))
     drawFlatVisibilityPerimeter(tiles, visible);
-  // --- right-drag order line
+  // --- secondary-press order line
   if (rdrag && rdragTo && sel) {
     const ts = TMAP.get(key(sel.pos)), tt = TMAP.get(key(rdragTo));
     const [x1, yy1] = hexXY(sel.pos[0], sel.pos[1]);
@@ -29750,14 +29750,36 @@ bindHeldZoom("zout", () => { takeCameraControl(true); zoomAt(skyZoomStep(1 / 1.3
 
 // ---------------------------------------------------------------- input
 let dragState = null, dragMoved = false, rdrag = null, rdragTo = null;
+let suppressControlClick = false;
 let altTap = false; // tapping Alt (no drag) resets the map's viewing angles
+// Civ 6 listens to the platform's secondary mouse button. Browsers expose a
+// real right/two-finger click as button 2; macOS also defines Control-click as
+// the secondary-click gesture, but exposes that compatibility gesture as a
+// modified primary button. Command-click is deliberately left to the browser.
+const MAC_POINTER_PLATFORM = /mac/i.test(
+  navigator.userAgentData?.platform || navigator.platform || "");
+function isSecondaryMapButton(ev) {
+  return ev.button === 2 ||
+    (MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey);
+}
 cv.addEventListener("pointerdown", ev => {
   // Touch has its own one/two-finger path below. Mouse and pen share this
   // captured pointer path so a drag does not depend on compatibility mouse
   // events and keeps moving when the pointer leaves the canvas.
   if (ev.pointerType === "touch") return;
   const r = cv.getBoundingClientRect();
-  if (ev.button === 0) {
+  const secondary = isSecondaryMapButton(ev);
+  if (secondary) {
+    ev.preventDefault();
+    const pos = state && !SPEC
+      ? pixelToHex(ev.clientX - r.left, ev.clientY - r.top) : null;
+    rdrag = {pointerId: ev.pointerId};
+    rdragTo = pos;
+    // A native right click does not dispatch `click`; Control-click can. Eat
+    // only that compatibility click, never the next ordinary selection.
+    suppressControlClick = ev.button === 0;
+    if (sel && pos) draw();
+  } else if (ev.button === 0) {
     ev.preventDefault();
     cameraFlight = null; cameraZoom = null; clearCameraInertia();
     dragState = { pointerId:ev.pointerId, x: ev.clientX, y: ev.clientY,
@@ -29772,15 +29794,6 @@ cv.addEventListener("pointerdown", ev => {
                   lastPX:ev.clientX, lastPY:ev.clientY, vpx:0, vpy:0,
                   controlled:false };
     dragMoved = false;
-  } else if (ev.button === 2 && state && !SPEC) {
-    const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
-    if (!pos) return;
-    const here = state.units.filter(u => u.owner === 0 && key(u.pos) === key(pos));
-    if (here.length) {
-      sel = here.find(u => u.moves_left > 0) || here[0];
-      selCity = null; drawSide(); drawUbar();
-    }
-    if (sel) { rdrag = true; rdragTo = pos; draw(); }
   }
   // Civ 6's middle button snaps the camera to whatever plot the cursor is on.
   else if (ev.button === 1) {
@@ -29788,7 +29801,7 @@ cv.addEventListener("pointerdown", ev => {
     const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
     if (pos) { takeCameraControl(true); centerOn(pos); }
   }
-  if (ev.button === 0 || ev.button === 2) {
+  if ((ev.button === 0 && !secondary) || rdrag?.pointerId === ev.pointerId) {
     try { cv.setPointerCapture?.(ev.pointerId); } catch (_) {}
   }
 });
@@ -29844,7 +29857,7 @@ window.addEventListener("pointermove", ev => {
       draw(); drawMini();
     }
   }
-  if (rdrag) {
+  if (rdrag && ev.pointerId === rdrag.pointerId) {
     const r = cv.getBoundingClientRect();
     const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
     if (pos && (!rdragTo || key(pos) !== key(rdragTo))) { rdragTo = pos; draw(); }
@@ -29852,6 +29865,18 @@ window.addEventListener("pointermove", ev => {
 });
 function endMapPointer(ev) {
   if (ev.pointerType === "touch") return;
+  // Finish the gesture that began as a secondary press even if the user lets
+  // go of Control before releasing the primary mouse button on macOS.
+  if (rdrag && ev.pointerId === rdrag.pointerId) {
+    const r = cv.getBoundingClientRect();
+    const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
+    rdrag = null; rdragTo = null;
+    if (suppressControlClick)
+      setTimeout(() => { suppressControlClick = false; }, 0);
+    if (!pos || !sel) { draw(); return; }
+    issueSelectedUnitOrder(pos);
+    return;
+  }
   if (ev.button === 0) {
     if (dragState && ev.pointerId !== dragState.pointerId) return;
     const released = dragState;
@@ -29879,27 +29904,16 @@ function endMapPointer(ev) {
     }
     return;
   }
-  if (ev.button !== 2 || !rdrag) return;
-  const r = cv.getBoundingClientRect();
-  const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
-  rdrag = null; rdragTo = null;
-  if (!pos || !sel) { draw(); return; }
-  const k = key(pos);
-  if (key(sel.pos) === k) { draw(); return; }
-  const atk = state.legal_actions.find(a => a.unit === sel.id &&
-    (a.type === "attack" || a.type === "ranged" || a.type === "theological_attack") && key(a.target) === k);
-  if (atk) { send(atk); return; }
-  if ((sel.reachable || []).some(p => key(p) === k)) {
-    send({type: "move_to", unit: sel.id, to: [pos[0], pos[1]]});
-    return;
-  }
-  draw();
 }
 window.addEventListener("pointerup", endMapPointer);
 window.addEventListener("pointercancel", ev => {
   if (ev.pointerType === "touch") return;
   if (dragState?.pointerId === ev.pointerId) dragState = null;
-  rdrag = null; rdragTo = null;
+  if (rdrag?.pointerId === ev.pointerId) {
+    rdrag = null; rdragTo = null;
+    if (suppressControlClick)
+      setTimeout(() => { suppressControlClick = false; }, 0);
+  }
   draw();
 });
 
@@ -30063,6 +30077,7 @@ cv.addEventListener("dblclick", ev => {
   zoomAt(skyZoomStep(ev.shiftKey ? 1 / 1.8 : 1.8), ev.clientX - r.left, ev.clientY - r.top);
 });
 cv.addEventListener("click", ev => {
+  if (suppressControlClick) { suppressControlClick = false; ev.preventDefault(); return; }
   if (dragMoved) { dragMoved = false; return; }
   const r = cv.getBoundingClientRect();
   const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
@@ -30083,22 +30098,6 @@ cv.addEventListener("click", ev => {
     selCity = city || null;
     drawSide();
     return;
-  }
-  if (sel) {
-    const atk = state.legal_actions.find(a => a.unit === sel.id &&
-      (a.type === "attack" || a.type === "ranged" || a.type === "theological_attack") && key(a.target) === k);
-    if (atk) { send(atk); return; }
-    if ((sel.reachable || []).some(p => key(p) === k)) {
-      send({type: "move_to", unit: sel.id, to: [pos[0], pos[1]]});
-      return;
-    }
-    // Out of range this turn is an order to travel, not a misclick. The
-    // engine paths the whole way and walks as far as the movement allows;
-    // the order carries the unit the rest of the way over later turns.
-    if (sel.moves_left > 0 && !TMAP.get(k)?.unknown) {
-      orderTravel(sel.id, [pos[0], pos[1]]);
-      return;
-    }
   }
   if (selCity && selCity._striking) {
     const sa = state.legal_actions.find(a => a.type === "city_strike" &&
@@ -30121,6 +30120,31 @@ cv.addEventListener("click", ev => {
   } else { sel = null; selCity = null; }
   draw(); drawSide(); drawUbar();
 });
+
+// Civ 6's ordinary unit order gesture: right/secondary press previews the
+// destination, and release commits the move or attack. Left click never comes
+// through here; it stays a pure selection gesture unless M/A/R armed a mode.
+function issueSelectedUnitOrder(pos) {
+  if (!sel || SPEC || !state) return false;
+  const k = key(pos);
+  if (key(sel.pos) === k) { draw(); return false; }
+  const attack = state.legal_actions.find(action => action.unit === sel.id &&
+    ["attack", "ranged", "theological_attack"].includes(action.type) &&
+    key(action.target) === k);
+  if (attack) { send(attack); return true; }
+  if ((sel.reachable || []).some(reachable => key(reachable) === k)) {
+    send({type: "move_to", unit: sel.id, to: [pos[0], pos[1]]});
+    return true;
+  }
+  // Civ 6 queues a path beyond the movement remaining this turn. CIVVIS's
+  // long-range route order provides the same contract across later turns.
+  if (sel.moves_left > 0 && !TMAP.get(k)?.unknown) {
+    orderTravel(sel.id, [pos[0], pos[1]]);
+    return true;
+  }
+  draw();
+  return false;
+}
 
 // Adjacency decides where districts go, but the map only ever said "campus
 // here" — never that the campus was worth four science, and never which
@@ -30515,10 +30539,10 @@ function advanceToNextUnit(force = false) {
   draw(); drawSide(); drawUbar(); drawTurnLoop();
 }
 // ------------------------------------------------------- multi-turn travel
-// Clicking a tile outside a unit's remaining movement used to clear the
-// selection and nothing else, so crossing a continent meant finding the same
-// unit again once a turn for twenty turns. Civ 6 takes the click as an order
-// and the unit walks there over as many turns as it takes.
+// Secondary-clicking a tile outside a unit's remaining movement used to clear
+// the selection and nothing else, so crossing a continent meant finding the
+// same unit again once a turn for twenty turns. Civ 6 takes the click as an
+// order and the unit walks there over as many turns as it takes.
 //
 // `move_to` cannot express that: `path_to` seeds its search with the unit's
 // remaining movement, so anything further comes back "unreachable". The
