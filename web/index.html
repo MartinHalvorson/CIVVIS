@@ -4775,6 +4775,11 @@ const MAP_CIV_HIERARCHY = Object.freeze({
   minimapMajor:.76,
   minimapCityState:.18,
 });
+// Territory colour should identify ownership without replacing the terrain
+// beneath it. Keep the authored relative weights above, but moderate every
+// interior ownership wash by half. Frontier ribbons and city markers do not
+// use this scale, so empire perimeters retain their existing strength.
+const TERRITORY_TINT_SCALE = .5;
 const EDGE_CORNERS = [[0,1],[5,0],[4,5],[3,4],[2,3],[1,2]]; // matches DIRS order
 const DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
 const ERA_NAMES = ["ancient", "classical", "medieval", "renaissance",
@@ -9213,12 +9218,18 @@ const VIEWER_ID = `${Date.now().toString(36)}${Math.random().toString(36).slice(
 // state drawn last turn keeps the tile objects it was drawn from, which is
 // what anything comparing one turn against the previous one relies on.
 let tileStore = null;
+function stateFrameSequence(st) {
+  const sequence = Number(st?.frame_sequence);
+  if (Number.isSafeInteger(sequence) && sequence >= 0) return sequence;
+  return tileStore?.sequence ?? paintedFrame?.sequence ?? 0;
+}
 function adoptTiles(st) {
   const map = st && st.map;
   if (!map) return st;
   if (Array.isArray(map.tiles)) {
     tileStore = {seed: st.seed, turn: st.turn,
                  finished:st.winner !== null && st.winner !== undefined,
+                 sequence:stateFrameSequence(st),
                  tiles: map.tiles};
     return st;
   }
@@ -9229,15 +9240,17 @@ function adoptTiles(st) {
   const tiles = tileStore.tiles.slice();
   for (const [at, tile] of patch) tiles[at] = tile;
   tileStore = {seed: st.seed, turn: st.turn,
-               finished:st.winner !== null && st.winner !== undefined, tiles};
+               finished:st.winner !== null && st.winner !== undefined,
+               sequence:stateFrameSequence(st), tiles};
   map.tiles = tiles;
   return st;
 }
-// Martin-requested simulation requirement: every turn is owed at least one
-// complete frame from one snapshot — updated HUD, victory tracker, map,
-// minimap, units, sidebars, controls, and everything else bound to that turn.
-// The server holds a finished turn until an active viewer acknowledges that
-// complete paint. Only a page that actually paints
+// Martin-requested simulation requirement: every published boundary is owed
+// one complete frame from one snapshot — updated HUD, victory tracker, map,
+// minimap, units, sidebars, controls, and everything else bound to that frame.
+// At Blitz and slower, a boundary follows every player's turn; Lightning uses
+// the end of the round. The server holds each boundary until an active viewer
+// acknowledges that complete paint. Only a page that actually paints
 // counts as one: the keeper's refresh check and any curl read /state as well,
 // and a reader that draws nothing must not slow the simulation to its own
 // cadence. Saying which turn was last painted is how this page announces
@@ -9289,7 +9302,7 @@ function paintedQuery() {
   // server to hold the answer back until there is a next turn, and the human
   // game's one-off boot read wants the state that exists now.
   const held = SPEC && tileStore
-    ? `&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}` : "";
+    ? `&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}:${tileStore.sequence}` : "";
   const who = `&viewer=${VIEWER_ID}`;
   // The last thought this page holds. Naming it is what asks for the AI
   // reasoning delta and what keeps it to the handful of lines recorded since,
@@ -9297,9 +9310,10 @@ function paintedQuery() {
   const thinking = `&think=${reasoningLog.cursor}`;
   return (paintedFrame === null ? "?painted="
     : `?painted=${paintedFrame.turn}&world=${paintedFrame.seed}` +
-      `&finished=${paintedFrame.finished ? 1 : 0}`) + who + held + thinking;
+      `&finished=${paintedFrame.finished ? 1 : 0}&frame=${paintedFrame.sequence}`) +
+      who + held + thinking;
 }
-// One turn, one frame on the glass.
+// One published boundary, one frame on the glass.
 //
 // The server holds a finished turn until this page acknowledges painting it,
 // so the exhibition runs at whatever rate this page paints — which quietly
@@ -9314,9 +9328,10 @@ function paintedQuery() {
 // delivered, drawn, and still never appear on a screen — which is what "some
 // turns are still being skipped" looks like from the far side of the glass.
 //
-// So the loop runs on the display's own clock. At most one turn is painted per
-// animation frame, which is what makes each turn a frame somebody can see; the
-// fetch for the next one is the paint acknowledgement: it goes out only after
+// So the loop runs on the display's own clock. At most one state is painted per
+// animation frame, which makes every published player-turn or round boundary
+// a frame somebody can see; the fetch for the next one is the paint
+// acknowledgement: it goes out only after
 // render() has updated the map, HUD, victory tracker, and all other turn-bound
 // surfaces. Nothing is ever dropped — a state that has arrived is always
 // painted — and the gate upstream will not simulate past the turn this page
@@ -10178,7 +10193,8 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
     paintedFrame = {seed:st.seed, turn:st.turn,
-                    finished:st.winner !== null && st.winner !== undefined};
+                    finished:st.winner !== null && st.winner !== undefined,
+                    sequence:stateFrameSequence(st)};
   finishWorldTransition(st);
 }
 
@@ -21192,13 +21208,13 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     if (owner === null || owner === undefined) continue;
     planetPaintPath(cx, cell, .22);
     const cityState = ownerIsCityState(owner);
-    cx.globalAlpha = empire
+    cx.globalAlpha = TERRITORY_TINT_SCALE * (empire
       ? (cityState ? .055 : .45)
       : cityState ? MAP_CIV_HIERARCHY.planetWashCityState
       : painted ? (MODE.atmosphere
           ? MAP_CIV_HIERARCHY.planetWashMajorCinematic
           : MAP_CIV_HIERARCHY.planetWashMajorBalanced)
-      : MAP_CIV_HIERARCHY.planetWashMajorStrategic;
+      : MAP_CIV_HIERARCHY.planetWashMajorStrategic);
     cx.fillStyle = pcol(owner);
     cx.fill();
   }
@@ -21697,8 +21713,8 @@ function drawSettlerLensFlat(tiles) {
 // Empire lens is deliberately a replacement ground pass. Painting it after
 // terrain, routes, improvements, resources and yields means every map style
 // collapses to the same two land/water materials without changing hit-testing
-// or the normal renderer. Major territory remains saturated; minor territory
-// is present at a fraction of that weight so the eye reads civilization-scale
+// or the normal renderer. Major territory remains legible; minor territory is
+// present at a fraction of that weight so the eye reads civilization-scale
 // frontiers first.
 function drawEmpireLensFlat(tiles) {
   cx.save();
@@ -21710,7 +21726,8 @@ function drawEmpireLensFlat(tiles) {
     if (tile.owner === null || tile.owner === undefined) continue;
     hexPath(x, y, S + .45);
     cx.fillStyle = pcol(tile.owner);
-    cx.globalAlpha = ownerIsCityState(tile.owner) ? .055 : .45;
+    cx.globalAlpha = TERRITORY_TINT_SCALE *
+      (ownerIsCityState(tile.owner) ? .055 : .45);
     cx.fill(); cx.globalAlpha = 1;
   }
 
@@ -22316,7 +22333,7 @@ function draw() {
     // landscape; strategic mode intentionally keeps tile identity explicit.
     if (!beau && t.owner !== null && t.owner !== undefined) {
       hexPath(x, y, S + 0.15);
-      cx.globalAlpha = 0.11;
+      cx.globalAlpha = TERRITORY_TINT_SCALE * 0.11;
       cx.fillStyle = pcol(t.owner);
       cx.fill();
     }
@@ -22423,10 +22440,10 @@ function draw() {
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     hexPath(x, yy - elev(t), S - 0.5);
     cx.fillStyle = pcol(t.owner);
-    cx.globalAlpha = ownerIsCityState(t.owner)
+    cx.globalAlpha = TERRITORY_TINT_SCALE * (ownerIsCityState(t.owner)
       ? MAP_CIV_HIERARCHY.flatWashCityState
       : beau ? MAP_CIV_HIERARCHY.flatWashMajorPainted
-             : MAP_CIV_HIERARCHY.flatWashMajorStrategic;
+             : MAP_CIV_HIERARCHY.flatWashMajorStrategic);
     cx.fill();
   }
   cx.globalAlpha = 1;
@@ -24183,8 +24200,8 @@ function drawPlanetMini() {
     mx2.fillStyle = spectator || visible.has(key(cell.tile.pos)) ? base : shade(base, .35);
     mx2.fill();
     if (cell.tile.owner !== null && cell.tile.owner !== undefined) {
-      mx2.globalAlpha = ownerIsCityState(cell.tile.owner)
-        ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor;
+      mx2.globalAlpha = TERRITORY_TINT_SCALE * (ownerIsCityState(cell.tile.owner)
+        ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor);
       mx2.fillStyle = cityBannerColor(cell.tile.owner); mx2.fill();
       mx2.globalAlpha = 1;
     }
@@ -24372,8 +24389,8 @@ function drawMini() {
     // ground at minimap strength. The banner colour carries their TYPE instead,
     // and matches the hex already drawn for their capital.
     mx2.fillStyle = cityBannerColor(t.owner);
-    mx2.globalAlpha = ownerIsCityState(t.owner)
-      ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor;
+    mx2.globalAlpha = TERRITORY_TINT_SCALE * (ownerIsCityState(t.owner)
+      ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor);
     miniHexPath(x, y, layout.size + 0.12); mx2.fill();
   }
   mx2.globalAlpha = 1;

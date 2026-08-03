@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Check Martin's requirement that every simulated turn shows one complete frame.
+"""Check Martin's requirement that every published turn boundary shows a frame.
 
-Every turn the spectator plays is owed at least one frame, and that frame must
-carry the whole updated turn — HUD, player stats, victory tracker, map, minimap,
-units, sidebars, controls, and every other turn-bound surface — from the same
-snapshot. The server holds a finished turn until an active viewer acknowledges
-painting the exact snapshot it was handed, whatever pace the turn was played
-at. This checks that Martin's simulation requirement is actually being kept.
+At Blitz and slower, every player's completed turn is owed a frame; Lightning
+publishes once per round. Each frame must carry the whole updated boundary —
+HUD, player stats, victory tracker, map, minimap, units, sidebars, controls, and
+every other turn-bound surface — from the same snapshot. The server holds a
+published boundary until an active viewer acknowledges painting the exact
+snapshot it was handed. This checks that Martin's simulation requirement is
+actually being kept.
 
 Two modes:
 
@@ -82,17 +83,29 @@ def read_sized(port: int, path: str, timeout: float = 10.0) -> tuple[int, dict]:
     return len(raw), json.loads(raw)
 
 
-def gaps(turns: list[int]) -> list[int]:
-    """Turns between the first and last seen that never appeared at all.
+def gaps(sequence: list[int]) -> list[int]:
+    """Published sequence numbers between the first and last that never arrived.
 
-    The sequence is what a viewer actually received, so it repeats turns it
-    polled twice inside and never goes backwards within one world. A hole in
-    it is a turn the server simulated and nobody ever saw.
+    At Blitz several values can belong to the same world turn, which is why
+    the server's frame sequence — rather than the turn counter — is the audit
+    identity. A hole is a published player-turn/round frame nobody ever saw.
     """
-    if not turns:
+    if not sequence:
         return []
-    seen = set(turns)
-    return [turn for turn in range(min(turns), max(turns) + 1) if turn not in seen]
+    seen = set(sequence)
+    return [frame for frame in range(min(sequence), max(sequence) + 1) if frame not in seen]
+
+
+def frame_key(state: dict) -> tuple[int, int, int, int]:
+    """The exact snapshot identity used by `/state` acknowledgements."""
+    return (state["seed"], state["turn"], int(state.get("winner") is not None),
+            state["frame_sequence"])
+
+
+def frame_query(frame: tuple[int, int, int, int]) -> str:
+    seed, turn, finished, sequence = frame
+    return (f"painted={turn}&world={seed}&finished={finished}&frame={sequence}"
+            f"&have={seed}:{turn}:{finished}:{sequence}")
 
 
 def watch(port: int, seconds: float, interval: float) -> int:
@@ -105,12 +118,19 @@ def watch(port: int, seconds: float, interval: float) -> int:
 
     missed = last.get("frames_missed")
     painted = last.get("frames_painted")
+    first_sequence = first.get("frame_sequence")
+    last_sequence = last.get("frame_sequence")
+    published = (last_sequence - first_sequence
+                 if isinstance(first_sequence, int) and isinstance(last_sequence, int)
+                 else None)
     report = {
         "mode": "watch",
         "seconds": round(seconds, 1),
         "turns_played": last["turn"] - first["turn"],
         "frames_missed": missed,
         "last_painted_turn": painted,
+        "last_painted_sequence": last.get("frames_painted_sequence"),
+        "frames_published": published,
         # Every viewer is owed every turn and each is waited for separately, so
         # this is also how many paints a turn costs before the next one starts.
         "viewers": last.get("viewers"),
@@ -122,22 +142,23 @@ def watch(port: int, seconds: float, interval: float) -> int:
     elif missed:
         report["verdict"] = f"{missed} turns were simulated that no viewer drew"
         ok = False
-    elif report["turns_played"] == 0:
+    elif published == 0 or (published is None and report["turns_played"] == 0):
         # Nothing was played, so nothing was skipped, so this says nothing.
         # Worth naming: a paused exhibition and a healthy one both read zero.
-        report["verdict"] = "no turns were played in this window — nothing was tested"
+        report["verdict"] = "no frames were published in this window — nothing was tested"
         ok = False
     else:
-        report["verdict"] = "every turn reached the viewer"
+        report["verdict"] = "every published frame reached the viewer"
         ok = True
     print(json.dumps(report, indent=2))
     return 0 if ok else 1
 
 
 def probe(port: int, seconds: float, render_ms: float, poll_ms: float) -> int:
-    seen: list[int] = []
+    seen_turns: list[int] = []
+    seen_frames: list[int] = []
     errors = 0
-    painted: tuple[int, int] | None = None
+    painted: tuple[int, int, int, int] | None = None
     # A seat of its own. Every viewer is owed every turn and the server waits
     # for each separately, so a probe sharing an id with the page in front of
     # somebody would take turns with it rather than testing anything.
@@ -146,16 +167,14 @@ def probe(port: int, seconds: float, render_ms: float, poll_ms: float) -> int:
     # and the frame it belongs to. Saying so is what earns a patch instead of
     # the whole map, and what asks the server to hold the answer back until
     # there is a next turn to give.
-    held: tuple[int, int] | None = None
+    held: tuple[int, int, int, int] | None = None
     tiles: list = []
     bytes_first = 0
     bytes_patched: list[int] = []
     started = time.monotonic()
     while time.monotonic() - started < seconds:
-        report = ("painted=" if painted is None
-                  else f"painted={painted[1]}&world={painted[0]}")
-        baseline = f"&have={held[0]}:{held[1]}" if held else ""
-        target = f"/state?{report}&viewer={viewer}{baseline}"
+        report = "painted=" if painted is None else frame_query(painted)
+        target = f"/state?{report}&viewer={viewer}"
         try:
             size, state = read_sized(port, target, timeout=30.0)
         except (URLError, OSError, ValueError):
@@ -174,7 +193,7 @@ def probe(port: int, seconds: float, render_ms: float, poll_ms: float) -> int:
             for at, tile in patch:
                 tiles[at] = tile
             bytes_patched.append(size)
-        held = (state["seed"], state["turn"])
+        held = frame_key(state)
         # A real page parses the whole observation and repaints the map before
         # it asks for the next one. Touch the payload and spend the time, or
         # this loop is a faster viewer than any browser and proves less.
@@ -182,36 +201,42 @@ def probe(port: int, seconds: float, render_ms: float, poll_ms: float) -> int:
         len(state.get("units", ()))
         if render_ms:
             time.sleep(render_ms / 1000.0)
-        seen.append(state["turn"])
-        painted = (state["seed"], state["turn"])
+        seen_turns.append(state["turn"])
+        seen_frames.append(state["frame_sequence"])
+        painted = held
         if state.get("winner") is not None:
             break
         time.sleep(poll_ms / 1000.0)
 
-    if not seen:
+    if not seen_frames:
         print(json.dumps({"mode": "probe", "verdict": "no state was ever served",
                           "fetch_errors": errors}, indent=2))
         return 1
-    missed = gaps(seen)
+    missed = gaps(seen_frames)
+    missed_turns = gaps(seen_turns)
     elapsed = time.monotonic() - started
     print(json.dumps({
         "mode": "probe",
         "seconds": round(elapsed, 1),
         "render_ms": render_ms,
-        "responses": len(seen),
-        "turn_range": [min(seen), max(seen)],
-        "turns_simulated": max(seen) - min(seen) + 1,
-        "turns_seen": len(set(seen)),
-        "turns_missed": len(missed),
-        "missed": missed[:40],
+        "responses": len(seen_frames),
+        "frame_range": [min(seen_frames), max(seen_frames)],
+        "frames_published": max(seen_frames) - min(seen_frames) + 1,
+        "frames_seen": len(set(seen_frames)),
+        "frames_missed": len(missed),
+        "missed_frames": missed[:40],
+        "turn_range": [min(seen_turns), max(seen_turns)],
+        "turns_seen": len(set(seen_turns)),
+        "turns_missed": len(missed_turns),
         "fetch_errors": errors,
-        "turns_per_sec": round((max(seen) - min(seen)) / elapsed, 2) if elapsed else 0,
+        "frames_per_sec": round((max(seen_frames) - min(seen_frames)) / elapsed, 2)
+                          if elapsed else 0,
         "first_poll_bytes": bytes_first,
         "patched_poll_bytes": round(sum(bytes_patched) / len(bytes_patched))
                               if bytes_patched else None,
         "tiles_held": len(tiles),
-        "verdict": "every turn reached the viewer" if not missed
-                   else f"{len(missed)} turns were simulated that never reached a frame",
+        "verdict": "every published frame reached the viewer" if not missed
+                   else f"{len(missed)} published frames never reached the viewer",
     }, indent=2))
     return 0 if not missed else 1
 
