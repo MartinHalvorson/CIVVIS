@@ -656,8 +656,33 @@ def main() -> int:
     ap.add_argument("--strategy", default="auto",
                     help="strategy the decider loads; `auto` is the strongest by "
                          "outright-win lower bound, empty keeps the built-in")
-    ap.add_argument("--war-from-plan", action="store_true", default=False,
-                    help="pass through to the brain; see its note for why")
+    # ★★★★★ ON BY DEFAULT since 2026-08-03, on the operator's call.
+    #
+    # 96 of 123 corpus runs reaching turn 50 NEVER DECLARED WAR, and the corpus
+    # holds only 58 `cannot_declare` refusals — all of them inside two runs. So
+    # the declaration was not being refused, it was not being ATTEMPTED. CIVVIS's
+    # own diplomacy wants a casus belli or a denouncement matured over five
+    # turns, and NOTHING matures on a board that `--fresh-board` rebuilds every
+    # turn, so the decline is an artefact of the reconstruction rather than a
+    # judgement about the war (see the `Decider` docstring in civ6_brain.py).
+    #
+    # ⚠ The default lives HERE rather than in ~/civvis-batch-loop.sh because the
+    # supervisor is a long-running zsh process that holds its script's inode for
+    # its whole life: editing that file — even atomically — does not reach the
+    # running loop, and a batch launched 18 minutes after such an edit still ran
+    # the old command line. The runner tree re-checkouts `origin/main` between
+    # batches, so a default that ships in the repo DOES take effect without
+    # restarting anything.
+    #
+    # ⚠⚠ This changes what the ladder measures. Rows are separated by
+    # `code_rev`, but the code_rev boundary at this commit also carries a
+    # configuration change — do not read a before/after difference as a code
+    # effect.
+    ap.add_argument("--war-from-plan", action=argparse.BooleanOptionalAction,
+                    default=True,
+                    help="declare when the PLAN names a target, since a board "
+                         "rebuilt each turn can never mature a casus belli; "
+                         "--no-war-from-plan restores the old refusal")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--orders-bin", default=str(HERE.parent / "target" / "release" / "civvis_orders"))
