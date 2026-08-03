@@ -9129,6 +9129,26 @@ mod tests {
     }
 
     #[test]
+    fn browser_tile_yields_are_numbered_in_centered_semantic_rows() {
+        assert!(EMBEDDED_INDEX.contains(
+            "[\"science\", \"culture\", \"faith\"],\n  [\"food\", \"production\", \"gold\"],"
+        ));
+
+        let renderer = EMBEDDED_INDEX
+            .split("function drawTileYields")
+            .nth(1)
+            .and_then(|tail| tail.split("function mountainRockColumn").next())
+            .expect("tile-yield renderer");
+        assert!(renderer.contains(".filter(([, amount]) => amount >= 1)"));
+        assert!(renderer.contains("(i - (entries.length - 1) / 2) * step"));
+        assert!(renderer.contains("cx.fillStyle = YPIP[kind]"));
+        assert!(renderer.contains("cx.fillText(label, px, py + .5)"));
+        assert!(renderer.contains("const label = fmtYield(amount)"));
+        assert!(!renderer.contains("YICON[kind]"));
+        assert!(!renderer.contains("yieldGlyph"));
+    }
+
+    #[test]
     fn strategic_volcanic_soil_splats_from_the_volcano_facing_edge() {
         let splat = EMBEDDED_INDEX
             .split("function drawStrategicVolcanicSoil")
