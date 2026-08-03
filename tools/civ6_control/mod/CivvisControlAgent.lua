@@ -4749,6 +4749,22 @@ local function exportState(player, pid, turn)
 			-- history) and for a hash lookup that segfaulted the game four times.
 			-- ⚠ -1 sentinels, not 0: a city with zero amenities and a city the read
 			-- failed on must not look the same to the reconstruction.
+			-- Housing, and where it comes from. Population is the term every
+			-- yield is a linear function of -- five completed live games put
+			-- science at 1.16 x pop, with city COUNT predicting nothing -- and
+			-- `housing_growth_mult` gates growth on the headroom over
+			-- population: >= 2 full, >= 1 HALF, below -4 ZERO.
+			--
+			-- ⚠ CIVVIS has been reconstructing this from its own rules and has
+			-- never been able to check it, which is exactly the position
+			-- Amenities were in before #967 -- and there a claim I had made
+			-- from the model turned out to be unverifiable and had to be
+			-- retracted. This exports the number so the model can be CHECKED;
+			-- it is not a claim that the model is wrong.
+			housing = try(function() return city:GetGrowth():GetHousing(); end, -1),
+			housing_from_improvements = try(function()
+				return city:GetGrowth():GetHousingFromImprovements();
+			end, -1),
 			amenities = try(function() return city:GetGrowth():GetAmenities(); end, -1),
 			amenities_needed = try(function()
 				return city:GetGrowth():GetAmenitiesNeeded();
