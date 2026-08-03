@@ -92,11 +92,18 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update && sudo apt-get install -y lua5.4
-      - name: Compile every mod script
+      # ⚠⚠ 5.1 SPECIFICALLY, NOT "SOME LUA". Civilization VI's script runtime is
+      # Lua 5.1, and the gap is not academic: `goto`/labels arrived in 5.2, so a
+      # `goto continue` passes `luac5.4 -p` cleanly and then silently refuses to
+      # load in the game. That exact mistake cost run settler-20260729T224210Z,
+      # which sat in a configured game for half an hour emitting only autoclose
+      # events because CivvisControlAgent.lua never loaded. A gate on the wrong
+      # version would have called that commit green.
+      - run: sudo apt-get update && sudo apt-get install -y lua5.1
+      - name: Compile every mod script under the game's Lua version
         run: |
           set -eu
           find tools/civ6_control/mod tools/civ6_mod -name '*.lua' -print0 \
-            | xargs -0 -n1 luac5.4 -p
+            | xargs -0 -n1 luac5.1 -p
       - name: Envoy spend order
-        run: lua5.4 tools/civ6_control/mod/envoy_spend_test.lua
+        run: lua5.1 tools/civ6_control/mod/envoy_spend_test.lua
