@@ -4744,6 +4744,73 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn the_pantheon_charges_exactly_what_it_asked_for() {
+        // ⚠⚠ #1044 made the CHECK speed-aware and left the SPEND a bare 25.0, so on
+        // every speed but Standard the engine demanded one price and took another —
+        // Online asks 12.5 and took 25, dropping a founder at 13 faith to -12. That
+        // is worse than both being wrong together, because the check licenses a
+        // purchase the charge then cannot honour.
+        let (mut game, _) = game_with_capitals(91_762);
+        game.game_speed = crate::setup::GameSpeed::Online;
+        game.players[0].pantheon = None;
+        game.players[0].faith = 13.0;
+        let belief = game.rules.beliefs.pantheon.keys().next().unwrap().clone();
+        assert!(game.do_choose_pantheon(0, &belief).is_ok());
+        assert_eq!(
+            game.players[0].faith,
+            0.5,
+            "13 faith minus Online's 12.5 price; a bare 25.0 would leave -12"
+        );
+
+        // Standard still pays 25, so the default speed is untouched.
+        let (mut standard, _) = game_with_capitals(91_762);
+        standard.game_speed = crate::setup::GameSpeed::Standard;
+        standard.players[0].pantheon = None;
+        standard.players[0].faith = 30.0;
+        let belief = standard.rules.beliefs.pantheon.keys().next().unwrap().clone();
+        assert!(standard.do_choose_pantheon(0, &belief).is_ok());
+        assert_eq!(standard.players[0].faith, 5.0);
+    }
+
+    #[test]
+    fn every_pantheon_price_reads_the_same_helper() {
+        // ⚠⚠⚠ ONE TABLE, ONE FORMATTER. This rule had THREE spellings — the
+        // legality gate and the affordability check in this file, and the AI's own
+        // decision gate in `ai.rs` — and #1044 fixed one of them. The two that were
+        // missed are exactly the ones that decide and charge, so the fix looked
+        // merged and changed nothing live: on `civvis-20260803T231038Z` the AI was
+        // still waiting for 25 while Civilization VI charged ~12 and its own
+        // fallback picked the pantheon by database order.
+        //
+        // Asserted on the SOURCE, because a behavioural test can pass while a fourth
+        // spelling is added somewhere it does not reach.
+        for (path, source) in [
+            ("game.rs", include_str!("game.rs")),
+            ("ai.rs", include_str!("ai.rs")),
+        ] {
+            for (n, line) in source.lines().enumerate() {
+                let code = line.split("//").next().unwrap_or("");
+                if !code.contains("pantheon") && !code.contains("Pantheon") {
+                    continue;
+                }
+                // ⚠ An assertion ABOUT the price is not a second spelling OF it —
+                // `assert_eq!(pantheon_faith_cost(), 25.0)` is exactly the check
+                // that pins Standard, and flagging it would make this scan
+                // unsatisfiable. Skip assertions and the constant's own definition.
+                if code.contains("assert") || code.contains("PANTHEON_FAITH_STANDARD")
+                {
+                    continue;
+                }
+                assert!(
+                    !code.contains("25.0"),
+                    "{path}:{} spells the pantheon price as a literal; use                      `pantheon_faith_cost()`: {code}",
+                    n + 1
+                );
+            }
+        }
+    }
+
+    #[test]
     fn the_pantheon_price_follows_the_game_speed_like_every_other_cost() {
         // ⚠⚠⚠ This was a bare `25.0` in the legality gate AND in `do_choose_pantheon`,
         // while techs, civics and growth beside it all scaled. It cost CIVVIS the
@@ -22166,7 +22233,12 @@ impl Game {
             return Err("belief already taken".into());
         }
         self.players[pid].pantheon = Some(belief.to_string());
-        self.players[pid].faith -= 25.0;
+        // ⚠⚠ THE PRICE THE CHECK ASKED FOR, NOT A SECOND LITERAL. #1044 made the
+        // check above speed-aware and left this deduction at a bare 25.0, so on any
+        // speed but Standard the engine charged MORE than it demanded: Online asks
+        // for 12.5 and this took 25, dropping a player who founded at 13 faith to
+        // -12. A check and a charge that disagree is worse than both being wrong.
+        self.players[pid].faith -= cost;
         let capital = self
             .player_city_ids(pid)
             .into_iter()

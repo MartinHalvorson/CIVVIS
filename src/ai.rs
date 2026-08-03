@@ -3230,7 +3230,18 @@ impl BasicAi {
                 },
             );
         }
-        if !self.minor && g.players[pid].pantheon.is_none() && g.players[pid].faith >= 25.0 {
+        // ⚠⚠⚠ THE THIRD SPELLING OF THE SAME RULE, and the one that actually
+        // decides. #1044 fixed the legality gate and the affordability check in
+        // `game.rs` and missed this, so on Online — where the real price is 12.5 —
+        // the AI sat waiting for 25 faith while Civilization VI had already raised
+        // `ENDTURN_BLOCKING_PANTHEON`, and the mod's fallback picked instead.
+        // Measured live on `civvis-20260803T231038Z`: faith passed 12.5 on turn 19,
+        // the host asked on turn 25, and replaying turns 21 and 23 emitted 7 and 8
+        // orders with NO pantheon among them.
+        if !self.minor
+            && g.players[pid].pantheon.is_none()
+            && g.players[pid].faith >= g.pantheon_faith_cost()
+        {
             for (rank, b) in [
                 "divine_spark",
                 "fertility_rites",
