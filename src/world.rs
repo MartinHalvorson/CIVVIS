@@ -1,6 +1,6 @@
 //! Tiles and the world map (mirrors civvis/world.py).
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 
 use crate::name::Name;
@@ -574,14 +574,11 @@ impl WorldMap {
         if let Some(sphere) = self.sphere() {
             return sphere.disk(center, radius);
         }
-        let mut out: Vec<Pos> = Vec::new();
-        let mut dedup = HashSet::new();
-        for pos in hex::disk(center, radius).into_iter() {
-            let pos = hex::canon(pos, self.width);
-            if self.tiles.contains_key(&pos) && dedup.insert(pos) {
-                out.push(pos);
-            }
-        }
+        let mut out: Vec<Pos> = hex::disk(center, radius)
+            .into_iter()
+            .map(|pos| hex::canon(pos, self.width))
+            .filter_map(|pos| self.tiles.index_of(pos).map(|_| pos))
+            .collect();
         out.sort_unstable();
         out.dedup();
         out
@@ -602,14 +599,11 @@ impl WorldMap {
         if let Some(sphere) = self.sphere() {
             return sphere.ring(center, radius);
         }
-        let mut out: Vec<Pos> = Vec::new();
-        let mut dedup = HashSet::new();
-        for pos in hex::ring(center, radius).into_iter() {
-            let pos = hex::canon(pos, self.width);
-            if self.tiles.contains_key(&pos) && dedup.insert(pos) {
-                out.push(pos);
-            }
-        }
+        let mut out: Vec<Pos> = hex::ring(center, radius)
+            .into_iter()
+            .map(|pos| hex::canon(pos, self.width))
+            .filter_map(|pos| self.tiles.index_of(pos).map(|_| pos))
+            .collect();
         out.sort_unstable();
         out.dedup();
         out
