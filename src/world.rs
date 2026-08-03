@@ -577,9 +577,9 @@ impl WorldMap {
         let mut out: Vec<Pos> = hex::disk(center, radius)
             .into_iter()
             .map(|pos| hex::canon(pos, self.width))
-            .filter(|pos| self.tiles.contains_key(pos))
+            .filter_map(|pos| self.tiles.index_of(pos).map(|_| pos))
             .collect();
-        out.sort();
+        out.sort_unstable();
         out.dedup();
         out
     }
@@ -602,9 +602,9 @@ impl WorldMap {
         let mut out: Vec<Pos> = hex::ring(center, radius)
             .into_iter()
             .map(|pos| hex::canon(pos, self.width))
-            .filter(|pos| self.tiles.contains_key(pos))
+            .filter_map(|pos| self.tiles.index_of(pos).map(|_| pos))
             .collect();
-        out.sort();
+        out.sort_unstable();
         out.dedup();
         out
     }

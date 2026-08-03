@@ -18514,6 +18514,10 @@ impl Game {
         self.occ.get(&pos).cloned().unwrap_or_default()
     }
 
+    pub fn unit_ids_at(&self, pos: Pos) -> &[u32] {
+        self.occ.get(&pos).map_or(&[], Vec::as_slice)
+    }
+
     pub fn player_unit_ids(&self, pid: usize) -> Vec<u32> {
         if let Some(ids) = self
             .query_memo
