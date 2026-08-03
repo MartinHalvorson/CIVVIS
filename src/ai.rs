@@ -63,6 +63,10 @@ const LIVELOCK_STAND_DOWN_TURNS: u32 = 4;
 /// panic. Earn a gene on evidence.
 pub(crate) const WATER_MARCH_PENALTY: f64 = 18.0;
 
+/// Probe: how many times the deployed controller reaches `garrison_step`.
+pub static GARRISON_STEP_CALLS: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+
 const MINOR_DEFENSE_RADIUS: i32 = 6;
 
 /// How near one of our own cities an enemy has to stand before the empire owes
@@ -92,7 +96,7 @@ const HOME_DEFENSE_RECALL_RANGE: i32 = 10;
 /// How near a city a hostile must come before that city wants somebody actually
 /// standing in it. Three tiles is one turn's move for most classical units, so a
 /// garrison ordered at this range is in place before the attacker arrives.
-const GARRISON_ALERT_RADIUS: i32 = 3;
+pub(crate) const GARRISON_ALERT_RADIUS: i32 = 3;
 
 /// How close a visible hostile must be before a city musters against it. A
 /// horseman three tiles out reaches the city next turn; a wanderer beyond that
@@ -7043,6 +7047,7 @@ impl BasicAi {
     /// Walk the assigned defender to its city and hold it. Standing on the tile
     /// IS the job, so arriving means fortifying rather than looking for a fight.
     fn garrison_step(&mut self, g: &mut Game, pid: usize, uid: u32, enemy_ids: &[usize]) -> bool {
+        GARRISON_STEP_CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let Some((_, city)) = self
             .garrison_assignments(g, pid, enemy_ids)
             .into_iter()

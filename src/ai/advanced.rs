@@ -28930,6 +28930,262 @@ mod tests {
     /// timing rule that lane plays against.
     ///
     /// Run with `cargo test --release blind_defense_census -- --ignored --nocapture`.
+/// Why do we actually lose cities? Autopsy every loss instead of guessing.
+    ///
+    /// `come_ashore` cut embarked share 15.3% -> 6.3% over 30 paired maps and
+    /// moved cities lost only 36 -> 33, with two paired Elo A/Bs at -44 and -29
+    /// (both INCONCLUSIVE). So the water is real but is not what costs us
+    /// cities. This records the state of each city on the turn BEFORE it was
+    /// lost, so the binding constraint is measured rather than assumed.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn city_loss_autopsy() {
+        let mut lost = 0u64;
+        let mut besieged = 0u64;          // hp below full: something was shooting it
+        let mut full_hp = 0u64;           // lost at full hp => not a siege at all
+        let mut garrisoned = 0u64;        // a combat unit stood on the tile
+        let mut help_within_3 = 0u64;     // our military within 3 tiles
+        let mut help_within_6 = 0u64;
+        let mut no_help_at_all = 0u64;
+        let mut enemy_adjacent = 0u64;
+        let mut our_army_total = 0u64;
+        let mut razed = 0u64;
+        let mut taken_by_enemy = 0u64;
+        let mut taken_by_minor = 0u64;
+        let mut flipped_peacefully = 0u64;
+        let mut revolted = 0u64;
+        let mut enemy_dist_hist = [0u64; 8];
+        let mut beyond_alert = 0u64;
+        let mut could_strike = 0u64;
+        for map in 0..30u64 {
+            let mut game = Game::new_full(4, 32, 20, 770_000 + map, 200, 1, false);
+            let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                .map(|_| {
+                    let mut ai = AdvancedAi::new();
+                    ai.enable_live_bridge();
+                    ai
+                })
+                .collect();
+            game.set_fog_memory(false);
+            let mut owned: std::collections::HashSet<u32> =
+                game.player_city_ids(0).into_iter().collect();
+            // Snapshot of what each city looked like last time we saw it.
+            let mut snap: std::collections::HashMap<u32, (i32, i32, bool, i32, i32, i32, usize)> =
+                std::collections::HashMap::new();
+            let mut dist_snap: std::collections::HashMap<u32, (i32, i32)> =
+                std::collections::HashMap::new();
+            while game.winner.is_none() && game.turn <= game.max_turns {
+                let pid = game.current;
+                ais[pid].take_turn(&mut game, pid);
+                if game.winner.is_none() && game.current == pid {
+                    let _ = game.apply(pid, &Action::EndTurn);
+                }
+                if pid != 0 {
+                    continue;
+                }
+                let now: std::collections::HashSet<u32> =
+                    game.player_city_ids(0).into_iter().collect();
+                for gone in owned.difference(&now) {
+                    // Ground truth the live export cannot give: who holds it now.
+                    // ⚠ A revolt transfers the city to the FREE CITIES player,
+                    // which we count as at war — so `is_at_war` alone reads a
+                    // revolt as a conquest. Check `is_free_city` FIRST.
+                    match game.cities.get(gone).map(|c| c.owner) {
+                        None => razed += 1,
+                        Some(other)
+                            if game.players.get(other).is_some_and(|p| p.is_free_city) =>
+                        {
+                            revolted += 1
+                        }
+                        Some(other) if game.is_at_war(0, other) => taken_by_enemy += 1,
+                        Some(other) if game.players.get(other).is_some_and(|p| p.is_minor) => {
+                            taken_by_minor += 1
+                        }
+                        Some(_) => flipped_peacefully += 1,
+                    }
+                    let Some(&(hp, maxhp, garrison, near3, near6, adj, army)) = snap.get(gone)
+                    else {
+                        continue;
+                    };
+                    lost += 1;
+                    our_army_total += army as u64;
+                    if let Some(&(ed, reach)) = dist_snap.get(gone) {
+                        enemy_dist_hist[(ed.min(7)) as usize] += 1;
+                        if ed > crate::ai::GARRISON_ALERT_RADIUS as i32 { beyond_alert += 1; }
+                        if reach > 0 { could_strike += 1; }
+                    }
+                    if hp < maxhp { besieged += 1; } else { full_hp += 1; }
+                    if garrison { garrisoned += 1; }
+                    if near3 > 0 { help_within_3 += 1; }
+                    if near6 > 0 { help_within_6 += 1; }
+                    if near6 == 0 { no_help_at_all += 1; }
+                    if adj > 0 { enemy_adjacent += 1; }
+                }
+                owned = now;
+                let army = game
+                    .player_unit_ids(0)
+                    .into_iter()
+                    .filter(|u| game.rules.units[game.units[u].kind].class == "military")
+                    .count();
+                for cid in game.player_city_ids(0) {
+                    let city = &game.cities[&cid];
+                    let pos = city.pos;
+                    let hp = city.hp;
+                    // Cities cap at 200 hp; `Game` clamps to that in its own scoring.
+                    let maxhp = 200;
+                    let garrison = game.units_at(pos).into_iter().any(|u| {
+                        let unit = &game.units[&u];
+                        unit.owner == 0 && game.rules.units[unit.kind].class == "military"
+                    });
+                    let mut near3 = 0;
+                    let mut near6 = 0;
+                    let mut adj = 0;
+                    let mut enemy_dist = 99i32;
+                    let mut reach = 0i32;
+                    for unit in game.units.values() {
+                        if game.rules.units[unit.kind].class != "military" { continue; }
+                        let d = game.wdist(unit.pos, pos);
+                        if unit.owner == 0 {
+                            if d <= 3 { near3 += 1; }
+                            if d <= 6 { near6 += 1; }
+                        } else if game.is_at_war(0, unit.owner) {
+                            if d <= 1 { adj += 1; }
+                            if d < enemy_dist { enemy_dist = d; }
+                            // How far this unit could come and still strike.
+                            let mv = game.rules.units[unit.kind].moves.max(1.0) as i32;
+                            let rng = game.unit_attack_range(unit.id).max(1);
+                            if d <= mv + rng { reach += 1; }
+                        }
+                    }
+                    snap.insert(cid, (hp, maxhp, garrison, near3, near6, adj, army));
+                    dist_snap.insert(cid, (enemy_dist, reach));
+                }
+            }
+        }
+        let garrison_calls =
+            crate::ai::GARRISON_STEP_CALLS.load(std::sync::atomic::Ordering::Relaxed);
+        println!("garrison_step reached {garrison_calls} times across the whole census");
+        let pct = |n: u64| 100.0 * n as f64 / lost.max(1) as f64;
+        println!("cities lost: {lost}  (mean army alive at the moment of loss: {:.1})",
+            our_army_total as f64 / lost.max(1) as f64);
+        println!("  besieged (hp < max) ....... {besieged:>3}  {:>5.1}%", pct(besieged));
+        println!("  lost at FULL hp ........... {full_hp:>3}  {:>5.1}%  <- not a siege", pct(full_hp));
+        println!("  an enemy stood ADJACENT ... {enemy_adjacent:>3}  {:>5.1}%", pct(enemy_adjacent));
+        println!("  had a GARRISON ............ {garrisoned:>3}  {:>5.1}%", pct(garrisoned));
+        println!("  our military within 3 ..... {help_within_3:>3}  {:>5.1}%", pct(help_within_3));
+        println!("  our military within 6 ..... {help_within_6:>3}  {:>5.1}%", pct(help_within_6));
+        println!("  NO military within 6 ...... {no_help_at_all:>3}  {:>5.1}%", pct(no_help_at_all));
+        println!("NEAREST ENEMY on the last turn we held it:");
+        for (d, n) in enemy_dist_hist.iter().enumerate() {
+            if *n > 0 {
+                let label = if d >= 7 { "7+".to_string() } else { d.to_string() };
+                println!("    distance {label:<3} .................. {n:>3}  {:>5.1}%", pct(*n));
+            }
+        }
+        println!("  BEYOND GARRISON_ALERT_RADIUS ({}) .. {beyond_alert:>3}  {:>5.1}%", crate::ai::GARRISON_ALERT_RADIUS, pct(beyond_alert));
+        println!("  an enemy could MOVE+STRIKE it that turn {could_strike:>3}  {:>5.1}%", pct(could_strike));
+        println!("WHO HOLDS IT NOW (ground truth the live export cannot give):");
+        println!("  REVOLTED to Free Cities (loyalty 0) ... {revolted:>3}  {:>5.1}%", pct(revolted));
+        println!("  taken by an enemy we are at war with .. {taken_by_enemy:>3}  {:>5.1}%", pct(taken_by_enemy));
+        println!("  taken by a city-state/minor ........... {taken_by_minor:>3}  {:>5.1}%", pct(taken_by_minor));
+        println!("  owner changed with NO war (revolt) .... {flipped_peacefully:>3}  {:>5.1}%", pct(flipped_peacefully));
+        println!("  razed / gone .......................... {razed:>3}  {:>5.1}%", pct(razed));
+    }
+
+        /// Does `come_ashore` actually reduce time spent embarked, and does it do
+    /// so without making units pace the shoreline?
+    ///
+    /// The paired A/B came back −44 and −29 Elo (both INCONCLUSIVE) on the
+    /// first version of the fix, while the engine's own refusal ledger says
+    /// "cannot attack while embarked" is the single largest cause of a thrown
+    /// away attack. Those two facts only reconcile if the repair costs
+    /// something the Elo can see. Oscillation is the obvious candidate: pull a
+    /// unit ashore, let the objective pull it back to sea next turn, and the
+    /// army burns its movement on the beach.
+    ///
+    /// `transitions` counts land→water and water→land crossings per unit-life.
+    /// A fix that works lowers `embarked_share` AND does not raise
+    /// `transitions`.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn come_ashore_census() {
+        for &flag in &[false, true] {
+            let mut unit_turns = 0u64;
+            let mut embarked = 0u64;
+            let mut transitions = 0u64;
+            let mut attacks_refused_embarked = 0u64;
+            let mut cities_lost = 0u64;
+            let mut city_damage_turns = 0u64;
+            for map in 0..30u64 {
+                let mut game = Game::new_full(4, 32, 20, 770_000 + map, 200, 1, false);
+                let mut ais: Vec<AdvancedAi> = (0..game.players.len())
+                    .map(|_| {
+                        let mut ai = AdvancedAi::new();
+                        ai.enable_live_bridge();
+                        if !flag {
+                            ai.disable_come_ashore();
+                        }
+                        ai
+                    })
+                    .collect();
+                game.set_fog_memory(false);
+                let mut was_wet: std::collections::HashMap<u32, bool> =
+                    std::collections::HashMap::new();
+                let mut owned: std::collections::HashSet<u32> =
+                    game.player_city_ids(0).into_iter().collect();
+                let mut prev_hp: std::collections::HashMap<u32, i32> =
+                    std::collections::HashMap::new();
+                while game.winner.is_none() && game.turn <= game.max_turns {
+                    let pid = game.current;
+                    ais[pid].take_turn(&mut game, pid);
+                    if game.winner.is_none() && game.current == pid {
+                        let _ = game.apply(pid, &Action::EndTurn);
+                    }
+                    if pid != 0 {
+                        continue;
+                    }
+                    let now: std::collections::HashSet<u32> =
+                        game.player_city_ids(0).into_iter().collect();
+                    cities_lost += owned.difference(&now).count() as u64;
+                    owned = now;
+                    for cid in game.player_city_ids(0) {
+                        let hp = game.cities[&cid].hp;
+                        if prev_hp.insert(cid, hp).is_some_and(|was| hp < was) {
+                            city_damage_turns += 1;
+                        }
+                    }
+                    for uid in game.player_unit_ids(0) {
+                        let unit = &game.units[&uid];
+                        if game.rules.units[unit.kind].class != "military"
+                            || game.rules.units[unit.kind].domain.as_deref() == Some("sea")
+                        {
+                            continue;
+                        }
+                        let wet = game.is_embarked(unit);
+                        unit_turns += 1;
+                        if wet {
+                            embarked += 1;
+                            if game.unit_attack_range(uid) >= 1 {
+                                attacks_refused_embarked += 1;
+                            }
+                        }
+                        if was_wet.insert(uid, wet).is_some_and(|prev| prev != wet) {
+                            transitions += 1;
+                        }
+                    }
+                }
+            }
+            let share = 100.0 * embarked as f64 / unit_turns.max(1) as f64;
+            let churn = 1000.0 * transitions as f64 / unit_turns.max(1) as f64;
+            println!(
+                "come_ashore={flag:<5} unit_turns={unit_turns:<6} embarked={share:>5.1}%  \
+                 transitions/1000 unit-turns={churn:>6.1}  \
+                 embarked-with-attack={attacks_refused_embarked}  \
+                 CITIES_LOST={cities_lost}  city-damage-turns={city_damage_turns}"
+            );
+        }
+    }
+
     #[test]
     #[ignore = "census, not an assertion; run explicitly with --nocapture"]
     fn blind_defense_census() {
