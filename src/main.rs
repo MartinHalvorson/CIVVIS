@@ -309,8 +309,18 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// #955 also adds `garrison_assignments`/`garrison_step`, which put a unit on a
 /// threatened city's own tile. Behind the SAME `home_defense` flag, short-
 /// circuiting on it first, so this too is a compatibility re-pin.
+///
+/// #965 promotes wide, developed, defended expansion only in the production
+/// constructor: it enables call-local city/Builder floors, plan delegation plus
+/// the three existing defense flags, and lets that flagged plan consume the
+/// land-aware nine-city ceiling. Stored genomes, `configured`, and
+/// `AdvancedAi::legacy()` retain the historical weights; the controls also keep
+/// their three-city floor, six-city ceiling, flat delegation, and default-off
+/// defense fields. The focused production/control contract test asserts each
+/// side of that boundary. This is therefore a compatibility re-pin for
+/// `advanced_v1`, not an Elo protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1f5b_6504_c076_b5fb;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x27a2_6e53_6c60_c94e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
