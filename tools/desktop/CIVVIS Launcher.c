@@ -28,7 +28,11 @@ int main(void) {
 
     char script[PATH_MAX];
     int written = snprintf(
-        script, sizeof(script), "%s/%s", executable, "CIVVIS Launcher.zsh"
+        script,
+        sizeof(script),
+        "%s/%s",
+        executable,
+        "../Resources/CIVVIS Launcher.zsh"
     );
     if (written < 0 || (size_t)written >= sizeof(script)) {
         fputs("CIVVIS script path is too long\n", stderr);
