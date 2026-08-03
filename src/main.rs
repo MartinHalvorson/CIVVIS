@@ -327,8 +327,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `battlefront_observation` is on. `advanced_v1` sets that to `false`, so the
 /// legacy anchor takes the same `Some(g.city_strength(city))` arm it always
 /// took and is byte-identical twice over. A compatibility re-pin.
+///
+/// #963 sizes the siege train against the target city's standing wall, behind
+/// `siege_tracks_the_wall` — `false` in `AdvancedAi::new()` and set only by
+/// `civvis_orders`. `siege_units_wanted` returns the shipped
+/// `usize::from(plan.target_city.is_some())` on that flag before it reads the
+/// board, so the legacy anchor's production value is bit-for-bit what it was.
+/// A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x46a6_74b0_6d99_278c;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9a5c_eb6d_f086_bc92;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
