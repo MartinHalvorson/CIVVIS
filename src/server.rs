@@ -5456,13 +5456,19 @@ mod tests {
     }
 
     #[test]
-    fn viewer_marks_the_selected_revision_and_its_age() {
+    fn viewer_marks_the_selected_revision_and_its_compact_ages_beneath_the_minimap() {
         assert!(EMBEDDED_INDEX.contains("id=\"buildmark\""));
         assert!(EMBEDDED_INDEX.contains("function updateBuildMarker(st = state)"));
         assert!(EMBEDDED_INDEX.contains("st?.server_commit_time"));
         assert!(EMBEDDED_INDEX.contains("st?.server_built_at"));
         assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
+        assert!(EMBEDDED_INDEX.contains("return parts.join(\" \") || \"0m\""));
+        assert!(EMBEDDED_INDEX.contains("Commit is ${formatBuildAge(commitDate)} old"));
         assert!(EMBEDDED_INDEX.contains("Build is ${formatBuildAge(buildDate)} old"));
+        assert!(EMBEDDED_INDEX.contains(
+            "#buildmark {\n    /* The authored World minimap owns the lower-right corner at z-index 6."
+        ));
+        assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 5;\n    right:"));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
