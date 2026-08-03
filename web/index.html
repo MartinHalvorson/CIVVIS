@@ -9218,12 +9218,18 @@ const VIEWER_ID = `${Date.now().toString(36)}${Math.random().toString(36).slice(
 // state drawn last turn keeps the tile objects it was drawn from, which is
 // what anything comparing one turn against the previous one relies on.
 let tileStore = null;
+function stateFrameSequence(st) {
+  const sequence = Number(st?.frame_sequence);
+  if (Number.isSafeInteger(sequence) && sequence >= 0) return sequence;
+  return tileStore?.sequence ?? paintedFrame?.sequence ?? 0;
+}
 function adoptTiles(st) {
   const map = st && st.map;
   if (!map) return st;
   if (Array.isArray(map.tiles)) {
     tileStore = {seed: st.seed, turn: st.turn,
                  finished:st.winner !== null && st.winner !== undefined,
+                 sequence:stateFrameSequence(st),
                  tiles: map.tiles};
     return st;
   }
@@ -9234,15 +9240,17 @@ function adoptTiles(st) {
   const tiles = tileStore.tiles.slice();
   for (const [at, tile] of patch) tiles[at] = tile;
   tileStore = {seed: st.seed, turn: st.turn,
-               finished:st.winner !== null && st.winner !== undefined, tiles};
+               finished:st.winner !== null && st.winner !== undefined,
+               sequence:stateFrameSequence(st), tiles};
   map.tiles = tiles;
   return st;
 }
-// Martin-requested simulation requirement: every turn is owed at least one
-// complete frame from one snapshot — updated HUD, victory tracker, map,
-// minimap, units, sidebars, controls, and everything else bound to that turn.
-// The server holds a finished turn until an active viewer acknowledges that
-// complete paint. Only a page that actually paints
+// Martin-requested simulation requirement: every published boundary is owed
+// one complete frame from one snapshot — updated HUD, victory tracker, map,
+// minimap, units, sidebars, controls, and everything else bound to that frame.
+// At Blitz and slower, a boundary follows every player's turn; Lightning uses
+// the end of the round. The server holds each boundary until an active viewer
+// acknowledges that complete paint. Only a page that actually paints
 // counts as one: the keeper's refresh check and any curl read /state as well,
 // and a reader that draws nothing must not slow the simulation to its own
 // cadence. Saying which turn was last painted is how this page announces
@@ -9294,7 +9302,7 @@ function paintedQuery() {
   // server to hold the answer back until there is a next turn, and the human
   // game's one-off boot read wants the state that exists now.
   const held = SPEC && tileStore
-    ? `&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}` : "";
+    ? `&have=${tileStore.seed}:${tileStore.turn}:${tileStore.finished ? 1 : 0}:${tileStore.sequence}` : "";
   const who = `&viewer=${VIEWER_ID}`;
   // The last thought this page holds. Naming it is what asks for the AI
   // reasoning delta and what keeps it to the handful of lines recorded since,
@@ -9302,9 +9310,10 @@ function paintedQuery() {
   const thinking = `&think=${reasoningLog.cursor}`;
   return (paintedFrame === null ? "?painted="
     : `?painted=${paintedFrame.turn}&world=${paintedFrame.seed}` +
-      `&finished=${paintedFrame.finished ? 1 : 0}`) + who + held + thinking;
+      `&finished=${paintedFrame.finished ? 1 : 0}&frame=${paintedFrame.sequence}`) +
+      who + held + thinking;
 }
-// One turn, one frame on the glass.
+// One published boundary, one frame on the glass.
 //
 // The server holds a finished turn until this page acknowledges painting it,
 // so the exhibition runs at whatever rate this page paints — which quietly
@@ -9319,9 +9328,10 @@ function paintedQuery() {
 // delivered, drawn, and still never appear on a screen — which is what "some
 // turns are still being skipped" looks like from the far side of the glass.
 //
-// So the loop runs on the display's own clock. At most one turn is painted per
-// animation frame, which is what makes each turn a frame somebody can see; the
-// fetch for the next one is the paint acknowledgement: it goes out only after
+// So the loop runs on the display's own clock. At most one state is painted per
+// animation frame, which makes every published player-turn or round boundary
+// a frame somebody can see; the fetch for the next one is the paint
+// acknowledgement: it goes out only after
 // render() has updated the map, HUD, victory tracker, and all other turn-bound
 // surfaces. Nothing is ever dropped — a state that has arrived is always
 // painted — and the gate upstream will not simulate past the turn this page
@@ -10183,7 +10193,8 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   // successor world painted nothing, and must not claim it did.
   if (st.turn !== undefined && st.seed !== undefined)
     paintedFrame = {seed:st.seed, turn:st.turn,
-                    finished:st.winner !== null && st.winner !== undefined};
+                    finished:st.winner !== null && st.winner !== undefined,
+                    sequence:stateFrameSequence(st)};
   finishWorldTransition(st);
 }
 
