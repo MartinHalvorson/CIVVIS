@@ -6855,9 +6855,56 @@ local function applyOrder(player, pid, row, turn)
 				end
 				return city:GetGold():GetPurchaseCost(currency, row2.Hash);
 			end, -1);
+			-- ★★★★★ WHY DID THE HOST SAY NO WITH NO REASON?
+			--
+			-- 77% of purchase refusals come back `has_results=false` and an EMPTY
+			-- reason list: 1334 of 1730 on 2026-08-03, 918 of them UNIT_MISSIONARY,
+			-- and 93% of them affordable. Eight hypotheses are dead — affordability,
+			-- no religion (the empire holds RELIGION_BUDDHISM and 382 faith), a
+			-- missing Shrine (the city has one), the city following a foreign
+			-- religion (it follows ours), the building already being built (0 of 93),
+			-- unit stacking (0, and 401 had an EMPTY tile), and "faith purchases
+			-- never work" (faith fell 15 times) — though NOT ONE of those drops was a
+			-- unit: every one was 134-316, Great Person patronage, never the ~70 a
+			-- Missionary costs, and zero religious units ever existed in that run.
+			--
+			-- `has_results=false` means Civilization VI returned no results TABLE at
+			-- all, which is what an inapplicable command looks like rather than a
+			-- rejected one — every refusal that carries a reason has one. This file
+			-- has already been burned twice by exactly that: passing `params` as
+			-- argument three "made every otherwise valid purchase answer false
+			-- without throwing", and a stray PARAM_MILITARY_FORMATION_TYPE did the
+			-- same to a Heavy Chariot while an identical Catapult succeeded.
+			--
+			-- So ask the same question four ways and record which shapes answer. This
+			-- is READ-ONLY — `CanStartCommand` never spends anything, and nothing
+			-- below changes what the agent does. It exists to turn a silent refusal
+			-- into a named one.
+			local probes = {};
+			if results == nil then
+				local shapes = {
+					{ name = "as_sent", args = eligibilityParams },
+					{ name = "full_params", args = params },
+					{ name = "empty", args = {} },
+					{ name = "nil_params", args = nil },
+				};
+				for _, shape in ipairs(shapes) do
+					local ok, can, res = pcall(function()
+						return CityManager.CanStartCommand(city, CityCommandTypes.PURCHASE,
+						                                  false, shape.args, true);
+					end);
+					probes[#probes + 1] = {
+						shape = shape.name,
+						threw = not ok,
+						can = ok and (can == true) or false,
+						has_results = ok and (res ~= nil) or false,
+					};
+				end
+			end
 			emit("purchase_refused", {
 				turn = turn, city = subject, item = resolved,
 				currency = yieldName,
+				probes = probes,
 				balance = try(function()
 					if yieldName == "YIELD_FAITH" then
 						return player:GetReligion():GetFaithBalance();
