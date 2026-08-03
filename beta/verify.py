@@ -573,6 +573,9 @@ def main(argv: list[str] | None = None) -> int:
             "   seen.add(`${d[i]},${d[i+1]},${d[i+2]},${d[i+3]}`);"
             " return seen.size; })()"
         )
+        build_marker = dev.evaluate(
+            "document.getElementById('buildmark')?.textContent || ''"
+        )
 
         dev.call("Page.stopScreencast", wait=False)
         dev.alive = False
@@ -589,6 +592,11 @@ def main(argv: list[str] | None = None) -> int:
             problems.append("the page reported 'CIVVIS boot failed'")
         if isinstance(painted, int) and painted < 8:
             problems.append(f"the map canvas holds only {painted} distinct colours")
+        expected_artifact = f"WASM {build['wasm_bytes'] / 1048576:.1f} MiB"
+        if expected_artifact not in build_marker:
+            problems.append(
+                f"the build marker does not show {expected_artifact!r}: {build_marker!r}"
+            )
         fatal = [
             line
             for line in dev.console
@@ -599,6 +607,7 @@ def main(argv: list[str] | None = None) -> int:
 
         print(f"    build       {build['short']}")
         print(f"    engine      {build['wasm_bytes']:,} bytes")
+        print(f"    marker      {build_marker}")
         print(f"    turns       {report.get('turns', 0)} (reached turn {report.get('lastTurn')})")
         print(f"    repaints    {report.get('paints', 0)}")
         print(f"    canvas      {painted} distinct sampled colours")

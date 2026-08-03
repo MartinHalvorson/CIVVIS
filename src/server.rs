@@ -5503,8 +5503,11 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function updateBuildMarker(st = state)"));
         assert!(EMBEDDED_INDEX.contains("st?.server_commit_time"));
         assert!(EMBEDDED_INDEX.contains("st?.server_built_at"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_artifact_bytes"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_artifact_kind"));
         assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
         assert!(EMBEDDED_INDEX.contains("Build is ${formatBuildAge(buildDate)} old"));
+        assert!(EMBEDDED_INDEX.contains("(bytes / 1048576).toFixed(1)} MiB"));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
