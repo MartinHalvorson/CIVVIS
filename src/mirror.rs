@@ -3651,6 +3651,73 @@ mod tests {
     /// measured with the `move_refused` instrument on run
     /// `civvis-20260801T065721Z`, ONE trader produced **22 of 33** move refusals by
     /// turn 70, shuffling between four tiles for 38 turns.
+    /// ★★★★ A SPY CANNOT BE WALKED EITHER, and unlike the trader the export gives
+    /// it real movement points — so the ruleset value cannot be trusted here.
+    ///
+    /// Measured over every run recorded on 2026-08-03: **893 of 1,197 refused
+    /// adjacent moves (75%) were `UNIT_SPY`**, all on our own territory, with
+    /// single spies stuck and re-ordered for 43 to 81 consecutive turns.
+    #[test]
+    fn a_spy_is_given_no_movement_even_though_civ6_reports_some() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 20,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![plot(5, 5, "TERRAIN_GRASS"), plot(5, 6, "TERRAIN_GRASS")],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 20,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Canberra".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        // ⚠ The precondition that makes this test worth having: Civilization VI
+        // exports a spy WITH movement (1, 2 and 3 were all observed), so nothing
+        // in the export tells the bridge this unit cannot walk.
+        state.units.push(StateUnit {
+            id: 5439532,
+            kind: "UNIT_SPY".to_string(),
+            x: 5,
+            y: 6,
+            moves: 2.0,
+            ..StateUnit::default()
+        });
+        state.units.push(StateUnit {
+            id: 5439533,
+            kind: "UNIT_WARRIOR".to_string(),
+            x: 5,
+            y: 5,
+            ..StateUnit::default()
+        });
+
+        let mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let moves_of = |board: &LiveMirror, want: &str| -> Option<f64> {
+            board
+                .game
+                .units
+                .values()
+                .find(|u| u.kind.as_str() == want)
+                .map(|u| u.moves_left)
+        };
+        assert_eq!(
+            moves_of(&mirror, "spy"),
+            Some(0.0),
+            "a spy must be given no walking movement — Civilization VI refuses every \
+             MOVE_TO for one however many movement points it reports"
+        );
+        assert!(
+            moves_of(&mirror, "warrior").is_some_and(|m| m > 0.0),
+            "every other unit keeps its ruleset movement"
+        );
+    }
+
     #[test]
     fn a_trader_is_given_no_movement_because_civ6_gives_it_none() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -9617,6 +9684,35 @@ fn mirror_unit_moves(game: &crate::game::Game, uid: u32) -> f64 {
     // ⚠ And it does not silence the trader: `TradeRoute` is a separate action and
     // stays available. What stops is the walking it was never able to do.
     if kind == "trader" {
+        return 0.0;
+    }
+    // ★★★★★ AND A SPY CANNOT BE WALKED EITHER — IT IS THE BIGGEST REFUSAL CLASS LEFT.
+    //
+    // Measured over every run recorded on 2026-08-03, after the self-tile repair
+    // (#836) had already removed its own class: **893 of 1,197 refused adjacent
+    // moves — 75% — were `UNIT_SPY`**, and every one of them was on OUR OWN
+    // territory (`owner: 0`) onto ordinary passable ground. Individual spies were
+    // ordered and refused for the length of a game: unit 5439532 stuck at (16,22)
+    // for 81 turns, 5046311 at (16,26) for 73, 6291477 at (27,17) for 65.
+    //
+    // ⚠ THE SHAPE DIFFERS FROM THE TRADER'S AND THE CONCLUSION IS THE SAME.
+    // Civilization VI reports a trader with `moves: 0`, which is a plain signal.
+    // It reports a SPY with `moves` of 1, 2 or 3 — so the export says it can move
+    // and the host still refuses every `MOVE_TO`, because a spy travels by being
+    // given a destination city through the espionage system, not by walking a
+    // tile at a time. The movement points are real; tile movement is not the
+    // operation that spends them.
+    //
+    // ⚠ This does NOT silence the spy, exactly as the trader clause does not
+    // silence trade: `AssignSpy`, `SpyMission` and `PromoteSpy` are separate
+    // actions, are already translated by the bridge, and are untouched. What
+    // stops is the walking it was never able to do — and with it a decision the
+    // planner spent on that unit every single turn.
+    //
+    // ⚠ Mirror only. `data/units.json` still gives `spy` its 1 move, so
+    // `Rules::source_fingerprint` does not shift and an ordinary CIVVIS game is
+    // unaffected.
+    if kind == "spy" {
         return 0.0;
     }
     game.rules
