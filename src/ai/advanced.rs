@@ -24,6 +24,12 @@ use std::sync::Arc;
 /// attack unsupported. Below it the group holds on its own account, whatever
 /// else is happening in the empire.
 const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
+/// Most the wartime army target may be multiplied by when the enemy outweighs
+/// us, used by [`AdvancedAi::wartime_army_target`]. Two doublings would be an
+/// empire of nothing but soldiers; 2.0 asks a six-city empire at war to want
+/// 24 land units rather than 12 when it is being outweighed two to one, and
+/// stops there however far ahead the rival runs.
+const WARTIME_ARMY_CEILING: f64 = 2.0;
 /// Points of standing wall that justify one more siege train, used by
 /// [`AdvancedAi::siege_units_wanted`]. A Civ VI wall tier is 100 points and a
 /// fully walled Renaissance city carries 400, so this asks for two trains at
@@ -749,6 +755,13 @@ pub struct AdvancedAi {
     /// `advanced_relief_scoped` entrant, so it can be re-measured once the
     /// conversion bottleneck moves rather than re-derived from scratch.
     pub scoped_relief_hold: bool,
+    /// Raise the wartime army target when the enemy outweighs us, instead of
+    /// keeping a headcount that only ever looks at our own city count.
+    ///
+    /// **Off by default, live-bridge only**, on the same footing as
+    /// `bounded_recovery`. See [`AdvancedAi::wartime_army_target`] for the
+    /// 94-of-188-turns measurement behind it.
+    pub army_target_weighs_the_enemy: bool,
     /// Size the siege train against the wall standing at the target city,
     /// instead of asking for exactly one siege unit for any target at all.
     ///
@@ -1676,6 +1689,7 @@ impl AdvancedAi {
             solvent_faith_army: false,
             battlefront_frame: None,
             scoped_relief_hold: false,
+            army_target_weighs_the_enemy: false,
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
             refuse_unreachable_lanes: false,
@@ -1770,6 +1784,13 @@ impl AdvancedAi {
     /// tournament games leave this disabled.
     pub fn enable_bounded_recovery(&mut self) {
         self.bounded_recovery = true;
+    }
+
+    /// Let the army target account for the enemy it has to beat. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_army_target_weighs_the_enemy(&mut self) {
+        self.army_target_weighs_the_enemy = true;
     }
 
     /// Let the siege train be sized by the wall it has to breach. Native
@@ -9513,6 +9534,67 @@ impl AdvancedAi {
         }
     }
 
+    /// The army target, raised while a war is running to account for the enemy
+    /// it has to beat.
+    ///
+    /// `desired_military` is `2 * city_count` at war and `city_count`
+    /// otherwise — **a headcount keyed entirely to our own empire. It never
+    /// asks how strong the rival is.** Once the count is met, `force_gap`
+    /// reaches zero and the military arm of `production_value` collapses from
+    /// a `4.0` multiplier to `0.65` — a 6.2x cut that loses to a building
+    /// every time.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo, at war with
+    /// Korea from t64 for 188 turns):
+    ///
+    /// - **94 of 188 war turns had `force_gap <= 0`** — half the war spent
+    ///   with the army officially finished.
+    /// - CIVVIS ordered **17 military units in the whole war**, 8 of them land
+    ///   combat and 2 siege, against Korea's five walled cities. Its top
+    ///   production items were commercial hub projects (47), spies (32) and
+    ///   traders (29); no combat unit appears in the top twelve.
+    /// - At t240 the rival fielded **1050 military against our 658** and the
+    ///   target still read satisfied: 11 land units against a wanted 10.
+    ///
+    /// The repair keeps the shipped count as a floor and never lowers it. When
+    /// at war with a major, it scales by how far the strongest wartime rival
+    /// outweighs us, clamped to [`WARTIME_ARMY_CEILING`]. At parity or ahead
+    /// the ratio is 1.0 and the shipped number is returned unchanged, so this
+    /// only ever fires when the enemy is genuinely bigger — which is exactly
+    /// the state in which declaring the army finished is the error.
+    ///
+    /// `military_power` is the same measure `assess` already uses to pick
+    /// Recovery, so this reads no new information; it spends what the strategy
+    /// layer already knew and the production layer never asked for.
+    ///
+    /// ⚠ The ceiling is load-bearing. Without it a runaway rival drives the
+    /// target arbitrarily high and the empire builds nothing but units, which
+    /// is the failure `civvis-civ6-all-army-no-economy` records. #962's
+    /// affordability gate bounds the *purchase* side; this bounds the *want*.
+    fn wartime_army_target(&self, g: &Game, pid: usize, shipped: usize) -> usize {
+        if !self.army_target_weighs_the_enemy {
+            return shipped;
+        }
+        let strongest = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid
+                    && player.alive
+                    && !player.is_barbarian
+                    && !player.is_minor
+                    && g.is_at_war(pid, player.id)
+            })
+            .map(|player| g.military_power(player.id))
+            .fold(0.0_f64, f64::max);
+        if strongest <= 0.0 {
+            return shipped;
+        }
+        let ours = g.military_power(pid).max(1.0);
+        let ratio = (strongest / ours).clamp(1.0, WARTIME_ARMY_CEILING);
+        ((shipped as f64) * ratio).ceil() as usize
+    }
+
     /// Score the production shortlist under one memo scope, retaining item
     /// order and therefore the stock tie-break. These individual arithmetic
     /// evaluations are too small to amortize worker-private game snapshots;
@@ -9961,6 +10043,7 @@ impl AdvancedAi {
             GrandStrategy::Recovery => 2 * city_count,
             _ => city_count,
         };
+        let desired_military = self.wartime_army_target(g, pid, desired_military);
         // A rush is fought out of one or two cities, so `2 * city_count` asks
         // for two units when the siege needs four and the census measures it
         // fielding 2.5 melee at turn 50 with 1.1 of them anywhere near the
@@ -21715,6 +21798,80 @@ mod tests {
             1,
             "the shipped rule never looked at the wall"
         );
+    }
+
+    /// The defect this exists for: the army target was a headcount keyed to
+    /// our own city count, so an empire being outweighed two to one declared
+    /// its army finished and went back to building markets.
+    #[test]
+    fn the_army_target_rises_when_the_enemy_outweighs_us() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_105);
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        sites.sort_unstable();
+        let muster = sites[0];
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_army_target_weighs_the_enemy();
+        let shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+
+        // An army of ours that comfortably outweighs theirs. `empire_with_a_capital`
+        // strips our starting units, so this is the whole of our power.
+        for step in 0..6 {
+            game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 1 + step));
+        }
+        game.spawn_test_unit("warrior", 1, muster);
+        assert_eq!(
+            ai.wartime_army_target(&game, 0, 12),
+            12,
+            "while we are ahead the shipped target is exactly what it was"
+        );
+
+        // They pass us. The target rises with the gap and never falls below
+        // the shipped floor.
+        for _ in 0..12 {
+            game.spawn_test_unit("warrior", 1, muster);
+        }
+        let raised = ai.wartime_army_target(&game, 0, 12);
+        assert!(
+            raised > 12,
+            "an army twice ours must want more than the peacetime twelve: {raised}"
+        );
+        assert!(raised <= 24, "the 2x ceiling holds: {raised}");
+
+        // However far ahead they run, the empire is not asked to become
+        // nothing but soldiers.
+        for _ in 0..60 {
+            game.spawn_test_unit("warrior", 1, muster);
+        }
+        assert_eq!(
+            ai.wartime_army_target(&game, 0, 12),
+            24,
+            "a runaway rival is still capped at WARTIME_ARMY_CEILING"
+        );
+
+        // Peace with the same strong rival: the wartime scaling must not apply.
+        game.at_war.remove(&(0, 1));
+        game.at_war.remove(&(1, 0));
+        assert_eq!(
+            ai.wartime_army_target(&game, 0, 12),
+            12,
+            "a rival we are not fighting does not size our army"
+        );
+
+        // And the shipped agent never moves at all, war or not.
+        game.at_war.insert((0, 1));
+        assert!(!shipped.army_target_weighs_the_enemy);
+        assert_eq!(shipped.wartime_army_target(&game, 0, 12), 12);
     }
 
     /// The behaviour this exists for: a locally superior force far from the

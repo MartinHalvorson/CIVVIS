@@ -334,8 +334,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `usize::from(plan.target_city.is_some())` on that flag before it reads the
 /// board, so the legacy anchor's production value is bit-for-bit what it was.
 /// A compatibility re-pin.
+///
+/// #977 raises the wartime army target when the enemy outweighs us, behind
+/// `army_target_weighs_the_enemy` — `false` in `AdvancedAi::new()` and set only
+/// by `civvis_orders`. `wartime_army_target` returns its `shipped` argument
+/// unchanged on that flag before it reads a single player, so every configured,
+/// legacy and Elo agent wants exactly the army it always wanted. A
+/// compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9a5c_eb6d_f086_bc92;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9bd6_e656_de80_c706;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
