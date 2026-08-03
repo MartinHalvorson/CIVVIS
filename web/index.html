@@ -22903,9 +22903,23 @@ function draw() {
         cx.beginPath(); cx.arc(x + dx, y + dy, r, 0, 7); cx.fill();
       }
     } else if (t.feature === "geothermal_fissure") {
-      cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.6;
-      cx.beginPath(); cx.arc(x - 4, y - 2, 5, .2, 3.4); cx.arc(x + 5, y - 7, 4, .1, 3.2); cx.stroke();
-      cx.fillStyle = "#66b6b3"; cx.beginPath(); cx.ellipse(x, y + 5, 11, 4, 0, 0, 7); cx.fill();
+      // Two mineral pools and one vertical geyser: three discrete landmarks
+      // read more clearly than the former single pond with two steam curls.
+      cx.fillStyle = "#66b6b3"; cx.strokeStyle = "#286f72"; cx.lineWidth = 1.1;
+      for (const [dx, dy, rx, ry] of [[-7, 5, 6, 2.8], [7, 7, 5, 2.3]]) {
+        cx.beginPath(); cx.ellipse(x + dx, y + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
+      }
+      cx.fillStyle = "#dcece8";
+      cx.beginPath(); cx.moveTo(x - 2.2, y + 3);
+      cx.bezierCurveTo(x - 1.4, y - 3, x - 1.1, y - 10, x, y - 16);
+      cx.bezierCurveTo(x + 1.2, y - 10, x + 1.6, y - 3, x + 2.2, y + 3);
+      cx.closePath(); cx.fill();
+      cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.5;
+      cx.beginPath();
+      cx.arc(x, y - 14, 4.5, 3.55, 5.9);
+      cx.moveTo(x - 1, y - 12); cx.lineTo(x - 4, y - 8);
+      cx.moveTo(x + 1, y - 12); cx.lineTo(x + 4, y - 8);
+      cx.stroke();
     } else if (t.feature === "ice") {
       cx.fillStyle = "#dfeff3"; cx.strokeStyle = "#7db3c5"; cx.lineWidth = 1.4;
       cx.beginPath(); cx.moveTo(x - 15, y - 3); cx.lineTo(x - 5, y - 12);
