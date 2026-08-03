@@ -254,6 +254,31 @@ def main(argv: list[str] | None = None) -> int:
             f"got {download['status']}",
         )
 
+        print("==> stable build channels follow the latest published artifacts")
+        rust = hit(path="/rust")
+        check(problems, "/rust points at the latest native release",
+              rust["status"] == 302 and rust["location"] == "/download/",
+              f"got {rust['status']} {rust['location']!r}")
+        check(problems, "/rust is temporary and uncached",
+              rust["status"] != 301 and rust["cacheControl"] == "no-store",
+              f"got {rust['status']} {rust['cacheControl']!r}")
+        rust_slash = hit(path="/rust/")
+        check(problems, "/rust/ is the same native channel",
+              rust_slash["location"] == "/download/",
+              f"got {rust_slash['location']!r}")
+
+        wasm = hit(path="/wasm?game=7311")
+        check(problems, "/wasm points at the latest WASM build",
+              wasm["status"] == 302 and wasm["location"] == "/beta/?game=7311",
+              f"got {wasm['status']} {wasm['location']!r}")
+        check(problems, "/wasm is temporary and uncached",
+              wasm["status"] != 301 and wasm["cacheControl"] == "no-store",
+              f"got {wasm['status']} {wasm['cacheControl']!r}")
+        wasm_slash = hit(path="/wasm/")
+        check(problems, "/wasm/ is the same browser channel",
+              wasm_slash["location"] == "/beta/",
+              f"got {wasm_slash['location']!r}")
+
         print("==> so is the beta, which is the point of publishing it")
         beta = hit(path="/beta/")
         check(problems, "/beta/ serves the viewer to anyone", beta["body"].strip() == "asset:/beta/",
