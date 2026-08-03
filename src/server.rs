@@ -61,6 +61,8 @@ fn process_identity() -> u32 {
 static LAUNCHED_COMMIT: OnceLock<Option<String>> = OnceLock::new();
 #[cfg(not(target_arch = "wasm32"))]
 static LAUNCHED_COMMIT_TIME: OnceLock<Option<String>> = OnceLock::new();
+#[cfg(not(target_arch = "wasm32"))]
+static LAUNCHED_BUILT_AT: OnceLock<Option<String>> = OnceLock::new();
 
 #[cfg(not(target_arch = "wasm32"))]
 fn promoted_binary_commit(name: &str) -> Option<String> {
@@ -86,6 +88,13 @@ fn launched_commit_time() -> Option<String> {
     std::env::var("CIVVIS_COMMIT_TIME")
         .ok()
         .filter(|commit_time| !commit_time.is_empty())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn launched_built_at() -> Option<String> {
+    std::env::var("CIVVIS_BUILT_AT")
+        .ok()
+        .filter(|built_at| !built_at.is_empty())
 }
 
 /// The revision of the code a supervisor selected for this process.
@@ -127,6 +136,23 @@ pub(crate) fn runtime_commit_time() -> Option<String> {
         LAUNCHED_COMMIT_TIME
             .get_or_init(launched_commit_time)
             .clone()
+    }
+}
+
+/// When this exact artifact was built, as an ISO-8601 timestamp.
+///
+/// This stays separate from the revision's commit time: rebuilding current
+/// source makes a fresh artifact, but does not rewrite Git history.
+pub(crate) fn runtime_built_at() -> Option<String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        option_env!("CIVVIS_BUILT_AT")
+            .filter(|built_at| !built_at.is_empty())
+            .map(str::to_owned)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        LAUNCHED_BUILT_AT.get_or_init(launched_built_at).clone()
     }
 }
 
@@ -2419,6 +2445,7 @@ impl Session {
             o["server_instance"] = json!(process_identity());
             o["server_commit"] = json!(runtime_commit("unknown"));
             o["server_commit_time"] = json!(runtime_commit_time());
+            o["server_built_at"] = json!(runtime_built_at());
             return o;
         }
         let mut o = observation(&self.game, 0);
@@ -2439,6 +2466,7 @@ impl Session {
         o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(runtime_commit("unknown"));
         o["server_commit_time"] = json!(runtime_commit_time());
+        o["server_built_at"] = json!(runtime_built_at());
         o
     }
 
@@ -3553,6 +3581,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "seed": sh.current_seed.load(Ordering::Relaxed),
                     "commit": runtime_commit("unknown"),
                     "commit_time": runtime_commit_time(),
+                    "built_at": runtime_built_at(),
                     // The supervisor's only view of a restart used to be
                     // `/state`, which is exactly what a long AI turn makes
                     // unavailable. This probe takes no lock the simulation
@@ -3705,6 +3734,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // build reports unknown.
                     "commit": runtime_commit("unknown"),
                     "commit_time": runtime_commit_time(),
+                    "built_at": runtime_built_at(),
                 }),
             );
         }
@@ -5399,6 +5429,7 @@ mod tests {
         assert_eq!(runtime["seed"], state["seed"]);
         assert_eq!(runtime["commit"], state["server_commit"]);
         assert_eq!(runtime["commit_time"], state["server_commit_time"]);
+        assert_eq!(runtime["built_at"], state["server_built_at"]);
         // The supervisor's whole view of a pending restart. It rides here
         // rather than only on `/state` because a long AI turn is exactly when
         // a restart is asked for and exactly when `/state` cannot be built.
@@ -5420,8 +5451,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("id=\"buildmark\""));
         assert!(EMBEDDED_INDEX.contains("function updateBuildMarker(st = state)"));
         assert!(EMBEDDED_INDEX.contains("st?.server_commit_time"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_built_at"));
         assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
-        assert!(EMBEDDED_INDEX.contains("Build is ${formatBuildAge(commitDate)} old"));
+        assert!(EMBEDDED_INDEX.contains("Build is ${formatBuildAge(buildDate)} old"));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
