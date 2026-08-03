@@ -541,6 +541,68 @@ class MatchMachineTests(unittest.TestCase):
             resumed = subject.event.call_args_list[-1]
             self.assertEqual(resumed.kwargs["resources"]["cpu"], 30)
 
+    def test_background_build_yields_until_visible_game_recovers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            subject = machine.MatchMachine.__new__(machine.MatchMachine)
+            subject.runtime = root
+            subject.args = SimpleNamespace(limit=60, poll=1)
+            subject.deadline = 100
+            subject.stopping = False
+            subject.watched_terminal_closed = mock.Mock(return_value=False)
+            subject.event = mock.Mock()
+            visible = SimpleNamespace(visible=True, paused=True)
+            subject.games = [visible]
+            process = mock.Mock(pid=1234, returncode=0)
+            process.poll.side_effect = [None, None, None, None, 0, 0]
+
+            def sleep(_seconds):
+                visible.paused = False
+
+            with mock.patch.object(
+                machine.subprocess, "Popen", return_value=process
+            ), mock.patch.object(
+                machine, "resources", return_value=machine.Resources(20, 20, 12, 0, False)
+            ), mock.patch.object(
+                machine, "set_paused", return_value=True
+            ) as pause, mock.patch.object(
+                machine.time, "monotonic", side_effect=[0, 1, 2, 8]
+            ), mock.patch.object(machine.time, "sleep", side_effect=sleep):
+                result = subject.resource_capped_command(
+                    "cargo",
+                    "build",
+                    cwd=root,
+                    env=None,
+                    timeout=30,
+                    purpose="build",
+                    log_path=root / "build.log",
+                    prefer_visible=True,
+                )
+
+            self.assertEqual(result.returncode, 0)
+            self.assertEqual(
+                pause.call_args_list,
+                [mock.call(process, True), mock.call(process, False)],
+            )
+            self.assertEqual(
+                [call.args[0] for call in subject.event.call_args_list],
+                [
+                    "work_cpu_throttle_started",
+                    "work_yielded_for_visible",
+                    "work_resumed_after_visible",
+                ],
+            )
+
+    def test_background_head_build_enables_visible_priority(self):
+        subject = machine.MatchMachine.__new__(machine.MatchMachine)
+        subject.build_executor = mock.Mock()
+
+        subject.start_head_build("new-head")
+
+        subject.build_executor.submit.assert_called_once_with(
+            subject.compile_build, "new-head", True
+        )
+
     def test_terminal_close_cancels_resource_capped_work(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

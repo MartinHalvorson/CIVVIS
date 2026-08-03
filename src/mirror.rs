@@ -5762,6 +5762,47 @@ pub struct StateSnapshot {
     /// mirrored empire does not reproduce every capacity modifier.
     #[serde(default)]
     pub trade_capacity: Option<i64>,
+    /// Envoys we are HOLDING and have not placed, per Firaxis's own
+    /// `GetTokensToGive`.
+    ///
+    /// ★★★★★ `minors[].envoys` has always said where our envoys LANDED. Nothing
+    /// ever said how many were sitting unspent, and that single omission closes
+    /// the whole axis: [`crate::game::Game::legal_actions`] gates
+    /// `Action::SendEnvoy` behind `if p.envoys_free > 0`, `envoys_free` is never
+    /// mirrored, so on every reconstructed live board it reads 0 and **CIVVIS
+    /// never enumerates sending an envoy at all**. That is why `SendEnvoy`
+    /// appears nowhere in the skipped-action tally, while `LevyMilitary` — which
+    /// needs a suzerainty we never hold — appears there 44 times.
+    ///
+    /// Measured over 36 live runs past turn 150: median envoys placed **1**,
+    /// median suzerainties **0**, 16 of 36 runs ending with none placed anywhere.
+    /// CIVVIS prices the payoff in full (`envoy_type_yields_for_count` pays a
+    /// cultural city-state at the 1/3/6 thresholds), so the sim collects it and
+    /// the live game collects nothing.
+    ///
+    /// ⚠ **CARRIED AND REPORTED, NOT ACTED ON.** This deliberately does not reach
+    /// `Player::envoys_free` on the reconstructed board. The actuation path is a
+    /// known game crasher — `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` answered by
+    /// `chooseEnvoy` gave three SIGSEGVs in three runs on a seed that reached
+    /// t92/t106 without it, and `cfg.EnvoyEnabled` is off for that reason.
+    /// Teaching CIVVIS to want something the bridge cannot safely deliver trades
+    /// a silent loss for a crashed run. Size the prize first.
+    ///
+    /// `None`/negative means the host did not answer; a real 0 means we are
+    /// genuinely holding none, and the two must not read the same.
+    #[serde(default)]
+    pub envoys_free: Option<i64>,
+    /// Great Person POINTS by Civilization VI class type, e.g.
+    /// `GREAT_PERSON_CLASS_SCIENTIST`. The points, not the people: the earned
+    /// individuals already arrive as units.
+    ///
+    /// `district_project_value` prices every district project against the live
+    /// Great Person race — how close this empire is to the next one of that
+    /// class, and how close the leading rival is. Without this the race is all
+    /// zeros in every live game, so the Campus project's entire reason to exist
+    /// (Great Scientist points) is invisible to the planner that chooses it.
+    #[serde(default)]
+    pub great_person_points: Option<BTreeMap<String, f64>>,
     /// Total Governor Titles obtained and spent according to Firaxis. These are
     /// separate from the roster because a title can be held unspent.
     #[serde(default)]
@@ -5930,6 +5971,42 @@ fn restore_active_trade_routes(
 /// not all Civics, and neither appointments, promotions nor assignments are derived
 /// facts. Without this pass CIVVIS spends the same titles on every reconstructed
 /// turn and repeatedly appoints Governors already visible in the host game.
+/// Carry the Great Person race across from the host.
+///
+/// Deliberately **not** part of `apply_governor_state`: that function returns
+/// early when the host reports no governors, and the Great Person race has
+/// nothing to do with governors. Bundling them would have made this arrive only
+/// in games that already had a Governor appointed, which is precisely the kind
+/// of silent conditional the mirror has been bitten by before.
+fn apply_great_person_points(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    unmapped: &mut Vec<String>,
+) {
+    // Civilization VI names the class `GREAT_PERSON_CLASS_SCIENTIST`; CIVVIS
+    // keys the same thing `scientist`. The nine classes correspond one to one,
+    // so the translation is the suffix, lowercased — and an unrecognised class
+    // is reported rather than dropped, because a new expansion adding one is
+    // exactly the case where silence would be wrong.
+    if let Some(points) = state.great_person_points.as_ref() {
+        let mut gpp = BTreeMap::new();
+        for (class, total) in points {
+            match class.strip_prefix("GREAT_PERSON_CLASS_") {
+                Some(kind) if !kind.is_empty() => {
+                    gpp.insert(kind.to_ascii_lowercase(), *total);
+                }
+                _ => {
+                    let issue = format!("great_person_class:{class}");
+                    if !unmapped.contains(&issue) {
+                        unmapped.push(issue);
+                    }
+                }
+            }
+        }
+        game.players[0].gpp = gpp;
+    }
+}
+
 fn apply_governor_state(
     game: &mut crate::game::Game,
     state: &StateSnapshot,
@@ -6439,8 +6516,13 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "prophet_pending",
         "policies", "policy_slots", "gold", "faith", "science", "culture", "score",
-        "military", "trade_capacity", "governor_points", "governor_points_spent",
+        "military", "trade_capacity", "great_person_points", "governor_points",
+        "governor_points_spent",
         "governors", "cities", "units", "trade_routes", "rivals", "minors", "hostiles",
+        // Unspent envoys. `the_schema_allowlists_cover_every_declared_field` fails
+        // if a new StateSnapshot field is missing here — this list is a second
+        // copy of the struct's names and nothing keeps them in step automatically.
+        "envoys_free",
     ];
     const CITY: &[&str] = CITY_KEYS;
     const DISTRICT: &[&str] = &["type", "x", "y", "pillaged", "complete"];
@@ -7437,7 +7519,7 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
         false => String::new(),
     };
     Some(format!(
-        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}{}",
+        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}{}{}",
         state.science,
         science,
         pct(science, state.science),
@@ -7447,7 +7529,37 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
         production_part,
         attributed,
         host_amenity_report(state),
+        host_envoy_report(state),
     ))}
+
+/// Envoys Civilization VI says we are holding and have not placed.
+///
+/// ★★★★★ Reported here because the loss is invisible everywhere else. `SendEnvoy`
+/// is gated behind `Player::envoys_free`, which the mirror does not carry, so the
+/// action is never enumerated on a live board and never even reaches the
+/// skipped-action tally. The empire simply never notices it is holding them.
+///
+/// Measured over 36 live runs past turn 150: median envoys PLACED **1**, median
+/// suzerainties **0**, and 16 of 36 runs finished having placed none at all.
+///
+/// Prints nothing when the host did not answer, so a mirror built before the
+/// export does not read as an empire that is correctly holding zero.
+fn host_envoy_report(state: &StateSnapshot) -> String {
+    let Some(free) = state.envoys_free.filter(|n| *n >= 0) else {
+        return String::new();
+    };
+    let placed: i64 = state.minors.iter().map(|m| m.envoys.max(0)).sum();
+    // ⚠ `suzerain` is a SEAT ID defaulting to `minus_one`, not a flag. Seat 0 is
+    // ours, and an unclaimed city-state reads -1 — so testing `== 0` counts only
+    // the ones we actually hold. A truthiness test here would report every
+    // masterless city-state as ours, which is the instrument lying in the one
+    // direction that would make this whole finding look already-solved.
+    let suzerain = state.minors.iter().filter(|m| m.suzerain == 0).count();
+    format!(
+        "; envoys unspent {free} placed {placed} suzerain {suzerain}/{}",
+        state.minors.len()
+    )
+}
 
 /// What Civilization VI itself says the empire's happiness is costing it.
 ///
@@ -9139,6 +9251,7 @@ pub fn rebuild_from_state(
         &known_city_ids,
     ));
     apply_governor_state(&mut game, state, &mut unmapped);
+    apply_great_person_points(&mut game, state, &mut unmapped);
     apply_observed_host_metrics(&mut game, state, &mut unmapped);
     block_loyalty_doomed_settler_sites(&mut game);
 
@@ -10024,6 +10137,7 @@ impl LiveMirror {
         // no plan of ours worth preserving.
         if skip_rivals {
             apply_governor_state(&mut self.game, state, &mut self.unmapped);
+            apply_great_person_points(&mut self.game, state, &mut self.unmapped);
             return;
         }
         for uid in std::mem::take(&mut self.rival_units) {
@@ -10449,6 +10563,64 @@ mod host_fact_tests {
         .is_none());
     }
 
+    /// The Great Person race the planner prices against must actually exist.
+    ///
+    /// `district_project_value` reads `players[pid].gpp` for this empire and
+    /// every rival, and awards up to 150 for closing on a leader and 240 for
+    /// overtaking one. Before this the field was never written from a live
+    /// game, so both sides of every one of those comparisons were 0.0 — which
+    /// is why the Campus research project, whose entire payoff is Great
+    /// Scientist points, was chosen 7 times against 131 for the other district
+    /// projects across five live runs.
+    #[test]
+    fn great_person_points_reach_the_planner_from_the_host() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let mut points = BTreeMap::new();
+        points.insert("GREAT_PERSON_CLASS_SCIENTIST".to_string(), 118.0);
+        points.insert("GREAT_PERSON_CLASS_WRITER".to_string(), 12.5);
+        // A class Civilization VI could add that CIVVIS has never heard of must
+        // be reported, not silently dropped.
+        points.insert("GREAT_PERSON_CLASS_ASTRONAUT".to_string(), 4.0);
+        points.insert("NOT_A_GREAT_PERSON_CLASS".to_string(), 9.0);
+        let state = StateSnapshot {
+            turn: 92,
+            great_person_points: Some(points),
+            ..StateSnapshot::default()
+        };
+        let report = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let game = &report.game;
+
+        assert_eq!(
+            game.players[0].gpp.get("scientist").copied(),
+            Some(118.0),
+            "the Scientist race is what the Campus project is played for"
+        );
+        assert_eq!(game.players[0].gpp.get("writer").copied(), Some(12.5));
+        assert_eq!(
+            game.players[0].gpp.get("astronaut").copied(),
+            Some(4.0),
+            "an unfamiliar class still translates by its suffix"
+        );
+        assert!(
+            report
+                .unmapped
+                .iter()
+                .any(|issue| issue.contains("NOT_A_GREAT_PERSON_CLASS")),
+            "a class that does not carry the prefix must be reported: {:?}",
+            report.unmapped
+        );
+        assert!(
+            !game.players[0].gpp.contains_key("not_a_great_person_class"),
+            "and must not be invented into the race"
+        );
+    }
+
     #[test]
     fn firaxis_governors_replace_inferred_titles_roster_and_promotions() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -10676,6 +10848,45 @@ mod host_fact_tests {
             ..Default::default()
         };
         assert_eq!(host_amenity_report(&state), "",
+            "the mod's -1 must be refused as firmly as an absent field");
+    }
+
+    /// The wire format is the risk: a Lua key that does not match the serde name
+    /// silently returns the default and the empire reads as correctly holding zero.
+    #[test]
+    fn unspent_envoys_cross_the_bridge_and_name_the_suzerainties_we_hold() {
+        let state: StateSnapshot = serde_json::from_str(
+            r#"{"turn":214,"envoys_free":7,
+                "minors":[
+                  {"player":8,"civ":"CIVILIZATION_YEREVAN","envoys":3,"suzerain":0},
+                  {"player":9,"civ":"CIVILIZATION_VILNIUS","envoys":1,"suzerain":3},
+                  {"player":10,"civ":"CIVILIZATION_KABUL","envoys":0}]}"#,
+        )
+        .expect("the mod's state record deserializes");
+        assert_eq!(state.envoys_free, Some(7), "the field name must match the Lua key");
+
+        let report = host_envoy_report(&state);
+        assert!(report.contains("unspent 7"), "{report}");
+        assert!(report.contains("placed 4"), "{report}");
+        // ⚠ Exactly one: seat 0 is ours, seat 3 is a rival's, and the third
+        // city-state has no suzerain at all and defaults to -1.
+        assert!(report.contains("suzerain 1/3"),
+            "an unclaimed city-state must not count as ours: {report}");
+    }
+
+    /// ⚠ A mirror built before this export must not read as an empire correctly
+    /// holding no envoys — that is the instrument inventing good news.
+    #[test]
+    fn a_host_that_never_reported_envoys_says_nothing_rather_than_zero() {
+        let silent: StateSnapshot =
+            serde_json::from_str(r#"{"turn":40,"minors":[]}"#).expect("deserializes");
+        assert_eq!(silent.envoys_free, None);
+        assert_eq!(host_envoy_report(&silent), "");
+
+        // The other shape: the host was asked and could not answer.
+        let failed: StateSnapshot = serde_json::from_str(
+            r#"{"turn":40,"envoys_free":-1,"minors":[]}"#).expect("deserializes");
+        assert_eq!(host_envoy_report(&failed), "",
             "the mod's -1 must be refused as firmly as an absent field");
     }
 }

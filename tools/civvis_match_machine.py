@@ -739,6 +739,7 @@ class MatchMachine:
         timeout: float,
         purpose: str,
         log_path: Path,
+        prefer_visible: bool = False,
     ) -> subprocess.CompletedProcess[str] | None:
         """Run long work while preserving terminal, deadline, and host limits."""
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -747,6 +748,8 @@ class MatchMachine:
         admission_pending = False
         cpu_throttled = purpose == "build"
         pressure_paused = False
+        yielding_for_visible = False
+        visible_recovery_not_before: float | None = None
         with log_path.open("w", encoding="utf-8") as output:
             process = subprocess.Popen(
                 args,
@@ -795,6 +798,48 @@ class MatchMachine:
                 if now - started >= timeout:
                     stop_process(process, timeout=2)
                     raise subprocess.TimeoutExpired(args, timeout)
+
+                if prefer_visible:
+                    visible_games = [game for game in self.games if game.visible]
+                    visible_waiting = not visible_games or any(
+                        game.paused for game in visible_games
+                    )
+                    if visible_waiting:
+                        # The operator loop and background builder otherwise
+                        # race for the same narrow recovery window.  A build
+                        # pulse can repeatedly win and leave the sole visible
+                        # match stopped even though both processes are alive.
+                        if not paused:
+                            if not set_paused(process, True):
+                                stop_process(process, timeout=2)
+                                raise RuntimeError(
+                                    "cannot yield background work to visible game"
+                                )
+                            paused = True
+                        if not yielding_for_visible:
+                            yielding_for_visible = True
+                            self.event(
+                                "work_yielded_for_visible",
+                                purpose=purpose,
+                                pid=process.pid,
+                            )
+                        visible_recovery_not_before = None
+                        time.sleep(self.args.poll)
+                        continue
+                    if yielding_for_visible:
+                        if visible_recovery_not_before is None:
+                            visible_recovery_not_before = now + RESUME_STEP_SECONDS
+                        if now < visible_recovery_not_before:
+                            time.sleep(self.args.poll)
+                            continue
+                        yielding_for_visible = False
+                        visible_recovery_not_before = None
+                        self.event(
+                            "work_resumed_after_visible",
+                            purpose=purpose,
+                            pid=process.pid,
+                            grace_seconds=RESUME_STEP_SECONDS,
+                        )
 
                 sample = resources(self.runtime)
                 must_pause = (
@@ -907,7 +952,7 @@ class MatchMachine:
         captured = log_path.read_text(encoding="utf-8", errors="replace")
         return subprocess.CompletedProcess(args, returncode, captured)
 
-    def compile_build(self, revision: str) -> Path | None:
+    def compile_build(self, revision: str, prefer_visible: bool = False) -> Path | None:
         self.event("build_started", revision=revision, jobs=self.args.build_jobs)
         reset = command("git", "reset", "--hard", revision, cwd=self.source)
         if reset.returncode != 0:
@@ -922,6 +967,7 @@ class MatchMachine:
             timeout=self.args.build_timeout,
             purpose="build",
             log_path=self.runtime / "logs" / f"build-{revision[:12]}.log",
+            prefer_visible=prefer_visible,
         )
         if result is None:
             return None
@@ -944,6 +990,7 @@ class MatchMachine:
             timeout=180,
             purpose="validation",
             log_path=self.runtime / "logs" / f"validation-{revision[:12]}.log",
+            prefer_visible=prefer_visible,
         )
         if check is None:
             promoted.unlink(missing_ok=True)
@@ -976,7 +1023,7 @@ class MatchMachine:
 
     def start_head_build(self, revision: str) -> None:
         self.build_revision = revision
-        self.build_future = self.build_executor.submit(self.compile_build, revision)
+        self.build_future = self.build_executor.submit(self.compile_build, revision, True)
 
     def poll_head_build(self, now: float) -> None:
         future = self.build_future

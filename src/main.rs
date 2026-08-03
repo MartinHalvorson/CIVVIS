@@ -387,13 +387,27 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 ///
 /// A compatibility re-pin.
 ///
+///
+/// #977 raises the wartime army target when the enemy outweighs us, behind
+/// `army_target_weighs_the_enemy` — `false` in `AdvancedAi::new()` and set only
+/// by `civvis_orders`. `wartime_army_target` returns its `shipped` argument
+/// unchanged on that flag before it reads a single player, so every configured,
+/// legacy and Elo agent wants exactly the army it always wanted. A
+/// compatibility re-pin.
+///
+/// #981 adds `BasicAi::loyalty_emergency`, which ranks loyalty trouble by TURNS
+/// TO FLIP rather than by level, behind the new `loyalty_rate_alarm` flag. The
+/// flag is `false` in both `BasicAi` constructors and `loyalty_emergency`
+/// returns the old level-only answer on it before reading any rate, so every
+/// configured, legacy and Elo agent behaves identically. A compatibility re-pin.
+///
 /// #984 credits a movement tile for the attack it opens, behind
 /// `strike_opening` — `false` in `AdvancedAi::new()` and set only by
 /// `enable_live_bridge`. `strike_opening_value` returns 0.0 on that flag
 /// before it reads the board, so every configured, legacy and Elo agent scores
 /// every tile exactly as it did. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc34f_bf6b_0351_bf56;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x07d8_de22_7c72_0b3f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
