@@ -1162,6 +1162,67 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// ★★★★ A refused DISTRICT must cool down like every other production refusal.
+    ///
+    /// `blocked_production_from` has always had a `DISTRICT_` fallback and
+    /// `production_block_key` has always emitted `district:{name}`, but
+    /// `refused_production` accepted only `UNIT_`/`BUILDING_`/`PROJECT_`, so no
+    /// district name ever reached either and that branch was dead code.
+    ///
+    /// The prefix list predicted the cooldown exactly. Over 20 live runs, gaps
+    /// between successive refusals of the same (run, city, item): every accepted
+    /// prefix had **zero** gaps of one turn, and `DISTRICT_` had **13 of them and
+    /// none of eight or more** — `DISTRICT_HOLY_SITE` re-proposed in one city on
+    /// turns 45 through 58, every consecutive turn, against a TTL of eight.
+    ///
+    /// ⚠ Asserts the whole chain, not the prefix list: a filter that admits the name
+    /// but a translator that drops it would leave the block empty and still pass a
+    /// test written against the parser alone.
+    #[test]
+    fn a_refused_district_cools_down_like_every_other_production_refusal() {
+        let dir = std::env::temp_dir().join(format!("civvis-prodref-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).expect("scratch dir");
+        let path = dir.join("events.jsonl");
+        std::fs::write(
+            &path,
+            concat!(
+                r#"{"kind":"civvis_build_unplayable","turn":45,"city":65536,"item":"DISTRICT_HOLY_SITE","reasons":[]}"#,
+                "\n",
+                r#"{"kind":"civvis_build_unplayable","turn":46,"city":65536,"item":"UNIT_SPY","reasons":[]}"#,
+                "\n",
+                r#"{"kind":"civvis_build_unplayable","turn":30,"city":65536,"item":"DISTRICT_CAMPUS","reasons":[]}"#,
+                "\n",
+            ),
+        )
+        .expect("write events");
+
+        // Turn 50: the t45 and t46 refusals are inside the eight-turn window, the
+        // t30 one is not.
+        let refused = refused_production(&path, 50);
+        let names = refused.get(&65536).expect("the city has recent refusals");
+        assert!(
+            names.contains("DISTRICT_HOLY_SITE"),
+            "a district refusal must be carried like any other"
+        );
+        assert!(names.contains("UNIT_SPY"), "and the kinds that already worked must keep working");
+        assert!(
+            !names.contains("DISTRICT_CAMPUS"),
+            "the TTL still applies — an old refusal is not a permanent ban"
+        );
+
+        // ⚠ The half that was dead code: the name has to survive translation into a
+        // key `Game::can_produce` actually checks.
+        let rules = crate::rules::Rules::embedded();
+        let city_ids: std::collections::BTreeMap<u32, i64> = [(7u32, 65536i64)].into_iter().collect();
+        let blocked = blocked_production_from(&refused, &city_ids, &rules);
+        let keys = blocked.get(&7).expect("translated block for the city");
+        assert!(
+            keys.contains("district:holy_site"),
+            "translated to the same key production_block_key emits, got {keys:?}"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     #[test]
     fn trade_route_refusals_are_merged_through_the_requested_host_turn() {
         let dir = std::env::temp_dir().join(format!("civvis-route-{}", std::process::id()));
@@ -7162,11 +7223,32 @@ pub fn refused_production(
     path: &std::path::Path,
     current_turn: u32,
 ) -> std::collections::BTreeMap<i64, std::collections::BTreeSet<String>> {
+    // ⚠ `DISTRICT_` belongs here, and its absence made a whole branch of
+    // `blocked_production_from` dead code: that function already falls back to
+    // `civvis_node_name(&rules.districts, name, "DISTRICT_")`, and
+    // `production_block_key` already emits `district:{name}`, but no district name
+    // ever reached either because this filter dropped it first.
+    //
+    // ★ The prefix list predicts the cooldown EXACTLY. Over 20 live runs, gaps
+    // between successive refusals of the same (run, city, item):
+    //
+    //   UNIT_       49 combos, 164 events — 0 gaps of 1, 115 of >=8   TTL holding
+    //   BUILDING_   29 combos, 126 events — 0 gaps of 1,  97 of >=8   TTL holding
+    //   PROJECT_    12 combos,  16 events — 0 gaps of 1,   4 of >=8   TTL holding
+    //   DISTRICT_    4 combos,  18 events — 13 gaps of 1,  0 of >=8   NOT holding
+    //
+    // `DISTRICT_HOLY_SITE` was re-proposed in one city on turns 45 through 58, every
+    // consecutive turn, against a TTL of eight.
+    //
+    // This is NOT a duplicate of `blocked_districts`, which is permanent and answers
+    // "the host has no PLOT here" from `build_no_plot`. This one is the eight-turn
+    // cooldown for "the host will not let this city produce that right now" — a
+    // missing prerequisite or a district cap, which changes.
     recent_host_item_refusals(
         path,
         current_turn,
         "civvis_build_unplayable",
-        &["UNIT_", "BUILDING_", "PROJECT_"],
+        &["UNIT_", "BUILDING_", "PROJECT_", "DISTRICT_"],
     )
 }
 
