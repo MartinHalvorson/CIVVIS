@@ -12169,6 +12169,8 @@ const SKY_LAUNCH_FLIGHTS = {
 function queueSkyLaunches(prev, next, now = performance.now()) {
   if (!prev || !next || prev.seed !== next.seed || REDUCED_MOTION_QUERY.matches) return;
   const before = new Map((prev.players || []).map(player => [player.id, player]));
+  const majors = (next.players || []).filter(player =>
+    player.alive && !player.is_minor && !player.is_barbarian);
   for (const player of next.players || []) {
     if (player.is_minor || player.is_barbarian) continue;
     const old = before.get(player.id);
@@ -12182,15 +12184,36 @@ function queueSkyLaunches(prev, next, now = performance.now()) {
       // also makes synthetic/recovery state streams harmless.
       if (anim.skyLaunches.some(launch =>
           launch.playerId === player.id && launch.mission === mission)) continue;
-      anim.skyLaunches.push({playerId:player.id, mission, t0:now,
-                            duration:flight.duration});
+      const launchCrew = majors.filter(candidate =>
+        (candidate.science_projects || []).includes(flight.project))
+        .map(candidate => ({id:candidate.id}));
+      const target = +player.victories?.science?.distance_target || 50;
+      const origin = statePlayerAnchor(next, player.id)?.pos;
+      // A launch is a wall-clock event, not a turn-frame decoration. Fast
+      // spectators can advance dozens of turns during one flight, so freeze
+      // everything the route inherited from the completion frame. In
+      // particular, an exoplanet ship begins advancing on the next turn; if
+      // its live light-year progress becomes this temporary rocket's endpoint,
+      // the endpoint races off-screen and makes a three-second launch look as
+      // though the following turn cut it short.
+      anim.skyLaunches.push({
+        playerId:player.id, player:{id:player.id}, mission, t0:now,
+        duration:flight.duration, endsAt:now + flight.duration,
+        originPos:Array.isArray(origin) ? [...origin] : null,
+        crew:launchCrew,
+        expeditionProgress:Math.max(0, Math.min(1,
+          (+player.exoplanet_distance || 0) / target)),
+      });
     }
   }
 }
 function activeSkyLaunches(now = performance.now()) {
-  for (let index = anim.skyLaunches.length - 1; index >= 0; index--)
-    if (now >= anim.skyLaunches[index].t0 + anim.skyLaunches[index].duration)
+  for (let index = anim.skyLaunches.length - 1; index >= 0; index--) {
+    const launch = anim.skyLaunches[index];
+    const endsAt = launch.endsAt ?? launch.t0 + launch.duration;
+    if (now >= endsAt)
       anim.skyLaunches.splice(index, 1);
+  }
   return anim.skyLaunches;
 }
 function skyLaunchInFlight(playerId, mission, now = performance.now()) {
@@ -14526,15 +14549,19 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
 // The expedition is the only one of the four that is still moving, and the
 // engine already knows how far it has come. Its lane is the line from here to
 // there, and the ship sits on it at exactly that fraction. Launch injection
-// uses this same calculation so the temporary rocket hands off to the real
-// ship without changing lanes.
-function skyExpeditionRoute(player, index, count, exo, radius, centerX, centerY) {
+// uses this same calculation and lane, but freezes the completion-frame
+// fraction: turns may keep moving the real ship while the launch film plays,
+// without dragging the temporary rocket along with it.
+function skyExpeditionRoute(player, index, count, exo, radius, centerX, centerY,
+                            travelledOverride = null) {
   const dx = exo.x - centerX, dy = exo.y - centerY;
   const span = Math.hypot(dx, dy) || 1;
   const ux = dx / span, uy = dy / span;
   const lane = Math.max(7, radius * .9);
   const target = +player.victories?.science?.distance_target || 50;
-  const travelled = Math.max(0, Math.min(1, (+player.exoplanet_distance || 0) / target));
+  const travelled = travelledOverride === null
+    ? Math.max(0, Math.min(1, (+player.exoplanet_distance || 0) / target))
+    : Math.max(0, Math.min(1, travelledOverride));
   const offset = (index - (count - 1) / 2) * lane;
   const ox = -uy * offset, oy = ux * offset;
   const from = radius * 1.6 + 6, to = span - exo.r - 5;
@@ -14596,16 +14623,20 @@ function skyLaunchStart(player, place, radius, centerX, centerY) {
 
 function skyLaunchEnd(launch, player, place, crews,
                       radius, centerX, centerY) {
+  const launchCrew = Array.isArray(launch.crew) && launch.crew.length
+    ? launch.crew
+    : launch.mission === "moon" ? crews.moon
+    : launch.mission === "mars" ? crews.mars : crews.expedition;
   if (launch.mission === "expedition") {
-    const index = crews.expedition.findIndex(candidate => candidate.id === player.id);
+    const index = launchCrew.findIndex(candidate => candidate.id === player.id);
     if (index >= 0) {
-      const route = skyExpeditionRoute(player, index, crews.expedition.length,
-                                       place, radius, centerX, centerY);
+      const route = skyExpeditionRoute(player, index, launchCrew.length,
+        place, radius, centerX, centerY, launch.expeditionProgress);
       return {x:route.shipX, y:route.shipY};
     }
   }
-  const crew = launch.mission === "moon" ? crews.moon : crews.mars;
-  const seat = skyLandingSeats(place, crew).find(entry => entry.player.id === player.id);
+  const seat = skyLandingSeats(place, launchCrew)
+    .find(entry => entry.player.id === player.id);
   if (seat) return {x:seat.x, y:seat.y};
   // A stable landing site can be around the back of a close-up world. Aim for
   // the Earth-facing limb in that case: the rocket disappears behind the body
@@ -14753,7 +14784,8 @@ function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
   const launches = activeSkyLaunches(now);
   if (!launches.length) return;
   for (const launch of launches) {
-    const player = (state.players || []).find(candidate => candidate.id === launch.playerId);
+    const player = launch.player ||
+      (state.players || []).find(candidate => candidate.id === launch.playerId);
     const flight = SKY_LAUNCH_FLIGHTS[launch.mission];
     const place = flight && placements.get(flight.body);
     if (!player || !place) continue;
@@ -15156,7 +15188,7 @@ function flatSkyProject(worldX, worldY) {
 // city and an unambiguous direction: up and out of the picture. Keep that path
 // in screen proportions so the same completion is legible at every map zoom.
 function flatLaunchRoute(launch, player) {
-  const anchor = playerAnchor(player.id);
+  const anchor = launch.originPos ? {pos:launch.originPos} : playerAnchor(player.id);
   if (!anchor?.pos) return null;
   const [x, y] = worldXY(anchor.pos);
   const pixel = 1 / cam.scale;
@@ -15174,7 +15206,8 @@ function drawFlatLaunches(now) {
   const launches = activeSkyLaunches(now);
   if (!launches.length) return;
   for (const launch of launches) {
-    const player = (state.players || []).find(candidate => candidate.id === launch.playerId);
+    const player = launch.player ||
+      (state.players || []).find(candidate => candidate.id === launch.playerId);
     const flight = SKY_LAUNCH_FLIGHTS[launch.mission];
     if (!player || !flight) continue;
     const route = flatLaunchRoute(launch, player);
@@ -22342,11 +22375,14 @@ function centerWorld(pos, immediate = false) {
   cam.x = x; cam.y = clampCameraY(y);
   cameraFlight = null; draw(); drawMini();
 }
+function statePlayerAnchor(st, pid) {
+  if (!st || !Number.isInteger(pid)) return null;
+  return (st.cities || []).find(c => c.owner === pid && c.is_capital) ||
+         (st.cities || []).find(c => c.owner === pid) ||
+         (st.units || []).find(u => u.owner === pid) || null;
+}
 function playerAnchor(pid) {
-  if (!state || !Number.isInteger(pid)) return null;
-  return state.cities.find(c => c.owner === pid && c.is_capital) ||
-         state.cities.find(c => c.owner === pid) ||
-         state.units.find(u => u.owner === pid) || null;
+  return statePlayerAnchor(state, pid);
 }
 function observedPlayerIds() {
   if (!state) return [];
