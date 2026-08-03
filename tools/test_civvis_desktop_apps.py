@@ -75,7 +75,7 @@ class DesktopAppsTests(unittest.TestCase):
             launcher = (
                 desktop_dir
                 / app.bundle_name
-                / "Contents/MacOS"
+                / "Contents/Resources"
                 / app.launcher_script_name
             )
             launcher.parent.mkdir(parents=True)
@@ -137,15 +137,19 @@ class DesktopAppsTests(unittest.TestCase):
     def test_native_launcher_executes_the_adjacent_zsh_script(self):
         source = ROOT / "tools/desktop/CIVVIS Launcher.c"
         with tempfile.TemporaryDirectory() as held:
-            macos = pathlib.Path(held)
+            contents = pathlib.Path(held) / "CIVVIS Test.app/Contents"
+            macos = contents / "MacOS"
+            resources = contents / "Resources"
+            macos.mkdir(parents=True)
+            resources.mkdir()
             executable = macos / "CIVVISLauncher"
-            marker = macos / "marker"
-            script = macos / desktop.APPS[0].launcher_script_name
+            marker = resources / "marker"
+            script = resources / desktop.APPS[0].launcher_script_name
             script.write_text(
                 "#!/bin/zsh\nprint -r -- native-wrapper > \"${0:A:h}/marker\"\n",
                 encoding="utf-8",
             )
-            script.chmod(0o755)
+            script.chmod(0o644)
             subprocess.run(
                 (
                     "/usr/bin/xcrun",
@@ -165,6 +169,7 @@ class DesktopAppsTests(unittest.TestCase):
             )
             subprocess.run((str(executable),), check=True)
             self.assertEqual(marker.read_text(encoding="utf-8"), "native-wrapper\n")
+            self.assertFalse(script.stat().st_mode & 0o111)
 
     def test_install_archives_both_apps_before_replacing_them(self):
         with tempfile.TemporaryDirectory() as held:
