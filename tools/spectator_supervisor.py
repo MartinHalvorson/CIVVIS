@@ -125,6 +125,9 @@ SCRIPT_PATH = Path(__file__).resolve()
 SCRIPT_ROOT = SCRIPT_PATH.parents[1]
 RUNNING_SUPERVISOR_SHA256 = hashlib.sha256(SCRIPT_PATH.read_bytes()).hexdigest()
 ROOT = Path(os.environ.get("CIVVIS_DEPLOY_ROOT", str(SCRIPT_ROOT))).expanduser().resolve()
+RUNTIME_ROOT = Path(
+    os.environ.get("CIVVIS_RUNTIME_ROOT", str(ROOT))
+).expanduser().resolve()
 SOURCE_ROOT = Path(
     os.environ.get(
         "CIVVIS_SUPERVISOR_SOURCE",
@@ -132,7 +135,7 @@ SOURCE_ROOT = Path(
     )
 ).expanduser().resolve()
 BINARY_NAME = "civvis.exe" if os.name == "nt" else "civvis"
-RUNTIME_BINARY = ROOT / "target" / "spectator" / BINARY_NAME
+RUNTIME_BINARY = RUNTIME_ROOT / "target" / "spectator" / BINARY_NAME
 RUNTIME_METADATA = RUNTIME_BINARY.parent / "build.json"
 CHECKPOINT_DIR = RUNTIME_BINARY.parent / "checkpoints"
 RESULTS_DIR = RUNTIME_BINARY.parent / "results"
@@ -394,12 +397,20 @@ def source_revision() -> str:
     ).stdout.strip()
 
 
+def source_commit_time() -> str:
+    """Return the selected revision's committer timestamp for the live HUD."""
+    return command(
+        "git", "show", "-s", "--format=%cI", "HEAD", check=True, cwd=SOURCE_ROOT
+    ).stdout.strip()
+
+
 def write_runtime_metadata(snapshot: str) -> None:
     revision = source_revision()
     dirty = runtime_inputs_dirty()
     metadata = {
         "revision": revision,
         "embedded_revision": revision,
+        "commit_time": source_commit_time(),
         "dirty": dirty,
         "source_snapshot": snapshot,
         "binary_sha256": hashlib.sha256(RUNTIME_BINARY.read_bytes()).hexdigest(),
@@ -434,6 +445,7 @@ def refresh_runtime_metadata(snapshot: str) -> None:
     dirty = runtime_inputs_dirty()
     current_identity = {
         "revision": revision,
+        "commit_time": source_commit_time(),
         "dirty": dirty,
         "source_snapshot": snapshot,
         "binary_sha256": hashlib.sha256(RUNTIME_BINARY.read_bytes()).hexdigest(),
@@ -896,7 +908,9 @@ def quarantine_checkpoint(path: Path) -> None:
         pass
 
 
-def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[str, Any]:
+def session_settings(
+    state: dict[str, Any], defaults: dict[str, Any], fixed_setup: bool = False
+) -> dict[str, Any]:
     """Carry the just-finished game's setup forward to the next binary.
 
     The seat counts come from the operator's flags, never from the observation.
@@ -911,6 +925,11 @@ def session_settings(state: dict[str, Any], defaults: dict[str, Any]) -> dict[st
     selected = normalized_simulation_settings(state.get("next_game_settings"))
     if selected is not None:
         return selected
+    if fixed_setup:
+        # Desktop launchers promise the repository's default landing setup on
+        # every deal. Keep a viewer's explicit staged setup above, but do not
+        # let the unattended variety policy silently change the next table.
+        return dict(defaults)
 
     players = state.get("players") or []
     game_map = state.get("map") or {}
@@ -1203,10 +1222,24 @@ def start_server(
     # page embedded in the executable. Starting in the shared checkout would
     # pair a canonical engine with whichever UI a development session is
     # editing, recreating the cross-machine mismatch at the presentation layer.
+    environment = os.environ.copy()
+    try:
+        metadata = json.loads(RUNTIME_METADATA.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        metadata = {}
+    for field, variable in (
+        ("revision", "CIVVIS_COMMIT"),
+        ("commit_time", "CIVVIS_COMMIT_TIME"),
+        ("built_at", "CIVVIS_BUILT_AT"),
+    ):
+        value = metadata.get(field)
+        if isinstance(value, str) and value:
+            environment[variable] = value
     process = subprocess.Popen(
         server_command(port, settings, open_browser, resume, initially_paused),
         cwd=RUNTIME_BINARY.parent,
         text=True,
+        env=environment,
         **_NO_WINDOW,
     )
     detail = f", resuming {resume.name}" if resume is not None else ""
@@ -1258,9 +1291,13 @@ def pid_alive(pid: int) -> bool:
     if os.name != "nt":
         try:
             os.kill(pid, 0)
-            return True
         except OSError:
             return False
+        # A terminated child remains addressable by kill(0) until its parent
+        # reaps it. It cannot own a port or compute a turn, so treating that
+        # zombie as live makes an adopting supervisor wait forever.
+        state = command("ps", "-o", "stat=", "-p", str(pid))
+        return state.returncode == 0 and not state.stdout.strip().startswith("Z")
     # os.kill(pid, 0) is not a probe on Windows: it opens the target with
     # PROCESS_ALL_ACCESS and calls TerminateProcess. That open is denied for a
     # server this process did not create, so an adopting successor read every
@@ -1284,10 +1321,18 @@ def process_cpu_percent(pid: int, window: float = 0.25) -> float | None:
         result = command("ps", "-o", "%cpu=", "-p", str(pid))
         if result.returncode != 0:
             return None
+        # Give the kernel accounting tick time to distinguish a newly spawned
+        # sleeper's startup cost from a process that is still consuming CPU.
+        if window > 0.0:
+            time.sleep(max(window, 0.5))
+            result = command("ps", "-o", "%cpu=", "-p", str(pid))
+            if result.returncode != 0:
+                return None
         try:
-            return float(result.stdout.strip())
+            percent = float(result.stdout.strip())
         except ValueError:
             return None
+        return percent
     # Windows exposes cumulative CPU time rather than a rate, so sample twice.
     before = windows_cpu_seconds(pid)
     if before is None:
@@ -1527,6 +1572,11 @@ def parse_args() -> argparse.Namespace:
         default=1800.0,
         help="how long a promoted runtime waits for the active game to end "
         "before it replaces the server mid-match",
+    )
+    parser.add_argument(
+        "--fixed-setup",
+        action="store_true",
+        help="reuse the launch settings at each automatic game boundary",
     )
     parser.add_argument("--no-open", action="store_true")
     parser.add_argument(
@@ -1898,7 +1948,9 @@ def main() -> int:
                 source_check_at = time.monotonic() + max(1.0, args.source_check_interval)
                 continue
 
-            settings = session_settings(state, settings)
+            settings = session_settings(
+                state, settings, getattr(args, "fixed_setup", False)
+            )
             if state.get("winner") is None:
                 finished_key = None
                 now = time.monotonic()

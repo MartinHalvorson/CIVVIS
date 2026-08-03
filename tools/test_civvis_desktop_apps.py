@@ -47,9 +47,9 @@ class DesktopAppsTests(unittest.TestCase):
 
         for expected in (
             "--players 6 --width 74 --height 46 --city-states 9",
-            "--speed online --map continents --shape flat --poles poles",
-            "--start-era ancient --spectate",
+            "--turns 250 --speed online --map continents --shape flat --poles poles",
             "--victories science,culture,religious,diplomatic,domination,score",
+            "--fixed-setup --source-check-interval 1200",
         ):
             self.assertIn(expected, rendered["rust"])
             self.assertIn(expected, rendered["wasm"])
@@ -61,9 +61,11 @@ class DesktopAppsTests(unittest.TestCase):
                 '    # A live file server can begin serving a newly installed bundle',
                 launcher,
             )
-            self.assertIn('    open_civvis_page true\n    exit 0', launcher)
+            self.assertIn('    open_civvis_page true\n    start_tab_watcher', launcher)
             self.assertIn('"${refresh_tool}" refresh', launcher)
+            self.assertIn("--max-build-age-minutes 20 --no-launch", launcher)
             self.assertIn("set minimized of chrome_window to false", launcher)
+        self.assertEqual([app.label for app in desktop.APPS], ["CIVVIS Rust", "CIVVIS Wasm"])
 
     def test_refresh_rebuilds_only_stale_or_old_pairs(self):
         held = tempfile.TemporaryDirectory()
@@ -85,7 +87,7 @@ class DesktopAppsTests(unittest.TestCase):
         ), mock.patch.object(desktop, "age_minutes", side_effect=(12, 13)):
             self.assertFalse(
                 desktop.installed_pair_needs_refresh(
-                    desktop_dir, self.revision, 30
+                    desktop_dir, self.revision, 20
                 )
             )
 
@@ -95,16 +97,16 @@ class DesktopAppsTests(unittest.TestCase):
         ), mock.patch.object(desktop, "age_minutes", side_effect=(12, 13)):
             self.assertTrue(
                 desktop.installed_pair_needs_refresh(
-                    desktop_dir, self.revision, 30
+                    desktop_dir, self.revision, 20
                 )
             )
 
         with mock.patch.object(
             desktop, "launcher_metadata", side_effect=(current, wasm)
-        ), mock.patch.object(desktop, "age_minutes", return_value=31):
+        ), mock.patch.object(desktop, "age_minutes", return_value=21):
             self.assertTrue(
                 desktop.installed_pair_needs_refresh(
-                    desktop_dir, self.revision, 30
+                    desktop_dir, self.revision, 20
                 )
             )
 
@@ -159,6 +161,30 @@ class DesktopAppsTests(unittest.TestCase):
                 self.assertTrue((restored / "old").is_file())
                 self.assertFalse((restored / "new").exists())
 
+    def test_install_archives_legacy_reverse_named_apps(self):
+        with tempfile.TemporaryDirectory() as held:
+            root = pathlib.Path(held)
+            apps = root / "apps"
+            desktop_dir = root / "Desktop"
+            for app in desktop.APPS:
+                (apps / app.bundle_name / "Contents/Resources").mkdir(parents=True)
+                legacy = (
+                    desktop_dir
+                    / (app.legacy_labels[0] + ".app")
+                    / "Contents/Resources"
+                )
+                legacy.mkdir(parents=True)
+                (legacy / "old").write_text(app.mode, encoding="utf-8")
+
+            swap = desktop.install_apps(apps, desktop_dir, root / "state")
+
+            self.assertEqual(len(swap.archives), 2)
+            for app in desktop.APPS:
+                self.assertFalse(
+                    (desktop_dir / (app.legacy_labels[0] + ".app")).exists()
+                )
+                self.assertTrue((desktop_dir / app.bundle_name).is_dir())
+
     def test_install_lock_exposes_only_a_live_refresh_pid(self):
         with tempfile.TemporaryDirectory() as held:
             state = pathlib.Path(held)
@@ -178,6 +204,8 @@ class DesktopAppsTests(unittest.TestCase):
             wasm_bytes=8_000_000,
             bundle_bytes=12_000_000,
             serve_script=pathlib.Path("/build/serve.py"),
+            supervisor_script=pathlib.Path("/build/spectator_supervisor.py"),
+            source_snapshot="snapshot",
             version="0.6.0",
         )
         rust = desktop.build_note(desktop.APPS[0], artifacts, artifacts.native_built_at)
@@ -187,19 +215,75 @@ class DesktopAppsTests(unittest.TestCase):
             self.assertIn(desktop.DEFAULT_PRESET, note)
         self.assertIn("Engine: 8,000,000 bytes", wasm)
 
-    def test_listener_verification_waits_for_launcher_to_exit(self):
+    def test_listener_verification_waits_for_long_lived_owners(self):
         attached_rust = {"pid": 101, "ppid": 99, "command": "rust"}
-        detached_rust = {"pid": 101, "ppid": 1, "command": "rust"}
-        detached_wasm = {"pid": 202, "ppid": 1, "command": "wasm"}
+        owned_rust = {
+            "pid": 101,
+            "ppid": 88,
+            "command": "/state/rust-runtime/target/spectator/civvis play",
+        }
+        owned_wasm = {
+            "pid": 202,
+            "ppid": 1,
+            "command": "/Desktop/CIVVIS Wasm.app/Contents/Resources/serve.py site",
+        }
         with mock.patch.object(
             desktop,
             "listener",
-            side_effect=(attached_rust, detached_wasm, detached_rust, detached_wasm),
+            side_effect=(attached_rust, owned_wasm, owned_rust, owned_wasm),
         ), mock.patch.object(desktop.time, "sleep") as sleep:
             listeners = desktop.wait_for_detached_listeners(ROOT)
 
-        self.assertEqual(listeners, {"rust": detached_rust, "wasm": detached_wasm})
+        self.assertEqual(listeners, {"rust": owned_rust, "wasm": owned_wasm})
         sleep.assert_called_once_with(0.25)
+
+    def test_refresh_agent_checks_often_enough_to_keep_builds_under_twenty_minutes(self):
+        with tempfile.TemporaryDirectory() as held:
+            home = pathlib.Path(held)
+            with mock.patch.object(desktop.pathlib.Path, "home", return_value=home):
+                payload = desktop.refresh_agent_payload(
+                    ROOT, home / "Desktop", home / "state"
+                )
+        self.assertEqual(payload["StartInterval"], 600)
+        self.assertEqual(desktop.REFRESH_REBUILD_AGE_MINUTES, 10)
+        arguments = payload["ProgramArguments"]
+        self.assertIn("refresh", arguments)
+        self.assertIn("--no-launch", arguments)
+
+    def test_endless_refresh_prunes_only_old_generated_artifacts(self):
+        with tempfile.TemporaryDirectory() as held:
+            state = pathlib.Path(held)
+            previous = state / "previous"
+            previous.mkdir()
+            builds = []
+            archives = []
+            for index in range(5):
+                build = state / f"build-abcdef{index}-20260803T22000{index}Z"
+                archive = previous / f"CIVVIS-Rust-abcdef{index}.app"
+                build.mkdir()
+                archive.mkdir()
+                desktop.os.utime(build, (index, index))
+                desktop.os.utime(archive, (index, index))
+                builds.append(build)
+                archives.append(archive)
+            unrelated = state / "operator-data"
+            unrelated.mkdir()
+
+            desktop.prune_generated_state(state, keep_builds=2, keep_archives=3)
+
+            self.assertEqual([path.exists() for path in builds], [False] * 3 + [True] * 2)
+            self.assertEqual(
+                [path.exists() for path in archives], [False] * 2 + [True] * 3
+            )
+            self.assertTrue(unrelated.is_dir())
+
+    def test_tab_watcher_is_valid_zsh_and_owns_both_lifecycles(self):
+        watcher = ROOT / "tools/desktop/CIVVIS Tab Watcher.zsh.in"
+        subprocess.run(("/bin/zsh", "-n", str(watcher)), check=True)
+        text = watcher.read_text(encoding="utf-8")
+        self.assertIn("chrome_has_tab", text)
+        self.assertIn("stop_owned_processes", text)
+        self.assertIn('misses >= 5', text)
 
     def test_shared_page_names_each_desktop_channel(self):
         page = (ROOT / "web/index.html").read_text(encoding="utf-8")
