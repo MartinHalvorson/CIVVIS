@@ -451,8 +451,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `enable_live_bridge`). `promotion_heal_is_wasted` returns `false` on that
 /// flag before it reads a unit, so every configured, legacy and Elo agent
 /// promotes exactly when it always did. A compatibility re-pin.
+///
+/// The tactical-role branch adds class assignments, projected return-fire,
+/// wall/support coordination, and cavalry action priority behind
+/// `BasicAi::tactical_strategy`. Both Basic constructors leave it `false`, and
+/// `AdvancedAi::promoted_policy_envoy` alone enables it for the production
+/// controller, so frozen Basic, configured, legacy and `advanced_v1` entrants
+/// retain their old branches. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5f7e_744b_f90d_bb9c;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd4df_3cee_5244_46ba;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
