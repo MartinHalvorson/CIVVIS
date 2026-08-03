@@ -5282,6 +5282,63 @@ pub struct StateCity {
     /// Food stockpiled toward the next citizen.
     #[serde(default)]
     pub food: f64,
+    /// Civilization VI's own amenity ledger for this city, and the multiplier it
+    /// puts on every non-food yield.
+    ///
+    /// ★★★★★ NONE OF THIS WAS EVER ASKED FOR. Neither mod exported an amenity,
+    /// happiness or luxury field and this struct imported none, so CIVVIS's whole
+    /// happiness picture was derived from its own rules on the reconstructed board
+    /// and never once checked against the host.
+    ///
+    /// That derived number is not decoration: [`Game::amenity_yield_mult_for`] bands
+    /// it straight onto science, production, gold, **culture** and faith — `+5` →
+    /// 1.20, `0` → 1.00, `-4` → 0.80, `-6` → 0.70. CIVVIS's model puts the live
+    /// empires at `-4/-5`, i.e. paying a **25-30% tax on every yield**, which would
+    /// be the largest single multiplier on the board.
+    ///
+    /// ⚠ **The economy drift line cannot settle this and must not be read as if it
+    /// could.** It compares model totals against host totals; a spurious 0.75 here
+    /// and an overestimate anywhere else cancel to a clean-looking number. Only the
+    /// host's own figure decides it, which is what these carry.
+    ///
+    /// `happiness_yield_mult` is `GetHappinessNonFoodYieldModifier` — the host's own
+    /// version of the very quantity CIVVIS bands for itself, so the two are directly
+    /// comparable.
+    ///
+    /// ⚠ **UNKNOWN HAS TWO SHAPES HERE AND A CONSUMER MUST REJECT BOTH.** A field the
+    /// host never sent defaults to [`unknown_metric`], which is `f64::NAN`; a field
+    /// the host tried and failed to read arrives as the mod's `-1`. Neither is zero,
+    /// and a city with genuinely zero amenities must not reconstruct like a city that
+    /// said nothing — a mirror built before this export would otherwise read as a
+    /// perfectly happy empire, which is the instrument inventing good news.
+    ///
+    /// The `>= 0.0` test used by [`host_amenity_report`] rejects both, because every
+    /// comparison against `NAN` is false. Any new reader must do the same; `!= -1.0`
+    /// alone would let `NAN` through.
+    #[serde(default = "unknown_metric")]
+    pub amenities: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_needed: f64,
+    /// Civ 6's happiness *state*, an enum index, not a count. 4 is "content" —
+    /// the shipped CityPanel special-cases exactly that value.
+    #[serde(default = "unknown_metric")]
+    pub happiness: f64,
+    #[serde(default = "unknown_metric")]
+    pub happiness_yield_mult: f64,
+    /// Where the amenities come from, so a shortfall names its own repair rather
+    /// than only its size. Luxuries and entertainment are the two CIVVIS can act on.
+    #[serde(default = "unknown_metric")]
+    pub amenities_luxuries: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_entertainment: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_civics: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_city_states: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_war_weariness: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_bankruptcy: f64,
     /// Loyalty CHANGE per turn. `loyalty` alone is a level, and a city at 100
     /// falling fast looks identical to one at 100 holding steady — which is exactly
     /// how a city was lost at t98 with loyalty reading 100.
@@ -7374,7 +7431,7 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
         false => String::new(),
     };
     Some(format!(
-        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}",
+        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}{}",
         state.science,
         science,
         pct(science, state.science),
@@ -7383,7 +7440,68 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
         pct(culture, state.culture),
         production_part,
         attributed,
+        host_amenity_report(state),
     ))}
+
+/// What Civilization VI itself says the empire's happiness is costing it.
+///
+/// ★★★★★ This line has compared science, culture and production for the whole
+/// project and never once carried the term that multiplies all three. CIVVIS bands
+/// its own derived amenity surplus into a factor on every non-food yield
+/// ([`Game::amenity_yield_mult_for`]: `-4` → 0.80, `-6` → 0.70) and its model puts
+/// the live empires at `-4/-5`. If that is real it is the largest single multiplier
+/// on the board — a **25-30% standing tax on culture and science alike**. If it is
+/// not, CIVVIS has been planning against an invented penalty.
+///
+/// ⚠ **The rest of this line cannot answer that**, which is exactly why the term
+/// belongs here: totals-vs-totals hides a spurious 0.75 behind any offsetting
+/// overestimate. `mult` is the host's own `GetHappinessNonFoodYieldModifier`.
+///
+/// Prints nothing when the host said nothing — the fields default to the
+/// `unknown_metric` sentinel, and a mirror built before the export must not read as
+/// a perfectly happy empire.
+fn host_amenity_report(state: &StateSnapshot) -> String {
+    let known: Vec<&StateCity> = state
+        .cities
+        .iter()
+        .filter(|c| c.amenities >= 0.0 && c.amenities_needed >= 0.0)
+        .collect();
+    if known.is_empty() {
+        return String::new();
+    }
+    let surplus: f64 = known.iter().map(|c| c.amenities - c.amenities_needed).sum();
+    let short = known
+        .iter()
+        .filter(|c| c.amenities < c.amenities_needed)
+        .count();
+    let mults: Vec<f64> = known
+        .iter()
+        .map(|c| c.happiness_yield_mult)
+        .filter(|m| *m >= 0.0)
+        .collect();
+    let mult = if mults.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " host_yield_mult {:.2}",
+            mults.iter().sum::<f64>() / mults.len() as f64
+        )
+    };
+    // Name the two sources CIVVIS can actually act on: improve or trade for a
+    // luxury, or build an Entertainment Complex.
+    let from = |pick: fn(&StateCity) -> f64| -> f64 {
+        known.iter().map(|c| pick(c)).filter(|v| *v >= 0.0).sum()
+    };
+    format!(
+        "; amenities net {:+.0} over {} cities ({} short){} from luxuries {:.0} entertainment {:.0}",
+        surplus,
+        known.len(),
+        short,
+        mult,
+        from(|c| c.amenities_luxuries),
+        from(|c| c.amenities_entertainment),
+    )
+}
 
 /// Policy cards the host ruleset has retired, learned from its own refusals.
 ///
@@ -10481,5 +10599,77 @@ mod host_fact_tests {
                 );
             }
         }
+    }
+
+    /// The wire format is the risk here, not the arithmetic: the Lua field names and
+    /// the serde names have to agree or every read silently returns its sentinel and
+    /// the empire reconstructs as perfectly happy. This deserializes the exact shape
+    /// the mod emits.
+    #[test]
+    fn the_host_amenity_ledger_crosses_the_bridge_and_names_the_shortfall() {
+        let city: StateCity = serde_json::from_str(
+            r#"{"id":65536,"name":"Kabasa","pop":15,"x":3,"y":4,
+                "amenities":3,"amenities_needed":7,"happiness":2,
+                "happiness_yield_mult":0.8,
+                "amenities_luxuries":2,"amenities_entertainment":1,
+                "amenities_civics":0,"amenities_city_states":0,
+                "amenities_war_weariness":0,"amenities_bankruptcy":0}"#,
+        )
+        .expect("the mod's city record deserializes");
+        assert_eq!(city.amenities, 3.0, "the field name must match the Lua key");
+        assert_eq!(city.amenities_needed, 7.0);
+        assert_eq!(city.happiness_yield_mult, 0.8);
+        assert_eq!(city.amenities_luxuries, 2.0);
+
+        let state = StateSnapshot {
+            turn: 214,
+            cities: vec![city],
+            ..Default::default()
+        };
+        let report = host_amenity_report(&state);
+        assert!(report.contains("net -4"), "the sign and size must survive: {report}");
+        assert!(report.contains("(1 short)"), "{report}");
+        assert!(report.contains("host_yield_mult 0.80"),
+            "the host's own multiplier is the whole point of the line: {report}");
+        assert!(report.contains("luxuries 2"), "{report}");
+    }
+
+    /// ⚠ A mirror built before this export must NOT read as a happy empire, and
+    /// UNKNOWN ARRIVES IN TWO SHAPES: absent becomes `f64::NAN` via `unknown_metric`,
+    /// while a host read that failed arrives as the mod's `-1`. This asserts both are
+    /// rejected — a reader testing only `!= -1.0` would let `NAN` through and a
+    /// reader testing only `< 0.0` would let it through the other way, since every
+    /// comparison against `NAN` is false.
+    #[test]
+    fn a_host_that_never_reported_amenities_says_nothing_rather_than_zero() {
+        let silent: StateCity =
+            serde_json::from_str(r#"{"id":65536,"name":"Kabasa","x":3,"y":4}"#)
+                .expect("a pre-export city record still deserializes");
+        assert!(silent.amenities.is_nan(),
+            "an absent amenity read defaults to the unknown_metric sentinel, not zero");
+        assert!(silent.amenities_needed.is_nan());
+        assert!(silent.happiness_yield_mult.is_nan());
+
+        let state = StateSnapshot {
+            turn: 40,
+            cities: vec![silent],
+            ..Default::default()
+        };
+        assert_eq!(host_amenity_report(&state), "",
+            "silence must print nothing, not a surplus of zero");
+
+        // The other shape: the host was asked and could not answer.
+        let failed: StateCity = serde_json::from_str(
+            r#"{"id":65536,"name":"Kabasa","x":3,"y":4,
+                "amenities":-1,"amenities_needed":-1,"happiness_yield_mult":-1}"#,
+        )
+        .expect("a failed host read still deserializes");
+        let state = StateSnapshot {
+            turn: 40,
+            cities: vec![failed],
+            ..Default::default()
+        };
+        assert_eq!(host_amenity_report(&state), "",
+            "the mod's -1 must be refused as firmly as an absent field");
     }
 }
