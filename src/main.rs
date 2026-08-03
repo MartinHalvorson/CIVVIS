@@ -305,8 +305,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// byte-identical and `the_default_controller_keeps_home_defense_off` asserts
 /// it on a board that DOES yield an objective once enabled. A compatibility
 /// re-pin.
+///
+/// #955 also adds `garrison_assignments`/`garrison_step`, which put a unit on a
+/// threatened city's own tile. Behind the SAME `home_defense` flag, short-
+/// circuiting on it first, so this too is a compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8a07_ec2d_0b02_8ed3;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1f5b_6504_c076_b5fb;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

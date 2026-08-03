@@ -69,6 +69,11 @@ const HOME_DEFENSE_MARGIN: f64 = 1.25;
 /// after the damage. Past this range the unit keeps its offensive job.
 const HOME_DEFENSE_RECALL_RANGE: i32 = 10;
 
+/// How near a city a hostile must come before that city wants somebody actually
+/// standing in it. Three tiles is one turn's move for most classical units, so a
+/// garrison ordered at this range is in place before the attacker arrives.
+const GARRISON_ALERT_RADIUS: i32 = 3;
+
 /// How close a visible hostile must be before a city musters against it. A
 /// horseman three tiles out reaches the city next turn; a wanderer beyond that
 /// is not worth a standing garrison.
@@ -6500,6 +6505,123 @@ impl BasicAi {
             .map(|(_, target)| target)
     }
 
+    /// ★★★★★ NOTHING EVER PUT A UNIT INSIDE A CITY.
+    ///
+    /// Same run as `home_defense_objective`, traced to its end (t251). Counting,
+    /// every turn, our cities with one of our combat units standing on them:
+    /// **1 of 6 through t224–t239, then 0/5, 0/4, 0/3, 0/2 to the finish** — while
+    /// **14 to 17 combat units were alive**. The cities then fell one after
+    /// another, 6 → 5 → 4 → 3 → 2 across t226–t249, and the game ended with two
+    /// cities on loyalty 42 and 33, one at 180/200 damage, score 446 dead last
+    /// behind Persia's 1563.
+    ///
+    /// ⚠ THIS IS NOT A SHORTAGE OF ARMY AND IT IS NOT THE SAME BUG AS THE ONE
+    /// ABOVE. `home_defense_objective` intercepts raiders in the field; it never
+    /// makes anybody hold the city tile itself, and an empty city with breached
+    /// walls falls to a single melee step. No other code does it either:
+    /// `peacetime_step`'s "garrison the nearest city" path actually runs
+    /// `patrol_step`, which walks *frontier* posts, and `siege_muster` (#930)
+    /// raises the production floor without placing what it builds.
+    ///
+    /// Pure and deterministic — same board, same assignment, whichever unit is
+    /// asking — so `home_defense_objective` can call it to see who is already
+    /// spoken for without the two mechanisms fighting over the same units.
+    fn garrison_assignments(
+        &self,
+        g: &Game,
+        pid: usize,
+        enemy_ids: &[usize],
+    ) -> Vec<(u32, Pos)> {
+        if !self.home_defense || self.minor || self.barb {
+            return Vec::new();
+        }
+        // A city wants a garrison when something hostile is close enough to
+        // reach it and nothing of ours is standing on it. Worst first: the most
+        // strength bearing down, then the most damage already taken.
+        let mut wanting: Vec<(i64, Pos)> = Vec::new();
+        for city in g.cities.values().filter(|city| city.owner == pid) {
+            let held = g.units_at(city.pos).into_iter().any(|uid| {
+                g.units[&uid].owner == pid && g.rules.units[g.units[&uid].kind].class == "military"
+            });
+            if held {
+                continue;
+            }
+            let pressure: f64 = g
+                .units
+                .values()
+                .filter(|enemy| enemy_ids.contains(&enemy.owner))
+                .filter(|enemy| g.rules.units[enemy.kind].class == "military")
+                .filter(|enemy| g.wdist(enemy.pos, city.pos) <= GARRISON_ALERT_RADIUS)
+                .map(|enemy| effective_strength(g.unit_strength(enemy, true), enemy.hp))
+                .sum();
+            if pressure <= 0.0 {
+                continue;
+            }
+            wanting.push((pressure as i64 * 1_000 + city.hp.max(0) as i64, city.pos));
+        }
+        if wanting.is_empty() {
+            return Vec::new();
+        }
+        wanting.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+
+        let mut responders: Vec<u32> = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid)
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .filter(|unit| {
+                matches!(
+                    g.rules.units[unit.kind].domain.as_deref(),
+                    None | Some("land")
+                )
+            })
+            .filter(|unit| !self.recovering_units.contains(&unit.id))
+            .map(|unit| unit.id)
+            .collect();
+        responders.sort_unstable();
+        // Same bound as the field recall, for the same reason, and shared with
+        // it: between them the two mechanisms never claim more than half.
+        let cap = ((responders.len() as f64 * HOME_DEFENSE_MAX_SHARE).floor() as usize).max(1);
+
+        let mut assigned: Vec<(u32, Pos)> = Vec::new();
+        for (_, city) in wanting {
+            if assigned.len() >= cap {
+                break;
+            }
+            // One unit per city. A second body on the tile adds nothing a city's
+            // own defence does not already do; the rest are better in the field.
+            let Some(&(_, defender)) = responders
+                .iter()
+                .filter(|id| !assigned.iter().any(|(taken, _)| taken == *id))
+                .map(|id| (g.wdist(g.units[id].pos, city), *id))
+                .filter(|(distance, _)| *distance <= HOME_DEFENSE_RECALL_RANGE)
+                .collect::<Vec<_>>()
+                .iter()
+                .min()
+            else {
+                continue;
+            };
+            assigned.push((defender, city));
+        }
+        assigned
+    }
+
+    /// Walk the assigned defender to its city and hold it. Standing on the tile
+    /// IS the job, so arriving means fortifying rather than looking for a fight.
+    fn garrison_step(&mut self, g: &mut Game, pid: usize, uid: u32, enemy_ids: &[usize]) -> bool {
+        let Some((_, city)) = self
+            .garrison_assignments(g, pid, enemy_ids)
+            .into_iter()
+            .find(|(defender, _)| *defender == uid)
+        else {
+            return false;
+        };
+        if g.units[&uid].pos == city {
+            return self.fortify_or_stop(g, pid, uid);
+        }
+        self.step_toward(g, pid, uid, city) || self.fortify_or_stop(g, pid, uid)
+    }
+
     /// ★★★★★ THE HOMELAND HAD NO CLAIM ON THE ARMY AT ALL.
     ///
     /// Measured on live run `civvis-20260803T005930Z` (Kongo, Small, 154 turns):
@@ -6599,6 +6721,10 @@ impl BasicAi {
         // units out of the offensive buys nothing a fighter on patrol does not
         // already give. A unit already withdrawn to heal stays withdrawn —
         // `healing_step` ran before this and its judgement outranks ours.
+        // Units already holding a city tile are spoken for. Excluding them here
+        // is what keeps the two mechanisms from tugging the same unit between a
+        // city and a field raider on alternate turns.
+        let garrisoned = self.garrison_assignments(g, pid, enemy_ids);
         let responders: Vec<u32> = {
             let mut ids: Vec<u32> = g
                 .units
@@ -6612,6 +6738,7 @@ impl BasicAi {
                     )
                 })
                 .filter(|unit| !self.recovering_units.contains(&unit.id))
+                .filter(|unit| !garrisoned.iter().any(|(held, _)| *held == unit.id))
                 .map(|unit| unit.id)
                 .collect();
             ids.sort_unstable();
@@ -6627,8 +6754,16 @@ impl BasicAi {
         // and a lone soldier with a raider at the gates is precisely who cannot
         // afford to be somewhere else. The share bounds over-commitment; it does
         // not license ignoring the threat entirely.
-        let cap = ((responders.len() as f64 * HOME_DEFENSE_MAX_SHARE).floor() as usize).max(1);
-        if !responders.contains(&uid) {
+        //
+        // ⚠ THE BUDGET IS THE WHOLE ARMY'S, NOT THIS LIST'S. `responders` has
+        // already had the garrison removed, so sizing the cap off it would let
+        // garrison and field recall each take half of a shrinking remainder and
+        // together take far more than half. Size it off the full eligible army
+        // and subtract what the garrison spent.
+        let eligible = responders.len() + garrisoned.len();
+        let budget = ((eligible as f64 * HOME_DEFENSE_MAX_SHARE).floor() as usize).max(1);
+        let cap = budget.saturating_sub(garrisoned.len());
+        if cap == 0 || !responders.contains(&uid) {
             return None;
         }
 
@@ -7219,6 +7354,12 @@ impl BasicAi {
                 && self.should_explore(g, pid, uid, true)
                 && self.explore_step(g, pid, uid)
             {
+                return true;
+            }
+            // Holding a threatened city outranks everything else this unit could
+            // do: an empty city with breached walls is lost to one melee step,
+            // and the measured game lost four that way while its army was busy.
+            if self.garrison_step(g, pid, uid, &enemy_ids) {
                 return true;
             }
             // The homeland gets first claim on this unit. Without it the
@@ -9277,6 +9418,138 @@ mod tests {
             .expect("a tile exists that is closer to the enemy city than to the raider");
         let soldier = g.spawn_test_unit("warrior", 0, soldier_at);
         (g, soldier, raider_at, enemy_city)
+    }
+
+    /// The measured collapse in one test: a city with a raider next to it and
+    /// nobody standing on it.
+    ///
+    /// ⚠ The point is WHERE the unit is sent. Targeting, whether it picks the
+    /// enemy city or the raider, always names a tile to attack; only the
+    /// garrison names our own city tile, which is the one that has to be
+    /// occupied for the city not to fall to a single melee step.
+    #[test]
+    fn an_empty_city_with_a_raider_next_to_it_claims_a_defender() {
+        let (mut g, soldier, _, _) = raider_at_home_game();
+        let home = g.cities[&g.player_city_ids(0)[0]].pos;
+        let beside = g
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| {
+                g.units_at(*pos).is_empty()
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .expect("the capital has a passable neighbour");
+        g.spawn_test_unit("warrior", 1, beside);
+
+        let mut ai = BasicAi::new();
+        ai.home_defense = true;
+        assert!(
+            !g.units_at(home)
+                .into_iter()
+                .any(|uid| g.units[&uid].owner == 0),
+            "precondition: the city really is empty"
+        );
+        assert_ne!(
+            ai.nearest_enemy_for_unit(&g, 0, soldier, &[1]),
+            Some(home),
+            "precondition: targeting never names our own city — it only picks things to attack"
+        );
+        assert_eq!(
+            ai.garrison_assignments(&g, 0, &[1]),
+            vec![(soldier, home)],
+            "a threatened, empty city must claim the nearest defender, and name the CITY tile"
+        );
+
+        // And the claim must actually move it — an assignment nothing acts on is
+        // the same empty city.
+        let before = g.units[&soldier].pos;
+        assert!(ai.garrison_step(&mut g, 0, soldier, &[1]));
+        assert!(
+            g.wdist(g.units[&soldier].pos, home) < g.wdist(before, home)
+                || g.units[&soldier].pos == home,
+            "the assigned defender must close on its city"
+        );
+    }
+
+    #[test]
+    fn a_city_that_is_already_held_does_not_claim_anybody() {
+        let (mut g, _, _, _) = raider_at_home_game();
+        let home = g.cities[&g.player_city_ids(0)[0]].pos;
+        let beside = g
+            .nbrs(home)
+            .into_iter()
+            .find(|pos| {
+                g.units_at(*pos).is_empty()
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .expect("the capital has a passable neighbour");
+        g.spawn_test_unit("warrior", 1, beside);
+        g.spawn_test_unit("warrior", 0, home);
+
+        let mut ai = BasicAi::new();
+        ai.home_defense = true;
+        assert_eq!(
+            ai.garrison_assignments(&g, 0, &[1]),
+            Vec::new(),
+            "one body on the tile is the whole job; the rest belong in the field"
+        );
+    }
+
+    /// Garrison and field recall draw on ONE budget. Sizing the field cap off
+    /// the already-reduced responder list would let each take half of a
+    /// shrinking remainder and together take most of the army.
+    #[test]
+    fn garrison_and_field_recall_share_one_half_army_budget() {
+        let (mut g, _, raider_at, _) = raider_at_home_game();
+        let home = g.cities[&g.player_city_ids(0)[0]].pos;
+        let open = |g: &Game, around: Pos, want: usize| -> Vec<Pos> {
+            g.wdisk(around, 3)
+                .into_iter()
+                .filter(|pos| {
+                    *pos != raider_at
+                        && g.units_at(*pos).is_empty()
+                        && g.map
+                            .get(*pos)
+                            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                })
+                .take(want)
+                .collect()
+        };
+        for pos in open(&g, home, 2) {
+            g.spawn_test_unit("warrior", 1, pos);
+        }
+        let mut ours: Vec<u32> = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == 0)
+            .map(|unit| unit.id)
+            .collect();
+        for pos in open(&g, home, 8).into_iter().skip(2).take(5) {
+            ours.push(g.spawn_test_unit("warrior", 0, pos));
+        }
+        let total = ours.len();
+        assert!(total >= 4, "the budget is only meaningful on a real army");
+
+        let mut ai = BasicAi::new();
+        ai.home_defense = true;
+        let held = ai.garrison_assignments(&g, 0, &[1]);
+        let fielded = ours
+            .iter()
+            .filter(|uid| !held.iter().any(|(taken, _)| taken == *uid))
+            .filter(|uid| ai.home_defense_objective(&g, 0, **uid, &[1]).is_some())
+            .count();
+        let committed = held.len() + fielded;
+        let budget = ((total as f64 * HOME_DEFENSE_MAX_SHARE).floor() as usize).max(1);
+        assert!(
+            committed <= budget,
+            "garrison {} + field {} = {committed} of {total} exceeds the shared budget of {budget}",
+            held.len(),
+            fielded
+        );
     }
 
     /// The frozen native controllers must not gain this. Their recorded ladders
