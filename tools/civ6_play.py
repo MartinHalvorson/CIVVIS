@@ -342,9 +342,20 @@ SETUP_X = 0.500
 # changes the normalized coordinate (measured at 0.277 on 1474x949 and 0.294 on
 # the taller full-screen setup).
 LEADER_PICKER_OFFSET = 0.056
-LEADER_SCROLL_STEPS = 100
-LEADER_SCROLL_RESET = 10_000
-LEADER_SCROLL_AMOUNT = -30
+# ⚠ RETUNED 2026-08-03 when scrolling started working at all — see
+# `macos_input.scroll`, which was emitting line-unit events Civilization VI
+# ignores. These are wheel NOTCHES now, and they are measured, not guessed:
+#
+#   20 notches up      returns the list to `Random Leader` from anywhere in it
+#    2 notches down    advances ~10 rows against ~10 visible: page by page
+#    3 notches down    advances ~11 against 10 visible: it SKIPS rows
+#
+# At 2 the sweep saw 73 distinct rows in 6 steps — the whole installed roster —
+# and found Trajan. `STEPS` stays generous because overshooting the bottom costs
+# one wasted screenshot and undershooting costs the run.
+LEADER_SCROLL_STEPS = 40
+LEADER_SCROLL_RESET = 20
+LEADER_SCROLL_AMOUNT = -2
 
 # Each dropdown's closed box, as a fraction of window height.
 DROPDOWN = {
