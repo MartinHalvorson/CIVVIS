@@ -41,7 +41,7 @@ thread_local! {
     static HOOKED: Cell<bool> = const { Cell::new(false) };
     /// What the socket build keeps in atomics on `Shared`. Nothing in this
     /// build reads them but the page that set them.
-    static PACE: Cell<u64> = const { Cell::new(0) };
+    static PACE: Cell<u64> = const { Cell::new(1_000) };
     static PAUSED: Cell<bool> = const { Cell::new(false) };
     /// Monotonic identity of the frame most recently completed for this page.
     /// Multiple player turns share one game turn at Blitz and slower, so
@@ -75,8 +75,8 @@ fn opening_params() -> Params {
         map_script: MapScript::Continents,
         map_topology: MapTopology::Flat,
         map_poles: MapPoles::Poles,
-        game_speed: GameSpeed::Standard,
-        max_turns: 500,
+        game_speed: GameSpeed::Online,
+        max_turns: GameSpeed::Online.turn_limit(),
         victory_conditions: VictoryConditions {
             science: true,
             culture: true,
@@ -88,7 +88,7 @@ fn opening_params() -> Params {
         num_city_states: size.default_city_states,
         spectate: true,
         difficulty: "prince".to_string(),
-        speed: "standard".to_string(),
+        speed: GameSpeed::Online.id().to_string(),
         teams: Vec::new(),
         leader_pool: LeaderPool::Civ6,
         civs: Vec::new(),
@@ -188,6 +188,7 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             "server_instance": process_identity(),
             "seed": with_session(|s| s.game.seed),
             "commit": runtime_commit("unknown"),
+            "commit_time": runtime_commit_time(),
         }),
 
         // No per-viewer tile delta: the page is told the whole world every
@@ -234,6 +235,8 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 "winner": session.game.winner,
                 "paused": PAUSED.with(Cell::get),
                 "server_instance": process_identity(),
+                "commit": runtime_commit("unknown"),
+                "commit_time": runtime_commit_time(),
             })
         }),
 
