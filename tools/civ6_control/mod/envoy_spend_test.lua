@@ -31,8 +31,19 @@ end })
 
 local chunk, err = loadfile(here .. "/CivvisControlAgent.lua")
 assert(chunk, "could not load agent: " .. tostring(err))
-pcall(chunk)  -- top-level side effects are stubbed; we only need the definitions
 
+-- ⚠⚠ REPORT THE PCALL RESULT. The first version of this test wrote
+-- `pcall(chunk)` and threw the result away, so a chunk that DIED at load still
+-- passed as long as the export had already happened — and that is exactly the
+-- failure it should have caught: #1047 shipped an agent that raises at load and
+-- this gate called it green. A check that swallows the error it exists to catch
+-- is worse than no check.
+local ran, runtime_err = pcall(chunk)
+assert(ran, "CivvisControlAgent.lua raised at chunk load: " .. tostring(runtime_err))
+
+-- ⚠ `rawget`, not `_G.x`: the agent must never be able to pass this test by
+-- doing something the game's sandbox forbids. See the bare-global note beside
+-- the export itself.
 local spendOrder = rawget(_G, "CivvisEnvoySpendOrder")
 assert(type(spendOrder) == "function",
 	"CivvisControlAgent.lua did not export CivvisEnvoySpendOrder")

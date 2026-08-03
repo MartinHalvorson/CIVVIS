@@ -3992,7 +3992,23 @@ local function envoySpendOrder(seen)
 end
 
 -- Exposed for the offline test only; nothing in the agent reads it back.
-_G.CivvisEnvoySpendOrder = envoySpendOrder;
+--
+-- ⚠⚠⚠ A BARE GLOBAL, NEVER `_G.`. This exact line read `_G.CivvisEnvoySpendOrder`
+-- in #1047 and that is what killed the whole lane: **Civilization VI's UI Lua
+-- sandbox does not expose `_G`**, so indexing it raises at CHUNK LOAD and the
+-- agent never loads at all. The symptom is not an error — it is silence. No
+-- `loaded` event, no seat, no orders, `Automation.log` holding nothing but the
+-- autoclose shim's lines, and a game that simply sits there. #1052 reverted the
+-- file on that evidence (3 failed runs against 1 passing, interleaved) without
+-- being able to name the cause.
+--
+-- The cause was already written down twice in this repository:
+-- `CivvisGrounding.lua` — "The UI Lua sandbox does not expose `_G`, so
+-- `rawget(_G, ...)` raises at load, which kills the whole script" — and
+-- `CivvisControlAutoClose.lua`, which ends its warning with "if anybody reaches
+-- for `_G` again". Bare globals are fine and this file already uses them
+-- (`encode`, `findSettleSite`); only `_G` is fatal.
+CivvisEnvoySpendOrder = envoySpendOrder;
 
 local function chooseEnvoy(player, pid, turn)
 	local influence = try(function() return player:GetInfluence(); end);

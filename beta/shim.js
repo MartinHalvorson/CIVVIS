@@ -115,6 +115,38 @@
 
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
+  async function installedSuccessorBuild() {
+    try {
+      const [runtime, response] = await Promise.all([
+        ask("GET", "/runtime", ""),
+        networkFetch(new URL(`build.json?fresh=${Date.now()}`, here), {
+          cache: "no-store",
+        }),
+      ]);
+      if (!response.ok) return null;
+      const manifest = await response.json();
+      if (typeof runtime.commit !== "string" || typeof manifest.commit !== "string" ||
+          runtime.commit === manifest.commit) return null;
+      return manifest.commit;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function reloadInstalledSuccessor() {
+    const commit = await installedSuccessorBuild();
+    if (commit === null) return false;
+    const target = new URL(window.location.href);
+    // A pinned `game=` is the world that just ended. The newly installed
+    // module starts the next default simulation, not a replay of that seed.
+    target.searchParams.delete("game");
+    target.searchParams.delete("instance");
+    target.searchParams.set("build", commit);
+    report.refreshingTo = commit;
+    window.location.replace(target.href);
+    return true;
+  }
+
   // ------------------------------------------------------- clock and finale
 
   let pace = 0;
@@ -138,6 +170,7 @@
       return state;
     }
     finaleEndsAt = null;
+    if (await reloadInstalledSuccessor()) return state;
     return await ask("POST", "/next-game", "{}");
   }
 

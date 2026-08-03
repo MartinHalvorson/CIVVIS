@@ -1,6 +1,6 @@
 # Local Rust and WASM desktop apps
 
-`Rust CIVVIS.app` and `WASM CIVVIS.app` are two local presentations of one
+`CIVVIS Rust.app` and `CIVVIS Wasm.app` are two local presentations of one
 game. The Rust app runs the optimized native server on port 8785. The WASM app
 serves the optimized browser build on port 8790. Both open a stable channel
 URL, reuse an existing Chrome tab, and carry exact commit and artifact-build
@@ -30,12 +30,25 @@ installs the replacements, launches both, and verifies their live metadata and
 routes. A process lock prevents two cooperating installers from racing over the
 Desktop bundles.
 
-After installation, opening either desktop icon is immediate: it opens or
-focuses its installed channel. The same click also starts a locked background
-refresh. If GitHub `main` is newer, or either artifact is more than 30 minutes
-old, the refresh builds one exact revision, transactionally replaces both apps,
-and relaunches both channels. Clicking both icons still creates at most one
-build, and a minimized Chrome window is restored before its tab is focused.
+Installation also registers `ai.civvis.desktop-refresh` as a per-user launchd
+agent. It checks GitHub every ten minutes and rebuilds the pinned pair when
+`main` advances or either artifact reaches ten minutes old. That headroom keeps
+a successful build inside the 20-minute freshness contract even while Cargo is
+working. The job installs both bundles transactionally without interrupting a
+live game. Opening either icon performs the same locked freshness check in the
+background, so a laptop that just woke converges without waiting for the next
+scheduled check.
+
+The native channel runs under the repository spectator supervisor. A promoted
+runtime waits for the next game boundary, then the next default simulation
+starts on it; checkpoints also preserve an active map across crash recovery.
+The browser module checks the installed `build.json` at its result boundary and
+reloads before dealing the next world when a newer WASM bundle is present.
+
+Each app owns a small Chrome-tab watcher. Closing its matching tab (or Chrome)
+stops that channel's supervisor/server within about ten seconds. Double-clicking
+the icon starts it again. A minimized Chrome window is restored before its tab
+is focused.
 
 Build without installing:
 
@@ -49,8 +62,8 @@ Run the same cheap freshness check used by the launchers:
 python3 tools/civvis_desktop_apps.py refresh
 ```
 
-Audit installed, live apps against current main and require artifact ages no
-greater than 30 minutes:
+Audit installed, live apps against current main, require artifact ages no
+greater than 20 minutes, and verify the recurring launchd agent:
 
 ```bash
 python3 tools/civvis_desktop_apps.py verify
@@ -58,7 +71,9 @@ python3 tools/civvis_desktop_apps.py verify
 
 Build records and staged apps remain under
 `~/.local/share/civvis-desktop/build-<short>-<UTC>/`. Replaced bundles move to
-`~/.local/share/civvis-desktop/previous/`; they are not deleted.
+`~/.local/share/civvis-desktop/previous/`. Because the updater is perpetual,
+it retains the two newest build trees and four newest archived bundles rather
+than allowing generated artifacts to consume the disk without bound.
 
 ## Shared opening exhibition
 
@@ -73,9 +88,11 @@ native launcher or WASM opening parameters drift from that contract.
 - Native content is available at `/rust/` and the legacy root.
 - WASM content is available at `/wasm/`, locally mapped onto the packaged
   `/beta/` tree with query strings preserved.
-- Both launchers require the listener's commit and `built_at` values to match
-  their own before reusing it. An older matching CIVVIS process is stopped;
-  an unrelated owner of either port is left alone and causes a visible error.
+- The WASM launcher requires the listener's commit and `built_at` values to
+  match its bundle. The Rust launcher also recognizes its owned supervisor
+  while that supervisor is holding a newly promoted runtime for a safe game
+  boundary. An unrelated owner of either port is left alone and causes a
+  visible error.
 - The viewer shows compact commit and build ages in the lower-right provenance
   marker beneath the World minimap. Exact timestamps remain in its tooltip.
 

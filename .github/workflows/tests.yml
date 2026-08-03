@@ -105,5 +105,37 @@ jobs:
           set -eu
           find tools/civ6_control/mod tools/civ6_mod -name '*.lua' -print0 \
             | xargs -0 -n1 luac5.1 -p
+      # ⚠⚠⚠ `_G` IS FATAL IN THE GAME AND COMPILES FINE EVERYWHERE ELSE.
+      # Civilization VI's UI Lua sandbox does not expose `_G`, so indexing it
+      # raises at CHUNK LOAD and the agent never loads — no `loaded` event, no
+      # seat, no orders, and a game that just sits there. It is valid Lua, so
+      # `luac5.1 -p` above passes it, and `check_lua51.py` only looks for
+      # post-5.1 constructs.
+      #
+      # This has now cost the project twice. `CivvisGrounding.lua` records it
+      # ("the sandbox has no `_G`") and `CivvisControlAutoClose.lua` ends its
+      # warning with "if anybody reaches for `_G` again" — and then #1047 did,
+      # bricking every live game until #1052 reverted it on evidence alone,
+      # unable to name the cause. Two prose warnings did not hold. This does.
+      #
+      # Bare globals are fine and the agent already uses them; only `_G` is
+      # fatal. `grep -w` matters: a bare `_G` pattern also matches YIELD_GOLD,
+      # DISTRICT_GARRISON and every PARAM_GOVERNOR_* constant. Comments are
+      # excluded so the warnings themselves may keep naming it.
+      - name: Reject `_G` in mod scripts
+        run: |
+          set -eu
+          # `*_test.lua` is excluded: it runs under lua5.1 in this job, never
+          # inside the game, and it uses `_G` deliberately to read the export.
+          hits=$(find tools/civ6_control/mod tools/civ6_mod -name '*.lua' \
+            ! -name '*_test.lua' -exec grep -nHw '_G' {} + \
+            | grep -v '^[^:]*:[0-9]*:[[:space:]]*--' || true)
+          if [ -n "$hits" ]; then
+            echo "$hits"
+            echo
+            echo "Civ 6's UI Lua sandbox does not expose _G; indexing it kills the script at load."
+            exit 1
+          fi
+          echo "no _G references outside comments"
       - name: Envoy spend order
         run: lua5.1 tools/civ6_control/mod/envoy_spend_test.lua

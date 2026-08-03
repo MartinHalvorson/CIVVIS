@@ -55,6 +55,72 @@ def _alive(pid: int) -> bool:
     return True
 
 
+#: Argv substrings that mark a process as a harness actually driving a run.
+#: Matching the tag alone is not enough -- an editor, a `tail -f` on the run's
+#: log, or a shell history expansion all carry the tag in their argv and none of
+#: them is holding the game.
+#:
+#: ⚠ ERR TOWARDS INCLUDING A LAUNCHER. A name missing here makes a genuinely
+#: live run look dead and lets a second writer in, which is the silent
+#: corruption this whole module exists to prevent. A name that is here but never
+#: writes the tag costs nothing. `civ6_run.py` installs the *grounding* mod
+#: rather than CivvisControl and so cannot produce this tag today; it is listed
+#: anyway so that changing which mod it installs cannot quietly open a hole.
+_HARNESS_MARKERS = (
+    "civ6_play.py",
+    "civ6_brain.py",
+    "civ6_civvis_climb.py",
+    "civ6_run.py",
+)
+
+
+def _processes() -> list[tuple[int, str]]:
+    """Every process as (pid, argv), or an empty list if `ps` cannot be read."""
+    import subprocess  # noqa: PLC0415 - only needed on this path
+
+    try:
+        out = subprocess.run(
+            ["ps", "-Ao", "pid=,args="],
+            capture_output=True, text=True, timeout=10, check=False,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    rows = []
+    for line in out.splitlines():
+        pid_text, _, args = line.strip().partition(" ")
+        try:
+            rows.append((int(pid_text), args))
+        except ValueError:
+            continue
+    return rows
+
+
+def _tag_has_live_owner(tag: str) -> bool:
+    """Whether a live harness process is actually driving this run tag.
+
+    ⚠ EXCLUDES THIS PROCESS AND ITS ANCESTRY. A caller that already carries the
+    tag in its own argv would otherwise find itself and conclude that somebody
+    else holds the game. That exact self-match has bitten this repository
+    before, when a liveness probe matched its own `grep` argv and reported every
+    run live.
+
+    ⚠ Fails CLOSED. If `ps` cannot be read we cannot prove the tag is dead, and
+    the safe answer is that it is alive -- concurrency is the failure this
+    module exists to prevent, so an unreadable process table must not hand out
+    the game.
+    """
+    rows = _processes()
+    if not rows:
+        return True
+    mine = {os.getpid(), os.getppid()}
+    for pid, args in rows:
+        if pid in mine:
+            continue
+        if tag in args and any(marker in args for marker in _HARNESS_MARKERS):
+            return True
+    return False
+
+
 def describe() -> str:
     held = _holder()
     if held is None:
@@ -86,6 +152,25 @@ def foreign_run(tag: str) -> str | None:
     except (json.JSONDecodeError, OSError):
         return None
     if installed in (None, tag):
+        return None
+    # ⚠⚠ A TAG IS NOT AN OWNER. Every other path in this module treats a holder
+    # whose process is gone as stale and takes it over -- the module docstring
+    # says so outright, "the failure this is guarding against is concurrency,
+    # not crashes". This check was the one that did not, and the asymmetry
+    # WEDGES THE MACHINE: a harness that dies without teardown leaves its tag
+    # written into the installed mod, and from then on every new run is
+    # "foreign" to a corpse. Civilization VI stays up, so the guard never
+    # expires, and nothing starts again until a human clears it by hand.
+    #
+    # Observed 2026-08-03: tag 'civvis-20260803T212834Z' with no process behind
+    # it refused three consecutive launches over seven minutes. `civ6_play.py`
+    # run directly cannot recover from it at all -- only `civ6_civvis_climb.py`
+    # clears the tag, and only on the teardown path it actually reaches.
+    #
+    # So ask whether anybody is really driving that tag. A tag with nothing
+    # behind it describes nothing, which is the same conclusion the climb
+    # teardown reached; this puts it where every launcher benefits.
+    if not _tag_has_live_owner(installed):
         return None
     return f"a game is running under run tag {installed!r}"
 

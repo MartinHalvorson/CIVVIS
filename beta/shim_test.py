@@ -29,7 +29,7 @@ window.Worker = class {
     workerCalls.push(message.path);
     let answer;
     if (message.path === "/runtime") {
-      answer = { commit: "test" };
+      answer = { commit: new URL(location.href).searchParams.get("build") || "test" };
     } else if (message.path.startsWith("/state")) {
       answer = { seed: 7, turn: 227, winner: 0 };
     } else if (message.path === "/next-game") {
@@ -63,6 +63,8 @@ def main() -> int:
     profile = tempfile.mkdtemp(prefix="civvis-shim-profile-")
     shutil.copy(here / "shim.js", stage / "shim.js")
     (stage / "index.html").write_text(HARNESS, encoding="utf-8")
+    build = stage / "build.json"
+    build.write_text('{"commit":"test"}\n', encoding="utf-8")
 
     port = free_port()
     server = socketserver.TCPServer(
@@ -129,7 +131,36 @@ def main() -> int:
         calls = dev.evaluate("window.workerCalls")
         assert successor["seed"] == 8 and successor["turn"] == 1, successor
         assert calls.count("/next-game") == 1, calls
-        print("the WASM finale survives metadata polling and opens one successor world.")
+
+        # A paired desktop refresh replaces the static bundle while the old
+        # module finishes its current game. At the next finale it must load the
+        # new module instead of asking the old worker to deal another world.
+        build.write_text('{"commit":"fresh"}\n', encoding="utf-8")
+        dev.evaluate("fetch('/state?have=1').then(r => r.json())")
+        dev.evaluate("window.fakeNow = 22000")
+        try:
+            dev.evaluate("fetch('/state?have=2').then(r => r.json())")
+        except Exception:
+            # Navigation may retire the inspected execution context before the
+            # fetch promise reports back through DevTools.
+            pass
+        deadline = time.time() + 10
+        current_url = ""
+        while time.time() < deadline:
+            pages = json.load(
+                urllib.request.urlopen(
+                    f"http://127.0.0.1:{debug_port}/json", timeout=2
+                )
+            )
+            current_url = next(
+                (page.get("url", "") for page in pages if page.get("type") == "page"),
+                "",
+            )
+            if "build=fresh" in current_url:
+                break
+            time.sleep(0.1)
+        assert "build=fresh" in current_url, current_url
+        print("the WASM finale opens the next world on an installed successor build.")
         return 0
     finally:
         chrome.terminate()
