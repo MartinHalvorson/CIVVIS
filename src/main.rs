@@ -406,8 +406,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `enable_live_bridge`. `strike_opening_value` returns 0.0 on that flag
 /// before it reads the board, so every configured, legacy and Elo agent scores
 /// every tile exactly as it did. A compatibility re-pin.
+///
+/// #990 adds four `disable_*` methods so every flag in `enable_live_bridge` has a
+/// measurement arm. They are called only by `builtin_ai`'s `live_without_*`
+/// factories, never in play, so every configured, legacy and Elo agent is
+/// byte-identical. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x07d8_de22_7c72_0b3f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe16a_9db6_c7c9_8939;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
