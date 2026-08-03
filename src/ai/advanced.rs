@@ -812,6 +812,10 @@ pub struct AdvancedAi {
     /// `bounded_recovery`. See [`AdvancedAi::wartime_army_target`] for the
     /// 94-of-188-turns measurement behind it.
     pub army_target_weighs_the_enemy: bool,
+    /// Skip policy cards that multiply a suzerainty count of zero. Off here so
+    /// every configured, legacy and Elo agent keeps the deck order it has always
+    /// had; `strategic_policies` reorders nothing on this flag.
+    pub suzerain_cards_need_a_suzerainty: bool,
     /// Size the siege train against the wall standing at the target city,
     /// instead of asking for exactly one siege unit for any target at all.
     ///
@@ -1836,6 +1840,7 @@ impl AdvancedAi {
             strike_opening: false,
             ranged_needs_line_of_sight: false,
             army_target_weighs_the_enemy: false,
+            suzerain_cards_need_a_suzerainty: false,
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
             refuse_unreachable_lanes: false,
@@ -1975,6 +1980,10 @@ impl AdvancedAi {
         self.army_target_weighs_the_enemy = true;
     }
 
+    pub fn enable_suzerain_cards_need_a_suzerainty(&mut self) {
+        self.suzerain_cards_need_a_suzerainty = true;
+    }
+
     /// Let the siege train be sized by the wall it has to breach. Native
     /// tournament games leave this disabled so their recorded ladders stay
     /// comparable.
@@ -2076,6 +2085,12 @@ impl AdvancedAi {
         // the rival fielded 1050 military against our 658 while the target still
         // read satisfied at 11 against a wanted 10.
         self.enable_army_target_weighs_the_enemy();
+        // Raj, Wisselbanken, Collective Activism and the International Space
+        // Agency all scale off SUZERAIN city-states and pay nothing at zero.
+        // Live run `civvis-20260803T220954Z` held Raj AND Wisselbanken slotted
+        // at turn 208 with 0 suzerainties and 41 unspent envoys — two of six
+        // slots returning zero for the whole game.
+        self.enable_suzerain_cards_need_a_suzerainty();
         // ⚠ The siege appetite was one unit for any target city at all, walled
         // or not. The engine halves a non-siege unit's wall damage
         // (`mult = if spec.siege { 1.0 } else { 0.5 }`) and docks a non-siege
@@ -2218,6 +2233,10 @@ impl AdvancedAi {
 
     pub fn disable_army_target_weighs_the_enemy(&mut self) {
         self.army_target_weighs_the_enemy = false;
+    }
+
+    pub fn disable_suzerain_cards_need_a_suzerainty(&mut self) {
+        self.suzerain_cards_need_a_suzerainty = false;
     }
 
     pub fn disable_siege_tracks_the_wall(&mut self) {
@@ -5468,7 +5487,7 @@ impl AdvancedAi {
             .map(|p| p.id)
             .filter(|minor| g.suzerain_of(*minor) == Some(pid))
             .count();
-        if suzerainties == 0 {
+        if self.suzerain_cards_need_a_suzerainty && suzerainties == 0 {
             desired.retain(|card| !SUZERAIN_CONDITIONAL.contains(card));
             desired.extend(SUZERAIN_CONDITIONAL);
         }
@@ -18445,6 +18464,7 @@ mod tests {
             }
             game.players[0].policies.clear();
             let mut ai = AdvancedAi::new();
+            ai.enable_suzerain_cards_need_a_suzerainty();
             ai.refresh_research_weight(&game);
             ai.strategic_policies(&mut game, 0, GrandStrategy::Recovery);
             game.players[0].policies.clone()
@@ -18458,6 +18478,31 @@ mod tests {
         assert!(
             !barren.contains(&crate::name!("raj")),
             "Raj must not outrank a card that pays when it pays nothing: {barren:?}"
+        );
+    }
+
+    /// ⚠ OFF BY DEFAULT, and this is what keeps the Elo ledger valid. A
+    /// behaviour change to `advanced.rs` that fires for every agent invalidates
+    /// every rated game ever played under the `advanced_v1` anchor; the source
+    /// contract test in `main.rs` exists to catch exactly that, and it caught
+    /// this. Legacy and Elo agents must reorder nothing.
+    #[test]
+    fn the_suzerain_gate_is_off_unless_the_live_bridge_asks() {
+        let plain = AdvancedAi::new();
+        assert!(
+            !plain.suzerain_cards_need_a_suzerainty,
+            "a configured or Elo agent must keep the deck order it has always had"
+        );
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_live_bridge();
+        assert!(
+            bridged.suzerain_cards_need_a_suzerainty,
+            "the live bridge is where this is meant to fire"
+        );
+        bridged.disable_suzerain_cards_need_a_suzerainty();
+        assert!(
+            !bridged.suzerain_cards_need_a_suzerainty,
+            "every live-bridge flag needs a disable or it ships unpriced"
         );
     }
 
@@ -18496,6 +18541,7 @@ mod tests {
         );
         game.players[0].policies.clear();
         let mut ai = AdvancedAi::new();
+        ai.enable_suzerain_cards_need_a_suzerainty();
         ai.refresh_research_weight(&game);
         ai.strategic_policies(&mut game, 0, GrandStrategy::Recovery);
         assert!(
