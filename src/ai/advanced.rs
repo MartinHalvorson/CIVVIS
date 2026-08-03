@@ -28768,9 +28768,15 @@ mod research_probe {
     use crate::setup::GameSpeed;
 
     /// Paired A/B at the *deployment* shape, not the unit-test shape: six
-    /// players, Online speed, 250 turns, a Small world. Ignored; run by hand.
+    /// players, Online speed, 250 turns, a Small world.
+    ///
+    /// This is the instrument behind PR #958's numbers, kept so they can be
+    /// reproduced rather than taken on trust. The same treatment measured at
+    /// 4p/28x18/140 turns was byte-identical on 13 of 20 seeds — those empires
+    /// finish with 6-25 techs and mostly never build a Campus, so the treatment
+    /// barely fires and the run says almost nothing. Measure where it runs.
     #[test]
-    #[ignore]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
     fn research_economy_ab_at_deployment_scale() {
         let play = |seed: u64, treated: bool| {
             let mut g = Game::new(6, 74, 46, seed, 250, 9);

@@ -295,8 +295,28 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// (`major_war_since`). Still behind `bounded_recovery`, still short-circuiting
 /// on the flag before anything is read, so every configured, legacy and Elo
 /// agent is byte-identical. Another compatibility re-pin.
+///
+/// #958 prices research outside the victory lane, behind `research_economy`.
+/// `advanced_v1` is `AdvancedAi::legacy()`, which goes through
+/// `AdvancedAi::configured` and therefore has that field `false`; only
+/// `promoted_policy_envoy` turns it on. The identity is exact rather than
+/// sampled, and it holds in two ways at once:
+///
+/// - the Campus coverage bonus, the peacetime Campus-building debt and the
+///   policy-deck insertion are each guarded by `if self.research_economy`, so
+///   for the anchor they are not evaluated at all;
+/// - the three weight terms are floors — `science.max(self.research_weight)` in
+///   `yield_value`, `yield_weights.science.max(..)` in the search evaluator, and
+///   `ys.science.max(research_tilt)` in `lane_emphasis`. For an agent without
+///   the flag, `refresh_research_weight` writes `0.0` and the tilt argument is
+///   `0.0`, and every value being floored is already non-negative (the lane
+///   science weights run 1.0-4.2, the evaluator's 0.5-2.8, the emphasis 0.0 or
+///   0.50). A floor at zero over a non-negative quantity is the identity, so
+///   this is provably byte-identical and not merely measured to be.
+///
+/// A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3ff9_fbfa_5d2f_bbff;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbf41_0ad2_e55c_69ef;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
