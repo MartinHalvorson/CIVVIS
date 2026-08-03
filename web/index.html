@@ -1774,6 +1774,17 @@
     background: #091310f2; box-shadow: var(--shadow); pointer-events: none;
     font-size: var(--type-control); line-height: 1.6; backdrop-filter: blur(14px);
   }
+  #buildmark {
+    position: fixed; z-index: 25;
+    left: max(7px, env(safe-area-inset-left)); bottom: max(5px, env(safe-area-inset-bottom));
+    max-width: calc(100vw - 14px); padding: 3px 6px;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    color: #9aaca5; background: #07110fbd; border: 1px solid #40534b99;
+    border-radius: 5px; box-shadow: 0 4px 14px #0007; pointer-events: none;
+    font: 750 var(--type-micro)/1.35 var(--font-ui); font-variant-numeric: tabular-nums;
+    letter-spacing: .035em; backdrop-filter: blur(8px); opacity: .82;
+  }
+  #buildmark[hidden] { display: none; }
   .tip-primary, .tip-unit {
     display: inline-block; color: #fffaf0; font-size: var(--type-body); font-weight: 850; line-height: 1.45;
   }
@@ -4169,6 +4180,7 @@
     </div>
   </details>
 </div>
+<div id="buildmark" hidden aria-label="CIVVIS build revision"></div>
 <script src="/cinematic3d.js"></script>
 <script>
 "use strict";
@@ -7999,6 +8011,33 @@ let serverInstance = null;
 // build this document actually came from is what tells a successor worth
 // reloading for from one this page is already running.
 let documentCommit = null;
+function formatBuildAge(commitDate) {
+  const totalMinutes = Math.floor(Math.max(0, Date.now() - commitDate.getTime()) / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor(totalMinutes % 1440 / 60);
+  const minutes = totalMinutes % 60;
+  return `${days}d ${hours}h ${minutes}m`;
+}
+function updateBuildMarker(st = state) {
+  const marker = document.getElementById("buildmark");
+  const commit = st?.server_commit;
+  const commitTime = st?.server_commit_time;
+  const commitDate = typeof commitTime === "string" ? new Date(commitTime) : null;
+  if (!marker || typeof commit !== "string" || commit === "unknown" ||
+      !commitDate || !Number.isFinite(commitDate.getTime())) {
+    if (marker) marker.hidden = true;
+    return;
+  }
+  const committed = commitDate.toLocaleString(undefined, {
+    year: "numeric", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", timeZoneName: "short",
+  });
+  marker.textContent = `${commit.slice(0, 7)} · ${committed} · ` +
+    `Build is ${formatBuildAge(commitDate)} old`;
+  marker.title = `${commit}\nCommitted ${commitTime}`;
+  marker.hidden = false;
+}
+setInterval(() => updateBuildMarker(), 60_000);
 function servesThisDocumentsCode(commit) {
   return documentCommit !== null && typeof commit === "string" &&
     commit !== "unknown" && commit === documentCommit;
@@ -10023,6 +10062,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     cameraFlight = null; cameraZoom = null; clearCameraInertia();
   }
   state = st;
+  updateBuildMarker(st);
   SPEC = !!st.spectate;
   syncFlatMapWrapControls();
   syncFoundNorth(st);
