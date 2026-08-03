@@ -4739,6 +4739,58 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn the_pantheon_price_follows_the_game_speed_like_every_other_cost() {
+        // ⚠⚠⚠ This was a bare `25.0` in the legality gate AND in `do_choose_pantheon`,
+        // while techs, civics and growth beside it all scaled. It cost CIVVIS the
+        // decision outright in live games.
+        //
+        // Measured on live run `civvis-20260803T191900Z` (Online, Rome/Trajan):
+        // Civilization VI raised `ENDTURN_BLOCKING_PANTHEON` on turn 19 at FAITH 11,
+        // and faith went 11 -> 0 when it was taken. CIVVIS wanted 25, so
+        // `ChoosePantheon` never became legal, `civvis_orders` emitted nothing on a
+        // replay of turns 18/19/20, and the mod answered instead by walking
+        // `GameInfo.Beliefs()` and taking the first untaken row — the empire's one
+        // permanent pantheon chosen by database order, in every live game.
+        let (mut game, _) = game_with_capitals(91_762);
+
+        game.game_speed = crate::setup::GameSpeed::Standard;
+        assert_eq!(game.pantheon_faith_cost(), 25.0, "Standard must not move");
+
+        game.game_speed = crate::setup::GameSpeed::Online;
+        assert_eq!(
+            game.pantheon_faith_cost(),
+            12.5,
+            "Online pays half, and 12.5 is the price the host was charging"
+        );
+
+        // The gate and the action must agree, or one of them is decorative.
+        game.players[0].pantheon = None;
+        game.players[0].faith = 13.0;
+        let belief = game.rules.beliefs.pantheon.keys().next().unwrap().clone();
+        assert!(
+            game.legal_actions(0)
+                .iter()
+                .any(|action| matches!(action, Action::ChoosePantheon { .. })),
+            "13 faith on Online is above the real price and must offer the action"
+        );
+        assert!(game.do_choose_pantheon(0, &belief).is_ok());
+
+        // ⚠ And the same faith on Standard must still be refused, or this is not a
+        // scaling fix, it is a discount applied everywhere.
+        let (mut standard, _) = game_with_capitals(91_762);
+        standard.game_speed = crate::setup::GameSpeed::Standard;
+        standard.players[0].pantheon = None;
+        standard.players[0].faith = 13.0;
+        assert!(
+            standard
+                .legal_actions(0)
+                .iter()
+                .all(|action| !matches!(action, Action::ChoosePantheon { .. })),
+            "13 faith is below Standard's 25 and must not offer it"
+        );
+    }
+
+    #[test]
     fn pantheons_spend_faith_grant_units_and_apply_exact_production_gates() {
         for (seed, belief, unit) in [
             (91_760, "fertility_rites", "builder"),
@@ -12972,6 +13024,12 @@ pub struct VictoryRaces {
     pub score_points: i64,
 }
 pub const TOURISM_PER_VISITOR: f64 = 200.0;
+
+/// Faith for a pantheon at STANDARD speed. Read it through
+/// `Game::pantheon_faith_cost`, never directly: the number that matters is this one
+/// scaled by the game's speed, and using the constant raw is the defect that hid
+/// here for the whole project.
+pub const PANTHEON_FAITH_STANDARD: f64 = 25.0;
 const STANDARD_DEAL_TURNS: u32 = 30;
 /// The one-off token costs published for individual diplomatic missions.
 const DELEGATION_GOLD: f64 = 10.0;
@@ -13199,6 +13257,28 @@ impl Game {
 
     pub fn growth_cost(&self, population: i32) -> f64 {
         self.game_speed.scale(growth_threshold(population))
+    }
+
+    /// Faith needed to found a pantheon, scaled by game speed like every other cost.
+    ///
+    /// ⚠⚠⚠ THIS WAS A BARE `25.0` IN TWO PLACES, AND IT COST CIVVIS THE DECISION
+    /// ENTIRELY IN LIVE GAMES. Every neighbouring cost above already scales — techs,
+    /// civics, growth — and this one did not, so on any speed but Standard CIVVIS
+    /// was asking for a different game's price.
+    ///
+    /// Measured on live run `civvis-20260803T191900Z` (Online speed, Rome/Trajan):
+    /// Civilization VI raised `ENDTURN_BLOCKING_PANTHEON` on **turn 19 at faith 11**,
+    /// and faith went 11 -> 0 when the pantheon was taken. CIVVIS's gate wanted 25,
+    /// so `ChoosePantheon` was never a legal action, `civvis_orders` emitted nothing
+    /// for turns 18/19/20 on replay, and the mod's fallback answered instead — by
+    /// walking `GameInfo.Beliefs()` and taking the FIRST UNTAKEN ROW. The empire's
+    /// one permanent pantheon was chosen by database order, in every live game.
+    ///
+    /// `Online.scale(25.0)` is 12.5, which is the price the host was charging.
+    /// Standard is unchanged at 25.0, so self-play at the default speed is
+    /// untouched; only the speeds that were already wrong move.
+    pub fn pantheon_faith_cost(&self) -> f64 {
+        self.game_speed.scale(PANTHEON_FAITH_STANDARD)
     }
 
     pub fn standard_duration(&self, turns: u32) -> u32 {
@@ -21865,8 +21945,12 @@ impl Game {
         if self.players[pid].pantheon.is_some() {
             return Err("pantheon already chosen".into());
         }
-        if self.players[pid].faith < 25.0 {
-            return Err("needs 25 faith".into());
+        let cost = self.pantheon_faith_cost();
+        if self.players[pid].faith < cost {
+            // ⚠ The price, not a literal. The old message said "needs 25 faith" on
+            // every speed, so a refusal on Online named a number the game was not
+            // charging and read as a CIVVIS bug rather than a scaling one.
+            return Err(format!("needs {cost:.0} faith").into());
         }
         if !self.rules.beliefs.pantheon.contains_key(belief) {
             return Err("no such pantheon belief".into());
@@ -38561,7 +38645,11 @@ impl Game {
                     });
                 }
             }
-            if !p.is_minor && !p.is_barbarian && p.pantheon.is_none() && p.faith >= 25.0 {
+            if !p.is_minor
+                && !p.is_barbarian
+                && p.pantheon.is_none()
+                && p.faith >= self.pantheon_faith_cost()
+            {
                 for b in self.rules.beliefs.pantheon.keys() {
                     if !self
                         .players
