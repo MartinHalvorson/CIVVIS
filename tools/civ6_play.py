@@ -177,6 +177,16 @@ def build_config(args: argparse.Namespace) -> dict:
         # actively costs cities — one run went 4 cities to 3 while besieging.
         # So peace is a real strategy here, not a concession, and it is one flag.
         "MakeWar": args.make_war,
+        # ★ The largest measured headroom in the project and the one lane that
+        # is switched off. An oracle granted suzerainty wins 56.7% against
+        # 22.7%; headless the same agent places 18.1 envoys and holds 0.71
+        # suzerainties per seat against a live median of 1 and 0 over 36 runs.
+        # Live turn 231 of civvis-20260803T191900Z: 56 envoys held, 0
+        # suzerainties, and all four met city-states flying a rival's flag.
+        "EnvoyEnabled": args.envoys,
+        "EnvoyPlace": args.envoy_place,
+        "EnvoyLevy": args.envoy_levy,
+        "EnvoyConsider": args.envoy_consider,
         # How many units are aimed at the city plot each turn. Each MOVE_TO onto
         # an enemy city is an attack that bounces back unless it captures, so
         # this is attacks per turn — and a city heals between turns, so too few
@@ -2265,6 +2275,26 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--explore-until-turn", type=int, default=12)
     ap.add_argument("--make-war", dest="make_war", action="store_true", default=True)
     ap.add_argument("--no-war", dest="make_war", action="store_false")
+    # The envoy lane. OFF by default because `chooseEnvoy` is blamed for three
+    # game-core SIGSEGVs (3-for-3 against 0-for-2 on the same seed) and the fix
+    # for the handle defect behind them is a hypothesis, not a verified result.
+    # Until an isolation batch clears it, the known-stable skip stands.
+    #
+    # It is exposed here because the Lua comment asks for exactly this
+    # experiment -- "a CONFIG change, not a code change: place-only, then
+    # consider-only, same seed" -- and there was no way to run it without
+    # hand-editing the mod. `EnvoyPlace`/`EnvoyLevy`/`EnvoyConsider` switch the
+    # three mutations independently, so one variable moves at a time.
+    ap.add_argument("--envoys", dest="envoys", action="store_true", default=False)
+    ap.add_argument("--no-envoys", dest="envoys", action="store_false")
+    ap.add_argument("--envoy-place", dest="envoy_place", action="store_true", default=True)
+    ap.add_argument("--no-envoy-place", dest="envoy_place", action="store_false")
+    ap.add_argument("--envoy-levy", dest="envoy_levy", action="store_true", default=True)
+    ap.add_argument("--no-envoy-levy", dest="envoy_levy", action="store_false")
+    ap.add_argument(
+        "--envoy-consider", dest="envoy_consider", action="store_true", default=True
+    )
+    ap.add_argument("--no-envoy-consider", dest="envoy_consider", action="store_false")
     ap.add_argument("--assault-width", type=int, default=2)
     ap.add_argument("--settlers-in-flight", type=int, default=1)
     # 1 = the shipped behaviour (always CIVVIS's top-ranked unoccupied site),

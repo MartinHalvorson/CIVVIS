@@ -81,3 +81,22 @@ jobs:
           restore-keys: |
             cargo-wasm-${{ runner.os }}-
       - run: cargo check --lib --locked --target wasm32-unknown-unknown
+
+  # The control mod is ~7k lines of Lua that no gate has ever compiled. It runs
+  # inside Civ 6, so a syntax error does not fail a build — it fails a GAME, on
+  # a machine with a 45-minute feedback loop, and the run just wedges. Cheap
+  # insurance: `luac -p` every mod script, then run the one piece of agent logic
+  # that has an argument rather than an engine call.
+  control-mod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y lua5.4
+      - name: Compile every mod script
+        run: |
+          set -eu
+          find tools/civ6_control/mod tools/civ6_mod -name '*.lua' -print0 \
+            | xargs -0 -n1 luac5.4 -p
+      - name: Envoy spend order
+        run: lua5.4 tools/civ6_control/mod/envoy_spend_test.lua
