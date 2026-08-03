@@ -286,11 +286,23 @@ fn civ6_live_build_name(
 ) -> Option<String> {
     use civvis::game::Item;
     match item {
+        // ⚠ THIS ARM MUST USE `civ6_district_type`, NOT ITS OWN UPPERCASE.
+        //
+        // It formatted its own name and so re-introduced every divergent
+        // district spelling the rest of this file had already repaired. Live run
+        // `civvis-20260803T094641Z` emitted `DISTRICT_GOVERNMENT_PLAZA` **26
+        // times** on a revision where `civ6_district_type` had mapped it to
+        // `DISTRICT_GOVERNMENT` for hours; the host discarded all 26.
+        //
+        // This is the third time the same shape has cost a live game: #959 put
+        // the wonder spellings in `civ6_building_type` while `Item::Wonder`
+        // still formatted its own, and #983's map export was rejected wholesale
+        // for a related reason. **One table, one formatter.**
         Item::Repair { repair, pos } if repair == "district" => game
             .map
             .get(*pos)
             .and_then(|tile| tile.district.as_ref())
-            .map(|district| format!("DISTRICT_{}", district.as_str().to_ascii_uppercase())),
+            .map(civ6_district_type),
         Item::Repair { repair, .. } => Some(civ6_building_type(repair)),
         _ => civ6_build_name(item),
     }
@@ -3914,6 +3926,45 @@ mod civ6_name_audit {
         "PROJECT_REPAIR_ENCAMPMENT",
     ];
 
+    /// The exact regression, pinned: repairing a pillaged Government Plaza
+    /// must not re-introduce CIVVIS's own spelling.
+    ///
+    /// Live run `civvis-20260803T094641Z` emitted `DISTRICT_GOVERNMENT_PLAZA`
+    /// 26 times while `civ6_district_type` had already mapped it to
+    /// `DISTRICT_GOVERNMENT` — because the repair arm formatted its own name.
+    #[test]
+    fn repairing_a_district_uses_the_same_spelling_as_building_one() {
+        use civvis::game::{Game, Item};
+        let mut board = Game::new(2, 8, 8, 7, 100, 0);
+        let pos = (3, 3);
+        board
+            .map
+            .tiles
+            .get_mut(&pos)
+            .expect("a tile")
+            .district = Some(civvis::name::Name::new("government_plaza"));
+
+        let repaired = civ6_live_build_name(
+            &Item::Repair { repair: civvis::name::Name::new("district"), pos },
+            &board,
+        )
+        .expect("a district repair names a district");
+
+        assert_eq!(
+            repaired, "DISTRICT_GOVERNMENT",
+            "the repair path must use civ6_district_type, not its own uppercase"
+        );
+        assert_eq!(
+            repaired,
+            civ6_district_type(&civvis::name::Name::new("government_plaza")),
+            "one table, one formatter"
+        );
+        assert!(
+            shipped().contains(&repaired),
+            "and the result must be a name Civilization VI actually ships"
+        );
+    }
+
     #[test]
     fn the_snapshot_is_the_shipped_ruleset_and_not_our_own_mod() {
         let shipped = shipped();
@@ -3981,6 +4032,27 @@ mod civ6_name_audit {
         // reach the wire through their own helper rather than `civ6_build_name`.
         for name in rules.improvements.keys() {
             check("improvement", name.as_str(), civ6_improvement_type(name));
+        }
+        // ⚠ AND THE REPAIR PATH, which is a DIFFERENT FUNCTION.
+        //
+        // The first version of this audit drove `civ6_build_name` only. That
+        // missed `civ6_live_build_name`'s `Item::Repair` arm, which formatted
+        // its own uppercase — and live run `civvis-20260803T094641Z` then
+        // emitted `DISTRICT_GOVERNMENT_PLAZA` 26 times, all discarded, on a
+        // revision where every other path spelled it `DISTRICT_GOVERNMENT`.
+        //
+        // A name audit is only worth what it covers. Drive every function that
+        // can put a name on the wire, not the one that is easiest to reach.
+        let board = civvis::game::Game::new(2, 8, 8, 1, 100, 0);
+        for name in rules.districts.keys() {
+            let repaired = civ6_district_type(name);
+            check("district-repair", name.as_str(), repaired);
+        }
+        for name in rules.buildings.keys() {
+            let item = Item::Repair { repair: *name, pos: (0, 0) };
+            if let Some(emitted) = civ6_live_build_name(&item, &board) {
+                check("building-repair", name.as_str(), emitted);
+            }
         }
 
         assert!(

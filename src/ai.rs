@@ -94,6 +94,15 @@ const SIEGE_MUSTER_CAP: usize = 3;
 /// a raiding party.
 const SIEGE_PRESSURE_MIN: usize = 2;
 
+/// How many wall-breaking units the empire will ask for before it stops. Two
+/// is a siege train, not a doctrine; past this the ordinary melee/ranged
+/// alternation resumes so this cannot become an endless military appetite.
+const SIEGE_ARM_MAX: usize = 2;
+
+/// How far a walled enemy city can be and still be this empire's problem.
+/// Beyond it the siege train would spend its life walking.
+const SIEGE_TARGET_REACH: i32 = 20;
+
 /// Railroads are valuable infrastructure, but every tile consumes one Iron
 /// and one Coal. Keep enough of each material for an emergency unit upgrade
 /// instead of letting an idle Engineer pave the stockpile down to zero.
@@ -1355,6 +1364,9 @@ pub struct BasicAi {
     /// ladders would otherwise shift underneath them, and enabled explicitly
     /// by the Civilization VI bridge. See `besieged_military_floor`.
     siege_muster: bool,
+    /// Let the unit chooser ask for SIEGE as a role. Off for the frozen native
+    /// controllers. See `best_military_role` and `siege_is_the_missing_arm`.
+    siege_role: bool,
     /// Let threats standing in our own territory claim units before the
     /// offensive does. Off for the frozen native controllers, whose recorded
     /// ladders would otherwise shift underneath them, and enabled explicitly by
@@ -2202,6 +2214,7 @@ impl BasicAi {
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
+            siege_role: false,
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
@@ -2229,6 +2242,7 @@ impl BasicAi {
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
+            siege_role: false,
             home_defense: false,
             loyalty_rate_alarm: false,
             recorded_tactical_step: false,
@@ -4175,6 +4189,17 @@ impl BasicAi {
         cid: u32,
         want_ranged: Option<bool>,
     ) -> Option<String> {
+        self.best_military_role(g, pid, cid, want_ranged, false)
+    }
+
+    fn best_military_role(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        want_ranged: Option<bool>,
+        want_siege: bool,
+    ) -> Option<String> {
         let mut best: Option<(f64, String)> = None;
         for (name, spec) in &g.rules.units {
             if spec.class != "military" || spec.domain.as_deref() == Some("sea") {
@@ -4185,6 +4210,32 @@ impl BasicAi {
                 Some(false) => spec.is_melee_capable(),
                 None => spec.has_ranged_attack() || spec.is_melee_capable(),
             };
+            // ★★★★★ SIEGE IS NOT A ROLE THIS CHOOSER HAD, so it never chose one.
+            // Every siege unit carries a ranged attack, so it competed in the
+            // RANGED bucket and lost on raw `strength.max(ranged)` to a Field
+            // Cannon — while the one property that makes it siege, FULL damage
+            // to walls where every other unit does half, is absent from that
+            // comparison entirely.
+            //
+            // Measured on run `civvis-20260803T082856Z`, a game CIVVIS was
+            // WINNING (turn 226, 7 cities, score 645, ~3x the corpus mean):
+            // 151 turns at war with England at **594 military against 56**, a
+            // ten to one advantage, and **zero cities taken**. All seven cities
+            // came from `found` events; not one was captured. England's cities
+            // sat at 400 wall and full health the whole time. CIVVIS held
+            // engineering, military_engineering, metal_casting AND steel, so
+            // catapult through artillery were all buildable — and it built
+            // **zero siege units in 251 turns**, 8 Field Cannons instead.
+            //
+            // ⚠ THE APPETITE WAS NEVER THE PROBLEM. `siege_units_wanted` and
+            // its `+95` production bonus both sit behind `if spec.siege`, i.e.
+            // they are consulted only for a unit this function has ALREADY
+            // returned. Instrumented over 251 turns, `siege_units_wanted` was
+            // entered ONCE. That is why #963 measured parity: it tuned an
+            // appetite that is read once a game.
+            if self.siege_role && want_siege && !spec.siege {
+                continue;
+            }
             if !matches_role {
                 continue;
             }
@@ -4310,9 +4361,56 @@ impl BasicAi {
         // Ranged units trade efficiently, but only melee units can take a
         // city. Alternate the strongest available unit in each role so an
         // advanced army never degenerates into an uncapturing firing line.
+        // A walled enemy city is a wall problem, and only siege answers it.
+        // Ask for that FIRST when one is in reach and the army has none, then
+        // fall back to the ordinary melee/ranged alternation.
         let want_ranged = melee > ranged;
         self.best_military(g, pid, cid, Some(want_ranged))
             .or_else(|| self.best_military(g, pid, cid, None))
+    }
+
+    /// Whether this empire is trying to crack a wall with nothing that can.
+    ///
+    /// Deliberately built from the BOARD, not from the strategic plan: this
+    /// lives in `BasicAi`, the plan does not reach here, and the two facts that
+    /// matter — is there a walled enemy city we could actually reach, and do we
+    /// own anything that breaks walls — are both on the board already.
+    ///
+    /// ⚠ Bounded by `SIEGE_ARM_MAX`, and it stops asking as soon as the arm
+    /// exists. Without that this becomes "build siege forever", which is the
+    /// `all-army-no-economy` failure, and every mechanism that spent more on
+    /// the military has measured null.
+    fn siege_is_the_missing_arm(&self, g: &Game, pid: usize) -> bool {
+        if self.minor || self.barb {
+            return false;
+        }
+        let owned_siege = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid && g.rules.units[unit.kind].siege)
+            .count();
+        if owned_siege >= SIEGE_ARM_MAX {
+            return false;
+        }
+        let home: Vec<Pos> = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .map(|city| city.pos)
+            .collect();
+        if home.is_empty() {
+            return false;
+        }
+        g.cities.values().any(|city| {
+            city.owner != pid
+                && g.is_at_war(pid, city.owner)
+                && !g.players[city.owner].is_barbarian
+                && g.city_max_wall_hp(city) > 0
+                && city.wall_hp > 0
+                && home
+                    .iter()
+                    .any(|mine| g.wdist(*mine, city.pos) <= SIEGE_TARGET_REACH)
+        })
     }
 
     fn siege_support_unit(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
@@ -5135,8 +5233,41 @@ impl BasicAi {
             self.w.mil_per_city * n_cities as f64
         }
         .max(self.besieged_military_floor(g, pid, cid, n_cities));
-        if can_add_military && (military as f64) < military_floor {
-            let picked = if rushing && melee < self.rush_military_floor {
+        // ★★★★★ THE FLOOR IS A HEADCOUNT AND CANNOT SEE A MISSING ARM.
+        //
+        // `military_floor` is `mil_per_city * n_cities`. It counts bodies and
+        // asks nothing about what they can do, so an empire holding nineteen
+        // units and NO SIEGE reports its army finished while it is physically
+        // unable to take a city.
+        //
+        // Measured on run `civvis-20260803T082856Z`, a game CIVVIS was WINNING
+        // (turn 226, 7 cities, score 645, ~3x the corpus mean):
+        //
+        //   19 military units against a floor of 7  -> this branch never ran
+        //   151 turns at war with England, 594 military against their 56
+        //   ZERO cities taken; all 7 of ours came from `found`, none captured
+        //   England's cities: 400 wall, full health, the entire war
+        //   siege units built in 251 turns: ZERO, with engineering,
+        //   military_engineering, metal_casting AND steel all researched
+        //
+        // ⚠ NEITHER EXISTING REPAIR COULD REACH THIS. `siege_units_wanted` and
+        // its `+95` production bonus are consulted only through
+        // `redirect_repeatable_projects_for_force_gap`, which needs Conquest or
+        // Recovery AND an army below `2 * cities` AND a repeatable project at
+        // the head of the queue — instrumented over 251 turns, it was entered
+        // ONCE. That is why #963 measured parity: it tuned an appetite nothing
+        // reads. And a siege ROLE in the chooser is dead too, because the
+        // chooser is never called while the headcount is satisfied.
+        //
+        // So the floor itself has to know an arm is missing. It stays a
+        // headcount for everything else; this only adds "and we own nothing
+        // that breaks a wall we are actually besieging".
+        let missing_siege_arm = self.siege_role && self.siege_is_the_missing_arm(g, pid);
+        if can_add_military && ((military as f64) < military_floor || missing_siege_arm) {
+            let picked = if missing_siege_arm {
+                self.best_military_role(g, pid, cid, None, true)
+                    .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
+            } else if rushing && melee < self.rush_military_floor {
                 self.best_military(g, pid, cid, Some(false))
                     .or_else(|| self.combined_arms_unit(g, pid, cid, melee, ranged))
             } else {
@@ -5496,9 +5627,27 @@ impl BasicAi {
             buildable.sort_by(|a, b| {
                 a.0.cmp(&b.0)
                     .then_with(|| {
-                        slot_worth(&b.1)
-                            .partial_cmp(&slot_worth(&a.1))
-                            .unwrap_or(std::cmp::Ordering::Equal)
+                        // ⚠⚠ ONLY WHEN BOTH CANDIDATES HAVE SLOTS. My first version
+                        // compared slot worth across every cost tie, which is a far
+                        // bigger change than the one being argued for: it reordered
+                        // SIX tie groups, putting `old_god_obelisk` over `monument`,
+                        // `temple` over `market`, `cathedral` over every other worship
+                        // building, and `broadcast_center` over `research_lab`. Priced
+                        // at 50 maps it came back **-14 Elo (p=0.6875) with culture
+                        // LOWER, 151.7 against 153.8** — those are bad trades and the
+                        // measurement said so.
+                        //
+                        // Restricting it to pairs that both carry slots leaves every
+                        // one of those groups exactly as it was and decides only the
+                        // question actually at issue: Art Museum against
+                        // Archaeological Museum, identical in cost, culture,
+                        // maintenance and great-person points, separated in the old
+                        // sort by the letter 'c'.
+                        let (wa, wb) = (slot_worth(&a.1), slot_worth(&b.1));
+                        if wa <= 0.0 || wb <= 0.0 {
+                            return std::cmp::Ordering::Equal;
+                        }
+                        wb.partial_cmp(&wa).unwrap_or(std::cmp::Ordering::Equal)
                     })
                     .then_with(|| a.1.cmp(&b.1))
             });
@@ -12295,6 +12444,22 @@ mod tests {
         // changes tied pairs only and never reorders on cost.
         assert_eq!(slot_worth("amphitheater"), 2.0);
         assert_eq!(slot_worth("library"), 0.0);
+
+        // ⚠ SCOPE. The rule fires only where BOTH candidates carry slots. A first
+        // version compared across every cost tie and reordered six groups —
+        // old_god_obelisk over monument, temple over market, cathedral over every
+        // other worship building, broadcast_center over research_lab — and priced at
+        // -14 Elo with culture LOWER (151.7 vs 153.8). These assertions pin the
+        // narrowing: a slotless building must never be displaced by a slotted one.
+        for (cost, slotless) in [(60, "monument"), (120, "market"), (150, "arena"),
+                                 (290, "bank"), (440, "research_lab")] {
+            let spec = &g.rules.buildings[&Name::new(slotless)];
+            assert_eq!(spec.cost as i64, cost, "fixture: {slotless} still costs {cost}");
+            assert_eq!(
+                slot_worth(slotless), 0.0,
+                "{slotless} has no slots, so the tiebreak must not touch its position"
+            );
+        }
     }
 }
 
