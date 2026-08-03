@@ -504,6 +504,7 @@ class MatchMachine:
         self.build_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="civvis-build")
         self.next_sync = 0.0
         self.next_resource_log = 0.0
+        self.resume_visible_next = False
         self.completed = 0
         self.failed = 0
         self.visible_started = False
@@ -1268,9 +1269,28 @@ class MatchMachine:
                 candidate.paused = True
                 self.event("game_paused_for_resources", seed=candidate.seed, resources=asdict(sample))
         elif action == "resume" and now >= self.resume_not_before:
-            candidate = next((game for game in self.games if game.paused), None)
+            paused = [game for game in self.games if game.paused]
+            candidate = paused[0] if paused else None
+            if paused and (self.pending_revision or self.build_future is not None):
+                # A bursty host may expose only one restart window at a time.
+                # Alternating classes prevents the always-first visible game
+                # from starving the old headless fleet that must drain before
+                # the pending HEAD can build, without starving the spectator
+                # while that transition is waiting.
+                preferred = next(
+                    (
+                        game
+                        for game in paused
+                        if game.visible == self.resume_visible_next
+                    ),
+                    None,
+                )
+                if preferred is not None:
+                    candidate = preferred
             if candidate and set_paused(candidate.process, False):
                 candidate.paused = False
+                if self.pending_revision or self.build_future is not None:
+                    self.resume_visible_next = not candidate.visible
                 self.resume_not_before = now + RESUME_STEP_SECONDS
                 self.event("game_resumed", seed=candidate.seed, resources=asdict(sample))
 

@@ -1766,6 +1766,13 @@ impl AdvancedAi {
         self.base.home_defense = true;
     }
 
+    /// Record tactical steps so a unit stepped twice in one turn cannot walk
+    /// back onto the tile it just left. Native tournament games leave this
+    /// disabled so their recorded ladders replay move-for-move.
+    pub fn enable_recorded_tactical_step(&mut self) {
+        self.base.recorded_tactical_step = true;
+    }
+
     /// Stop the defensive-war posture from becoming permanent. Native
     /// tournament games leave this disabled.
     pub fn enable_bounded_recovery(&mut self) {
@@ -1834,6 +1841,14 @@ impl AdvancedAi {
         // with ONE warrior at military 34 against the Mapuche's 1354. The bound
         // releases only the power-gap half, and only after the posture has had
         // `RECOVERY_POSTURE_LIMIT` standard turns to work.
+        // ⚠ A tactical step applied raw records nothing, so when a unit with
+        // movement left is stepped a second time in the same turn, the reversal
+        // guard inside `path_move` cannot see where it came from — and round two
+        // walks straight back onto the tile round one just left. Measured on the
+        // replay of run `civvis-20260801T224944Z`: 217 of 217 refused moves were
+        // exactly that out-and-back pair; self-tile orders fell 43 → 1 with the
+        // steps recorded.
+        self.enable_recorded_tactical_step();
         self.enable_bounded_recovery();
         // ⚠ The siege appetite was one unit for any target city at all, walled
         // or not. The engine halves a non-siege unit's wall damage
@@ -9590,6 +9605,51 @@ impl AdvancedAi {
                     )
                     .is_ok()
                 {
+                    // What this city was told to build. `BasicAi::production`
+                    // has recorded its own choice since it was written, but
+                    // this path — the one the live controller actually uses —
+                    // had no line at all: on a 251-turn replay of run
+                    // `civvis-20260803T005930Z`, 394 build decisions were
+                    // explained and the 132 taken here were silent.
+                    //
+                    // The `displacing` half exists because every live produce
+                    // order carries `VALUE_REPLACE_AT`, so an order naming a
+                    // different item than the city is already building
+                    // REPLACES it in Civilization VI; the bridge only skips an
+                    // identical one. On that run's own orders, 23 of 297
+                    // produce orders (8%) landed on a city that was already
+                    // building something else — none of them a military unit.
+                    // That is small, and this line is what will say so
+                    // directly rather than by joining two sources.
+                    //
+                    // ⚠ Do not measure this by joining a REPLAY's orders
+                    // against the LIVE run's `producing`: the replay is a
+                    // counterfactual trajectory, and that join reads 46%
+                    // where the true figure is 8%.
+                    if self.journal().wants(crate::reasoning::Level::Decision) {
+                        let banked = g.cities[&cid]
+                            .production_progress
+                            .get(&format!("{item:?}"))
+                            .copied()
+                            .unwrap_or(0.0);
+                        let city_name = g.cities[&cid].name.clone();
+                        match &committed {
+                            Some((current, current_item)) if *current_item != item => {
+                                think!(self.journal(), Economy, Decision,
+                                       "{} switches to {}", city_name, Self::plain_item(&item);
+                                       "worth {score:.0}, displacing {} at {current:.0}; \
+                                        {banked:.0} banked on the new item",
+                                       Self::plain_item(current_item));
+                            }
+                            _ => {
+                                think!(self.journal(), Economy, Decision,
+                                       "{} starts {}", city_name, Self::plain_item(&item);
+                                       "worth {score:.0} to the {} plan; \
+                                        {banked:.0} already banked",
+                                       plan.strategy.as_str());
+                            }
+                        }
+                    }
                     let is_settler =
                         matches!(&item, Item::Unit { unit } if unit == "settler");
                     counts.add_item(g, &item);
@@ -9606,6 +9666,28 @@ impl AdvancedAi {
                     }
                 }
             }
+        }
+    }
+
+    /// A production item as an operator would say it: "trebuchet", "walls",
+    /// "campus", "commercial hub investment". `Debug` is what the scoring code
+    /// keys on and it is unreadable in a journal line — `Unit { unit: Name("trebuchet") }`
+    /// tells a reader nothing the word "trebuchet" does not.
+    fn plain_item(item: &Item) -> String {
+        match item {
+            Item::Formation { unit, formation } => {
+                let size = if *formation >= 2 { "army" } else { "corps" };
+                format!("{} {size}", crate::reasoning::plain(unit.as_str()))
+            }
+            Item::Unit { unit } => crate::reasoning::plain(unit.as_str()),
+            Item::Building { building } => crate::reasoning::plain(building.as_str()),
+            Item::District { district, .. } => crate::reasoning::plain(district.as_str()),
+            Item::Wonder { wonder, .. } => crate::reasoning::plain(wonder.as_str()),
+            Item::Repair { repair, .. } => {
+                format!("repairs to the {}", crate::reasoning::plain(repair.as_str()))
+            }
+            Item::Project { project } => crate::reasoning::plain(project.as_str()),
+            Item::Product { product } => crate::reasoning::plain(product.as_str()),
         }
     }
 
@@ -13711,7 +13793,14 @@ impl AdvancedAi {
                 self.base.move_beats_holding(g, uid, candidate, stay)
             };
             if should_move {
-                return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                // ⚠ Through `path_move`, never `g.apply` directly: it records
+                // the step, and a unit stepped again this turn must not
+                // re-enter the tile it just left. This site emitted 50 of the
+                // 88 same-turn out-and-back pairs on the replay of run
+                // civvis-20260801T224944Z — net zero ground, two orders, and
+                // the second refused by Civilization VI as a MOVE_TO of the
+                // unit's own tile.
+                return self.base.tactical_apply_move(g, pid, uid, pos);
             }
         }
 
@@ -13738,7 +13827,9 @@ impl AdvancedAi {
                 })
             {
                 if self.base.move_beats_holding(g, uid, score(g, pos), stay) {
-                    return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                    // Same rule as the local arm above: recorded through
+                    // `path_move` so the next same-turn step cannot undo it.
+                    return self.base.tactical_apply_move(g, pid, uid, pos);
                 }
             }
         }

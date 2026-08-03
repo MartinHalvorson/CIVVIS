@@ -139,11 +139,12 @@ pub const EVAL_ONLY_AIS: [&str; 86] = [
 ///
 /// ⚠ Keep in step with `AdvancedAi::enable_live_bridge`. A flag added there and
 /// not here makes the arms claim a controlled comparison they are not running.
-const LIVE_BRIDGE_TREATMENTS: [&str; 8] = [
+const LIVE_BRIDGE_TREATMENTS: [&str; 9] = [
     "live-trader-route",
     "live-religious-purchase",
     "siege-muster",
     "home-defense",
+    "recorded-tactical-step",
     "bounded-recovery",
     "siege-tracks-wall",
     "blind-objective-strength",
@@ -2682,9 +2683,9 @@ impl ArmKind {
             // mechanism that differs instead of the catch-all
             // "implementation" axis, which the evaluator refuses.
             Self::Live => &LIVE_BRIDGE_TREATMENTS,
-            Self::LiveWithoutHomeDefense => &["live-trader-route", "live-religious-purchase", "siege-muster", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
-            Self::LiveWithoutSolventFaithArmy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength"],
-            Self::LiveWithoutSiegeMuster => &["live-trader-route", "live-religious-purchase", "home-defense", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
+            Self::LiveWithoutHomeDefense => &["live-trader-route", "live-religious-purchase", "siege-muster", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
+            Self::LiveWithoutSolventFaithArmy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength"],
+            Self::LiveWithoutSiegeMuster => &["live-trader-route", "live-religious-purchase", "home-defense", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
             Self::AdvancedBeliefPressure => &["belief-pressure"],
             // `advanced` now owns the confirmed Live + infrastructure +
             // priority composite. The retained arms below are therefore
