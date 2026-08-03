@@ -29,6 +29,12 @@ const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
 /// -15.0, so contact becomes worth considering without becoming automatic —
 /// the shipped caution is reduced, not removed.
 const STRIKE_OPENING_SCALE: f64 = 0.6;
+/// Hexes past its own reach that a force group will consider a target, used by
+/// [`AdvancedAi::focus_approach_radius`]. One turn's march for most land units.
+const FOCUS_APPROACH_RADIUS: i32 = 3;
+/// What a target the group must walk to is worth against one it can strike now.
+/// Well under 1.0 so a prospective fight never outbids a live one.
+const FOCUS_APPROACH_DISCOUNT: f64 = 0.35;
 /// Most the wartime army target may be multiplied by when the enemy outweighs
 /// us, used by [`AdvancedAi::wartime_army_target`]. Two doublings would be an
 /// empire of nothing but soldiers; 2.0 asks a six-city empire at war to want
@@ -780,6 +786,13 @@ pub struct AdvancedAi {
     /// [`AdvancedAi::strike_opening_value`] for the arithmetic and the
     /// 7-melee-attacks-in-188-turns measurement behind it.
     pub strike_opening: bool,
+    /// Let a force group's focus name an enemy it could reach, not only one it
+    /// is already touching.
+    ///
+    /// **Off by default, live-bridge only.** See
+    /// [`AdvancedAi::focus_approach_radius`] for the 622-unit-turns
+    /// measurement behind it.
+    pub focus_reachable_enemies: bool,
     /// Raise the wartime army target when the enemy outweighs us, instead of
     /// keeping a headcount that only ever looks at our own city count.
     ///
@@ -1804,6 +1817,7 @@ impl AdvancedAi {
             battlefront_frame: None,
             scoped_relief_hold: false,
             strike_opening: false,
+            focus_reachable_enemies: false,
             army_target_weighs_the_enemy: false,
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
@@ -1914,6 +1928,12 @@ impl AdvancedAi {
     /// leave this disabled so their recorded ladders stay comparable.
     pub fn enable_strike_opening(&mut self) {
         self.strike_opening = true;
+    }
+
+    /// Let a group's focus name an enemy it could reach. Native tournament
+    /// games leave this disabled so their recorded ladders stay comparable.
+    pub fn enable_focus_reachable_enemies(&mut self) {
+        self.focus_reachable_enemies = true;
     }
 
     /// Let the army target account for the enemy it has to beat. Native
@@ -2034,6 +2054,13 @@ impl AdvancedAi {
         // tournament controller stays frozen so its recorded ladders remain
         // comparable.
         self.enable_strike_opening();
+        // ⚠ And the reason the army is only ever in range on a tenth of its
+        // unit-turns: `force_focus_target` could only name a target already
+        // inside a unit's attack radius, so a group with nothing in contact
+        // had no focus at all and marched at its distant objective. Measured on
+        // run `civvis-20260803T005930Z`: 622 of 1787 military unit-turns sat
+        // 2-4 hexes from an enemy, a median 6 hexes from their own objective.
+        self.enable_focus_reachable_enemies();
         self.enable_blind_objective_strength();
         // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
         // `military_faith_spending` never asks about gold — it gates on the faith
@@ -13655,6 +13682,33 @@ impl AdvancedAi {
             .unwrap_or(anchor)
     }
 
+    /// How far past its own reach a group will look for something to fight.
+    ///
+    /// `force_focus_target` searched `wdisk(unit.pos, radius)` — radius 1 for
+    /// melee and its attack range for ranged — so **the focus could only ever
+    /// name a target the group was already touching**. With nothing in contact
+    /// it returned `None`, the group's movement target fell back to
+    /// `group.objective`, and the column marched at whatever distant city the
+    /// campaign had named.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo vs Korea, 188
+    /// turns of war): of 1787 military unit-turns, **622 (35%) sat 2-4 hexes
+    /// from an enemy without closing**, and those units were a **median 6
+    /// hexes from their own engage objective** with only 12% of them within
+    /// reach of it. The army walks past a field force to reach a city and
+    /// engages neither — the operator's "sometimes clear the units first",
+    /// which the focus rule could not express.
+    ///
+    /// Three is one turn's march for most land units, so the widened ring is
+    /// "a fight we could join next turn" rather than a survey of the map.
+    fn focus_approach_radius(&self) -> i32 {
+        if self.focus_reachable_enemies {
+            FOCUS_APPROACH_RADIUS
+        } else {
+            0
+        }
+    }
+
     fn force_focus_target(
         &self,
         g: &Game,
@@ -13676,7 +13730,10 @@ impl AdvancedAi {
             } else {
                 1
             };
-            for pos in g.wdisk(unit.pos, radius) {
+            // ★★★★★ AN ENEMY THE GROUP COULD REACH, not only one it is already
+            // touching. See `FOCUS_APPROACH_RADIUS`.
+            let search = radius + self.focus_approach_radius();
+            for pos in g.wdisk(unit.pos, search) {
                 let visible_enemy = if self.battlefront_observation {
                     g.sees(&visible, pos)
                         && (g
@@ -13717,6 +13774,24 @@ impl AdvancedAi {
                     if exchange.is_finite() {
                         score += exchange.max(-20.0);
                         attackers += 1;
+                    } else if self.focus_reachable_enemies {
+                        // Not in reach this instant, but inside the approach
+                        // ring. Worth a discounted share of the same exchange
+                        // so a column can be pointed at a fight it has to walk
+                        // one turn to join — never enough to outbid a unit that
+                        // can swing now, which is what the undiscounted term
+                        // and the `attackers` bonus together guarantee.
+                        let reach = if spec.has_ranged_attack() {
+                            g.unit_attack_range(*uid).max(1)
+                        } else {
+                            1
+                        };
+                        if distance <= reach + self.focus_approach_radius() {
+                            let melee = spec.is_melee_capable();
+                            let prospect =
+                                self.base.exchange_score(g, *uid, target, !melee);
+                            score += FOCUS_APPROACH_DISCOUNT * prospect.max(-20.0);
+                        }
                     }
                 }
                 score += attackers as f64 * 8.0;
