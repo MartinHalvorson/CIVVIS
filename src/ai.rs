@@ -1340,6 +1340,8 @@ pub struct BasicAi {
     /// Off for the frozen native controllers, whose recorded ladders would
     /// otherwise shift underneath them.
     pub(crate) amenity_districts: bool,
+    /// Scale each district family by how much of the empire still lacks it.
+    pub(crate) district_coverage: bool,
     pursue_religion: bool,
     /// Enforce the live Firaxis rule that a religious unit inherits its
     /// purchase city's majority. Off for the frozen native controllers and
@@ -2193,6 +2195,7 @@ impl BasicAi {
             barb: false,
             culture_focus: false,
             amenity_districts: false,
+            district_coverage: false,
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
@@ -2218,6 +2221,7 @@ impl BasicAi {
             barb: false,
             culture_focus: false,
             amenity_districts: false,
+            district_coverage: false,
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
@@ -5307,6 +5311,39 @@ impl BasicAi {
         }
         if self.minor {
             dpri.clear();
+        }
+        // ⚠⚠ THE RANKING IS A CONSTANT, AND ONE FAMILY IS ALWAYS LAST. `d_theater` is
+        // the LOWEST of these four in **all 51 genomes** in `data/league/league.json`
+        // — typically 1.0 against a Campus's 4.0 — and the loop below only skips a
+        // family THIS CITY already has. So every city independently works down the
+        // same list, and the fourth entry is reached only by a city that already
+        // holds the other three.
+        //
+        // Measured on live run `civvis-20260803T090911Z` (5 cities, 242 turns):
+        // CIVVIS ordered `DISTRICT_CAMPUS` **28 times** and `DISTRICT_THEATER`
+        // **zero** times. The empire finished with 4 Campuses and no Theatre Square
+        // anywhere, so the whole culture chain — Amphitheatre, Museum, Broadcast
+        // Centre, and every Great Work slot — was unreachable by construction.
+        // Culture ended at 22.1 against a science of comparable size.
+        //
+        // So scale each family by how much of the EMPIRE still lacks it. A fifth
+        // Campus and a first Theatre Square are not the same decision, and a static
+        // weight cannot tell them apart. This is deliberately a coverage term, not a
+        // re-tuning: the genome's ordering still decides between two families the
+        // empire is equally short of, so a bred preference is preserved wherever it
+        // is actually expressing a preference.
+        if !self.minor && self.district_coverage {
+            let mine: Vec<&crate::game::City> =
+                g.cities.values().filter(|city| city.owner == pid).collect();
+            let total = mine.len().max(1) as f64;
+            for (family, weight) in dpri.iter_mut() {
+                let have = mine
+                    .iter()
+                    .filter(|city| g.city_has_district_family(city, Name::new(*family)))
+                    .count() as f64;
+                // 1.0 when no city has it, falling toward 0.5 when every city does.
+                *weight *= 1.0 - 0.5 * (have / total);
+            }
         }
         dpri.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
         for (family, _) in dpri {

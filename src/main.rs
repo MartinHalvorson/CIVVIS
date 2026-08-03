@@ -439,7 +439,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// ranks the same four district families in the same order. A compatibility
 /// re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc0fd_a03e_246d_6d3c;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf87f_8983_b56b_b05c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
