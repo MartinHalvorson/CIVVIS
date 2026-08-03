@@ -1521,7 +1521,82 @@ pub struct AdvancedAi {
     /// [`AdvancedAi::joint_tactics_census`].
     tactics_plans: usize,
     tactics_decisions: usize,
+
+    /// Price beakers as the empire's compounding interest rate rather than as
+    /// one victory lane's currency.
+    ///
+    /// Every science term in this agent was written *inside* a lane: the
+    /// `yield_value` weight is 4.2 under [`GrandStrategy::Science`] and 1.0 to
+    /// 1.7 everywhere else, `lane_emphasis` tilts a citizen toward beakers only
+    /// under Science, the Campus `strategic_family` bonus is keyed to Science,
+    /// and the search evaluator's tech-count reward is Science-only. The
+    /// district-building debt that would finish a Campus fires *only* in
+    /// Conquest and Recovery.
+    ///
+    /// That is the wrong shape. A Science *victory* is a lane and deserves lane
+    /// pricing; a Science *yield* is not, because techs are the prerequisite
+    /// for every other lane's tools — the units a war needs, the buildings a
+    /// culture game needs, the Apostles a religion needs, the harbours and
+    /// banks a diplomatic game buys envoys with. Beakers are the only yield on
+    /// the sheet that raises the conversion rate of all the others.
+    ///
+    /// Live evidence, run `civvis-20260803T005930Z` (Kongo, Online, 250 turns,
+    /// the real Civ 6 through the mirror): the empire founded a religion, which
+    /// pins `victory_focus` at 40+ against a Science floor that only reaches 55
+    /// at a *complete* tech tree, so the sampled plan lines are religion 39 /
+    /// conquest 31 / recovery 19 / expansion 17 and **science 0**. Output went
+    /// 2.8 -> 10.7 beakers by turn 62 and finished the game at 12.3, having
+    /// gained 1.6 in 188 turns. The second city never built a Campus at all.
+    ///
+    /// Off in [`AdvancedAi::legacy`] and [`AdvancedAi::pre_policy_envoy`] so an
+    /// evaluator control can measure it; on in the promoted production agent.
+    pub research_economy: bool,
+
+    /// This turn's floor on the science weight, refreshed by
+    /// [`AdvancedAi::refresh_research_weight`] once per decision.
+    ///
+    /// Held on the agent rather than threaded through `yield_value` because
+    /// twenty call sites read that anchor and the horizon is a property of the
+    /// turn, not of the item being priced. `0.0` is the identity: it floors
+    /// nothing and reproduces the pre-`research_economy` ordering exactly, so a
+    /// direct unit-test call to `yield_value` is unaffected.
+    research_weight: f64,
 }
+
+/// Science weight floor at the start of a game, and at its very end.
+///
+/// A beaker bought on turn 20 of 250 compounds for 230 turns; the same beaker
+/// on turn 245 buys nothing that can be built. So the floor is a ramp, not a
+/// constant — which is also what keeps this from wrecking the endgame army the
+/// way a flat "science is always 3" would.
+///
+/// The early number sits deliberately *above* Religion's 1.1 and Conquest's
+/// 1.7 and deliberately *below* Science's own 4.2: a lane still outbids the
+/// floor for its own currency, and this only stops the other lanes pricing
+/// research below their least valuable ordinary yield.
+const RESEARCH_FLOOR_EARLY: f64 = 3.0;
+const RESEARCH_FLOOR_LATE: f64 = 1.0;
+
+/// Standing citizen tilt toward beakers in every lane, scaled by the same
+/// horizon. Sized against `lane_emphasis`'s own numbers, where a lane's tilt is
+/// 0.50 and the shipped baseline science weight is 1.30: at full horizon this
+/// moves a governor about a fifth, not a takeover.
+const RESEARCH_CITIZEN_TILT: f64 = 0.28;
+
+/// A city with no Campus, in any lane, once one is legal here.
+const RESEARCH_CAMPUS_COVERAGE: f64 = 300.0;
+
+/// A Campus standing without the building that pays for it. The debt is per
+/// missing copy and independent of the lane, unlike `wartime_infrastructure_debt`
+/// which pays the same shape only while the empire is fighting.
+const RESEARCH_BUILDING_DEBT: f64 = 240.0;
+
+/// Where the Campus policy multipliers enter a lane's own preference list.
+///
+/// Behind the lane's leading cards, not in front of them: a Religion empire
+/// must keep its opening, and the deck is longer than the slot count, so this
+/// only wins a slot that would otherwise have gone to the tail of the list.
+const RESEARCH_DECK_INSERT: usize = 4;
 
 impl Default for AdvancedAi {
     fn default() -> Self {
@@ -1576,6 +1651,7 @@ impl AdvancedAi {
         ai.envoy_priority = true;
         ai.adjacency_site_planning = true;
         ai.settler_commit = true;
+        ai.research_economy = true;
         ai.city_target_floor = PRODUCTION_CITY_TARGET_FLOOR;
         ai.plan_city_target = true;
         // Expansion is allowed only behind the existing production floors;
@@ -1755,6 +1831,8 @@ impl AdvancedAi {
             tactics_resolved: BTreeSet::new(),
             tactics_plans: 0,
             tactics_decisions: 0,
+            research_economy: false,
+            research_weight: 0.0,
         }
     }
 
@@ -2486,7 +2564,14 @@ impl AdvancedAi {
     /// faith 0.90, so a lane yield gaining ~0.5 moves it up roughly a third
     /// and never reorders the whole vector — a Science empire still builds
     /// settlers and still feeds itself.
-    fn lane_emphasis(strategy: GrandStrategy) -> Yields {
+    ///
+    /// `research_tilt` is the standing beaker appetite from
+    /// [`AdvancedAi::research_economy`], added on top of the lane's own tilt in
+    /// *every* lane. In the live Kongo run the second city's governor carried a
+    /// science weight of 1.3 against production 3.9 and worked no research
+    /// tiles for the whole game; a lane-only emphasis can never reach it,
+    /// because that empire was never in the Science lane.
+    fn lane_emphasis(strategy: GrandStrategy, research_tilt: f64) -> Yields {
         let mut ys = Yields::default();
         match strategy {
             // Growth is the lane. Hammers still matter because a settler is
@@ -2524,6 +2609,8 @@ impl AdvancedAi {
                 ys.food = 0.20;
             }
         }
+        // A lane that already asks for beakers keeps its own, larger, appetite.
+        ys.science = ys.science.max(research_tilt);
         ys
     }
 
@@ -2564,8 +2651,13 @@ impl AdvancedAi {
         // sixty turns earlier compounds for the rest of the game where a
         // marginally better yield mix does not.
         let expanding = self.city_strategy_expansion_first && cities.len() < plan.desired_cities;
+        let research_tilt = if self.research_economy {
+            RESEARCH_CITIZEN_TILT * Self::research_horizon(g)
+        } else {
+            0.0
+        };
         let emphasis = if self.city_strategy_emphasis {
-            Self::lane_emphasis(plan.strategy)
+            Self::lane_emphasis(plan.strategy, research_tilt)
         } else {
             Yields::default()
         };
@@ -4064,8 +4156,29 @@ impl AdvancedAi {
         value
     }
 
+    /// Fraction of the game still to be played, clamped to `[0, 1]`.
+    ///
+    /// The horizon every research term is scaled by. A game past its turn limit
+    /// (the mirror runs one turn beyond it) reports 0 rather than a negative.
+    fn research_horizon(g: &Game) -> f64 {
+        let budget = g.max_turns.max(1) as f64;
+        ((budget - g.turn as f64) / budget).clamp(0.0, 1.0)
+    }
+
+    /// Set this turn's science floor. Called once per decision, before any
+    /// pricing runs.
+    fn refresh_research_weight(&mut self, g: &Game) {
+        self.research_weight = if self.research_economy {
+            let horizon = Self::research_horizon(g);
+            RESEARCH_FLOOR_LATE + (RESEARCH_FLOOR_EARLY - RESEARCH_FLOOR_LATE) * horizon
+        } else {
+            0.0
+        };
+    }
+
     fn yield_value(&self, yields: Yields, strategy: GrandStrategy) -> f64 {
-        let (food, prod, gold, science, culture, faith) = match strategy {
+        let (food, prod, gold, science, culture, faith): (f64, f64, f64, f64, f64, f64) =
+            match strategy {
             GrandStrategy::Expansion => (2.0, 2.2, 0.9, 1.2, 1.2, 0.5),
             GrandStrategy::Science => (1.4, 2.0, 1.0, 4.2, 1.2, 0.4),
             GrandStrategy::Culture => (1.4, 1.8, 1.0, 1.3, 4.2, 0.8),
@@ -4086,6 +4199,11 @@ impl AdvancedAi {
             GrandStrategy::Conquest => (1.2, 2.8, 1.4, 1.7, 0.8, 0.3),
             GrandStrategy::Recovery => (1.6, 3.2, 1.5, 1.0, 0.8, 0.3),
         };
+        // The anchor above is the *lane's* opinion of a beaker and is left
+        // exactly as promoted. `research_weight` is a floor under it, not a
+        // replacement: the Science lane's 4.2 always wins, and with
+        // `research_economy` off the floor is 0.0 and this line is a no-op.
+        let science = science.max(self.research_weight);
         yields.food * food
             + yields.production * prod
             + yields.gold * gold
@@ -4976,6 +5094,35 @@ impl AdvancedAi {
             ];
             desired.retain(|card| !WARTIME_ECONOMY.contains(card));
             desired.splice(0..0, WARTIME_ECONOMY);
+        }
+        // The deck has the same lane-keyed shape as every other science term.
+        // Counted over the six lists above, the Campus multipliers appear in
+        // exactly two: Science and Expansion. **The Religion and Culture decks
+        // contain no science card at all** — and the deployment genome is
+        // `adv-religious`, so in the live game Rationalism and Natural
+        // Philosophy are unreachable unless a Conquest army happens to saturate
+        // and trigger `WARTIME_ECONOMY` above. That is exactly what the two
+        // recorded runs show: the religion-heavy `civvis-20260803T005930Z`
+        // finished with all three science cards *available and unslotted*,
+        // while `civvis-20260802T220818Z` had Rationalism and Natural
+        // Philosophy in and reached 60.9 science against the other's 12.3.
+        //
+        // Both cards multiply Campus buildings, so the empire must own a Campus
+        // for them to mean anything — that gate is the whole precondition, and
+        // it is why this cannot fire in a seat these cards would be wasted in.
+        // Inserted after the lane's own leading cards rather than in front of
+        // them: a Religion empire keeps its opening, and picks these up with a
+        // slot it would otherwise fill from the tail of its list.
+        if self.research_economy {
+            const RESEARCH_MULTIPLIERS: [&str; 2] = ["rationalism", "natural_philosophy"];
+            let has_campus = city_ids.iter().any(|city| {
+                g.city_has_district_family(&g.cities[city], crate::name!("campus"))
+            });
+            if has_campus {
+                desired.retain(|card| !RESEARCH_MULTIPLIERS.contains(card));
+                let at = desired.len().min(RESEARCH_DECK_INSERT);
+                desired.splice(at..at, RESEARCH_MULTIPLIERS);
+            }
         }
         let elite_active = g.players[pid].policies.contains(&crate::name!("elite_forces"));
         let elite_affordable = if elite_active {
@@ -10640,7 +10787,28 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
+                    // The debt `wartime_infrastructure_debt` pays for a Campus,
+                    // owed in peacetime too. A Campus standing without its
+                    // Library is the empire having bought the expensive half of
+                    // a research city and declined the cheap half: the live
+                    // Kongo run reached Composites holding two Campus buildings
+                    // in the whole empire, and its second city had neither.
+                    let research_debt = if self.research_economy
+                        && spec
+                            .district
+                            .map(|district| g.district_family(district))
+                            .is_some_and(|family| family == "campus")
+                        && city
+                            .districts
+                            .keys()
+                            .any(|built| g.district_family(*built) == crate::name!("campus"))
+                    {
+                        RESEARCH_BUILDING_DEBT * Self::research_horizon(g)
+                    } else {
+                        0.0
+                    };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
+                        + research_debt
                         + spec.housing * (22.0 + housing_need * 18.0)
                         + spec.amenity * (30.0 + amenity_need * 22.0)
                         + great_work_slots
@@ -10883,6 +11051,24 @@ impl AdvancedAi {
                 } else {
                     0.0
                 };
+                // Campus coverage, priced in every lane. `balanced_core` above
+                // already wants one Campus per two cities, but it stops there
+                // and it is shared with three other families; this says the
+                // quieter thing that a city without a Campus is an empire-wide
+                // research hole whatever the empire is currently playing for.
+                // Scaled by the horizon so a Campus begun at turn 240 does not
+                // outbid a defender.
+                let research_coverage = if self.research_economy
+                    && family == "campus"
+                    && !city
+                        .districts
+                        .keys()
+                        .any(|built| g.district_family(*built) == family)
+                {
+                    RESEARCH_CAMPUS_COVERAGE * Self::research_horizon(g)
+                } else {
+                    0.0
+                };
                 self.yield_value(g.district_yields(district, *pos), plan.strategy) * 60.0
                     + self.yield_value(spec.citizen_yields, plan.strategy) * 24.0
                     + spec.defense * if threatened { 5.0 } else { 1.5 }
@@ -10909,6 +11095,7 @@ impl AdvancedAi {
                     + envoy_unlock
                     + effect_value
                     + development_penalty
+                    + research_coverage
             }
             Item::Repair { repair, .. } => {
                 if repair == "district" {
@@ -16348,6 +16535,14 @@ impl AdvancedAi {
                 faith: 0.4,
             },
         };
+        // The lookahead evaluator carries its own, smaller, weight table —
+        // Science reads 2.8 here where `yield_value` reads 4.2. Scale the same
+        // floor into that table's units so the search and the production
+        // ordering cannot disagree about what a beaker is worth.
+        let mut yield_weights = yield_weights;
+        yield_weights.science = yield_weights
+            .science
+            .max(self.research_weight * (2.8 / 4.2));
         let weighted = |yields: Yields| {
             yields.food * yield_weights.food
                 + yields.production * yield_weights.production
@@ -16565,6 +16760,10 @@ impl Ai for AdvancedAi {
 impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         self.battlefront_frame = None;
+        // Before anything in this turn is priced. Every science term downstream
+        // reads this one number, so the horizon cannot drift between the
+        // production ordering, the citizen governor, and the search evaluator.
+        self.refresh_research_weight(g);
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);
@@ -17071,6 +17270,311 @@ mod tests {
         install_ai_test_district(game, city, "holy_site");
         game.cities.get_mut(&city).unwrap().buildings =
             vec![crate::name!("shrine"), crate::name!("temple")];
+    }
+
+    /// The research floor is a ramp on the remaining game and is absent from
+    /// the frozen controls, so an ablation measures a real difference.
+    #[test]
+    fn the_research_floor_ramps_with_the_horizon_and_stays_out_of_the_controls() {
+        let mut early = Game::new(2, 24, 16, 5_411, 250, 0);
+        early.turn = 1;
+        let mut late = early.clone();
+        late.turn = 240;
+        let mut finished = early.clone();
+        finished.turn = 251;
+
+        let mut ai = AdvancedAi::new();
+        ai.refresh_research_weight(&early);
+        let early_weight = ai.research_weight;
+        ai.refresh_research_weight(&late);
+        let late_weight = ai.research_weight;
+        ai.refresh_research_weight(&finished);
+        let finished_weight = ai.research_weight;
+
+        assert!(
+            early_weight > 2.9 && early_weight <= RESEARCH_FLOOR_EARLY,
+            "a beaker bought on turn 1 compounds for the whole game: {early_weight}"
+        );
+        assert!(
+            late_weight < 1.2,
+            "a beaker bought on turn 240 buys nothing that can be built: {late_weight}"
+        );
+        assert!(
+            early_weight > late_weight,
+            "the floor must decay, not sit flat"
+        );
+        assert_eq!(
+            finished_weight, RESEARCH_FLOOR_LATE,
+            "past the turn limit the horizon clamps at zero rather than going negative"
+        );
+
+        for mut control in [AdvancedAi::legacy(), AdvancedAi::pre_policy_envoy()] {
+            control.refresh_research_weight(&early);
+            assert_eq!(
+                control.research_weight, 0.0,
+                "the evaluation controls must keep the pre-treatment pricing"
+            );
+        }
+    }
+
+    /// The defect this repairs: every lane except Science priced a beaker below
+    /// its own least valuable ordinary yield, and the live Kongo run spent 89 of
+    /// 106 sampled turns in exactly those lanes.
+    #[test]
+    fn beakers_keep_a_floor_in_every_lane_but_never_outbid_the_science_lane() {
+        let mut game = Game::new(2, 24, 16, 5_412, 250, 0);
+        game.turn = 40;
+        let mut ai = AdvancedAi::new();
+        ai.refresh_research_weight(&game);
+        let legacy = AdvancedAi::legacy();
+        let one_science = Yields {
+            science: 1.0,
+            ..Yields::default()
+        };
+
+        for strategy in [
+            GrandStrategy::Religion,
+            GrandStrategy::Conquest,
+            GrandStrategy::Recovery,
+            GrandStrategy::Expansion,
+            GrandStrategy::Culture,
+            GrandStrategy::Diplomacy,
+        ] {
+            let treated = ai.yield_value(one_science, strategy);
+            let control = legacy.yield_value(one_science, strategy);
+            assert!(
+                treated > control,
+                "{strategy:?} must value research above the lane-only anchor: \
+                 {treated} vs {control}"
+            );
+            assert!(
+                treated < ai.yield_value(one_science, GrandStrategy::Science),
+                "{strategy:?} must not outbid the Science lane's own currency"
+            );
+        }
+
+        assert_eq!(
+            ai.yield_value(one_science, GrandStrategy::Science),
+            legacy.yield_value(one_science, GrandStrategy::Science),
+            "the Science lane's promoted weight is untouched"
+        );
+        let one_faith = Yields {
+            faith: 1.0,
+            ..Yields::default()
+        };
+        assert_eq!(
+            ai.yield_value(one_faith, GrandStrategy::Religion),
+            legacy.yield_value(one_faith, GrandStrategy::Religion),
+            "the floor is science-only: no other yield moves"
+        );
+    }
+
+    /// Every lane asks a governor for beakers, because the lane the empire is
+    /// in is not evidence that research stopped mattering.
+    #[test]
+    fn every_lane_tilts_a_citizen_toward_research() {
+        for strategy in [
+            GrandStrategy::Expansion,
+            GrandStrategy::Religion,
+            GrandStrategy::Conquest,
+            GrandStrategy::Recovery,
+            GrandStrategy::Culture,
+            GrandStrategy::Diplomacy,
+        ] {
+            assert_eq!(
+                AdvancedAi::lane_emphasis(strategy, 0.0).science,
+                0.0,
+                "{strategy:?} carried no research tilt before the treatment"
+            );
+            assert!(
+                AdvancedAi::lane_emphasis(strategy, RESEARCH_CITIZEN_TILT).science > 0.0,
+                "{strategy:?} must now ask its citizens for research too"
+            );
+        }
+        assert_eq!(
+            AdvancedAi::lane_emphasis(GrandStrategy::Science, RESEARCH_CITIZEN_TILT).science,
+            0.50,
+            "the Science lane keeps its own larger appetite"
+        );
+    }
+
+    /// The policy deck carried the same lane-keyed defect as the yield weights:
+    /// the Religion list contains no science card, and the deployment genome is
+    /// `adv-religious`. The live religion-heavy run finished with Rationalism,
+    /// Natural Philosophy and Military Research all *available and unslotted*.
+    #[test]
+    fn a_religion_empire_can_reach_the_campus_policy_multipliers() {
+        let build = |research_economy: bool| {
+            let mut game = Game::new(2, 32, 24, 5_415, 250, 0);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("starting settler");
+            game.apply(0, &Action::FoundCity { unit: settler })
+                .expect("found city");
+            let city = game.player_city_ids(0)[0];
+            install_ai_test_district(&mut game, city, "campus");
+            game.cities.get_mut(&city).unwrap().buildings =
+                vec![crate::name!("library"), crate::name!("university")];
+            game.players[0].government = Some("theocracy".to_string());
+            game.players[0].civics.extend([
+                crate::name!("recorded_history"),
+                crate::name!("medieval_faires"),
+                crate::name!("the_enlightenment"),
+                crate::name!("opera_ballet"),
+                crate::name!("theology"),
+            ]);
+            game.players[0].policies.clear();
+            let mut ai = AdvancedAi::new();
+            ai.research_economy = research_economy;
+            ai.refresh_research_weight(&game);
+            ai.strategic_policies(&mut game, 0, GrandStrategy::Religion);
+            game.players[0].policies.clone()
+        };
+
+        let treated = build(true);
+        let control = build(false);
+        assert!(
+            !control.contains(&crate::name!("rationalism")),
+            "the untreated Religion deck has no science card at all: {control:?}"
+        );
+        assert!(
+            treated.contains(&crate::name!("rationalism")),
+            "a Religion empire holding a Campus must be able to multiply it: {treated:?}"
+        );
+    }
+
+    /// The multipliers are Campus cards. A seat with no Campus must not spend a
+    /// slot on one, or the treatment buys a religion empire nothing and costs
+    /// it a card it was using.
+    #[test]
+    fn the_campus_policy_multipliers_need_a_campus() {
+        let mut game = Game::new(2, 32, 24, 5_416, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        game.players[0].government = Some("theocracy".to_string());
+        game.players[0].civics.extend([
+            crate::name!("recorded_history"),
+            crate::name!("medieval_faires"),
+            crate::name!("the_enlightenment"),
+            crate::name!("theology"),
+        ]);
+        game.players[0].policies.clear();
+        let mut ai = AdvancedAi::new();
+        ai.refresh_research_weight(&game);
+        ai.strategic_policies(&mut game, 0, GrandStrategy::Religion);
+        assert!(
+            !game.players[0].policies.contains(&crate::name!("rationalism")),
+            "Rationalism multiplies Campus buildings this empire does not have"
+        );
+    }
+
+    /// The live run's second city held an Industrial Zone and a Mbanza and
+    /// never built a Campus, because a Religion empire's Campus bonus is zero.
+    #[test]
+    fn a_religion_empire_still_wants_a_campus_in_a_city_that_has_none() {
+        let mut game = Game::new(2, 32, 24, 5_413, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        let city = game.player_city_ids(0)[0];
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.turn = 60;
+
+        let mut ai = AdvancedAi::new();
+        ai.refresh_research_weight(&game);
+        let legacy = AdvancedAi::legacy();
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Religion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let counts = ai.counts(&game, 0);
+        let campus_site = game
+            .district_sites(city, crate::name!("campus"))
+            .into_iter()
+            .next()
+            .expect("a legal Campus site");
+        let campus = Item::District {
+            district: crate::name!("campus"),
+            pos: campus_site,
+        };
+
+        let treated = ai.production_value(&game, 0, city, &campus, &plan, &counts);
+        let control = legacy.production_value(&game, 0, city, &campus, &plan, &counts);
+        assert!(
+            treated > control * 1.5,
+            "a Religion empire must still pay for its first Campus: {treated} vs {control}"
+        );
+    }
+
+    /// A Campus with no Library is the expensive half of a research city bought
+    /// and the cheap half declined. That debt was only ever paid at war.
+    #[test]
+    fn a_campus_without_its_library_carries_a_debt_in_peacetime_too() {
+        let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        let city = game.player_city_ids(0)[0];
+        install_ai_test_district(&mut game, city, "campus");
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.turn = 60;
+
+        let mut ai = AdvancedAi::new();
+        ai.refresh_research_weight(&game);
+        let legacy = AdvancedAi::legacy();
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Religion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let counts = ai.counts(&game, 0);
+        let library = Item::Building {
+            building: crate::name!("library"),
+        };
+        assert!(game.can_produce(0, city, &library));
+
+        let treated = ai.production_value(&game, 0, city, &library, &plan, &counts);
+        let control = legacy.production_value(&game, 0, city, &library, &plan, &counts);
+        assert!(
+            treated > control * 2.0,
+            "the peacetime Campus-building debt must be paid: {treated} vs {control}"
+        );
+
+        // And it is owed for the Campus, not for every building in the city.
+        let monument = Item::Building {
+            building: crate::name!("monument"),
+        };
+        let treated_monument = ai.production_value(&game, 0, city, &monument, &plan, &counts);
+        let control_monument = legacy.production_value(&game, 0, city, &monument, &plan, &counts);
+        assert!(
+            treated_monument <= control_monument * 1.05,
+            "an unrelated building must not collect the research debt: \
+             {treated_monument} vs {control_monument}"
+        );
     }
 
     #[test]
@@ -26820,9 +27324,9 @@ mod tests {
     /// produce identical governor weights the directive is decorative.
     #[test]
     fn the_lane_reaches_the_tile_the_citizen_works() {
-        let science = AdvancedAi::lane_emphasis(GrandStrategy::Science);
-        let culture = AdvancedAi::lane_emphasis(GrandStrategy::Culture);
-        let conquest = AdvancedAi::lane_emphasis(GrandStrategy::Conquest);
+        let science = AdvancedAi::lane_emphasis(GrandStrategy::Science, 0.0);
+        let culture = AdvancedAi::lane_emphasis(GrandStrategy::Culture, 0.0);
+        let conquest = AdvancedAi::lane_emphasis(GrandStrategy::Conquest, 0.0);
         assert!(science.science > culture.science);
         assert!(culture.culture > science.culture);
         assert!(conquest.production > science.production);
@@ -29162,5 +29666,72 @@ mod tests {
             }
         }
         println!();
+    }
+}
+
+#[cfg(test)]
+mod research_probe {
+    use super::*;
+    use crate::ai::Ai;
+    use crate::game::{Action, Game};
+    use crate::setup::GameSpeed;
+
+    /// Paired A/B at the *deployment* shape, not the unit-test shape: six
+    /// players, Online speed, 250 turns, a Small world.
+    ///
+    /// This is the instrument behind PR #958's numbers, kept so they can be
+    /// reproduced rather than taken on trust. The same treatment measured at
+    /// 4p/28x18/140 turns was byte-identical on 13 of 20 seeds — those empires
+    /// finish with 6-25 techs and mostly never build a Campus, so the treatment
+    /// barely fires and the run says almost nothing. Measure where it runs.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn research_economy_ab_at_deployment_scale() {
+        let play = |seed: u64, treated: bool| {
+            let mut g = Game::new(6, 74, 46, seed, 250, 9);
+            g.game_speed = GameSpeed::Online;
+            let mut me = AdvancedAi::new();
+            me.research_economy = treated;
+            let mut others = AdvancedAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 {
+                    me.take_turn(&mut g, pid);
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            let cities = g.player_city_ids(0);
+            let science: f64 = cities.iter().map(|c| g.city_yields(*c).science).sum();
+            let campuses = cities
+                .iter()
+                .filter(|c| {
+                    g.cities[c]
+                        .districts
+                        .keys()
+                        .any(|d| g.district_family(*d) == crate::name!("campus"))
+                })
+                .count();
+            (cities.len(), campuses, g.players[0].techs.len(), science, g.score(0))
+        };
+        let (mut n, mut ts, mut cs, mut tt, mut tc, mut tsc, mut csc, mut tcp, mut ccp) =
+            (0, 0.0, 0.0, 0, 0, 0i64, 0i64, 0, 0);
+        for seed in 9_200..9_208u64 {
+            let t = play(seed, true);
+            let c = play(seed, false);
+            println!(
+                "seed {seed}: treated cities={} campus={} techs={} sci={:.1} score={} | control cities={} campus={} techs={} sci={:.1} score={}",
+                t.0, t.1, t.2, t.3, t.4, c.0, c.1, c.2, c.3, c.4
+            );
+            n += 1;
+            ts += t.3; cs += c.3; tt += t.2; tc += c.2;
+            tsc += t.4 as i64; csc += c.4 as i64; tcp += t.1; ccp += c.1;
+        }
+        println!(
+            "TOTALS n={n} science {ts:.1} vs {cs:.1} | techs {tt} vs {tc} | campuses {tcp} vs {ccp} | score {tsc} vs {csc}"
+        );
     }
 }
