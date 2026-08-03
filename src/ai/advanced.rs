@@ -24,6 +24,35 @@ use std::sync::Arc;
 /// attack unsupported. Below it the group holds on its own account, whatever
 /// else is happening in the empire.
 const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
+/// Scale of [`AdvancedAi::strike_opening_value`] against `mv_threat`'s own
+/// `30.0`. At even odds this returns +5.2 where the parity threat penalty is
+/// -15.0, so contact becomes worth considering without becoming automatic —
+/// the shipped caution is reduced, not removed.
+const STRIKE_OPENING_SCALE: f64 = 0.6;
+/// Charged to a tile that would leave a ranged unit in range of a target and
+/// unable to see it, by [`AdvancedAi::ranged_tile_is_blind`]. Sized to beat the
+/// depth preference decisively — `role_spacing` is 2.0 and a Ranged unit scales
+/// it by 1.5, so one hex of depth error costs 3.0 — while staying under
+/// `mv_threat`'s 15.0 at parity, so a blind tile loses to a sighted one a hex
+/// out of position without the unit fleeing contact altogether.
+const BLIND_RANGED_TILE: f64 = 12.0;
+/// Most the wartime army target may be multiplied by when the enemy outweighs
+/// us, used by [`AdvancedAi::wartime_army_target`]. Two doublings would be an
+/// empire of nothing but soldiers; 2.0 asks a six-city empire at war to want
+/// 24 land units rather than 12 when it is being outweighed two to one, and
+/// stops there however far ahead the rival runs.
+const WARTIME_ARMY_CEILING: f64 = 2.0;
+/// Points of standing wall that justify one more siege train, used by
+/// [`AdvancedAi::siege_units_wanted`]. A Civ VI wall tier is 100 points and a
+/// fully walled Renaissance city carries 400, so this asks for two trains at
+/// Medieval walls and the cap at Renaissance — the shape Korea used to strip a
+/// 400-point wall off Kwango in six turns while CIVVIS removed 9 points from
+/// Jeonju in fourteen.
+const SIEGE_WALL_PER_UNIT: usize = 150;
+/// Ceiling on the siege train. Past this the production is better spent on the
+/// melee that has to walk in and take the city — ranged and siege units cannot
+/// capture, and an unsealed city heals 20 a turn.
+const SIEGE_UNITS_MAX: usize = 3;
 /// Radius `threatened_city` scores hostiles in. A group already inside it is
 /// part of the defence rather than a column marching to it.
 const THREAT_RELIEF_RADIUS: i32 = 6;
@@ -117,6 +146,12 @@ const SETTLER_LAND_FALLBACK_RADIUS: i32 = 12;
 const SETTLER_GLOBAL_PREMIUM: f64 = 10.0;
 const SETTLER_EXTRA_TRAVEL_PRICE: f64 = 2.5;
 
+/// How many turns of a faith-bought soldier's gold upkeep the treasury must be
+/// able to cover when income alone will not. Twenty-five turns is long enough
+/// that a purchase made on a deep balance is a real decision, and short enough
+/// that a healthy empire is never stopped from arming itself.
+const FAITH_ARMY_SOLVENCY_TURNS: f64 = 25.0;
+
 /// A Settler walking farther than this, or one that has already been stopped,
 /// gets a land escort when the empire can spare one.
 const SETTLER_ESCORT_DISTANCE: i32 = 4;
@@ -127,6 +162,19 @@ const SETTLER_ESCORT_SEARCH_RADIUS: i32 = 8;
 /// radius. Named here because a census that scores siting against raw
 /// `settle_value` is scoring it against an objective the agent never held.
 const SETTLE_DISTANCE_PENALTY: f64 = 0.9;
+
+/// Production Advanced opens wide: six cities are the floor, not the finish.
+/// The land-aware plan may then climb to nine as the empire and era mature.
+/// Six is also the point at which the existing expansion oracle first showed
+/// decisive headroom; keeping it named prevents the production constructor,
+/// the plan, and the delegated governor from drifting apart again.
+const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
+
+/// A growing empire needs enough Builder charges to make new territory earn
+/// its keep. Three active Builders per four cities provide roughly two useful
+/// improvements per city at ordinary three-charge Builders, while the existing
+/// `has_builder_work` gate stops production once there is no yield to add.
+const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
 
 /// How far above its empire's per-city mean a yield must stand before it names
 /// the city's role. At 1.0 every city would be typed by a coin flip around the
@@ -706,6 +754,10 @@ pub struct AdvancedAi {
     /// route-start action.  This stays off for every native game and is enabled
     /// only by the Civ VI order bridge.
     live_trader_route_adapter: bool,
+    /// Require a faith-bought soldier's GOLD upkeep to be payable before buying
+    /// it. Off for every native game, enabled only by the Civ VI order bridge.
+    /// See `faith_military_is_affordable`.
+    solvent_faith_army: bool,
     /// Immutable information frame captured before this major acts.  It is
     /// cleared after the turn so direct evaluators outside a turn still read
     /// the game's current observation.
@@ -728,6 +780,41 @@ pub struct AdvancedAi {
     /// `advanced_relief_scoped` entrant, so it can be re-measured once the
     /// conversion bottleneck moves rather than re-derived from scratch.
     pub scoped_relief_hold: bool,
+    /// Credit a tile for the attack it opens, not only charge it for the
+    /// threat it accepts.
+    ///
+    /// **Off by default, live-bridge only.** See
+    /// [`AdvancedAi::strike_opening_value`] for the arithmetic and the
+    /// 7-melee-attacks-in-188-turns measurement behind it.
+    pub strike_opening: bool,
+    /// Stop a ranged unit choosing a tile from which it is in range of a target
+    /// and cannot see it.
+    ///
+    /// **Off by default, live-bridge only.** See
+    /// [`AdvancedAi::ranged_tile_is_blind`] for the refusal census behind it.
+    pub ranged_needs_line_of_sight: bool,
+    /// Raise the wartime army target when the enemy outweighs us, instead of
+    /// keeping a headcount that only ever looks at our own city count.
+    ///
+    /// **Off by default, live-bridge only**, on the same footing as
+    /// `bounded_recovery`. See [`AdvancedAi::wartime_army_target`] for the
+    /// 94-of-188-turns measurement behind it.
+    pub army_target_weighs_the_enemy: bool,
+    /// Size the siege train against the wall standing at the target city,
+    /// instead of asking for exactly one siege unit for any target at all.
+    ///
+    /// **Off by default, live-bridge only**, on the same footing as
+    /// `bounded_recovery`. See [`AdvancedAi::siege_units_wanted`] for the
+    /// engine arithmetic and the 4-units-in-251-turns measurement behind it.
+    pub siege_tracks_the_wall: bool,
+    /// Price a fogged objective city from this controller's last sighting of
+    /// it, instead of scoring it as absent.
+    ///
+    /// **Off by default, live-bridge only** — the same footing as
+    /// `bounded_recovery`, and for the same reason: the defect it repairs is a
+    /// live-regime one. See [`AdvancedAi::remembered_objective_strength`] for
+    /// the mechanism and the 294-of-426 measurement behind it.
+    pub blind_objective_strength: bool,
     /// Exclude victory lanes the empire cannot finish before the game ends.
     ///
     /// **Off by default, on the pre-registered rule.** Routing toward a lane
@@ -1071,11 +1158,13 @@ pub struct AdvancedAi {
     /// default-off evaluator arm; it does not claim to make the broader
     /// full-state Advanced controller fog honest.
     pub belief_pressure: bool,
-    /// Where the city-target ramp starts. **3 by default, the shipped value.**
+    /// Where the city-target ramp starts. Configured controls retain three;
+    /// production Advanced starts at [`PRODUCTION_CITY_TARGET_FLOOR`].
     ///
-    /// `assess` computes `desired_cities = (3 + turn / cadence).min(map_capacity).min(6)`
-    /// — the empire wants three cities at the opening and adds roughly one per
-    /// era. #554's oracle handed a seat settlers up to **six** from the start
+    /// `assess` computes `desired_cities = (floor + turn / cadence).min(map_capacity)`.
+    /// The production empire wants six cities at the opening and adds roughly
+    /// one per era up to the land-aware nine-city ceiling. #554's oracle handed
+    /// a seat settlers up to **six** from the start
     /// and more than doubled its win rate (23.0% to 52.3%, p=0.0000 over 300
     /// games). The gap between those two numbers is this ramp.
     ///
@@ -1091,13 +1180,15 @@ pub struct AdvancedAi {
     /// reaches 4.83 of its own 5.00 target, so what limits it is the target,
     /// not its ability to hit one.
     ///
-    /// Reachable as `advanced_wide_opening`, paired against `advanced`.
+    /// Historical controls can still set this to three; production promotes
+    /// the wide opening because a four-city ceiling is not a Civ VI scaling
+    /// strategy.
     pub city_target_floor: usize,
     /// Let the baseline production governor use the empire's own city target
     /// instead of the flat `city_target` gene.
     ///
     /// `assess` computes `plan.desired_cities` from the land actually on the
-    /// map: `(city_target_floor + turn / cadence).min(map_capacity).min(6)`,
+    /// map: `(city_target_floor + turn / cadence).min(map_capacity)`,
     /// where `map_capacity = (2 + land / 55).clamp(3, 9)`. Nothing on the
     /// adaptive path consumes it. `docs/OPENINGS.md` §19 records why: after
     /// the four-build opening an untargeted adaptive empire reaches
@@ -1114,16 +1205,15 @@ pub struct AdvancedAi {
     /// 4p 24×16 = 96 tiles per player and judged at 6p 74×46 = 567. The arm
     /// itself does not depend on that artifact value.
     ///
-    /// This flag makes the delegation carry the plan: the base governor is
-    /// handed `plan.desired_cities` for the duration of that call and its own
-    /// gene is restored afterwards. It changes no other gate — population,
-    /// production cost, the one-settler-at-a-time rule, the site search and
-    /// `settler_stop_turn` all still apply — and it deliberately does not
-    /// touch the opening-book branch, so the proven four-build opening is
-    /// unchanged.
+    /// This flag makes the delegation carry the plan: for the duration of that
+    /// call the base governor receives the larger of its gene and
+    /// `plan.desired_cities`, plus the plan's speed-aware expansion deadline.
+    /// Its own values are restored afterwards. Population, escalating Settler
+    /// cost, one-settler-at-a-time, practical-site, military-floor and Builder
+    /// gates still apply, and the four-build opening remains unchanged.
     ///
-    /// Default-off evaluator treatment, reachable as
-    /// `advanced_plan_city_target` and paired against `advanced`.
+    /// Production Advanced enables this. Historical evaluator controls retain
+    /// the old flat-gene delegation.
     pub plan_city_target: bool,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
@@ -1469,7 +1559,82 @@ pub struct AdvancedAi {
     /// [`AdvancedAi::joint_tactics_census`].
     tactics_plans: usize,
     tactics_decisions: usize,
+
+    /// Price beakers as the empire's compounding interest rate rather than as
+    /// one victory lane's currency.
+    ///
+    /// Every science term in this agent was written *inside* a lane: the
+    /// `yield_value` weight is 4.2 under [`GrandStrategy::Science`] and 1.0 to
+    /// 1.7 everywhere else, `lane_emphasis` tilts a citizen toward beakers only
+    /// under Science, the Campus `strategic_family` bonus is keyed to Science,
+    /// and the search evaluator's tech-count reward is Science-only. The
+    /// district-building debt that would finish a Campus fires *only* in
+    /// Conquest and Recovery.
+    ///
+    /// That is the wrong shape. A Science *victory* is a lane and deserves lane
+    /// pricing; a Science *yield* is not, because techs are the prerequisite
+    /// for every other lane's tools — the units a war needs, the buildings a
+    /// culture game needs, the Apostles a religion needs, the harbours and
+    /// banks a diplomatic game buys envoys with. Beakers are the only yield on
+    /// the sheet that raises the conversion rate of all the others.
+    ///
+    /// Live evidence, run `civvis-20260803T005930Z` (Kongo, Online, 250 turns,
+    /// the real Civ 6 through the mirror): the empire founded a religion, which
+    /// pins `victory_focus` at 40+ against a Science floor that only reaches 55
+    /// at a *complete* tech tree, so the sampled plan lines are religion 39 /
+    /// conquest 31 / recovery 19 / expansion 17 and **science 0**. Output went
+    /// 2.8 -> 10.7 beakers by turn 62 and finished the game at 12.3, having
+    /// gained 1.6 in 188 turns. The second city never built a Campus at all.
+    ///
+    /// Off in [`AdvancedAi::legacy`] and [`AdvancedAi::pre_policy_envoy`] so an
+    /// evaluator control can measure it; on in the promoted production agent.
+    pub research_economy: bool,
+
+    /// This turn's floor on the science weight, refreshed by
+    /// [`AdvancedAi::refresh_research_weight`] once per decision.
+    ///
+    /// Held on the agent rather than threaded through `yield_value` because
+    /// twenty call sites read that anchor and the horizon is a property of the
+    /// turn, not of the item being priced. `0.0` is the identity: it floors
+    /// nothing and reproduces the pre-`research_economy` ordering exactly, so a
+    /// direct unit-test call to `yield_value` is unaffected.
+    research_weight: f64,
 }
+
+/// Science weight floor at the start of a game, and at its very end.
+///
+/// A beaker bought on turn 20 of 250 compounds for 230 turns; the same beaker
+/// on turn 245 buys nothing that can be built. So the floor is a ramp, not a
+/// constant — which is also what keeps this from wrecking the endgame army the
+/// way a flat "science is always 3" would.
+///
+/// The early number sits deliberately *above* Religion's 1.1 and Conquest's
+/// 1.7 and deliberately *below* Science's own 4.2: a lane still outbids the
+/// floor for its own currency, and this only stops the other lanes pricing
+/// research below their least valuable ordinary yield.
+const RESEARCH_FLOOR_EARLY: f64 = 3.0;
+const RESEARCH_FLOOR_LATE: f64 = 1.0;
+
+/// Standing citizen tilt toward beakers in every lane, scaled by the same
+/// horizon. Sized against `lane_emphasis`'s own numbers, where a lane's tilt is
+/// 0.50 and the shipped baseline science weight is 1.30: at full horizon this
+/// moves a governor about a fifth, not a takeover.
+const RESEARCH_CITIZEN_TILT: f64 = 0.28;
+
+/// A city with no Campus, in any lane, once one is legal here.
+const RESEARCH_CAMPUS_COVERAGE: f64 = 300.0;
+
+/// A Campus standing without the building that pays for it. The debt is per
+/// missing copy and independent of the lane, unlike `wartime_infrastructure_debt`
+/// which pays the same shape only while the empire is fighting.
+const RESEARCH_BUILDING_DEBT: f64 = 240.0;
+
+/// Where the Campus policy multipliers enter a lane's own preference list.
+///
+/// Behind the lane's leading cards, not in front of them: a Religion empire
+/// must keep its opening, and the deck is longer than the slot count, so this
+/// only wins a slot that would otherwise have gone to the tail of the list.
+const RESEARCH_DECK_INSERT: usize = 4;
 
 impl Default for AdvancedAi {
     fn default() -> Self {
@@ -1505,6 +1670,9 @@ impl AdvancedAi {
         // weight vector cannot silently withdraw the confirmed production
         // policy layer when it enters an Advanced controller.
         weights.policy_deck = PolicyDeck::Live;
+        // City and Builder floors are call-local policy in `delegated_cities`,
+        // not mutations of an evolved genome. That keeps frozen evaluators and
+        // strategy searches honest about the weights they were given.
         weights
     }
 
@@ -1521,6 +1689,14 @@ impl AdvancedAi {
         ai.envoy_priority = true;
         ai.adjacency_site_planning = true;
         ai.settler_commit = true;
+        ai.research_economy = true;
+        ai.city_target_floor = PRODUCTION_CITY_TARGET_FLOOR;
+        ai.plan_city_target = true;
+        // Expansion is allowed only behind the existing production floors;
+        // make sure the larger empire can actually hold what it founds.
+        ai.base.siege_muster = true;
+        ai.base.home_defense = true;
+        ai.bounded_recovery = true;
         ai
     }
 
@@ -1637,8 +1813,14 @@ impl AdvancedAi {
             belief: BeliefState::new(),
             battlefront_observation: true,
             live_trader_route_adapter: false,
+            solvent_faith_army: false,
             battlefront_frame: None,
             scoped_relief_hold: false,
+            strike_opening: false,
+            ranged_needs_line_of_sight: false,
+            army_target_weighs_the_enemy: false,
+            siege_tracks_the_wall: false,
+            blind_objective_strength: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
             settler_price: 1.0,
@@ -1690,6 +1872,8 @@ impl AdvancedAi {
             tactics_resolved: BTreeSet::new(),
             tactics_plans: 0,
             tactics_decisions: 0,
+            research_economy: false,
+            research_weight: 0.0,
         }
     }
 
@@ -1720,10 +1904,235 @@ impl AdvancedAi {
         self.base.siege_muster = true;
     }
 
+    /// Let a raider standing in our own territory claim a unit before the
+    /// offensive does. Native tournament games leave this disabled so their
+    /// recorded ladders stay comparable.
+    pub fn enable_home_defense(&mut self) {
+        self.base.home_defense = true;
+    }
+
+    /// Record tactical steps so a unit stepped twice in one turn cannot walk
+    /// back onto the tile it just left. Native tournament games leave this
+    /// disabled so their recorded ladders replay move-for-move.
+    pub fn enable_recorded_tactical_step(&mut self) {
+        self.base.recorded_tactical_step = true;
+    }
+
     /// Stop the defensive-war posture from becoming permanent. Native
     /// tournament games leave this disabled.
     pub fn enable_bounded_recovery(&mut self) {
         self.bounded_recovery = true;
+    }
+
+    /// Let movement credit the attack a tile opens. Native tournament games
+    /// leave this disabled so their recorded ladders stay comparable.
+    pub fn enable_strike_opening(&mut self) {
+        self.strike_opening = true;
+    }
+
+    /// Let a ranged unit prefer tiles it can actually shoot from. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_ranged_needs_line_of_sight(&mut self) {
+        self.ranged_needs_line_of_sight = true;
+    }
+
+    /// Let the army target account for the enemy it has to beat. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_army_target_weighs_the_enemy(&mut self) {
+        self.army_target_weighs_the_enemy = true;
+    }
+
+    /// Let the siege train be sized by the wall it has to breach. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_siege_tracks_the_wall(&mut self) {
+        self.siege_tracks_the_wall = true;
+    }
+
+    /// Stop a fogged objective city from reading as an empty tile when the
+    /// army decides whether it is strong enough to engage. Native tournament
+    /// games leave this disabled so their recorded ladders stay comparable.
+    pub fn enable_blind_objective_strength(&mut self) {
+        self.blind_objective_strength = true;
+    }
+
+    /// ★★★★★ EVERY LIVE-BRIDGE REPAIR, IN ONE PLACE THAT THE MEASUREMENT CAN PLAY.
+    ///
+    /// These eight flags are the difference between the frozen tournament
+    /// controller and the agent that actually plays Civilization VI. They were
+    /// set one by one inside `civvis_orders::decide`, which is a binary — so no
+    /// headless arm could construct the deployed agent, and **not one of them
+    /// has ever been measured on an outcome.** #930, #933, #955, #957 and #962
+    /// all shipped on reasoning plus a live anecdote.
+    ///
+    /// Collecting them here gives `builtin_ai` a `live` controller to play, so
+    /// `civvis tournament --ais live,live_without_<flag>` can price any one of
+    /// them in cities and score instead of in order counts. The bridge calls
+    /// this same function, so the measured agent and the deployed agent cannot
+    /// drift apart.
+    ///
+    /// ⚠ ADD NEW BRIDGE FLAGS HERE, not in the binary, or the arm silently
+    /// stops matching the deployment — the exact shape of
+    /// `civvis-the-runner-tree-was-the-broken-link`.
+    pub fn enable_live_bridge(&mut self) {
+        self.enable_live_trader_route_adapter();
+        self.enable_live_religious_purchase_guard();
+        // ⚠ Barbarians are excluded from `at_major_war` by design, so every defensive
+        // escalation in the production picker reads a barbarian siege as no threat at
+        // all: a one-city empire's standing-army floor stays at `mil_per_city` (1.0)
+        // and it cannot want a third defender while horsemen stand on its doorstep.
+        // Measured on run `civvis-20260802T202501Z` — four settlers built into that
+        // siege and captured, two on the capital tile without ever moving, one city
+        // until t80, score 140 against a best rival's 416. The tournament controller
+        // stays frozen so its recorded ladders remain comparable.
+        self.enable_siege_muster();
+        // ⚠ And once it CAN want the defenders, something has to send them. Measured
+        // on run `civvis-20260803T005930Z` (Kongo, 154 turns): **116 of 154 turns had
+        // a hostile standing inside or beside our own territory**, including a
+        // full-health Crossbowman parked four tiles from two cities, unmoved and
+        // unengaged, for 21 consecutive turns, while the whole seven-unit army stood
+        // eight tiles away on a war front that had taken nothing in 75 turns. The
+        // cause is `nearest_enemy` ranking targets by distance FROM THE ASKING UNIT,
+        // which for a deployed army is always the enemy's cities. The tournament
+        // controller stays frozen so its recorded ladders remain comparable.
+        self.enable_home_defense();
+        // ⚠ `assess` drops the empire into Recovery whenever it is at war and
+        // `my_power * 1.25 < strongest_rival`, and Recovery does not build an army —
+        // so the test stays true because of the choice it caused. Measured on run
+        // `civvis-20260802T205959Z`: the journal names that arm 160 times, the
+        // posture held from t65 to t229 (72% of the game), and the empire finished
+        // with ONE warrior at military 34 against the Mapuche's 1354. The bound
+        // releases only the power-gap half, and only after the posture has had
+        // `RECOVERY_POSTURE_LIMIT` standard turns to work.
+        // ⚠ A tactical step applied raw records nothing, so when a unit with
+        // movement left is stepped a second time in the same turn, the reversal
+        // guard inside `path_move` cannot see where it came from — and round two
+        // walks straight back onto the tile round one just left. Measured on the
+        // replay of run `civvis-20260801T224944Z`: 217 of 217 refused moves were
+        // exactly that out-and-back pair; self-tile orders fell 43 → 1 with the
+        // steps recorded.
+        self.enable_recorded_tactical_step();
+        self.enable_bounded_recovery();
+        // ⚠ `desired_military` is `2 * city_count` at war — a headcount keyed to
+        // OUR empire that never asks how strong the rival is. Once it is met,
+        // `force_gap` hits zero and the military arm of `production_value` drops
+        // from a 4.0 multiplier to 0.65, so units lose to buildings. Measured on
+        // run `civvis-20260803T005930Z`: 94 of 188 war turns had the target
+        // already satisfied, CIVVIS ordered 17 military units in the whole war
+        // (8 land combat, 2 siege) against Korea's five walled cities, and at t240
+        // the rival fielded 1050 military against our 658 while the target still
+        // read satisfied at 11 against a wanted 10.
+        self.enable_army_target_weighs_the_enemy();
+        // ⚠ The siege appetite was one unit for any target city at all, walled
+        // or not. The engine halves a non-siege unit's wall damage
+        // (`mult = if spec.siege { 1.0 } else { 0.5 }`) and docks a non-siege
+        // ranged unit a flat 17 attack for shooting a city, so an army without a
+        // siege train pays twice. Measured on run `civvis-20260803T005930Z`: four
+        // siege units across 251 turns against a Korea holding five walled cities;
+        // 27 turns in contact with Jinju and Jeonju removed 12 and 9 points of a
+        // 400-point wall, while Korea stripped Kwango's 400 in six.
+        self.enable_siege_tracks_the_wall();
+        // ⚠ `local_strength_ratio` prices an objective city only while it is
+        // currently in sight, and returns its `hostile <= 0.0` sentinel of 3.0 —
+        // the maximum — otherwise. Under live fog that makes a walled enemy
+        // capital score identically to an empty meadow, four times over the
+        // superiority floor, so the army engages. Measured on run
+        // `civvis-20260803T005930Z`: Seoul (walled, 22 pop, defense 101) was the
+        // objective of 426 force-group decisions from t65 to t231 and 294 of them
+        // read exactly 3.00, 108 with a force of one. No Korean city ever passed
+        // 27% damage in 173 turns of war. The repair reads only this controller's
+        // own last sighting, which the defensive half already trusts.
+        // ⚠ And once the army is sent, something has to make it close. The
+        // movement score charges `mv_threat * threat_caution * 30.0` for
+        // standing where an enemy can reach — -15.0 at parity for a Vanguard —
+        // and credits the attack that position buys with nothing, while
+        // closing one hex is worth +2.9. Measured on run
+        // `civvis-20260803T005930Z`: **7 melee ATTACK orders in 188 turns of
+        // war** against 1546 MOVE_TO, with 622 military unit-turns sitting 2-4
+        // hexes from a target and 52% of those under an Engage posture. The
+        // tournament controller stays frozen so its recorded ladders remain
+        // comparable.
+        self.enable_strike_opening();
+        // ⚠ And the largest single reason the army does not shoot. Of 87
+        // declined attacks on a replay of run `civvis-20260803T005930Z`, 45
+        // were the forward model refusing outright and **line of sight blocked
+        // was 25 of those** — 27 of the 45 a Field Cannon. Movement picks a
+        // ranged unit's tile by distance and preferred depth and never asks
+        // whether the target is visible from it, so the unit marches exactly
+        // into range and cannot fire.
+        self.enable_ranged_needs_line_of_sight();
+        self.enable_blind_objective_strength();
+        // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
+        // `military_faith_spending` never asks about gold — it gates on the faith
+        // bank alone. Measured on run `civvis-20260803T014330Z`: faith military
+        // purchases walked down the gold curve (t124 at 60 gold, t141 at 48, t165 at
+        // 51), the treasury hit zero on t168, Civilization VI disbanded the army
+        // from 29 units to 19 by t173, and on t174 — at FIVE gold, one turn after
+        // losing a third of the army — CIVVIS bought another Field Cannon. The
+        // tournament controller stays frozen so its recorded ladders stay
+        // comparable.
+        // ⚠ Loyalty is the LARGEST single cause of city loss and the AI was
+        // reading only the level. Classified over every recorded run, 125 city
+        // losses: 52 (41.6%) below loyalty 50, 37 (29.6%) loyal-and-damaged, and
+        // 36 (28.8%) gone from FULL health and full loyalty in one round. 66 of
+        // the 125 were carrying a negative loyalty rate when last seen, and
+        // `Game::city_loyalty_per_turn` — mirrored from Civilization VI all along
+        // — had zero consumers in the whole AI. The tournament controller stays
+        // frozen so its recorded ladders remain comparable.
+        self.enable_loyalty_rate_alarm();
+        self.enable_solvent_faith_army();
+    }
+
+    /// Hold ONE live-bridge flag off so an arm can price it. These exist for
+    /// `live_without_*` in `builtin_ai` and nothing else — the deployment never
+    /// turns a repair back off.
+    pub fn disable_home_defense(&mut self) {
+        self.base.home_defense = false;
+    }
+
+    pub fn disable_solvent_faith_army(&mut self) {
+        self.solvent_faith_army = false;
+    }
+
+    pub fn disable_siege_muster(&mut self) {
+        self.base.siege_muster = false;
+    }
+
+    /// Require a faith-bought soldier's gold upkeep to be payable. Native
+    /// tournament games leave this disabled so their ladders stay comparable.
+    /// Rank loyalty emergencies by turns-to-flip instead of by level. Native
+    /// tournament games leave this disabled.
+    pub fn enable_loyalty_rate_alarm(&mut self) {
+        self.base.loyalty_rate_alarm = true;
+    }
+
+    /// Hold one more live-bridge flag off so it can be priced. Every flag in
+    /// `enable_live_bridge` needs one of these or it ships unmeasured — which is
+    /// how five repairs reached deployment without a single outcome number.
+    pub fn disable_bounded_recovery(&mut self) {
+        self.bounded_recovery = false;
+    }
+
+    pub fn disable_army_target_weighs_the_enemy(&mut self) {
+        self.army_target_weighs_the_enemy = false;
+    }
+
+    pub fn disable_siege_tracks_the_wall(&mut self) {
+        self.siege_tracks_the_wall = false;
+    }
+
+    pub fn disable_blind_objective_strength(&mut self) {
+        self.blind_objective_strength = false;
+    }
+
+    pub fn disable_loyalty_rate_alarm(&mut self) {
+        self.base.loyalty_rate_alarm = false;
+    }
+
+    pub fn enable_solvent_faith_army(&mut self) {
+        self.solvent_faith_army = true;
     }
 
     /// Redirect an existing agent at a new explicit victory target without
@@ -2264,7 +2673,14 @@ impl AdvancedAi {
     /// faith 0.90, so a lane yield gaining ~0.5 moves it up roughly a third
     /// and never reorders the whole vector — a Science empire still builds
     /// settlers and still feeds itself.
-    fn lane_emphasis(strategy: GrandStrategy) -> Yields {
+    ///
+    /// `research_tilt` is the standing beaker appetite from
+    /// [`AdvancedAi::research_economy`], added on top of the lane's own tilt in
+    /// *every* lane. In the live Kongo run the second city's governor carried a
+    /// science weight of 1.3 against production 3.9 and worked no research
+    /// tiles for the whole game; a lane-only emphasis can never reach it,
+    /// because that empire was never in the Science lane.
+    fn lane_emphasis(strategy: GrandStrategy, research_tilt: f64) -> Yields {
         let mut ys = Yields::default();
         match strategy {
             // Growth is the lane. Hammers still matter because a settler is
@@ -2302,6 +2718,8 @@ impl AdvancedAi {
                 ys.food = 0.20;
             }
         }
+        // A lane that already asks for beakers keeps its own, larger, appetite.
+        ys.science = ys.science.max(research_tilt);
         ys
     }
 
@@ -2342,8 +2760,13 @@ impl AdvancedAi {
         // sixty turns earlier compounds for the rest of the game where a
         // marginally better yield mix does not.
         let expanding = self.city_strategy_expansion_first && cities.len() < plan.desired_cities;
+        let research_tilt = if self.research_economy {
+            RESEARCH_CITIZEN_TILT * Self::research_horizon(g)
+        } else {
+            0.0
+        };
         let emphasis = if self.city_strategy_emphasis {
-            Self::lane_emphasis(plan.strategy)
+            Self::lane_emphasis(plan.strategy, research_tilt)
         } else {
             Yields::default()
         };
@@ -3231,9 +3654,16 @@ impl AdvancedAi {
         // the cadence with game speed; the old fixed turn-175 cutoff expired
         // before the five-city target even became active on Standard speed.
         let city_cadence = g.standard_duration(90).max(1) as usize;
-        let desired_cities = (self.city_target_floor + g.turn as usize / city_cadence)
-            .min(map_capacity)
-            .min(6);
+        // Historical controls keep the old six-city planning ceiling. The
+        // production delegation flag is also the compatibility boundary that
+        // lets the promoted controller consume the full land-aware capacity.
+        let city_ceiling = if self.plan_city_target {
+            map_capacity
+        } else {
+            map_capacity.min(6)
+        };
+        let desired_cities =
+            (self.city_target_floor + g.turn as usize / city_cadence).min(city_ceiling);
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(
@@ -3692,6 +4122,32 @@ impl AdvancedAi {
         }
     }
 
+    /// Run the proven baseline city governor with the strategic expansion
+    /// contract temporarily threaded through it.
+    ///
+    /// The historical treatment replaced the four-city gene with an early
+    /// three-city plan and predictably made the opening smaller. Production
+    /// takes the maximum instead: the plan may widen a governor, never narrow
+    /// it. The speed-aware deadline similarly extends the raw turn-150 gene on
+    /// slower or longer games without removing the endgame reserve.
+    fn delegated_cities(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        if !self.plan_city_target {
+            self.base.cities(g, pid);
+            return;
+        }
+        let restore_target = self.base.w.city_target;
+        let restore_stop = self.base.w.settler_stop_turn;
+        let restore_builders = self.base.w.builder_per_city;
+        self.base.w.city_target = restore_target.max(plan.desired_cities as f64);
+        self.base.w.settler_stop_turn =
+            restore_stop.max(Self::stock_expansion_deadline(g) as f64);
+        self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
+        self.base.cities(g, pid);
+        self.base.w.city_target = restore_target;
+        self.base.w.settler_stop_turn = restore_stop;
+        self.base.w.builder_per_city = restore_builders;
+    }
+
     /// Lower is a more attractive rival: nearby, weak empires with valuable
     /// cities are preferable to distant low-power distractions.
     #[cfg(test)]
@@ -3809,8 +4265,29 @@ impl AdvancedAi {
         value
     }
 
+    /// Fraction of the game still to be played, clamped to `[0, 1]`.
+    ///
+    /// The horizon every research term is scaled by. A game past its turn limit
+    /// (the mirror runs one turn beyond it) reports 0 rather than a negative.
+    fn research_horizon(g: &Game) -> f64 {
+        let budget = g.max_turns.max(1) as f64;
+        ((budget - g.turn as f64) / budget).clamp(0.0, 1.0)
+    }
+
+    /// Set this turn's science floor. Called once per decision, before any
+    /// pricing runs.
+    fn refresh_research_weight(&mut self, g: &Game) {
+        self.research_weight = if self.research_economy {
+            let horizon = Self::research_horizon(g);
+            RESEARCH_FLOOR_LATE + (RESEARCH_FLOOR_EARLY - RESEARCH_FLOOR_LATE) * horizon
+        } else {
+            0.0
+        };
+    }
+
     fn yield_value(&self, yields: Yields, strategy: GrandStrategy) -> f64 {
-        let (food, prod, gold, science, culture, faith) = match strategy {
+        let (food, prod, gold, science, culture, faith): (f64, f64, f64, f64, f64, f64) =
+            match strategy {
             GrandStrategy::Expansion => (2.0, 2.2, 0.9, 1.2, 1.2, 0.5),
             GrandStrategy::Science => (1.4, 2.0, 1.0, 4.2, 1.2, 0.4),
             GrandStrategy::Culture => (1.4, 1.8, 1.0, 1.3, 4.2, 0.8),
@@ -3831,6 +4308,11 @@ impl AdvancedAi {
             GrandStrategy::Conquest => (1.2, 2.8, 1.4, 1.7, 0.8, 0.3),
             GrandStrategy::Recovery => (1.6, 3.2, 1.5, 1.0, 0.8, 0.3),
         };
+        // The anchor above is the *lane's* opinion of a beaker and is left
+        // exactly as promoted. `research_weight` is a floor under it, not a
+        // replacement: the Science lane's 4.2 always wins, and with
+        // `research_economy` off the floor is 0.0 and this line is a no-op.
+        let science = science.max(self.research_weight);
         yields.food * food
             + yields.production * prod
             + yields.gold * gold
@@ -4721,6 +5203,35 @@ impl AdvancedAi {
             ];
             desired.retain(|card| !WARTIME_ECONOMY.contains(card));
             desired.splice(0..0, WARTIME_ECONOMY);
+        }
+        // The deck has the same lane-keyed shape as every other science term.
+        // Counted over the six lists above, the Campus multipliers appear in
+        // exactly two: Science and Expansion. **The Religion and Culture decks
+        // contain no science card at all** — and the deployment genome is
+        // `adv-religious`, so in the live game Rationalism and Natural
+        // Philosophy are unreachable unless a Conquest army happens to saturate
+        // and trigger `WARTIME_ECONOMY` above. That is exactly what the two
+        // recorded runs show: the religion-heavy `civvis-20260803T005930Z`
+        // finished with all three science cards *available and unslotted*,
+        // while `civvis-20260802T220818Z` had Rationalism and Natural
+        // Philosophy in and reached 60.9 science against the other's 12.3.
+        //
+        // Both cards multiply Campus buildings, so the empire must own a Campus
+        // for them to mean anything — that gate is the whole precondition, and
+        // it is why this cannot fire in a seat these cards would be wasted in.
+        // Inserted after the lane's own leading cards rather than in front of
+        // them: a Religion empire keeps its opening, and picks these up with a
+        // slot it would otherwise fill from the tail of its list.
+        if self.research_economy {
+            const RESEARCH_MULTIPLIERS: [&str; 2] = ["rationalism", "natural_philosophy"];
+            let has_campus = city_ids.iter().any(|city| {
+                g.city_has_district_family(&g.cities[city], crate::name!("campus"))
+            });
+            if has_campus {
+                desired.retain(|card| !RESEARCH_MULTIPLIERS.contains(card));
+                let at = desired.len().min(RESEARCH_DECK_INSERT);
+                desired.splice(at..at, RESEARCH_MULTIPLIERS);
+            }
         }
         let elite_active = g.players[pid].policies.contains(&crate::name!("elite_forces"));
         let elite_affordable = if elite_active {
@@ -8449,6 +8960,62 @@ impl AdvancedAi {
 
     }
 
+    /// ★★★★★ FAITH BUYS THE SOLDIER; GOLD PAYS FOR IT, EVERY TURN, FOREVER.
+    ///
+    /// `military_faith_spending` gates on `plan.strategy` and on the FAITH bank
+    /// (`faith >= 600`, `reserve = 180`). There is no gold term anywhere in it,
+    /// so a faith-rich empire keeps buying soldiers it cannot pay to keep — and
+    /// Civilization VI settles that bill by disbanding them.
+    ///
+    /// Measured on live run `civvis-20260803T014330Z`. Faith military purchases
+    /// walk straight down the gold curve — t104 at 288 gold, t124 at 60, t141 at
+    /// 48, t148 at 51, t157 at 61, t165 at 51 — and then:
+    ///
+    /// ```text
+    /// t165  gold  51   29 combat units
+    /// t168  gold   0   26   <- Civ 6 starts disbanding
+    /// t170  gold   0   23
+    /// t172  gold   0   20
+    /// t173  gold   0   19   <- a THIRD of the army confiscated
+    /// t174  gold   5   18   <- and CIVVIS bought another Field Cannon HERE
+    /// ```
+    ///
+    /// ⚠ 21 of 28 vanished units were last seen at FULL HP with a median
+    /// final-turn HP drop of 0, and 20 of 29 had no visible enemy within three
+    /// tiles. These are accounting deaths, not combat deaths — do not read them
+    /// as an attrition or exposure problem.
+    ///
+    /// ⚠ The `economic_recovery` branch of `BasicAi::product_for` does NOT cover
+    /// this. That gate stops *production* when `gold_per_turn < -0.5`; a faith
+    /// purchase never passes through it.
+    ///
+    /// Base ruleset maintenance is a deliberate approximation of the eventual
+    /// bill: formation multipliers and policy discounts are applied by
+    /// `Game::unit_gold_maintenance_cost` to a unit that does not exist yet.
+    /// Erring low is the safe direction — it refuses fewer purchases than the
+    /// true cost would, so this never blocks an empire that can actually pay.
+    fn faith_military_is_affordable(&self, g: &Game, pid: usize, unit: &str) -> bool {
+        if !self.solvent_faith_army {
+            return true;
+        }
+        let Some(spec) = g.rules.units.get(unit) else {
+            return true;
+        };
+        let upkeep = spec.maintenance.max(0.0);
+        if upkeep <= f64::EPSILON {
+            return true;
+        }
+        // Still in surplus once the new bill lands: buy.
+        if g.players[pid].gold_per_turn - upkeep >= 0.0 {
+            return true;
+        }
+        // Otherwise the balance has to be deep enough to carry it for a while.
+        // A treasury Civilization VI has clamped at zero reports as negative
+        // income, so an already-broke empire fails here however much faith it
+        // has piled up — which is the whole point.
+        g.players[pid].gold >= upkeep * FAITH_ARMY_SOLVENCY_TURNS
+    }
+
     /// A faith-rich empire countering a military or religious victory threat
     /// should convert that otherwise stranded treasury into defenders once
     /// Theocracy (or another legal faith-purchase source) makes them available.
@@ -8476,6 +9043,9 @@ impl AdvancedAi {
                 continue;
             };
             if currency != "faith" || g.rules.units[unit].class != "military" {
+                continue;
+            }
+            if !self.faith_military_is_affordable(g, pid, unit) {
                 continue;
             }
             options.push(action);
@@ -9369,6 +9939,51 @@ impl AdvancedAi {
                     )
                     .is_ok()
                 {
+                    // What this city was told to build. `BasicAi::production`
+                    // has recorded its own choice since it was written, but
+                    // this path — the one the live controller actually uses —
+                    // had no line at all: on a 251-turn replay of run
+                    // `civvis-20260803T005930Z`, 394 build decisions were
+                    // explained and the 132 taken here were silent.
+                    //
+                    // The `displacing` half exists because every live produce
+                    // order carries `VALUE_REPLACE_AT`, so an order naming a
+                    // different item than the city is already building
+                    // REPLACES it in Civilization VI; the bridge only skips an
+                    // identical one. On that run's own orders, 23 of 297
+                    // produce orders (8%) landed on a city that was already
+                    // building something else — none of them a military unit.
+                    // That is small, and this line is what will say so
+                    // directly rather than by joining two sources.
+                    //
+                    // ⚠ Do not measure this by joining a REPLAY's orders
+                    // against the LIVE run's `producing`: the replay is a
+                    // counterfactual trajectory, and that join reads 46%
+                    // where the true figure is 8%.
+                    if self.journal().wants(crate::reasoning::Level::Decision) {
+                        let banked = g.cities[&cid]
+                            .production_progress
+                            .get(&format!("{item:?}"))
+                            .copied()
+                            .unwrap_or(0.0);
+                        let city_name = g.cities[&cid].name.clone();
+                        match &committed {
+                            Some((current, current_item)) if *current_item != item => {
+                                think!(self.journal(), Economy, Decision,
+                                       "{} switches to {}", city_name, Self::plain_item(&item);
+                                       "worth {score:.0}, displacing {} at {current:.0}; \
+                                        {banked:.0} banked on the new item",
+                                       Self::plain_item(current_item));
+                            }
+                            _ => {
+                                think!(self.journal(), Economy, Decision,
+                                       "{} starts {}", city_name, Self::plain_item(&item);
+                                       "worth {score:.0} to the {} plan; \
+                                        {banked:.0} already banked",
+                                       plan.strategy.as_str());
+                            }
+                        }
+                    }
                     let is_settler =
                         matches!(&item, Item::Unit { unit } if unit == "settler");
                     counts.add_item(g, &item);
@@ -9386,6 +10001,302 @@ impl AdvancedAi {
                 }
             }
         }
+    }
+
+    /// The army target, raised while a war is running to account for the enemy
+    /// it has to beat.
+    ///
+    /// `desired_military` is `2 * city_count` at war and `city_count`
+    /// otherwise — **a headcount keyed entirely to our own empire. It never
+    /// asks how strong the rival is.** Once the count is met, `force_gap`
+    /// reaches zero and the military arm of `production_value` collapses from
+    /// a `4.0` multiplier to `0.65` — a 6.2x cut that loses to a building
+    /// every time.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo, at war with
+    /// Korea from t64 for 188 turns):
+    ///
+    /// - **94 of 188 war turns had `force_gap <= 0`** — half the war spent
+    ///   with the army officially finished.
+    /// - CIVVIS ordered **17 military units in the whole war**, 8 of them land
+    ///   combat and 2 siege, against Korea's five walled cities. Its top
+    ///   production items were commercial hub projects (47), spies (32) and
+    ///   traders (29); no combat unit appears in the top twelve.
+    /// - At t240 the rival fielded **1050 military against our 658** and the
+    ///   target still read satisfied: 11 land units against a wanted 10.
+    ///
+    /// The repair keeps the shipped count as a floor and never lowers it. When
+    /// at war with a major, it scales by how far the strongest wartime rival
+    /// outweighs us, clamped to [`WARTIME_ARMY_CEILING`]. At parity or ahead
+    /// the ratio is 1.0 and the shipped number is returned unchanged, so this
+    /// only ever fires when the enemy is genuinely bigger — which is exactly
+    /// the state in which declaring the army finished is the error.
+    ///
+    /// `military_power` is the same measure `assess` already uses to pick
+    /// Recovery, so this reads no new information; it spends what the strategy
+    /// layer already knew and the production layer never asked for.
+    ///
+    /// ⚠ The ceiling is load-bearing. Without it a runaway rival drives the
+    /// target arbitrarily high and the empire builds nothing but units, which
+    /// is the failure `civvis-civ6-all-army-no-economy` records. #962's
+    /// affordability gate bounds the *purchase* side; this bounds the *want*.
+    fn wartime_army_target(&self, g: &Game, pid: usize, shipped: usize) -> usize {
+        if !self.army_target_weighs_the_enemy {
+            return shipped;
+        }
+        let strongest = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid
+                    && player.alive
+                    && !player.is_barbarian
+                    && !player.is_minor
+                    && g.is_at_war(pid, player.id)
+            })
+            .map(|player| g.military_power(player.id))
+            .fold(0.0_f64, f64::max);
+        if strongest <= 0.0 {
+            return shipped;
+        }
+        let ours = g.military_power(pid).max(1.0);
+        let ratio = (strongest / ours).clamp(1.0, WARTIME_ARMY_CEILING);
+        ((shipped as f64) * ratio).ceil() as usize
+    }
+
+    /// A production item as an operator would say it: "trebuchet", "walls",
+    /// "campus", "commercial hub investment". `Debug` is what the scoring code
+    /// keys on and it is unreadable in a journal line — `Unit { unit: Name("trebuchet") }`
+    /// tells a reader nothing the word "trebuchet" does not.
+    fn plain_item(item: &Item) -> String {
+        match item {
+            Item::Formation { unit, formation } => {
+                let size = if *formation >= 2 { "army" } else { "corps" };
+                format!("{} {size}", crate::reasoning::plain(unit.as_str()))
+            }
+            Item::Unit { unit } => crate::reasoning::plain(unit.as_str()),
+            Item::Building { building } => crate::reasoning::plain(building.as_str()),
+            Item::District { district, .. } => crate::reasoning::plain(district.as_str()),
+            Item::Wonder { wonder, .. } => crate::reasoning::plain(wonder.as_str()),
+            Item::Repair { repair, .. } => {
+                format!("repairs to the {}", crate::reasoning::plain(repair.as_str()))
+            }
+            Item::Project { project } => crate::reasoning::plain(project.as_str()),
+            Item::Product { product } => crate::reasoning::plain(product.as_str()),
+        }
+    }
+
+    /// Whether a ranged unit standing on `tile` would be in range of something
+    /// and unable to shoot any of it.
+    ///
+    /// `Game::do_ranged` refuses a shot with `"line of sight blocked"`, and
+    /// **that is the single largest reason CIVVIS's army does not attack.**
+    /// PR #989 made the forward model's refusals name themselves; replaying
+    /// run `civvis-20260803T005930Z` (Kongo vs Korea, 188 turns of war), of 87
+    /// declined attacks **45 were the model refusing the action outright**,
+    /// and they broke down as:
+    ///
+    /// ```text
+    /// line of sight blocked                          25
+    /// cannot attack while embarked                   19
+    /// nothing to attack                               9
+    /// siege units cannot move and attack in one turn  5
+    /// no combat target                                4
+    /// not enough movement to attack                   3
+    /// ```
+    ///
+    /// 27 of the 45 were a Field Cannon. The cause is that the movement
+    /// scorer picks a tile by `wdist` to the target and by `preferred_depth`
+    /// — which for a ranged unit *is* its attack range — and **never asks
+    /// whether the target can be seen from there.** So the unit marches
+    /// exactly into range and then cannot fire.
+    ///
+    /// Line of sight binds at exactly distance 2: `has_line_of_sight` returns
+    /// true unconditionally at 1 (adjacent fire) and at 3+ (lobbed shots).
+    /// Range-2 units are therefore the whole population, which is why Field
+    /// Cannons, Crossbowmen and Trebuchets dominate the census and Archers
+    /// barely appear.
+    ///
+    /// A tile is only blind if it is in range of at least one hostile *and*
+    /// sighted on none of them — a tile out of range entirely is not blind, it
+    /// is just far, and [`AdvancedAi::strike_opening_value`] and the depth
+    /// term already speak to that.
+    /// How many candidate tiles the blind-ranged penalty has charged this
+    /// process. Diagnostic only: a treatment that measures null is only
+    /// informative once it is known to have fired at all.
+    fn blind_tile_tally() -> &'static std::sync::atomic::AtomicUsize {
+        static SEEN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        &SEEN
+    }
+
+    fn note_blind_tile() {
+        Self::blind_tile_tally().fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Candidate tiles rejected so far for having no line of sight.
+    pub fn blind_tiles_charged() -> usize {
+        Self::blind_tile_tally().load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    fn ranged_tile_is_blind(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        tile: Pos,
+        enemies: &[usize],
+        visible: Option<&crate::world::TileBits>,
+    ) -> bool {
+        if !self.ranged_needs_line_of_sight {
+            return false;
+        }
+        let unit = &g.units[&uid];
+        let spec = &g.rules.units[unit.kind];
+        if spec.class != "military" || !spec.has_ranged_attack() {
+            return false;
+        }
+        let reach = g.unit_attack_range(uid).max(1);
+        let mut in_range = false;
+        for enemy in g.units.values() {
+            if !enemies.contains(&enemy.owner)
+                || g.rules.units[enemy.kind].class != "military"
+                || g.wdist(tile, enemy.pos) > reach
+            {
+                continue;
+            }
+            if visible.is_some_and(|visible| {
+                !(g.sees(visible, enemy.pos) && self.battlefront_unit_visible(g, pid, enemy.id))
+            }) {
+                continue;
+            }
+            in_range = true;
+            if g.line_of_sight_from(tile, enemy.pos) {
+                return false;
+            }
+        }
+        for city in g.cities.values() {
+            if !enemies.contains(&city.owner) || g.wdist(tile, city.pos) > reach {
+                continue;
+            }
+            if visible.is_some_and(|visible| !g.sees(visible, city.pos)) {
+                continue;
+            }
+            in_range = true;
+            if g.line_of_sight_from(tile, city.pos) {
+                return false;
+            }
+        }
+        in_range
+    }
+
+    /// What a tile is worth for the attack it opens.
+    ///
+    /// `src/ai/tactics.rs` names this as the fourth and largest defect in the
+    /// shipped tactical layer: *"Movement is blind to the attacks it enables.
+    /// Position is chosen by depth-to-target, adjacent support and incoming
+    /// threat; nothing scores a tile for the shot it opens."* The joint
+    /// planner written to repair it is `joint_tactics`, which is `false` and
+    /// measured null, so the shipped movement score still has the hole.
+    ///
+    /// The hole is not neutral, it is one-sided. Standing where an enemy can
+    /// reach costs `mv_threat * threat_caution * 30.0 * exp(..)` — **-15.0 at
+    /// parity for a Vanguard on the shipped weights** — while closing one hex
+    /// is worth `objective_progress * progress` = +2.9 plus `role_spacing`
+    /// +2.0. **Contact is priced at roughly three times what closing is worth,
+    /// and the attack that contact buys is worth nothing at all.** A melee
+    /// unit therefore never volunteers for the tile it has to occupy to
+    /// swing.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo vs Korea, war
+    /// t64-251), joining the run's own `orders.sqlite` to its per-turn state:
+    ///
+    /// - **7 melee ATTACK orders in 188 turns of war**, six of them inside one
+    ///   seven-turn window, against 1546 MOVE_TO.
+    /// - Of 1787 military unit-turns, **622 (35%) sat 2-4 hexes from a target
+    ///   without closing**, and **52% of those were under an `Engage`
+    ///   posture** — ordered to attack, declining to approach. 390 of the 622
+    ///   were melee, `UNIT_HEAVY_CHARIOT` alone accounting for 156 with four
+    ///   movement to spend.
+    /// - Movement itself is healthy: 67% of war `MOVE_TO` orders arrived and
+    ///   **0% named the unit's own tile**, so this is not
+    ///   `civvis-civ6-the-order-that-goes-nowhere`.
+    ///
+    /// The repair credits a tile for the strike it makes available, on the
+    /// same scale as the threat it charges, so the two are commensurable. Only
+    /// targets the group is actually prosecuting count — a hostile that merely
+    /// wanders into range is already handled by the threat term, and paying
+    /// for it here would pull the column off its objective.
+    ///
+    /// Odds are `attack / (attack + defense)`, bounded in `(0, 1)` by
+    /// construction, so unlike `mv_threat`'s uncapped `exp` this term cannot
+    /// run away. At even odds it returns `0.5 * 30.0 *
+    /// STRIKE_OPENING_SCALE` = +5.2, which offsets a third of the parity
+    /// threat penalty rather than erasing it: the intent is to make contact
+    /// *considerable*, not automatic.
+    fn strike_opening_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        tile: Pos,
+        group: &ForceGroup,
+        enemies: &[usize],
+        visible: Option<&crate::world::TileBits>,
+    ) -> f64 {
+        if !self.strike_opening || group.posture != ForcePosture::Engage {
+            return 0.0;
+        }
+        let unit = &g.units[&uid];
+        let spec = &g.rules.units[unit.kind];
+        if spec.class != "military" {
+            return 0.0;
+        }
+        let reach = if spec.has_ranged_attack() {
+            g.unit_attack_range(uid).max(1)
+        } else {
+            1
+        };
+        let attack = crate::game::effective_strength(
+            g.unit_strength(unit, false)
+                .max(g.unit_ranged_attack_strength(unit)),
+            unit.hp,
+        );
+        if attack <= 0.0 {
+            return 0.0;
+        }
+        // The objective the group is prosecuting, plus any hostile standing on
+        // it. Anything else in range is the threat term's business.
+        let focus = group.focus_target.unwrap_or(group.objective);
+        let mut best_defense: Option<f64> = None;
+        if g.wdist(tile, focus) <= reach {
+            if let Some(city) = g.city_at(focus).filter(|city| {
+                enemies.contains(&g.cities[city].owner)
+                    && visible.is_none_or(|visible| g.sees(visible, g.cities[city].pos))
+            }) {
+                best_defense = Some(g.city_strength(city));
+            }
+        }
+        for enemy in g.units.values() {
+            if !enemies.contains(&enemy.owner)
+                || g.rules.units[enemy.kind].class != "military"
+                || g.wdist(tile, enemy.pos) > reach
+            {
+                continue;
+            }
+            if visible.is_some_and(|visible| {
+                !(g.sees(visible, enemy.pos) && self.battlefront_unit_visible(g, pid, enemy.id))
+            }) {
+                continue;
+            }
+            let defense =
+                crate::game::effective_strength(g.unit_strength(enemy, true), enemy.hp);
+            best_defense = Some(best_defense.map_or(defense, |had: f64| had.min(defense)));
+        }
+        let Some(defense) = best_defense else {
+            return 0.0;
+        };
+        let odds = attack / (attack + defense.max(1.0));
+        STRIKE_OPENING_SCALE * 30.0 * odds
     }
 
     /// Score the production shortlist under one memo scope, retaining item
@@ -9836,6 +10747,7 @@ impl AdvancedAi {
             GrandStrategy::Recovery => 2 * city_count,
             _ => city_count,
         };
+        let desired_military = self.wartime_army_target(g, pid, desired_military);
         // A rush is fought out of one or two cities, so `2 * city_count` asks
         // for two units when the siege needs four and the census measures it
         // fielding 2.5 melee at turn 50 with 1.1 of them anywhere near the
@@ -10137,7 +11049,9 @@ impl AdvancedAi {
                         } else {
                             0.0
                         }
-                        + if spec.siege && counts.siege == 0 && plan.target_city.is_some() {
+                        + if spec.siege
+                            && counts.siege < self.siege_units_wanted(g, pid, plan)
+                        {
                             95.0
                         } else {
                             0.0
@@ -10257,7 +11171,28 @@ impl AdvancedAi {
                     } else {
                         0.0
                     };
+                    // The debt `wartime_infrastructure_debt` pays for a Campus,
+                    // owed in peacetime too. A Campus standing without its
+                    // Library is the empire having bought the expensive half of
+                    // a research city and declined the cheap half: the live
+                    // Kongo run reached Composites holding two Campus buildings
+                    // in the whole empire, and its second city had neither.
+                    let research_debt = if self.research_economy
+                        && spec
+                            .district
+                            .map(|district| g.district_family(district))
+                            .is_some_and(|family| family == "campus")
+                        && city
+                            .districts
+                            .keys()
+                            .any(|built| g.district_family(*built) == crate::name!("campus"))
+                    {
+                        RESEARCH_BUILDING_DEBT * Self::research_horizon(g)
+                    } else {
+                        0.0
+                    };
                     self.yield_value(spec.yields, plan.strategy) * 42.0
+                        + research_debt
                         + spec.housing * (22.0 + housing_need * 18.0)
                         + spec.amenity * (30.0 + amenity_need * 22.0)
                         + great_work_slots
@@ -10500,6 +11435,24 @@ impl AdvancedAi {
                 } else {
                     0.0
                 };
+                // Campus coverage, priced in every lane. `balanced_core` above
+                // already wants one Campus per two cities, but it stops there
+                // and it is shared with three other families; this says the
+                // quieter thing that a city without a Campus is an empire-wide
+                // research hole whatever the empire is currently playing for.
+                // Scaled by the horizon so a Campus begun at turn 240 does not
+                // outbid a defender.
+                let research_coverage = if self.research_economy
+                    && family == "campus"
+                    && !city
+                        .districts
+                        .keys()
+                        .any(|built| g.district_family(*built) == family)
+                {
+                    RESEARCH_CAMPUS_COVERAGE * Self::research_horizon(g)
+                } else {
+                    0.0
+                };
                 self.yield_value(g.district_yields(district, *pos), plan.strategy) * 60.0
                     + self.yield_value(spec.citizen_yields, plan.strategy) * 24.0
                     + spec.defense * if threatened { 5.0 } else { 1.5 }
@@ -10526,6 +11479,7 @@ impl AdvancedAi {
                     + envoy_unlock
                     + effect_value
                     + development_penalty
+                    + research_coverage
             }
             Item::Repair { repair, .. } => {
                 if repair == "district" {
@@ -12974,6 +13928,79 @@ impl AdvancedAi {
         })
     }
 
+    /// How many siege units the campaign wants, given the wall actually
+    /// standing at the city it means to take.
+    ///
+    /// The shipped rule asks for exactly one — `counts.siege == 0 &&
+    /// plan.target_city.is_some()` — and asks for it whether the target is an
+    /// unwalled frontier town or a capital behind 400 points of Renaissance
+    /// wall. The engine itself says those are not the same problem. In
+    /// `Game::apply`, a shot at a city is scaled by
+    ///
+    /// ```text
+    /// let mult = if spec.siege { 1.0 } else { 0.5 };
+    /// ```
+    ///
+    /// and a non-siege ranged unit additionally eats a flat `att_base -= 17.0`
+    /// for attacking a city at all. So an army without siege pays twice, and
+    /// the shortfall compounds against exactly the targets that matter most.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo vs Korea, 173
+    /// turns of war): **four siege units were owned across 251 turns** — one
+    /// catapult and three trebuchets — held on **53 of 251 turns**, against a
+    /// Korea holding five walled cities. The within-run contrast is the whole
+    /// argument:
+    ///
+    /// | window | siege present | result |
+    /// |---|---|---|
+    /// | Seoul t136-142 (7 turns) | 1 trebuchet | 48 of 400 wall |
+    /// | Jinju + Jeonju t174-200 (27 turns) | none | 12 and 9 of 400 wall |
+    ///
+    /// Over 27 turns in contact with 5 field cannons and 3 heavy chariots the
+    /// army removed 9 points of a 400-point wall. Korea stripped Kwango's 400
+    /// in six turns and Mbuji-Mayi's in three.
+    ///
+    /// Corpus-wide over 111 runs and 19,713 turns, once cities that were ever
+    /// *ours* are excluded from the rival lists: turns holding a siege unit
+    /// inflict **0.12** points of new damage on an enemy city against **0.02**
+    /// without — 5.5x. ⚠ That comparison is observational and confounded:
+    /// holding siege correlates with being on the offensive at all. It is
+    /// offered as consistency, not as the causal claim. The claim this change
+    /// rests on is the engine arithmetic above and the structural defect that
+    /// the appetite is one unit regardless of the wall.
+    ///
+    /// The rule: nothing without a target; nothing for an unwalled target,
+    /// where the shipped `is_melee_capable` preference already wins the city;
+    /// otherwise one train per [`SIEGE_WALL_PER_UNIT`] points of standing wall,
+    /// capped at [`SIEGE_UNITS_MAX`]. A fogged target is read from this
+    /// controller's last sighting, on the same footing as
+    /// [`AdvancedAi::remembered_objective_strength`] — the wall a city had when
+    /// we last looked is the best estimate we are entitled to.
+    fn siege_units_wanted(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> usize {
+        if !self.siege_tracks_the_wall {
+            return usize::from(plan.target_city.is_some());
+        }
+        let Some(cid) = plan.target_city else {
+            return 0;
+        };
+        let Some(city) = g.cities.get(&cid) else {
+            return 0;
+        };
+        let visible = self.battlefront_visibility(g, pid);
+        let wall = if !self.battlefront_observation || g.sees(&visible, city.pos) {
+            city.wall_hp
+        } else {
+            match self.remembered_city(cid) {
+                Some(sighting) => sighting.wall_hp,
+                None => return 0,
+            }
+        };
+        if wall <= 0 {
+            return 0;
+        }
+        ((wall as usize).div_ceil(SIEGE_WALL_PER_UNIT)).clamp(1, SIEGE_UNITS_MAX)
+    }
+
     fn local_strength_ratio(
         &self,
         g: &Game,
@@ -13005,24 +14032,73 @@ impl AdvancedAi {
             .map(|unit| crate::game::effective_strength(g.unit_strength(unit, true), unit.hp))
             .sum::<f64>()
             + g.city_at(objective)
-                .filter(|city| {
-                    enemies.contains(&g.cities[city].owner)
-                        && (!self.battlefront_observation || g.sees(&visible, g.cities[city].pos))
+                .filter(|city| enemies.contains(&g.cities[city].owner))
+                .and_then(|city| {
+                    if !self.battlefront_observation || g.sees(&visible, g.cities[&city].pos) {
+                        Some(g.city_strength(city))
+                    } else {
+                        self.remembered_objective_strength(city)
+                    }
                 })
-                .map(|city| g.city_strength(city))
                 .unwrap_or(0.0)
             + g.encampment_at(objective)
-                .filter(|city| {
-                    enemies.contains(&g.cities[city].owner)
-                        && (!self.battlefront_observation || g.sees(&visible, g.cities[city].pos))
+                .filter(|city| enemies.contains(&g.cities[city].owner))
+                .and_then(|city| {
+                    if !self.battlefront_observation || g.sees(&visible, g.cities[&city].pos) {
+                        Some(g.encampment_strength(city))
+                    } else {
+                        self.remembered_objective_strength(city)
+                    }
                 })
-                .map(|city| g.encampment_strength(city))
                 .unwrap_or(0.0);
         if hostile <= 0.0 {
             3.0
         } else {
             (friendly / hostile).clamp(0.0, 3.0)
         }
+    }
+
+    /// What a fogged enemy city at the objective is worth to
+    /// [`AdvancedAi::local_strength_ratio`], from this controller's own last
+    /// sighting of it.
+    ///
+    /// The shipped rule prices an objective city only while it is *currently*
+    /// in sight. That is fog-honest but it is not belief-honest, and the
+    /// difference is the whole story of a failed siege: `local_strength_ratio`
+    /// returns its `hostile <= 0.0` sentinel of `3.0` — the maximum, "we
+    /// dominate here" — for an objective the army simply cannot see. A walled
+    /// capital under fog and an empty meadow produce the identical number, and
+    /// `3.0` clears [`LOCAL_SUPERIORITY_FLOOR`] by a factor of four, so the
+    /// group engages.
+    ///
+    /// Measured on live run `civvis-20260803T005930Z` (Kongo, at war with Korea
+    /// from turn 64): Seoul — walled, 22 pop, city defense 101 — was the
+    /// objective of **426 force-group decisions between t65 and t231, and 294
+    /// of them read exactly 3.00**. 108 of those decisions were a force of
+    /// *one*. Seoul finished the game on 0 damage and 0 wall damage, as did
+    /// every other Korean city bar transient pokes that healed back: across 173
+    /// turns of war no rival city ever passed 27% of its health bar.
+    ///
+    /// The repair does not invent information. [`CitySighting::strength`] is
+    /// this controller's own recorded observation — city combat strength at the
+    /// last time it actually saw the City Center, garrison and defense
+    /// modifiers included — and it is already trusted for the defensive half of
+    /// the same question by [`AdvancedAi::remembered_city_pressure`]. Reading
+    /// it here only stops the offensive half from treating "I have not looked"
+    /// as "there is nothing there".
+    ///
+    /// A stale sighting stays stale on purpose: a city that walled up under fog
+    /// still reads at its last-seen strength, which is exactly the mistake a
+    /// fog-honest agent should be allowed to make. Returning `None` when there
+    /// is no sighting at all preserves the shipped behaviour for a city this
+    /// controller has genuinely never seen.
+    fn remembered_objective_strength(&self, cid: u32) -> Option<f64> {
+        if !self.blind_objective_strength {
+            return None;
+        }
+        self.remembered_city(cid)
+            .map(|sighting| sighting.strength.max(0.0))
+            .filter(|strength| *strength > 0.0)
     }
 
     fn rebuild_force_groups(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
@@ -13363,6 +14439,11 @@ impl AdvancedAi {
                         * ((attack - defense) / 25.0).exp();
                 }
             }
+            value += self.strike_opening_value(g, pid, uid, tile, group, &enemies, visible.as_ref());
+            if self.ranged_tile_is_blind(g, pid, uid, tile, &enemies, visible.as_ref()) {
+                value -= BLIND_RANGED_TILE;
+                Self::note_blind_tile();
+            }
             if g.wdist(tile, target) <= 5 {
                 value -= self.base.w.role_spacing
                     * spacing
@@ -13414,7 +14495,14 @@ impl AdvancedAi {
                 self.base.move_beats_holding(g, uid, candidate, stay)
             };
             if should_move {
-                return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                // ⚠ Through `path_move`, never `g.apply` directly: it records
+                // the step, and a unit stepped again this turn must not
+                // re-enter the tile it just left. This site emitted 50 of the
+                // 88 same-turn out-and-back pairs on the replay of run
+                // civvis-20260801T224944Z — net zero ground, two orders, and
+                // the second refused by Civilization VI as a MOVE_TO of the
+                // unit's own tile.
+                return self.base.tactical_apply_move(g, pid, uid, pos);
             }
         }
 
@@ -13441,7 +14529,9 @@ impl AdvancedAi {
                 })
             {
                 if self.base.move_beats_holding(g, uid, score(g, pos), stay) {
-                    return g.apply(pid, &Action::Move { unit: uid, to: pos }).is_ok();
+                    // Same rule as the local arm above: recorded through
+                    // `path_move` so the next same-turn step cannot undo it.
+                    return self.base.tactical_apply_move(g, pid, uid, pos);
                 }
             }
         }
@@ -13817,6 +14907,37 @@ impl AdvancedAi {
     /// enemy's forcing combat actions, and prices a two-action focus-fire
     /// sequence. It catches poisoned captures and coordinated ranged kills
     /// without turning every unit decision into an unbounded turn search.
+    /// Why the forward model refused an attack, counted by reason.
+    ///
+    /// `forcing_reply_penalty_owned` runs on the work pool, so this cannot be
+    /// `&mut self` state; a process-wide tally is the cheapest thing that
+    /// survives the thread boundary, and it is diagnostic only — nothing reads
+    /// it to decide anything.
+    fn illegal_attack_tally() -> &'static std::sync::Mutex<BTreeMap<String, usize>> {
+        static REASONS: std::sync::OnceLock<std::sync::Mutex<BTreeMap<String, usize>>> =
+            std::sync::OnceLock::new();
+        REASONS.get_or_init(|| std::sync::Mutex::new(BTreeMap::new()))
+    }
+
+    fn note_illegal_attack(why: &str) {
+        if let Ok(mut tally) = Self::illegal_attack_tally().lock() {
+            *tally.entry(why.to_string()).or_insert(0) += 1;
+        }
+    }
+
+    /// Every reason the model has refused an attack this process, commonest
+    /// first. The live bridge prints it so a run says which rule is refusing
+    /// its army rather than leaving 45 silent declines in a war.
+    pub fn illegal_attack_census() -> Vec<(String, usize)> {
+        let Ok(tally) = Self::illegal_attack_tally().lock() else {
+            return Vec::new();
+        };
+        let mut rows: Vec<(String, usize)> =
+            tally.iter().map(|(why, count)| (why.clone(), *count)).collect();
+        rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        rows
+    }
+
     fn forcing_reply_penalty_owned(
         work_pool: Option<Arc<WorkPool>>,
         mut after: Game,
@@ -13824,7 +14945,16 @@ impl AdvancedAi {
         uid: u32,
         action: &Action,
     ) -> f64 {
-        if after.apply(pid, action).is_err() {
+        if let Err(why) = after.apply(pid, action) {
+            // ⚠ The refusal reason is the whole diagnosis and it used to be
+            // thrown away. Measured on a replay of run
+            // `civvis-20260803T005930Z`, 45 of 87 declined attacks reached
+            // this line — the model rejecting an attack outright, not judging
+            // it bad — and 27 of those were a Field Cannon. `do_ranged`
+            // refuses for seven distinct reasons (embarked, siege moved,
+            // no moves, no attacks left, out of range, target not visible,
+            // line of sight blocked) and the journal could name none of them.
+            Self::note_illegal_attack(&why);
             return 1_000.0;
         }
         if !after.units.contains_key(&uid) {
@@ -14751,11 +15881,12 @@ impl AdvancedAi {
                 .collect(),
         };
 
-        let mut best: Option<(f64, Pos, Action)> = None;
+        let mut best: Option<(f64, Pos, Action, [f64; 4])> = None;
         for ((pos, action), (attack_value, reply_penalty)) in
             candidates.into_iter().zip(evaluations)
         {
-            let mut score = attack_value - self.base.attack_threshold(g, uid, pos);
+            let threshold = self.base.attack_threshold(g, uid, pos);
+            let mut score = attack_value - threshold;
             if plan
                 .target_city
                 .is_some_and(|cid| g.cities.get(&cid).is_some_and(|c| c.pos == pos))
@@ -14768,20 +15899,25 @@ impl AdvancedAi {
             if group.as_ref().and_then(|orders| orders.focus_target) == Some(pos) {
                 score += self.base.w.focus_fire * 10.0;
             }
-            if let Some(orders) = &group {
-                score -= self.base.w.local_superiority
-                    * (1.0 - orders.local_strength_ratio).max(0.0);
-            }
-            score -= self.base.w.trade_caution * reply_penalty;
+            let caution = group
+                .as_ref()
+                .map(|orders| {
+                    self.base.w.local_superiority
+                        * (1.0 - orders.local_strength_ratio).max(0.0)
+                })
+                .unwrap_or(0.0);
+            score -= caution;
+            let reply = self.base.w.trade_caution * reply_penalty;
+            score -= reply;
             if best
                 .as_ref()
-                .map(|(old, bp, _)| score > *old || (score == *old && pos < *bp))
+                .map(|(old, bp, _, _)| score > *old || (score == *old && pos < *bp))
                 .unwrap_or(true)
             {
-                best = Some((score, pos, action));
+                best = Some((score, pos, action, [attack_value, threshold, caution, reply]));
             }
         }
-        if let Some((score, at, action)) = best {
+        if let Some((score, at, action, parts)) = best {
             let required_margin = if unit.hp < 55 { 12.0 } else { 0.0 };
             if score > required_margin {
                 if self.journal().wants(crate::reasoning::Level::Detail) {
@@ -14816,6 +15952,41 @@ impl AdvancedAi {
                     self.force_groups_dirty = true;
                     return true;
                 }
+            } else if self.journal().wants(crate::reasoning::Level::Detail) {
+                // ★★★★★ SAY WHY THE ARMY DID NOT SWING.
+                //
+                // The line above records every attack that happens and there
+                // is none for an attack that does not, so a unit standing in
+                // range declining a shot is indistinguishable in `why.log`
+                // from one that had no target at all. Measured on live run
+                // `civvis-20260803T005930Z`: of 1787 military unit-turns in
+                // 188 turns of war, 186 were in range of a target and **117
+                // did not attack — 77 of them with movement left and a median
+                // 100 health**, 37 of those Field Cannons. Not one of those 77
+                // decisions left a trace.
+                //
+                // The four terms are named because the score is a sum and
+                // knowing it was negative says nothing about which part sank
+                // it. `worth` is the exact forward-model attack value,
+                // `asking` the doctrine threshold from
+                // `BasicAi::attack_threshold`, `caution` the local-superiority
+                // deduction, and `reply` the enemy's best answer priced by
+                // `trade_caution`.
+                let [attack_value, threshold, caution, reply] = parts;
+                let defender = g
+                    .city_at(at)
+                    .and_then(|cid| g.cities.get(&cid))
+                    .map(|city| city.name.clone())
+                    .or_else(|| {
+                        g.units_at(at).first().map(|oid| plain(&g.units[oid].kind))
+                    })
+                    .unwrap_or_else(|| format!("{at:?}"));
+                think!(self.journal(), Military, Detail,
+                       "{} declines {defender}", plain(&unit.kind);
+                       "worth {attack_value:.0} against asking {threshold:.0}, \
+                        caution {caution:.0}, reply {reply:.0} — {score:.0} \
+                        under a margin of {required_margin:.0}, on {} health",
+                       unit.hp; at);
             }
         }
 
@@ -15882,6 +17053,14 @@ impl AdvancedAi {
                 faith: 0.4,
             },
         };
+        // The lookahead evaluator carries its own, smaller, weight table —
+        // Science reads 2.8 here where `yield_value` reads 4.2. Scale the same
+        // floor into that table's units so the search and the production
+        // ordering cannot disagree about what a beaker is worth.
+        let mut yield_weights = yield_weights;
+        yield_weights.science = yield_weights
+            .science
+            .max(self.research_weight * (2.8 / 4.2));
         let weighted = |yields: Yields| {
             yields.food * yield_weights.food
                 + yields.production * yield_weights.production
@@ -16099,6 +17278,10 @@ impl Ai for AdvancedAi {
 impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         self.battlefront_frame = None;
+        // Before anything in this turn is priced. Every science term downstream
+        // reads this one number, so the horizon cannot drift between the
+        // production ordering, the citizen governor, and the search evaluator.
+        self.refresh_research_weight(g);
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         let active_victory_target = self.active_victory_target(g);
@@ -16258,18 +17441,9 @@ impl AdvancedAi {
             if active_victory_target.is_none() {
                 self.advanced_support_production(g, pid, &plan);
                 // The adaptive empire's Settler gate lives in the baseline
-                // governor, which reads a flat gene. Hand it the target this
-                // empire actually computed for this map, then put the gene
-                // back so nothing else in the turn sees the substitution.
-                let restore = self.plan_city_target.then(|| {
-                    let gene = self.base.w.city_target;
-                    self.base.w.city_target = plan.desired_cities as f64;
-                    gene
-                });
-                self.base.cities(g, pid);
-                if let Some(gene) = restore {
-                    self.base.w.city_target = gene;
-                }
+                // governor. Thread the larger, speed-aware plan through that
+                // call without leaking it to later consumers.
+                self.delegated_cities(g, pid, &plan);
             }
         }
         if active_victory_target.is_some() {
@@ -16316,6 +17490,123 @@ mod tests {
     fn legacy_controller_keeps_battlefront_observation_off() {
         assert!(AdvancedAi::new().battlefront_observation);
         assert!(!AdvancedAi::legacy().battlefront_observation);
+    }
+
+    /// The measured t174 purchase: five gold in the treasury, one turn after
+    /// Civilization VI disbanded a third of the army to pay the upkeep bill,
+    /// and CIVVIS bought another Field Cannon because the gate only ever asked
+    /// about faith.
+    #[test]
+    fn a_broke_empire_stops_buying_soldiers_with_faith() {
+        let mut game = Game::new(2, 20, 14, 91_501, 80, 0);
+        let unit = game
+            .rules
+            .units
+            .iter()
+            .find(|(_, spec)| spec.class == "military" && spec.maintenance > 0.0)
+            .map(|(name, _)| name.to_string())
+            .expect("the ruleset has a military unit that costs upkeep");
+        let upkeep = game.rules.units[unit.as_str()].maintenance;
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_solvent_faith_army();
+
+        // The measured state: broke, and losing money.
+        game.players[0].gold = 5.0;
+        game.players[0].gold_per_turn = -3.0;
+        assert!(
+            !ai.faith_military_is_affordable(&game, 0, &unit),
+            "an empire on five gold and falling must not take on more upkeep"
+        );
+
+        // A deep balance carries the bill even while income is short.
+        game.players[0].gold = upkeep * FAITH_ARMY_SOLVENCY_TURNS + 1.0;
+        assert!(
+            ai.faith_military_is_affordable(&game, 0, &unit),
+            "a treasury that can pay for {FAITH_ARMY_SOLVENCY_TURNS} turns may still arm"
+        );
+
+        // And a surplus never needs the balance at all.
+        game.players[0].gold = 0.0;
+        game.players[0].gold_per_turn = upkeep + 1.0;
+        assert!(
+            ai.faith_military_is_affordable(&game, 0, &unit),
+            "income that covers the new bill is sufficient on its own"
+        );
+    }
+
+    /// The frozen controllers must keep buying exactly as they always have.
+    #[test]
+    fn the_default_controller_keeps_the_faith_army_ungated() {
+        let mut game = Game::new(2, 20, 14, 91_502, 80, 0);
+        let unit = game
+            .rules
+            .units
+            .iter()
+            .find(|(_, spec)| spec.class == "military" && spec.maintenance > 0.0)
+            .map(|(name, _)| name.to_string())
+            .expect("the ruleset has a military unit that costs upkeep");
+        game.players[0].gold = 5.0;
+        game.players[0].gold_per_turn = -3.0;
+
+        for frozen in [AdvancedAi::new(), AdvancedAi::legacy()] {
+            assert!(!frozen.solvent_faith_army);
+            assert!(
+                frozen.faith_military_is_affordable(&game, 0, &unit),
+                "a tournament controller must not change what it buys"
+            );
+        }
+        let mut live = AdvancedAi::new();
+        live.enable_solvent_faith_army();
+        assert!(
+            !live.faith_military_is_affordable(&game, 0, &unit),
+            "precondition: the same board DOES refuse once the gate is enabled"
+        );
+    }
+
+    #[test]
+    fn production_advanced_scales_cities_development_and_home_defense_together() {
+        let production = AdvancedAi::new();
+        assert_eq!(
+            production.city_target_floor,
+            PRODUCTION_CITY_TARGET_FLOOR
+        );
+        assert!(production.plan_city_target);
+        assert_eq!(production.base.w.city_target, 4.0);
+        assert_eq!(production.base.w.builder_per_city, 0.5);
+        assert!(production.base.siege_muster);
+        assert!(production.base.home_defense);
+        assert!(production.bounded_recovery);
+        assert!(production.settlement_safety);
+        assert!(production.adjacency_site_planning);
+
+        // Frozen and evaluator controls keep the old policy exactly, including
+        // its smaller economy and default-off live-defense adapters.
+        let control = AdvancedAi::pre_policy_envoy();
+        assert_eq!(control.city_target_floor, 3);
+        assert!(!control.plan_city_target);
+        assert_eq!(control.base.w.city_target, 4.0);
+        assert_eq!(control.base.w.builder_per_city, 0.5);
+        assert!(!control.base.siege_muster);
+        assert!(!control.base.home_defense);
+        assert!(!control.bounded_recovery);
+
+        let frozen = AdvancedAi::legacy();
+        assert_eq!(frozen.city_target_floor, 3);
+        assert!(!frozen.plan_city_target);
+        assert_eq!(frozen.base.w.city_target, 4.0);
+        assert_eq!(frozen.base.w.builder_per_city, 0.5);
+        assert!(!frozen.base.siege_muster);
+        assert!(!frozen.base.home_defense);
+        assert!(!frozen.bounded_recovery);
+
+        // Production policy never mutates a wider, better-developed genome.
+        let mut wide = Weights::default();
+        wide.city_target = 10.0;
+        wide.builder_per_city = 0.9;
+        let weighted = AdvancedAi::with_weights(wide);
+        assert_eq!(weighted.base.w.city_target, 10.0);
+        assert_eq!(weighted.base.w.builder_per_city, 0.9);
     }
 
     #[test]
@@ -16497,6 +17788,311 @@ mod tests {
         install_ai_test_district(game, city, "holy_site");
         game.cities.get_mut(&city).unwrap().buildings =
             vec![crate::name!("shrine"), crate::name!("temple")];
+    }
+
+    /// The research floor is a ramp on the remaining game and is absent from
+    /// the frozen controls, so an ablation measures a real difference.
+    #[test]
+    fn the_research_floor_ramps_with_the_horizon_and_stays_out_of_the_controls() {
+        let mut early = Game::new(2, 24, 16, 5_411, 250, 0);
+        early.turn = 1;
+        let mut late = early.clone();
+        late.turn = 240;
+        let mut finished = early.clone();
+        finished.turn = 251;
+
+        let mut ai = AdvancedAi::new();
+        ai.refresh_research_weight(&early);
+        let early_weight = ai.research_weight;
+        ai.refresh_research_weight(&late);
+        let late_weight = ai.research_weight;
+        ai.refresh_research_weight(&finished);
+        let finished_weight = ai.research_weight;
+
+        assert!(
+            early_weight > 2.9 && early_weight <= RESEARCH_FLOOR_EARLY,
+            "a beaker bought on turn 1 compounds for the whole game: {early_weight}"
+        );
+        assert!(
+            late_weight < 1.2,
+            "a beaker bought on turn 240 buys nothing that can be built: {late_weight}"
+        );
+        assert!(
+            early_weight > late_weight,
+            "the floor must decay, not sit flat"
+        );
+        assert_eq!(
+            finished_weight, RESEARCH_FLOOR_LATE,
+            "past the turn limit the horizon clamps at zero rather than going negative"
+        );
+
+        for mut control in [AdvancedAi::legacy(), AdvancedAi::pre_policy_envoy()] {
+            control.refresh_research_weight(&early);
+            assert_eq!(
+                control.research_weight, 0.0,
+                "the evaluation controls must keep the pre-treatment pricing"
+            );
+        }
+    }
+
+    /// The defect this repairs: every lane except Science priced a beaker below
+    /// its own least valuable ordinary yield, and the live Kongo run spent 89 of
+    /// 106 sampled turns in exactly those lanes.
+    #[test]
+    fn beakers_keep_a_floor_in_every_lane_but_never_outbid_the_science_lane() {
+        let mut game = Game::new(2, 24, 16, 5_412, 250, 0);
+        game.turn = 40;
+        let mut ai = AdvancedAi::new();
+        ai.refresh_research_weight(&game);
+        let legacy = AdvancedAi::legacy();
+        let one_science = Yields {
+            science: 1.0,
+            ..Yields::default()
+        };
+
+        for strategy in [
+            GrandStrategy::Religion,
+            GrandStrategy::Conquest,
+            GrandStrategy::Recovery,
+            GrandStrategy::Expansion,
+            GrandStrategy::Culture,
+            GrandStrategy::Diplomacy,
+        ] {
+            let treated = ai.yield_value(one_science, strategy);
+            let control = legacy.yield_value(one_science, strategy);
+            assert!(
+                treated > control,
+                "{strategy:?} must value research above the lane-only anchor: \
+                 {treated} vs {control}"
+            );
+            assert!(
+                treated < ai.yield_value(one_science, GrandStrategy::Science),
+                "{strategy:?} must not outbid the Science lane's own currency"
+            );
+        }
+
+        assert_eq!(
+            ai.yield_value(one_science, GrandStrategy::Science),
+            legacy.yield_value(one_science, GrandStrategy::Science),
+            "the Science lane's promoted weight is untouched"
+        );
+        let one_faith = Yields {
+            faith: 1.0,
+            ..Yields::default()
+        };
+        assert_eq!(
+            ai.yield_value(one_faith, GrandStrategy::Religion),
+            legacy.yield_value(one_faith, GrandStrategy::Religion),
+            "the floor is science-only: no other yield moves"
+        );
+    }
+
+    /// Every lane asks a governor for beakers, because the lane the empire is
+    /// in is not evidence that research stopped mattering.
+    #[test]
+    fn every_lane_tilts_a_citizen_toward_research() {
+        for strategy in [
+            GrandStrategy::Expansion,
+            GrandStrategy::Religion,
+            GrandStrategy::Conquest,
+            GrandStrategy::Recovery,
+            GrandStrategy::Culture,
+            GrandStrategy::Diplomacy,
+        ] {
+            assert_eq!(
+                AdvancedAi::lane_emphasis(strategy, 0.0).science,
+                0.0,
+                "{strategy:?} carried no research tilt before the treatment"
+            );
+            assert!(
+                AdvancedAi::lane_emphasis(strategy, RESEARCH_CITIZEN_TILT).science > 0.0,
+                "{strategy:?} must now ask its citizens for research too"
+            );
+        }
+        assert_eq!(
+            AdvancedAi::lane_emphasis(GrandStrategy::Science, RESEARCH_CITIZEN_TILT).science,
+            0.50,
+            "the Science lane keeps its own larger appetite"
+        );
+    }
+
+    /// The policy deck carried the same lane-keyed defect as the yield weights:
+    /// the Religion list contains no science card, and the deployment genome is
+    /// `adv-religious`. The live religion-heavy run finished with Rationalism,
+    /// Natural Philosophy and Military Research all *available and unslotted*.
+    #[test]
+    fn a_religion_empire_can_reach_the_campus_policy_multipliers() {
+        let build = |research_economy: bool| {
+            let mut game = Game::new(2, 32, 24, 5_415, 250, 0);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("starting settler");
+            game.apply(0, &Action::FoundCity { unit: settler })
+                .expect("found city");
+            let city = game.player_city_ids(0)[0];
+            install_ai_test_district(&mut game, city, "campus");
+            game.cities.get_mut(&city).unwrap().buildings =
+                vec![crate::name!("library"), crate::name!("university")];
+            game.players[0].government = Some("theocracy".to_string());
+            game.players[0].civics.extend([
+                crate::name!("recorded_history"),
+                crate::name!("medieval_faires"),
+                crate::name!("the_enlightenment"),
+                crate::name!("opera_ballet"),
+                crate::name!("theology"),
+            ]);
+            game.players[0].policies.clear();
+            let mut ai = AdvancedAi::new();
+            ai.research_economy = research_economy;
+            ai.refresh_research_weight(&game);
+            ai.strategic_policies(&mut game, 0, GrandStrategy::Religion);
+            game.players[0].policies.clone()
+        };
+
+        let treated = build(true);
+        let control = build(false);
+        assert!(
+            !control.contains(&crate::name!("rationalism")),
+            "the untreated Religion deck has no science card at all: {control:?}"
+        );
+        assert!(
+            treated.contains(&crate::name!("rationalism")),
+            "a Religion empire holding a Campus must be able to multiply it: {treated:?}"
+        );
+    }
+
+    /// The multipliers are Campus cards. A seat with no Campus must not spend a
+    /// slot on one, or the treatment buys a religion empire nothing and costs
+    /// it a card it was using.
+    #[test]
+    fn the_campus_policy_multipliers_need_a_campus() {
+        let mut game = Game::new(2, 32, 24, 5_416, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        game.players[0].government = Some("theocracy".to_string());
+        game.players[0].civics.extend([
+            crate::name!("recorded_history"),
+            crate::name!("medieval_faires"),
+            crate::name!("the_enlightenment"),
+            crate::name!("theology"),
+        ]);
+        game.players[0].policies.clear();
+        let mut ai = AdvancedAi::new();
+        ai.refresh_research_weight(&game);
+        ai.strategic_policies(&mut game, 0, GrandStrategy::Religion);
+        assert!(
+            !game.players[0].policies.contains(&crate::name!("rationalism")),
+            "Rationalism multiplies Campus buildings this empire does not have"
+        );
+    }
+
+    /// The live run's second city held an Industrial Zone and a Mbanza and
+    /// never built a Campus, because a Religion empire's Campus bonus is zero.
+    #[test]
+    fn a_religion_empire_still_wants_a_campus_in_a_city_that_has_none() {
+        let mut game = Game::new(2, 32, 24, 5_413, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        let city = game.player_city_ids(0)[0];
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.turn = 60;
+
+        let mut ai = AdvancedAi::new();
+        ai.refresh_research_weight(&game);
+        let legacy = AdvancedAi::legacy();
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Religion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let counts = ai.counts(&game, 0);
+        let campus_site = game
+            .district_sites(city, crate::name!("campus"))
+            .into_iter()
+            .next()
+            .expect("a legal Campus site");
+        let campus = Item::District {
+            district: crate::name!("campus"),
+            pos: campus_site,
+        };
+
+        let treated = ai.production_value(&game, 0, city, &campus, &plan, &counts);
+        let control = legacy.production_value(&game, 0, city, &campus, &plan, &counts);
+        assert!(
+            treated > control * 1.5,
+            "a Religion empire must still pay for its first Campus: {treated} vs {control}"
+        );
+    }
+
+    /// A Campus with no Library is the expensive half of a research city bought
+    /// and the cheap half declined. That debt was only ever paid at war.
+    #[test]
+    fn a_campus_without_its_library_carries_a_debt_in_peacetime_too() {
+        let mut game = Game::new(2, 32, 24, 5_414, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        let city = game.player_city_ids(0)[0];
+        install_ai_test_district(&mut game, city, "campus");
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.turn = 60;
+
+        let mut ai = AdvancedAi::new();
+        ai.refresh_research_weight(&game);
+        let legacy = AdvancedAi::legacy();
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Religion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let counts = ai.counts(&game, 0);
+        let library = Item::Building {
+            building: crate::name!("library"),
+        };
+        assert!(game.can_produce(0, city, &library));
+
+        let treated = ai.production_value(&game, 0, city, &library, &plan, &counts);
+        let control = legacy.production_value(&game, 0, city, &library, &plan, &counts);
+        assert!(
+            treated > control * 2.0,
+            "the peacetime Campus-building debt must be paid: {treated} vs {control}"
+        );
+
+        // And it is owed for the Campus, not for every building in the city.
+        let monument = Item::Building {
+            building: crate::name!("monument"),
+        };
+        let treated_monument = ai.production_value(&game, 0, city, &monument, &plan, &counts);
+        let control_monument = legacy.production_value(&game, 0, city, &monument, &plan, &counts);
+        assert!(
+            treated_monument <= control_monument * 1.05,
+            "an unrelated building must not collect the research debt: \
+             {treated_monument} vs {control_monument}"
+        );
     }
 
     #[test]
@@ -16759,6 +18355,9 @@ mod tests {
         // resolve, which is how a live run spent 160 turns here.
         game.turn = 100;
         let mut untreated = AdvancedAi::new();
+        // Production enables the bound by default; disable it explicitly for
+        // this counterfactual control.
+        untreated.bounded_recovery = false;
         untreated.plan = Some(opening.clone());
         untreated.major_war_since = Some(0);
         assert_eq!(untreated.assess(&game, 0).strategy, GrandStrategy::Recovery);
@@ -17886,7 +19485,7 @@ mod tests {
     }
 
     #[test]
-    fn expansion_window_reaches_its_six_city_target_before_endgame() {
+    fn expansion_window_reaches_its_nine_city_target_before_endgame() {
         let mut game = Game::new_full(1, 30, 18, 7_113, 500, 0, false);
         let settler = game
             .player_unit_ids(0)
@@ -17904,7 +19503,7 @@ mod tests {
 
         let ai = AdvancedAi::new();
         let plan = ai.assess(&game, 0);
-        assert_eq!(plan.desired_cities, 6);
+        assert_eq!(plan.desired_cities, 9);
         assert_eq!(plan.strategy, GrandStrategy::Expansion);
         let item = Item::Unit {
             unit: crate::name!("settler"),
@@ -21334,6 +22933,267 @@ mod tests {
         assert!(!AdvancedAi::can_relieve(&game, &[warrior], home, u32::MAX));
     }
 
+    /// The defect this exists for: the siege appetite was one unit for any
+    /// target city at all, so a capital behind 400 points of wall was
+    /// provisioned exactly like an unwalled frontier town — and once that one
+    /// unit existed the appetite went to zero.
+    #[test]
+    fn the_siege_train_is_sized_by_the_wall_it_has_to_breach() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_104);
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        sites.sort_unstable();
+        game.current = 1;
+        for site in sites {
+            let settler = game.spawn_test_unit("settler", 1, site);
+            if game.apply(1, &Action::FoundCity { unit: settler }).is_ok() {
+                break;
+            }
+            game.remove_unit(settler);
+        }
+        game.current = 0;
+        let target = *game.player_city_ids(1).first().expect("a target city");
+
+        let assessed_turn = game.turn;
+        let plan_for = move |city: Option<u32>| StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: city,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn,
+            rush: false,
+        };
+
+        // The city is out of sight, so every reading below comes from the
+        // belief layer. Look at it once, the way a scout would.
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_siege_tracks_the_wall();
+        let watchtower = game
+            .nbrs(game.cities[&target].pos)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .expect("a tile beside the city");
+        let scout = game.spawn_test_unit("scout", 0, watchtower);
+
+        let wanted = move |ai: &AdvancedAi, game: &Game, city: Option<u32>| {
+            ai.siege_units_wanted(game, 0, &plan_for(city))
+        };
+
+        // No target at all: no siege train, walls or not.
+        assert_eq!(wanted(&ai, &game, None), 0);
+
+        // An unwalled target does not need one either — melee takes the city
+        // and siege units can never land the capturing blow.
+        game.cities.get_mut(&target).unwrap().wall_hp = 0;
+        assert_eq!(wanted(&ai, &game, Some(target)), 0);
+
+        // One tier of wall, one train; four tiers, the cap.
+        game.cities.get_mut(&target).unwrap().wall_hp = 100;
+        assert_eq!(wanted(&ai, &game, Some(target)), 1);
+        game.cities.get_mut(&target).unwrap().wall_hp = 300;
+        assert_eq!(wanted(&ai, &game, Some(target)), 2);
+        game.cities.get_mut(&target).unwrap().wall_hp = 400;
+        assert_eq!(
+            wanted(&ai, &game, Some(target)),
+            SIEGE_UNITS_MAX,
+            "a fully walled capital is worth the whole train"
+        );
+
+        // The wall is read from memory once the scout leaves, so a fogged
+        // capital still provisions the campaign that has to breach it.
+        ai.belief.observe(&game, 0);
+        game.remove_unit(scout);
+        assert!(
+            !game.player_can_see(0, game.cities[&target].pos),
+            "the target must be fogged for the memory path to be exercised"
+        );
+        assert_eq!(
+            wanted(&ai, &game, Some(target)),
+            SIEGE_UNITS_MAX,
+            "the wall a city had when we last looked still sizes the train"
+        );
+
+        // Memory is the only new input: with no sighting on file the campaign
+        // provisions nothing rather than guessing.
+        let mut unseen = AdvancedAi::targeting(VictoryTarget::Domination);
+        unseen.enable_siege_tracks_the_wall();
+        assert_eq!(wanted(&unseen, &game, Some(target)), 0);
+
+        // The shipped agent is unchanged: one unit for any target, zero
+        // otherwise, whatever the wall is doing.
+        let shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(!shipped.siege_tracks_the_wall);
+        assert_eq!(wanted(&shipped, &game, Some(target)), 1);
+        assert_eq!(wanted(&shipped, &game, None), 0);
+        game.cities.get_mut(&target).unwrap().wall_hp = 0;
+        assert_eq!(
+            wanted(&shipped, &game, Some(target)),
+            1,
+            "the shipped rule never looked at the wall"
+        );
+    }
+
+    /// The defect this exists for: the movement score charged for the threat a
+    /// tile accepts and credited nothing for the attack it opens, so a melee
+    /// unit never volunteered for the tile it has to occupy to swing.
+    #[test]
+    fn a_tile_is_worth_the_attack_it_opens() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_106);
+        let ours = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 2));
+        let target = anchor_at(&game, home, 4);
+        let theirs = game.spawn_test_unit("warrior", 1, target);
+
+        let group = ForceGroup {
+            id: ours,
+            domain: ForceDomain::Land,
+            units: vec![ours],
+            anchor: game.units[&ours].pos,
+            objective: target,
+            focus_target: Some(target),
+            posture: ForcePosture::Engage,
+            readiness: 1.0,
+            local_strength_ratio: 1.0,
+        };
+        let enemies = vec![1usize];
+        let adjacent = game
+            .nbrs(target)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .expect("a tile beside the enemy");
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(!ai.strike_opening, "the shipped default must be unchanged");
+        assert_eq!(
+            ai.strike_opening_value(&game, 0, ours, adjacent, &group, &enemies, None),
+            0.0,
+            "the shipped agent credits nothing"
+        );
+
+        ai.enable_strike_opening();
+        let in_contact = ai.strike_opening_value(&game, 0, ours, adjacent, &group, &enemies, None);
+        assert!(
+            in_contact > 0.0,
+            "a tile that puts the target in reach must be worth something: {in_contact}"
+        );
+        // Two even warriors: odds are 0.5, so the credit is half the scale.
+        assert!(
+            (in_contact - STRIKE_OPENING_SCALE * 30.0 * 0.5).abs() < 1.5,
+            "even odds should pay about half the scale, got {in_contact}"
+        );
+
+        // A tile out of reach opens nothing.
+        let far = anchor_at(&game, home, 1);
+        assert_eq!(
+            ai.strike_opening_value(&game, 0, ours, far, &group, &enemies, None),
+            0.0,
+            "a tile the target cannot be struck from is worth nothing"
+        );
+
+        // Only while prosecuting. A group that is holding is not paid to close.
+        let holding = ForceGroup {
+            posture: ForcePosture::Hold,
+            ..group.clone()
+        };
+        assert_eq!(
+            ai.strike_opening_value(&game, 0, ours, adjacent, &holding, &enemies, None),
+            0.0,
+            "a held group must not be pulled into contact"
+        );
+
+        // A wounded defender is worth more than a fresh one, because the odds
+        // of the strike are better.
+        game.units.get_mut(&theirs).unwrap().hp = 30;
+        let wounded = ai.strike_opening_value(&game, 0, ours, adjacent, &group, &enemies, None);
+        assert!(
+            wounded > in_contact,
+            "pouncing on a wounded target must score higher: {wounded} vs {in_contact}"
+        );
+    }
+
+    /// The defect this exists for: the army target was a headcount keyed to
+    /// our own city count, so an empire being outweighed two to one declared
+    /// its army finished and went back to building markets.
+    #[test]
+    fn the_army_target_rises_when_the_enemy_outweighs_us() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_105);
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        sites.sort_unstable();
+        let muster = sites[0];
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_army_target_weighs_the_enemy();
+        let shipped = AdvancedAi::targeting(VictoryTarget::Domination);
+
+        // An army of ours that comfortably outweighs theirs. `empire_with_a_capital`
+        // strips our starting units, so this is the whole of our power.
+        for step in 0..6 {
+            game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 1 + step));
+        }
+        game.spawn_test_unit("warrior", 1, muster);
+        assert_eq!(
+            ai.wartime_army_target(&game, 0, 12),
+            12,
+            "while we are ahead the shipped target is exactly what it was"
+        );
+
+        // They pass us. The target rises with the gap and never falls below
+        // the shipped floor.
+        for _ in 0..12 {
+            game.spawn_test_unit("warrior", 1, muster);
+        }
+        let raised = ai.wartime_army_target(&game, 0, 12);
+        assert!(
+            raised > 12,
+            "an army twice ours must want more than the peacetime twelve: {raised}"
+        );
+        assert!(raised <= 24, "the 2x ceiling holds: {raised}");
+
+        // However far ahead they run, the empire is not asked to become
+        // nothing but soldiers.
+        for _ in 0..60 {
+            game.spawn_test_unit("warrior", 1, muster);
+        }
+        assert_eq!(
+            ai.wartime_army_target(&game, 0, 12),
+            24,
+            "a runaway rival is still capped at WARTIME_ARMY_CEILING"
+        );
+
+        // Peace with the same strong rival: the wartime scaling must not apply.
+        game.at_war.remove(&(0, 1));
+        game.at_war.remove(&(1, 0));
+        assert_eq!(
+            ai.wartime_army_target(&game, 0, 12),
+            12,
+            "a rival we are not fighting does not size our army"
+        );
+
+        // And the shipped agent never moves at all, war or not.
+        game.at_war.insert((0, 1));
+        assert!(!shipped.army_target_weighs_the_enemy);
+        assert_eq!(shipped.wartime_army_target(&game, 0, 12), 12);
+    }
+
     /// The behaviour this exists for: a locally superior force far from the
     /// emergency keeps prosecuting its campaign, while one close enough to
     /// matter halts. Before this, one threatened city anywhere held every
@@ -21406,6 +23266,111 @@ mod tests {
                 .unwrap()
                 .posture,
             ForcePosture::Hold,
+        );
+    }
+
+    /// The defect this exists for: a walled enemy capital the army cannot
+    /// currently see scored identically to an empty meadow, because
+    /// `local_strength_ratio` reached its `hostile <= 0.0` sentinel and
+    /// returned 3.0 — four times the superiority floor. One lone warrior
+    /// therefore read itself as locally dominant over a city.
+    #[test]
+    fn a_fogged_objective_city_is_priced_from_the_last_sighting() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_103);
+        // An enemy city far enough away that nothing of ours can see it.
+        let mut sites: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(position, tile)| {
+                game.wdist(**position, home) >= 15
+                    && game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+            })
+            .map(|(position, _)| *position)
+            .collect();
+        sites.sort_unstable();
+        game.current = 1;
+        for site in sites {
+            let settler = game.spawn_test_unit("settler", 1, site);
+            if game.apply(1, &Action::FoundCity { unit: settler }).is_ok() {
+                break;
+            }
+            game.remove_unit(settler);
+        }
+        game.current = 0;
+        let enemy_city = *game
+            .player_city_ids(1)
+            .first()
+            .expect("the enemy must have somewhere to be attacked");
+        let objective = game.cities[&enemy_city].pos;
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+
+        // Korea's Seoul was no frontier outpost, so neither is this: an empire
+        // fielding field cannons defends its cities at that standard.
+        game.players[1]
+            .counters
+            .insert("strongest_unit_built".to_string(), 60);
+
+        // One warrior, standing well outside its own sight range of the city.
+        let warrior = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 6));
+        assert!(
+            !game.player_can_see(0, objective),
+            "the setup must leave the objective fogged"
+        );
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(
+            !ai.blind_objective_strength,
+            "the shipped default must be unchanged"
+        );
+        assert_eq!(
+            ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective),
+            3.0,
+            "the shipped rule reads a fogged city as no enemy at all"
+        );
+
+        // A scout walks up, sees the city, and leaves. Nothing about the city
+        // changed — only what this controller has observed of it.
+        let watchtower = game
+            .nbrs(objective)
+            .into_iter()
+            .find(|position| game.map.get(*position).is_some())
+            .expect("a tile beside the city");
+        let scout = game.spawn_test_unit("scout", 0, watchtower);
+        let in_sight = ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective);
+        ai.belief.observe(&game, 0);
+        game.remove_unit(scout);
+        assert!(
+            !game.player_can_see(0, objective),
+            "the city is fogged again once the scout is gone"
+        );
+        assert!(
+            ai.remembered_city(enemy_city).is_some(),
+            "the sighting must survive the fog"
+        );
+
+        ai.enable_blind_objective_strength();
+        let ratio = ai.local_strength_ratio(&game, 0, &[warrior], &[1], objective);
+        assert_eq!(
+            ratio, in_sight,
+            "an unchanged city must read the same remembered as it did in sight"
+        );
+        assert!(
+            ratio < LOCAL_SUPERIORITY_FLOOR,
+            "one warrior is not locally superior to a city it remembers: {ratio}"
+        );
+
+        // Memory is the only new input: a city this controller has never seen
+        // still scores as absent, so the repair cannot become omniscience.
+        let mut unseen = AdvancedAi::targeting(VictoryTarget::Domination);
+        unseen.enable_blind_objective_strength();
+        assert_eq!(
+            unseen.local_strength_ratio(&game, 0, &[warrior], &[1], objective),
+            3.0,
+            "with no sighting on file the shipped behaviour is preserved"
         );
     }
 
@@ -26028,9 +27993,9 @@ mod tests {
     /// produce identical governor weights the directive is decorative.
     #[test]
     fn the_lane_reaches_the_tile_the_citizen_works() {
-        let science = AdvancedAi::lane_emphasis(GrandStrategy::Science);
-        let culture = AdvancedAi::lane_emphasis(GrandStrategy::Culture);
-        let conquest = AdvancedAi::lane_emphasis(GrandStrategy::Conquest);
+        let science = AdvancedAi::lane_emphasis(GrandStrategy::Science, 0.0);
+        let culture = AdvancedAi::lane_emphasis(GrandStrategy::Culture, 0.0);
+        let conquest = AdvancedAi::lane_emphasis(GrandStrategy::Conquest, 0.0);
         assert!(science.science > culture.science);
         assert!(culture.culture > science.culture);
         assert!(conquest.production > science.production);
@@ -27829,6 +29794,75 @@ mod tests {
         }
     }
 
+    #[test]
+    fn delegated_wide_expansion_extends_the_window_but_defense_stays_first() {
+        let mut game = Game::new_full(2, 30, 18, 4_810_002, 500, 0, false);
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+        }
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 6;
+        game.turn = 200;
+
+        let own_military: Vec<u32> = game
+            .player_unit_ids(0)
+            .into_iter()
+            .filter(|unit| game.rules.units[game.units[unit].kind].class == "military")
+            .collect();
+        for unit in own_military {
+            game.remove_unit(unit);
+        }
+        game.at_war.insert((0, 1));
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 9,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::new();
+        ai.base.book_pos = 4;
+        // Prove the delegated plan, not the production constructor's own
+        // defaults, opens both the target and the speed-aware time window.
+        ai.base.w.city_target = 1.0;
+        ai.base.w.settler_stop_turn = 100.0;
+        ai.base.w.builder_per_city = 0.25;
+        ai.delegated_cities(&mut game, 0, &plan);
+
+        let defensive_item = game.cities[&city].queue.first().unwrap();
+        assert!(matches!(
+            defensive_item,
+            Item::Unit { unit } if game.rules.units[unit].class == "military"
+        ));
+        assert_eq!(ai.base.w.city_target, 1.0);
+        assert_eq!(ai.base.w.settler_stop_turn, 100.0);
+        assert_eq!(ai.base.w.builder_per_city, 0.25);
+
+        // Once the one-unit-per-city floor is restored, the same wide plan may
+        // produce the Settler even though both historical genes would refuse it.
+        game.at_war.clear();
+        game.cities.get_mut(&city).unwrap().queue.clear();
+        game.spawn_test_unit("warrior", 0, game.cities[&city].pos);
+        ai.delegated_cities(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if unit == "settler"
+        ));
+        assert_eq!(ai.base.w.city_target, 1.0);
+        assert_eq!(ai.base.w.settler_stop_turn, 100.0);
+        assert_eq!(ai.base.w.builder_per_city, 0.25);
+    }
+
     /// Fires-check for `plan_city_target`, at both map scales.
     ///
     /// The criterion is the **outcome** — cities at end — for the same reason
@@ -28301,5 +30335,72 @@ mod tests {
             }
         }
         println!();
+    }
+}
+
+#[cfg(test)]
+mod research_probe {
+    use super::*;
+    use crate::ai::Ai;
+    use crate::game::{Action, Game};
+    use crate::setup::GameSpeed;
+
+    /// Paired A/B at the *deployment* shape, not the unit-test shape: six
+    /// players, Online speed, 250 turns, a Small world.
+    ///
+    /// This is the instrument behind PR #958's numbers, kept so they can be
+    /// reproduced rather than taken on trust. The same treatment measured at
+    /// 4p/28x18/140 turns was byte-identical on 13 of 20 seeds — those empires
+    /// finish with 6-25 techs and mostly never build a Campus, so the treatment
+    /// barely fires and the run says almost nothing. Measure where it runs.
+    #[test]
+    #[ignore = "census, not an assertion; run explicitly with --nocapture"]
+    fn research_economy_ab_at_deployment_scale() {
+        let play = |seed: u64, treated: bool| {
+            let mut g = Game::new(6, 74, 46, seed, 250, 9);
+            g.game_speed = GameSpeed::Online;
+            let mut me = AdvancedAi::new();
+            me.research_economy = treated;
+            let mut others = AdvancedAi::fleet(&g);
+            while g.winner.is_none() && g.turn <= g.max_turns {
+                let pid = g.current;
+                if pid == 0 {
+                    me.take_turn(&mut g, pid);
+                } else {
+                    others[pid].take_turn(&mut g, pid);
+                }
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &Action::EndTurn);
+                }
+            }
+            let cities = g.player_city_ids(0);
+            let science: f64 = cities.iter().map(|c| g.city_yields(*c).science).sum();
+            let campuses = cities
+                .iter()
+                .filter(|c| {
+                    g.cities[c]
+                        .districts
+                        .keys()
+                        .any(|d| g.district_family(*d) == crate::name!("campus"))
+                })
+                .count();
+            (cities.len(), campuses, g.players[0].techs.len(), science, g.score(0))
+        };
+        let (mut n, mut ts, mut cs, mut tt, mut tc, mut tsc, mut csc, mut tcp, mut ccp) =
+            (0, 0.0, 0.0, 0, 0, 0i64, 0i64, 0, 0);
+        for seed in 9_200..9_208u64 {
+            let t = play(seed, true);
+            let c = play(seed, false);
+            println!(
+                "seed {seed}: treated cities={} campus={} techs={} sci={:.1} score={} | control cities={} campus={} techs={} sci={:.1} score={}",
+                t.0, t.1, t.2, t.3, t.4, c.0, c.1, c.2, c.3, c.4
+            );
+            n += 1;
+            ts += t.3; cs += c.3; tt += t.2; tc += c.2;
+            tsc += t.4 as i64; csc += c.4 as i64; tcp += t.1; ccp += c.1;
+        }
+        println!(
+            "TOTALS n={n} science {ts:.1} vs {cs:.1} | techs {tt} vs {tc} | campuses {tcp} vs {ccp} | score {tsc} vs {csc}"
+        );
     }
 }

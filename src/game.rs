@@ -3621,7 +3621,7 @@ mod natural_wonder_permanence_tests {
     }
 
     #[test]
-    fn no_city_may_be_founded_on_a_natural_wonder() {
+    fn no_city_may_be_founded_on_a_natural_wonder_or_oasis() {
         let (mut game, _city, site) = wonder_beside_capital();
         // Far enough from the capital that only the wonder can refuse it.
         let distant = game
@@ -3648,7 +3648,41 @@ mod natural_wonder_permanence_tests {
         assert!(!game.can_found_city(settler));
         assert!(game.apply(0, &Action::FoundCity { unit: settler }).is_err());
         assert_eq!(game.map.tiles[&distant].feature.as_deref(), Some("uluru"));
+
+        game.map.tiles.get_mut(&distant).unwrap().feature = Some(crate::name!("oasis"));
+        assert!(!game.can_found_city(settler));
+        assert!(game.apply(0, &Action::FoundCity { unit: settler }).is_err());
+        assert_eq!(game.map.tiles[&distant].feature.as_deref(), Some("oasis"));
         assert_eq!(game.map.tiles[&site].feature.as_deref(), Some("pantanal"));
+    }
+
+    #[test]
+    fn oasis_keeps_its_yields_appeal_fresh_water_and_permanence() {
+        let (mut game, city, site) = wonder_beside_capital();
+        let center = game.cities[&city].pos;
+        game.map.tiles.get_mut(&center).unwrap().river_edges = [false; 6];
+        for neighbor in game.nbrs(center) {
+            let tile = game.map.tiles.get_mut(&neighbor).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.hills = false;
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+        game.map.tiles.get_mut(&site).unwrap().terrain = crate::name!("desert");
+
+        let bare_appeal = game.tile_appeal(center);
+        let dry_housing = game.city_housing(&game.cities[&city]);
+        game.map.tiles.get_mut(&site).unwrap().feature = Some(crate::name!("oasis"));
+
+        let yields = game.rules.tile_yields(&game.map.tiles[&site]);
+        assert_eq!(yields.food, 3.0);
+        assert_eq!(yields.gold, 1.0);
+        assert_eq!(yields.total(), 4.0);
+        assert_eq!(game.tile_appeal(center), bare_appeal + 1);
+        assert_eq!(game.city_housing(&game.cities[&city]), dry_housing + 3.0);
+        assert!(game.valid_improvements(0, site).is_empty());
+        assert!(game.builder_operations(0, site).is_empty());
     }
 }
 
@@ -29523,6 +29557,20 @@ impl Game {
         self.tile_has_visibility_line(&mut HeightField::none(), from, to, attacker_height, false)
     }
 
+    /// Whether a unit standing on `from` would have line of sight to `to`.
+    ///
+    /// The same test `do_ranged` applies before it will let a shot happen, but
+    /// asked of a tile the unit is only *considering*. Movement scoring needs
+    /// it because line of sight binds at exactly range 2 — adjacent fire is
+    /// unconditional and range 3+ lobs — which is precisely where a Field
+    /// Cannon parks. See `AdvancedAi::ranged_tile_is_blind`.
+    pub fn line_of_sight_from(&self, from: Pos, to: Pos) -> bool {
+        if !self.map.tiles.contains_key(&from) || !self.map.tiles.contains_key(&to) {
+            return false;
+        }
+        self.has_line_of_sight(from, to, true)
+    }
+
     fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
         let unit = &self.units[&uid];
         if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
@@ -31873,8 +31921,13 @@ impl Game {
         }
         let t = &self.map.tiles[&u.pos];
         // Founding clears the centre tile's feature, so a Settler standing on
-        // a natural wonder would erase it. Civ VI blocks the site outright.
-        if self.rules.is_water(t) || !self.rules.is_passable(t) || self.tile_is_natural_wonder(t) {
+        // a natural wonder would erase it. Oasis likewise ships
+        // `Settlement=false`; Civ VI blocks both sites outright.
+        if self.rules.is_water(t)
+            || !self.rules.is_passable(t)
+            || self.tile_is_natural_wonder(t)
+            || t.feature.as_deref() == Some("oasis")
+        {
             return false;
         }
         for c in self.cities.values() {

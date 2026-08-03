@@ -2875,7 +2875,31 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	local DEVELOP = { "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
 	                  "BUILDING_UNIVERSITY", "BUILDING_RESEARCH_LAB",
 	                  "DISTRICT_THEATER", "BUILDING_AMPHITHEATER",
-	                  "BUILDING_ART_MUSEUM", "BUILDING_ARCHAEOLOGICAL_MUSEUM",
+	                  -- ⚠⚠ `BUILDING_MUSEUM_ART` / `BUILDING_MUSEUM_ARTIFACT`, NOT
+	                  -- `BUILDING_ART_MUSEUM` / `BUILDING_ARCHAEOLOGICAL_MUSEUM`.
+	                  -- Civilization VI has neither of the latter — the shipped rows
+	                  -- read subject-last. Exactly the defect the `BUILDING_WALLS`
+	                  -- comment below this list describes, sitting three lines above
+	                  -- it and unnoticed, because a ladder entry that cannot fire is
+	                  -- invisible: the ladder just moves to the next line.
+	                  --
+	                  -- ⚠ THIS RUNG IS NOT A CORNER. Across 50 live runs the harness
+	                  -- ladder decides **2,935 of 3,708 builds (79%)** and `develop`
+	                  -- is its largest rung at 879; CIVVIS itself gets 773. So both
+	                  -- roads to a Museum were closed by the same class of bug and
+	                  -- #959 only fixed CIVVIS's. Museums stand in **0 of 119** live
+	                  -- end-of-game cities, Broadcast Centres in 0, and the Great
+	                  -- People that need those slots rot: Artist 9 activated against
+	                  -- 67 idle, Musician **0 against 31**, while Merchant runs 89%.
+	                  --
+	                  -- ⚠ ART BEFORE ARTIFACT, and the order is load-bearing. They
+	                  -- are identical in cost and yield; only the slot kind differs.
+	                  -- An Artifact slot needs an Archaeologist, which no live run has
+	                  -- **ever** built, while 67 Great Artists sit idle for want of
+	                  -- the Art slot. The ladder takes the first entry that is
+	                  -- playable, so listing Art first spends the 290 on the museum
+	                  -- whose slots can actually fill.
+	                  "BUILDING_MUSEUM_ART", "BUILDING_MUSEUM_ARTIFACT",
 	                  "BUILDING_BROADCAST_CENTER",
 	                  "DISTRICT_COMMERCIAL_HUB", "BUILDING_MARKET",
 	                  "BUILDING_BANK", "BUILDING_STOCK_EXCHANGE",
@@ -3043,9 +3067,14 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 	local results = try(function()
 		return CityManager.GetOperationTargets(city, CityOperationTypes.BUILD, probe);
 	end);
-	if results == nil then return nil; end
+	-- ⚠ The SECOND return is how many plots the engine offered, and it is the whole
+	-- difference between "this wonder is gone from the world" and "not on that tile".
+	-- Zero is a real answer and must be distinguishable from the nil-results case, so
+	-- both early exits return an explicit 0 rather than falling off the end.
+	if results == nil then return nil, 0; end
 	local plots = results[CityOperationResults.PLOTS];
-	if plots == nil then return nil; end
+	if plots == nil then return nil, 0; end
+	local offered = 0;
 	local first = nil;
 	-- Taken by iteration, not `plots[1]`: the shipped UI counts these with
 	-- `table.count`, so the result is not promised to be a dense array.
@@ -3055,9 +3084,10 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 			local px = try(function() return plot:GetX(); end, -1);
 			local py = try(function() return plot:GetY(); end, -1);
 			if px >= 0 and py >= 0 then
+				offered = offered + 1;
 				if requestedX ~= nil and requestedY ~= nil
 						and px == requestedX and py == requestedY then
-					return { x = px, y = py };
+					return { x = px, y = py }, offered;
 				end
 				if first == nil then first = { x = px, y = py }; end
 			end
@@ -3065,8 +3095,8 @@ local function productionPlot(city, param, hash, requestedX, requestedY)
 	end
 	-- A direct CIVVIS order names a plot. Substituting another legal plot would
 	-- actuate a different decision; only the emergency ladder may take the first.
-	if requestedX ~= nil or requestedY ~= nil then return nil; end
-	return first;
+	if requestedX ~= nil or requestedY ~= nil then return nil, offered; end
+	return first, offered;
 end
 
 -- ★ A PROBE, NOT A MAPPING — the measurement that decides whether repair can ship.
@@ -3178,14 +3208,43 @@ local function buildParams(row, city, requestedX, requestedY)
 			return city:GetBuildQueue():HasBeenPlaced(row.Hash);
 		end, false);
 		if building ~= nil and building.IsWonder and not alreadyPlaced then
-			local where = productionPlot(city,
+			local where, offered = productionPlot(city,
 				CityOperationTypes.PARAM_BUILDING_TYPE, row.Hash,
 				requestedX, requestedY);
 			if where == nil then
+				-- ★★★★★ SAY WHY. `build_no_plot` named the wonder and the city but
+				-- never the reason, and the two reasons want OPPOSITE responses.
+				--
+				-- Measured over 45 live runs to 2026-08-03: **726 wonder refusals, and
+				-- every single one named a plot that satisfies the wonder's own rule**
+				-- as the shipped database states it — all 264 Great Bath asks were on
+				-- Floodplains, all 160 Hanging Gardens asks on a river, all 78
+				-- Stonehenge asks on legal terrain. Not one wonder was built in any
+				-- run. So the plot is not the problem, and with only `x`/`y` in the
+				-- event there was no way to learn what was.
+				--
+				-- The two cases:
+				--   `offered == 0` — the engine has no target at all. A wonder is
+				--     unique in the world, and a rival's cities export no buildings
+				--     and no wonders, so CIVVIS cannot see that someone else already
+				--     finished it. That block belongs to the WHOLE EMPIRE and forever.
+				--   `offered > 0`  — the engine has ground, just not ours. That is a
+				--     placement disagreement in one city and must not stop the empire.
+				--
+				-- `reasons` comes off the same `CanProduce(hash, false, true)` the
+				-- ladder's `playable` uses, which is where "has already been built"
+				-- is spelled out in words.
+				local reasons = nil;
+				local ok, _, results = pcall(function()
+					return city:GetBuildQueue():CanProduce(row.Hash, false, true);
+				end);
+				if ok then reasons = productionFailureReasons(results); end
 				emit("build_no_plot", {
 					city = try(function() return city:GetID(); end, -1),
 					building = row.Type or tostring(row.Hash),
 					x = requestedX, y = requestedY,
+					offered = offered or 0,
+					reasons = reasons,
 				});
 				return nil;
 			end
@@ -3203,9 +3262,9 @@ local function buildParams(row, city, requestedX, requestedY)
 		local alreadyPlaced = try(function()
 			return city:GetBuildQueue():HasBeenPlaced(row.Hash);
 		end, false);
-		local where = nil;
+		local where, offered = nil, 0;
 		if not alreadyPlaced then
-			where = productionPlot(city,
+			where, offered = productionPlot(city,
 				CityOperationTypes.PARAM_DISTRICT_TYPE, row.Hash,
 				requestedX, requestedY);
 		end
@@ -3225,9 +3284,21 @@ local function buildParams(row, city, requestedX, requestedY)
 			-- ⚠ The id comes off the live city object, not from `subject`: this is a
 			-- top-level function and `subject` belongs to the order handler. The scope
 			-- checker caught that, which is exactly what it is for.
+			-- ⚠ `offered` separates the two reasons this comment already names. A
+			-- Government Plaza that exists elsewhere in the empire offers ZERO plots
+			-- in every city; a Campus in a full city offers zero here and plenty next
+			-- door. Measured over 45 runs: 1,353 district refusals, and **1,295 of
+			-- them named no plot at all**, so the count is the only signal available.
+			local reasons = nil;
+			local ok, _, results = pcall(function()
+				return city:GetBuildQueue():CanProduce(row.Hash, false, true);
+			end);
+			if ok then reasons = productionFailureReasons(results); end
 			emit("build_no_plot", {
 				city = try(function() return city:GetID(); end, -1),
 				district = row.Type or tostring(row.Hash),
+				offered = offered or 0,
+				reasons = reasons,
 				x = requestedX, y = requestedY,
 			});
 			return nil;
@@ -4007,14 +4078,41 @@ local function chooseEnvoy(player, pid, turn)
 
 	-- 3. Clear the prompt whatever happened. This is the line that ends the
 	--    turn, and skipping it is what left a run wedged for ten minutes.
-	--    ⚠ It is also a PRIME SUSPECT for the game-core segfault: it writes a
-	--    flag the shipped code only ever writes from the CityStates screen's own
-	--    context, and the fault is delayed by 6-9 turns, which fits desynced
-	--    bookkeeping better than a bad operation request.
+	--
+	-- ⚠⚠ THE HANDLE WAS STALE, AND THAT IS THE BEST EXPLANATION ANYONE HAS FOR
+	-- THE SEGFAULT. `influence` is fetched ONCE at the top of this function and
+	-- was then written through HERE — after up to `tokens` calls to
+	-- `UI.RequestPlayerOperation(pid, giveOp, ...)`, every one of which mutates
+	-- the very gameplay object it points at.
+	--
+	-- The shipped screen never does that. `UI/PartialScreens/CityStates.lua`
+	-- `Close()` re-fetches in the same expression as the read and the write:
+	--
+	--     local localPlayer = Players[Game.GetLocalPlayer()];
+	--     if (... and not localPlayer:GetInfluence():IsGivingTokensConsidered()) then
+	--         localPlayer:GetInfluence():SetGivingTokensConsidered(true);
+	--     end
+	--
+	-- So the suspected illegality was never the CONTEXT — the shipped call is a
+	-- UI script too, exactly like this one. What differs is holding a pointer to
+	-- a gameplay sub-object across operations that rewrite it. That matches the
+	-- recorded signature far better than a bad immediate call does: three
+	-- EXC_BAD_ACCESS faults in the game core on seed 425255, each **6-9 turns
+	-- AFTER** the single envoy was placed, against 0-for-2 on the same seed with
+	-- no envoy placed. A delayed fault is corrupted bookkeeping.
+	--
+	-- ⚠ This does NOT re-enable envoys. `cfg.EnvoyEnabled` stays off and this
+	-- whole function is still unreachable in deployment, so shipping this changes
+	-- nothing at runtime. It removes one concrete defect so that the isolation
+	-- experiment the comment in SOFT_BLOCKERS asks for has a fair chance —
+	-- `EnvoyPlace` and `EnvoyConsider` already switch the two mutations
+	-- independently, so that experiment is a config change, not a code change.
 	if cfg.EnvoyConsider ~= false then
 		pcall(function()
-			if not influence:IsGivingTokensConsidered() then
-				influence:SetGivingTokensConsidered(true);
+			-- Re-fetch: mirror the shipped screen exactly.
+			local fresh = player:GetInfluence();
+			if fresh ~= nil and not fresh:IsGivingTokensConsidered() then
+				fresh:SetGivingTokensConsidered(true);
 			end
 		end);
 	end
@@ -4107,10 +4205,25 @@ local SOFT_BLOCKERS = {
 	-- state rather than a bad immediate call. Civ 6 does segfault on its own
 	-- (there is a pre-envoy crash at t25), but 3-for-3 against 0-for-2 on the
 	-- SAME SEED is a controlled comparison, not a coincidence.
-	-- Set `EnvoyEnabled` to re-enable and isolate which mutation does it:
-	-- `GIVE_INFLUENCE_TOKEN` from a gameplay context, or the
-	-- `SetGivingTokensConsidered` write. Until then the known-stable skip stands,
-	-- and the ten-minute wedge is the lesser of the two failures.
+	-- ⚠ THE "WRONG CONTEXT" HYPOTHESIS IS DEAD — do not spend another cycle on it.
+	-- The shipped `UI/PartialScreens/CityStates.lua` `Close()` calls
+	-- `SetGivingTokensConsidered(true)` from a UI script, exactly like this agent.
+	-- What differed was that `chooseEnvoy` cached `player:GetInfluence()` at the
+	-- top of the function and wrote through that handle AFTER up to `tokens`
+	-- `UI.RequestPlayerOperation` calls had rewritten the object underneath it,
+	-- while the shipped screen re-fetches in the same expression. A stale
+	-- gameplay handle fits a fault delayed 6-9 turns; a bad immediate call does
+	-- not. That is now fixed, so the isolation run is worth doing.
+	--
+	-- Set `EnvoyEnabled` to re-enable. `EnvoyPlace` and `EnvoyConsider` already
+	-- switch the two mutations independently, so isolating them is a CONFIG
+	-- change, not a code change: place-only, then consider-only, same seed.
+	-- ⚠ Do it on a throwaway batch, never on a running one. Until then the
+	-- known-stable skip stands, and the ten-minute wedge is the lesser failure.
+	--
+	-- The prize is large: the same agent headless places **18.1 envoys and holds
+	-- 0.71 suzerainties** per seat (74x46, 9 city-states, 200 turns), against a
+	-- live median of **1 and 0** over 36 runs.
 	ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN = true,
 	ENDTURN_BLOCKING_CLAIM_GREAT_PERSON = true,
 	ENDTURN_BLOCKING_ARTIFACT = true,
@@ -4609,6 +4722,63 @@ local function exportState(player, pid, turn)
 				return city:GetBuildQueue():GetTurnsLeft();
 			end, -1),
 			food = try(function() return city:GetGrowth():GetFood(); end, -1),
+			-- ★★★★★ THE EMPIRE'S HAPPINESS WAS NEVER ASKED FOR, AND IT MULTIPLIES
+			-- EVERY YIELD ON THE BOARD.
+			--
+			-- Neither mod exported a single amenity, happiness or luxury field, and
+			-- `mirror.rs` imported none — so CIVVIS's entire happiness picture was
+			-- something it derived from its own rules on the reconstructed board and
+			-- then never checked. `Game::amenity_yield_mult_for` bands that derived
+			-- surplus straight into a multiplier on science, production, gold,
+			-- culture and faith: +5 -> 1.20, 0 -> 1.00, -4 -> 0.80, -6 -> 0.70.
+			--
+			-- CIVVIS's model says the live empires are sitting at -4/-5, i.e. paying a
+			-- **25-30% tax on every yield**. That may be exactly right, or it may be a
+			-- number it invented; with nothing from the host there is no way to know,
+			-- and the economy drift line cannot tell a real tax from a modelled one
+			-- because an overestimate elsewhere would cancel it.
+			--
+			-- `GetHappinessNonFoodYieldModifier` is the host's OWN multiplier — the
+			-- same quantity CIVVIS bands for itself — so the two can finally be
+			-- compared rather than assumed.
+			--
+			-- ⚠ Every call here is one the shipped CityPanel makes on
+			-- `city:GetGrowth()`, taken from the Assets rather than guessed: this file
+			-- has already paid for `GetDistricts():GetDefenseStrength()` (a method on
+			-- the collection, which read -1 on every city for the project's whole
+			-- history) and for a hash lookup that segfaulted the game four times.
+			-- ⚠ -1 sentinels, not 0: a city with zero amenities and a city the read
+			-- failed on must not look the same to the reconstruction.
+			amenities = try(function() return city:GetGrowth():GetAmenities(); end, -1),
+			amenities_needed = try(function()
+				return city:GetGrowth():GetAmenitiesNeeded();
+			end, -1),
+			happiness = try(function() return city:GetGrowth():GetHappiness(); end, -1),
+			happiness_yield_mult = try(function()
+				return city:GetGrowth():GetHappinessNonFoodYieldModifier();
+			end, -1),
+			-- WHERE the amenities come from, so a shortfall names its own repair
+			-- rather than only its size. Luxuries are the lever CIVVIS can actually
+			-- pull (improve one, or trade for one); entertainment is a district it
+			-- can build.
+			amenities_luxuries = try(function()
+				return city:GetGrowth():GetAmenitiesFromLuxuries();
+			end, -1),
+			amenities_entertainment = try(function()
+				return city:GetGrowth():GetAmenitiesFromEntertainment();
+			end, -1),
+			amenities_civics = try(function()
+				return city:GetGrowth():GetAmenitiesFromCivics();
+			end, -1),
+			amenities_city_states = try(function()
+				return city:GetGrowth():GetAmenitiesFromCityStates();
+			end, -1),
+			amenities_war_weariness = try(function()
+				return city:GetGrowth():GetAmenitiesLostFromWarWeariness();
+			end, -1),
+			amenities_bankruptcy = try(function()
+				return city:GetGrowth():GetAmenitiesLostFromBankruptcy();
+			end, -1),
 			-- ⚠ Was `GetDistricts():GetDefenseStrength()` — the method on the
 			-- collection, which does not exist, so this read -1 for the whole
 			-- project's history on every city on the board.
@@ -5275,6 +5445,43 @@ local function exportState(player, pid, turn)
 		score = try(function() return player:GetScore(); end, -1),
 		-- Ours, on the same scale as each rival's, so a comparison is possible at all.
 		military = try(function() return player:GetStats():GetMilitaryStrength(); end, -1),
+		-- Great Person POINTS, not the Great People already earned. The planner
+		-- prices every district project against the live race -- how close we
+		-- are to the next Scientist, and how close the leading rival is -- and
+		-- with this absent that whole comparison ran against all zeros in every
+		-- live game.
+		--
+		-- ⚠ `GetPointsTotal` takes `row.Index`, NOT `row.Hash`. Passing a hash
+		-- here is what crashed the game four times, once per attempt, and a
+		-- pcall cannot catch that: it is a segfault inside the host, not a Lua
+		-- error. Base/Assets/UI/.../GreatPeoplePopup.lua:2098 is the reference.
+		great_person_points = try(function()
+			local points = player:GetGreatPeoplePoints();
+			if points == nil then return nil; end
+			local out = {};
+			local any = false;
+			for row in GameInfo.GreatPersonClasses() do
+				local total = points:GetPointsTotal(row.Index);
+				if total ~= nil and total > 0 then
+					out[row.GreatPersonClassType] = total;
+					any = true;
+				end
+			end
+			-- ⚠⚠ RETURN nil, NOT AN EMPTY TABLE. `encode` above counts entries and
+			-- emits `[]` for any table where `#v == n`, which an empty table
+			-- satisfies (0 == 0). So `{}` goes out as `[]`, the Rust field is a
+			-- map, serde refuses a sequence, and **the whole StateSnapshot fails
+			-- to deserialize** — not just this field.
+			--
+			-- That is not hypothetical. It took every live game down: three
+			-- consecutive attempts on d0fdcfb reported "no revealed terrain or no
+			-- state yet" and 0 orders from turn 1, stalled at turn 6 with the
+			-- research prompt unanswered, and were killed by the watchdog. Every
+			-- player has zero Great Person points on turn 1, so this fired in
+			-- every game immediately.
+			if not any then return nil; end
+			return out;
+		end, nil),
 		governor_points = governor_points,
 		governor_points_spent = governor_points_spent,
 		governors = governor_roster,
@@ -5286,6 +5493,42 @@ local function exportState(player, pid, turn)
 		trade_routes = tradeRoutes,
 		rivals = rivals,
 		minors = minors,
+		-- ★★★★★ THE ENVOYS WE ARE HOLDING BUT NEVER SPEND.
+		--
+		-- `minors[].envoys` says where our envoys have LANDED. Nothing has ever
+		-- said how many are sitting UNSPENT, and that omission decides the whole
+		-- axis: `Game::legal_actions` gates `Action::SendEnvoy` behind
+		-- `if p.envoys_free > 0`, `envoys_free` is never mirrored, so on every
+		-- reconstructed live board it is 0 and **CIVVIS never even enumerates
+		-- sending an envoy**. That is why `SendEnvoy` appears nowhere in the
+		-- skipped-action tally while `LevyMilitary` (which needs a suzerainty we
+		-- never have) appears 44 times.
+		--
+		-- Measured over 36 live runs past turn 150, from Civ 6's own export:
+		-- median envoys placed **1**, median suzerainties **0**, and 16 of 36
+		-- runs end holding zero envoys anywhere. A rival was sitting on 10 at a
+		-- single city-state.
+		--
+		-- CIVVIS models the payoff in full — `envoy_type_yields_for_count` gives a
+		-- cultural city-state culture at the 1/3/6 thresholds — so the sim
+		-- collects this and the live game collects none of it. Suzerainty also
+		-- hands over the city-state's luxuries, which is amenities, which is the
+		-- 0.70-0.80 multiplier on every yield.
+		--
+		-- ⚠ EXPORT ONLY. This deliberately does NOT reach `player.envoys_free` on
+		-- the reconstructed board yet, because the actuation path is a KNOWN GAME
+		-- CRASHER: `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` answered by
+		-- `chooseEnvoy` produced three SIGSEGVs in three runs on a seed that
+		-- reached t92/t106 without it, and `cfg.EnvoyEnabled` is off because of
+		-- it. Making CIVVIS want something the bridge cannot safely deliver would
+		-- trade a silent loss for a crashed run. First measure the size of the
+		-- prize; then isolate the crash.
+		--
+		-- `GetTokensToGive` is the same call `chooseEnvoy` already makes and
+		-- appears six times in the shipped UI Lua.
+		envoys_free = try(function()
+			return player:GetInfluence():GetTokensToGive();
+		end, -1),
 	});
 end
 

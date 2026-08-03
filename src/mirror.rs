@@ -5282,6 +5282,63 @@ pub struct StateCity {
     /// Food stockpiled toward the next citizen.
     #[serde(default)]
     pub food: f64,
+    /// Civilization VI's own amenity ledger for this city, and the multiplier it
+    /// puts on every non-food yield.
+    ///
+    /// ★★★★★ NONE OF THIS WAS EVER ASKED FOR. Neither mod exported an amenity,
+    /// happiness or luxury field and this struct imported none, so CIVVIS's whole
+    /// happiness picture was derived from its own rules on the reconstructed board
+    /// and never once checked against the host.
+    ///
+    /// That derived number is not decoration: [`Game::amenity_yield_mult_for`] bands
+    /// it straight onto science, production, gold, **culture** and faith — `+5` →
+    /// 1.20, `0` → 1.00, `-4` → 0.80, `-6` → 0.70. CIVVIS's model puts the live
+    /// empires at `-4/-5`, i.e. paying a **25-30% tax on every yield**, which would
+    /// be the largest single multiplier on the board.
+    ///
+    /// ⚠ **The economy drift line cannot settle this and must not be read as if it
+    /// could.** It compares model totals against host totals; a spurious 0.75 here
+    /// and an overestimate anywhere else cancel to a clean-looking number. Only the
+    /// host's own figure decides it, which is what these carry.
+    ///
+    /// `happiness_yield_mult` is `GetHappinessNonFoodYieldModifier` — the host's own
+    /// version of the very quantity CIVVIS bands for itself, so the two are directly
+    /// comparable.
+    ///
+    /// ⚠ **UNKNOWN HAS TWO SHAPES HERE AND A CONSUMER MUST REJECT BOTH.** A field the
+    /// host never sent defaults to [`unknown_metric`], which is `f64::NAN`; a field
+    /// the host tried and failed to read arrives as the mod's `-1`. Neither is zero,
+    /// and a city with genuinely zero amenities must not reconstruct like a city that
+    /// said nothing — a mirror built before this export would otherwise read as a
+    /// perfectly happy empire, which is the instrument inventing good news.
+    ///
+    /// The `>= 0.0` test used by [`host_amenity_report`] rejects both, because every
+    /// comparison against `NAN` is false. Any new reader must do the same; `!= -1.0`
+    /// alone would let `NAN` through.
+    #[serde(default = "unknown_metric")]
+    pub amenities: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_needed: f64,
+    /// Civ 6's happiness *state*, an enum index, not a count. 4 is "content" —
+    /// the shipped CityPanel special-cases exactly that value.
+    #[serde(default = "unknown_metric")]
+    pub happiness: f64,
+    #[serde(default = "unknown_metric")]
+    pub happiness_yield_mult: f64,
+    /// Where the amenities come from, so a shortfall names its own repair rather
+    /// than only its size. Luxuries and entertainment are the two CIVVIS can act on.
+    #[serde(default = "unknown_metric")]
+    pub amenities_luxuries: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_entertainment: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_civics: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_city_states: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_war_weariness: f64,
+    #[serde(default = "unknown_metric")]
+    pub amenities_bankruptcy: f64,
     /// Loyalty CHANGE per turn. `loyalty` alone is a level, and a city at 100
     /// falling fast looks identical to one at 100 holding steady — which is exactly
     /// how a city was lost at t98 with loyalty reading 100.
@@ -5605,6 +5662,44 @@ fn mirrored_city_state_name(game: &crate::game::Game, minor: &StateMinor) -> Opt
         .map(|spec| spec.name.clone())
 }
 
+/// Accept `{}`, `[]`, `null`, or a populated object for a map-valued host field.
+///
+/// ⚠ **The mod's JSON encoder emits `[]` for an empty table.** `encode` counts a
+/// table's entries and takes the array branch whenever `#v == n`, which an empty
+/// table satisfies because both are zero. So a Lua field that is logically an
+/// empty map arrives as a JSON *array*, serde refuses to read a sequence into a
+/// `BTreeMap`, and the failure is not scoped to the field — **the entire
+/// `StateSnapshot` fails to deserialize and the board is silently lost.**
+///
+/// That happened. `great_person_points` shipped in #983 without this, every
+/// player has zero Great Person points on turn 1, and three consecutive live
+/// attempts reported "no revealed terrain or no state yet" with 0 orders from
+/// turn 1, stalled at turn 6 on an unanswered research prompt, and were killed
+/// by the watchdog. The mod now returns `nil` when the table is empty; this is
+/// the second half of that repair, so a future map-valued export cannot take the
+/// board down the same way before anyone notices the encoder's behaviour.
+fn map_or_empty_sequence<'de, D>(
+    deserializer: D,
+) -> Result<Option<BTreeMap<String, f64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum MapOrSequence {
+        Map(BTreeMap<String, f64>),
+        /// Only ever empty in practice; a populated array has no key to carry.
+        Sequence(Vec<serde_json::Value>),
+        Null,
+    }
+
+    Ok(match MapOrSequence::deserialize(deserializer)? {
+        MapOrSequence::Map(map) => Some(map),
+        MapOrSequence::Sequence(_) => Some(BTreeMap::new()),
+        MapOrSequence::Null => None,
+    })
+}
+
 /// The whole board as one `state` event described it.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateSnapshot {
@@ -5705,6 +5800,47 @@ pub struct StateSnapshot {
     /// mirrored empire does not reproduce every capacity modifier.
     #[serde(default)]
     pub trade_capacity: Option<i64>,
+    /// Envoys we are HOLDING and have not placed, per Firaxis's own
+    /// `GetTokensToGive`.
+    ///
+    /// ★★★★★ `minors[].envoys` has always said where our envoys LANDED. Nothing
+    /// ever said how many were sitting unspent, and that single omission closes
+    /// the whole axis: [`crate::game::Game::legal_actions`] gates
+    /// `Action::SendEnvoy` behind `if p.envoys_free > 0`, `envoys_free` is never
+    /// mirrored, so on every reconstructed live board it reads 0 and **CIVVIS
+    /// never enumerates sending an envoy at all**. That is why `SendEnvoy`
+    /// appears nowhere in the skipped-action tally, while `LevyMilitary` — which
+    /// needs a suzerainty we never hold — appears there 44 times.
+    ///
+    /// Measured over 36 live runs past turn 150: median envoys placed **1**,
+    /// median suzerainties **0**, 16 of 36 runs ending with none placed anywhere.
+    /// CIVVIS prices the payoff in full (`envoy_type_yields_for_count` pays a
+    /// cultural city-state at the 1/3/6 thresholds), so the sim collects it and
+    /// the live game collects nothing.
+    ///
+    /// ⚠ **CARRIED AND REPORTED, NOT ACTED ON.** This deliberately does not reach
+    /// `Player::envoys_free` on the reconstructed board. The actuation path is a
+    /// known game crasher — `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` answered by
+    /// `chooseEnvoy` gave three SIGSEGVs in three runs on a seed that reached
+    /// t92/t106 without it, and `cfg.EnvoyEnabled` is off for that reason.
+    /// Teaching CIVVIS to want something the bridge cannot safely deliver trades
+    /// a silent loss for a crashed run. Size the prize first.
+    ///
+    /// `None`/negative means the host did not answer; a real 0 means we are
+    /// genuinely holding none, and the two must not read the same.
+    #[serde(default)]
+    pub envoys_free: Option<i64>,
+    /// Great Person POINTS by Civilization VI class type, e.g.
+    /// `GREAT_PERSON_CLASS_SCIENTIST`. The points, not the people: the earned
+    /// individuals already arrive as units.
+    ///
+    /// `district_project_value` prices every district project against the live
+    /// Great Person race — how close this empire is to the next one of that
+    /// class, and how close the leading rival is. Without this the race is all
+    /// zeros in every live game, so the Campus project's entire reason to exist
+    /// (Great Scientist points) is invisible to the planner that chooses it.
+    #[serde(default, deserialize_with = "map_or_empty_sequence")]
+    pub great_person_points: Option<BTreeMap<String, f64>>,
     /// Total Governor Titles obtained and spent according to Firaxis. These are
     /// separate from the roster because a title can be held unspent.
     #[serde(default)]
@@ -5873,6 +6009,42 @@ fn restore_active_trade_routes(
 /// not all Civics, and neither appointments, promotions nor assignments are derived
 /// facts. Without this pass CIVVIS spends the same titles on every reconstructed
 /// turn and repeatedly appoints Governors already visible in the host game.
+/// Carry the Great Person race across from the host.
+///
+/// Deliberately **not** part of `apply_governor_state`: that function returns
+/// early when the host reports no governors, and the Great Person race has
+/// nothing to do with governors. Bundling them would have made this arrive only
+/// in games that already had a Governor appointed, which is precisely the kind
+/// of silent conditional the mirror has been bitten by before.
+fn apply_great_person_points(
+    game: &mut crate::game::Game,
+    state: &StateSnapshot,
+    unmapped: &mut Vec<String>,
+) {
+    // Civilization VI names the class `GREAT_PERSON_CLASS_SCIENTIST`; CIVVIS
+    // keys the same thing `scientist`. The nine classes correspond one to one,
+    // so the translation is the suffix, lowercased — and an unrecognised class
+    // is reported rather than dropped, because a new expansion adding one is
+    // exactly the case where silence would be wrong.
+    if let Some(points) = state.great_person_points.as_ref() {
+        let mut gpp = BTreeMap::new();
+        for (class, total) in points {
+            match class.strip_prefix("GREAT_PERSON_CLASS_") {
+                Some(kind) if !kind.is_empty() => {
+                    gpp.insert(kind.to_ascii_lowercase(), *total);
+                }
+                _ => {
+                    let issue = format!("great_person_class:{class}");
+                    if !unmapped.contains(&issue) {
+                        unmapped.push(issue);
+                    }
+                }
+            }
+        }
+        game.players[0].gpp = gpp;
+    }
+}
+
 fn apply_governor_state(
     game: &mut crate::game::Game,
     state: &StateSnapshot,
@@ -6326,6 +6498,12 @@ const CITY_KEYS: &[&str] = &[
     "production_cost", "production_turns", "food", "loyalty_per_turn", "falls_to",
     "x", "y", "pop", "capital", "defense", "damage", "max_damage", "wall_damage",
     "max_wall_damage", "loyalty",
+    // The host's own amenity ledger and the multiplier it puts on every non-food
+    // yield. `the_schema_allowlists_cover_every_declared_field` caught these missing
+    // on the first run, which is the whole reason that test exists.
+    "amenities", "amenities_needed", "happiness", "happiness_yield_mult",
+    "amenities_luxuries", "amenities_entertainment", "amenities_civics",
+    "amenities_city_states", "amenities_war_weariness", "amenities_bankruptcy",
 ];
 
 const UNIT_KEYS: &[&str] = &[
@@ -6376,8 +6554,13 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "prophet_pending",
         "policies", "policy_slots", "gold", "faith", "science", "culture", "score",
-        "military", "trade_capacity", "governor_points", "governor_points_spent",
+        "military", "trade_capacity", "great_person_points", "governor_points",
+        "governor_points_spent",
         "governors", "cities", "units", "trade_routes", "rivals", "minors", "hostiles",
+        // Unspent envoys. `the_schema_allowlists_cover_every_declared_field` fails
+        // if a new StateSnapshot field is missing here — this list is a second
+        // copy of the struct's names and nothing keeps them in step automatically.
+        "envoys_free",
     ];
     const CITY: &[&str] = CITY_KEYS;
     const DISTRICT: &[&str] = &["type", "x", "y", "pillaged", "complete"];
@@ -7374,7 +7557,7 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
         false => String::new(),
     };
     Some(format!(
-        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}",
+        "economy civ6/civvis science {:.1}/{:.1} {} culture {:.1}/{:.1} {}{}{}{}{}",
         state.science,
         science,
         pct(science, state.science),
@@ -7383,7 +7566,98 @@ pub fn economy_drift(game: &crate::game::Game, state: &StateSnapshot) -> Option<
         pct(culture, state.culture),
         production_part,
         attributed,
+        host_amenity_report(state),
+        host_envoy_report(state),
     ))}
+
+/// Envoys Civilization VI says we are holding and have not placed.
+///
+/// ★★★★★ Reported here because the loss is invisible everywhere else. `SendEnvoy`
+/// is gated behind `Player::envoys_free`, which the mirror does not carry, so the
+/// action is never enumerated on a live board and never even reaches the
+/// skipped-action tally. The empire simply never notices it is holding them.
+///
+/// Measured over 36 live runs past turn 150: median envoys PLACED **1**, median
+/// suzerainties **0**, and 16 of 36 runs finished having placed none at all.
+///
+/// Prints nothing when the host did not answer, so a mirror built before the
+/// export does not read as an empire that is correctly holding zero.
+fn host_envoy_report(state: &StateSnapshot) -> String {
+    let Some(free) = state.envoys_free.filter(|n| *n >= 0) else {
+        return String::new();
+    };
+    let placed: i64 = state.minors.iter().map(|m| m.envoys.max(0)).sum();
+    // ⚠ `suzerain` is a SEAT ID defaulting to `minus_one`, not a flag. Seat 0 is
+    // ours, and an unclaimed city-state reads -1 — so testing `== 0` counts only
+    // the ones we actually hold. A truthiness test here would report every
+    // masterless city-state as ours, which is the instrument lying in the one
+    // direction that would make this whole finding look already-solved.
+    let suzerain = state.minors.iter().filter(|m| m.suzerain == 0).count();
+    format!(
+        "; envoys unspent {free} placed {placed} suzerain {suzerain}/{}",
+        state.minors.len()
+    )
+}
+
+/// What Civilization VI itself says the empire's happiness is costing it.
+///
+/// ★★★★★ This line has compared science, culture and production for the whole
+/// project and never once carried the term that multiplies all three. CIVVIS bands
+/// its own derived amenity surplus into a factor on every non-food yield
+/// ([`Game::amenity_yield_mult_for`]: `-4` → 0.80, `-6` → 0.70) and its model puts
+/// the live empires at `-4/-5`. If that is real it is the largest single multiplier
+/// on the board — a **25-30% standing tax on culture and science alike**. If it is
+/// not, CIVVIS has been planning against an invented penalty.
+///
+/// ⚠ **The rest of this line cannot answer that**, which is exactly why the term
+/// belongs here: totals-vs-totals hides a spurious 0.75 behind any offsetting
+/// overestimate. `mult` is the host's own `GetHappinessNonFoodYieldModifier`.
+///
+/// Prints nothing when the host said nothing — the fields default to the
+/// `unknown_metric` sentinel, and a mirror built before the export must not read as
+/// a perfectly happy empire.
+fn host_amenity_report(state: &StateSnapshot) -> String {
+    let known: Vec<&StateCity> = state
+        .cities
+        .iter()
+        .filter(|c| c.amenities >= 0.0 && c.amenities_needed >= 0.0)
+        .collect();
+    if known.is_empty() {
+        return String::new();
+    }
+    let surplus: f64 = known.iter().map(|c| c.amenities - c.amenities_needed).sum();
+    let short = known
+        .iter()
+        .filter(|c| c.amenities < c.amenities_needed)
+        .count();
+    let mults: Vec<f64> = known
+        .iter()
+        .map(|c| c.happiness_yield_mult)
+        .filter(|m| *m >= 0.0)
+        .collect();
+    let mult = if mults.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " host_yield_mult {:.2}",
+            mults.iter().sum::<f64>() / mults.len() as f64
+        )
+    };
+    // Name the two sources CIVVIS can actually act on: improve or trade for a
+    // luxury, or build an Entertainment Complex.
+    let from = |pick: fn(&StateCity) -> f64| -> f64 {
+        known.iter().map(|c| pick(c)).filter(|v| *v >= 0.0).sum()
+    };
+    format!(
+        "; amenities net {:+.0} over {} cities ({} short){} from luxuries {:.0} entertainment {:.0}",
+        surplus,
+        known.len(),
+        short,
+        mult,
+        from(|c| c.amenities_luxuries),
+        from(|c| c.amenities_entertainment),
+    )
+}
 
 /// Policy cards the host ruleset has retired, learned from its own refusals.
 ///
@@ -9015,6 +9289,7 @@ pub fn rebuild_from_state(
         &known_city_ids,
     ));
     apply_governor_state(&mut game, state, &mut unmapped);
+    apply_great_person_points(&mut game, state, &mut unmapped);
     apply_observed_host_metrics(&mut game, state, &mut unmapped);
     block_loyalty_doomed_settler_sites(&mut game);
 
@@ -9900,6 +10175,7 @@ impl LiveMirror {
         // no plan of ours worth preserving.
         if skip_rivals {
             apply_governor_state(&mut self.game, state, &mut self.unmapped);
+            apply_great_person_points(&mut self.game, state, &mut self.unmapped);
             return;
         }
         for uid in std::mem::take(&mut self.rival_units) {
@@ -10325,6 +10601,107 @@ mod host_fact_tests {
         .is_none());
     }
 
+    /// ⚠ THE REGRESSION THIS EXISTS TO PREVENT, PINNED AS A TEST.
+    ///
+    /// The mod's `encode` emits `[]` for an empty Lua table — it takes the array
+    /// branch whenever `#v == n`, and an empty table satisfies that with both
+    /// zero. `great_person_points` shipped in #983 as a plain `BTreeMap`, every
+    /// player has no Great Person points on turn 1, and serde refusing a
+    /// sequence took **the whole StateSnapshot** down with it, not just the
+    /// field. Three consecutive live attempts reported "no revealed terrain or
+    /// no state yet" and 0 orders from turn 1, stalled at turn 6 on an
+    /// unanswered research prompt, and were killed by the watchdog.
+    ///
+    /// The empty array must parse, and — this is the part that actually
+    /// mattered — everything *around* it must survive.
+    #[test]
+    fn an_empty_great_person_table_arrives_as_a_json_array_and_must_not_lose_the_board() {
+        let raw = r#"{"turn": 92, "gold": 140, "science": 7.5,
+                      "great_person_points": [],
+                      "techs": ["TECH_POTTERY"]}"#;
+        let state: StateSnapshot =
+            serde_json::from_str(raw).expect("an empty map encoded as [] must still parse");
+        assert_eq!(
+            state.great_person_points,
+            Some(BTreeMap::new()),
+            "an empty array is an empty race, not a missing field"
+        );
+        assert_eq!(state.turn, 92, "and the rest of the board must survive it");
+        assert_eq!(state.gold, 140);
+        assert_eq!(state.techs, vec!["TECH_POTTERY".to_string()]);
+
+        // The populated and absent forms keep working.
+        let populated: StateSnapshot = serde_json::from_str(
+            r#"{"turn": 3, "great_person_points": {"GREAT_PERSON_CLASS_SCIENTIST": 18.0}}"#,
+        )
+        .expect("a populated map parses");
+        assert_eq!(
+            populated.great_person_points.unwrap()["GREAT_PERSON_CLASS_SCIENTIST"],
+            18.0
+        );
+        let absent: StateSnapshot =
+            serde_json::from_str(r#"{"turn": 3}"#).expect("an absent field parses");
+        assert_eq!(absent.great_person_points, None);
+    }
+
+    /// The Great Person race the planner prices against must actually exist.
+    ///
+    /// `district_project_value` reads `players[pid].gpp` for this empire and
+    /// every rival, and awards up to 150 for closing on a leader and 240 for
+    /// overtaking one. Before this the field was never written from a live
+    /// game, so both sides of every one of those comparisons were 0.0 — which
+    /// is why the Campus research project, whose entire payoff is Great
+    /// Scientist points, was chosen 7 times against 131 for the other district
+    /// projects across five live runs.
+    #[test]
+    fn great_person_points_reach_the_planner_from_the_host() {
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 92,
+            width: 8,
+            height: 8,
+            chunk: 1,
+            plots: vec![host_grass(3, 3)],
+        }]);
+        let mut points = BTreeMap::new();
+        points.insert("GREAT_PERSON_CLASS_SCIENTIST".to_string(), 118.0);
+        points.insert("GREAT_PERSON_CLASS_WRITER".to_string(), 12.5);
+        // A class Civilization VI could add that CIVVIS has never heard of must
+        // be reported, not silently dropped.
+        points.insert("GREAT_PERSON_CLASS_ASTRONAUT".to_string(), 4.0);
+        points.insert("NOT_A_GREAT_PERSON_CLASS".to_string(), 9.0);
+        let state = StateSnapshot {
+            turn: 92,
+            great_person_points: Some(points),
+            ..StateSnapshot::default()
+        };
+        let report = rebuild_from_state(&snapshot, &state, 2, 1, 250, 0);
+        let game = &report.game;
+
+        assert_eq!(
+            game.players[0].gpp.get("scientist").copied(),
+            Some(118.0),
+            "the Scientist race is what the Campus project is played for"
+        );
+        assert_eq!(game.players[0].gpp.get("writer").copied(), Some(12.5));
+        assert_eq!(
+            game.players[0].gpp.get("astronaut").copied(),
+            Some(4.0),
+            "an unfamiliar class still translates by its suffix"
+        );
+        assert!(
+            report
+                .unmapped
+                .iter()
+                .any(|issue| issue.contains("NOT_A_GREAT_PERSON_CLASS")),
+            "a class that does not carry the prefix must be reported: {:?}",
+            report.unmapped
+        );
+        assert!(
+            !game.players[0].gpp.contains_key("not_a_great_person_class"),
+            "and must not be invented into the race"
+        );
+    }
+
     #[test]
     fn firaxis_governors_replace_inferred_titles_roster_and_promotions() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -10481,5 +10858,116 @@ mod host_fact_tests {
                 );
             }
         }
+    }
+
+    /// The wire format is the risk here, not the arithmetic: the Lua field names and
+    /// the serde names have to agree or every read silently returns its sentinel and
+    /// the empire reconstructs as perfectly happy. This deserializes the exact shape
+    /// the mod emits.
+    #[test]
+    fn the_host_amenity_ledger_crosses_the_bridge_and_names_the_shortfall() {
+        let city: StateCity = serde_json::from_str(
+            r#"{"id":65536,"name":"Kabasa","pop":15,"x":3,"y":4,
+                "amenities":3,"amenities_needed":7,"happiness":2,
+                "happiness_yield_mult":0.8,
+                "amenities_luxuries":2,"amenities_entertainment":1,
+                "amenities_civics":0,"amenities_city_states":0,
+                "amenities_war_weariness":0,"amenities_bankruptcy":0}"#,
+        )
+        .expect("the mod's city record deserializes");
+        assert_eq!(city.amenities, 3.0, "the field name must match the Lua key");
+        assert_eq!(city.amenities_needed, 7.0);
+        assert_eq!(city.happiness_yield_mult, 0.8);
+        assert_eq!(city.amenities_luxuries, 2.0);
+
+        let state = StateSnapshot {
+            turn: 214,
+            cities: vec![city],
+            ..Default::default()
+        };
+        let report = host_amenity_report(&state);
+        assert!(report.contains("net -4"), "the sign and size must survive: {report}");
+        assert!(report.contains("(1 short)"), "{report}");
+        assert!(report.contains("host_yield_mult 0.80"),
+            "the host's own multiplier is the whole point of the line: {report}");
+        assert!(report.contains("luxuries 2"), "{report}");
+    }
+
+    /// ⚠ A mirror built before this export must NOT read as a happy empire, and
+    /// UNKNOWN ARRIVES IN TWO SHAPES: absent becomes `f64::NAN` via `unknown_metric`,
+    /// while a host read that failed arrives as the mod's `-1`. This asserts both are
+    /// rejected — a reader testing only `!= -1.0` would let `NAN` through and a
+    /// reader testing only `< 0.0` would let it through the other way, since every
+    /// comparison against `NAN` is false.
+    #[test]
+    fn a_host_that_never_reported_amenities_says_nothing_rather_than_zero() {
+        let silent: StateCity =
+            serde_json::from_str(r#"{"id":65536,"name":"Kabasa","x":3,"y":4}"#)
+                .expect("a pre-export city record still deserializes");
+        assert!(silent.amenities.is_nan(),
+            "an absent amenity read defaults to the unknown_metric sentinel, not zero");
+        assert!(silent.amenities_needed.is_nan());
+        assert!(silent.happiness_yield_mult.is_nan());
+
+        let state = StateSnapshot {
+            turn: 40,
+            cities: vec![silent],
+            ..Default::default()
+        };
+        assert_eq!(host_amenity_report(&state), "",
+            "silence must print nothing, not a surplus of zero");
+
+        // The other shape: the host was asked and could not answer.
+        let failed: StateCity = serde_json::from_str(
+            r#"{"id":65536,"name":"Kabasa","x":3,"y":4,
+                "amenities":-1,"amenities_needed":-1,"happiness_yield_mult":-1}"#,
+        )
+        .expect("a failed host read still deserializes");
+        let state = StateSnapshot {
+            turn: 40,
+            cities: vec![failed],
+            ..Default::default()
+        };
+        assert_eq!(host_amenity_report(&state), "",
+            "the mod's -1 must be refused as firmly as an absent field");
+    }
+
+    /// The wire format is the risk: a Lua key that does not match the serde name
+    /// silently returns the default and the empire reads as correctly holding zero.
+    #[test]
+    fn unspent_envoys_cross_the_bridge_and_name_the_suzerainties_we_hold() {
+        let state: StateSnapshot = serde_json::from_str(
+            r#"{"turn":214,"envoys_free":7,
+                "minors":[
+                  {"player":8,"civ":"CIVILIZATION_YEREVAN","envoys":3,"suzerain":0},
+                  {"player":9,"civ":"CIVILIZATION_VILNIUS","envoys":1,"suzerain":3},
+                  {"player":10,"civ":"CIVILIZATION_KABUL","envoys":0}]}"#,
+        )
+        .expect("the mod's state record deserializes");
+        assert_eq!(state.envoys_free, Some(7), "the field name must match the Lua key");
+
+        let report = host_envoy_report(&state);
+        assert!(report.contains("unspent 7"), "{report}");
+        assert!(report.contains("placed 4"), "{report}");
+        // ⚠ Exactly one: seat 0 is ours, seat 3 is a rival's, and the third
+        // city-state has no suzerain at all and defaults to -1.
+        assert!(report.contains("suzerain 1/3"),
+            "an unclaimed city-state must not count as ours: {report}");
+    }
+
+    /// ⚠ A mirror built before this export must not read as an empire correctly
+    /// holding no envoys — that is the instrument inventing good news.
+    #[test]
+    fn a_host_that_never_reported_envoys_says_nothing_rather_than_zero() {
+        let silent: StateSnapshot =
+            serde_json::from_str(r#"{"turn":40,"minors":[]}"#).expect("deserializes");
+        assert_eq!(silent.envoys_free, None);
+        assert_eq!(host_envoy_report(&silent), "");
+
+        // The other shape: the host was asked and could not answer.
+        let failed: StateSnapshot = serde_json::from_str(
+            r#"{"turn":40,"envoys_free":-1,"minors":[]}"#).expect("deserializes");
+        assert_eq!(host_envoy_report(&failed), "",
+            "the mod's -1 must be refused as firmly as an absent field");
     }
 }

@@ -38,7 +38,19 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 82] = [
+pub const EVAL_ONLY_AIS: [&str; 91] = [
+    // The deployed Civilization VI agent, and one arm per live-bridge flag
+    // held off. Eval-only by construction: they move whenever the bridge
+    // moves, which is exactly what a rating anchor must not do.
+    "live",
+    "live_without_home_defense",
+    "live_without_solvent_faith_army",
+    "live_without_siege_muster",
+    "live_without_bounded_recovery",
+    "live_without_army_target_weighs_enemy",
+    "live_without_siege_tracks_wall",
+    "live_without_blind_objective_strength",
+    "live_without_loyalty_rate_alarm",
     "basic_evolved",
     "advanced_policy_live_control",
     "advanced_policy_envoy_priority",
@@ -126,6 +138,28 @@ pub const EVAL_ONLY_AIS: [&str; 82] = [
     "strategic_deep_rivals",
 ];
 
+/// Every mechanism the Civilization VI bridge turns on, as evaluator treatment
+/// tags. `live` carries all of them; each `live_without_*` carries all but one,
+/// so `differing_axes` between them names exactly the mechanism under test.
+///
+/// ⚠ Keep in step with `AdvancedAi::enable_live_bridge`. A flag added there and
+/// not here makes the arms claim a controlled comparison they are not running.
+const LIVE_BRIDGE_TREATMENTS: [&str; 13] = [
+    "live-trader-route",
+    "live-religious-purchase",
+    "siege-muster",
+    "home-defense",
+    "recorded-tactical-step",
+    "strike-opening",
+    "bounded-recovery",
+    "army-target-weighs-enemy",
+    "siege-tracks-wall",
+    "blind-objective-strength",
+    "solvent-faith-army",
+    "loyalty-rate-alarm",
+    "ranged-line-of-sight",
+];
+
 /// Register a selectable arm once, under a typed identity.  The factory,
 /// artifact resolver, provenance report, and evaluator-collapse guard all use
 /// this identity rather than maintaining separate string matches.
@@ -154,6 +188,17 @@ macro_rules! define_arm_kinds {
 }
 
 define_arm_kinds! {
+    // The deployed Civilization VI agent and one arm per live-bridge flag
+    // held off, so each repair can be priced in cities and score.
+    Live => "live",
+    LiveWithoutHomeDefense => "live_without_home_defense",
+    LiveWithoutSolventFaithArmy => "live_without_solvent_faith_army",
+    LiveWithoutSiegeMuster => "live_without_siege_muster",
+    LiveWithoutBoundedRecovery => "live_without_bounded_recovery",
+    LiveWithoutArmyTargetWeighsEnemy => "live_without_army_target_weighs_enemy",
+    LiveWithoutSiegeTracksWall => "live_without_siege_tracks_wall",
+    LiveWithoutBlindObjectiveStrength => "live_without_blind_objective_strength",
+    LiveWithoutLoyaltyRateAlarm => "live_without_loyalty_rate_alarm",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
     AdvancedBeliefPressure => "advanced_belief_pressure",
@@ -1966,6 +2011,70 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score))
         }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
+        // ★★★★ THE AGENT THAT ACTUALLY PLAYS CIVILIZATION VI, PLAYABLE HEADLESS.
+        //
+        // Eight flags separate the frozen controller from the deployed one, and
+        // until now they were set inside a binary, so no arm could construct the
+        // deployed agent and none of them had ever been priced on an outcome.
+        // `live` is that agent; each `live_without_*` holds ONE flag off, so
+        // `civvis tournament --ais live,live_without_home_defense` measures that
+        // flag in cities and score rather than in order counts.
+        //
+        // ⚠ These are NOT rating anchors. They move whenever the bridge moves,
+        // which is exactly what an anchor must not do.
+        "live" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            Box::new(ai)
+        }
+        "live_without_home_defense" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_home_defense();
+            Box::new(ai)
+        }
+        "live_without_solvent_faith_army" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_solvent_faith_army();
+            Box::new(ai)
+        }
+        "live_without_siege_muster" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_siege_muster();
+            Box::new(ai)
+        }
+        "live_without_bounded_recovery" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_bounded_recovery();
+            Box::new(ai)
+        }
+        "live_without_army_target_weighs_enemy" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_army_target_weighs_the_enemy();
+            Box::new(ai)
+        }
+        "live_without_siege_tracks_wall" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_siege_tracks_the_wall();
+            Box::new(ai)
+        }
+        "live_without_blind_objective_strength" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_blind_objective_strength();
+            Box::new(ai)
+        }
+        "live_without_loyalty_rate_alarm" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_loyalty_rate_alarm();
+            Box::new(ai)
+        }
         "random" => Box::new(RandomAi::new(seed)),
         // Exact netless fallback played by `neural` when the committed
         // champion is present. Naming it makes provenance collapse checks
@@ -2613,6 +2722,19 @@ impl ArmKind {
 
     fn treatments(self) -> &'static [&'static str] {
         match self {
+            // The live bridge is a COMPOSITE, and each flag is tagged so a
+            // `live` vs `live_without_*` comparison reports exactly the one
+            // mechanism that differs instead of the catch-all
+            // "implementation" axis, which the evaluator refuses.
+            Self::Live => &LIVE_BRIDGE_TREATMENTS,
+            Self::LiveWithoutHomeDefense => &["live-trader-route", "live-religious-purchase", "siege-muster", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight"],
+            Self::LiveWithoutSolventFaithArmy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "loyalty-rate-alarm", "ranged-line-of-sight"],
+            Self::LiveWithoutSiegeMuster => &["live-trader-route", "live-religious-purchase", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight"],
+            Self::LiveWithoutLoyaltyRateAlarm => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "ranged-line-of-sight"],
+            Self::LiveWithoutBoundedRecovery => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight"],
+            Self::LiveWithoutArmyTargetWeighsEnemy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight"],
+            Self::LiveWithoutSiegeTracksWall => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight"],
+            Self::LiveWithoutBlindObjectiveStrength => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight"],
             Self::AdvancedBeliefPressure => &["belief-pressure"],
             // `advanced` now owns the confirmed Live + infrastructure +
             // priority composite. The retained arms below are therefore
@@ -3120,6 +3242,19 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             vec![genome, value(true)],
             if net { "production_net" } else { "production" },
         ),
+        // The bridge arms are scripted composites: no genome, no value net, and
+        // each is effective as ITSELF. Without an explicit row they inherit the
+        // catch-all and the evaluator reports them as plain `basic`, which would
+        // silently compare two identical agents.
+        "live" => (Vec::new(), "live"),
+        "live_without_home_defense" => (Vec::new(), "live_without_home_defense"),
+        "live_without_solvent_faith_army" => (Vec::new(), "live_without_solvent_faith_army"),
+        "live_without_siege_muster" => (Vec::new(), "live_without_siege_muster"),
+        "live_without_bounded_recovery" => (Vec::new(), "live_without_bounded_recovery"),
+        "live_without_army_target_weighs_enemy" => (Vec::new(), "live_without_army_target_weighs_enemy"),
+        "live_without_siege_tracks_wall" => (Vec::new(), "live_without_siege_tracks_wall"),
+        "live_without_blind_objective_strength" => (Vec::new(), "live_without_blind_objective_strength"),
+        "live_without_loyalty_rate_alarm" => (Vec::new(), "live_without_loyalty_rate_alarm"),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_belief_pressure" => (Vec::new(), "advanced_belief_pressure"),
         "advanced_policy_live_control" => (Vec::new(), "advanced_policy_live_control"),
@@ -3842,12 +3977,15 @@ mod tests {
         builtin_ai, builtin_ai_degraded, builtin_ai_strict, builtin_arm, builtin_provenance,
         collapsed_entrants, direct_anchor_performance, expected, leaderboard, league_generalist,
         performance_elo, scheduled_seats, seat_schedule, strict_builtin_arm_in, wilson_interval,
-        win_shares, BuiltinAiBuildError, EloPool, RatedPlayer, RatingKey, TournamentProfile,
+        win_shares, ArmKind, BuiltinAiBuildError, EloPool, RatedPlayer, RatingKey,
+        TournamentProfile,
         TourneyCfg, WeightSource, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
         ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, HISTORICAL_V1_RATINGS_PATH,
+        LIVE_BRIDGE_TREATMENTS,
         HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH,
         VALUENET_FILE,
     };
+    use std::collections::BTreeSet;
     use crate::game::{Action, Game};
     use crate::rng::Rng;
     use std::collections::BTreeMap;
@@ -4214,7 +4352,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 49] = [
+            const SCRIPTED: [&str; 58] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4265,6 +4403,17 @@ mod tests {
                 "advanced_target_score",
                 "advanced_v1",
                 "basic",
+                // Scripted composites of bridge flags: built from code, no
+                // weights artifact and no value net.
+                "live",
+                "live_without_home_defense",
+                "live_without_siege_muster",
+                "live_without_bounded_recovery",
+                "live_without_army_target_weighs_enemy",
+                "live_without_siege_tracks_wall",
+                "live_without_blind_objective_strength",
+                "live_without_loyalty_rate_alarm",
+                "live_without_solvent_faith_army",
                 "random",
             ];
             const SCRIPTED_ALIASES: [&str; 1] = ["advanced_policy_envoy_priority"];
@@ -4289,6 +4438,84 @@ mod tests {
             }
         }
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// `AdvancedAi::enable_live_bridge` is the single place the Civilization VI
+    /// bridge turns its repairs on; `LIVE_BRIDGE_TREATMENTS` is how the
+    /// evaluator names them. Until now the only thing keeping the two in step
+    /// was a comment.
+    ///
+    /// A flag added to the helper and not to the tag list is silent: both sides
+    /// compile, every other test passes, and the `live` vs `live_without_*`
+    /// comparison goes on reporting a controlled experiment it is no longer
+    /// running. #977 shipped exactly that way — `army_target_weighs_the_enemy`
+    /// reached the deployment while the tag list still described ten
+    /// mechanisms — and it was caught by reading the merge, not by CI.
+    #[test]
+    fn live_bridge_treatments_name_every_flag_the_helper_sets() {
+        let source = include_str!("ai/advanced.rs");
+        let body = source
+            .split("pub fn enable_live_bridge(&mut self) {")
+            .nth(1)
+            .and_then(|tail| tail.split("\n    }\n").next())
+            .expect("enable_live_bridge body");
+        let enabled = body.matches("self.enable_").count();
+        assert_eq!(
+            enabled,
+            LIVE_BRIDGE_TREATMENTS.len(),
+            "enable_live_bridge sets {enabled} flags but LIVE_BRIDGE_TREATMENTS names {}: \
+             add the missing tag (and give it a `live_without_*` arm) or the evaluator \
+             arms claim a controlled comparison they are not running",
+            LIVE_BRIDGE_TREATMENTS.len()
+        );
+    }
+
+    /// Each `live_without_*` arm exists to hold exactly ONE mechanism off, so
+    /// `differing_axes` against `live` names that mechanism and nothing else.
+    ///
+    /// The failure this catches is a merge artifact rather than a typo: when a
+    /// new treatment lands, every arm has to gain it, and an arm that misses
+    /// the update silently differs from `live` on two axes instead of one. The
+    /// arms are derived from `EVAL_ONLY_AIS`, so a newly added arm is covered
+    /// here without touching this test.
+    #[test]
+    fn each_live_without_arm_holds_exactly_one_treatment_off() {
+        let all: BTreeSet<&str> = LIVE_BRIDGE_TREATMENTS.iter().copied().collect();
+        assert_eq!(
+            all.len(),
+            LIVE_BRIDGE_TREATMENTS.len(),
+            "LIVE_BRIDGE_TREATMENTS contains a duplicate tag"
+        );
+
+        let arms: Vec<&str> = EVAL_ONLY_AIS
+            .iter()
+            .copied()
+            .filter(|name| name.starts_with("live_without_"))
+            .collect();
+        assert!(!arms.is_empty(), "no live_without_* arms found");
+
+        let mut held_off = BTreeSet::new();
+        for name in arms {
+            let kind = ArmKind::from_name(name).expect("live_without_* arm is a known ArmKind");
+            let have: BTreeSet<&str> = kind.treatments().iter().copied().collect();
+            let missing: Vec<&str> = all.difference(&have).copied().collect();
+            assert!(
+                have.is_subset(&all),
+                "{name} carries a tag that is not a live-bridge treatment: {:?}",
+                have.difference(&all).collect::<Vec<_>>()
+            );
+            assert_eq!(
+                missing.len(),
+                1,
+                "{name} must hold exactly one treatment off, but differs from `live` on {:?}",
+                missing
+            );
+            assert!(
+                held_off.insert(missing[0]),
+                "{name} holds off {}, which another arm already holds off",
+                missing[0]
+            );
+        }
     }
 
     /// The reactor experiment pins generation 14 inside its dedicated runner.

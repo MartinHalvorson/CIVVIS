@@ -137,14 +137,83 @@ fn civ6_improvement_type(name: &civvis::name::Name) -> String {
 /// outbound boundary symmetric: live turns 165-219 refused 200 production orders
 /// for the nonexistent `BUILDING_MEDIEVAL_WALLS`, leaving three or four queues idle
 /// per turn.  The shipped Buildings.xml names the tiers WALLS, CASTLE, and STAR_FORT.
+/// ⚠⚠ THE WALL TIERS WERE NOT THE ONLY THREE. `mirror::civvis_node_name` carries a
+/// nineteen-entry inbound alias table for exactly this vocabulary gap, and only the
+/// walls half of it was ever mirrored back out. Every other entry was still being
+/// uppercased into a name the shipped database does not contain, and the mod that
+/// resolves against `GameInfo.Buildings` refused each one. Counted over the runs under
+/// `civvis-civ6-runs/control` on 2026-08-02:
+///
+/// ```text
+/// unknown_BUILDING_ARCHAEOLOGICAL_MUSEUM  449
+/// unknown_DISTRICT_GOVERNMENT_PLAZA       310
+/// unknown_BUILDING_MEDIEVAL_WALLS         275   (already fixed; runs predate it)
+/// unknown_TECH_WHEEL                      110
+/// unknown_BUILDING_ART_MUSEUM             108
+/// unknown_DISTRICT_THEATER_SQUARE          24
+/// unknown_BUILDING_OIL_POWER_PLANT         10
+/// ```
+///
+/// The culture cost is direct and it is the whole reason this was found. A Museum is
+/// the third step of the only culture chain in the game — Theater Square →
+/// Amphitheater → Art/Archaeological Museum → Broadcast Center — and it carries +2
+/// Culture and **three Great Work slots**, the largest late-game culture source there
+/// is. Across 45 live runs that reached turn 150, **not one city ever finished a
+/// Museum**, and the empire held a median of **zero Great Works**. The order went out
+/// 507 times and was refused every time.
+///
+/// ⚠ Every replacement here was read out of the shipped
+/// `Cache/DebugGameplay.sqlite`, not inferred from the display name: there is no
+/// `BUILDING_ART_MUSEUM` in Civilization VI, the row is `BUILDING_MUSEUM_ART`, and the
+/// nine Government Plaza buildings are named for their *tier* (`BUILDING_GOV_TALL`)
+/// rather than their subject. Keep this table the exact inverse of
+/// `mirror::civvis_node_name`'s — a name that only translates one way is the defect
+/// this pair of tables exists to prevent.
 fn civ6_building_type(name: &civvis::name::Name) -> String {
     let id = match name.as_str() {
         "ancient_walls" => "WALLS",
         "medieval_walls" => "CASTLE",
         "renaissance_walls" => "STAR_FORT",
+        "art_museum" => "MUSEUM_ART",
+        "archaeological_museum" => "MUSEUM_ARTIFACT",
+        "oil_power_plant" => "FOSSIL_FUEL_POWER_PLANT",
+        "nuclear_power_plant" => "POWER_PLANT",
+        "mausoleum_at_halicarnassus" => "HALICARNASSUS_MAUSOLEUM",
+        "statue_of_liberty" => "STATUE_LIBERTY",
+        "university_of_sankore" => "UNIVERSITY_SANKORE",
+        // The Government Plaza tier buildings. Firaxis names the slot, not the
+        // building: `gov_culture` is the National History Museum.
+        "audience_chamber" => "GOV_TALL",
+        "ancestral_hall" => "GOV_WIDE",
+        "warlords_throne" => "GOV_CONQUEST",
+        "foreign_ministry" => "GOV_CITYSTATES",
+        "grand_masters_chapel" => "GOV_FAITH",
+        "intelligence_agency" => "GOV_SPIES",
+        "national_history_museum" => "GOV_CULTURE",
+        "royal_society" => "GOV_SCIENCE",
+        "war_department" => "GOV_MILITARY",
         other => return format!("BUILDING_{}", other.to_ascii_uppercase()),
     };
     format!("BUILDING_{id}")
+}
+
+/// Civilization VI truncates two district names and spells a third differently.
+///
+/// `DISTRICT_THEATER_SQUARE` and `DISTRICT_GOVERNMENT_PLAZA` are CIVVIS spellings; the
+/// shipped rows are `DISTRICT_THEATER` and `DISTRICT_GOVERNMENT`. The inbound reader
+/// already recovers both — `civvis_node_name`'s unique-prefix rule was added for
+/// `DISTRICT_GOVERNMENT` specifically — so this is the missing outbound half.
+fn civ6_district_type(name: &civvis::name::Name) -> String {
+    let id = match name.as_str() {
+        "theater_square" => "THEATER",
+        "government_plaza" => "GOVERNMENT",
+        "water_park" => "WATER_ENTERTAINMENT_COMPLEX",
+        // Brazil's Water Park replacement; `data/districts.json` records
+        // `"replaces": "water_park"`, so it takes the water spelling.
+        "copacabana" => "WATER_STREET_CARNIVAL",
+        other => return format!("DISTRICT_{}", other.to_ascii_uppercase()),
+    };
+    format!("DISTRICT_{id}")
 }
 
 fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
@@ -153,8 +222,15 @@ fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
     match item {
         Item::Unit { unit } => Some(civ6_unit_type(unit)),
         Item::Building { building } => Some(civ6_building_type(building)),
-        Item::District { district, .. } => Some(format!("DISTRICT_{}", upper(district))),
-        Item::Wonder { wonder, .. } => Some(format!("BUILDING_{}", upper(wonder))),
+        Item::District { district, .. } => Some(civ6_district_type(district)),
+        // ⚠ A WONDER IS A BUILDING AND MUST USE THE BUILDING TABLE. #959 put the
+        // divergent spellings in `civ6_building_type`, but this arm still formatted its
+        // own name, so the three wonders Civilization VI spells differently
+        // — `BUILDING_HALICARNASSUS_MAUSOLEUM`, `BUILDING_STATUE_LIBERTY`,
+        // `BUILDING_UNIVERSITY_SANKORE` — kept going out mechanically uppercased and
+        // kept being refused. Two arms formatting the same table one line apart is the
+        // shape that made this a bug twice.
+        Item::Wonder { wonder, .. } => Some(civ6_building_type(wonder)),
         // ⚠ CIVVIS'S DISTRICT PROJECTS ARE NOT NAMED LIKE CIVILIZATION VI'S, and the
         // mechanical uppercase below produced names the game has never heard of.
         //
@@ -175,8 +251,23 @@ fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
                 "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE".to_string()
             }
             "theater_square_festival" => "PROJECT_ENHANCE_DISTRICT_THEATER".to_string(),
+            // ⚠ The space-race projects diverge too, and in four different ways: the
+            // shipped rows are LAUNCH_EXOPLANET_EXPEDITION (CIVVIS drops the verb),
+            // LAUNCH_MARS_BASE (CIVVIS says colony), and the two lasers are
+            // TERRESTRIAL_LASER / ORBITAL_LASER with no "station" and no Lagrange.
+            "exoplanet_expedition" => "PROJECT_LAUNCH_EXOPLANET_EXPEDITION".to_string(),
+            "launch_mars_colony" => "PROJECT_LAUNCH_MARS_BASE".to_string(),
+            "terrestrial_laser_station" => "PROJECT_TERRESTRIAL_LASER".to_string(),
+            "lagrange_laser_station" => "PROJECT_ORBITAL_LASER".to_string(),
+            // ⚠ `repair_encampment` is DELIBERATELY not translated, though it is the
+            // second-largest refusal class at 342. Civilization VI has no encampment
+            // repair project — a pillaged Encampment is repaired by ordering the
+            // district again, which needs the plot this arm cannot see. Mapping it to
+            // `DISTRICT_ENCAMPMENT` here would only trade `unknown_` refusals for
+            // `build_no_plot` ones. It belongs on the `Item::Repair` path in
+            // `civ6_live_build_name`, which already recovers the plot from the mirror.
             // The rest ARE mechanical: `build_nuclear_device` really is
-            // `PROJECT_BUILD_NUCLEAR_DEVICE`. Only the district projects diverge.
+            // `PROJECT_BUILD_NUCLEAR_DEVICE`.
             _ => format!("PROJECT_{}", upper(project)),
         }),
         _ => None,
@@ -219,8 +310,23 @@ fn civ6_build_pos(item: &civvis::game::Item) -> Option<(i32, i32)> {
     }
 }
 
+/// ⚠ THE TWO RULESETS DISAGREE ON ARTICLES, AND IT COSTS A WHOLE TECHNOLOGY.
+///
+/// `mirror::civvis_node_name` documents the inbound half: Civ 6's `TECH_THE_WHEEL` is
+/// CIVVIS's `wheel`, and it strips the leading article to cross. Outbound never put it
+/// back, so every research order for the Wheel went out as `TECH_WHEEL` and was
+/// refused — **110 times** across the runs under `civvis-civ6-runs/control`. The Wheel
+/// gates Horseback Riding, Bronze Working's siege line and the Water Mill, so a seat
+/// that could never select it was steering around a hole in its own tech tree.
+///
+/// The article is the only divergence in the 77-row technology table (audited against
+/// `Cache/DebugGameplay.sqlite` on 2026-08-02) and civics diverge nowhere, so this
+/// stays an exact list rather than a prefix rule.
 fn civ6_tech_name(civvis: &str) -> String {
-    format!("TECH_{}", civvis.to_ascii_uppercase())
+    match civvis {
+        "wheel" => "TECH_THE_WHEEL".to_string(),
+        other => format!("TECH_{}", other.to_ascii_uppercase()),
+    }
 }
 
 fn civ6_civic_name(civvis: &str) -> String {
@@ -342,9 +448,38 @@ fn host_city_target(
 /// unit workflow. The host supplies both the current activation verdict and every
 /// legal activation plot; choosing the nearest legal plot is path actuation, not a
 /// second strategy layer.
-fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, usize) {
+/// Why a Great Person standing on the board produced no order this turn.
+///
+/// ⚠ These are not the same thing and the single counter they replace could not
+/// tell them apart. `on_cooldown` is the deliberate, benign case documented
+/// below: the person already occupies an activation plot and Firaxis has not
+/// re-offered the command yet, so waiting is correct and the next export will
+/// activate them. `no_activation_plot` is a **loss** — the host offers nowhere
+/// at all to use this individual, and they will stand there for the rest of the
+/// game unless the empire builds the district their class needs.
+///
+/// The distinction is not cosmetic for the science question. A Great Scientist
+/// activates on a Campus; an empire with one Campus and two Scientists has one
+/// of them permanently stranded, and the merged counter reported that
+/// identically to a Writer waiting a single frame. Live brain logs show this
+/// reaching 3 and 6, and nothing said which kind.
+#[derive(Default, Clone, Copy)]
+struct GreatPersonStall {
+    on_cooldown: usize,
+    no_activation_plot: usize,
+}
+
+impl GreatPersonStall {
+    fn total(self) -> usize {
+        self.on_cooldown + self.no_activation_plot
+    }
+}
+
+fn great_person_orders(
+    state: &civvis::mirror::StateSnapshot,
+) -> (Vec<Order>, GreatPersonStall) {
     let mut orders = Vec::new();
-    let mut waiting_without_target = 0;
+    let mut stall = GreatPersonStall::default();
     for unit in &state.units {
         let Some(person) = &unit.great_person else {
             continue;
@@ -369,7 +504,7 @@ fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, us
         // different city. Qu Yuan otherwise bounced Theater -> capital on the
         // cooldown frame after creating his first work.
         if person.activation_plots.iter().any(|plot| plot.distance == 0) {
-            waiting_without_target += 1;
+            stall.on_cooldown += 1;
             continue;
         }
         let target = person
@@ -384,10 +519,12 @@ fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, us
                 pos: Some((target.x, target.y)),
             });
         } else {
-            waiting_without_target += 1;
+            // The host offered no plot anywhere. This individual has nothing to
+            // do until the empire builds the district their class activates on.
+            stall.no_activation_plot += 1;
         }
     }
-    (orders, waiting_without_target)
+    (orders, stall)
 }
 
 /// Keep every physical Great Person hex clear for the current Lua batch.
@@ -657,26 +794,10 @@ fn decide(
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
     // the AI simulates its turn; the tournament controller stays frozen.
-    ai.enable_live_trader_route_adapter();
-    ai.enable_live_religious_purchase_guard();
-    // ⚠ Barbarians are excluded from `at_major_war` by design, so every defensive
-    // escalation in the production picker reads a barbarian siege as no threat at
-    // all: a one-city empire's standing-army floor stays at `mil_per_city` (1.0)
-    // and it cannot want a third defender while horsemen stand on its doorstep.
-    // Measured on run `civvis-20260802T202501Z` — four settlers built into that
-    // siege and captured, two on the capital tile without ever moving, one city
-    // until t80, score 140 against a best rival's 416. The tournament controller
-    // stays frozen so its recorded ladders remain comparable.
-    ai.enable_siege_muster();
-    // ⚠ `assess` drops the empire into Recovery whenever it is at war and
-    // `my_power * 1.25 < strongest_rival`, and Recovery does not build an army —
-    // so the test stays true because of the choice it caused. Measured on run
-    // `civvis-20260802T205959Z`: the journal names that arm 160 times, the
-    // posture held from t65 to t229 (72% of the game), and the empire finished
-    // with ONE warrior at military 34 against the Mapuche's 1354. The bound
-    // releases only the power-gap half, and only after the posture has had
-    // `RECOVERY_POSTURE_LIMIT` standard turns to work.
-    ai.enable_bounded_recovery();
+    // Every live-bridge adapter and repair, in one place so the headless
+    // measurement arms can play the SAME controller the bridge deploys.
+    // See `AdvancedAi::enable_live_bridge`.
+    ai.enable_live_bridge();
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.
@@ -755,6 +876,29 @@ fn decide(
         std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
+    {
+        let blind = civvis::ai::AdvancedAi::blind_tiles_charged();
+        if blind > 0 {
+            note_bits.push(format!("blind_ranged_tiles_charged={blind}"));
+        }
+    }
+    // ⚠ Which rule is refusing the army its attacks. 45 of 87 declined attacks
+    // on a replay of run `civvis-20260803T005930Z` were the forward model
+    // rejecting the action outright rather than judging it bad, 27 of them a
+    // Field Cannon, and `do_ranged` alone refuses for seven distinct reasons.
+    // Naming them is the difference between "the army does not attack" and a
+    // fixable rule.
+    {
+        let census = civvis::ai::AdvancedAi::illegal_attack_census();
+        if !census.is_empty() {
+            let named: Vec<String> = census
+                .iter()
+                .take(6)
+                .map(|(why, count)| format!("{why}={count}"))
+                .collect();
+            note_bits.push(format!("illegal_attacks [{}]", named.join("; ")));
+        }
+    }
     let mut policy_changed = false;
     if !pre_traders.is_empty() {
         note_bits.push(format!(
@@ -865,14 +1009,20 @@ fn decide(
         orders.push(policy_deck_order(&planned_game, 0));
     }
 
-    let (person_orders, great_people_without_target) = great_person_orders(state);
+    let (person_orders, great_person_stall) = great_person_orders(state);
     if !person_orders.is_empty() {
         note_bits.push(format!("great_people_orders={}", person_orders.len()));
         orders.extend(person_orders);
     }
-    if great_people_without_target > 0 {
+    if great_person_stall.total() > 0 {
+        // Kept under the old key so existing log readers still find it, with the
+        // split alongside: one of these two numbers is a cooldown frame and the
+        // other is a Great Person the empire cannot use at all.
         note_bits.push(format!(
-            "great_people_without_activation_target={great_people_without_target}"
+            "great_people_without_activation_target={} (cooldown={} no_plot={})",
+            great_person_stall.total(),
+            great_person_stall.on_cooldown,
+            great_person_stall.no_activation_plot,
         ));
     }
 
@@ -2494,9 +2644,9 @@ mod tests {
             ..StateSnapshot::default()
         };
 
-        let (orders, waiting) = great_person_orders(&state);
+        let (orders, stall) = great_person_orders(&state);
 
-        assert_eq!(waiting, 0);
+        assert_eq!(stall.total(), 0);
         assert_eq!(orders.len(), 2);
         assert_eq!(orders[0].subject, Some(70));
         assert_eq!(orders[0].verb.as_deref(), Some("ACTIVATE_GREAT_PERSON"));
@@ -2533,10 +2683,47 @@ mod tests {
             ..StateSnapshot::default()
         };
 
-        let (orders, waiting) = great_person_orders(&state);
+        let (orders, stall) = great_person_orders(&state);
 
         assert!(orders.is_empty());
-        assert_eq!(waiting, 1);
+        assert_eq!(stall.on_cooldown, 1, "standing on a plot is the benign wait");
+        assert_eq!(
+            stall.no_activation_plot, 0,
+            "and must not be reported as an unusable Great Person"
+        );
+    }
+
+    /// The case the merged counter hid. A Great Person the host offers nowhere
+    /// to activate is not waiting a frame — they are stranded until the empire
+    /// builds the district their class needs, which for a Great Scientist is a
+    /// Campus. Live brain logs reached 3 and 6 under the old key with no way to
+    /// tell this apart from a Writer pausing for one export.
+    #[test]
+    fn a_great_person_with_nowhere_to_activate_is_named_separately() {
+        let state = StateSnapshot {
+            units: vec![StateUnit {
+                id: 73,
+                kind: "UNIT_GREAT_SCIENTIST".to_string(),
+                great_person: Some(StateGreatPerson {
+                    charges: 1,
+                    can_activate: false,
+                    activation_plots: Vec::new(),
+                    ..StateGreatPerson::default()
+                }),
+                ..StateUnit::default()
+            }],
+            ..StateSnapshot::default()
+        };
+
+        let (orders, stall) = great_person_orders(&state);
+
+        assert!(orders.is_empty(), "there is nowhere to send them");
+        assert_eq!(
+            stall.no_activation_plot, 1,
+            "a Great Scientist with no Campus to use is a loss, not a wait"
+        );
+        assert_eq!(stall.on_cooldown, 0);
+        assert_eq!(stall.total(), 1, "the old key keeps its meaning");
     }
 
     #[test]
@@ -3487,5 +3674,319 @@ mod tests {
         );
         assert_eq!(planning.active_routes(0), 1,
             "removing the visual stand-in must not erase the real route's economic state");
+    }
+
+    /// Every name here was refused by the live mod, and the count is from the ledger.
+    ///
+    /// The right-hand side is the row in `Cache/DebugGameplay.sqlite`, not a guess from
+    /// the display name — that distinction is the whole bug. `BUILDING_ART_MUSEUM` reads
+    /// perfectly and does not exist.
+    #[test]
+    fn a_build_order_names_the_row_civilization_vi_actually_ships() {
+        use civvis::game::Item;
+        use civvis::name::Name;
+
+        let building = |n: &str| civ6_building_type(&Name::new(n));
+        let district = |n: &str| {
+            civ6_build_name(&Item::District {
+                district: Name::new(n),
+                pos: (0, 0),
+            })
+            .expect("a district always names something")
+        };
+        let project = |n: &str| {
+            civ6_build_name(&Item::Project {
+                project: Name::new(n),
+            })
+            .expect("a project always names something")
+        };
+
+        // The culture chain. 507 Museum orders across 45 runs, every one refused, and
+        // not one city in any of them ever finished a Museum or held a Great Work.
+        assert_eq!(building("art_museum"), "BUILDING_MUSEUM_ART");
+        assert_eq!(building("archaeological_museum"), "BUILDING_MUSEUM_ARTIFACT");
+        assert_eq!(district("theater_square"), "DISTRICT_THEATER");
+        // 310 refusals, and the inbound reader already had to grow a unique-prefix
+        // rule to recover this one coming the other way.
+        assert_eq!(district("government_plaza"), "DISTRICT_GOVERNMENT");
+        assert_eq!(building("national_history_museum"), "BUILDING_GOV_CULTURE");
+        // 110 refusals: an entire technology the seat could never select.
+        assert_eq!(civ6_tech_name("wheel"), "TECH_THE_WHEEL");
+
+        // The rest of the Government Plaza tier, named for the slot not the subject.
+        assert_eq!(building("audience_chamber"), "BUILDING_GOV_TALL");
+        assert_eq!(building("ancestral_hall"), "BUILDING_GOV_WIDE");
+        assert_eq!(building("warlords_throne"), "BUILDING_GOV_CONQUEST");
+        assert_eq!(building("foreign_ministry"), "BUILDING_GOV_CITYSTATES");
+        assert_eq!(building("grand_masters_chapel"), "BUILDING_GOV_FAITH");
+        assert_eq!(building("intelligence_agency"), "BUILDING_GOV_SPIES");
+        assert_eq!(building("royal_society"), "BUILDING_GOV_SCIENCE");
+        assert_eq!(building("war_department"), "BUILDING_GOV_MILITARY");
+
+        assert_eq!(building("oil_power_plant"), "BUILDING_FOSSIL_FUEL_POWER_PLANT");
+        assert_eq!(building("nuclear_power_plant"), "BUILDING_POWER_PLANT");
+        assert_eq!(
+            building("mausoleum_at_halicarnassus"),
+            "BUILDING_HALICARNASSUS_MAUSOLEUM"
+        );
+        assert_eq!(building("statue_of_liberty"), "BUILDING_STATUE_LIBERTY");
+        assert_eq!(building("university_of_sankore"), "BUILDING_UNIVERSITY_SANKORE");
+
+        assert_eq!(district("water_park"), "DISTRICT_WATER_ENTERTAINMENT_COMPLEX");
+        assert_eq!(district("copacabana"), "DISTRICT_WATER_STREET_CARNIVAL");
+
+        assert_eq!(project("exoplanet_expedition"), "PROJECT_LAUNCH_EXOPLANET_EXPEDITION");
+        assert_eq!(project("launch_mars_colony"), "PROJECT_LAUNCH_MARS_BASE");
+        assert_eq!(project("terrestrial_laser_station"), "PROJECT_TERRESTRIAL_LASER");
+        assert_eq!(project("lagrange_laser_station"), "PROJECT_ORBITAL_LASER");
+
+        // ⚠ The mechanical path still has to carry the other ~230 names untouched. A
+        // translation table that starts rewriting things it was not asked to rewrite is
+        // the same defect pointed the other way.
+        assert_eq!(building("monument"), "BUILDING_MONUMENT");
+        assert_eq!(building("amphitheater"), "BUILDING_AMPHITHEATER");
+        assert_eq!(district("campus"), "DISTRICT_CAMPUS");
+        assert_eq!(civ6_tech_name("mining"), "TECH_MINING");
+        assert_eq!(civ6_civic_name("drama_poetry"), "CIVIC_DRAMA_POETRY");
+        assert_eq!(project("build_nuclear_device"), "PROJECT_BUILD_NUCLEAR_DEVICE");
+        // Already fixed before this change; keep it pinned so the table stays whole.
+        assert_eq!(building("medieval_walls"), "BUILDING_CASTLE");
+        assert_eq!(project("campus_research_grants"), "PROJECT_ENHANCE_DISTRICT_CAMPUS");
+    }
+
+    /// ⚠ A wonder reaches Civilization VI as a BUILDING, so it must use the building
+    /// table — #959 added the divergent spellings but left `Item::Wonder` formatting its
+    /// own name one line away, so all three kept going out wrong. This asserts the two
+    /// arms agree, which is the property that was actually missing.
+    #[test]
+    fn a_wonder_and_a_building_translate_through_the_same_table() {
+        use civvis::game::Item;
+        use civvis::name::Name;
+
+        for name in ["mausoleum_at_halicarnassus", "statue_of_liberty",
+                     "university_of_sankore", "stonehenge", "great_bath"] {
+            let as_wonder = civ6_build_name(&Item::Wonder {
+                wonder: Name::new(name),
+                pos: (0, 0),
+            })
+            .expect("a wonder always names something");
+            assert_eq!(
+                as_wonder,
+                civ6_building_type(&Name::new(name)),
+                "{name} must translate the same way whichever Item variant carries it"
+            );
+        }
+
+        assert_eq!(
+            civ6_build_name(&Item::Wonder {
+                wonder: Name::new("mausoleum_at_halicarnassus"),
+                pos: (0, 0)
+            })
+            .as_deref(),
+            Some("BUILDING_HALICARNASSUS_MAUSOLEUM")
+        );
+        // The plot is part of the decision and must survive the shared table.
+        assert_eq!(
+            civ6_build_pos(&Item::Wonder {
+                wonder: Name::new("stonehenge"),
+                pos: (3, 4)
+            }),
+            Some(civvis::hex::axial_to_offset(3, 4))
+        );
+    }
+
+    /// The outbound table must not silently shrink relative to CIVVIS's own ruleset.
+    ///
+    /// This is the check that would have caught the original defect: it walks every
+    /// building and district CIVVIS can order and fails on any whose translated name is
+    /// still the mechanical uppercase when the shipped database has no such row. The
+    /// known-divergent list is spelled out because CI has no Civilization VI install —
+    /// if a ruleset entry joins that list, this test is where it gets recorded.
+    #[test]
+    fn every_name_civilization_vi_spells_differently_is_translated() {
+        use civvis::name::Name;
+
+        // Read out of `Cache/DebugGameplay.sqlite` on 2026-08-02 by comparing every
+        // `data/*.json` key against Buildings/Districts/Projects/Technologies.
+        const DIVERGENT_BUILDINGS: &[&str] = &[
+            "ancient_walls", "medieval_walls", "renaissance_walls",
+            "art_museum", "archaeological_museum", "oil_power_plant", "nuclear_power_plant",
+            "mausoleum_at_halicarnassus", "statue_of_liberty", "university_of_sankore",
+            "audience_chamber", "ancestral_hall", "warlords_throne", "foreign_ministry",
+            "grand_masters_chapel", "intelligence_agency", "national_history_museum",
+            "royal_society", "war_department",
+        ];
+        const DIVERGENT_DISTRICTS: &[&str] =
+            &["theater_square", "government_plaza", "water_park", "copacabana"];
+
+        for name in DIVERGENT_BUILDINGS {
+            let mapped = civ6_building_type(&Name::new(name));
+            assert_ne!(
+                mapped,
+                format!("BUILDING_{}", name.to_ascii_uppercase()),
+                "{name} is known to be spelled differently in Civilization VI, so the \
+                 mechanical uppercase is exactly the name the mod refuses"
+            );
+        }
+        for name in DIVERGENT_DISTRICTS {
+            let mapped = civ6_district_type(&Name::new(name));
+            assert_ne!(
+                mapped,
+                format!("DISTRICT_{}", name.to_ascii_uppercase()),
+                "{name} is known to be spelled differently in Civilization VI"
+            );
+        }
+    }
+}
+
+/// Every Civilization VI type name this binary can emit must be one the game
+/// actually ships.
+///
+/// ## Why this is a test and not a review note
+///
+/// The outbound mapping is a `match` with a fallthrough that uppercases CIVVIS's
+/// own name. When the two rulesets happen to agree that is correct and free;
+/// when they disagree the host **silently discards the order**. Nothing in the
+/// telemetry says so — the order is written, `orders_source` still reads
+/// `civvis`, and the city simply builds nothing.
+///
+/// That is not hypothetical. Three separate rounds of it are recorded in the
+/// doc comments above:
+///
+/// - `BUILDING_MEDIEVAL_WALLS`, 200 refused orders over live turns 165-219;
+/// - `PROJECT_CAMPUS_RESEARCH_GRANTS` and its six siblings, all seven silently
+///   unbuildable;
+/// - `BUILDING_ARCHAEOLOGICAL_MUSEUM`, **248 orders across turns 118-250 of run
+///   `civvis-20260803T014330Z`, in all three of that empire's main cities**,
+///   which finished the game holding the building in none of them. Civilization
+///   VI calls it `BUILDING_MUSEUM_ARTIFACT`.
+///
+/// Each was repaired by adding one more arm. None of them added a way to find
+/// the next one, and each cost most of a game's production to notice. This
+/// closes the class: `data/civ6_type_names.json` is harvested from the shipped
+/// rule files by `tools/civ6_type_names.py`, and every name the mapping can
+/// produce is checked against it.
+///
+/// ⚠ The snapshot deliberately excludes `DLC/CivvisControl`. Our control mod is
+/// installed *into* the game's Assets tree, so a scan that includes it reads our
+/// own invented names back as proof the game has them — which is how
+/// `BUILDING_ARCHAEOLOGICAL_MUSEUM` looked legitimate on first inspection.
+#[cfg(test)]
+mod civ6_name_audit {
+    use super::*;
+    use civvis::game::Item;
+    use civvis::rules::Rules;
+    use std::collections::BTreeSet;
+
+    fn shipped() -> BTreeSet<String> {
+        let raw = include_str!("../../data/civ6_type_names.json");
+        serde_json::from_str::<Vec<String>>(raw)
+            .expect("the type-name snapshot parses")
+            .into_iter()
+            .collect()
+    }
+
+    /// CIVVIS concepts Civilization VI has no build order for at all.
+    ///
+    /// A National Park is not an Improvement row in the shipped ruleset, an
+    /// Antiquity Site and a Shipwreck are Resources an Archaeologist consumes,
+    /// and a Rock Concert is a unit ability. Naming them here says "checked, and
+    /// there is deliberately nothing to map" rather than leaving them to the
+    /// uppercase fallthrough, which would emit a name and have it dropped.
+    /// `PROJECT_REPAIR_ENCAMPMENT` is the one entry here that is a *deferral*
+    /// rather than an absence: Civilization VI repairs a pillaged Encampment by
+    /// ordering the district again, which needs a plot the `Item::Project` arm
+    /// cannot see. `civ6_build_name` records why it is left untranslated and
+    /// where the repair belongs. Listing it keeps that decision declared instead
+    /// of indistinguishable from a name nobody has checked.
+    const NO_CIV6_EQUIVALENT: [&str; 5] = [
+        "IMPROVEMENT_NATIONAL_PARK",
+        "IMPROVEMENT_ARCHAEOLOGICAL_DIG",
+        "IMPROVEMENT_SHIPWRECK_EXCAVATION",
+        "IMPROVEMENT_ROCK_CONCERT",
+        "PROJECT_REPAIR_ENCAMPMENT",
+    ];
+
+    #[test]
+    fn the_snapshot_is_the_shipped_ruleset_and_not_our_own_mod() {
+        let shipped = shipped();
+        assert!(
+            shipped.len() > 400,
+            "the snapshot has {} names, too few to be Civilization VI's ruleset",
+            shipped.len()
+        );
+        assert!(
+            shipped.contains("BUILDING_MUSEUM_ARTIFACT"),
+            "the real name of the building 248 live orders never built"
+        );
+        assert!(
+            !shipped.contains("BUILDING_ARCHAEOLOGICAL_MUSEUM"),
+            "CIVVIS's own spelling is in the snapshot, so the harvest read our \
+             control mod back as evidence about the game — rerun \
+             tools/civ6_type_names.py, which excludes DLC/CivvisControl"
+        );
+    }
+
+    #[test]
+    fn every_name_the_order_channel_can_emit_exists_in_civilization_vi() {
+        let rules = Rules::shipped();
+        let shipped = shipped();
+        let mut missing: Vec<(&str, String, String)> = Vec::new();
+
+        let mut check = |kind: &'static str, name: &str, emitted: String| {
+            if !shipped.contains(&emitted)
+                && !NO_CIV6_EQUIVALENT.contains(&emitted.as_str())
+            {
+                missing.push((kind, name.to_string(), emitted));
+            }
+        };
+
+        // ⚠ Drive `civ6_build_name`, the function the order channel actually
+        // calls, rather than the per-kind helpers. Dispatch is where this has
+        // gone wrong before: #959 put three divergent wonder spellings into
+        // `civ6_building_type` while the `Item::Wonder` arm still formatted its
+        // own name one line away, so the repair never reached the path that
+        // emitted them. A test that reproduces the mapping instead of invoking
+        // it reproduces that mistake too — this one wrote out the same stale
+        // uppercase and reported three false failures against correct code.
+        let anywhere: civvis::Pos = (0, 0);
+        for name in rules.units.keys() {
+            let item = Item::Unit { unit: *name };
+            check("unit", name.as_str(), civ6_build_name(&item).expect("a unit name"));
+        }
+        for name in rules.districts.keys() {
+            let item = Item::District { district: *name, pos: anywhere };
+            check("district", name.as_str(), civ6_build_name(&item).expect("a district name"));
+        }
+        for name in rules.buildings.keys() {
+            let item = Item::Building { building: *name };
+            check("building", name.as_str(), civ6_build_name(&item).expect("a building name"));
+        }
+        for name in rules.wonders.keys() {
+            let item = Item::Wonder { wonder: *name, pos: anywhere };
+            check("wonder", name.as_str(), civ6_build_name(&item).expect("a wonder name"));
+        }
+        for name in rules.projects.keys() {
+            let item = Item::Project { project: *name };
+            check("project", name.as_str(), civ6_build_name(&item).expect("a project name"));
+        }
+        // Improvements are ordered by builders, not produced in a city, so they
+        // reach the wire through their own helper rather than `civ6_build_name`.
+        for name in rules.improvements.keys() {
+            check("improvement", name.as_str(), civ6_improvement_type(name));
+        }
+
+        assert!(
+            missing.is_empty(),
+            "these names would be written to the order channel and silently \
+             discarded by the host — add an arm to the matching civ6_*_type \
+             function, or to NO_CIV6_EQUIVALENT if the game genuinely has no \
+             build order for it:\n{}",
+            missing
+                .iter()
+                .map(|(kind, name, emitted)| format!("  {kind:11} {name:32} -> {emitted}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
     }
 }

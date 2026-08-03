@@ -295,8 +295,137 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// (`major_war_since`). Still behind `bounded_recovery`, still short-circuiting
 /// on the flag before anything is read, so every configured, legacy and Elo
 /// agent is byte-identical. Another compatibility re-pin.
+///
+/// #955 adds `home_defense_objective`, which lets a raider standing in our own
+/// territory claim a unit before the offensive does. Gated behind the new
+/// `home_defense` flag, which is `false` in BOTH `BasicAi` constructors and is
+/// turned on only by the Civilization VI bridge — exactly the contract
+/// `siege_muster` runs under. `home_defense_objective` short-circuits on that
+/// flag before it reads anything, so every configured, legacy and Elo agent is
+/// byte-identical and `the_default_controller_keeps_home_defense_off` asserts
+/// it on a board that DOES yield an objective once enabled. A compatibility
+/// re-pin.
+///
+/// #955 also adds `garrison_assignments`/`garrison_step`, which put a unit on a
+/// threatened city's own tile. Behind the SAME `home_defense` flag, short-
+/// circuiting on it first, so this too is a compatibility re-pin.
+///
+/// #962 gates faith military purchases on whether the empire can pay the GOLD
+/// upkeep the soldier incurs. Behind the new `solvent_faith_army` flag, which is
+/// `false` in `AdvancedAi::configured` (so `new()` and `legacy()` both have it
+/// off) and is turned on only by the Civilization VI bridge —
+/// `faith_military_is_affordable` returns `true` immediately on that flag, so
+/// every configured, legacy and Elo agent buys exactly what it always did.
+/// `the_default_controller_keeps_the_faith_army_ungated` asserts it on a board
+/// that DOES refuse once enabled. A compatibility re-pin.
+///
+/// #957 prices a fogged objective city from this controller's last sighting
+/// inside `local_strength_ratio`, behind `blind_objective_strength` — again
+/// `false` in `AdvancedAi::new()` and set only by `civvis_orders`.
+/// `remembered_objective_strength` returns `None` on that flag before it
+/// touches the belief state, and the fallback is only reachable at all once
+/// `battlefront_observation` is on. `advanced_v1` sets that to `false`, so the
+/// legacy anchor takes the same `Some(g.city_strength(city))` arm it always
+/// took and is byte-identical twice over. A compatibility re-pin.
+///
+/// #963 sizes the siege train against the target city's standing wall, behind
+/// `siege_tracks_the_wall` — `false` in `AdvancedAi::new()` and set only by
+/// `civvis_orders`. `siege_units_wanted` returns the shipped
+/// `usize::from(plan.target_city.is_some())` on that flag before it reads the
+/// board, so the legacy anchor's production value is bit-for-bit what it was.
+/// A compatibility re-pin.
+/// #819 routes `BasicAi::tactical_step` and the Advanced force mover through
+/// `path_move` so a unit stepped twice in one turn cannot reverse its own
+/// first step, behind `recorded_tactical_step` — `false` at both `BasicAi`
+/// construction sites and set only by `civvis_orders`. Unlike the flags
+/// above, this one guards a call that can *refuse*: `path_move` rejects a
+/// reversal, a retread, or a minor leaving its defense area where the raw
+/// `g.apply(Move)` would have moved. `tactical_apply_move` therefore returns
+/// the historical raw apply on the flag before it reaches `path_move` at all,
+/// so `advanced_v1` takes byte-for-byte the arm it always took. A
+/// compatibility re-pin.
+///
+/// #974 adds a `Cities/Decision` journal line to `advanced_production`, which
+/// had none. It is inside `if self.journal().wants(Decision)` and writes only
+/// to the reasoning journal — no board state is read or changed, and the
+/// legacy anchor's chosen item is bit-for-bit what it was. A compatibility
+/// re-pin.
+///
+/// #965 promotes wide, developed, defended expansion only in the production
+/// constructor: it enables call-local city/Builder floors, plan delegation plus
+/// the three existing defense flags, and lets that flagged plan consume the
+/// land-aware nine-city ceiling. Stored genomes, `configured`, and
+/// `AdvancedAi::legacy()` retain the historical weights; the controls also keep
+/// their three-city floor, six-city ceiling, flat delegation, and default-off
+/// defense fields. The focused production/control contract test asserts each
+/// side of that boundary. This is therefore a compatibility re-pin for
+/// `advanced_v1`, not an Elo protocol change.
+///
+/// #976 adds `AdvancedAi::enable_live_bridge` (the eight bridge flags in one
+/// place, so a headless arm can play the deployed agent) and three
+/// `disable_*` methods that hold one flag off for a measurement arm. Nothing
+/// calls either from `new()` or `legacy()`, so every configured, legacy and Elo
+/// agent is byte-identical. A compatibility re-pin.
+///
+/// #958 prices research outside the victory lane, behind `research_economy`.
+/// `advanced_v1` is `AdvancedAi::legacy()`, which goes through
+/// `AdvancedAi::configured` and therefore has that field `false`; only
+/// `promoted_policy_envoy` turns it on. The identity is exact rather than
+/// sampled, and it holds in two ways at once:
+///
+/// - the Campus coverage bonus, the peacetime Campus-building debt and the
+///   policy-deck insertion are each guarded by `if self.research_economy`, so
+///   for the anchor they are not evaluated at all;
+/// - the three weight terms are floors — `science.max(self.research_weight)` in
+///   `yield_value`, `yield_weights.science.max(..)` in the search evaluator, and
+///   `ys.science.max(research_tilt)` in `lane_emphasis`. For an agent without
+///   the flag, `refresh_research_weight` writes `0.0` and the tilt argument is
+///   `0.0`, and every value being floored is already non-negative (the lane
+///   science weights run 1.0-4.2, the evaluator's 0.5-2.8, the emphasis 0.0 or
+///   0.50). A floor at zero over a non-negative quantity is the identity, so
+///   this is provably byte-identical and not merely measured to be.
+///
+/// A compatibility re-pin.
+///
+///
+/// #977 raises the wartime army target when the enemy outweighs us, behind
+/// `army_target_weighs_the_enemy` — `false` in `AdvancedAi::new()` and set only
+/// by `civvis_orders`. `wartime_army_target` returns its `shipped` argument
+/// unchanged on that flag before it reads a single player, so every configured,
+/// legacy and Elo agent wants exactly the army it always wanted. A
+/// compatibility re-pin.
+///
+/// #981 adds `BasicAi::loyalty_emergency`, which ranks loyalty trouble by TURNS
+/// TO FLIP rather than by level, behind the new `loyalty_rate_alarm` flag. The
+/// flag is `false` in both `BasicAi` constructors and `loyalty_emergency`
+/// returns the old level-only answer on it before reading any rate, so every
+/// configured, legacy and Elo agent behaves identically. A compatibility re-pin.
+///
+/// #984 credits a movement tile for the attack it opens, behind
+/// `strike_opening` — `false` in `AdvancedAi::new()` and set only by
+/// `enable_live_bridge`. `strike_opening_value` returns 0.0 on that flag
+/// before it reads the board, so every configured, legacy and Elo agent scores
+/// every tile exactly as it did. A compatibility re-pin.
+///
+/// #990 adds four `disable_*` methods so every flag in `enable_live_bridge` has a
+/// measurement arm. They are called only by `builtin_ai`'s `live_without_*`
+/// factories, never in play, so every configured, legacy and Elo agent is
+/// byte-identical. A compatibility re-pin.
+///
+/// #989 adds a journal line for a DECLINED attack and a diagnostic tally of the
+/// reasons the forward model refuses one. Both are behind
+/// `journal().wants(Detail)` or write only to a process-local census; no board
+/// state is read and no decision changes, so every configured, legacy and Elo
+/// agent attacks exactly what it always did. A compatibility re-pin.
+///
+/// #991 makes a ranged unit prefer a movement tile it can actually see the
+/// target from, behind `ranged_needs_line_of_sight` — `false` in
+/// `AdvancedAi::new()` and set only by `enable_live_bridge`.
+/// `ranged_tile_is_blind` returns `false` on that flag before it reads the
+/// board, so every configured, legacy and Elo agent scores every tile exactly
+/// as it did. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3ff9_fbfa_5d2f_bbff;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe878_c745_0830_3603;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
