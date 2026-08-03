@@ -361,6 +361,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// side of that boundary. This is therefore a compatibility re-pin for
 /// `advanced_v1`, not an Elo protocol change.
 ///
+/// #976 adds `AdvancedAi::enable_live_bridge` (the eight bridge flags in one
+/// place, so a headless arm can play the deployed agent) and three
+/// `disable_*` methods that hold one flag off for a measurement arm. Nothing
+/// calls either from `new()` or `legacy()`, so every configured, legacy and Elo
+/// agent is byte-identical. A compatibility re-pin.
+///
 /// #958 prices research outside the victory lane, behind `research_economy`.
 /// `advanced_v1` is `AdvancedAi::legacy()`, which goes through
 /// `AdvancedAi::configured` and therefore has that field `false`; only
@@ -381,7 +387,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 ///
 /// A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe918_fffd_8dfb_44c8;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5344_3e1a_5cbc_f96b;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
