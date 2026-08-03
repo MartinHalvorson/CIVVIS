@@ -32,3 +32,17 @@ codegen-units = 1
 inherits = "release"
 lto = false
 codegen-units = 16
+# ⚠ `release` turns debug assertions OFF, and the CI gate inherits it — so
+# every `debug_assert!` in the crate was compiled out of the only build that
+# gates a merge. They are not cheap comments: they guard vector widths
+# (`decision_features`, `action_space`), tile-claim uniqueness (`sphere`), a
+# score range (`ai_eval`), and the agreement between the artifact alias table
+# and the provenance row (`elo`).
+#
+# That last one shipped broken. `live_without_district_coverage` reached
+# `main` with no provenance row, so the arm silently identified itself as
+# `basic`, and two tests failed for anyone running the dev profile while every
+# CI run stayed green (#1008). A second arm repeated it within the hour
+# (#1005). Turning them on here costs a little test runtime and nothing in the
+# shipped `release` build, which does not inherit this profile.
+debug-assertions = true
