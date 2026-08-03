@@ -356,8 +356,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `disable_*` methods that hold one flag off for a measurement arm. Nothing
 /// calls either from `new()` or `legacy()`, so every configured, legacy and Elo
 /// agent is byte-identical. A compatibility re-pin.
+///
+/// This branch adds `BasicAi::loyalty_emergency`, which ranks loyalty trouble by
+/// TURNS TO FLIP rather than by level, behind the new `loyalty_rate_alarm` flag.
+/// The flag is `false` in both `BasicAi` constructors and `loyalty_emergency`
+/// returns the old level-only answer on it before reading any rate, so every
+/// configured, legacy and Elo agent behaves identically. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xec26_21c6_5782_957c;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1034_1e9a_0f13_e7c8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
