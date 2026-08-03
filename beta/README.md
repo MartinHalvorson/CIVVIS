@@ -12,10 +12,17 @@ apart from the asset paths a subdirectory forces.
 
 ```
 civvis.ai            forwards to youtube.com/@civvis
-civvis.ai/home       the landing page, linking the three below
+civvis.ai/home       the landing page with build and project links
+civvis.ai/rust       the latest published native Rust release
+civvis.ai/wasm       the latest published WASM build
 civvis.ai/beta       the published build, open to anyone
 civvis.ai/download   the native binaries, from the latest GitHub release
 ```
+
+`/rust` and `/wasm` are the stable build channels. They use uncached temporary
+redirects to `/download/` and `/beta/`, respectively, so those short addresses
+keep following each newly published artifact without trapping a past visitor
+on one release. A query on `/wasm`, including `?game=<n>`, survives the redirect.
 
 The domain's job is to be the channel's address — somebody typing `civvis.ai`
 wants the videos. So `/` is a **302** to the channel and the landing page moved
