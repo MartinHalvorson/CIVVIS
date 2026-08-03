@@ -55,6 +55,11 @@ const MINOR_DEFENSE_RADIUS: i32 = 6;
 /// when it decides whether to chase a barbarian, so the two agree on the word.
 const HOME_THREAT_RADIUS: i32 = 6;
 
+/// The loyalty level the governor logic has always treated as an emergency.
+/// Retained as a floor so making the rule rate-aware never makes it blinder
+/// than it was.
+const LOYALTY_LEVEL_ALARM: f64 = 70.0;
+
 /// The share of the army home defence may claim. Half, because the failure this
 /// fixes was total neglect of the homeland and the opposite extreme — recalling
 /// everything to chase raiders — loses the same game by another route.
@@ -1316,6 +1321,10 @@ pub struct BasicAi {
     /// the Civilization VI bridge — which is where the failure was measured.
     /// See `home_defense_objective`.
     home_defense: bool,
+    /// Rank loyalty emergencies by TURNS TO FLIP rather than by level. Off for
+    /// the frozen native controllers, enabled by the Civilization VI bridge.
+    /// See `loyalty_emergency`.
+    loyalty_rate_alarm: bool,
     /// Record every tactical step through `path_move` instead of applying it
     /// raw, so a unit stepped a second time in the same turn cannot walk back
     /// onto the tile it just left.
@@ -2151,6 +2160,7 @@ impl BasicAi {
             live_religious_purchase_guard: false,
             siege_muster: false,
             home_defense: false,
+            loyalty_rate_alarm: false,
             recorded_tactical_step: false,
             w: Weights::default(),
             book_pos: 0,
@@ -2174,6 +2184,7 @@ impl BasicAi {
             live_religious_purchase_guard: false,
             siege_muster: false,
             home_defense: false,
+            loyalty_rate_alarm: false,
             recorded_tactical_step: false,
             w,
             book_pos: 0,
@@ -3010,7 +3021,7 @@ impl BasicAi {
         // from a completely loyal city. AdvancedAI runs its plan-aware
         // governor pass first, so this is an emergency backstop rather than a
         // second strategy fighting the first one.
-        Self::reassign_governor_for_loyalty(g, pid);
+        self.reassign_governor_for_loyalty(g, pid);
         while g.players[pid].envoys_free > 0 {
             // consolidate on the city-state we already lead in (suzerain push)
             let target = g
@@ -3060,16 +3071,73 @@ impl BasicAi {
     }
 
     /// Relocate one Governor to a city in immediate Loyalty danger.
-    fn reassign_governor_for_loyalty(g: &mut Game, pid: usize) -> bool {
+    /// How many turns until this city flips, or `None` if it is not in trouble.
+    ///
+    /// Smaller is worse. A city already under `LOYALTY_LEVEL_ALARM` counts as an
+    /// emergency whatever its rate, because the level threshold is what the
+    /// governor logic used before and a city down there is in trouble even while
+    /// recovering — it just is not the MOST urgent one if something else is
+    /// visibly bleeding out faster.
+    ///
+    /// Returns `None` when the flag is off, so a frozen controller keeps the old
+    /// level-only behaviour exactly.
+    pub(crate) fn loyalty_emergency(&self, g: &Game, cid: u32) -> Option<f64> {
+        let city = g.cities.get(&cid)?;
+        if !self.loyalty_rate_alarm {
+            // Frozen behaviour: the level threshold alone, exactly as before.
+            return (city.loyalty < LOYALTY_LEVEL_ALARM).then_some(city.loyalty);
+        }
+        let rate = g.city_loyalty_per_turn(city);
+        if rate < -f64::EPSILON {
+            // Turns of headroom left at the current rate.
+            return Some((city.loyalty / -rate).max(0.0));
+        }
+        // Stable or recovering: only the old level threshold still flags it, and
+        // it ranks behind anything actually falling.
+        (city.loyalty < LOYALTY_LEVEL_ALARM).then_some(f64::MAX / 2.0)
+    }
+
+    /// ★★★★★ LOYALTY LEVEL IS A LAGGING INDICATOR AND IT IS ALL THIS AI EVER READ.
+    ///
+    /// Every city loss across every recorded run on this machine, classified by
+    /// the city's last sighting before it disappeared — **125 losses**:
+    ///
+    /// ```text
+    ///   52  41.6%  loyalty < 50            revolt
+    ///   37  29.6%  loyal, damaged          siege we could contest
+    ///   36  28.8%  loyal, UNDAMAGED        gone from full health in one round
+    /// ```
+    ///
+    /// **Loyalty is the single largest cause of city loss, ahead of every military
+    /// shape**, and `66 of the 125` were carrying a NEGATIVE loyalty rate when
+    /// last seen.
+    ///
+    /// ⚠ The rate was available the whole time and nothing read it.
+    /// `Game::city_loyalty_per_turn` is computed by the engine, mirrored from
+    /// Civilization VI (`mirror.rs` asserts it survives a save) and exported in
+    /// `obs.rs` — yet it had **zero consumers in `ai.rs`, `ai/advanced.rs`,
+    /// `strategic.rs` and `production.rs`**. The only two loyalty readers both
+    /// took the LEVEL: this function's `< 70.0`, and the `bread_and_circuses`
+    /// project score's `100 - loyalty`.
+    ///
+    /// A level threshold cannot see a city dying. A city on 100 losing 12 a turn
+    /// is eight turns from flipping and reads as perfectly safe; a city on 60
+    /// gaining 5 is recovering and reads as the emergency. That is exactly
+    /// backwards, and it is why 36 cities vanished at full loyalty.
+    ///
+    /// So the governor goes to whichever city flips SOONEST, and a level below
+    /// the old threshold is treated as an emergency in its own right so a city
+    /// already in trouble is never ranked behind a healthy one.
+    fn reassign_governor_for_loyalty(&self, g: &mut Game, pid: usize) -> bool {
         let target = g
             .player_city_ids(pid)
             .into_iter()
             .filter(|city| !g.players[pid].governors.contains(city))
-            .filter(|city| g.cities[city].loyalty < 70.0)
+            .filter(|city| self.loyalty_emergency(g, *city).is_some())
             .min_by(|left, right| {
-                g.cities[left]
-                    .loyalty
-                    .total_cmp(&g.cities[right].loyalty)
+                self.loyalty_emergency(g, *left)
+                    .unwrap_or(f64::MAX)
+                    .total_cmp(&self.loyalty_emergency(g, *right).unwrap_or(f64::MAX))
                     .then(left.cmp(right))
             });
         let Some(target) = target else { return false };
@@ -8265,6 +8333,90 @@ mod tests {
         assert!(game.players[0].great_people.iter().any(|person| person == "hypatia"));
     }
 
+    /// The 36 cities that vanished at FULL loyalty, in one assertion: a city on
+    /// 100 losing ground fast is in more danger than a city on 60 that is
+    /// stable, and the level-only rule ranked them exactly the other way round.
+    #[test]
+    fn a_city_bleeding_loyalty_outranks_a_lower_but_stable_one() {
+        let (mut game, source, target) = island_colony_game(1);
+        let second_settler = game.spawn_test_unit("settler", 0, target);
+        let bleeding = game.found_city_for(0, game.units[&second_settler].pos, None);
+        let stable = game.city_at(source).unwrap();
+
+        // Full loyalty, but the engine's rate says it is going fast.
+        game.cities.get_mut(&bleeding).unwrap().loyalty = 100.0;
+        game.cities.get_mut(&stable).unwrap().loyalty = 60.0;
+
+        let mut live = BasicAi::new();
+        live.loyalty_rate_alarm = true;
+        let frozen = BasicAi::new();
+
+        // ⚠ Force the rates rather than hoping the map generates a falling city.
+        // `observed_city_loyalty_per_turn` is the map the MIRROR writes from
+        // Civilization VI's own export, so this is the live representation and
+        // not a test-only back door — and it makes the case unconditional
+        // instead of a test that quietly passes when nothing is falling.
+        game.observed_city_loyalty_per_turn.insert(bleeding, -12.0);
+        game.observed_city_loyalty_per_turn.insert(stable, 1.0);
+        let bleed_rate = game.city_loyalty_per_turn(&game.cities[&bleeding]);
+        let stable_rate = game.city_loyalty_per_turn(&game.cities[&stable]);
+        assert_eq!(bleed_rate, -12.0, "the injected rate must be what the AI reads");
+
+        let live_bleeding = live.loyalty_emergency(&game, bleeding);
+        let live_stable = live.loyalty_emergency(&game, stable);
+        assert!(
+            live_bleeding.is_some(),
+            "a city losing {bleed_rate}/turn must register as an emergency at ANY level"
+        );
+        assert!(
+            live_stable.is_none() || live_bleeding.unwrap() < live_stable.unwrap(),
+            "the bleeding city must rank ahead: bleeding={live_bleeding:?} stable={live_stable:?} \
+             (rates {bleed_rate} vs {stable_rate})"
+        );
+
+        // The frozen controller keeps the old level-only rule, so the city on
+        // 100 is invisible to it however fast it is falling.
+        assert_eq!(
+            frozen.loyalty_emergency(&game, bleeding),
+            None,
+            "a tournament controller must not gain the rate reading"
+        );
+        assert!(
+            frozen.loyalty_emergency(&game, stable).is_some(),
+            "and must still see the low-level city exactly as before"
+        );
+    }
+
+    /// The ordering rule on explicit rates, independent of what any map happens
+    /// to generate.
+    #[test]
+    fn turns_to_flip_orders_loyalty_emergencies() {
+        let (mut game, _, _) = island_colony_game(1);
+        let city = game.player_city_ids(0)[0];
+        let mut ai = BasicAi::new();
+        ai.loyalty_rate_alarm = true;
+
+        // A city that is not falling and is comfortably loyal is not an
+        // emergency at all.
+        game.cities.get_mut(&city).unwrap().loyalty = 100.0;
+        let quiet = ai.loyalty_emergency(&game, city);
+        let rate = game.city_loyalty_per_turn(&game.cities[&city]);
+        assert!(
+            rate >= 0.0,
+            "test precondition changed: this map's lone city is now falling ({rate}/turn)"
+        );
+        assert_eq!(quiet, None, "a stable city on 100 loyalty is not an emergency");
+
+        // Below the old alarm level it is flagged whatever the rate, and always
+        // behind anything actually falling.
+        game.cities.get_mut(&city).unwrap().loyalty = LOYALTY_LEVEL_ALARM - 1.0;
+        let low = ai.loyalty_emergency(&game, city).expect("below the alarm level");
+        assert!(
+            low > 1_000.0,
+            "a stable-but-low city must rank behind any falling city, got {low}"
+        );
+    }
+
     #[test]
     fn ai_reassigns_a_governor_from_a_safe_city_to_a_loyalty_emergency() {
         let (mut game, source, target) = island_colony_game(1);
@@ -8285,7 +8437,7 @@ mod tests {
         game.cities.get_mut(&first).unwrap().loyalty = 100.0;
         game.cities.get_mut(&second).unwrap().loyalty = 35.0;
 
-        assert!(BasicAi::reassign_governor_for_loyalty(&mut game, 0));
+        assert!(BasicAi::new().reassign_governor_for_loyalty(&mut game, 0));
         assert_eq!(
             game.players[0].governor_roster["victor"].city,
             Some(second)
