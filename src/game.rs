@@ -4739,6 +4739,58 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn the_pantheon_price_follows_the_game_speed_like_every_other_cost() {
+        // ⚠⚠⚠ This was a bare `25.0` in the legality gate AND in `do_choose_pantheon`,
+        // while techs, civics and growth beside it all scaled. It cost CIVVIS the
+        // decision outright in live games.
+        //
+        // Measured on live run `civvis-20260803T191900Z` (Online, Rome/Trajan):
+        // Civilization VI raised `ENDTURN_BLOCKING_PANTHEON` on turn 19 at FAITH 11,
+        // and faith went 11 -> 0 when it was taken. CIVVIS wanted 25, so
+        // `ChoosePantheon` never became legal, `civvis_orders` emitted nothing on a
+        // replay of turns 18/19/20, and the mod answered instead by walking
+        // `GameInfo.Beliefs()` and taking the first untaken row — the empire's one
+        // permanent pantheon chosen by database order, in every live game.
+        let (mut game, _) = game_with_capitals(91_762);
+
+        game.game_speed = crate::setup::GameSpeed::Standard;
+        assert_eq!(game.pantheon_faith_cost(), 25.0, "Standard must not move");
+
+        game.game_speed = crate::setup::GameSpeed::Online;
+        assert_eq!(
+            game.pantheon_faith_cost(),
+            12.5,
+            "Online pays half, and 12.5 is the price the host was charging"
+        );
+
+        // The gate and the action must agree, or one of them is decorative.
+        game.players[0].pantheon = None;
+        game.players[0].faith = 13.0;
+        let belief = game.rules.beliefs.pantheon.keys().next().unwrap().clone();
+        assert!(
+            game.legal_actions(0)
+                .iter()
+                .any(|action| matches!(action, Action::ChoosePantheon { .. })),
+            "13 faith on Online is above the real price and must offer the action"
+        );
+        assert!(game.do_choose_pantheon(0, &belief).is_ok());
+
+        // ⚠ And the same faith on Standard must still be refused, or this is not a
+        // scaling fix, it is a discount applied everywhere.
+        let (mut standard, _) = game_with_capitals(91_762);
+        standard.game_speed = crate::setup::GameSpeed::Standard;
+        standard.players[0].pantheon = None;
+        standard.players[0].faith = 13.0;
+        assert!(
+            standard
+                .legal_actions(0)
+                .iter()
+                .all(|action| !matches!(action, Action::ChoosePantheon { .. })),
+            "13 faith is below Standard's 25 and must not offer it"
+        );
+    }
+
+    #[test]
     fn pantheons_spend_faith_grant_units_and_apply_exact_production_gates() {
         for (seed, belief, unit) in [
             (91_760, "fertility_rites", "builder"),
@@ -12977,6 +13029,12 @@ pub struct VictoryRaces {
     pub score_points: i64,
 }
 pub const TOURISM_PER_VISITOR: f64 = 200.0;
+
+/// Faith for a pantheon at STANDARD speed. Read it through
+/// `Game::pantheon_faith_cost`, never directly: the number that matters is this one
+/// scaled by the game's speed, and using the constant raw is the defect that hid
+/// here for the whole project.
+pub const PANTHEON_FAITH_STANDARD: f64 = 25.0;
 const STANDARD_DEAL_TURNS: u32 = 30;
 /// The one-off token costs published for individual diplomatic missions.
 const DELEGATION_GOLD: f64 = 10.0;
@@ -13206,6 +13264,28 @@ impl Game {
         self.game_speed.scale(growth_threshold(population))
     }
 
+    /// Faith needed to found a pantheon, scaled by game speed like every other cost.
+    ///
+    /// ⚠⚠⚠ THIS WAS A BARE `25.0` IN TWO PLACES, AND IT COST CIVVIS THE DECISION
+    /// ENTIRELY IN LIVE GAMES. Every neighbouring cost above already scales — techs,
+    /// civics, growth — and this one did not, so on any speed but Standard CIVVIS
+    /// was asking for a different game's price.
+    ///
+    /// Measured on live run `civvis-20260803T191900Z` (Online speed, Rome/Trajan):
+    /// Civilization VI raised `ENDTURN_BLOCKING_PANTHEON` on **turn 19 at faith 11**,
+    /// and faith went 11 -> 0 when the pantheon was taken. CIVVIS's gate wanted 25,
+    /// so `ChoosePantheon` was never a legal action, `civvis_orders` emitted nothing
+    /// for turns 18/19/20 on replay, and the mod's fallback answered instead — by
+    /// walking `GameInfo.Beliefs()` and taking the FIRST UNTAKEN ROW. The empire's
+    /// one permanent pantheon was chosen by database order, in every live game.
+    ///
+    /// `Online.scale(25.0)` is 12.5, which is the price the host was charging.
+    /// Standard is unchanged at 25.0, so self-play at the default speed is
+    /// untouched; only the speeds that were already wrong move.
+    pub fn pantheon_faith_cost(&self) -> f64 {
+        self.game_speed.scale(PANTHEON_FAITH_STANDARD)
+    }
+
     pub fn standard_duration(&self, turns: u32) -> u32 {
         self.game_speed.scale_turns(turns)
     }
@@ -13363,7 +13443,11 @@ pub struct QueryCache {
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
     // even when a read-only phase asks for the same empire repeatedly.
-    unit_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
+    unit_ids: std::cell::RefCell<Option<BTreeMap<usize, Arc<Vec<u32>>>>>,
+    // Territory access is a unit-level route predicate. Cache it by unit id
+    // while a route call runs, because the same access gates both local and
+    // cached planning steps.
+    unit_territory_access: std::cell::RefCell<Option<BTreeMap<u32, Arc<Vec<bool>>>>>,
     city_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
     // Three empire-wide derivations that callers reach for one city at a
     // time. Each is keyed by player, because that is the scope it is
@@ -13423,6 +13507,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.traversal.borrow_mut() = None;
             *self.game.query_memo.amenities.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
+            *self.game.query_memo.unit_territory_access.borrow_mut() = None;
             *self.game.query_memo.city_ids.borrow_mut() = None;
             *self.game.query_memo.lux_alloc.borrow_mut() = None;
             *self.game.query_memo.lux_names.borrow_mut() = None;
@@ -13540,6 +13625,16 @@ pub struct RoutingCache {
     stamp: u64,
     zones: Vec<(TraversalClass, std::sync::Arc<Vec<u32>>)>,
     paths: Vec<PlannedRoute>,
+}
+
+#[derive(Clone, Default)]
+struct RouteScratch {
+    astar_frontier: BinaryHeap<Reverse<(i32, Reverse<i32>, Pos)>>,
+    bfs_frontier: VecDeque<(Pos, usize)>,
+    path: Vec<Pos>,
+    parent: Vec<u32>,
+    seen: Vec<bool>,
+    distance: Vec<i32>,
 }
 
 #[derive(Clone)]
@@ -16030,6 +16125,8 @@ pub struct Game {
     /// rebuilt on demand whenever the world moves under it.
     #[serde(skip)]
     routing: std::cell::RefCell<RoutingCache>,
+    #[serde(skip)]
+    route_scratch: std::cell::RefCell<RouteScratch>,
     /// Memoized read-only answers; see [`QueryCache`]. Never saved, with
     /// short-lived entries cleared by their guard and production catalogs
     /// cleared by a successful action; empty in any clone.
@@ -16319,6 +16416,44 @@ pub struct Game {
     /// perfect vision of the entire world.
     #[serde(default)]
     pub host_observed: BTreeSet<Pos>,
+    /// Ground a HOST holds for somebody else and will not let this seat's units
+    /// enter, for tiles whose owner [`Game::territory_owner_at`] cannot name.
+    ///
+    /// ★★★★★ THE MISSING MEMBER OF THE `blocked_*` FAMILY, AND THE COMMENT ON
+    /// [`Game::blocked_policies`] already says which one it is: policies were
+    /// "third behind **movement** and `no_params`". Movement is the largest
+    /// refusal category in the ledger and it was the only one with no block set.
+    ///
+    /// The ordinary gate in `can_enter` reads `territory_owner_at`, which resolves
+    /// a tile's owner through `owner_city -> cities -> owner`. A rival whose cities
+    /// this seat has never SEEN has no city on the mirrored board, so their border
+    /// resolves to `None` and reads as free ground. That is a closed loop: their
+    /// border is invisible precisely because we cannot get past it to see the city
+    /// that makes it.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z` (Rome, SETTLER, small).
+    /// Scout `196608` reached offset (12,24) on **turn 42** and was ordered
+    /// `MOVE_TO (11,24)` — one hex — on **74 separate turns** without ever moving;
+    /// at t91 it was upgraded in place and the Skirmisher kept re-sending the same
+    /// step. (11,24) is exported `o: 4`, Kongo's territory, and we were not at war
+    /// and held no open borders. **81 of 670 `MOVE_TO` orders targeted foreign
+    /// ground, every one of them Kongo's, and all 81 were counted `applied` —
+    /// a blocked move is a silent no-op, not a refusal.**
+    ///
+    /// What it cost, in order: exploration flatlined at **283 of 3404 tiles (8.3%)**
+    /// from turn 42; **zero rival cities were observed in 96 snapshots**; with no
+    /// known enemy city `plan.target_city` stayed `None`, so `campaign` fell through
+    /// to `peacetime_step` and all seven combat units garrisoned within three hexes
+    /// of home; and `strategy=conquest` ran for forty turns with `war_legal=9` and
+    /// **no war ever declared**. Of 35 walkable frontier tiles, 21 were sealed
+    /// behind that border — including all six nearest the scout — while 14 neutral
+    /// ones waited at distance 7, leading east into two thirds of an unseen map.
+    ///
+    /// Written fresh from the export every turn rather than accumulated, and never
+    /// written for an owner this seat has access to, so declaring war opens the
+    /// ground on the following turn instead of sealing our own invasion out.
+    #[serde(default)]
+    pub closed_borders: BTreeSet<Pos>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -16620,6 +16755,7 @@ impl From<GameSer> for Game {
             rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
+            route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
@@ -16666,6 +16802,7 @@ impl From<GameSer> for Game {
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: BTreeSet::new(),
             host_observed: BTreeSet::new(),
+            closed_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
@@ -17072,6 +17209,7 @@ impl Game {
             rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
+            route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
@@ -17115,6 +17253,7 @@ impl Game {
             observed_city_max_wall_hp: BTreeMap::new(),
             blocked_city_sites: BTreeSet::new(),
             host_observed: BTreeSet::new(),
+            closed_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
@@ -18551,8 +18690,13 @@ impl Game {
         self.city_by_pos.get(&pos).copied()
     }
 
+    pub fn unit_ids_at(&self, pos: Pos) -> &[u32] {
+        const EMPTY: &[u32] = &[];
+        self.occ.get(&pos).map_or(EMPTY, Vec::as_slice)
+    }
+
     pub fn units_at(&self, pos: Pos) -> Vec<u32> {
-        self.occ.get(&pos).cloned().unwrap_or_default()
+        self.unit_ids_at(pos).to_vec()
     }
 
     pub fn player_unit_ids(&self, pid: usize) -> Vec<u32> {
@@ -18563,18 +18707,46 @@ impl Game {
             .as_ref()
             .and_then(|memo| memo.get(&pid))
         {
-            return ids.clone();
+            return ids.as_ref().clone();
         }
-        let ids: Vec<u32> = self
-            .units
-            .values()
-            .filter(|u| u.owner == pid)
-            .map(|u| u.id)
-            .collect();
+        let ids = Arc::new(
+            self
+                .units
+                .values()
+                .filter(|u| u.owner == pid)
+                .map(|u| u.id)
+                .collect::<Vec<u32>>(),
+        );
+        let owned = ids.as_ref().clone();
         if let Some(memo) = self.query_memo.unit_ids.borrow_mut().as_mut() {
             memo.insert(pid, ids.clone());
         }
-        ids
+        owned
+    }
+
+    fn unit_territory_access(&self, unit: &Unit) -> Arc<Vec<bool>> {
+        if let Some(access) = self
+            .query_memo
+            .unit_territory_access
+            .borrow()
+            .as_ref()
+            .and_then(|memo| memo.get(&unit.id))
+        {
+            return access.clone();
+        }
+        let access: Arc<Vec<bool>> = Arc::new(
+            (0..self.players.len())
+                .map(|owner| self.unit_has_territory_access(unit, owner))
+                .collect(),
+        );
+        if let Some(memo) = self.query_memo
+            .unit_territory_access
+            .borrow_mut()
+            .as_mut()
+        {
+            memo.insert(unit.id, access.clone());
+        }
+        access
     }
 
     pub fn player_city_ids(&self, pid: usize) -> Vec<u32> {
@@ -21906,8 +22078,12 @@ impl Game {
         if self.players[pid].pantheon.is_some() {
             return Err("pantheon already chosen".into());
         }
-        if self.players[pid].faith < 25.0 {
-            return Err("needs 25 faith".into());
+        let cost = self.pantheon_faith_cost();
+        if self.players[pid].faith < cost {
+            // ⚠ The price, not a literal. The old message said "needs 25 faith" on
+            // every speed, so a refusal on Online named a number the game was not
+            // charging and read as a CIVVIS bug rather than a scaling one.
+            return Err(format!("needs {cost:.0} faith").into());
         }
         if !self.rules.beliefs.pantheon.contains_key(belief) {
             return Err("no such pantheon belief".into());
@@ -31329,11 +31505,26 @@ impl Game {
         {
             return false;
         }
-        if self
-            .territory_owner_at(pos)
-            .is_some_and(|owner| !self.unit_has_territory_access(u, owner))
-        {
-            return false;
+        match self.territory_owner_at(pos) {
+            // The owner is on the board, so ordinary diplomacy is authoritative.
+            Some(owner) => {
+                if !self.unit_has_territory_access(u, owner) {
+                    return false;
+                }
+            }
+            // Nobody on this board holds it — but a live host may still say
+            // somebody does, and a border whose owning city has never been seen
+            // resolves to `None` here. See [`Game::closed_borders`]: without this
+            // arm a scout re-sends the same one-hex step for fifty turns while
+            // the empire goes blind. Empty in an ordinary CIVVIS game.
+            None => {
+                if !self.closed_borders.is_empty()
+                    && self.closed_borders.contains(&pos)
+                    && !self.unit_ignores_closed_borders(u)
+                {
+                    return false;
+                }
+            }
         }
         for oid in self.units_at(pos) {
             let o = &self.units[&oid];
@@ -31602,7 +31793,7 @@ impl Game {
         {
             return None;
         }
-        let access_key = self.route_access_key(unit, &territory_access);
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
         let cached_step = {
             let routing = self.routing.borrow();
             routing
@@ -31640,21 +31831,31 @@ impl Game {
         let _memo = self.query_memo();
         let tile_count = self.map.tiles.len();
         let start_index = self.map.tiles.index_of(start)?;
-        let mut frontier = BinaryHeap::with_capacity(128);
-        let mut distance: Vec<i32> = vec![UNREACHED; tile_count];
-        let mut parent: Vec<u32> = vec![NO_PARENT; tile_count];
-        distance[start_index] = 0;
+        let mut scratch = self.route_scratch.borrow_mut();
+        if scratch.parent.len() < tile_count {
+            scratch.parent.resize(tile_count, NO_PARENT);
+        }
+        if scratch.distance.len() < tile_count {
+            scratch.distance.resize(tile_count, UNREACHED);
+        }
+        for slot in 0..tile_count {
+            scratch.parent[slot] = NO_PARENT;
+            scratch.distance[slot] = UNREACHED;
+        }
+        scratch.astar_frontier.clear();
+        scratch.path.clear();
+        scratch.distance[start_index] = 0;
         // On equal f-scores, prefer the node furthest along the route. This
         // avoids breadth-first expansion of an entire open plain/ocean before
         // following one of several equally short paths to the destination.
-        frontier.push(Reverse((self.wdist(start, to), Reverse(0), start)));
+        scratch.astar_frontier.push(Reverse((self.wdist(start, to), Reverse(0), start)));
 
         let mut goal = None;
-        while let Some(Reverse((_, Reverse(traveled), cur))) = frontier.pop() {
+        while let Some(Reverse((_, Reverse(traveled), cur))) = scratch.astar_frontier.pop() {
             let Some(cur_index) = self.map.tiles.index_of(cur) else {
                 continue;
             };
-            if traveled != distance[cur_index] {
+            if traveled != scratch.distance[cur_index] {
                 continue;
             }
             if self.wdist(cur, to) <= range {
@@ -31672,35 +31873,36 @@ impl Game {
                     continue;
                 };
                 let next_distance = traveled + 1;
-                if next_distance >= distance[index] {
+                if next_distance >= scratch.distance[index] {
                     continue;
                 }
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n, &territory_access)
+                    self.can_path_through(uid, cur, n, territory_access.as_slice())
                 };
                 if !enterable {
                     continue;
                 }
-                distance[index] = next_distance;
-                parent[index] = cur_index as u32;
+                scratch.distance[index] = next_distance;
+                scratch.parent[index] = cur_index as u32;
                 let estimate = next_distance + (self.wdist(n, to) - range).max(0);
-                frontier.push(Reverse((estimate, Reverse(next_distance), n)));
+                scratch.astar_frontier.push(Reverse((estimate, Reverse(next_distance), n)));
             }
         }
         let mut cursor = goal?;
-        let mut reverse_path = vec![self.map.tiles.values().as_slice()[cursor].pos];
+        let map_tiles = self.map.tiles.values().as_slice();
+        scratch.path.push(map_tiles[cursor].pos);
         while cursor != start_index {
-            let previous = parent[cursor];
+            let previous = scratch.parent[cursor];
             if previous == NO_PARENT {
                 return None;
             }
             cursor = previous as usize;
-            reverse_path.push(self.map.tiles.values().as_slice()[cursor].pos);
+            scratch.path.push(map_tiles[cursor].pos);
         }
-        reverse_path.reverse();
-        let step = *reverse_path.get(1)?;
+        scratch.path.reverse();
+        let step = *scratch.path.get(1)?;
         let mut routing = self.routing.borrow_mut();
         routing.paths.retain(|route| route.unit != uid);
         routing.paths.push(PlannedRoute {
@@ -31708,7 +31910,7 @@ impl Game {
             target: to,
             range,
             access_key,
-            path: reverse_path,
+            path: std::mem::take(&mut scratch.path),
         });
         Some(step)
     }
@@ -31726,12 +31928,6 @@ impl Game {
             key = vision_key(&[key, city.id as u64, city.owner as u64]);
         }
         key
-    }
-
-    fn unit_territory_access(&self, unit: &Unit) -> Vec<bool> {
-        (0..self.players.len())
-            .map(|owner| self.unit_has_territory_access(unit, owner))
-            .collect()
     }
 
     /// Terrain/domain legality for future route segments. Dynamic unit
@@ -31894,16 +32090,29 @@ impl Game {
         // `unit_can_traverse`, which rejects a position the grid does not
         // hold — so an index always exists for a reachable neighbour.
         const NO_PARENT: u32 = u32::MAX;
+        const UNREACHED: i32 = i32::MAX;
         let tile_count = self.map.tiles.len();
-        let mut parent: Vec<u32> = vec![NO_PARENT; tile_count];
-        let mut seen: Vec<bool> = vec![false; tile_count];
-        let mut queue = VecDeque::new();
+        let mut scratch = self.route_scratch.borrow_mut();
+        if scratch.parent.len() < tile_count {
+            scratch.parent.resize(tile_count, NO_PARENT);
+        }
+        if scratch.distance.len() < tile_count {
+            scratch.distance.resize(tile_count, UNREACHED);
+        }
+        if scratch.seen.len() < tile_count {
+            scratch.seen.resize(tile_count, false);
+        }
+        for slot in 0..tile_count {
+            scratch.parent[slot] = NO_PARENT;
+            scratch.seen[slot] = false;
+        }
+        scratch.bfs_frontier.clear();
         let start_index = self.map.tiles.index_of(start)?;
-        seen[start_index] = true;
-        queue.push_back((start, start_index));
+        scratch.seen[start_index] = true;
+        scratch.bfs_frontier.push_back((start, start_index));
 
         let mut goal = None;
-        'search: while let Some((cur, cur_index)) = queue.pop_front() {
+        'search: while let Some((cur, cur_index)) = scratch.bfs_frontier.pop_front() {
             for n in self.nbrs(cur) {
                 // Settle the cheap disqualifiers before asking whether the
                 // unit may enter. Every interior tile is reached as a
@@ -31917,30 +32126,30 @@ impl Game {
                 let Some(index) = self.map.tiles.index_of(n) else {
                     continue;
                 };
-                if seen[index] {
+                if scratch.seen[index] {
                     continue;
                 }
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n, &territory_access)
+                    self.can_path_through(uid, cur, n, territory_access.as_slice())
                 };
                 if !enterable {
                     continue;
                 }
-                seen[index] = true;
-                parent[index] = cur_index as u32;
+                scratch.seen[index] = true;
+                scratch.parent[index] = cur_index as u32;
                 if is_goal(n) {
                     goal = Some(index);
                     break 'search;
                 }
-                queue.push_back((n, index));
+                scratch.bfs_frontier.push_back((n, index));
             }
         }
 
         let mut step = goal?;
-        while parent[step] != start_index as u32 {
-            let previous = parent[step];
+        while scratch.parent[step] != start_index as u32 {
+            let previous = scratch.parent[step];
             if previous == NO_PARENT {
                 return None;
             }
@@ -34363,6 +34572,7 @@ impl Game {
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.city_ids.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.lux_alloc.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.lux_names.borrow_mut() = Some(BTreeMap::new());
@@ -38617,7 +38827,11 @@ impl Game {
                     });
                 }
             }
-            if !p.is_minor && !p.is_barbarian && p.pantheon.is_none() && p.faith >= 25.0 {
+            if !p.is_minor
+                && !p.is_barbarian
+                && p.pantheon.is_none()
+                && p.faith >= self.pantheon_faith_cost()
+            {
                 for b in self.rules.beliefs.pantheon.keys() {
                     if !self
                         .players

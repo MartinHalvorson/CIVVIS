@@ -4134,6 +4134,122 @@ mod tests {
         );
     }
 
+    /// ★★★★★ A RIVAL'S BORDER IS INVISIBLE PRECISELY BECAUSE IT IS IN THE WAY.
+    ///
+    /// `can_enter` reads `territory_owner_at`, which resolves a plot through
+    /// `owner_city -> cities -> owner`. A rival whose cities this seat has never
+    /// SEEN owns no city on the mirrored board, so their border resolves to `None`
+    /// and reads as free ground — and we cannot see the city that would fix that,
+    /// because the border is what stops us walking to it.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z` (Rome, SETTLER, small).
+    /// Scout `196608` reached offset (12,24) on turn 42 and was ordered
+    /// `MOVE_TO (11,24)` — one hex — on **74 separate turns** without ever moving.
+    /// (11,24) is exported `o: 4`: Kongo's, with no war and no open borders.
+    /// **81 of 670 `MOVE_TO` orders targeted foreign ground and all 81 were
+    /// counted `applied`** — a blocked move is a silent no-op, not a refusal, so
+    /// every turn read as healthy while the empire went blind. Exploration
+    /// flatlined at 283 of 3404 tiles, no rival city was seen in 96 snapshots,
+    /// `plan.target_city` stayed `None`, and forty turns of `strategy=conquest`
+    /// with `war_legal=9` produced no war at all.
+    ///
+    /// ⚠ Asserted through `can_move`, not against `closed_borders` directly, for
+    /// the same reason the border-growth test above asserts through
+    /// `valid_improvements`: the field only matters where it is consulted, and a
+    /// test on the field alone would pass on a set nothing reads.
+    #[test]
+    fn a_rival_border_whose_city_is_unseen_still_stops_the_unit() {
+        let owned = |x: i32, y: i32, owner: i32| {
+            let mut p = plot(x, y, "TERRAIN_GRASS");
+            p.o = owner;
+            p
+        };
+        let snapshot = Snapshot::from_chunks(&[TilesChunk {
+            turn: 12,
+            width: 20,
+            height: 20,
+            chunk: 1,
+            plots: vec![owned(5, 5, 0), owned(5, 6, 3), owned(4, 5, -1)],
+        }]);
+        let mut state = StateSnapshot {
+            turn: 12,
+            ..StateSnapshot::default()
+        };
+        state.cities.push(StateCity {
+            id: 1,
+            name: "Roma".to_string(),
+            x: 5,
+            y: 5,
+            pop: 4,
+            ..StateCity::default()
+        });
+        state.units.push(StateUnit {
+            id: 10,
+            kind: "UNIT_SCOUT".to_string(),
+            x: 5,
+            y: 5,
+            hp: 100.0,
+            ..StateUnit::default()
+        });
+        // Met, nameable, and NOT at war — but not one of their cities is in sight,
+        // which is the whole condition. `cities` is deliberately empty.
+        state.rivals.push(StateRival {
+            player: 3,
+            at_war: false,
+            cities: Vec::new(),
+            ..StateRival::default()
+        });
+
+        let mut mirror = LiveMirror::new(&snapshot, &state, 4, 1, 500, 0);
+        let theirs = crate::hex::offset_to_axial(5, 6);
+        let neutral = crate::hex::offset_to_axial(4, 5);
+        let scout = *mirror
+            .game
+            .player_unit_ids(0)
+            .first()
+            .expect("the scout must reach the board");
+
+        assert!(
+            mirror.game.map.get(theirs).is_some_and(|t| t.owner_city.is_none()),
+            "their plot has no owning city on this board — that is the premise, not \
+             the defect: we have never seen the city that holds it"
+        );
+        assert!(
+            !mirror.game.can_move(scout, theirs),
+            "a rival's ground must stop the unit even when the mirror cannot name the \
+             city that owns it — before this fix the step was legal on CIVVIS's board, \
+             was ordered 74 times on one live run, and silently did nothing every time"
+        );
+        assert!(
+            mirror.game.can_move(scout, neutral),
+            "genuinely neutral ground must stay open, or the fix would seal the empire \
+             in instead of the border out"
+        );
+
+        // ★ And war must OPEN it again on the next sync. The seat is named, so its
+        // diplomacy is answerable even with its cities unseen; sealing ground we have
+        // just declared war on would lock our own invasion out — which is a worse
+        // failure than the one being repaired.
+        state.rivals[0].at_war = true;
+        state.turn = 13;
+        mirror.sync(&snapshot, &state, 0);
+        let scout = *mirror
+            .game
+            .player_unit_ids(0)
+            .first()
+            .expect("the scout survives the sync");
+        assert!(
+            !mirror.game.closed_borders.contains(&theirs),
+            "war opens the border: the seal is recomputed from the export every turn \
+             and must not outlive the peace that justified it"
+        );
+        assert!(
+            mirror.game.can_move(scout, theirs),
+            "once at war the unit must be able to cross — the repair must not cost us \
+             the invasion it exists to make possible"
+        );
+    }
+
     #[test]
     fn sync_discards_units_that_only_civvis_simulated_from_production() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -9744,6 +9860,12 @@ fn apply_territory(
     let mut assign: Vec<(crate::Pos, Option<u32>)> = Vec::new();
     // Ground somebody else holds that we cannot attribute to a mirrored seat.
     let mut blocked: std::collections::BTreeSet<crate::Pos> = Default::default();
+    // The same ground, minus whatever this seat may already walk through. See
+    // [`crate::game::Game::closed_borders`]: `blocked` answers "cannot found
+    // here", which is not the same question as "cannot enter here" — war and
+    // open borders open the second while leaving the first shut, and a settler
+    // barred by loyalty is barred from founding on ground it may cross freely.
+    let mut sealed: std::collections::BTreeSet<crate::Pos> = Default::default();
     for y in 0..snapshot.height.max(1) {
         for x in 0..snapshot.width.max(1) {
             let Some(plot) = snapshot.plot((x, y)) else {
@@ -9783,6 +9905,18 @@ fn apply_territory(
                 // we do not know where their city is and a phantom owner is worse than
                 // a known prohibition.
                 blocked.insert(pos);
+                // Nobody we can name holds it, so there is no diplomacy to
+                // consult and no war that could have opened it. A city-state's
+                // land is shut to us until we are its Suzerain, which is the
+                // conservative reading and the one that matches the settler
+                // stall this arm was written for.
+                sealed.insert(pos);
+                // ⚠ And it is certainly not OURS. `place_city` hands a mirrored
+                // city its whole first ring, so a rival or minor plot that falls
+                // inside one reads back as our own territory — worse than the
+                // "reads unowned" error this function was written to fix, because
+                // it inflates the yields and workable tiles we plan on. Strip it.
+                assign.push((pos, None));
                 continue;
             };
             // The city that would work it: the owner's nearest. Civ 6 records only
@@ -9802,10 +9936,34 @@ fn apply_territory(
                 // would re-open the exact hole the unattributable arm above
                 // closes.
                 blocked.insert(pos);
+                // ...and not ours to walk into either, unless we are at war.
+                // Asking here rather than in `can_enter` is what keeps a
+                // declaration of war from sealing our own invasion out: the seat
+                // is named, so `at_war` is answerable from the export even
+                // though their cities are unseen.
+                //
+                // ⚠ `has_open_borders` is deliberately NOT consulted. It returns
+                // TRUE whenever the owner has no `open_borders` tree effect —
+                // the correct Civ 6 rule that a civ without Early Empire has no
+                // enforced border — and this mirror does not model a RIVAL's
+                // civics, so it answers "free passage" for every rival by
+                // default. Consulting it would defeat the seal in exactly the
+                // live case it exists for. Sealing ground we could in truth have
+                // crossed costs a peacetime shortcut; not sealing it cost 74
+                // turns of a scout re-sending one blocked step.
+                if !game.is_at_war(0, seat) {
+                    sealed.insert(pos);
+                }
+                // Nor ours to count as territory — see the arm above.
+                assign.push((pos, None));
             }
         }
     }
     game.blocked_city_sites.extend(blocked);
+    // Assigned, not extended: recomputed from the export every turn, so ground
+    // that opens — a war declared, borders granted, or simply their city coming
+    // into view so the ordinary gate takes over — stops being sealed next turn.
+    game.closed_borders = sealed;
     for (pos, owner) in assign {
         let previous = game.map.tiles.get(&pos).and_then(|tile| tile.owner_city);
         if previous == owner {
