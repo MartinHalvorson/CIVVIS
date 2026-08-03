@@ -400,8 +400,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// flag is `false` in both `BasicAi` constructors and `loyalty_emergency`
 /// returns the old level-only answer on it before reading any rate, so every
 /// configured, legacy and Elo agent behaves identically. A compatibility re-pin.
+///
+/// #984 credits a movement tile for the attack it opens, behind
+/// `strike_opening` — `false` in `AdvancedAi::new()` and set only by
+/// `enable_live_bridge`. `strike_opening_value` returns 0.0 on that flag
+/// before it reads the board, so every configured, legacy and Elo agent scores
+/// every tile exactly as it did. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdc56_bcfe_5dd3_b5d0;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x07d8_de22_7c72_0b3f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
