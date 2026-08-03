@@ -124,8 +124,8 @@ GitHub main commit
   on the code it loaded; announce a newer green build and reload only after the
   player has saved.
 - Keep assets same-origin. Content-hash immutable wasm/JS/art; revalidate the
-  small HTML/version manifest. Lazy-load cinematic and wonder atlases so a
-  strategic-map player does not pay the entire art download at startup.
+  small HTML/version manifest. Lazy-load strategic map atlases so the initial
+  command surface remains quick to open.
 
 ### Implementation sequence
 
