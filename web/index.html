@@ -15552,31 +15552,27 @@ function drawEmpireDetailsPlanet(cells) {
   cx.restore();
 }
 
-const SETTLER_LENS_BANDS = [
-  {at:.78, fill:"#20df78", alpha:.91},
-  {at:.52, fill:"#61cd58", alpha:.87},
-  {at:.26, fill:"#c4c447", alpha:.83},
-  {at:0,   fill:"#db8c3f", alpha:.80},
-];
-function settleLensStyle(quality) {
-  const q = Math.max(0, Math.min(1, quality));
-  return SETTLER_LENS_BANDS.find(band => q >= band.at) ||
-    SETTLER_LENS_BANDS[SETTLER_LENS_BANDS.length - 1];
+// Civ 6's Settler lens is a water-availability guide, not a desirability
+// heatmap. It deliberately reuses the Appeal lens's dark green, light green,
+// gray and red: fresh water, coastal water, no water and unavailable ground.
+const SETTLER_LENS_STYLES = {
+  fresh:   {fill:"#176a3a", alpha:.90, label:"Fresh water", housing:3},
+  coast:   {fill:"#65ad5a", alpha:.86, label:"Coastal water", housing:1},
+  dry:     {fill:"#8b8f8a", alpha:.80, label:"No water access", housing:0},
+  blocked: {fill:"#b73535", alpha:.88, label:"Settlement unavailable", housing:0},
+};
+function settleLensStyle(water) {
+  return SETTLER_LENS_STYLES[water] || SETTLER_LENS_STYLES.dry;
 }
-function settleWaterColor(water) {
-  return water === "fresh" ? "#75ddff" : water === "coast" ? "#8de4cf" : "#edbb62";
+function paintSettlerLensTile(path, style, scale) {
+  path(); cx.fillStyle = style.fill; cx.globalAlpha = style.alpha; cx.fill();
+  // Keep individual hexes readable through the opaque Civ 6 category colors.
+  path(); cx.strokeStyle = "#13201c"; cx.globalAlpha = .38;
+  cx.lineWidth = .9 * scale; cx.stroke();
+  cx.globalAlpha = 1;
 }
 function drawSettlerLensSite(path, site, lens, scale, center) {
-  const quality = settleSiteQuality(site, lens);
-  const style = settleLensStyle(quality);
-  path(); cx.fillStyle = style.fill; cx.globalAlpha = style.alpha; cx.fill();
-  // A dark keyline keeps the water-access color readable over every quality
-  // band instead of letting hundreds of pale outlines dissolve into terrain.
-  path(); cx.strokeStyle = "#10231d"; cx.globalAlpha = .92;
-  cx.lineWidth = 3.4 * scale; cx.stroke();
-  path(); cx.strokeStyle = settleWaterColor(site.water); cx.globalAlpha = 1;
-  cx.lineWidth = 1.8 * scale; cx.stroke();
-  cx.globalAlpha = 1;
+  paintSettlerLensTile(path, settleLensStyle(site.water), scale);
   if (!center || !settleSiteIsRecommended(site, lens)) return;
   const [x, y, radius] = center;
   cx.save();
@@ -15594,8 +15590,9 @@ function drawPlanetSettlerLens(cells) {
     const site = lens.sites.get(key(cell.tile.pos));
     if (!site) {
       if (isWater(cell.tile)) continue;
-      planetPaintPath(cx, cell, .15);
-      cx.fillStyle = "rgba(18,17,22,.76)"; cx.fill();
+      paintSettlerLensTile(
+        () => planetPaintPath(cx, cell, .15), SETTLER_LENS_STYLES.blocked,
+        Math.max(.62, Math.min(1.15, planetCellInradius(cell) / 12)));
       continue;
     }
     const inradius = planetCellInradius(cell);
@@ -15616,7 +15613,8 @@ function drawSettlerLensFlat(tiles) {
     const site = lens.sites.get(key(tile.pos));
     if (!site) {
       if (isWater(tile)) continue;
-      hexPath(x, y, S + .2); cx.fillStyle = "rgba(18,17,22,.76)"; cx.fill();
+      paintSettlerLensTile(
+        () => hexPath(x, y, S + .2), SETTLER_LENS_STYLES.blocked, UI_K());
       continue;
     }
     drawSettlerLensSite(() => hexPath(x, y, S + .2), site, lens, UI_K(),
@@ -21622,7 +21620,7 @@ const MAP_LENS_INFO = {
   religion:"RELIGION LENS — territory follows its majority faith · city rings show pressure distribution",
   continent:"CONTINENT LENS — each geographic continent has one color · water remains blue",
   appeal:"APPEAL LENS — dark green Breathtaking · green Charming · gray Average · orange Uninviting · red Disgusting",
-  settler:"SETTLER — orange→green quality · blue/teal/ochre: fresh/coast/dry · targets: best",
+  settler:"SETTLER — dark green fresh +3 Housing · light green coast +1 · gray dry +0 · red unavailable",
   government:"GOVERNMENT LENS — territory is grouped by its civilization's current government",
   political:"POLITICAL LENS — territory uses civilization colors · city-states are dark",
   tourism:"TOURISM LENS — highlighted tiles show exact current Tourism per turn",
@@ -21633,8 +21631,14 @@ for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++)
   if (Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r)) <= 2)
     SETTLE_DISK.push([q, r]);
 function settleWaterAccess(t) {
-  if (t.river || DIRS.some(d => nbrTile(t.pos, d)?.feature === "oasis")) return "fresh";
-  if (DIRS.some(d => { const n = nbrTile(t.pos, d); return n && isWater(n); })) return "coast";
+  if (t.river || DIRS.some(d => {
+    const n = nbrTile(t.pos, d);
+    return n && (n.terrain === "lake" || n.feature === "oasis");
+  })) return "fresh";
+  if (DIRS.some(d => {
+    const n = nbrTile(t.pos, d);
+    return n && (n.terrain === "coast" || n.terrain === "ocean");
+  })) return "coast";
   return "dry";
 }
 function settleValue(pos) {
@@ -21687,7 +21691,7 @@ function settlerLensSites() {
   const recommended = new Set();
   const lens = {state, rules:RULES, sites, recommended, low, high};
   for (const site of sites.values()) {
-    if (settleSiteQuality(site, lens) < .68) continue;
+    if (settleRecommendationQuality(site, lens) < .68) continue;
     const siteKey = key(site.tile.pos);
     let localBest = true;
     for (const offset of SETTLE_DISK) {
@@ -21706,7 +21710,7 @@ function settlerLensSites() {
   settleLensCache = lens;
   return settleLensCache;
 }
-function settleSiteQuality(site, lens = settlerLensSites()) {
+function settleRecommendationQuality(site, lens = settlerLensSites()) {
   return Math.max(0, Math.min(1, (site.value - lens.low) / (lens.high - lens.low)));
 }
 function settleSiteIsRecommended(site, lens = settlerLensSites()) {
@@ -23411,9 +23415,11 @@ function tileTipLines(t, pos, tileKey) {
   if (mapLens === "settler") {
     const lens = settlerLensSites();
     const site = lens.sites.get(tileKey);
-    if (site) lines.push(`⌂ Settlement quality ${Math.round(settleSiteQuality(site, lens) * 100)}/100 · ` +
-      (site.water === "fresh" ? "fresh water" : site.water === "coast" ? "coastal water" : "no water") +
-      (settleSiteIsRecommended(site, lens) ? " · local best" : ""));
+    if (site) {
+      const water = settleLensStyle(site.water);
+      lines.push(`⌂ ${water.label} · +${water.housing} Housing from water` +
+        (settleSiteIsRecommended(site, lens) ? " · recommended site" : ""));
+    }
     else lines.push("⌂ Settlement unavailable");
   }
 
