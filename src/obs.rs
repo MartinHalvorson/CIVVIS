@@ -601,6 +601,18 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             "exoplanet_launched": p.exoplanet_target.is_some(),
             "exoplanet_surveyed": g.exoplanet_survey(pid).len(),
             "exoplanet_roster": EXOPLANET_TARGETS.len(),
+            // The Moon, in the Modified Future Era. The piles are one shared
+            // body rather than this civilization's holdings, so they are
+            // reported to everybody who can see the Moon at all — knowing how
+            // much a rival has already taken out is most of what makes the
+            // race a race. Empty in a classic game, where the Moon has no ore.
+            "moon_deposits": g.moon_ores().iter()
+                .map(|ore| json!({"id": ore, "left": round1(g.moon_deposit(ore))}))
+                .collect::<Vec<_>>(),
+            "mass_drivers": g.mass_drivers(pid),
+            "mass_driver_site": p.mass_driver_site,
+            "mass_driver_ore": p.mass_driver_ore,
+            "mass_driver_shots": p.mass_driver_shots,
             "pantheon": p.pantheon,
             "religion": p.religion,
             "religion_beliefs": p.religion_beliefs,
