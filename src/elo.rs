@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 87] = [
+pub const EVAL_ONLY_AIS: [&str; 91] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -46,6 +46,10 @@ pub const EVAL_ONLY_AIS: [&str; 87] = [
     "live_without_home_defense",
     "live_without_solvent_faith_army",
     "live_without_siege_muster",
+    "live_without_bounded_recovery",
+    "live_without_army_target_weighs_enemy",
+    "live_without_siege_tracks_wall",
+    "live_without_blind_objective_strength",
     "live_without_loyalty_rate_alarm",
     "basic_evolved",
     "advanced_policy_live_control",
@@ -188,6 +192,10 @@ define_arm_kinds! {
     LiveWithoutHomeDefense => "live_without_home_defense",
     LiveWithoutSolventFaithArmy => "live_without_solvent_faith_army",
     LiveWithoutSiegeMuster => "live_without_siege_muster",
+    LiveWithoutBoundedRecovery => "live_without_bounded_recovery",
+    LiveWithoutArmyTargetWeighsEnemy => "live_without_army_target_weighs_enemy",
+    LiveWithoutSiegeTracksWall => "live_without_siege_tracks_wall",
+    LiveWithoutBlindObjectiveStrength => "live_without_blind_objective_strength",
     LiveWithoutLoyaltyRateAlarm => "live_without_loyalty_rate_alarm",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -2035,6 +2043,30 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_siege_muster();
             Box::new(ai)
         }
+        "live_without_bounded_recovery" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_bounded_recovery();
+            Box::new(ai)
+        }
+        "live_without_army_target_weighs_enemy" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_army_target_weighs_the_enemy();
+            Box::new(ai)
+        }
+        "live_without_siege_tracks_wall" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_siege_tracks_the_wall();
+            Box::new(ai)
+        }
+        "live_without_blind_objective_strength" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_blind_objective_strength();
+            Box::new(ai)
+        }
         "live_without_loyalty_rate_alarm" => {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge();
@@ -2697,6 +2729,10 @@ impl ArmKind {
             Self::LiveWithoutSolventFaithArmy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "loyalty-rate-alarm"],
             Self::LiveWithoutSiegeMuster => &["live-trader-route", "live-religious-purchase", "home-defense", "recorded-tactical-step", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm"],
             Self::LiveWithoutLoyaltyRateAlarm => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
+            Self::LiveWithoutBoundedRecovery => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm"],
+            Self::LiveWithoutArmyTargetWeighsEnemy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm"],
+            Self::LiveWithoutSiegeTracksWall => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "bounded-recovery", "army-target-weighs-enemy", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm"],
+            Self::LiveWithoutBlindObjectiveStrength => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "solvent-faith-army", "loyalty-rate-alarm"],
             Self::AdvancedBeliefPressure => &["belief-pressure"],
             // `advanced` now owns the confirmed Live + infrastructure +
             // priority composite. The retained arms below are therefore
@@ -3212,6 +3248,10 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_home_defense" => (Vec::new(), "live_without_home_defense"),
         "live_without_solvent_faith_army" => (Vec::new(), "live_without_solvent_faith_army"),
         "live_without_siege_muster" => (Vec::new(), "live_without_siege_muster"),
+        "live_without_bounded_recovery" => (Vec::new(), "live_without_bounded_recovery"),
+        "live_without_army_target_weighs_enemy" => (Vec::new(), "live_without_army_target_weighs_enemy"),
+        "live_without_siege_tracks_wall" => (Vec::new(), "live_without_siege_tracks_wall"),
+        "live_without_blind_objective_strength" => (Vec::new(), "live_without_blind_objective_strength"),
         "live_without_loyalty_rate_alarm" => (Vec::new(), "live_without_loyalty_rate_alarm"),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_belief_pressure" => (Vec::new(), "advanced_belief_pressure"),
@@ -4310,7 +4350,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 54] = [
+            const SCRIPTED: [&str; 58] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4366,6 +4406,10 @@ mod tests {
                 "live",
                 "live_without_home_defense",
                 "live_without_siege_muster",
+                "live_without_bounded_recovery",
+                "live_without_army_target_weighs_enemy",
+                "live_without_siege_tracks_wall",
+                "live_without_blind_objective_strength",
                 "live_without_loyalty_rate_alarm",
                 "live_without_solvent_faith_army",
                 "random",

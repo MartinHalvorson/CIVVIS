@@ -400,8 +400,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// flag is `false` in both `BasicAi` constructors and `loyalty_emergency`
 /// returns the old level-only answer on it before reading any rate, so every
 /// configured, legacy and Elo agent behaves identically. A compatibility re-pin.
+///
+/// #990 adds four `disable_*` methods so every flag in `enable_live_bridge` has a
+/// measurement arm. They are called only by `builtin_ai`'s `live_without_*`
+/// factories, never in play, so every configured, legacy and Elo agent is
+/// byte-identical. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdc56_bcfe_5dd3_b5d0;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd9d2_a1a6_14c4_3162;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
