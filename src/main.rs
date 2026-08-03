@@ -328,13 +328,30 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy anchor takes the same `Some(g.city_strength(city))` arm it always
 /// took and is byte-identical twice over. A compatibility re-pin.
 ///
+/// #963 sizes the siege train against the target city's standing wall, behind
+/// `siege_tracks_the_wall` — `false` in `AdvancedAi::new()` and set only by
+/// `civvis_orders`. `siege_units_wanted` returns the shipped
+/// `usize::from(plan.target_city.is_some())` on that flag before it reads the
+/// board, so the legacy anchor's production value is bit-for-bit what it was.
+/// A compatibility re-pin.
+/// #819 routes `BasicAi::tactical_step` and the Advanced force mover through
+/// `path_move` so a unit stepped twice in one turn cannot reverse its own
+/// first step, behind `recorded_tactical_step` — `false` at both `BasicAi`
+/// construction sites and set only by `civvis_orders`. Unlike the flags
+/// above, this one guards a call that can *refuse*: `path_move` rejects a
+/// reversal, a retread, or a minor leaving its defense area where the raw
+/// `g.apply(Move)` would have moved. `tactical_apply_move` therefore returns
+/// the historical raw apply on the flag before it reaches `path_move` at all,
+/// so `advanced_v1` takes byte-for-byte the arm it always took. A
+/// compatibility re-pin.
+///
 /// #974 adds a `Cities/Decision` journal line to `advanced_production`, which
 /// had none. It is inside `if self.journal().wants(Decision)` and writes only
 /// to the reasoning journal — no board state is read or changed, and the
 /// legacy anchor's chosen item is bit-for-bit what it was. A compatibility
 /// re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xedc5_6a19_710f_4a00;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa25c_f26b_6d5c_e6b3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

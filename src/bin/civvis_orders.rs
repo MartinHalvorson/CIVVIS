@@ -784,6 +784,18 @@ fn decide(
     // which for a deployed army is always the enemy's cities. The tournament
     // controller stays frozen so its recorded ladders remain comparable.
     ai.enable_home_defense();
+    // ⚠ A tactical step applied raw records nothing, so when a unit with
+    // movement left is stepped a second time in the same turn, the reversal
+    // guard inside `path_move` cannot see where it came from — and round two
+    // walks straight back onto the tile round one just left. Net zero ground,
+    // two emitted orders, and Civilization VI refuses the second as a MOVE_TO
+    // of the unit's own tile. Measured on the replay of run
+    // `civvis-20260801T224944Z`: 217 of 217 refused moves were exactly that
+    // out-and-back pair, 88 same-turn pairs in all, of which 50 came from the
+    // Advanced force mover alone; self-tile orders fell 43 → 1 and pairs
+    // 88 → 1 with the steps recorded. The tournament controller stays frozen
+    // so its recorded ladders replay move-for-move.
+    ai.enable_recorded_tactical_step();
     // ⚠ `assess` drops the empire into Recovery whenever it is at war and
     // `my_power * 1.25 < strongest_rival`, and Recovery does not build an army —
     // so the test stays true because of the choice it caused. Measured on run
@@ -793,6 +805,15 @@ fn decide(
     // releases only the power-gap half, and only after the posture has had
     // `RECOVERY_POSTURE_LIMIT` standard turns to work.
     ai.enable_bounded_recovery();
+    // ⚠ The siege appetite was one unit for any target city at all, walled
+    // or not. The engine halves a non-siege unit's wall damage
+    // (`mult = if spec.siege { 1.0 } else { 0.5 }`) and docks a non-siege
+    // ranged unit a flat 17 attack for shooting a city, so an army without a
+    // siege train pays twice. Measured on run `civvis-20260803T005930Z`: four
+    // siege units across 251 turns against a Korea holding five walled cities;
+    // 27 turns in contact with Jinju and Jeonju removed 12 and 9 points of a
+    // 400-point wall, while Korea stripped Kwango's 400 in six.
+    ai.enable_siege_tracks_the_wall();
     // ⚠ `local_strength_ratio` prices an objective city only while it is
     // currently in sight, and returns its `hostile <= 0.0` sentinel of 3.0 —
     // the maximum — otherwise. Under live fog that makes a walled enemy
@@ -3786,5 +3807,157 @@ mod tests {
                 "{name} is known to be spelled differently in Civilization VI"
             );
         }
+    }
+}
+
+/// Every Civilization VI type name this binary can emit must be one the game
+/// actually ships.
+///
+/// ## Why this is a test and not a review note
+///
+/// The outbound mapping is a `match` with a fallthrough that uppercases CIVVIS's
+/// own name. When the two rulesets happen to agree that is correct and free;
+/// when they disagree the host **silently discards the order**. Nothing in the
+/// telemetry says so — the order is written, `orders_source` still reads
+/// `civvis`, and the city simply builds nothing.
+///
+/// That is not hypothetical. Three separate rounds of it are recorded in the
+/// doc comments above:
+///
+/// - `BUILDING_MEDIEVAL_WALLS`, 200 refused orders over live turns 165-219;
+/// - `PROJECT_CAMPUS_RESEARCH_GRANTS` and its six siblings, all seven silently
+///   unbuildable;
+/// - `BUILDING_ARCHAEOLOGICAL_MUSEUM`, **248 orders across turns 118-250 of run
+///   `civvis-20260803T014330Z`, in all three of that empire's main cities**,
+///   which finished the game holding the building in none of them. Civilization
+///   VI calls it `BUILDING_MUSEUM_ARTIFACT`.
+///
+/// Each was repaired by adding one more arm. None of them added a way to find
+/// the next one, and each cost most of a game's production to notice. This
+/// closes the class: `data/civ6_type_names.json` is harvested from the shipped
+/// rule files by `tools/civ6_type_names.py`, and every name the mapping can
+/// produce is checked against it.
+///
+/// ⚠ The snapshot deliberately excludes `DLC/CivvisControl`. Our control mod is
+/// installed *into* the game's Assets tree, so a scan that includes it reads our
+/// own invented names back as proof the game has them — which is how
+/// `BUILDING_ARCHAEOLOGICAL_MUSEUM` looked legitimate on first inspection.
+#[cfg(test)]
+mod civ6_name_audit {
+    use super::*;
+    use civvis::game::Item;
+    use civvis::rules::Rules;
+    use std::collections::BTreeSet;
+
+    fn shipped() -> BTreeSet<String> {
+        let raw = include_str!("../../data/civ6_type_names.json");
+        serde_json::from_str::<Vec<String>>(raw)
+            .expect("the type-name snapshot parses")
+            .into_iter()
+            .collect()
+    }
+
+    /// CIVVIS concepts Civilization VI has no build order for at all.
+    ///
+    /// A National Park is not an Improvement row in the shipped ruleset, an
+    /// Antiquity Site and a Shipwreck are Resources an Archaeologist consumes,
+    /// and a Rock Concert is a unit ability. Naming them here says "checked, and
+    /// there is deliberately nothing to map" rather than leaving them to the
+    /// uppercase fallthrough, which would emit a name and have it dropped.
+    /// `PROJECT_REPAIR_ENCAMPMENT` is the one entry here that is a *deferral*
+    /// rather than an absence: Civilization VI repairs a pillaged Encampment by
+    /// ordering the district again, which needs a plot the `Item::Project` arm
+    /// cannot see. `civ6_build_name` records why it is left untranslated and
+    /// where the repair belongs. Listing it keeps that decision declared instead
+    /// of indistinguishable from a name nobody has checked.
+    const NO_CIV6_EQUIVALENT: [&str; 5] = [
+        "IMPROVEMENT_NATIONAL_PARK",
+        "IMPROVEMENT_ARCHAEOLOGICAL_DIG",
+        "IMPROVEMENT_SHIPWRECK_EXCAVATION",
+        "IMPROVEMENT_ROCK_CONCERT",
+        "PROJECT_REPAIR_ENCAMPMENT",
+    ];
+
+    #[test]
+    fn the_snapshot_is_the_shipped_ruleset_and_not_our_own_mod() {
+        let shipped = shipped();
+        assert!(
+            shipped.len() > 400,
+            "the snapshot has {} names, too few to be Civilization VI's ruleset",
+            shipped.len()
+        );
+        assert!(
+            shipped.contains("BUILDING_MUSEUM_ARTIFACT"),
+            "the real name of the building 248 live orders never built"
+        );
+        assert!(
+            !shipped.contains("BUILDING_ARCHAEOLOGICAL_MUSEUM"),
+            "CIVVIS's own spelling is in the snapshot, so the harvest read our \
+             control mod back as evidence about the game — rerun \
+             tools/civ6_type_names.py, which excludes DLC/CivvisControl"
+        );
+    }
+
+    #[test]
+    fn every_name_the_order_channel_can_emit_exists_in_civilization_vi() {
+        let rules = Rules::shipped();
+        let shipped = shipped();
+        let mut missing: Vec<(&str, String, String)> = Vec::new();
+
+        let mut check = |kind: &'static str, name: &str, emitted: String| {
+            if !shipped.contains(&emitted)
+                && !NO_CIV6_EQUIVALENT.contains(&emitted.as_str())
+            {
+                missing.push((kind, name.to_string(), emitted));
+            }
+        };
+
+        // ⚠ Drive `civ6_build_name`, the function the order channel actually
+        // calls, rather than the per-kind helpers. Dispatch is where this has
+        // gone wrong before: #959 put three divergent wonder spellings into
+        // `civ6_building_type` while the `Item::Wonder` arm still formatted its
+        // own name one line away, so the repair never reached the path that
+        // emitted them. A test that reproduces the mapping instead of invoking
+        // it reproduces that mistake too — this one wrote out the same stale
+        // uppercase and reported three false failures against correct code.
+        let anywhere: civvis::Pos = (0, 0);
+        for name in rules.units.keys() {
+            let item = Item::Unit { unit: *name };
+            check("unit", name.as_str(), civ6_build_name(&item).expect("a unit name"));
+        }
+        for name in rules.districts.keys() {
+            let item = Item::District { district: *name, pos: anywhere };
+            check("district", name.as_str(), civ6_build_name(&item).expect("a district name"));
+        }
+        for name in rules.buildings.keys() {
+            let item = Item::Building { building: *name };
+            check("building", name.as_str(), civ6_build_name(&item).expect("a building name"));
+        }
+        for name in rules.wonders.keys() {
+            let item = Item::Wonder { wonder: *name, pos: anywhere };
+            check("wonder", name.as_str(), civ6_build_name(&item).expect("a wonder name"));
+        }
+        for name in rules.projects.keys() {
+            let item = Item::Project { project: *name };
+            check("project", name.as_str(), civ6_build_name(&item).expect("a project name"));
+        }
+        // Improvements are ordered by builders, not produced in a city, so they
+        // reach the wire through their own helper rather than `civ6_build_name`.
+        for name in rules.improvements.keys() {
+            check("improvement", name.as_str(), civ6_improvement_type(name));
+        }
+
+        assert!(
+            missing.is_empty(),
+            "these names would be written to the order channel and silently \
+             discarded by the host — add an arm to the matching civ6_*_type \
+             function, or to NO_CIV6_EQUIVALENT if the game genuinely has no \
+             build order for it:\n{}",
+            missing
+                .iter()
+                .map(|(kind, name, emitted)| format!("  {kind:11} {name:32} -> {emitted}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
     }
 }
