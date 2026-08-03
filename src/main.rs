@@ -453,16 +453,23 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// promotes exactly when it always did. A compatibility re-pin.
 ///
 /// #1026 keeps the land army out of the water, behind `come_ashore` — `false`
-/// in both `BasicAi` constructors and set only by `enable_live_bridge`. All
-/// three of its paths short-circuit on the flag before reading anything:
-/// `explore_step`'s `dry_only` is `self.come_ashore && …`, `disembark_step` is
-/// called only under `if self.come_ashore`, and `peacetime_step`'s new `at_war`
-/// parameter is folded through `at_war && self.come_ashore`, which reproduces
-/// the historical hardcoded `false` exactly. So every configured, legacy and
-/// Elo agent explores and moves exactly as it always did. A compatibility
-/// re-pin.
+/// in both `BasicAi` constructors and set only by `enable_live_bridge`. Every
+/// one of its paths short-circuits on the flag before reading anything:
+/// `explore_step`'s `dry_only` and `step_toward_range`'s and
+/// `coordinated_tactical_step`'s `prefer_dry` are each `come_ashore && …`, both
+/// `disembark_step` call sites are guarded by `if …come_ashore`, and
+/// `peacetime_step`'s new `at_war` parameter is folded through
+/// `at_war && self.come_ashore`, which reproduces the historical hardcoded
+/// `false` exactly. So every configured, legacy and Elo agent explores and
+/// moves exactly as it always did. A compatibility re-pin.
+///
+/// ⚠ Re-pinned twice in this PR. The first version was inert — it patched
+/// `BasicAi::tactical_step`, which a live probe showed the deployed controller
+/// never calls; the working change is in
+/// `AdvancedAi::coordinated_tactical_step`. Both edits touch anchored source,
+/// so both moved this hash.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3a02_7973_7637_b8ea;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb940_35d3_24b3_8cee;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
