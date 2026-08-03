@@ -445,7 +445,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy and Elo agent picks exactly what it always picked. A compatibility
 /// re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbe00_7df7_681a_ab75;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc480_74a5_a771_3060;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

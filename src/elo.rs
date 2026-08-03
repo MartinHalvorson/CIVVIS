@@ -3286,6 +3286,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_siege_role" => (Vec::new(), "live_without_siege_role"),
         "live_without_blind_objective_strength" => (Vec::new(), "live_without_blind_objective_strength"),
         "live_without_loyalty_rate_alarm" => (Vec::new(), "live_without_loyalty_rate_alarm"),
+        "live_without_district_coverage" => (Vec::new(), "live_without_district_coverage"),
         "live_without_slot_kind_tiebreak" => (Vec::new(), "live_without_slot_kind_tiebreak"),
         "advanced" => (Vec::new(), "advanced"),
         "advanced_belief_pressure" => (Vec::new(), "advanced_belief_pressure"),
