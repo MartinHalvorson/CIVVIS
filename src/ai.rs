@@ -1316,6 +1316,20 @@ pub struct BasicAi {
     /// the Civilization VI bridge — which is where the failure was measured.
     /// See `home_defense_objective`.
     home_defense: bool,
+    /// Record every tactical step through `path_move` instead of applying it
+    /// raw, so a unit stepped a second time in the same turn cannot walk back
+    /// onto the tile it just left.
+    ///
+    /// **Off by default, live-bridge only**, on the same footing as
+    /// `home_defense`. A raw `g.apply(Move)` records nothing, so the
+    /// same-turn reversal guard inside `path_move` never sees the first step;
+    /// the second step is then free to undo it. Net zero ground, two emitted
+    /// orders, and Civilization VI refuses the second as a MOVE_TO of the
+    /// unit's own tile — 217 of 217 refused moves on run
+    /// `civvis-20260801T224944Z` were exactly that pair. Gated because the
+    /// call sites are shared with the frozen `advanced_v1` anchor, whose
+    /// recorded ladders must keep replaying move-for-move.
+    recorded_tactical_step: bool,
     w: Weights,
     book_pos: usize, // opening-book progress (capital builds played so far)
     /// Units that have withdrawn from combat stay in recovery until they are
@@ -2137,6 +2151,7 @@ impl BasicAi {
             live_religious_purchase_guard: false,
             siege_muster: false,
             home_defense: false,
+            recorded_tactical_step: false,
             w: Weights::default(),
             book_pos: 0,
             recovering_units: HashSet::new(),
@@ -2159,6 +2174,7 @@ impl BasicAi {
             live_religious_purchase_guard: false,
             siege_muster: false,
             home_defense: false,
+            recorded_tactical_step: false,
             w,
             book_pos: 0,
             recovering_units: HashSet::new(),
@@ -5580,7 +5596,15 @@ impl BasicAi {
                     self.move_beats_holding(g, uid, sc, stay)
                 } =>
             {
-                g.apply(pid, &Action::Move { unit: uid, to: n }).is_ok()
+                // ⚠ Through `path_move`, never `g.apply` directly: a unit with
+                // movement left is stepped again this same turn, and a raw
+                // apply records nothing — so round two happily re-entered the
+                // tile round one just left. Net zero ground, TWO emitted
+                // orders, and on the Civilization VI side the second usually
+                // lands as a MOVE_TO of the unit's own tile: 217 of 217
+                // refused moves on run civvis-20260801T224944Z were exactly
+                // that, out-and-back pairs from this call site.
+                self.tactical_apply_move(g, pid, uid, n)
             }
             _ => {
                 // Long-range search is the fallback, not the hot path: most
@@ -5592,7 +5616,7 @@ impl BasicAi {
                 };
                 let routed = score(g, n) + 2.5;
                 self.move_beats_holding(g, uid, routed, stay)
-                    && g.apply(pid, &Action::Move { unit: uid, to: n }).is_ok()
+                    && self.tactical_apply_move(g, pid, uid, n)
             }
         }
     }
@@ -5620,6 +5644,31 @@ impl BasicAi {
     /// preceding path step in the same turn. Waiting in a dead end preserves
     /// real progress for the auditor, and next turn's route can back out once
     /// before choosing a different greedy branch.
+    /// Take a tactical step that has already been selected and validated by
+    /// the caller, recording it when `recorded_tactical_step` is on.
+    ///
+    /// The flag is the whole gate. Off — every tournament entrant, every
+    /// replayed ladder, and the frozen `advanced_v1` anchor — this is the
+    /// historical raw `g.apply(Move)` and nothing about the step changes. On,
+    /// which only the Civilization VI bridge does, the step goes through
+    /// `path_move` so the same-turn reversal guard can see it. `path_move`
+    /// can additionally refuse a step that the raw apply would have taken
+    /// (a reversal, a retread, a minor leaving its defense area); that
+    /// asymmetry is the point of the fix, and it is exactly why the anchor
+    /// must not be exposed to it.
+    pub(crate) fn tactical_apply_move(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        to: Pos,
+    ) -> bool {
+        if !self.recorded_tactical_step {
+            return g.apply(pid, &Action::Move { unit: uid, to }).is_ok();
+        }
+        self.path_move(g, pid, uid, to)
+    }
+
     pub(crate) fn path_move(&self, g: &mut Game, pid: usize, uid: u32, to: Pos) -> bool {
         let from = g.units[&uid].pos;
         if self.minor {
