@@ -351,6 +351,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy anchor's chosen item is bit-for-bit what it was. A compatibility
 /// re-pin.
 ///
+/// #965 promotes wide, developed, defended expansion only in the production
+/// constructor: it enables call-local city/Builder floors, plan delegation plus
+/// the three existing defense flags, and lets that flagged plan consume the
+/// land-aware nine-city ceiling. Stored genomes, `configured`, and
+/// `AdvancedAi::legacy()` retain the historical weights; the controls also keep
+/// their three-city floor, six-city ceiling, flat delegation, and default-off
+/// defense fields. The focused production/control contract test asserts each
+/// side of that boundary. This is therefore a compatibility re-pin for
+/// `advanced_v1`, not an Elo protocol change.
+///
 ///
 /// #977 raises the wartime army target when the enemy outweighs us, behind
 /// `army_target_weighs_the_enemy` — `false` in `AdvancedAi::new()` and set only
@@ -359,7 +369,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy and Elo agent wants exactly the army it always wanted. A
 /// compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe271_0662_96ac_5d8d;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x80d3_506f_2db2_93b6;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
