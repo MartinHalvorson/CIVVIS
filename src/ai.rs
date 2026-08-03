@@ -48,6 +48,21 @@ const LIVELOCK_STAND_DOWN_TURNS: u32 = 4;
 /// Unlevied city-state forces defend the state and its immediate approaches;
 /// ownership transfers to the Suzerain while levied, so those units naturally
 /// use the major civilization's unrestricted tactical doctrine instead.
+/// What a land unit gives up by taking its march across water instead of around.
+///
+/// `tactical_step`'s score is distance-to-objective plus adjacent threat and
+/// support, with no terrain term — and a sea tile is both closer to an
+/// objective across a bay and free of the adjacent-enemy penalty, because the
+/// enemies stand on land. Open water therefore scored as the fastest and
+/// safest road simultaneously. An embarked unit cannot attack, cannot fortify,
+/// and defends at the era's flat `embarked_strength`, so the true cost of that
+/// tile is most of the unit.
+///
+/// Ships fixed rather than as a gene: the genome is pinned at 40 with a
+/// committed champion on that length, so `from_vec` indexing `v[40]` would
+/// panic. Earn a gene on evidence.
+pub(crate) const WATER_MARCH_PENALTY: f64 = 18.0;
+
 const MINOR_DEFENSE_RADIUS: i32 = 6;
 
 /// How near one of our own cities an enemy has to stand before the empire owes
@@ -5834,9 +5849,29 @@ impl BasicAi {
         enemy_ids: &[usize],
         attack_range: i32,
     ) -> bool {
+        // Get out of the water before marching anywhere. The penalty in
+        // `score` below stops a unit WALKING INTO the sea, but it cannot
+        // recover one already out there: every neighbour of a tile in open
+        // water is also water, so a uniform penalty cancels and the unit keeps
+        // swimming toward the objective. This is the half that reaches the
+        // eleven-of-twelve afloat on run `civvis-20260803T130831Z`.
+        //
+        // It sits in `tactical_step` rather than `military_step` because the
+        // Advanced campaign path calls `tactical_step` directly and would
+        // otherwise miss the rule entirely — the same "reachable only on one
+        // path" mistake that left the #955 defence layer inert.
+        if self.come_ashore
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea")
+            && g.is_embarked(&g.units[&uid])
+            && self.disembark_step(g, pid, uid)
+        {
+            return true;
+        }
         let upos = g.units[&uid].pos;
         let u = &g.units[&uid];
         let my_def = effective_strength(g.unit_strength(u, true), u.hp);
+        let prefer_dry =
+            self.come_ashore && g.rules.units[u.kind].domain.as_deref() != Some("sea");
         let doctrine = Self::unit_doctrine(g, uid);
         let (preferred_range, progress, threat_caution) = match doctrine {
             UnitDoctrine::Recon => (2, 0.60, 1.35),
@@ -5873,6 +5908,29 @@ impl BasicAi {
             // refuse to leave their initial cluster even when a safe campaign
             // route is open.
             s += self.w.mv_support * adjacent_support.min(2) as f64;
+            // ⭐ The score above has no terrain term at all, and open water is
+            // doubly attractive because of it: a sea tile is usually the
+            // geometrically shorter road to an objective across a bay, AND it
+            // carries no adjacent-enemy threat because the enemies are on
+            // land. So the safest, fastest route was always the sea — and an
+            // embarked land unit cannot attack (`Game::apply` refuses it),
+            // cannot fortify, and defends at the era's flat
+            // `embarked_strength` instead of its own.
+            //
+            // This is the wartime mover, and it is the one that mattered: on
+            // live run `civvis-20260803T130831Z` at t174, eleven of twelve land
+            // combat units were afloat while the capital sat at 179/200 damage,
+            // and the journal read "A land force of 12 will advance | objective
+            // (22,21)" — an objective on our OWN landmass. They were not
+            // crossing to reach it; they were swimming along it.
+            //
+            // Sized to outweigh the few tiles of `depth_error` a detour around
+            // a bay costs, without removing the option: `route_step` below is
+            // untouched, so a real crossing still happens when the land route
+            // does not exist.
+            if prefer_dry && g.map.get(tile).is_some_and(|t| g.rules.is_water(t)) {
+                s -= WATER_MARCH_PENALTY;
+            }
             s + self.livelock_penalty(uid, tile)
         };
         let stay = score(g, upos);
@@ -6056,7 +6114,30 @@ impl BasicAi {
             .into_iter()
             .filter(|p| g.can_move(uid, *p))
             .collect();
-        local.sort_by_key(|p| (g.wdist(*p, target), *p));
+        // Dry land first for a land unit. This greedy step ranked neighbours on
+        // geometric distance alone, and `can_move` says yes to open water for
+        // every land unit once embarkation unlocks — so a straight line across
+        // a bay always beat walking around it, and the army marched into the
+        // sea. Embarked it cannot attack (`Game::apply` refuses it) or fortify.
+        //
+        // ⚠ The loop below `break`s on the first neighbour that fails to make
+        // progress, which is only sound while the order is by distance. So the
+        // non-improving neighbours are dropped here rather than re-sorted
+        // behind the dry ones — otherwise a dry tile that moves away from the
+        // target would cut off the improving water tiles behind it and the
+        // unit would simply stop. A water step is still reachable: it sorts
+        // last, and the A* fallback below is untouched, so a genuine ocean
+        // crossing still happens when no dry neighbour makes progress.
+        let prefer_dry = self.come_ashore
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea");
+        if prefer_dry {
+            let here = g.wdist(cur, target);
+            local.retain(|p| g.wdist(*p, target) < here);
+        }
+        local.sort_by_key(|p| {
+            let wet = prefer_dry && g.map.get(*p).is_some_and(|tile| g.rules.is_water(tile));
+            (wet, g.wdist(*p, target), *p)
+        });
         for next in local {
             if g.wdist(next, target) >= g.wdist(cur, target) {
                 break; // sorted: no remaining neighbor makes progress
@@ -7416,7 +7497,7 @@ impl BasicAi {
     /// exhaustive `route_step_to_any` is only the fallback, because a
     /// water-to-land step is a disembarkation and the cheap route search
     /// handles that transition where a raw goal-set flood does not.
-    fn disembark_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
+    pub(crate) fn disembark_step(&self, g: &mut Game, pid: usize, uid: u32) -> bool {
         if g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
             || !g.is_embarked(&g.units[&uid])
         {

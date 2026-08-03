@@ -14492,11 +14492,37 @@ impl AdvancedAi {
         // Avoid building a visibility frame for the frozen legacy control;
         // its deliberate full-state behavior remains bit-for-bit on its
         // original path.
+        // ⭐⭐ Get out of the water before marching anywhere.
+        //
+        // This is the mover the DEPLOYED controller actually uses. `BasicAi`'s
+        // `tactical_step` is the native/frozen path and never runs here — a
+        // probe on live run `civvis-20260803T130831Z` at t174 showed it is not
+        // called once, while this function moved the whole army. A fix landed
+        // only there would have been inert in exactly the game that motivated
+        // it, the same way #955's defence layer was.
+        //
+        // The `score` below is objective progress, cohesion, threat, spacing,
+        // screen and local superiority — with NO terrain term. Open water is
+        // therefore doubly attractive: it is usually the geometrically shorter
+        // road to an objective across a bay, AND it carries no threat penalty
+        // because the enemies are standing on land. An embarked land unit
+        // cannot attack (`Game::apply` refuses it), cannot fortify, and defends
+        // at the era's flat `embarked_strength`.
+        if self.base.come_ashore
+            && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea")
+            && g.is_embarked(&g.units[&uid])
+        {
+            if self.base.disembark_step(g, pid, uid) {
+                return true;
+            }
+        }
         let visible = self
             .battlefront_observation
             .then(|| self.battlefront_visibility(g, pid));
         let unit = &g.units[&uid];
         let upos = unit.pos;
+        let prefer_dry = self.base.come_ashore
+            && g.rules.units[unit.kind].domain.as_deref() != Some("sea");
         let role = Self::force_role(g, uid);
         let spec = &g.rules.units[unit.kind];
         let target = match group.posture {
@@ -14580,6 +14606,14 @@ impl AdvancedAi {
                         * 30.0
                         * ((attack - defense) / 25.0).exp();
                 }
+            }
+            // Walking into the sea costs most of the unit; the score has no
+            // other term that notices. Sized to outweigh the few tiles of
+            // objective progress a detour around a bay gives up, without
+            // removing the option — a real crossing still scores best when no
+            // land route exists.
+            if prefer_dry && g.map.get(tile).is_some_and(|t| g.rules.is_water(t)) {
+                value -= crate::ai::WATER_MARCH_PENALTY;
             }
             value += self.strike_opening_value(g, pid, uid, tile, group, &enemies, visible.as_ref());
             if self.ranged_tile_is_blind(g, pid, uid, tile, &enemies, visible.as_ref()) {
