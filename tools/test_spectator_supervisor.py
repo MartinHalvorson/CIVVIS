@@ -314,6 +314,31 @@ class SessionSettingsTests(unittest.TestCase):
             self.assertEqual(chosen["map"], "continents")
             self.assertEqual(chosen["players"], 8)
 
+    def test_fixed_desktop_setup_reuses_the_launch_contract(self):
+        defaults = {
+            "players": 6,
+            "width": 74,
+            "height": 46,
+            "city_states": 9,
+            "turns": 250,
+            "map": "continents",
+            "shape": "flat",
+            "poles": "poles",
+            "speed": "online",
+            "victories": [
+                "science", "culture", "religious", "diplomatic", "domination", "score"
+            ],
+        }
+        finished = {
+            "players": [{"is_minor": False}] * 10,
+            "map": {"script": "water_world", "shape": "planet"},
+            "max_turns": 500,
+        }
+        self.assertEqual(
+            supervisor.session_settings(finished, defaults, fixed_setup=True),
+            defaults,
+        )
+
     def test_fogged_state_does_not_shrink_the_next_game(self):
         """A trimmed observation must not become the next game's seat count."""
         fogged = {
@@ -725,6 +750,7 @@ class SourceSnapshotTests(unittest.TestCase):
 
             refreshed = json.loads(metadata_path.read_text(encoding="utf-8"))
             self.assertEqual(refreshed["revision"], "published")
+            self.assertEqual(refreshed["commit_time"], "published")
             self.assertFalse(refreshed["dirty"])
             self.assertEqual(refreshed["source_snapshot"], "same-source")
             self.assertEqual(refreshed["built_at"], "original-build-time")
@@ -1438,9 +1464,11 @@ class RecoveryTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             runtime = Path(directory) / "promoted" / "civvis"
+            runtime_metadata = runtime.parent / "build.json"
             process = SimpleNamespace(pid=123)
             with (
                 patch.object(supervisor, "RUNTIME_BINARY", runtime),
+                patch.object(supervisor, "RUNTIME_METADATA", runtime_metadata),
                 patch.object(
                     supervisor, "server_command", return_value=[str(runtime), "play"]
                 ),
@@ -1454,8 +1482,49 @@ class RecoveryTests(unittest.TestCase):
             [str(runtime), "play"],
             cwd=runtime.parent,
             text=True,
+            env=supervisor.os.environ.copy(),
             **supervisor._NO_WINDOW,
         )
+
+    def test_server_launch_exports_commit_and_build_times_from_promoted_metadata(self):
+        settings = {
+            "players": 6,
+            "width": 74,
+            "height": 46,
+            "city_states": 9,
+            "turns": 250,
+            "map": "continents",
+            "speed": "online",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "civvis"
+            metadata = root / "build.json"
+            metadata.write_text(
+                json.dumps(
+                    {
+                        "revision": "a" * 40,
+                        "commit_time": "2026-08-03T20:00:00Z",
+                        "built_at": "2026-08-03T20:05:00Z",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            process = SimpleNamespace(pid=123)
+            with (
+                patch.object(supervisor, "RUNTIME_BINARY", runtime),
+                patch.object(supervisor, "RUNTIME_METADATA", metadata),
+                patch.object(
+                    supervisor, "server_command", return_value=[str(runtime), "play"]
+                ),
+                patch.object(supervisor.subprocess, "Popen", return_value=process) as popen,
+            ):
+                supervisor.start_server(8785, settings, False)
+
+        environment = popen.call_args.kwargs["env"]
+        self.assertEqual(environment["CIVVIS_COMMIT"], "a" * 40)
+        self.assertEqual(environment["CIVVIS_COMMIT_TIME"], "2026-08-03T20:00:00Z")
+        self.assertEqual(environment["CIVVIS_BUILT_AT"], "2026-08-03T20:05:00Z")
 
     def test_checkpoint_write_is_atomic_and_finished_saves_are_not_resumed(self):
         class Response:
