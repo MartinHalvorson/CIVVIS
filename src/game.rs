@@ -12930,6 +12930,11 @@ pub fn growth_threshold(pop: i32) -> f64 {
 }
 
 /// Gathering Storm victory thresholds on standard speed.
+/// The seat a live mirror reconstructs. `mirror.rs` addresses it as a bare `0`
+/// throughout — `plant_unit(&mut game, 0, …)`, `is_at_war(0, seat)`,
+/// `player_unit_ids(0)` — and this names it where the engine has to agree.
+pub const MIRRORED_SEAT: usize = 0;
+
 pub const DIPLOMATIC_VICTORY_POINTS: i64 = 20;
 /// The New Frontier game modes CIVVIS models. Each is a lobby checkbox that
 /// is off in a stock Gathering Storm game and in every tournament lobby.
@@ -16377,6 +16382,40 @@ pub struct Game {
     /// the feedback is meant to repair. Ordinary CIVVIS games leave this empty.
     #[serde(default)]
     pub blocked_purchases: BTreeMap<u32, BTreeSet<String>>,
+    /// Tiles a HOST says the mirrored seat can see RIGHT NOW, over and above what
+    /// this engine's own sight model derives. Empty in an ordinary CIVVIS game.
+    ///
+    /// ★★★★★ THE EXPORT IS THE HOST'S VISIBILITY ANSWER, AND WE WERE THROWING IT
+    /// AWAY. Civilization VI exports a rival's or a minor's units *only under
+    /// current visibility* — `StateMinor` says so in its own doc — and the bridge
+    /// plants exactly those units on the board. Then
+    /// [`Game::player_vision_now`] RE-DERIVES what the seat can see, from this
+    /// engine's sight radii and height field on a reconstructed map, and the
+    /// tactical layer believes the derivation instead of the export. Every place
+    /// the two disagree, an enemy Civilization VI is showing us is invisible to
+    /// the agent deciding whether to shoot it.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z`, the 49 turns of
+    /// Kongo's war (t203-250) that cost Arpinum and Arretium and ended the game
+    /// at **479 against the winner's 1214**: an enemy was in the export on **49
+    /// of 49 turns**, our units stood **adjacent to one on 95 unit-turns** and
+    /// within range 2 — the range of the Field Cannons and Trebuchets that were
+    /// most of the army — on **197**. Attacks issued: **37**. The army declined
+    /// **81%** of the shots the host was showing it.
+    ///
+    /// `ForcePosture` only reaches `Engage` through
+    /// `g.sees(&visible, enemy.pos) && battlefront_unit_visible(..)`, so with the
+    /// derivation disagreeing it fell through to `Muster` — "still gathering" —
+    /// turn after turn while the cities burned. The same disagreement is what
+    /// `blind_ranged_tiles_charged` counts: 3 to 13 tiles on 45 separate turns.
+    ///
+    /// ⚠ Deliberately a stored set rather than "foreign units imply visibility".
+    /// That inference is only sound for a MIRRORED board, where every foreign unit
+    /// arrived from an export gated on sight. In ordinary self-play the board holds
+    /// the full simulation, and reading it the same way would hand every AI player
+    /// perfect vision of the entire world.
+    #[serde(default)]
+    pub host_observed: BTreeSet<Pos>,
     /// Ground a HOST holds for somebody else and will not let this seat's units
     /// enter, for tiles whose owner [`Game::territory_owner_at`] cannot name.
     ///
@@ -16762,6 +16801,7 @@ impl From<GameSer> for Game {
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: BTreeSet::new(),
+            host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             blocked_promotions: BTreeMap::new(),
@@ -17212,6 +17252,7 @@ impl Game {
             observed_city_strength: BTreeMap::new(),
             observed_city_max_wall_hp: BTreeMap::new(),
             blocked_city_sites: BTreeSet::new(),
+            host_observed: BTreeSet::new(),
             closed_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             blocked_promotions: BTreeMap::new(),
@@ -30271,6 +30312,21 @@ impl Game {
         let mut visible = TileBits::with_capacity(self.map.tiles.len());
         for viewer in self.visibility_viewers(pid) {
             visible.union_with(&self.base_player_visibility(heights, viewer));
+        }
+        // What the HOST says this seat can see, added to what we derive. See
+        // [`Game::host_observed`]: the derivation runs on a reconstructed map and
+        // loses ground the export was explicit about, and the tactical layer reads
+        // this answer to decide whether an enemy may be engaged at all.
+        //
+        // Seat 0 only, because that is the one seat a mirrored game reconstructs
+        // and the only one the set is ever populated for. An ordinary CIVVIS game
+        // leaves it empty, so this loop does not run.
+        if pid == MIRRORED_SEAT && !self.host_observed.is_empty() {
+            for pos in &self.host_observed {
+                if let Some(index) = self.map.tiles.index_of(*pos) {
+                    visible.insert(index);
+                }
+            }
         }
         visible
     }
