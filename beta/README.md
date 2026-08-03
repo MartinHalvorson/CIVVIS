@@ -12,7 +12,7 @@ apart from the asset paths a subdirectory forces.
 
 ```
 civvis.ai            forwards to youtube.com/@civvis
-civvis.ai/home       the landing page, linking the three below
+civvis.ai/home       the landing page with build and project links
 civvis.ai/rust       the latest published native Rust release
 civvis.ai/wasm       the latest published WASM build
 civvis.ai/beta       the published build, open to anyone
