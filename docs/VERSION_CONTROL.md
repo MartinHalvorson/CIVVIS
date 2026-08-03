@@ -103,6 +103,22 @@ never reused, including after its PR is merged. Avoid persistent branches named
 only `fix/foo`, `session-x`, or `agent/name`; their ownership and lifetime are
 ambiguous.
 
+Every commit also names the computer that produced it, in a `Computer:` trailer
+on the last line:
+
+```text
+Computer: mbp-m5-max-128
+```
+
+For now that value is simply the device's own name — `scutil --get ComputerName`
+on macOS, `hostname` elsewhere — not a curated identifier. It may therefore
+differ from the short `<machine-id>` in the branch name, and that is fine: the
+branch component stays stable for claims and ownership checks, while the trailer
+says which physical machine the work ran on. A branch is squash-merged and its
+name disappears from `main`, so without the trailer `git log` on `main` cannot
+answer that question at all. When the fleet outgrows device names, replace the
+value with a stronger computer ID and keep the trailer.
+
 ## Start a task
 
 Start from a stable base checkout used only to manage worktrees. Do not edit in
@@ -175,7 +191,8 @@ At the beginning and end of each work period:
 git status --short --branch
 git diff --check
 git add -- path/to/file another/path
-git commit -m "Describe one coherent change"
+git commit -m "Describe one coherent change" \
+  -m "Computer: $(scutil --get ComputerName 2>/dev/null || hostname)"
 git push
 ```
 
