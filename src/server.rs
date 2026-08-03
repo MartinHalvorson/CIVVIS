@@ -2944,6 +2944,10 @@ fn request_path(target: &str) -> &str {
     target.split_once('?').map_or(target, |(path, _)| path)
 }
 
+fn viewer_path(path: &str) -> bool {
+    matches!(path, "/" | "/index.html" | "/rust" | "/rust/")
+}
+
 /// One parameter out of a request target's query, or `None` if the request
 /// did not carry the key at all. A key present with an empty value reads as
 /// `Some("")`: the page announces itself as a viewer on its very first poll,
@@ -3552,7 +3556,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
     let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
 
     match (method.as_str(), path.as_str()) {
-        ("GET", "/") | ("GET", "/index.html") => {
+        ("GET", path) if viewer_path(path) => {
             respond(stream, "200 OK", "text/html; charset=utf-8", &index_html());
         }
         ("GET", "/assets/feature-atlas.png") => {
@@ -4313,10 +4317,10 @@ mod tests {
         automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
         new_game_params, publishes_player_turn_frames, query_value, request_path, save_path,
         seat_delay_ms, spectator_frame, spectator_step_completes_frame, strategy_roster,
-        tile_mark, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session, Shared,
-        SpectatorFrame, EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
-        MAX_EXACT_JAVASCRIPT_INTEGER, RESULT_COUNTDOWN_MS, SAVE_DIR, STATE_LONG_POLL,
-        VIEWER_ACTIVE,
+        tile_mark, viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session,
+        Shared, SpectatorFrame, EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS,
+        EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, RESULT_COUNTDOWN_MS, SAVE_DIR,
+        STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
@@ -8902,6 +8906,14 @@ mod tests {
         assert_eq!(request_path("/?instance=9232"), "/");
         assert_eq!(request_path("/?instance=9232&game=17"), "/");
         assert_eq!(request_path("/state?instance=9232"), "/state");
+    }
+
+    #[test]
+    fn native_channel_routes_to_the_embedded_page() {
+        assert!(viewer_path("/rust"));
+        assert!(viewer_path("/rust/"));
+        assert!(viewer_path(request_path("/rust?instance=9232&game=17")));
+        assert!(!viewer_path("/wasm"));
     }
 
     #[test]
