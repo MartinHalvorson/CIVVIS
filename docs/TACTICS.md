@@ -342,3 +342,28 @@ moves, rather than re-derived from scratch.
    fortification, and the general shape of that lesson — *the missing term was a
    future option the unit gave up, not a property of the position it reached* —
    is the one worth carrying to the next evaluator.
+
+## 8. Production tactical role basics (2026-08-03)
+
+The production `AdvancedAi` now assigns the ordinary unit classes to explicit
+battlefield jobs. This is separate from the optional joint search described
+above and applies to both its exact per-unit evaluator and its bounded portfolio
+candidate pruning:
+
+- melee prefers anti-cavalry, anti-cavalry prefers light or heavy cavalry, and
+  both cavalry classes prefer melee when exchanges are otherwise close;
+- ranged units value shots outside the defender's direct return-fire range, and
+  movement prices the enemy's next move-and-attack envelope instead of only its
+  current attack radius;
+- siege prefers districts with standing walls;
+- melee and anti-cavalry prefer a walled assault when an era-compatible
+  battering ram or siege tower is adjacent, while those support units follow
+  only a class that can actually use their aura and hold once they reach the
+  wall;
+- light cavalry pillages before routine combat; heavy cavalry attacks first and
+  uses pillaging as its fallback.
+
+The bonuses assign close choices; exact damage, kills, captures, and enemy reply
+damage still dominate decisive exchanges. The feature is enabled by the
+production constructor and remains off in the frozen Basic and `advanced_v1`
+controls so historical evaluator identities do not change silently.
