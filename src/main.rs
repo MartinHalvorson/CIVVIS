@@ -469,6 +469,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `AdvancedAi::coordinated_tactical_step`. Both edits touch anchored source,
 /// so both moved this hash.
 ///
+/// ⚠ And again for `blind_objective_units`, which is `false` in both `BasicAi`
+/// constructors' downstream `AdvancedAi` defaults and set only by
+/// `enable_live_bridge`. `local_strength_ratio`'s new term is
+/// `if self.blind_objective_units { … } else { 0.0 }`, so with the flag off the
+/// sum is arithmetically identical to before. A compatibility re-pin.
+///
 /// ⚠ And a third time on merging `origin/main`, which had re-pinned the same
 /// constant for the `tactical_strategy` branch documented below. Neither hash
 /// survives a merge of the two — the anchored source is now different from
@@ -500,7 +506,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// A compatibility re-pin.
 ///
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd142_e1ed_055b_c54f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2eb6_44b1_b1b3_7a36;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
