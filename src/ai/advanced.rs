@@ -1905,6 +1905,15 @@ impl AdvancedAi {
         // losing a third of the army — CIVVIS bought another Field Cannon. The
         // tournament controller stays frozen so its recorded ladders stay
         // comparable.
+        // ⚠ Loyalty is the LARGEST single cause of city loss and the AI was
+        // reading only the level. Classified over every recorded run, 125 city
+        // losses: 52 (41.6%) below loyalty 50, 37 (29.6%) loyal-and-damaged, and
+        // 36 (28.8%) gone from FULL health and full loyalty in one round. 66 of
+        // the 125 were carrying a negative loyalty rate when last seen, and
+        // `Game::city_loyalty_per_turn` — mirrored from Civilization VI all along
+        // — had zero consumers in the whole AI. The tournament controller stays
+        // frozen so its recorded ladders remain comparable.
+        self.enable_loyalty_rate_alarm();
         self.enable_solvent_faith_army();
     }
 
@@ -1925,6 +1934,16 @@ impl AdvancedAi {
 
     /// Require a faith-bought soldier's gold upkeep to be payable. Native
     /// tournament games leave this disabled so their ladders stay comparable.
+    /// Rank loyalty emergencies by turns-to-flip instead of by level. Native
+    /// tournament games leave this disabled.
+    pub fn enable_loyalty_rate_alarm(&mut self) {
+        self.base.loyalty_rate_alarm = true;
+    }
+
+    pub fn disable_loyalty_rate_alarm(&mut self) {
+        self.base.loyalty_rate_alarm = false;
+    }
+
     pub fn enable_solvent_faith_army(&mut self) {
         self.solvent_faith_army = true;
     }
