@@ -140,13 +140,14 @@ pub const EVAL_ONLY_AIS: [&str; 87] = [
 ///
 /// ⚠ Keep in step with `AdvancedAi::enable_live_bridge`. A flag added there and
 /// not here makes the arms claim a controlled comparison they are not running.
-const LIVE_BRIDGE_TREATMENTS: [&str; 10] = [
+const LIVE_BRIDGE_TREATMENTS: [&str; 11] = [
     "live-trader-route",
     "live-religious-purchase",
     "siege-muster",
     "home-defense",
     "recorded-tactical-step",
     "bounded-recovery",
+    "army-target-weighs-enemy",
     "siege-tracks-wall",
     "blind-objective-strength",
     "solvent-faith-army",
@@ -2692,10 +2693,10 @@ impl ArmKind {
             // mechanism that differs instead of the catch-all
             // "implementation" axis, which the evaluator refuses.
             Self::Live => &LIVE_BRIDGE_TREATMENTS,
-            Self::LiveWithoutHomeDefense => &["loyalty-rate-alarm", "live-trader-route", "live-religious-purchase", "siege-muster", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
-            Self::LiveWithoutSolventFaithArmy => &["loyalty-rate-alarm", "live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength"],
-            Self::LiveWithoutSiegeMuster => &["loyalty-rate-alarm", "live-trader-route", "live-religious-purchase", "home-defense", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
-            Self::LiveWithoutLoyaltyRateAlarm => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
+            Self::LiveWithoutHomeDefense => &["live-trader-route", "live-religious-purchase", "siege-muster", "recorded-tactical-step", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm"],
+            Self::LiveWithoutSolventFaithArmy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "loyalty-rate-alarm"],
+            Self::LiveWithoutSiegeMuster => &["live-trader-route", "live-religious-purchase", "home-defense", "recorded-tactical-step", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm"],
+            Self::LiveWithoutLoyaltyRateAlarm => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army"],
             Self::AdvancedBeliefPressure => &["belief-pressure"],
             // `advanced` now owns the confirmed Live + infrastructure +
             // priority composite. The retained arms below are therefore
