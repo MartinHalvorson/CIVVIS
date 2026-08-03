@@ -668,6 +668,16 @@ fn decide(
     // until t80, score 140 against a best rival's 416. The tournament controller
     // stays frozen so its recorded ladders remain comparable.
     ai.enable_siege_muster();
+    // ⚠ And once it CAN want the defenders, something has to send them. Measured
+    // on run `civvis-20260803T005930Z` (Kongo, 154 turns): **116 of 154 turns had
+    // a hostile standing inside or beside our own territory**, including a
+    // full-health Crossbowman parked four tiles from two cities, unmoved and
+    // unengaged, for 21 consecutive turns, while the whole seven-unit army stood
+    // eight tiles away on a war front that had taken nothing in 75 turns. The
+    // cause is `nearest_enemy` ranking targets by distance FROM THE ASKING UNIT,
+    // which for a deployed army is always the enemy's cities. The tournament
+    // controller stays frozen so its recorded ladders remain comparable.
+    ai.enable_home_defense();
     // ⚠ `assess` drops the empire into Recovery whenever it is at war and
     // `my_power * 1.25 < strongest_rival`, and Recovery does not build an army —
     // so the test stays true because of the choice it caused. Measured on run

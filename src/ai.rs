@@ -1305,6 +1305,12 @@ pub struct BasicAi {
     /// ladders would otherwise shift underneath them, and enabled explicitly
     /// by the Civilization VI bridge. See `besieged_military_floor`.
     siege_muster: bool,
+    /// Let threats standing in our own territory claim units before the
+    /// offensive does. Off for the frozen native controllers, whose recorded
+    /// ladders would otherwise shift underneath them, and enabled explicitly by
+    /// the Civilization VI bridge — which is where the failure was measured.
+    /// See `home_defense_objective`.
+    home_defense: bool,
     w: Weights,
     book_pos: usize, // opening-book progress (capital builds played so far)
     /// Units that have withdrawn from combat stay in recovery until they are
@@ -2125,6 +2131,7 @@ impl BasicAi {
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
+            home_defense: false,
             w: Weights::default(),
             book_pos: 0,
             recovering_units: HashSet::new(),
@@ -2146,6 +2153,7 @@ impl BasicAi {
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
+            home_defense: false,
             w,
             book_pos: 0,
             recovering_units: HashSet::new(),
@@ -6527,7 +6535,7 @@ impl BasicAi {
     ) -> Option<Pos> {
         // A city-state already guards home and nothing else; barbarians have no
         // homeland to defend. Both would only fight this assignment.
-        if self.minor || self.barb {
+        if !self.home_defense || self.minor || self.barb {
             return None;
         }
         let my_cities: Vec<Pos> = g
@@ -9271,10 +9279,43 @@ mod tests {
         (g, soldier, raider_at, enemy_city)
     }
 
+    /// The frozen native controllers must not gain this. Their recorded ladders
+    /// are only comparable while their play is unchanged, so home defence ships
+    /// off by default and the Civilization VI bridge turns it on — the same
+    /// contract `siege_muster` already runs under.
+    #[test]
+    fn the_default_controller_keeps_home_defense_off() {
+        let (g, soldier, raider_at, enemy_city) = raider_at_home_game();
+        let frozen = BasicAi::new();
+        assert!(
+            !frozen.home_defense,
+            "a tournament controller must open with home defence disabled"
+        );
+        assert_eq!(
+            frozen.home_defense_objective(&g, 0, soldier, &[1]),
+            None,
+            "the frozen controller must keep choosing the offensive"
+        );
+        assert_eq!(
+            frozen.nearest_enemy_for_unit(&g, 0, soldier, &[1]),
+            Some(enemy_city),
+            "and its unchanged choice is still the enemy city"
+        );
+
+        let mut live = BasicAi::new();
+        live.home_defense = true;
+        assert_eq!(
+            live.home_defense_objective(&g, 0, soldier, &[1]),
+            Some(raider_at),
+            "precondition: the same board DOES yield a defence objective when enabled"
+        );
+    }
+
     #[test]
     fn a_raider_in_the_home_ring_outranks_the_enemy_city_this_unit_is_standing_next_to() {
         let (g, soldier, raider_at, enemy_city) = raider_at_home_game();
-        let ai = BasicAi::new();
+        let mut ai = BasicAi::new();
+        ai.home_defense = true;
 
         // The defect, asserted first so the test cannot pass for the wrong
         // reason: the only selector this AI had picks the offensive.
@@ -9313,7 +9354,8 @@ mod tests {
         g.remove_unit(soldier);
         let distant = g.spawn_test_unit("warrior", 0, far);
 
-        let ai = BasicAi::new();
+        let mut ai = BasicAi::new();
+        ai.home_defense = true;
         assert!(
             g.wdist(far, raider_at) > HOME_DEFENSE_RECALL_RANGE,
             "precondition: the unit really is out of recall range"
@@ -9368,7 +9410,8 @@ mod tests {
         }
         assert_eq!(ours.len(), 4, "the cap is only meaningful on a known army size");
 
-        let ai = BasicAi::new();
+        let mut ai = BasicAi::new();
+        ai.home_defense = true;
         let claimed = ours
             .iter()
             .filter(|uid| ai.home_defense_objective(&g, 0, **uid, &[1]).is_some())

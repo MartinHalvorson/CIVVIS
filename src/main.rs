@@ -295,8 +295,18 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// (`major_war_since`). Still behind `bounded_recovery`, still short-circuiting
 /// on the flag before anything is read, so every configured, legacy and Elo
 /// agent is byte-identical. Another compatibility re-pin.
+///
+/// #955 adds `home_defense_objective`, which lets a raider standing in our own
+/// territory claim a unit before the offensive does. Gated behind the new
+/// `home_defense` flag, which is `false` in BOTH `BasicAi` constructors and is
+/// turned on only by the Civilization VI bridge — exactly the contract
+/// `siege_muster` runs under. `home_defense_objective` short-circuits on that
+/// flag before it reads anything, so every configured, legacy and Elo agent is
+/// byte-identical and `the_default_controller_keeps_home_defense_off` asserts
+/// it on a board that DOES yield an objective once enabled. A compatibility
+/// re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3ff9_fbfa_5d2f_bbff;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8a07_ec2d_0b02_8ed3;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
