@@ -345,6 +345,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// so `advanced_v1` takes byte-for-byte the arm it always took. A
 /// compatibility re-pin.
 ///
+/// #974 adds a `Cities/Decision` journal line to `advanced_production`, which
+/// had none. It is inside `if self.journal().wants(Decision)` and writes only
+/// to the reasoning journal — no board state is read or changed, and the
+/// legacy anchor's chosen item is bit-for-bit what it was. A compatibility
+/// re-pin.
+///
 /// #965 promotes wide, developed, defended expansion only in the production
 /// constructor: it enables call-local city/Builder floors, plan delegation plus
 /// the three existing defense flags, and lets that flagged plan consume the
@@ -355,7 +361,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// side of that boundary. This is therefore a compatibility re-pin for
 /// `advanced_v1`, not an Elo protocol change.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2561_ddff_6be2_7760;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc8c2_6abf_087d_982c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
