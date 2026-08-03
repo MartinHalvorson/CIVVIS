@@ -309,8 +309,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// #955 also adds `garrison_assignments`/`garrison_step`, which put a unit on a
 /// threatened city's own tile. Behind the SAME `home_defense` flag, short-
 /// circuiting on it first, so this too is a compatibility re-pin.
+///
+/// #962 gates faith military purchases on whether the empire can pay the GOLD
+/// upkeep the soldier incurs. Behind the new `solvent_faith_army` flag, which is
+/// `false` in `AdvancedAi::configured` (so `new()` and `legacy()` both have it
+/// off) and is turned on only by the Civilization VI bridge —
+/// `faith_military_is_affordable` returns `true` immediately on that flag, so
+/// every configured, legacy and Elo agent buys exactly what it always did.
+/// `the_default_controller_keeps_the_faith_army_ungated` asserts it on a board
+/// that DOES refuse once enabled. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1f5b_6504_c076_b5fb;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfa3d_df3c_792b_d1f6;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

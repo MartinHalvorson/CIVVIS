@@ -786,6 +786,16 @@ fn decide(
     // releases only the power-gap half, and only after the posture has had
     // `RECOVERY_POSTURE_LIMIT` standard turns to work.
     ai.enable_bounded_recovery();
+    // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
+    // `military_faith_spending` never asks about gold — it gates on the faith
+    // bank alone. Measured on run `civvis-20260803T014330Z`: faith military
+    // purchases walked down the gold curve (t124 at 60 gold, t141 at 48, t165 at
+    // 51), the treasury hit zero on t168, Civilization VI disbanded the army
+    // from 29 units to 19 by t173, and on t174 — at FIVE gold, one turn after
+    // losing a third of the army — CIVVIS bought another Field Cannon. The
+    // tournament controller stays frozen so its recorded ladders stay
+    // comparable.
+    ai.enable_solvent_faith_army();
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.
