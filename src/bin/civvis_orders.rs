@@ -763,6 +763,10 @@ fn decide(
     // Only the live bridge has Firaxis's non-walking Trader representation and
     // host-city religious purchase rule. Enable those narrow adapters before
     // the AI simulates its turn; the tournament controller stays frozen.
+    // Every live-bridge adapter and repair, in one place so the headless
+    // measurement arms can play the SAME controller the bridge deploys.
+    // See `AdvancedAi::enable_live_bridge`.
+    ai.enable_live_bridge();
     ai.enable_live_trader_route_adapter();
     ai.enable_live_religious_purchase_guard();
     // ⚠ Barbarians are excluded from `at_major_war` by design, so every defensive

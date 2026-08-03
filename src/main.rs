@@ -361,6 +361,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// side of that boundary. This is therefore a compatibility re-pin for
 /// `advanced_v1`, not an Elo protocol change.
 ///
+/// #976 adds `AdvancedAi::enable_live_bridge` (the eight bridge flags in one
+/// place, so a headless arm can play the deployed agent) and three
+/// `disable_*` methods that hold one flag off for a measurement arm. Nothing
+/// calls either from `new()` or `legacy()`, so every configured, legacy and Elo
+/// agent is byte-identical. A compatibility re-pin.
+///
 ///
 /// #977 raises the wartime army target when the enemy outweighs us, behind
 /// `army_target_weighs_the_enemy` — `false` in `AdvancedAi::new()` and set only
@@ -369,7 +375,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy and Elo agent wants exactly the army it always wanted. A
 /// compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x80d3_506f_2db2_93b6;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1e9b_e047_5b7b_db4f;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
