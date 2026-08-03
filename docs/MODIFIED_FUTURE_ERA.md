@@ -128,3 +128,12 @@ each was a way to get it wrong:
 - **The landing does not show as an event.** Deliveries are counted in
   `mass_driver_landings` but say nothing in the log; only strikes announce
   themselves.
+- **A rated game cannot be played in it, and that is load-bearing.**
+  `tournament_setup_contract` in `src/elo.rs` is the string an Elo ledger binds
+  a rated game to, and it does not name the Future Era. That is correct today
+  and only because `TourneyCfg` cannot ask for one: every tournament game is
+  built from `GameOptions::new`, which is the classic era. The moment a
+  tournament can select this era, that string has to gain the field — two games
+  played under different rules must not pool into one rating — and adding it
+  will move the contract for every existing record, which is a ledger migration
+  rather than a one-line change.
