@@ -7135,6 +7135,73 @@ function clearFinaleCountdown() {
   finaleCountdownWorld = null;
 }
 
+// The server owns an exhibition restart, but a full spectator snapshot is a
+// megabyte-scale long poll and therefore a poor display clock. Previously the
+// label changed only when one of those snapshots happened to arrive: a real
+// ten-second countdown could show 10 twice and then skip 6 entirely. Anchor a
+// local painter to the server's precise remainder instead. New snapshots may
+// pull the deadline earlier, never extend it, so network delay or a duplicate
+// response cannot make the visible clock count backwards.
+let exhibitionCountdownDeadline = 0;
+let exhibitionCountdownTimer = null;
+let exhibitionCountdownWorld = null;
+
+function clearExhibitionCountdown() {
+  if (exhibitionCountdownTimer !== null) clearInterval(exhibitionCountdownTimer);
+  exhibitionCountdownTimer = null;
+  exhibitionCountdownDeadline = 0;
+  exhibitionCountdownWorld = null;
+}
+
+function paintExhibitionCountdown() {
+  if (exhibitionCountdownTimer === null) return;
+  const respawn = document.getElementById("respawn");
+  if (!respawn || !state || !exhibitionCountdownWorld ||
+      (state.server_instance ?? null) !== exhibitionCountdownWorld.serverInstance ||
+      (state.seed ?? null) !== exhibitionCountdownWorld.seed) {
+    clearExhibitionCountdown();
+    return;
+  }
+  const milliseconds = exhibitionCountdownDeadline - Date.now();
+  if (milliseconds <= 0) {
+    if (respawn.textContent !== "The next world is beginning")
+      respawn.textContent = "The next world is beginning";
+    return;
+  }
+  const seconds = Math.ceil(milliseconds / 1000);
+  const text = `${seconds}s`;
+  if (respawn.querySelector(".winner-countdown-time")?.textContent === text) return;
+  respawn.replaceChildren();
+  respawn.append("The next world begins in");
+  const countdownTime = document.createElement("strong");
+  countdownTime.className = "winner-countdown-time";
+  countdownTime.textContent = text;
+  respawn.append(countdownTime);
+}
+
+function syncExhibitionCountdown(st) {
+  const wholeSeconds = Number(st.restart_in);
+  const preciseMilliseconds = Number(st.restart_in_ms);
+  const remaining = Number.isFinite(preciseMilliseconds)
+    ? Math.max(0, preciseMilliseconds)
+    : Math.max(0, wholeSeconds * 1000);
+  const world = {
+    serverInstance: st.server_instance ?? null,
+    seed: st.seed ?? null,
+  };
+  const sameWorld = exhibitionCountdownWorld &&
+    exhibitionCountdownWorld.serverInstance === world.serverInstance &&
+    exhibitionCountdownWorld.seed === world.seed;
+  const candidateDeadline = Date.now() + remaining;
+  exhibitionCountdownDeadline = sameWorld
+    ? Math.min(exhibitionCountdownDeadline, candidateDeadline)
+    : candidateDeadline;
+  exhibitionCountdownWorld = world;
+  if (exhibitionCountdownTimer === null)
+    exhibitionCountdownTimer = setInterval(paintExhibitionCountdown, 100);
+  paintExhibitionCountdown();
+}
+
 for (const gesture of ["pointerdown", "keydown", "wheel"])
   window.addEventListener(gesture, () => cancelFinaleCountdown(),
     {capture: true, passive: true});
@@ -8379,16 +8446,13 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     }
     const respawn = document.getElementById("respawn");
     if (respawn) {
-      respawn.replaceChildren();
       if (st.paused) {
+        clearExhibitionCountdown();
         respawn.textContent = "Final frame · exhibition paused";
       } else if (st.restart_in !== undefined) {
-        respawn.append("The next world begins in");
-        const countdownTime = document.createElement("strong");
-        countdownTime.className = "winner-countdown-time";
-        countdownTime.textContent = `${st.restart_in}s`;
-        respawn.append(countdownTime);
+        syncExhibitionCountdown(st);
       } else {
+        clearExhibitionCountdown();
         respawn.textContent = "Preparing the next world";
       }
     }
@@ -8399,6 +8463,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // Playing on takes the result screen away, and with it any countdown to
     // the game that would have replaced this one.
     clearFinaleCountdown();
+    clearExhibitionCountdown();
   }
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
   refreshTileTip();
