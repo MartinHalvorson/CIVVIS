@@ -4775,6 +4775,11 @@ const MAP_CIV_HIERARCHY = Object.freeze({
   minimapMajor:.76,
   minimapCityState:.18,
 });
+// Territory colour should identify ownership without replacing the terrain
+// beneath it. Keep the authored relative weights above, but moderate every
+// interior ownership wash by half. Frontier ribbons and city markers do not
+// use this scale, so empire perimeters retain their existing strength.
+const TERRITORY_TINT_SCALE = .5;
 const EDGE_CORNERS = [[0,1],[5,0],[4,5],[3,4],[2,3],[1,2]]; // matches DIRS order
 const DIRS = [[1,0],[1,-1],[0,-1],[-1,0],[-1,1],[0,1]];
 const ERA_NAMES = ["ancient", "classical", "medieval", "renaissance",
@@ -21203,13 +21208,13 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     if (owner === null || owner === undefined) continue;
     planetPaintPath(cx, cell, .22);
     const cityState = ownerIsCityState(owner);
-    cx.globalAlpha = empire
+    cx.globalAlpha = TERRITORY_TINT_SCALE * (empire
       ? (cityState ? .055 : .45)
       : cityState ? MAP_CIV_HIERARCHY.planetWashCityState
       : painted ? (MODE.atmosphere
           ? MAP_CIV_HIERARCHY.planetWashMajorCinematic
           : MAP_CIV_HIERARCHY.planetWashMajorBalanced)
-      : MAP_CIV_HIERARCHY.planetWashMajorStrategic;
+      : MAP_CIV_HIERARCHY.planetWashMajorStrategic);
     cx.fillStyle = pcol(owner);
     cx.fill();
   }
@@ -21708,8 +21713,8 @@ function drawSettlerLensFlat(tiles) {
 // Empire lens is deliberately a replacement ground pass. Painting it after
 // terrain, routes, improvements, resources and yields means every map style
 // collapses to the same two land/water materials without changing hit-testing
-// or the normal renderer. Major territory remains saturated; minor territory
-// is present at a fraction of that weight so the eye reads civilization-scale
+// or the normal renderer. Major territory remains legible; minor territory is
+// present at a fraction of that weight so the eye reads civilization-scale
 // frontiers first.
 function drawEmpireLensFlat(tiles) {
   cx.save();
@@ -21721,7 +21726,8 @@ function drawEmpireLensFlat(tiles) {
     if (tile.owner === null || tile.owner === undefined) continue;
     hexPath(x, y, S + .45);
     cx.fillStyle = pcol(tile.owner);
-    cx.globalAlpha = ownerIsCityState(tile.owner) ? .055 : .45;
+    cx.globalAlpha = TERRITORY_TINT_SCALE *
+      (ownerIsCityState(tile.owner) ? .055 : .45);
     cx.fill(); cx.globalAlpha = 1;
   }
 
@@ -22327,7 +22333,7 @@ function draw() {
     // landscape; strategic mode intentionally keeps tile identity explicit.
     if (!beau && t.owner !== null && t.owner !== undefined) {
       hexPath(x, y, S + 0.15);
-      cx.globalAlpha = 0.11;
+      cx.globalAlpha = TERRITORY_TINT_SCALE * 0.11;
       cx.fillStyle = pcol(t.owner);
       cx.fill();
     }
@@ -22434,10 +22440,10 @@ function draw() {
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     hexPath(x, yy - elev(t), S - 0.5);
     cx.fillStyle = pcol(t.owner);
-    cx.globalAlpha = ownerIsCityState(t.owner)
+    cx.globalAlpha = TERRITORY_TINT_SCALE * (ownerIsCityState(t.owner)
       ? MAP_CIV_HIERARCHY.flatWashCityState
       : beau ? MAP_CIV_HIERARCHY.flatWashMajorPainted
-             : MAP_CIV_HIERARCHY.flatWashMajorStrategic;
+             : MAP_CIV_HIERARCHY.flatWashMajorStrategic);
     cx.fill();
   }
   cx.globalAlpha = 1;
@@ -24194,8 +24200,8 @@ function drawPlanetMini() {
     mx2.fillStyle = spectator || visible.has(key(cell.tile.pos)) ? base : shade(base, .35);
     mx2.fill();
     if (cell.tile.owner !== null && cell.tile.owner !== undefined) {
-      mx2.globalAlpha = ownerIsCityState(cell.tile.owner)
-        ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor;
+      mx2.globalAlpha = TERRITORY_TINT_SCALE * (ownerIsCityState(cell.tile.owner)
+        ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor);
       mx2.fillStyle = cityBannerColor(cell.tile.owner); mx2.fill();
       mx2.globalAlpha = 1;
     }
@@ -24383,8 +24389,8 @@ function drawMini() {
     // ground at minimap strength. The banner colour carries their TYPE instead,
     // and matches the hex already drawn for their capital.
     mx2.fillStyle = cityBannerColor(t.owner);
-    mx2.globalAlpha = ownerIsCityState(t.owner)
-      ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor;
+    mx2.globalAlpha = TERRITORY_TINT_SCALE * (ownerIsCityState(t.owner)
+      ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor);
     miniHexPath(x, y, layout.size + 0.12); mx2.fill();
   }
   mx2.globalAlpha = 1;
