@@ -425,6 +425,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// board, so every configured, legacy and Elo agent scores every tile exactly
 /// as it did. A compatibility re-pin.
 ///
+/// #999 gives the research chooser a goal for a Campus building the empire is
+/// already equipped for but cannot reach, behind `research_economy`. That field
+/// is `false` in `AdvancedAi::configured`, and `unreachable_science_building_tech`
+/// returns `None` on it before reading the board at all, so `advanced_v1` picks
+/// the technology it always picked. A compatibility re-pin.
+///
 /// #954 says why a settler was held instead of only that it was marching. The
 /// added block is inside `if !moved && self.journal().wants(Detail)` and every
 /// call it makes is a read: `Game::route_step` and `route_step_to_any` take
@@ -433,7 +439,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// board state is touched, so the anchor plays the identical game and only its
 /// journal differs. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe6dc_83fd_ebaa_c41d;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1818_70fc_a214_78b8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
