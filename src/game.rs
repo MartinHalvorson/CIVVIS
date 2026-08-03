@@ -13438,7 +13438,11 @@ pub struct QueryCache {
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
     // even when a read-only phase asks for the same empire repeatedly.
-    unit_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
+    unit_ids: std::cell::RefCell<Option<BTreeMap<usize, Arc<Vec<u32>>>>>,
+    // Territory access is a unit-level route predicate. Cache it by unit id
+    // while a route call runs, because the same access gates both local and
+    // cached planning steps.
+    unit_territory_access: std::cell::RefCell<Option<BTreeMap<u32, Arc<Vec<bool>>>>>,
     city_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
     // Three empire-wide derivations that callers reach for one city at a
     // time. Each is keyed by player, because that is the scope it is
@@ -13498,6 +13502,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.traversal.borrow_mut() = None;
             *self.game.query_memo.amenities.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
+            *self.game.query_memo.unit_territory_access.borrow_mut() = None;
             *self.game.query_memo.city_ids.borrow_mut() = None;
             *self.game.query_memo.lux_alloc.borrow_mut() = None;
             *self.game.query_memo.lux_names.borrow_mut() = None;
@@ -13615,6 +13620,16 @@ pub struct RoutingCache {
     stamp: u64,
     zones: Vec<(TraversalClass, std::sync::Arc<Vec<u32>>)>,
     paths: Vec<PlannedRoute>,
+}
+
+#[derive(Clone, Default)]
+struct RouteScratch {
+    astar_frontier: BinaryHeap<Reverse<(i32, Reverse<i32>, Pos)>>,
+    bfs_frontier: VecDeque<(Pos, usize)>,
+    path: Vec<Pos>,
+    parent: Vec<u32>,
+    seen: Vec<bool>,
+    distance: Vec<i32>,
 }
 
 #[derive(Clone)]
@@ -16105,6 +16120,8 @@ pub struct Game {
     /// rebuilt on demand whenever the world moves under it.
     #[serde(skip)]
     routing: std::cell::RefCell<RoutingCache>,
+    #[serde(skip)]
+    route_scratch: std::cell::RefCell<RouteScratch>,
     /// Memoized read-only answers; see [`QueryCache`]. Never saved, with
     /// short-lived entries cleared by their guard and production catalogs
     /// cleared by a successful action; empty in any clone.
@@ -16661,6 +16678,7 @@ impl From<GameSer> for Game {
             rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
+            route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
@@ -17112,6 +17130,7 @@ impl Game {
             rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
+            route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
@@ -18590,8 +18609,13 @@ impl Game {
         self.city_by_pos.get(&pos).copied()
     }
 
+    pub fn unit_ids_at(&self, pos: Pos) -> &[u32] {
+        const EMPTY: &[u32] = &[];
+        self.occ.get(&pos).map_or(EMPTY, Vec::as_slice)
+    }
+
     pub fn units_at(&self, pos: Pos) -> Vec<u32> {
-        self.occ.get(&pos).cloned().unwrap_or_default()
+        self.unit_ids_at(pos).to_vec()
     }
 
     pub fn player_unit_ids(&self, pid: usize) -> Vec<u32> {
@@ -18602,18 +18626,46 @@ impl Game {
             .as_ref()
             .and_then(|memo| memo.get(&pid))
         {
-            return ids.clone();
+            return ids.as_ref().clone();
         }
-        let ids: Vec<u32> = self
-            .units
-            .values()
-            .filter(|u| u.owner == pid)
-            .map(|u| u.id)
-            .collect();
+        let ids = Arc::new(
+            self
+                .units
+                .values()
+                .filter(|u| u.owner == pid)
+                .map(|u| u.id)
+                .collect::<Vec<u32>>(),
+        );
+        let owned = ids.as_ref().clone();
         if let Some(memo) = self.query_memo.unit_ids.borrow_mut().as_mut() {
             memo.insert(pid, ids.clone());
         }
-        ids
+        owned
+    }
+
+    fn unit_territory_access(&self, unit: &Unit) -> Arc<Vec<bool>> {
+        if let Some(access) = self
+            .query_memo
+            .unit_territory_access
+            .borrow()
+            .as_ref()
+            .and_then(|memo| memo.get(&unit.id))
+        {
+            return access.clone();
+        }
+        let access: Arc<Vec<bool>> = Arc::new(
+            (0..self.players.len())
+                .map(|owner| self.unit_has_territory_access(unit, owner))
+                .collect(),
+        );
+        if let Some(memo) = self.query_memo
+            .unit_territory_access
+            .borrow_mut()
+            .as_mut()
+        {
+            memo.insert(unit.id, access.clone());
+        }
+        access
     }
 
     pub fn player_city_ids(&self, pid: usize) -> Vec<u32> {
@@ -31630,7 +31682,7 @@ impl Game {
         {
             return None;
         }
-        let access_key = self.route_access_key(unit, &territory_access);
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
         let cached_step = {
             let routing = self.routing.borrow();
             routing
@@ -31668,21 +31720,29 @@ impl Game {
         let _memo = self.query_memo();
         let tile_count = self.map.tiles.len();
         let start_index = self.map.tiles.index_of(start)?;
-        let mut frontier = BinaryHeap::with_capacity(128);
-        let mut distance: Vec<i32> = vec![UNREACHED; tile_count];
-        let mut parent: Vec<u32> = vec![NO_PARENT; tile_count];
-        distance[start_index] = 0;
+        let mut scratch = self.route_scratch.borrow_mut();
+        if scratch.parent.len() < tile_count {
+            scratch.parent.resize(tile_count, NO_PARENT);
+            scratch.distance.resize(tile_count, UNREACHED);
+        }
+        for slot in 0..tile_count {
+            scratch.parent[slot] = NO_PARENT;
+            scratch.distance[slot] = UNREACHED;
+        }
+        scratch.astar_frontier.clear();
+        scratch.path.clear();
+        scratch.distance[start_index] = 0;
         // On equal f-scores, prefer the node furthest along the route. This
         // avoids breadth-first expansion of an entire open plain/ocean before
         // following one of several equally short paths to the destination.
-        frontier.push(Reverse((self.wdist(start, to), Reverse(0), start)));
+        scratch.astar_frontier.push(Reverse((self.wdist(start, to), Reverse(0), start)));
 
         let mut goal = None;
-        while let Some(Reverse((_, Reverse(traveled), cur))) = frontier.pop() {
+        while let Some(Reverse((_, Reverse(traveled), cur))) = scratch.astar_frontier.pop() {
             let Some(cur_index) = self.map.tiles.index_of(cur) else {
                 continue;
             };
-            if traveled != distance[cur_index] {
+            if traveled != scratch.distance[cur_index] {
                 continue;
             }
             if self.wdist(cur, to) <= range {
@@ -31700,35 +31760,36 @@ impl Game {
                     continue;
                 };
                 let next_distance = traveled + 1;
-                if next_distance >= distance[index] {
+                if next_distance >= scratch.distance[index] {
                     continue;
                 }
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n, &territory_access)
+                    self.can_path_through(uid, cur, n, territory_access.as_slice())
                 };
                 if !enterable {
                     continue;
                 }
-                distance[index] = next_distance;
-                parent[index] = cur_index as u32;
+                scratch.distance[index] = next_distance;
+                scratch.parent[index] = cur_index as u32;
                 let estimate = next_distance + (self.wdist(n, to) - range).max(0);
-                frontier.push(Reverse((estimate, Reverse(next_distance), n)));
+                scratch.astar_frontier.push(Reverse((estimate, Reverse(next_distance), n)));
             }
         }
         let mut cursor = goal?;
-        let mut reverse_path = vec![self.map.tiles.values().as_slice()[cursor].pos];
+        let map_tiles = self.map.tiles.values().as_slice();
+        scratch.path.push(map_tiles[cursor].pos);
         while cursor != start_index {
-            let previous = parent[cursor];
+            let previous = scratch.parent[cursor];
             if previous == NO_PARENT {
                 return None;
             }
             cursor = previous as usize;
-            reverse_path.push(self.map.tiles.values().as_slice()[cursor].pos);
+            scratch.path.push(map_tiles[cursor].pos);
         }
-        reverse_path.reverse();
-        let step = *reverse_path.get(1)?;
+        scratch.path.reverse();
+        let step = *scratch.path.get(1)?;
         let mut routing = self.routing.borrow_mut();
         routing.paths.retain(|route| route.unit != uid);
         routing.paths.push(PlannedRoute {
@@ -31736,7 +31797,7 @@ impl Game {
             target: to,
             range,
             access_key,
-            path: reverse_path,
+            path: std::mem::take(&mut scratch.path),
         });
         Some(step)
     }
@@ -31754,12 +31815,6 @@ impl Game {
             key = vision_key(&[key, city.id as u64, city.owner as u64]);
         }
         key
-    }
-
-    fn unit_territory_access(&self, unit: &Unit) -> Vec<bool> {
-        (0..self.players.len())
-            .map(|owner| self.unit_has_territory_access(unit, owner))
-            .collect()
     }
 
     /// Terrain/domain legality for future route segments. Dynamic unit
@@ -31923,15 +31978,24 @@ impl Game {
         // hold — so an index always exists for a reachable neighbour.
         const NO_PARENT: u32 = u32::MAX;
         let tile_count = self.map.tiles.len();
-        let mut parent: Vec<u32> = vec![NO_PARENT; tile_count];
-        let mut seen: Vec<bool> = vec![false; tile_count];
-        let mut queue = VecDeque::new();
+        let mut scratch = self.route_scratch.borrow_mut();
+        if scratch.parent.len() < tile_count {
+            scratch.parent.resize(tile_count, NO_PARENT);
+        }
+        if scratch.seen.len() < tile_count {
+            scratch.seen.resize(tile_count, false);
+        }
+        for slot in 0..tile_count {
+            scratch.parent[slot] = NO_PARENT;
+            scratch.seen[slot] = false;
+        }
+        scratch.bfs_frontier.clear();
         let start_index = self.map.tiles.index_of(start)?;
-        seen[start_index] = true;
-        queue.push_back((start, start_index));
+        scratch.seen[start_index] = true;
+        scratch.bfs_frontier.push_back((start, start_index));
 
         let mut goal = None;
-        'search: while let Some((cur, cur_index)) = queue.pop_front() {
+        'search: while let Some((cur, cur_index)) = scratch.bfs_frontier.pop_front() {
             for n in self.nbrs(cur) {
                 // Settle the cheap disqualifiers before asking whether the
                 // unit may enter. Every interior tile is reached as a
@@ -31945,30 +32009,30 @@ impl Game {
                 let Some(index) = self.map.tiles.index_of(n) else {
                     continue;
                 };
-                if seen[index] {
+                if scratch.seen[index] {
                     continue;
                 }
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n, &territory_access)
+                    self.can_path_through(uid, cur, n, territory_access.as_slice())
                 };
                 if !enterable {
                     continue;
                 }
-                seen[index] = true;
-                parent[index] = cur_index as u32;
+                scratch.seen[index] = true;
+                scratch.parent[index] = cur_index as u32;
                 if is_goal(n) {
                     goal = Some(index);
                     break 'search;
                 }
-                queue.push_back((n, index));
+                scratch.bfs_frontier.push_back((n, index));
             }
         }
 
         let mut step = goal?;
-        while parent[step] != start_index as u32 {
-            let previous = parent[step];
+        while scratch.parent[step] != start_index as u32 {
+            let previous = scratch.parent[step];
             if previous == NO_PARENT {
                 return None;
             }
@@ -34391,6 +34455,7 @@ impl Game {
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.city_ids.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.lux_alloc.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.lux_names.borrow_mut() = Some(BTreeMap::new());
