@@ -1490,8 +1490,11 @@
     font-size: var(--type-control); line-height: 1.6; backdrop-filter: blur(14px);
   }
   #buildmark {
-    position: fixed; z-index: 25;
-    left: max(7px, env(safe-area-inset-left)); bottom: max(5px, env(safe-area-inset-bottom));
+    /* The authored World minimap owns the lower-right corner at z-index 6.
+       Keeping this one layer beneath it makes the provenance unobtrusive at
+       first, then reveals it naturally when that movable map leaves home. */
+    position: fixed; z-index: 5;
+    right: max(7px, env(safe-area-inset-right)); bottom: max(5px, env(safe-area-inset-bottom));
     max-width: calc(100vw - 14px); padding: 3px 6px;
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
     color: #9aaca5; background: #07110fbd; border: 1px solid #40534b99;
@@ -6837,7 +6840,12 @@ function formatBuildAge(buildDate) {
   const days = Math.floor(totalMinutes / 1440);
   const hours = Math.floor(totalMinutes % 1440 / 60);
   const minutes = totalMinutes % 60;
-  return `${days}d ${hours}h ${minutes}m`;
+  const parts = [
+    days ? `${days}d` : "",
+    hours ? `${hours}h` : "",
+    minutes ? `${minutes}m` : "",
+  ].filter(Boolean);
+  return parts.join(" ") || "0m";
 }
 function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
@@ -6852,11 +6860,8 @@ function updateBuildMarker(st = state) {
     if (marker) marker.hidden = true;
     return;
   }
-  const committed = commitDate.toLocaleString(undefined, {
-    year: "numeric", month: "short", day: "numeric",
-    hour: "numeric", minute: "2-digit", timeZoneName: "short",
-  });
-  marker.textContent = `${commit.slice(0, 7)} · committed ${committed} · ` +
+  marker.textContent = `${commit.slice(0, 7)} · ` +
+    `Commit is ${formatBuildAge(commitDate)} old · ` +
     `Build is ${formatBuildAge(buildDate)} old`;
   marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}`;
   marker.hidden = false;
