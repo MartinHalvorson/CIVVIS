@@ -29,8 +29,8 @@
   const WASM_URL = new URL("civvis.wasm", here).href;
   const WORKER_URL = new URL("worker.js", here).href;
 
-  // Everything the engine answers. A path not in here is a real file — the
-  // sprite atlases, the 3D cinematic — and goes to the network untouched.
+  // Everything the engine answers. A path not in here is a real file, such as
+  // a strategic map sprite atlas, and goes to the network untouched.
   const ENGINE_ROUTES = new Set([
     "/state", "/status", "/runtime", "/rules", "/pedia", "/save", "/saves",
     "/load", "/action", "/step", "/autoplay", "/play-on", "/route", "/view",
