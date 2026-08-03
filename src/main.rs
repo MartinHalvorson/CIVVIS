@@ -430,8 +430,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// is `false` in `AdvancedAi::configured`, and `unreachable_science_building_tech`
 /// returns `None` on it before reading the board at all, so `advanced_v1` picks
 /// the technology it always picked. A compatibility re-pin.
+///
+/// #1003 lets the baseline governor build an Entertainment Complex when the
+/// host reports the city paying the Amenity band, behind
+/// `BasicAi::amenity_districts`. That field is `false` in both `BasicAi`
+/// constructors and is set only by `AdvancedAi::promoted_policy_envoy`; the
+/// added block short-circuits on it before reading the board, so `advanced_v1`
+/// ranks the same four district families in the same order. A compatibility
+/// re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xcc72_4414_a932_0edc;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc0fd_a03e_246d_6d3c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
