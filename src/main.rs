@@ -407,6 +407,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// before it reads the board, so every configured, legacy and Elo agent scores
 /// every tile exactly as it did. A compatibility re-pin.
 ///
+/// #990 adds four `disable_*` methods so every flag in `enable_live_bridge` has a
+/// measurement arm. They are called only by `builtin_ai`'s `live_without_*`
+/// factories, never in play, so every configured, legacy and Elo agent is
+/// byte-identical. A compatibility re-pin.
+///
+/// #989 adds a journal line for a DECLINED attack and a diagnostic tally of the
+/// reasons the forward model refuses one. Both are behind
+/// `journal().wants(Detail)` or write only to a process-local census; no board
+/// state is read and no decision changes, so every configured, legacy and Elo
+/// agent attacks exactly what it always did. A compatibility re-pin.
+///
 /// #991 makes a ranged unit prefer a movement tile it can actually see the
 /// target from, behind `ranged_needs_line_of_sight` — `false` in
 /// `AdvancedAi::new()` and set only by `enable_live_bridge`.
@@ -414,7 +425,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// board, so every configured, legacy and Elo agent scores every tile exactly
 /// as it did. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0c18_e0d1_a033_3e3f;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe878_c745_0830_3603;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
