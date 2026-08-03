@@ -4,6 +4,7 @@ import plistlib
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
@@ -120,6 +121,20 @@ class DesktopAppsTests(unittest.TestCase):
             self.assertIn("Commit: " + self.revision.commit, note)
             self.assertIn(desktop.DEFAULT_PRESET, note)
         self.assertIn("Engine: 8,000,000 bytes", wasm)
+
+    def test_listener_verification_waits_for_launcher_to_exit(self):
+        attached_rust = {"pid": 101, "ppid": 99, "command": "rust"}
+        detached_rust = {"pid": 101, "ppid": 1, "command": "rust"}
+        detached_wasm = {"pid": 202, "ppid": 1, "command": "wasm"}
+        with mock.patch.object(
+            desktop,
+            "listener",
+            side_effect=(attached_rust, detached_wasm, detached_rust, detached_wasm),
+        ), mock.patch.object(desktop.time, "sleep") as sleep:
+            listeners = desktop.wait_for_detached_listeners(ROOT)
+
+        self.assertEqual(listeners, {"rust": detached_rust, "wasm": detached_wasm})
+        sleep.assert_called_once_with(0.25)
 
 
 if __name__ == "__main__":
