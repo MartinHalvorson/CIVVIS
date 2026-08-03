@@ -6859,6 +6859,68 @@ mod tests {
         }
     }
 
+    /// Map search is deliberately a client-side read of the observation the
+    /// browser already owns. It must use exact sight rather than remembered
+    /// tiles, understand the named things that can occupy a tile, and paint
+    /// the same result on both supported map projections.
+    #[test]
+    fn browser_search_lights_every_matching_visible_tile() {
+        let dock = EMBEDDED_INDEX
+            .split_once("<div id=\"map-controls-dock\">")
+            .expect("map controls dock")
+            .1
+            .split_once("<div id=\"map-area-editor\"")
+            .expect("end of map controls dock")
+            .0;
+        let search_at = dock.find("id=\"map-search\"").expect("map search control");
+        let controls_at = dock.find("id=\"zoomctl\"").expect("map controls");
+        assert!(
+            search_at < controls_at,
+            "the search box should stand directly above the lower-left map controls"
+        );
+        assert!(dock.contains("id=\"map-search-input\" type=\"search\""));
+        assert!(dock.contains("aria-live=\"polite\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "#map-search {\n    position: absolute; z-index: 2; left: 0; bottom: calc(100% + 6px);"
+        ));
+
+        let matcher = EMBEDDED_INDEX
+            .split_once("function computeMapSearchMatches(st, query) {")
+            .expect("map search matcher")
+            .1
+            .split_once("\nfunction mapSearchMatches() {")
+            .expect("end of map search matcher")
+            .0;
+        assert!(matcher.contains("new Set((st.visible || []).map(key))"));
+        assert!(
+            !matcher.contains("turn_visible"),
+            "search must not reveal remembered tiles outside exact sight"
+        );
+        for field in [
+            "tile.terrain",
+            "tile.feature",
+            "tile.resource",
+            "tile.improvement",
+            "tile.district",
+            "tile.planned_district",
+            "tile.wonder",
+            "st.cities",
+            "st.units",
+            "st.camps",
+        ] {
+            assert!(matcher.contains(field), "map search ignores {field}");
+        }
+        assert!(matcher.contains("RULES?.districts?.[district]?.replaces"));
+        assert!(EMBEDDED_INDEX.contains("drawFlatMapSearchHighlights(tiles);"));
+        assert!(EMBEDDED_INDEX.contains("drawPlanetMapSearchHighlights(cells);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));\n  syncMapSearchStatus();"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const message = `${count} visible ${count === 1 ? \"tile\" : \"tiles\"}`;"
+        ));
+    }
+
     /// Every lobby setting is answered before a game starts: each select
     /// offers only real values, and a victory condition is the two states a
     /// checkbox knows. Nothing in the panel stands in for a decision that has
