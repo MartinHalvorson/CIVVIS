@@ -486,3 +486,57 @@ def test_an_absent_rig_is_not_reported_as_stale():
         open(decider, "w").close()
         lines = [f"python3 tools/civ6_brain.py --bin {decider}"]
         assert civ6_mirror_check.stale_rig_problems(lines, rig=os.path.join(tmp, "nope")) == []
+
+
+def test_the_binary_actually_serving_is_the_one_compared():
+    """⚠⚠⚠ The rig path was ASSUMED while the decider's was ASKED FOR.
+
+    `follow.py`'s repo copy resolves its binary to `<repo>/target/release/civvis`,
+    not the deployed `~/civvis-civ6-mirror/civvis` this defaulted to. So on any
+    checkout-run follower the check compared a file NOBODY WAS RUNNING — and a stale
+    binary at the real path would have been reported as fine, which is precisely the
+    2026-08-02 failure this whole check exists to prevent.
+    """
+    with tempfile.TemporaryDirectory() as tmp:
+        serving = os.path.join(tmp, "serving-civvis")
+        unused = os.path.join(tmp, "deployed-civvis")
+        decider = os.path.join(tmp, "civvis_orders")
+        for path, when in ((serving, 1_000_000),          # stale, and it is the one running
+                           (unused, 1_000_000 + 99_000),  # fresh, and nobody runs it
+                           (decider, 1_000_000 + 7200)):
+            open(path, "w").close()
+            os.utime(path, (when, when))
+        lines = [
+            f"python3 tools/civ6_brain.py --run-dir /x --bin {decider}",
+            f"nice -n 5 {serving} play --mirror /stage --players 6 --port 8610",
+        ]
+        found = civ6_mirror_check.stale_rig_problems(lines, rig=unused)
+        assert found, "the binary on the server's own command line must win"
+        assert serving in found[0], found[0]
+        assert "2.0h older" in found[0], found[0]
+
+
+def test_the_message_says_mtime_is_only_a_proxy():
+    """A fresh copy of identical sources trips this, and a touched stale binary does
+    not. Whoever reads it must be told to confirm before spending a rebuild."""
+    with tempfile.TemporaryDirectory() as tmp:
+        rig, decider = os.path.join(tmp, "civvis"), os.path.join(tmp, "civvis_orders")
+        open(rig, "w").close(); os.utime(rig, (1_000_000, 1_000_000))
+        open(decider, "w").close(); os.utime(decider, (1_003_600, 1_003_600))
+        found = civ6_mirror_check.stale_rig_problems(
+            [f"python3 tools/civ6_brain.py --bin {decider}"], rig=rig)
+        assert "PROXY" in found[0], found[0]
+
+
+def test_the_controllers_own_command_line_is_not_mistaken_for_the_server():
+    """⚠ `civ6_play.py` also carries `play`. Matching it would compare a Python
+    script's mtime against the decider and warn on every single run."""
+    with tempfile.TemporaryDirectory() as tmp:
+        rig, decider = os.path.join(tmp, "civvis"), os.path.join(tmp, "civvis_orders")
+        open(rig, "w").close(); os.utime(rig, (1_003_600, 1_003_600))
+        open(decider, "w").close(); os.utime(decider, (1_000_000, 1_000_000))
+        lines = [
+            f"python3 tools/civ6_brain.py --bin {decider}",
+            "python3 -u /repo/tools/civ6_play.py --tag civvis-x --mirror-ish --civvis-decides",
+        ]
+        assert civ6_mirror_check.stale_rig_problems(lines, rig=rig) == []

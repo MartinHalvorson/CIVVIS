@@ -29,11 +29,16 @@ class DesktopAppsTests(unittest.TestCase):
         rendered = {}
         for app in desktop.APPS:
             text = desktop.render_launcher(
-                self.template, app, self.revision, "2026-08-03T17:01:00Z"
+                self.template,
+                app,
+                self.revision,
+                "2026-08-03T17:01:00Z",
+                ROOT,
             )
             self.assertNotIn("@@", text)
             self.assertIn('readonly civvis_mode="{}"'.format(app.mode), text)
             self.assertIn('readonly civvis_commit="{}"'.format(self.revision.commit), text)
+            self.assertIn('readonly civvis_repo="{}"'.format(ROOT), text)
             with tempfile.NamedTemporaryFile("w", suffix=".zsh", encoding="utf-8") as launcher:
                 launcher.write(text)
                 launcher.flush()
@@ -50,6 +55,58 @@ class DesktopAppsTests(unittest.TestCase):
             self.assertIn(expected, rendered["wasm"])
         self.assertIn('readonly civvis_port="8785"', rendered["rust"])
         self.assertIn('readonly civvis_port="8790"', rendered["wasm"])
+        for launcher in rendered.values():
+            self.assertIn(
+                'if status_matches_build "${civvis_status}"; then\n'
+                '    # A live file server can begin serving a newly installed bundle',
+                launcher,
+            )
+            self.assertIn('    open_civvis_page true\n    exit 0', launcher)
+            self.assertIn('"${refresh_tool}" refresh', launcher)
+            self.assertIn("set minimized of chrome_window to false", launcher)
+
+    def test_refresh_rebuilds_only_stale_or_old_pairs(self):
+        held = tempfile.TemporaryDirectory()
+        self.addCleanup(held.cleanup)
+        desktop_dir = pathlib.Path(held.name)
+        for app in desktop.APPS:
+            launcher = desktop_dir / app.bundle_name / "Contents/MacOS" / app.executable_name
+            launcher.parent.mkdir(parents=True)
+            launcher.touch()
+        current = {
+            "mode": "rust",
+            "commit": self.revision.commit,
+            "commit_time": self.revision.committed_at,
+            "built_at": "2026-08-03T17:01:00Z",
+        }
+        wasm = {**current, "mode": "wasm"}
+        with mock.patch.object(
+            desktop, "launcher_metadata", side_effect=(current, wasm)
+        ), mock.patch.object(desktop, "age_minutes", side_effect=(12, 13)):
+            self.assertFalse(
+                desktop.installed_pair_needs_refresh(
+                    desktop_dir, self.revision, 30
+                )
+            )
+
+        older = {**current, "commit": "b" * 40}
+        with mock.patch.object(
+            desktop, "launcher_metadata", side_effect=(older, wasm)
+        ), mock.patch.object(desktop, "age_minutes", side_effect=(12, 13)):
+            self.assertTrue(
+                desktop.installed_pair_needs_refresh(
+                    desktop_dir, self.revision, 30
+                )
+            )
+
+        with mock.patch.object(
+            desktop, "launcher_metadata", side_effect=(current, wasm)
+        ), mock.patch.object(desktop, "age_minutes", return_value=31):
+            self.assertTrue(
+                desktop.installed_pair_needs_refresh(
+                    desktop_dir, self.revision, 30
+                )
+            )
 
     def test_repository_defaults_match_the_launcher_contract(self):
         desktop.verify_default_contract(ROOT, self.template_path)
@@ -101,6 +158,14 @@ class DesktopAppsTests(unittest.TestCase):
                 restored = desktop_dir / app.bundle_name / "Contents/Resources"
                 self.assertTrue((restored / "old").is_file())
                 self.assertFalse((restored / "new").exists())
+
+    def test_install_lock_exposes_only_a_live_refresh_pid(self):
+        with tempfile.TemporaryDirectory() as held:
+            state = pathlib.Path(held)
+            lock = state / "desktop-apps.lock"
+            with desktop.install_lock(state):
+                self.assertEqual(int(lock.read_text(encoding="utf-8")), desktop.os.getpid())
+            self.assertEqual(lock.read_text(encoding="utf-8"), "")
 
     def test_build_note_carries_exact_revision_and_shared_preset(self):
         artifacts = desktop.BuildArtifacts(

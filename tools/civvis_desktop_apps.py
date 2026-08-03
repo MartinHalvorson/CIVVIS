@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Build, install, and verify the local Rust and WASM CIVVIS macOS apps.
+"""Build, refresh, install, and verify local Rust and WASM CIVVIS macOS apps.
 
 Both apps are cut from one pinned Git revision, rendered from one launcher
 template, signed before installation, and swapped under one process lock.  The
@@ -27,7 +27,7 @@ from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 REPOSITORY_URL = "https://github.com/MartinHalvorson/CIVVIS"
 FULL_COMMIT = re.compile(r"^[0-9a-f]{40}$")
-TEMPLATE_TOKENS = ("MODE", "LABEL", "COMMIT", "COMMIT_TIME", "BUILT_AT")
+TEMPLATE_TOKENS = ("MODE", "LABEL", "COMMIT", "COMMIT_TIME", "BUILT_AT", "REPO")
 DEFAULT_PRESET = (
     "AI simulation; Small 74x46 flat Continents; 6 majors;\n"
     "9 city-states; free for all; Ancient; Online/250 turns; Blitz/1000 ms;\n"
@@ -156,6 +156,9 @@ def install_lock(state_dir: pathlib.Path) -> Iterator[None]:
         try:
             yield
         finally:
+            held.seek(0)
+            held.truncate()
+            held.flush()
             fcntl.flock(held.fileno(), fcntl.LOCK_UN)
 
 
@@ -281,13 +284,20 @@ def build_artifacts(
             run(("git", "worktree", "remove", str(source)), cwd=repo)
 
 
-def render_launcher(template: str, spec: AppSpec, revision: Revision, built_at: str) -> str:
+def render_launcher(
+    template: str,
+    spec: AppSpec,
+    revision: Revision,
+    built_at: str,
+    repo: pathlib.Path,
+) -> str:
     values = {
         "MODE": spec.mode,
         "LABEL": spec.label,
         "COMMIT": revision.commit,
         "COMMIT_TIME": revision.committed_at,
         "BUILT_AT": built_at,
+        "REPO": str(repo),
     }
     rendered = template
     for token in TEMPLATE_TOKENS:
@@ -363,7 +373,10 @@ def stage_apps(repo: pathlib.Path, artifacts: BuildArtifacts, template_path: pat
         resources.mkdir()
         built_at = artifacts.native_built_at if spec.mode == "rust" else artifacts.wasm_built_at
         launcher = macos / spec.executable_name
-        launcher.write_text(render_launcher(template, spec, artifacts.revision, built_at), encoding="utf-8")
+        launcher.write_text(
+            render_launcher(template, spec, artifacts.revision, built_at, repo),
+            encoding="utf-8",
+        )
         launcher.chmod(0o755)
         write_info_plist(
             app / "Contents/Info.plist",
@@ -527,6 +540,28 @@ def age_minutes(timestamp: str) -> int:
     return int((dt.datetime.now(dt.timezone.utc) - parsed).total_seconds() // 60)
 
 
+def installed_pair_needs_refresh(
+    desktop: pathlib.Path,
+    revision: Revision,
+    max_build_age_minutes: int,
+) -> bool:
+    """Cheaply decide whether a click should rebuild the installed pair."""
+    metadata = []
+    for spec in APPS:
+        app = desktop / spec.bundle_name
+        launcher = app / "Contents/MacOS" / spec.executable_name
+        if not launcher.is_file():
+            return True
+        try:
+            held = launcher_metadata(app, spec.executable_name)
+            if age_minutes(held["built_at"]) > max_build_age_minutes:
+                return True
+        except (DesktopAppError, OSError, ValueError):
+            return True
+        metadata.append(held)
+    return any(held["commit"] != revision.commit for held in metadata)
+
+
 def route(url: str) -> Tuple[int, str, str, str]:
     opener = urllib.request.build_opener(urllib.request.HTTPRedirectHandler())
     with opener.open(url, timeout=3) as response:
@@ -662,7 +697,7 @@ def verify_installed(
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     script = pathlib.Path(__file__)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("build", "install", "verify"))
+    parser.add_argument("action", choices=("build", "install", "refresh", "verify"))
     parser.add_argument("--repo", type=pathlib.Path, default=repository_root(script))
     parser.add_argument("--ref", default="origin/main")
     parser.add_argument("--desktop", type=pathlib.Path, default=pathlib.Path.home() / "Desktop")
@@ -701,6 +736,11 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
 
         with install_lock(state_dir):
             revision = resolve_revision(repo, args.ref, not args.no_fetch)
+            if args.action == "refresh" and not installed_pair_needs_refresh(
+                desktop, revision, args.max_build_age_minutes
+            ):
+                print("desktop apps already match {} and are fresh".format(revision.short))
+                return 0
             artifacts = build_artifacts(repo, revision, state_dir, template)
             apps_root = stage_apps(repo, artifacts, template)
             print("staged {} and {} from {} at {}".format(APPS[0].bundle_name, APPS[1].bundle_name, revision.short, apps_root))

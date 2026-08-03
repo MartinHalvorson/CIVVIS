@@ -10,6 +10,7 @@ readonly civvis_label="@@LABEL@@"
 readonly civvis_commit="@@COMMIT@@"
 readonly civvis_commit_time="@@COMMIT_TIME@@"
 readonly civvis_built_at="@@BUILT_AT@@"
+readonly civvis_repo="@@REPO@@"
 
 case "${civvis_mode}" in
   rust)
@@ -30,6 +31,29 @@ readonly civvis_legacy_url="http://127.0.0.1:${civvis_port}/${civvis_legacy_chan
 readonly contents_dir="${0:A:h:h}"
 readonly log_dir="${HOME}/Library/Logs"
 readonly log_file="${log_dir}/${civvis_label}.log"
+readonly refresh_log="${log_dir}/CIVVIS Desktop Refresh.log"
+readonly refresh_lock="${HOME}/.local/share/civvis-desktop/desktop-apps.lock"
+
+refresh_desktop_pair() {
+    local refresh_tool="${civvis_repo}/tools/civvis_desktop_apps.py"
+    local refresh_pid=""
+    [[ ! -f "${refresh_tool}" ]] && return 0
+
+    # The paired installer writes its PID before taking the build lock. New
+    # launchers opened by that installer must not recursively start another
+    # refresh while it is still verifying their listeners.
+    if [[ -f "${refresh_lock}" ]]; then
+        refresh_pid="$(/bin/cat "${refresh_lock}" 2>/dev/null || true)"
+        if [[ "${refresh_pid}" == <-> ]] && /bin/kill -0 "${refresh_pid}" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    /bin/mkdir -p "${log_dir}"
+    /usr/bin/nohup /usr/bin/python3 "${refresh_tool}" refresh \
+        --repo "${civvis_repo}" --max-build-age-minutes 30 \
+        >>"${refresh_log}" 2>&1 </dev/null &
+}
 
 show_civvis_dialog() {
     /usr/bin/osascript - "$1" "$2" <<'APPLESCRIPT'
@@ -89,6 +113,7 @@ on run argv
                 if is_civvis then
                     if reload_existing is "true" then set URL of chrome_tab to target_url
                     set active tab index of chrome_window to tab_number
+                    set minimized of chrome_window to false
                     set index of chrome_window to 1
                     activate
                     return "focused"
@@ -171,9 +196,17 @@ else
     fi
 fi
 
+# Opening either icon is instant, but also makes the pair converge on current
+# GitHub main in the background. The installer owns one lock and swaps both
+# bundles together, so clicking both icons cannot produce mixed revisions.
+refresh_desktop_pair
+
 civvis_status="$(read_civvis_status)"
 if status_matches_build "${civvis_status}"; then
-    open_civvis_page
+    # A live file server can begin serving a newly installed bundle from the
+    # same path before this launcher runs. Refresh the reused tab so its page,
+    # WASM module, title, and provenance all come from the matching bundle.
+    open_civvis_page true
     exit 0
 fi
 
