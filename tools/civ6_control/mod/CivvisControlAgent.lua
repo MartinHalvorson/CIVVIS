@@ -4656,6 +4656,63 @@ local function exportState(player, pid, turn)
 				return city:GetBuildQueue():GetTurnsLeft();
 			end, -1),
 			food = try(function() return city:GetGrowth():GetFood(); end, -1),
+			-- ★★★★★ THE EMPIRE'S HAPPINESS WAS NEVER ASKED FOR, AND IT MULTIPLIES
+			-- EVERY YIELD ON THE BOARD.
+			--
+			-- Neither mod exported a single amenity, happiness or luxury field, and
+			-- `mirror.rs` imported none — so CIVVIS's entire happiness picture was
+			-- something it derived from its own rules on the reconstructed board and
+			-- then never checked. `Game::amenity_yield_mult_for` bands that derived
+			-- surplus straight into a multiplier on science, production, gold,
+			-- culture and faith: +5 -> 1.20, 0 -> 1.00, -4 -> 0.80, -6 -> 0.70.
+			--
+			-- CIVVIS's model says the live empires are sitting at -4/-5, i.e. paying a
+			-- **25-30% tax on every yield**. That may be exactly right, or it may be a
+			-- number it invented; with nothing from the host there is no way to know,
+			-- and the economy drift line cannot tell a real tax from a modelled one
+			-- because an overestimate elsewhere would cancel it.
+			--
+			-- `GetHappinessNonFoodYieldModifier` is the host's OWN multiplier — the
+			-- same quantity CIVVIS bands for itself — so the two can finally be
+			-- compared rather than assumed.
+			--
+			-- ⚠ Every call here is one the shipped CityPanel makes on
+			-- `city:GetGrowth()`, taken from the Assets rather than guessed: this file
+			-- has already paid for `GetDistricts():GetDefenseStrength()` (a method on
+			-- the collection, which read -1 on every city for the project's whole
+			-- history) and for a hash lookup that segfaulted the game four times.
+			-- ⚠ -1 sentinels, not 0: a city with zero amenities and a city the read
+			-- failed on must not look the same to the reconstruction.
+			amenities = try(function() return city:GetGrowth():GetAmenities(); end, -1),
+			amenities_needed = try(function()
+				return city:GetGrowth():GetAmenitiesNeeded();
+			end, -1),
+			happiness = try(function() return city:GetGrowth():GetHappiness(); end, -1),
+			happiness_yield_mult = try(function()
+				return city:GetGrowth():GetHappinessNonFoodYieldModifier();
+			end, -1),
+			-- WHERE the amenities come from, so a shortfall names its own repair
+			-- rather than only its size. Luxuries are the lever CIVVIS can actually
+			-- pull (improve one, or trade for one); entertainment is a district it
+			-- can build.
+			amenities_luxuries = try(function()
+				return city:GetGrowth():GetAmenitiesFromLuxuries();
+			end, -1),
+			amenities_entertainment = try(function()
+				return city:GetGrowth():GetAmenitiesFromEntertainment();
+			end, -1),
+			amenities_civics = try(function()
+				return city:GetGrowth():GetAmenitiesFromCivics();
+			end, -1),
+			amenities_city_states = try(function()
+				return city:GetGrowth():GetAmenitiesFromCityStates();
+			end, -1),
+			amenities_war_weariness = try(function()
+				return city:GetGrowth():GetAmenitiesLostFromWarWeariness();
+			end, -1),
+			amenities_bankruptcy = try(function()
+				return city:GetGrowth():GetAmenitiesLostFromBankruptcy();
+			end, -1),
 			-- ⚠ Was `GetDistricts():GetDefenseStrength()` — the method on the
 			-- collection, which does not exist, so this read -1 for the whole
 			-- project's history on every city on the board.

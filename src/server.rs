@@ -59,6 +59,8 @@ fn process_identity() -> u32 {
 
 #[cfg(not(target_arch = "wasm32"))]
 static LAUNCHED_COMMIT: OnceLock<Option<String>> = OnceLock::new();
+#[cfg(not(target_arch = "wasm32"))]
+static LAUNCHED_COMMIT_TIME: OnceLock<Option<String>> = OnceLock::new();
 
 #[cfg(not(target_arch = "wasm32"))]
 fn promoted_binary_commit(name: &str) -> Option<String> {
@@ -79,6 +81,13 @@ fn launched_commit() -> Option<String> {
         })
 }
 
+#[cfg(not(target_arch = "wasm32"))]
+fn launched_commit_time() -> Option<String> {
+    std::env::var("CIVVIS_COMMIT_TIME")
+        .ok()
+        .filter(|commit_time| !commit_time.is_empty())
+}
+
 /// The revision of the code a supervisor selected for this process.
 ///
 /// This deliberately reads the launch environment or promoted executable name
@@ -87,7 +96,10 @@ fn launched_commit() -> Option<String> {
 pub(crate) fn runtime_commit(fallback: &str) -> String {
     #[cfg(target_arch = "wasm32")]
     {
-        fallback.to_owned()
+        option_env!("CIVVIS_COMMIT")
+            .filter(|commit| !commit.is_empty())
+            .unwrap_or(fallback)
+            .to_owned()
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -95,6 +107,26 @@ pub(crate) fn runtime_commit(fallback: &str) -> String {
             .get_or_init(launched_commit)
             .clone()
             .unwrap_or_else(|| fallback.to_owned())
+    }
+}
+
+/// When the selected revision was committed, as an ISO-8601 timestamp.
+///
+/// The desktop launcher supplies this beside `CIVVIS_COMMIT`; a published
+/// browser build bakes both into its pinned module. An unstamped development
+/// build returns `None` rather than presenting its compile time as source age.
+pub(crate) fn runtime_commit_time() -> Option<String> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        option_env!("CIVVIS_COMMIT_TIME")
+            .filter(|commit_time| !commit_time.is_empty())
+            .map(str::to_owned)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        LAUNCHED_COMMIT_TIME
+            .get_or_init(launched_commit_time)
+            .clone()
     }
 }
 
@@ -2392,6 +2424,7 @@ impl Session {
             // rebuilt/restarted between games and reload the latest UI.
             o["server_instance"] = json!(process_identity());
             o["server_commit"] = json!(runtime_commit("unknown"));
+            o["server_commit_time"] = json!(runtime_commit_time());
             return o;
         }
         let mut o = observation(&self.game, 0);
@@ -2411,6 +2444,7 @@ impl Session {
         o["legal_actions"] = serde_json::to_value(self.game.legal_actions(0)).unwrap();
         o["server_instance"] = json!(process_identity());
         o["server_commit"] = json!(runtime_commit("unknown"));
+        o["server_commit_time"] = json!(runtime_commit_time());
         o
     }
 
@@ -3561,6 +3595,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "server_instance": process_identity(),
                     "seed": sh.current_seed.load(Ordering::Relaxed),
                     "commit": runtime_commit("unknown"),
+                    "commit_time": runtime_commit_time(),
                     // The supervisor's only view of a restart used to be
                     // `/state`, which is exactly what a long AI turn makes
                     // unavailable. This probe takes no lock the simulation
@@ -3712,6 +3747,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // it when it launches the promoted binary; an unstamped
                     // build reports unknown.
                     "commit": runtime_commit("unknown"),
+                    "commit_time": runtime_commit_time(),
                 }),
             );
         }
@@ -5406,6 +5442,7 @@ mod tests {
         assert_eq!(runtime["server_instance"], state["server_instance"]);
         assert_eq!(runtime["seed"], state["seed"]);
         assert_eq!(runtime["commit"], state["server_commit"]);
+        assert_eq!(runtime["commit_time"], state["server_commit_time"]);
         // The supervisor's whole view of a pending restart. It rides here
         // rather than only on `/state` because a long AI turn is exactly when
         // a restart is asked for and exactly when `/state` cannot be built.
@@ -5420,6 +5457,15 @@ mod tests {
             runtime_body.len() * 10 < state_body.len(),
             "the identity probe should not resemble a full observation"
         );
+    }
+
+    #[test]
+    fn viewer_marks_the_selected_revision_and_its_age() {
+        assert!(EMBEDDED_INDEX.contains("id=\"buildmark\""));
+        assert!(EMBEDDED_INDEX.contains("function updateBuildMarker(st = state)"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_commit_time"));
+        assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
+        assert!(EMBEDDED_INDEX.contains("Build is ${formatBuildAge(commitDate)} old"));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
