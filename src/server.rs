@@ -1,5 +1,5 @@
 //! Zero-dependency local HTTP server for the human-vs-AI browser GUI.
-//! Endpoints: GET / (page), GET /cinematic3d.js, GET /state, GET /save, GET /rules, GET /pedia,
+//! Endpoints: GET / (page), GET /state, GET /save, GET /rules, GET /pedia,
 //! POST /action, POST /step, POST /autoplay, POST /view,
 //! POST /spectator-status, POST /next-game-settings, POST /new,
 //! POST /supervisor-new.
@@ -131,15 +131,9 @@ pub(crate) fn runtime_commit_time() -> Option<String> {
 }
 
 const EMBEDDED_INDEX: &str = include_str!("../web/index.html");
-const EMBEDDED_CINEMATIC_3D: &str = include_str!("../web/cinematic3d.js");
-const EMBEDDED_TERRAIN_ATLAS: &[u8] = include_bytes!("../web/assets/terrain-atlas.png");
 const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atlas.png");
 const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
     include_bytes!("../web/assets/environment-feature-atlas.png");
-const EMBEDDED_NATURAL_WONDER_ATLAS: &[u8] =
-    include_bytes!("../web/assets/natural-wonder-atlas.png");
-const EMBEDDED_WORLD_WONDER_ATLAS: &[u8] =
-    include_bytes!("../web/assets/world-wonder-atlas.png");
 const EMBEDDED_MOUNTAIN_ATLAS: &[u8] = include_bytes!("../web/assets/mountain-atlas.png");
 const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] =
     include_bytes!("../web/assets/hidden-map-monsters.png");
@@ -2768,16 +2762,6 @@ fn index_html() -> Vec<u8> {
     EMBEDDED_INDEX.as_bytes().to_vec()
 }
 
-fn cinematic_3d_js() -> Vec<u8> {
-    std::fs::read("web/cinematic3d.js")
-        .unwrap_or_else(|_| EMBEDDED_CINEMATIC_3D.as_bytes().to_vec())
-}
-
-fn terrain_atlas() -> Vec<u8> {
-    std::fs::read("web/assets/terrain-atlas.png")
-        .unwrap_or_else(|_| EMBEDDED_TERRAIN_ATLAS.to_vec())
-}
-
 fn feature_atlas() -> Vec<u8> {
     std::fs::read("web/assets/feature-atlas.png")
         .unwrap_or_else(|_| EMBEDDED_FEATURE_ATLAS.to_vec())
@@ -2786,16 +2770,6 @@ fn feature_atlas() -> Vec<u8> {
 fn environment_feature_atlas() -> Vec<u8> {
     std::fs::read("web/assets/environment-feature-atlas.png")
         .unwrap_or_else(|_| EMBEDDED_ENVIRONMENT_FEATURE_ATLAS.to_vec())
-}
-
-fn natural_wonder_atlas() -> Vec<u8> {
-    std::fs::read("web/assets/natural-wonder-atlas.png")
-        .unwrap_or_else(|_| EMBEDDED_NATURAL_WONDER_ATLAS.to_vec())
-}
-
-fn world_wonder_atlas() -> Vec<u8> {
-    std::fs::read("web/assets/world-wonder-atlas.png")
-        .unwrap_or_else(|_| EMBEDDED_WORLD_WONDER_ATLAS.to_vec())
 }
 
 fn mountain_atlas() -> Vec<u8> {
@@ -3553,28 +3527,11 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/") | ("GET", "/index.html") => {
             respond(stream, "200 OK", "text/html; charset=utf-8", &index_html());
         }
-        ("GET", "/cinematic3d.js") => {
-            respond(
-                stream,
-                "200 OK",
-                "text/javascript; charset=utf-8",
-                &cinematic_3d_js(),
-            );
-        }
-        ("GET", "/assets/terrain-atlas.png") => {
-            respond(stream, "200 OK", "image/png", &terrain_atlas());
-        }
         ("GET", "/assets/feature-atlas.png") => {
             respond(stream, "200 OK", "image/png", &feature_atlas());
         }
         ("GET", "/assets/environment-feature-atlas.png") => {
             respond(stream, "200 OK", "image/png", &environment_feature_atlas());
-        }
-        ("GET", "/assets/natural-wonder-atlas.png") => {
-            respond(stream, "200 OK", "image/png", &natural_wonder_atlas());
-        }
-        ("GET", "/assets/world-wonder-atlas.png") => {
-            respond(stream, "200 OK", "image/png", &world_wonder_atlas());
         }
         ("GET", "/assets/mountain-atlas.png") => {
             respond(stream, "200 OK", "image/png", &mountain_atlas());
@@ -4327,10 +4284,9 @@ mod tests {
         new_game_params, publishes_player_turn_frames, query_value, request_path, save_path,
         seat_delay_ms, spectator_frame, spectator_step_completes_frame, strategy_roster,
         tile_mark, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session, Shared,
-        SpectatorFrame, EMBEDDED_CINEMATIC_3D, EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_INDEX,
-        RESULT_COUNTDOWN_MS,
-        EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_WORLD_WONDER_ATLAS, SAVE_DIR, STATE_LONG_POLL,
-        MAX_EXACT_JAVASCRIPT_INTEGER, VIEWER_ACTIVE,
+        SpectatorFrame, EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
+        MAX_EXACT_JAVASCRIPT_INTEGER, RESULT_COUNTDOWN_MS, SAVE_DIR, STATE_LONG_POLL,
+        VIEWER_ACTIVE,
     };
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
@@ -7157,8 +7113,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function planetMiniScale(width, height)"));
         assert!(EMBEDDED_INDEX.contains("id=\"compass\""));
         assert!(EMBEDDED_INDEX.contains("id=\"compass-needle\""));
-        assert!(EMBEDDED_INDEX.contains("resetMapFacing(DEFAULT_CINEMA_YS - cinematicYS)"));
-        assert!(!EMBEDDED_INDEX.contains("orbitCamera(-cam.rot, DEFAULT_CINEMA_YS"));
+        assert!(EMBEDDED_INDEX.contains("resetMapFacing()"));
         // The globe's yaw is a bearing, not a second way to spin it eastward.
         assert!(EMBEDDED_INDEX.contains("roll:cam.rot"));
         // A globe is turned, not slid. Longitude and latitude cannot express a
@@ -7969,93 +7924,46 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("e.important && now - e.at < 6000"));
         assert!(EMBEDDED_INDEX.contains("const CAP = 60, FRESH = 12"));
         assert!(EMBEDDED_INDEX.contains("SERVER_EVENT_VALUES"));
-        assert!(EMBEDDED_INDEX.contains("const floor = active ? (SPEC ? 32 : 16) : MODE.idle"));
-        // The repaint rate answers to what a frame actually costs, so the
-        // expensive style degrades to a slower picture rather than a stalled one
-        // on a box that is also running the game.
+        assert!(EMBEDDED_INDEX.contains("const floor = active ? (SPEC ? 32 : 16) : 0"));
+        // The repaint rate answers to what a frame actually costs.
         assert!(EMBEDDED_INDEX.contains("const MAX_ANIMATION_PAINT_SHARE = .5"));
         assert!(EMBEDDED_INDEX
             .contains("Math.max(floor, drawCost / MAX_ANIMATION_PAINT_SHARE)"));
-        // Three map styles, and the browser must be able to name each of them.
-        // The idle repaint rate is a property of the style rather than a
-        // constant now: strategic never repaints on its own, balanced ticks
-        // slowly for the pulsing markers, cinematic runs its weather.
-        for style in ["strategic", "balanced", "cinematic"] {
+        // The command map is the only presentation surface. There is no style
+        // selector, persisted mode, cinematic module, or painted atlas path.
+        assert!(EMBEDDED_INDEX.contains("const MAP_PROJECTION = 0.92"));
+        for removed in [
+            "id=\"viewsel\"",
+            "const VIEW_MODES",
+            "civvis-view-v3",
+            "Painted 2D",
+            "Cinematic 3D",
+            "/cinematic3d.js",
+            "globalThis.Cinematic3D",
+            "TERRAIN_ATLAS",
+            "NATURAL_WONDER_ATLAS",
+            "WORLD_WONDER_ATLAS",
+            "const MODE =",
+            "MODE.painted",
+            "cinemaActive",
+            "drawCinematic",
+            "function stageAttack(",
+            "const SHOT_KIND = {",
+            "anim.shots",
+            "anim.motes",
+        ] {
             assert!(
-                EMBEDDED_INDEX.contains(&format!("<option value=\"{style}\"")),
-                "map style {style} missing from the view selector"
-            );
-            assert!(
-                EMBEDDED_INDEX.contains(&format!("  {style}:")),
-                "map style {style} missing from VIEW_MODES"
+                !EMBEDDED_INDEX.contains(removed),
+                "obsolete presentation code remains: {removed}"
             );
         }
-        assert!(EMBEDDED_INDEX.contains("const VIEW_MODES = {"));
-        assert!(EMBEDDED_INDEX.contains(
-            "const VIEW_LEVELS = [\"strategic\", \"balanced\", \"cinematic\"]"
-        ));
-        let strategic_option = EMBEDDED_INDEX
-            .find("<option value=\"strategic\">Strategic")
-            .unwrap();
-        let painted_option = EMBEDDED_INDEX
-            .find("<option value=\"balanced\">Painted")
-            .unwrap();
-        let cinematic_option = EMBEDDED_INDEX
-            .find("<option value=\"cinematic\">Cinematic")
-            .unwrap();
-        assert!(strategic_option < painted_option && painted_option < cinematic_option);
-        assert!(EMBEDDED_INDEX.contains("if (old === \"cinematic\") return \"balanced\";"));
-        assert!(EMBEDDED_INDEX.contains("return \"strategic\";"));
-        // Painted and Cinematic are different geometries, not the same raised
-        // board with a post-process pass: the former is a top-down painted
-        // plane, while the latter lowers the camera and extrudes the terrain.
-        assert!(
-            EMBEDDED_INDEX.contains("balanced:  { relief:0,   projection:1.00, skirt:0")
-        );
-        assert!(
-            EMBEDDED_INDEX.contains("cinematic: { relief:1.8, projection:0.70, skirt:9")
-        );
-        assert!(EMBEDDED_INDEX.contains(
-            "YS = VIEW === \"cinematic\" ? cinematicYS : MODE.projection"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "else setRot(cam.rot, false);  // recompute screen-space light"
-        ));
-        // Reducing visual complexity is a deliberate return to the atlas, not
-        // merely a material swap on whatever close-up the cinematic director
-        // happened to leave behind.
-        assert!(EMBEDDED_INDEX.contains(
-            "const movingDown = VIEW_LEVELS.indexOf(v) < VIEW_LEVELS.indexOf(VIEW);"
-        ));
-        assert!(EMBEDDED_INDEX.contains("if (movingDown) setFullWorldView();"));
-        assert!(EMBEDDED_INDEX.contains("function setFullWorldView()"));
-        // The atlas view returns to whatever "up" means in this world, which is
-        // north only for a civilization that has found it.
-        assert!(EMBEDDED_INDEX.contains("takeCameraControl();\n  setRot(restingRot());"));
-        assert!(EMBEDDED_INDEX.contains("const centers = state.map.tiles.map"));
-        assert!(
-            EMBEDDED_INDEX.contains("if (beau && MODE.relief > 0 && !water) drawWalls(")
-        );
-        assert!(EMBEDDED_INDEX.contains("localStorage.setItem(\"civvis-view-v3\", v)"));
-        // Preserve the old Cinematic-to-Painted rename for returning browsers;
-        // a browser with no saved preference starts in Strategic instead.
-        assert!(EMBEDDED_INDEX.contains("localStorage.getItem(\"civvis-view\")"));
-        // Ground is baked once per style/terrain/relief/variant and blitted
-        // through the world plane; the per-frame clip-and-gradient path it
-        // replaced is what made a full-size map cost eighty milliseconds a
-        // frame. Both halves have to ship together to mean anything.
-        assert!(EMBEDDED_INDEX.contains("function bakeTileArt("));
-        assert!(EMBEDDED_INDEX.contains("function tileArt("));
-        assert!(EMBEDDED_INDEX.contains("cx.drawImage(art, -artR, -artR, artR * 2, artR * 2)"));
-        assert!(EMBEDDED_INDEX.contains("TERRAIN_ATLAS.onload"));
-        assert!(EMBEDDED_INDEX.contains("ATLAS_READY = true; TILE_ART.clear()"));
         // Only what the camera can reach is drawn.
         assert!(EMBEDDED_INDEX.contains("const onscreen = []"));
-        // Combat is staged rather than marked: a weapon, a flight, an impact.
-        assert!(EMBEDDED_INDEX.contains("function stageAttack("));
-        assert!(EMBEDDED_INDEX.contains("const SHOT_KIND = {"));
-        assert!(EMBEDDED_INDEX.contains("const SHOT_STYLE = {"));
-        assert!(EMBEDDED_INDEX.contains("function drawAtmosphere("));
+        // Strategic combat stays diagrammatic: damage labels and compact hit
+        // sparks, without a second cinematic effects renderer.
+        assert!(EMBEDDED_INDEX
+            .contains("anim.floats.push({ x, y: y - 16, txt: \"-\" + dmg"));
+        assert!(EMBEDDED_INDEX.contains("anim.sparks.push({ x, y, t0: now });"));
         assert!(EMBEDDED_INDEX.contains(".diplomacy-card.at-war"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
         assert!(EMBEDDED_INDEX.contains("cam.y = clampCameraY(cam.y)"));
@@ -8143,7 +8051,6 @@ mod tests {
         // was a word from no part of this game.
         assert!(EMBEDDED_INDEX.contains("<span></span><span>Capitals</span>"));
         assert!(!EMBEDDED_INDEX.contains("HQs"));
-        assert!(EMBEDDED_INDEX.contains("<span>Terrain</span>"));
         assert!(EMBEDDED_INDEX.contains("<span>Watch as</span>"));
         assert_eq!(
             EMBEDDED_INDEX
@@ -8198,7 +8105,7 @@ mod tests {
             .split("function setObservedPlayersView(smooth = false)")
             .nth(1)
             .unwrap()
-            .split("function actionViewingAnchor(focus)")
+            .split("function mainLandmassAnchor()")
             .next()
             .unwrap();
         assert!(observed_view.contains("if (planetMap() && !watched) { fitPlanetView(); return; }"));
@@ -8215,7 +8122,6 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const atWarFront"));
         assert!(EMBEDDED_INDEX.contains("Number(unit.formation) > 0"));
         assert!(EMBEDDED_INDEX.contains("Number(unit.level) >= 3"));
-        assert!(EMBEDDED_INDEX.contains("directorGoal.kind === \"empire\""));
         assert!(EMBEDDED_INDEX.contains("player log"));
         assert!(EMBEDDED_INDEX.contains("Spectator · combined summary"));
         assert!(EMBEDDED_INDEX.contains("let eventLogs = new Map()"));
@@ -8545,7 +8451,6 @@ mod tests {
             ("ToggleGrid", "g"),
             ("ToggleResources", "q"),
             ("ToggleYield", "y"),
-            ("Toggle2DView", "+"),
             ("PauseMenu", "Home"),
             ("QuickSave", "F5"),
             ("QuickLoad", "F6"),
@@ -8631,105 +8536,6 @@ mod tests {
     }
 
     #[test]
-    fn browser_includes_the_cinematic_spectator_director() {
-        for id in [
-            "cinemachk",
-            "cinema-atmosphere",
-            "cinema-lighting",
-            "cinema-frame",
-            "cinema-transition",
-            "cinema-prologue",
-            "cinema-story",
-            "cinema-audio",
-            "cinema-follow",
-        ] {
-            assert!(
-                EMBEDDED_INDEX.contains(&format!("id=\"{id}\"")),
-                "cinematic spectator element {id} is missing"
-            );
-        }
-        for function in [
-            "function applyCinemaMode()",
-            "function showCinemaPrologue(st)",
-            "function showCinemaChapter(cue)",
-            "function createCinemaAudioGraph()",
-            "function playCinemaCue(cue = {})",
-            "function showDirectorStory(cue)",
-            "function cinematicDisasterStory(disaster, next)",
-            "function cinematicWarContext(st)",
-            "function cinematicWarFront(st, war)",
-            "function drawCinematicDisasterField(sceneTime)",
-            "function recentCombatActions(st)",
-            "const lethalBattle = MODE.fx && lethalTrace",
-            "const deathAt = lethalBattle?.impactAt || now",
-            "function directorCue(prev, next)",
-            "function cinematicShotGoal(goal, variation = 0)",
-            "function directorSurveyGoal()",
-            "function directorAmbientCue()",
-            "function advanceDirector(now = performance.now())",
-            "function advanceUserCameraMotion(now = performance.now())",
-            "function advanceCameraFollow(now = performance.now())",
-            "function startCameraFollow(unitId)",
-            // Both defaults are `null`: a standalone subject uses the copies
-            // nearest the camera, while a caller chaining a path can name the
-            // point it wants the next leg drawn beside across either seam.
-            "function unitMapPoint(p, nearX = null, nearY = null)",
-            "function sampleUnitMove(mv, now = performance.now())",
-            "function cinematicUnitMapPoint(unit, now = performance.now())",
-            "function unitMoveDuration(unitId, steps)",
-            "function drawCinematicSubjectMarker(u, x, y, now)",
-            "function drawCinematicSubjectBrackets(u, x, y, now)",
-            "function drawUnitCompany(u, x, y, now, moving)",
-            "function beginTouchTransform()",
-            "function cinematicSurveyUnits(units)",
-            "function drawWalls(t, x, ytop, baseColor, tileElevation)",
-        ] {
-            assert!(
-                EMBEDDED_INDEX.contains(function),
-                "cinematic spectator behavior {function} is missing"
-            );
-        }
-        for story in [
-            "A new world awakens",
-            "Nature unleashed",
-            "The world enters the ${eraName} Era",
-            "A civilization falls",
-            "History has a victor",
-            "City captured",
-            "War declared",
-            "Battlefield losses",
-            "The war continues",
-            "Wonder completed",
-        ] {
-            assert!(
-                EMBEDDED_INDEX.contains(story),
-                "cinematic spectator story cue {story} is missing"
-            );
-        }
-        assert!(EMBEDDED_INDEX.contains("civvis-cinema-audio-v1"));
-        assert!(EMBEDDED_INDEX.contains("REDUCED_MOTION_QUERY.matches"));
-        assert!(EMBEDDED_INDEX.contains("touch-action: none"));
-        assert!(EMBEDDED_INDEX
-            .contains("kind:battle ? \"battle\" : (tracksUnit ? \"character\" : \"event\")"));
-        assert!(EMBEDDED_INDEX.contains("side.units_lost"));
-        assert!(EMBEDDED_INDEX.contains("action.type === \"theological_attack\""));
-        assert!(EMBEDDED_INDEX.contains("front:\"war front\""));
-        assert!(EMBEDDED_INDEX.contains("kind:cue.kind || \"portrait\""));
-        assert!(!EMBEDDED_INDEX.contains("kicker:\"Casualty of war\""));
-        assert!(EMBEDDED_INDEX.contains("class=\"winner-content\""));
-        assert!(EMBEDDED_INDEX.contains("cinema-finale"));
-        assert!(
-            EMBEDDED_INDEX.contains("DEFAULT_CINEMA_YS = VIEW_MODES.cinematic.projection")
-        );
-        assert!(EMBEDDED_INDEX.contains("function drawUnitFormationBadge"));
-        assert!(EMBEDDED_INDEX.contains("<script src=\"/cinematic3d.js\"></script>"));
-        assert!(EMBEDDED_INDEX.contains("globalThis.Cinematic3D?.supports(family)"));
-        assert!(EMBEDDED_INDEX.contains("Cinematic3D.draw({"));
-        assert!(EMBEDDED_INDEX.contains("specular glints travel"));
-        assert!(EMBEDDED_INDEX.contains("cx.lineDashOffset = dash.length"));
-    }
-
-    #[test]
     fn strategic_units_use_a_complete_civ6_icon_atlas() {
         assert!(EMBEDDED_CIV6_UNIT_FLAGS.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(EMBEDDED_CIV6_UNIT_FLAGS.len() > 50_000);
@@ -8754,7 +8560,6 @@ mod tests {
         let renderer = EMBEDDED_INDEX
             .split("function drawUnitPictogram")
             .nth(1)
-            .and_then(|tail| tail.split("function drawUnitFormationBadge").next())
             .expect("strategic unit pictogram renderer");
         assert!(renderer.contains("const official = civ6UnitIconSprite(type, color)"));
         assert!(renderer.contains("cx.drawImage(official"));
@@ -8762,38 +8567,6 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(u.type, x, y,"));
         assert!(!EMBEDDED_INDEX.contains("u.embarked ? \"galley\" : u.type"));
         assert!(EMBEDDED_INDEX.contains("rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk"));
-    }
-
-    #[test]
-    fn cinematic_world_wonders_use_a_complete_sprite_atlas() {
-        assert!(EMBEDDED_WORLD_WONDER_ATLAS.starts_with(b"\x89PNG\r\n\x1a\n"));
-        assert!(EMBEDDED_WORLD_WONDER_ATLAS.len() > 1_000_000);
-        assert!(
-            EMBEDDED_INDEX.contains("WORLD_WONDER_ATLAS.src = \"/assets/world-wonder-atlas.png\"")
-        );
-
-        let ids = EMBEDDED_INDEX
-            .split("const WORLD_WONDER_IDS = [")
-            .nth(1)
-            .and_then(|tail| tail.split("];\nconst WORLD_WONDER_CELL").next())
-            .expect("ordered World Wonder sprite IDs");
-        let rules = crate::rules::Rules::embedded();
-        assert_eq!(ids.matches('"').count() / 2, rules.wonders.len());
-        for wonder in rules.wonders.keys() {
-            assert!(
-                ids.contains(&format!("\"{wonder}\"")),
-                "World Wonder {wonder} has no sprite cell"
-            );
-        }
-
-        let renderer = EMBEDDED_INDEX
-            .split("function drawWorldWonderSprite")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawWonder").next())
-            .expect("World Wonder sprite renderer");
-        assert!(renderer.contains("!MODE.atmosphere"));
-        assert!(renderer.contains("SHX * S * .42"));
-        assert!(EMBEDDED_INDEX.contains("t.wonder && !drawWorldWonderSprite(t.wonder, x, y)"));
     }
 
     #[test]
@@ -8838,7 +8611,7 @@ mod tests {
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_MIN"));
         assert!(monsters.contains("HIDDEN_MAP_TALE_SIZE_RANGE"));
         assert!(monsters.contains("HIDDEN_MAP_MONSTER_VARIANTS"));
-        assert!(monsters.contains("MODE.painted ? .30 : .26"));
+        assert!(monsters.contains(".26"));
 
         let seating = EMBEDDED_INDEX
             .split("function hiddenMapMonsterSeat")
@@ -8953,117 +8726,11 @@ mod tests {
     }
 
     #[test]
-    fn cinematic_3d_module_covers_every_unit_renderer_family() {
-        for family in [
-            "embarked",
-            "naval",
-            "air",
-            "rotor",
-            "balloon",
-            "drone",
-            "robot",
-            "armor",
-            "gun",
-            "siege",
-            "mounted",
-            "religious",
-            "civilian",
-            "infantry",
-        ] {
-            assert!(
-                EMBEDDED_CINEMATIC_3D.contains(&format!("\"{family}\"")),
-                "cinematic 3D model family {family} is missing"
-            );
-        }
-        for behavior in [
-            "class Scene",
-            "this.items.sort((a, b) => a.depth - b.depth)",
-            "const direct = Math.max(0, dot(normal, this.light))",
-            "function human(scene, options",
-            "function drawMounted(scene, o)",
-            "function drawChariot(scene, o)",
-            "function drawArmor(scene, o)",
-            "function drawRobot(scene, o)",
-            "function drawGun(scene, o)",
-            "function drawSiege(scene, o)",
-            "function drawNaval(scene, o, embarked = false)",
-            "function drawAir(scene, o)",
-            "function drawRotor(scene, o)",
-            "function drawBalloon(scene, o)",
-            "function drawDrone(scene, o)",
-            "function drawConvoy(scene, o)",
-            "type === \"slinger\"",
-            "type === \"scout\"",
-            "global.Cinematic3D = Object.freeze",
-        ] {
-            assert!(
-                EMBEDDED_CINEMATIC_3D.contains(behavior),
-                "cinematic 3D behavior {behavior} is missing"
-            );
-        }
-    }
-
-    #[test]
-    fn browser_blends_atlas_art_only_across_compatible_tile_footprints() {
-        let atlas_drawer = EMBEDDED_INDEX
-            .split("function drawAtlasFeatureCell")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawFeatureSprite").next())
-            .expect("shared atlas feature renderer");
-        assert!(atlas_drawer.contains("tileArtPath(footprint"));
-        assert!(atlas_drawer.contains("cx.clip()"));
-
-        let blend_footprint = EMBEDDED_INDEX
-            .split("function blendedTileFootprint")
-            .nth(1)
-            .and_then(|tail| tail.split("function featureBlendKind").next())
-            .expect("compatible-neighbor footprint builder");
-        assert!(blend_footprint.contains("if (!neighbor || !accepts(neighbor)) continue"));
-        assert!(EMBEDDED_INDEX.contains("featureBlendKind(neighbor.feature) === baseFeature"));
-        assert!(EMBEDDED_INDEX.contains("neighbor.terrain === \"mountain\""));
-
-        let terrain_texture = EMBEDDED_INDEX
-            .split("function drawTerrainTexture")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawTerrainBlend").next())
-            .expect("terrain material renderer");
-        assert!(terrain_texture.contains("drawContinuousTerrain(t, x, y"));
-        assert!(!terrain_texture.contains("hexPath(x, y"));
-        let terrain_blend = EMBEDDED_INDEX
-            .split("function drawTerrainBlend")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawAtlasFeatureCell").next())
-            .expect("terrain transition renderer");
-        assert!(terrain_blend.contains("drawFeathered(t, x, y"));
-        assert!(EMBEDDED_INDEX.contains("function drawContinuousTerrain(t, x, y, alpha)"));
-        assert!(EMBEDDED_INDEX.contains("cx.createPattern(c, \"repeat\")"));
-
-        let mountain_drawer = EMBEDDED_INDEX
-            .split("function drawMountainSprite")
-            .nth(1)
-            .and_then(|tail| tail.split("function tri(").next())
-            .expect("mountain sprite renderer");
-        assert!(mountain_drawer.contains("tileArtPath(footprint, true"));
-        assert!(mountain_drawer.contains("cx.clip()"));
-
-        let wonder_placement = EMBEDDED_INDEX
-            .split("function buildNaturalWonderPlacements")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawTileYields").next())
-            .expect("natural wonder footprint builder");
-        assert!(wonder_placement.contains("footprint:points.map"));
-        assert!(EMBEDDED_INDEX.contains("placement.footprint"));
-
-        assert!(!EMBEDDED_INDEX.contains("const w = S * 2.55"));
-        assert!(!EMBEDDED_INDEX.contains("width: volcano ? 2.32"));
-    }
-
-    #[test]
     fn browser_draws_one_perimeter_around_each_natural_wonder_footprint() {
         let continuation = EMBEDDED_INDEX
             .split("function naturalWonderContinues")
             .nth(1)
-            .and_then(|tail| tail.split("const NATURAL_WONDER_ATLAS").next())
+            .and_then(|tail| tail.split("function drawNaturalWonderPerimeters").next())
             .expect("natural wonder adjacency rule");
         assert!(continuation.contains("neighbor.feature === tile.feature"));
 
@@ -9137,7 +8804,7 @@ mod tests {
         let renderer = EMBEDDED_INDEX
             .split("function drawTileYields")
             .nth(1)
-            .and_then(|tail| tail.split("function mountainRockColumn").next())
+            .and_then(|tail| tail.split("function tri(").next())
             .expect("tile-yield renderer");
         assert!(renderer.contains(".filter(([, amount]) => amount >= 1)"));
         assert!(renderer.contains("(i - (entries.length - 1) / 2) * step"));
@@ -9195,38 +8862,6 @@ mod tests {
         assert!(icon.contains("cx.ellipse(0, -9, 4.5, 2.2"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false)"));
-    }
-
-    #[test]
-    fn painted_planet_blends_terrain_without_revealing_the_hex_mesh() {
-        let underpaint = EMBEDDED_INDEX
-            .split("function planetTerrainUnderpaint")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawPlanetShoreline").next())
-            .expect("painted planet terrain foundation");
-        assert!(underpaint.contains("isWater(tile)"));
-        assert!(underpaint.contains("#174b61"));
-        assert!(underpaint.contains("#747655"));
-
-        let ground = EMBEDDED_INDEX
-            .split("function drawPlanetGround")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawPlanetSurfaceDetail").next())
-            .expect("planet terrain renderer");
-        assert!(ground.contains("painted ? planetTerrainUnderpaint(cell.tile)"));
-        assert!(ground.contains("const blend = Math.max(1.2, Math.min(5.2"));
-        assert!(ground.contains("cx.filter = `blur(${blend.toFixed(2)}px)`"));
-        assert!(ground.contains("cx.globalCompositeOperation = \"soft-light\""));
-        assert!(ground.contains("drawPlanetShoreline(knownCells)"));
-
-        let shoreline = EMBEDDED_INDEX
-            .split("function drawPlanetShoreline")
-            .nth(1)
-            .and_then(|tail| tail.split("function drawPlanetGround").next())
-            .expect("painted planet shoreline renderer");
-        assert!(shoreline.contains("const painted = new Set(cells.map"));
-        assert!(shoreline.contains("painted.has(cell.nbrs[side])"));
-        assert!(shoreline.contains("cx.quadraticCurveTo(mx, my, bx, by)"));
     }
 
     #[test]

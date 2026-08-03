@@ -77,7 +77,7 @@ def find_chrome() -> str:
 
 
 # The atlases are republished as WebP when Pillow is available and stay PNG
-# when it is not, so the required-files list asks for the terrain atlas in
+# when it is not, so the required-files list asks for a strategic map atlas in
 # whichever form this build actually chose.
 REQUIRED = [
     "index.html",
@@ -86,9 +86,8 @@ REQUIRED = [
     "beta/civvis.wasm",
     "beta/shim.js",
     "beta/worker.js",
-    "beta/cinematic3d.js",
     "beta/build.json",
-    ("beta/assets/terrain-atlas.webp", "beta/assets/terrain-atlas.png"),
+    ("beta/assets/feature-atlas.webp", "beta/assets/feature-atlas.png"),
     "_worker.js",
 ]
 
@@ -430,7 +429,7 @@ def main(argv: list[str] | None = None) -> int:
     print(f"    {len(REQUIRED)} required files present, build {build['short']}")
 
     page = (dist / "beta" / "index.html").read_text(encoding="utf-8")
-    for absolute in ('src="/cinematic3d.js"', '"/assets/'):
+    for absolute in ('"/assets/',):
         if absolute in page:
             print(f"    the published viewer still asks for {absolute}", file=sys.stderr)
             return 1

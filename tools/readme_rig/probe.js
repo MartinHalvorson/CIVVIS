@@ -1,18 +1,18 @@
-// How often does the page actually paint, in each view, with and without a
-// camera move? A screencast frame count answers "what could be recorded"; a
+// How often does the strategic map actually paint, with and without a camera
+// move? A screencast frame count answers "what could be recorded"; a
 // counter wrapped round draw() answers "what the page believes it did", and the
 // two disagreeing is the interesting case.
 //
-//   node probe.js <gamePort> <view> [width] [height]
+//   node probe.js <gamePort> [width] [height]
 const {Chrome, sleep} = require("./cdp");
 
 async function main() {
-  const [port, view, width = "1920", height = "1080"] = process.argv.slice(2);
+  const [port, width = "1920", height = "1080"] = process.argv.slice(2);
   const chrome = await Chrome.launch({width: +width, height: +height, profileTag: "probe"});
   try {
     await chrome.send("Page.enable");
     await chrome.send("Runtime.enable");
-    await chrome.send("Page.navigate", {url: `http://127.0.0.1:${port}/?view=${view}&viewer=probe-${view}`});
+    await chrome.send("Page.navigate", {url: `http://127.0.0.1:${port}/?viewer=probe-strategic`});
     for (let attempt = 0; attempt < 80; attempt++) {
       await sleep(500);
       const turn = await chrome.evaluate("typeof state !== 'undefined' && state ? state.turn : 0");
@@ -22,8 +22,9 @@ async function main() {
       window.__paints = 0; window.__minis = 0;
       const realDraw = draw; draw = function(...a) { window.__paints++; return realDraw.apply(this, a); };
       const realMini = drawMini; drawMini = function(...a) { window.__minis++; return realMini.apply(this, a); };
-      window.__mode = JSON.stringify({idle: MODE.idle, view: VIEW, spec: SPEC, cinema: cinemaActive(),
-                                      w: cv.width, h: cv.height, reduced: REDUCED_MOTION_QUERY.matches});
+      window.__mode = JSON.stringify({view: "strategic", spec: SPEC,
+                                      w: cv.width, h: cv.height,
+                                      reduced: REDUCED_MOTION_QUERY.matches});
       return 1;
     })()`);
     console.log("mode", await chrome.evaluate("window.__mode"));

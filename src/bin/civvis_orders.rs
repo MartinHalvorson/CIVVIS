@@ -784,6 +784,18 @@ fn decide(
     // which for a deployed army is always the enemy's cities. The tournament
     // controller stays frozen so its recorded ladders remain comparable.
     ai.enable_home_defense();
+    // ⚠ A tactical step applied raw records nothing, so when a unit with
+    // movement left is stepped a second time in the same turn, the reversal
+    // guard inside `path_move` cannot see where it came from — and round two
+    // walks straight back onto the tile round one just left. Net zero ground,
+    // two emitted orders, and Civilization VI refuses the second as a MOVE_TO
+    // of the unit's own tile. Measured on the replay of run
+    // `civvis-20260801T224944Z`: 217 of 217 refused moves were exactly that
+    // out-and-back pair, 88 same-turn pairs in all, of which 50 came from the
+    // Advanced force mover alone; self-tile orders fell 43 → 1 and pairs
+    // 88 → 1 with the steps recorded. The tournament controller stays frozen
+    // so its recorded ladders replay move-for-move.
+    ai.enable_recorded_tactical_step();
     // ⚠ `assess` drops the empire into Recovery whenever it is at war and
     // `my_power * 1.25 < strongest_rival`, and Recovery does not build an army —
     // so the test stays true because of the choice it caused. Measured on run
