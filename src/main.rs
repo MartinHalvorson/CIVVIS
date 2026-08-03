@@ -394,8 +394,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// unchanged on that flag before it reads a single player, so every configured,
 /// legacy and Elo agent wants exactly the army it always wanted. A
 /// compatibility re-pin.
+///
+/// #981 adds `BasicAi::loyalty_emergency`, which ranks loyalty trouble by TURNS
+/// TO FLIP rather than by level, behind the new `loyalty_rate_alarm` flag. The
+/// flag is `false` in both `BasicAi` constructors and `loyalty_emergency`
+/// returns the old level-only answer on it before reading any rate, so every
+/// configured, legacy and Elo agent behaves identically. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfd17_944d_7c35_e7ac;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdc56_bcfe_5dd3_b5d0;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
