@@ -400,8 +400,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// flag is `false` in both `BasicAi` constructors and `loyalty_emergency`
 /// returns the old level-only answer on it before reading any rate, so every
 /// configured, legacy and Elo agent behaves identically. A compatibility re-pin.
+///
+/// #989 adds a journal line for a DECLINED attack and a diagnostic tally of the
+/// reasons the forward model refuses one. Both are behind
+/// `journal().wants(Detail)` or write only to a process-local census; no board
+/// state is read and no decision changes, so every configured, legacy and Elo
+/// agent attacks exactly what it always did. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdc56_bcfe_5dd3_b5d0;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe529_26aa_8137_59ea;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
