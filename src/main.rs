@@ -445,6 +445,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy and Elo agent picks exactly what it always picked. A compatibility
 /// re-pin.
 ///
+/// #1011 holds a promotion until its healing would land, behind
+/// `promote_when_wounded` — `false` in `AdvancedAi::new()` and set by nothing
+/// on the shipped paths (it is native/eval only and deliberately absent from
+/// `enable_live_bridge`). `promotion_heal_is_wasted` returns `false` on that
+/// flag before it reads a unit, so every configured, legacy and Elo agent
+/// promotes exactly when it always did. A compatibility re-pin.
+///
 /// #954 says why a settler was held instead of only that it was marching. The
 /// added block is inside `if !moved && self.journal().wants(Detail)` and every
 /// call it makes is a read: `Game::route_step` and `route_step_to_any` take
@@ -453,7 +460,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// board state is touched, so the anchor plays the identical game and only its
 /// journal differs. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xacfe_2dbf_b462_2abf;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf242_8e15_bd4a_88e9;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

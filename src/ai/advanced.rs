@@ -24,6 +24,11 @@ use std::sync::Arc;
 /// attack unsupported. Below it the group holds on its own account, whatever
 /// else is happening in the empire.
 const LOCAL_SUPERIORITY_FLOOR: f64 = 0.72;
+/// Health above which [`AdvancedAi::promotion_heal_is_wasted`] holds a
+/// promotion back. `do_promote` heals `min(50, 100 - hp)`, so promoting at 100
+/// delivers nothing; 75 asks for at least 25 of the 50 to land before spending
+/// the unit's turn on it.
+const PROMOTE_HEAL_HP_CEILING: i32 = 75;
 /// Scale of [`AdvancedAi::strike_opening_value`] against `mv_threat`'s own
 /// `30.0`. At even odds this returns +5.2 where the parity threat penalty is
 /// -15.0, so contact becomes worth considering without becoming automatic —
@@ -780,6 +785,13 @@ pub struct AdvancedAi {
     /// `advanced_relief_scoped` entrant, so it can be re-measured once the
     /// conversion bottleneck moves rather than re-derived from scratch.
     pub scoped_relief_hold: bool,
+    /// Hold a promotion back until its healing would actually land.
+    ///
+    /// **Off by default. Native/eval only — deliberately NOT in
+    /// `enable_live_bridge`**, because the +50 health is CIVVIS's own model and
+    /// Civilization VI's real promotion rule is unverified here. See
+    /// [`AdvancedAi::promotion_heal_is_wasted`].
+    pub promote_when_wounded: bool,
     /// Credit a tile for the attack it opens, not only charge it for the
     /// threat it accepts.
     ///
@@ -1819,6 +1831,7 @@ impl AdvancedAi {
             solvent_faith_army: false,
             battlefront_frame: None,
             scoped_relief_hold: false,
+            promote_when_wounded: false,
             strike_opening: false,
             ranged_needs_line_of_sight: false,
             army_target_weighs_the_enemy: false,
@@ -1925,6 +1938,12 @@ impl AdvancedAi {
     /// tournament games leave this disabled.
     pub fn enable_bounded_recovery(&mut self) {
         self.bounded_recovery = true;
+    }
+
+    /// Hold a promotion until its healing would land. Native/eval only; the
+    /// live bridge does not set this.
+    pub fn enable_promote_when_wounded(&mut self) {
+        self.promote_when_wounded = true;
     }
 
     /// Let movement credit the attack a tile opens. Native tournament games
@@ -16281,8 +16300,59 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether taking a promotion now would waste the healing it carries.
+    ///
+    /// `Game::do_promote` ends with
+    ///
+    /// ```text
+    /// unit.hp = (unit.hp + 50).min(100);
+    /// unit.moves_left = 0.0;
+    /// unit.attacks_left = 0;
+    /// ```
+    ///
+    /// so a promotion is **worth up to 50 health**, and it costs the unit its
+    /// whole turn. `advanced_promotions` took every promotion the instant it
+    /// became available, at whatever health the unit happened to be — so a
+    /// full-health unit paid a turn for nothing and threw the heal away.
+    ///
+    /// Measured across every recorded run on this machine, **359 promotions**:
+    ///
+    /// | health when promoted | | |
+    /// |---|---|---|
+    /// | **100 — heal entirely wasted** | **156** | **43%** |
+    /// | 80-99 | 22 | 6% |
+    /// | 55-79 | 64 | 18% |
+    /// | <= 54 — heal fully used | 117 | 33% |
+    ///
+    /// Median health at promotion is 79, and **54% of all the healing
+    /// available was wasted — 8,307 delivered of 17,950 possible.**
+    ///
+    /// Waiting is close to free: experience is banked on the unit and the
+    /// promotion stays available. A unit that never takes 25 damage never
+    /// promotes under this rule, which is the right trade — it is also a unit
+    /// that is not fighting, so the combat bonus it forgoes is worth little,
+    /// and the moment it is hurt it promotes and heals.
+    ///
+    /// ⚠⚠ **This is a NATIVE-engine treatment and is deliberately NOT in
+    /// `enable_live_bridge`.** The +50 is CIVVIS's own model; the Civilization
+    /// VI bridge does not model it and Civ VI's own promotion rule has not been
+    /// verified here. Deferring a promotion for a heal that never arrives would
+    /// be a pure loss of the combat bonus, so the live controller keeps taking
+    /// promotions immediately until someone checks the real rule.
+    fn promotion_heal_is_wasted(&self, g: &Game, uid: u32) -> bool {
+        if !self.promote_when_wounded {
+            return false;
+        }
+        g.units
+            .get(&uid)
+            .is_some_and(|unit| unit.hp > PROMOTE_HEAL_HP_CEILING)
+    }
+
     fn advanced_promotions(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
         for uid in g.player_unit_ids(pid) {
+            if self.promotion_heal_is_wasted(g, uid) {
+                continue;
+            }
             let promotions = g.available_promotions(uid);
             let choice = promotions.into_iter().max_by(|a, b| {
                 self.promotion_value(g, a, strategy)
@@ -23437,6 +23507,60 @@ mod tests {
         game.at_war.insert((0, 1));
         assert!(!shipped.army_target_weighs_the_enemy);
         assert_eq!(shipped.wartime_army_target(&game, 0, 12), 12);
+    }
+
+    /// The defect this exists for: `do_promote` heals up to 50 and costs the
+    /// unit its turn, and promotions were taken the instant they appeared — so
+    /// 43% of the 359 promotions in the corpus were taken at full health and
+    /// threw the whole heal away.
+    #[test]
+    fn a_promotion_waits_until_its_healing_would_land() {
+        let (mut game, _capital, home) = empire_with_a_capital(71_107);
+        let warrior = game.spawn_test_unit("warrior", 0, anchor_at(&game, home, 1));
+        game.units.get_mut(&warrior).unwrap().xp = 200;
+        game.units.get_mut(&warrior).unwrap().level = 1;
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        assert!(!ai.promote_when_wounded, "the shipped default must be unchanged");
+        assert!(
+            !ai.promotion_heal_is_wasted(&game, warrior),
+            "the shipped agent never holds a promotion back"
+        );
+
+        ai.enable_promote_when_wounded();
+        // Full health: every point of the heal would be thrown away.
+        game.units.get_mut(&warrior).unwrap().hp = 100;
+        assert!(ai.promotion_heal_is_wasted(&game, warrior));
+
+        // Just above the ceiling is still a waste; at it, the promotion lands.
+        game.units.get_mut(&warrior).unwrap().hp = PROMOTE_HEAL_HP_CEILING + 1;
+        assert!(ai.promotion_heal_is_wasted(&game, warrior));
+        game.units.get_mut(&warrior).unwrap().hp = PROMOTE_HEAL_HP_CEILING;
+        assert!(!ai.promotion_heal_is_wasted(&game, warrior));
+
+        // A badly hurt unit promotes and is healed for it — the whole point.
+        game.units.get_mut(&warrior).unwrap().hp = 40;
+        assert!(!ai.promotion_heal_is_wasted(&game, warrior));
+        let before = game.units[&warrior].hp;
+        if let Some(promotion) = game.available_promotions(warrior).into_iter().next() {
+            game.units.get_mut(&warrior).unwrap().moves_left = 2.0;
+            game.apply(
+                0,
+                &Action::Promote {
+                    unit: warrior,
+                    promotion: Name::new(&promotion),
+                },
+            )
+            .expect("a banked promotion is available");
+            assert_eq!(
+                game.units[&warrior].hp,
+                (before + 50).min(100),
+                "promoting a wounded unit is worth up to 50 health"
+            );
+        }
+
+        // A unit that no longer exists is not a promotion decision.
+        assert!(!ai.promotion_heal_is_wasted(&game, u32::MAX));
     }
 
     /// The behaviour this exists for: a locally superior force far from the

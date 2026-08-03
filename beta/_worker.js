@@ -38,6 +38,20 @@ const WEEK = 60 * 60 * 24 * 7;
 /// either way without a deploy.
 const CHANNEL = "https://www.youtube.com/@civvis";
 
+/// Give a build channel a stable address without teaching browsers that its
+/// current destination can never change. Both destinations are themselves
+/// moving pointers: `/download/` links GitHub's latest native Rust release,
+/// while `/beta/` is replaced whenever the WASM site is published.
+function buildChannel(url, path) {
+  return new Response(null, {
+    status: 302,
+    headers: {
+      Location: `${path}${url.search}`,
+      "Cache-Control": "no-store",
+    },
+  });
+}
+
 /// What the cookie carries: proof of the password rather than the password.
 async function token(password) {
   const digest = await crypto.subtle.digest(
@@ -169,6 +183,12 @@ export default {
     }
     if (url.pathname === "/home" || url.pathname === "/home/") {
       return asset(assetAt(request, "/index.html"), env, false);
+    }
+    if (url.pathname === "/rust" || url.pathname === "/rust/") {
+      return buildChannel(url, "/download/");
+    }
+    if (url.pathname === "/wasm" || url.pathname === "/wasm/") {
+      return buildChannel(url, "/beta/");
     }
 
     if (!url.pathname.startsWith("/beta")) return asset(request, env, false);

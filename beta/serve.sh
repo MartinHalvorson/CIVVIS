@@ -20,33 +20,7 @@ root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/dist"
 echo "serving $root"
 echo "  landing page  http://127.0.0.1:$port/"
 echo "  beta build    http://127.0.0.1:$port/beta/"
+echo "  WASM channel  http://127.0.0.1:$port/wasm/"
 echo
 
-exec python3 - "$root" "$port" <<'PY'
-import functools, http.server, socketserver, sys
-
-root, port = sys.argv[1], int(sys.argv[2])
-
-class Handler(http.server.SimpleHTTPRequestHandler):
-    # Python's table has no entry for wasm, and `instantiateStreaming` refuses
-    # anything that is not application/wasm — which is exactly the failure a
-    # local check exists to catch before a deploy does.
-    extensions_map = {
-        **http.server.SimpleHTTPRequestHandler.extensions_map,
-        ".wasm": "application/wasm",
-        ".js": "text/javascript",
-        ".json": "application/json",
-    }
-
-    def end_headers(self):
-        self.send_header("Cache-Control", "no-store")
-        super().end_headers()
-
-    def log_message(self, fmt, *args):
-        sys.stderr.write("  %s\n" % (fmt % args))
-
-socketserver.TCPServer.allow_reuse_address = True
-with socketserver.TCPServer(("127.0.0.1", port),
-                            functools.partial(Handler, directory=root)) as httpd:
-    httpd.serve_forever()
-PY
+exec python3 "$(dirname "${BASH_SOURCE[0]}")/serve.py" "$root" "$port"
