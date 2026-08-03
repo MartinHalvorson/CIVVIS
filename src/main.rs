@@ -386,8 +386,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 ///   this is provably byte-identical and not merely measured to be.
 ///
 /// A compatibility re-pin.
+///
+/// #984 credits a movement tile for the attack it opens, behind
+/// `strike_opening` — `false` in `AdvancedAi::new()` and set only by
+/// `enable_live_bridge`. `strike_opening_value` returns 0.0 on that flag
+/// before it reads the board, so every configured, legacy and Elo agent scores
+/// every tile exactly as it did. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5344_3e1a_5cbc_f96b;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc34f_bf6b_0351_bf56;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
