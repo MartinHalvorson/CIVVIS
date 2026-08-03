@@ -2083,6 +2083,19 @@ impl AdvancedAi {
         // frozen so its recorded ladders remain comparable.
         self.enable_loyalty_rate_alarm();
         self.enable_solvent_faith_army();
+        // ⚠ PENDING MEASUREMENT. First arm at deployment shape (74x46, 9 city-states,
+        // 16 games, 200 turns) read +35 Elo (CI -61..+130), direction 7-2, sign
+        // p=0.1797 — inconclusive, the promotion gate did not fire, terminal score
+        // flat at 23-22. A weak positive is not a result. A 40-game arm is running;
+        // if it does not clear, this call and its `live_without_` arm come back out
+        // rather than sitting here unpriced.
+        //
+        // ⚠ It cannot be parked "off but registered": `each_live_without_arm_holds_
+        // exactly_one_treatment_off` and `live_bridge_treatments_name_every_flag_
+        // the_helper_sets` (#988) require the treatment list, the arms and this
+        // helper to agree exactly. A flag the deployment does not set has no
+        // `live_without_` arm — which is the invariant working, and the reason a
+        // gated-off flag here would be dead code of the `culture_focus` kind.
         self.enable_district_coverage();
     }
 

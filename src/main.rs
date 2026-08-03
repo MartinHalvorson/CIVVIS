@@ -425,7 +425,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// board, so every configured, legacy and Elo agent scores every tile exactly
 /// as it did. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xe878_c745_0830_3603;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3470_0168_9e1a_17b9;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
