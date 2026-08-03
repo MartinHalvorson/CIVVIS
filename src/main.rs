@@ -295,8 +295,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// (`major_war_since`). Still behind `bounded_recovery`, still short-circuiting
 /// on the flag before anything is read, so every configured, legacy and Elo
 /// agent is byte-identical. Another compatibility re-pin.
+///
+/// #962 gates faith military purchases on whether the empire can pay the GOLD
+/// upkeep the soldier incurs. Behind the new `solvent_faith_army` flag, which is
+/// `false` in `AdvancedAi::configured` (so `new()` and `legacy()` both have it
+/// off) and is turned on only by the Civilization VI bridge —
+/// `faith_military_is_affordable` returns `true` immediately on that flag, so
+/// every configured, legacy and Elo agent buys exactly what it always did.
+/// `the_default_controller_keeps_the_faith_army_ungated` asserts it on a board
+/// that DOES refuse once enabled. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3ff9_fbfa_5d2f_bbff;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6911_78ce_c5d0_d43a;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
