@@ -3935,12 +3935,15 @@ mod tests {
         builtin_ai, builtin_ai_degraded, builtin_ai_strict, builtin_arm, builtin_provenance,
         collapsed_entrants, direct_anchor_performance, expected, leaderboard, league_generalist,
         performance_elo, scheduled_seats, seat_schedule, strict_builtin_arm_in, wilson_interval,
-        win_shares, BuiltinAiBuildError, EloPool, RatedPlayer, RatingKey, TournamentProfile,
+        win_shares, ArmKind, BuiltinAiBuildError, EloPool, RatedPlayer, RatingKey,
+        TournamentProfile,
         TourneyCfg, WeightSource, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
         ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, HISTORICAL_V1_RATINGS_PATH,
+        LIVE_BRIDGE_TREATMENTS,
         HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH,
         VALUENET_FILE,
     };
+    use std::collections::BTreeSet;
     use crate::game::{Action, Game};
     use crate::rng::Rng;
     use std::collections::BTreeMap;
@@ -4389,6 +4392,84 @@ mod tests {
             }
         }
         fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// `AdvancedAi::enable_live_bridge` is the single place the Civilization VI
+    /// bridge turns its repairs on; `LIVE_BRIDGE_TREATMENTS` is how the
+    /// evaluator names them. Until now the only thing keeping the two in step
+    /// was a comment.
+    ///
+    /// A flag added to the helper and not to the tag list is silent: both sides
+    /// compile, every other test passes, and the `live` vs `live_without_*`
+    /// comparison goes on reporting a controlled experiment it is no longer
+    /// running. #977 shipped exactly that way — `army_target_weighs_the_enemy`
+    /// reached the deployment while the tag list still described ten
+    /// mechanisms — and it was caught by reading the merge, not by CI.
+    #[test]
+    fn live_bridge_treatments_name_every_flag_the_helper_sets() {
+        let source = include_str!("ai/advanced.rs");
+        let body = source
+            .split("pub fn enable_live_bridge(&mut self) {")
+            .nth(1)
+            .and_then(|tail| tail.split("\n    }\n").next())
+            .expect("enable_live_bridge body");
+        let enabled = body.matches("self.enable_").count();
+        assert_eq!(
+            enabled,
+            LIVE_BRIDGE_TREATMENTS.len(),
+            "enable_live_bridge sets {enabled} flags but LIVE_BRIDGE_TREATMENTS names {}: \
+             add the missing tag (and give it a `live_without_*` arm) or the evaluator \
+             arms claim a controlled comparison they are not running",
+            LIVE_BRIDGE_TREATMENTS.len()
+        );
+    }
+
+    /// Each `live_without_*` arm exists to hold exactly ONE mechanism off, so
+    /// `differing_axes` against `live` names that mechanism and nothing else.
+    ///
+    /// The failure this catches is a merge artifact rather than a typo: when a
+    /// new treatment lands, every arm has to gain it, and an arm that misses
+    /// the update silently differs from `live` on two axes instead of one. The
+    /// arms are derived from `EVAL_ONLY_AIS`, so a newly added arm is covered
+    /// here without touching this test.
+    #[test]
+    fn each_live_without_arm_holds_exactly_one_treatment_off() {
+        let all: BTreeSet<&str> = LIVE_BRIDGE_TREATMENTS.iter().copied().collect();
+        assert_eq!(
+            all.len(),
+            LIVE_BRIDGE_TREATMENTS.len(),
+            "LIVE_BRIDGE_TREATMENTS contains a duplicate tag"
+        );
+
+        let arms: Vec<&str> = EVAL_ONLY_AIS
+            .iter()
+            .copied()
+            .filter(|name| name.starts_with("live_without_"))
+            .collect();
+        assert!(!arms.is_empty(), "no live_without_* arms found");
+
+        let mut held_off = BTreeSet::new();
+        for name in arms {
+            let kind = ArmKind::from_name(name).expect("live_without_* arm is a known ArmKind");
+            let have: BTreeSet<&str> = kind.treatments().iter().copied().collect();
+            let missing: Vec<&str> = all.difference(&have).copied().collect();
+            assert!(
+                have.is_subset(&all),
+                "{name} carries a tag that is not a live-bridge treatment: {:?}",
+                have.difference(&all).collect::<Vec<_>>()
+            );
+            assert_eq!(
+                missing.len(),
+                1,
+                "{name} must hold exactly one treatment off, but differs from `live` on {:?}",
+                missing
+            );
+            assert!(
+                held_off.insert(missing[0]),
+                "{name} holds off {}, which another arm already holds off",
+                missing[0]
+            );
+        }
     }
 
     /// The reactor experiment pins generation 14 inside its dedicated runner.
