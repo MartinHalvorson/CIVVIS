@@ -35,8 +35,9 @@ here can be checked against that file directly.
 | `.` | `NextUnit` | Next unit needing orders |
 
 `M`, `A` and `R` do not act on their own in Civ 6 either: they arm the next
-click. Clicking a tile already moves and already attacks here, so these are what
-make the board playable without reaching for the mouse first.
+left click. The ordinary left click remains selection-only; movement and attack
+use the secondary mouse button. The armed modes provide the same keyboard-first
+alternative as Civ 6.
 
 ### Screens
 
@@ -86,7 +87,7 @@ keypad (see the additions below).
 
 | Gesture | Civ 6 | CIVVIS |
 | --- | --- | --- |
-| Left click | `OnMouseSelectionEnd` — select what is in the plot | Same |
+| Left click | `OnMouseSelectionEnd` — select what is in the plot | Same; selecting a unit shows every tile reachable with its remaining movement |
 | Left drag | `StartDragMap` — pan | Same |
 | Right press | `OnMouseSelectionUnitMoveStart` — show the movement path | Same |
 | Right release | `OnMouseSelectionUnitMoveEnd` — move there | Same, and a tile out of this turn's range becomes a multi-turn travel order |
@@ -94,6 +95,11 @@ keypad (see the additions below).
 | Wheel | `OnMouseWheelZoom` | Same |
 | Alt + drag | Spin the camera | Rotates, and in cinematic also tilts |
 | Pointer at a map edge | `EdgePan` (Gameplay option, ships on) | Same, and a setting under Display settings |
+
+“Right” means the platform secondary click: the right mouse button on Windows,
+Linux, and a multi-button Mac mouse; a configured two-finger/secondary click on
+a Mac trackpad; or macOS Control-click. Command-click is not a Civ 6 movement
+binding and remains available to the browser.
 
 ## Deliberate overrides
 
