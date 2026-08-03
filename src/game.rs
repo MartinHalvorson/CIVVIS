@@ -29557,6 +29557,20 @@ impl Game {
         self.tile_has_visibility_line(&mut HeightField::none(), from, to, attacker_height, false)
     }
 
+    /// Whether a unit standing on `from` would have line of sight to `to`.
+    ///
+    /// The same test `do_ranged` applies before it will let a shot happen, but
+    /// asked of a tile the unit is only *considering*. Movement scoring needs
+    /// it because line of sight binds at exactly range 2 — adjacent fire is
+    /// unconditional and range 3+ lobs — which is precisely where a Field
+    /// Cannon parks. See `AdvancedAi::ranged_tile_is_blind`.
+    pub fn line_of_sight_from(&self, from: Pos, to: Pos) -> bool {
+        if !self.map.tiles.contains_key(&from) || !self.map.tiles.contains_key(&to) {
+            return false;
+        }
+        self.has_line_of_sight(from, to, true)
+    }
+
     fn unit_has_line_of_sight(&self, uid: u32, to: Pos) -> bool {
         let unit = &self.units[&uid];
         if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(unit.pos, to) == 2 {
