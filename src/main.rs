@@ -459,7 +459,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// controller, so frozen Basic, configured, legacy and `advanced_v1` entrants
 /// retain their old branches. A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd4df_3cee_5244_46ba;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8c5f_2db8_1c90_bc1c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
