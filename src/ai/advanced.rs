@@ -145,6 +145,19 @@ const SETTLER_ESCORT_SEARCH_RADIUS: i32 = 8;
 /// `settle_value` is scoring it against an objective the agent never held.
 const SETTLE_DISTANCE_PENALTY: f64 = 0.9;
 
+/// Production Advanced opens wide: six cities are the floor, not the finish.
+/// The land-aware plan may then climb to nine as the empire and era mature.
+/// Six is also the point at which the existing expansion oracle first showed
+/// decisive headroom; keeping it named prevents the production constructor,
+/// the plan, and the delegated governor from drifting apart again.
+const PRODUCTION_CITY_TARGET_FLOOR: usize = 6;
+
+/// A growing empire needs enough Builder charges to make new territory earn
+/// its keep. Three active Builders per four cities provide roughly two useful
+/// improvements per city at ordinary three-charge Builders, while the existing
+/// `has_builder_work` gate stops production once there is no yield to add.
+const PRODUCTION_BUILDERS_PER_CITY: f64 = 0.75;
+
 /// How far above its empire's per-city mean a yield must stand before it names
 /// the city's role. At 1.0 every city would be typed by a coin flip around the
 /// average; 1.15 asks for a real lead, so an empire of interchangeable cities
@@ -1107,11 +1120,13 @@ pub struct AdvancedAi {
     /// default-off evaluator arm; it does not claim to make the broader
     /// full-state Advanced controller fog honest.
     pub belief_pressure: bool,
-    /// Where the city-target ramp starts. **3 by default, the shipped value.**
+    /// Where the city-target ramp starts. Configured controls retain three;
+    /// production Advanced starts at [`PRODUCTION_CITY_TARGET_FLOOR`].
     ///
-    /// `assess` computes `desired_cities = (3 + turn / cadence).min(map_capacity).min(6)`
-    /// — the empire wants three cities at the opening and adds roughly one per
-    /// era. #554's oracle handed a seat settlers up to **six** from the start
+    /// `assess` computes `desired_cities = (floor + turn / cadence).min(map_capacity)`.
+    /// The production empire wants six cities at the opening and adds roughly
+    /// one per era up to the land-aware nine-city ceiling. #554's oracle handed
+    /// a seat settlers up to **six** from the start
     /// and more than doubled its win rate (23.0% to 52.3%, p=0.0000 over 300
     /// games). The gap between those two numbers is this ramp.
     ///
@@ -1127,13 +1142,15 @@ pub struct AdvancedAi {
     /// reaches 4.83 of its own 5.00 target, so what limits it is the target,
     /// not its ability to hit one.
     ///
-    /// Reachable as `advanced_wide_opening`, paired against `advanced`.
+    /// Historical controls can still set this to three; production promotes
+    /// the wide opening because a four-city ceiling is not a Civ VI scaling
+    /// strategy.
     pub city_target_floor: usize,
     /// Let the baseline production governor use the empire's own city target
     /// instead of the flat `city_target` gene.
     ///
     /// `assess` computes `plan.desired_cities` from the land actually on the
-    /// map: `(city_target_floor + turn / cadence).min(map_capacity).min(6)`,
+    /// map: `(city_target_floor + turn / cadence).min(map_capacity)`,
     /// where `map_capacity = (2 + land / 55).clamp(3, 9)`. Nothing on the
     /// adaptive path consumes it. `docs/OPENINGS.md` §19 records why: after
     /// the four-build opening an untargeted adaptive empire reaches
@@ -1150,16 +1167,15 @@ pub struct AdvancedAi {
     /// 4p 24×16 = 96 tiles per player and judged at 6p 74×46 = 567. The arm
     /// itself does not depend on that artifact value.
     ///
-    /// This flag makes the delegation carry the plan: the base governor is
-    /// handed `plan.desired_cities` for the duration of that call and its own
-    /// gene is restored afterwards. It changes no other gate — population,
-    /// production cost, the one-settler-at-a-time rule, the site search and
-    /// `settler_stop_turn` all still apply — and it deliberately does not
-    /// touch the opening-book branch, so the proven four-build opening is
-    /// unchanged.
+    /// This flag makes the delegation carry the plan: for the duration of that
+    /// call the base governor receives the larger of its gene and
+    /// `plan.desired_cities`, plus the plan's speed-aware expansion deadline.
+    /// Its own values are restored afterwards. Population, escalating Settler
+    /// cost, one-settler-at-a-time, practical-site, military-floor and Builder
+    /// gates still apply, and the four-build opening remains unchanged.
     ///
-    /// Default-off evaluator treatment, reachable as
-    /// `advanced_plan_city_target` and paired against `advanced`.
+    /// Production Advanced enables this. Historical evaluator controls retain
+    /// the old flat-gene delegation.
     pub plan_city_target: bool,
     pub city_strategy: bool,
     /// Ablation halves of `city_strategy`, so the loss above can be attributed
@@ -1541,6 +1557,9 @@ impl AdvancedAi {
         // weight vector cannot silently withdraw the confirmed production
         // policy layer when it enters an Advanced controller.
         weights.policy_deck = PolicyDeck::Live;
+        // City and Builder floors are call-local policy in `delegated_cities`,
+        // not mutations of an evolved genome. That keeps frozen evaluators and
+        // strategy searches honest about the weights they were given.
         weights
     }
 
@@ -1557,6 +1576,13 @@ impl AdvancedAi {
         ai.envoy_priority = true;
         ai.adjacency_site_planning = true;
         ai.settler_commit = true;
+        ai.city_target_floor = PRODUCTION_CITY_TARGET_FLOOR;
+        ai.plan_city_target = true;
+        // Expansion is allowed only behind the existing production floors;
+        // make sure the larger empire can actually hold what it founds.
+        ai.base.siege_muster = true;
+        ai.base.home_defense = true;
+        ai.bounded_recovery = true;
         ai
     }
 
@@ -3408,9 +3434,16 @@ impl AdvancedAi {
         // the cadence with game speed; the old fixed turn-175 cutoff expired
         // before the five-city target even became active on Standard speed.
         let city_cadence = g.standard_duration(90).max(1) as usize;
-        let desired_cities = (self.city_target_floor + g.turn as usize / city_cadence)
-            .min(map_capacity)
-            .min(6);
+        // Historical controls keep the old six-city planning ceiling. The
+        // production delegation flag is also the compatibility boundary that
+        // lets the promoted controller consume the full land-aware capacity.
+        let city_ceiling = if self.plan_city_target {
+            map_capacity
+        } else {
+            map_capacity.min(6)
+        };
+        let desired_cities =
+            (self.city_target_floor + g.turn as usize / city_cadence).min(city_ceiling);
         let mut expansion_origins: Vec<Pos> = cities.iter().map(|cid| g.cities[cid].pos).collect();
         if expansion_origins.is_empty() {
             expansion_origins.extend(
@@ -3867,6 +3900,32 @@ impl AdvancedAi {
         } else {
             self.adaptive_expansion_window_open(g)
         }
+    }
+
+    /// Run the proven baseline city governor with the strategic expansion
+    /// contract temporarily threaded through it.
+    ///
+    /// The historical treatment replaced the four-city gene with an early
+    /// three-city plan and predictably made the opening smaller. Production
+    /// takes the maximum instead: the plan may widen a governor, never narrow
+    /// it. The speed-aware deadline similarly extends the raw turn-150 gene on
+    /// slower or longer games without removing the endgame reserve.
+    fn delegated_cities(&mut self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        if !self.plan_city_target {
+            self.base.cities(g, pid);
+            return;
+        }
+        let restore_target = self.base.w.city_target;
+        let restore_stop = self.base.w.settler_stop_turn;
+        let restore_builders = self.base.w.builder_per_city;
+        self.base.w.city_target = restore_target.max(plan.desired_cities as f64);
+        self.base.w.settler_stop_turn =
+            restore_stop.max(Self::stock_expansion_deadline(g) as f64);
+        self.base.w.builder_per_city = restore_builders.max(PRODUCTION_BUILDERS_PER_CITY);
+        self.base.cities(g, pid);
+        self.base.w.city_target = restore_target;
+        self.base.w.settler_stop_turn = restore_stop;
+        self.base.w.builder_per_city = restore_builders;
     }
 
     /// Lower is a more attractive rival: nearby, weak empires with valuable
@@ -16646,18 +16705,9 @@ impl AdvancedAi {
             if active_victory_target.is_none() {
                 self.advanced_support_production(g, pid, &plan);
                 // The adaptive empire's Settler gate lives in the baseline
-                // governor, which reads a flat gene. Hand it the target this
-                // empire actually computed for this map, then put the gene
-                // back so nothing else in the turn sees the substitution.
-                let restore = self.plan_city_target.then(|| {
-                    let gene = self.base.w.city_target;
-                    self.base.w.city_target = plan.desired_cities as f64;
-                    gene
-                });
-                self.base.cities(g, pid);
-                if let Some(gene) = restore {
-                    self.base.w.city_target = gene;
-                }
+                // governor. Thread the larger, speed-aware plan through that
+                // call without leaking it to later consumers.
+                self.delegated_cities(g, pid, &plan);
             }
         }
         if active_victory_target.is_some() {
@@ -16776,6 +16826,51 @@ mod tests {
             !live.faith_military_is_affordable(&game, 0, &unit),
             "precondition: the same board DOES refuse once the gate is enabled"
         );
+    }
+
+    #[test]
+    fn production_advanced_scales_cities_development_and_home_defense_together() {
+        let production = AdvancedAi::new();
+        assert_eq!(
+            production.city_target_floor,
+            PRODUCTION_CITY_TARGET_FLOOR
+        );
+        assert!(production.plan_city_target);
+        assert_eq!(production.base.w.city_target, 4.0);
+        assert_eq!(production.base.w.builder_per_city, 0.5);
+        assert!(production.base.siege_muster);
+        assert!(production.base.home_defense);
+        assert!(production.bounded_recovery);
+        assert!(production.settlement_safety);
+        assert!(production.adjacency_site_planning);
+
+        // Frozen and evaluator controls keep the old policy exactly, including
+        // its smaller economy and default-off live-defense adapters.
+        let control = AdvancedAi::pre_policy_envoy();
+        assert_eq!(control.city_target_floor, 3);
+        assert!(!control.plan_city_target);
+        assert_eq!(control.base.w.city_target, 4.0);
+        assert_eq!(control.base.w.builder_per_city, 0.5);
+        assert!(!control.base.siege_muster);
+        assert!(!control.base.home_defense);
+        assert!(!control.bounded_recovery);
+
+        let frozen = AdvancedAi::legacy();
+        assert_eq!(frozen.city_target_floor, 3);
+        assert!(!frozen.plan_city_target);
+        assert_eq!(frozen.base.w.city_target, 4.0);
+        assert_eq!(frozen.base.w.builder_per_city, 0.5);
+        assert!(!frozen.base.siege_muster);
+        assert!(!frozen.base.home_defense);
+        assert!(!frozen.bounded_recovery);
+
+        // Production policy never mutates a wider, better-developed genome.
+        let mut wide = Weights::default();
+        wide.city_target = 10.0;
+        wide.builder_per_city = 0.9;
+        let weighted = AdvancedAi::with_weights(wide);
+        assert_eq!(weighted.base.w.city_target, 10.0);
+        assert_eq!(weighted.base.w.builder_per_city, 0.9);
     }
 
     #[test]
@@ -17219,6 +17314,9 @@ mod tests {
         // resolve, which is how a live run spent 160 turns here.
         game.turn = 100;
         let mut untreated = AdvancedAi::new();
+        // Production enables the bound by default; disable it explicitly for
+        // this counterfactual control.
+        untreated.bounded_recovery = false;
         untreated.plan = Some(opening.clone());
         untreated.major_war_since = Some(0);
         assert_eq!(untreated.assess(&game, 0).strategy, GrandStrategy::Recovery);
@@ -18346,7 +18444,7 @@ mod tests {
     }
 
     #[test]
-    fn expansion_window_reaches_its_six_city_target_before_endgame() {
+    fn expansion_window_reaches_its_nine_city_target_before_endgame() {
         let mut game = Game::new_full(1, 30, 18, 7_113, 500, 0, false);
         let settler = game
             .player_unit_ids(0)
@@ -18364,7 +18462,7 @@ mod tests {
 
         let ai = AdvancedAi::new();
         let plan = ai.assess(&game, 0);
-        assert_eq!(plan.desired_cities, 6);
+        assert_eq!(plan.desired_cities, 9);
         assert_eq!(plan.strategy, GrandStrategy::Expansion);
         let item = Item::Unit {
             unit: crate::name!("settler"),
@@ -28502,6 +28600,75 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn delegated_wide_expansion_extends_the_window_but_defense_stays_first() {
+        let mut game = Game::new_full(2, 30, 18, 4_810_002, 500, 0, false);
+        for tile in game.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+        }
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 6;
+        game.turn = 200;
+
+        let own_military: Vec<u32> = game
+            .player_unit_ids(0)
+            .into_iter()
+            .filter(|unit| game.rules.units[game.units[unit].kind].class == "military")
+            .collect();
+        for unit in own_military {
+            game.remove_unit(unit);
+        }
+        game.at_war.insert((0, 1));
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 9,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::new();
+        ai.base.book_pos = 4;
+        // Prove the delegated plan, not the production constructor's own
+        // defaults, opens both the target and the speed-aware time window.
+        ai.base.w.city_target = 1.0;
+        ai.base.w.settler_stop_turn = 100.0;
+        ai.base.w.builder_per_city = 0.25;
+        ai.delegated_cities(&mut game, 0, &plan);
+
+        let defensive_item = game.cities[&city].queue.first().unwrap();
+        assert!(matches!(
+            defensive_item,
+            Item::Unit { unit } if game.rules.units[unit].class == "military"
+        ));
+        assert_eq!(ai.base.w.city_target, 1.0);
+        assert_eq!(ai.base.w.settler_stop_turn, 100.0);
+        assert_eq!(ai.base.w.builder_per_city, 0.25);
+
+        // Once the one-unit-per-city floor is restored, the same wide plan may
+        // produce the Settler even though both historical genes would refuse it.
+        game.at_war.clear();
+        game.cities.get_mut(&city).unwrap().queue.clear();
+        game.spawn_test_unit("warrior", 0, game.cities[&city].pos);
+        ai.delegated_cities(&mut game, 0, &plan);
+        assert!(matches!(
+            game.cities[&city].queue.first(),
+            Some(Item::Unit { unit }) if unit == "settler"
+        ));
+        assert_eq!(ai.base.w.city_target, 1.0);
+        assert_eq!(ai.base.w.settler_stop_turn, 100.0);
+        assert_eq!(ai.base.w.builder_per_city, 0.25);
     }
 
     /// Fires-check for `plan_city_target`, at both map scales.

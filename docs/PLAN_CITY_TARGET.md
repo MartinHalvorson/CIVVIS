@@ -1,193 +1,120 @@
 # The empire's city target and the governor that decides
 
-**Verdict: the original 2026-07-31 treatment is a recorded null, refuted by
-its own fires-check before any outcome seed was read. The mechanism it
-documents is real and corrects `docs/GENOME.md`; the refreshed current-main
-check below keeps the arm default-off.** The original two-regime measurement is
-historical: it was taken before the current embedded champion and later
-production-controller changes, so it is not a claim about `data/evolved/best.json`
-today.
+## Production policy
 
-## The disagreement
+Production `AdvancedAi` now treats six cities as the opening floor rather than
+the finish. Its strategic target rises by roughly one city per era, is bounded
+by the existing land-capacity estimate, and can reach nine. A weighted agent
+with a learned target above six keeps that larger target.
 
-`AdvancedAi::assess` computes how many cities this empire wants **on this
-map**:
+The delegated `BasicAi` governor receives the larger of its own city-target
+gene and `plan.desired_cities` for that call. It also receives the strategy's
+speed-aware expansion deadline instead of being cut off by the raw turn-150
+gene, plus at least 0.75 Builders per city. All three numerical genes are
+restored before the call returns, so evolved and frozen genomes remain exact.
+
+This is an expansion policy, not permission to throw Settlers away:
+
+- the practical-site gate still refuses a Settler when there is nowhere legal
+  and reachable to found;
+- Advanced settlement ranking still combines early growth, production,
+  freshwater/coast, district adjacency, travel cost, visible attack envelopes,
+  barbarian pressure, support distance, and isolation;
+- repairs, a besieged city's walls/defender, and the one-unit-per-city military
+  floor all rank ahead of a Settler;
+- production Advanced enables siege muster, home-defense assignments and the
+  bounded Recovery posture, so the larger empire raises and uses defenders;
+- Builder coverage rises from 0.5 to 0.75 per city, while `has_builder_work`
+  stops Builder production after useful improvements and repairs are exhausted.
+
+Configured historical controls retain a three-city ramp, a six-city planning
+ceiling, the flat four-city production gene, 0.5 Builders per city, and the
+default-off live-defense adapters. `AdvancedAi::legacy()` therefore remains the
+frozen rating anchor.
+
+## Why the governor had to change
+
+`AdvancedAi::assess` has always computed a land-aware, speed-aware target, but
+an untargeted adaptive empire delegates ordinary queues to `BasicAi::cities`.
+That governor used only this flat gate:
 
 ```rust
-let map_capacity = (2 + land / 55).clamp(3, 9);
-let city_cadence = g.standard_duration(90).max(1) as usize;
-let desired_cities = (self.city_target_floor + g.turn as usize / city_cadence)
-    .min(map_capacity)
-    .min(6);
+((n_cities + settlers) as f64) < self.w.city_target
 ```
 
-It is land-aware, speed-aware and time-aware: three cities at the opening,
-about one more per era, never more than the map can hold.
+The production default was 4.0. The plan and the queue therefore disagreed,
+and the governor that actually produced Settlers knew the least about the map.
+The live six-player league had already demonstrated that a target near ten was
+viable, while the historical expansion-leverage probe was the one gene block
+where drawing larger values helped.
 
-Nothing on the adaptive path consumes it. `docs/OPENINGS.md` §19 records the
-dispatch, and the code still reads that way: after the four-build opening an
-untargeted adaptive empire enters `advanced_production` only for `Recovery`;
-every other adaptive plan ends in `BasicAi::cities`. That governor's Settler
-gate is
+## Why this is not the rejected 2026-07-31 treatment
 
-```rust
-((n_cities + settlers) as f64) < self.w.city_target   // src/ai.rs
+The original `advanced_plan_city_target` experiment replaced the gene with the
+plan verbatim. At the time the plan opened at three while the production gene
+was four, so the treatment made the compounding opening *smaller*. Its original
+fires check correctly rejected it:
+
+```text
+[eval 4p 24x16]       plan=false  cities 2.17 / target 3.83
+[eval 4p 24x16]       plan=true   cities 1.50 / target 3.67
+[deployment 6p 74x46] plan=false  cities 4.83 / target 5.00
+[deployment 6p 74x46] plan=true   cities 4.33 / target 5.00
 ```
 
-— a **flat gene that cannot see the map**. `ai_eval` reports stock `advanced`
-at *100% adaptive plans, 0.00 switches*, so this is the governor deciding
-every evaluated game. That is not a property of stock alone: on the
-deployment-profile screen recorded in `docs/EVAL.md`, **all four genome arms
-report `{"adaptive": 240}` — 240 of 240 seat-games each** — so every arm
-compared there took this path.
+That null remains useful evidence. The production policy fixes its mechanism:
+the opening floor is six and delegation takes `max(gene, plan)` so a strategic
+target can widen the governor but can never narrow it. It also scales Builder
+and defense capacity alongside the target rather than changing one number in
+isolation.
 
-So the empire computes one city target and expands to a different one, and the
-number that decides is the one that knows least about the map.
+## Current validation
 
-## Why the gap is not academic
+The focused contract tests cover four properties:
 
-| agent | `city_target` | what the baseline governor stops at |
+- production constructors get the six-to-nine target, higher Builder coverage,
+  smart settlement, siege/home-defense, and bounded Recovery together;
+- historical controls retain their old values and flags;
+- a higher learned city target or Builder ratio is preserved;
+- after the historical stop turn, a wide plan builds a defender first when the
+  army is short, then a Settler once the defense floor is filled, and restores
+  all three temporary genes afterward.
+
+The existing six-seed fires census on the production candidate reported:
+
+```text
+[eval 4p 24x16]       target 4  cities 3.83  score 260
+[deployment 6p 74x46] target 6  cities 6.83  score 384
+[deployment 6p 74x46] target 8  cities 6.83  score 365
+```
+
+Compact maps are site-limited. On the deployment map the six-city production
+floor fires materially; raising the reported late target from six to eight did
+not add another city in this small census, so nine is a continuing ceiling,
+not a claim that every empire reaches nine.
+
+For an end-to-end check, candidate and base `ai_eval` binaries were run on the
+same six Online Continents maps (seeds `88620000..88620005`, 6 players,
+74x46, 200 turns), each against the same frozen `advanced_v1` anchor. The
+production candidate moved the `advanced` averages as follows:
+
+| measure | base | candidate |
 |---|---:|---:|
-| stock `advanced` (`Weights::default`) | 4.0 | 4 cities, every map size, every speed |
-| current embedded champion (`data/evolved/best.json`) | **4.0** | 4 |
-| historical gen-14 candidate (2026-07-31 screen) | **2.408** | 3 |
-| live-league leader `g28-28` (round 3217) | **9.681** | its own site supply |
-| `assess`, deployment profile, turn 135+ | — | **6** |
+| cities | 5.31 | **8.28** |
+| population | 63.8 | **90.4** |
+| districts | 21.0 | **29.8** |
+| buildings | 73.6 | **100.9** |
+| military power | 791.9 | **1311.8** |
+| Builders | 2.36 | **5.67** |
+| food yield | 163.5 | **233.4** |
+| production yield | 283.1 | **373.6** |
+| science yield | 148.2 | **175.4** |
+| culture yield | 115.2 | **129.3** |
+| terminal score | 563.8 | **666.0** |
 
-The historical candidate's value sat *below the opening floor of three*. It was
-bred at 4p 24×16 = 96 tiles per player; the promotion gate's deployment profile
-is 6p 74×46 = 567 tiles per player. `docs/EVAL.md`'s historical matrix records
-that candidate at 120 maps per profile as **+51 on compact and −30 at
-deployment, verdict retain stock** (`docs/AI_GAPS.md` §5 has the same shape as
-+58/−9 on an older comparison).
-
-Meanwhile the league — which plays six-player games continuously — had its
-round-3217 leader at `city_target = 9.681` after 1011 six-player games (19.7%
-outright wins against stock `advanced`'s 16.4%). ⚠ That is one entrant, not a
-trend: the next-best-evidenced league genome, `g44-41`, sits at exactly the
-stock 4.0. The defensible reading is only that six-player selection has not
-pushed this gene *down* the way the compact breeding profile did.
-
-`docs/GENOME.md`'s `gene_leverage` independently reports **expansion as the
-one block where replacing the shipped values with uniform draws from their own
-bounds *helped*** (−0.0305 cost, 1.8 SE), and names `city_target` explicitly:
-"shipped `city_target = 4` against a 2..12 range whose random mean is 7 → the
-AI may simply under-expand."
-
-## The correction, and what it is not
-
-`docs/GENOME.md` and `AdvancedAi::city_target_floor`'s doc comment both say
-the gene "is only reached through `unwrap_or_else` when there is no plan — a
-live `AdvancedAi` reads `plan.desired_cities` and never consults it."
-
-**That is true of `advanced_production` and false of the path an adaptive
-empire actually takes.** The `unwrap_or_else` site is real, and so is the
-`BasicAi::cities` gate, and the second one is where the settlers come from.
-Any sweep of this gene that concluded "identical to four decimal places" was
-reading the fallback; that is why every value above six looked the same.
-
-## The treatment
-
-`AdvancedAi::plan_city_target` (default off, arm `advanced_plan_city_target`)
-makes the delegation carry the plan. For the duration of the delegated call
-only, the baseline governor is handed `plan.desired_cities`; its own gene is
-restored before the turn returns.
-
-It changes nothing else. The population gate, the production costs, the
-one-settler-at-a-time rule, `settler_stop_turn`, the site search and the
-opening-book branch are all untouched, and the substitution is invisible to
-every other consumer of `w.city_target` — asserted by
-`plan_city_target_substitutes_only_inside_the_delegated_call`.
-
-This is deliberately *not* a new number. Every value it introduces is one the
-agent already computed and already acts on elsewhere, which is the property
-the retuning attempts recorded in `docs/GENOME.md` lacked.
-
-## ⚠ Historical fires-check — no outcome seed was read
-
-```sh
-cargo test --profile ci plan_city_target_fires -- --ignored --nocapture
-```
-
-The original 2026-07-31 screen used six maps at each of 4p 24×16 and 6p 74×46,
-flag off and on, reporting **cities at end** beside the plan's own target. The
-criterion was fixed as the outcome, not a mechanism bucket, for the reason
-`city_target_floor_fires` gives: a bucket the treatment cannot move is not
-falsifiable in the helpful direction.
-
-```text
-[eval 4p 24x16]       plan_city_target=false  cities 2.17 / plan target 3.83   score 147
-[eval 4p 24x16]       plan_city_target=true   cities 1.50 / plan target 3.67   score 122
-[deployment 6p 74x46] plan_city_target=false  cities 4.83 / plan target 5.00   score 373
-[deployment 6p 74x46] plan_city_target=true   cities 4.33 / plan target 5.00   score 329
-```
-
-**Cities fall in both profiles, and so does score.** The mechanism fires and it
-fires the wrong way, so the pre-registered `ai_eval --matrix` at seed
-65,000,000 was never run and the arm stays default-off with the null recorded,
-on the `advanced_parallel_settlers` precedent.
-
-### Current-main recheck — the arm remains default-off
-
-The current integration revision re-ran the same ignored census after merging
-current `main` and its newer embedded champion/controller changes:
-
-```text
-[eval 4p 24x16]       plan_city_target=false  cities 3.67 / plan target 3.83   score 206
-[eval 4p 24x16]       plan_city_target=true   cities 3.67 / plan target 3.83   score 204
-[deployment 6p 74x46] plan_city_target=false  cities 5.17 / plan target 4.83   score 397
-[deployment 6p 74x46] plan_city_target=true   cities 5.50 / plan target 5.00   score 385
-```
-
-The compact city count is now unchanged while score falls; deployment gains
-cities but still loses score. This is a refreshed fires check, not a
-pre-registered outcome evaluation, so it supplies no promotion evidence and
-does not change the arm's default-off status. It also means the old numerical
-two-regime reading is historical rather than a claim about the current
-controller.
-
-### Why the historical result occurred, and why it remains useful
-
-The ramp *starts below the gene*. `desired_cities` opens at
-`city_target_floor = 3`; stock's `city_target` gene is **4.0**. So for the
-whole early game — the part that compounds — substituting the plan makes the
-governor *more* restrictive, not less, and the late rungs of the ramp arrive
-after the settler window has largely closed. The two numbers do disagree, and
-the plan is not uniformly the larger one.
-
-The original census also priced the axis, which was worth more than the
-treatment was at the time:
-
-- **At deployment the empire reaches 4.83 cities against its own target of
-  5.00.** It is target-limited, not execution-limited, which independently
-  reproduces #569's recorded figure.
-- **At the compact eval profile it reaches 2.17 against a target of 3.83.**
-  There it is execution-limited. The same treatment therefore cannot be judged
-  at one scale, and any expansion result read only at 4p 24×16 is reading the
-  other regime.
-
-A `max(gene, plan.desired_cities)` variant would not have this failure mode.
-It is not proposed here: it was visible only after reading this census, and
-adopting it now would be choosing the knob after seeing the result — the
-failure `docs/GENOME.md` records for the opening-book sweep. If it is worth
-testing it needs its own pre-registration and its own fires-check.
-
-## What survives
-
-The mechanism note above stands and is independent of the treatment: the
-adaptive path's Settler gate is the flat gene in `BasicAi::cities`, and
-`docs/GENOME.md`'s "`city_target` is only reached through `unwrap_or_else`" is
-true of `advanced_production` and false of the path an adaptive empire takes.
-Any future sweep of that gene must move it on this path or it is sweeping the
-fallback again. Its numerical result must be measured against the controller
-and embedded artifact it will actually judge.
-
-⚠ **And it does not generalise.** The obvious next question is whether the four
-settle-site genes are live for the same reason. They are not: there are two
-`settle_value` implementations — `BasicAi`'s reads the genes, `AdvancedAi`'s
-uses hard-coded ring weights — and the Advanced settler path calls its own at
-every site choice and every re-target, while the gene-reading one is reached
-only from `BasicAi`'s own settler movement. `docs/GENOME.md`'s dead-gene
-reading of the settle block stands. `city_target` crosses over through
-*production*, not through siting, and this correction should not be extended
-past the one gene it was measured on.
+All six maps favored the candidate on terminal score. Six maps are mechanism
+evidence, not a powered win-rate claim: no game in this short 200-turn profile
+ended in a victory, and the promotion gate correctly called the sample
+insufficient. The durable claim is narrower and directly observed: the AI
+built and developed substantially more cities while fielding a larger army and
+raising every terminal city-yield column the evaluator reports.
