@@ -1720,6 +1720,13 @@ impl AdvancedAi {
         self.base.siege_muster = true;
     }
 
+    /// Let a raider standing in our own territory claim a unit before the
+    /// offensive does. Native tournament games leave this disabled so their
+    /// recorded ladders stay comparable.
+    pub fn enable_home_defense(&mut self) {
+        self.base.home_defense = true;
+    }
+
     /// Stop the defensive-war posture from becoming permanent. Native
     /// tournament games leave this disabled.
     pub fn enable_bounded_recovery(&mut self) {
