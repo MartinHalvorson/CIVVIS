@@ -82,6 +82,8 @@
     const build = await publishedBuild;
     const bytes = build?.wasm_bytes;
     if (!Number.isSafeInteger(bytes) || bytes <= 0) return answer;
+    const runningCommit = answer.server_commit ?? answer.commit;
+    if (typeof build?.commit !== "string" || build.commit !== runningCommit) return answer;
     if (Object.prototype.hasOwnProperty.call(answer, "server_commit")) {
       answer.server_artifact_bytes = bytes;
       answer.server_artifact_kind = "WASM";
