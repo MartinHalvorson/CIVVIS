@@ -2207,6 +2207,49 @@ mod tests {
         );
     }
 
+    /// The simulation is allowed to finish many turns while one mission
+    /// rocket is still on screen. Its route therefore belongs to the frame in
+    /// which the project completed, while only its progress along that frozen
+    /// route belongs to the wall clock. In particular, the Exoplanet
+    /// Expedition starts accumulating light-years on the following turn; using
+    /// that live distance as the temporary rocket's endpoint pulls the launch
+    /// off-screen at fast spectator paces even though its timer is still live.
+    #[test]
+    fn space_race_launches_outlive_fast_turn_boundaries() {
+        const INDEX: &str = include_str!("../web/index.html");
+
+        let queue = INDEX
+            .split_once("function queueSkyLaunches(")
+            .unwrap()
+            .1
+            .split_once("function activeSkyLaunches(")
+            .unwrap()
+            .0;
+        assert!(queue.contains("endsAt:now + flight.duration"));
+        assert!(queue.contains("originPos:Array.isArray(origin) ? [...origin] : null"));
+        assert!(queue.contains("crew:launchCrew"));
+        assert!(queue.contains("expeditionProgress:Math.max(0, Math.min(1,"));
+
+        let lifetime = INDEX
+            .split_once("function activeSkyLaunches(")
+            .unwrap()
+            .1
+            .split_once("function skyLaunchInFlight(")
+            .unwrap()
+            .0;
+        assert!(lifetime.contains("if (now >= endsAt)"));
+        assert!(
+            !lifetime.contains(".turn"),
+            "a wall-clock launch lifetime must not expire at a turn boundary"
+        );
+
+        assert!(INDEX.contains("place, radius, centerX, centerY, launch.expeditionProgress"));
+        assert!(INDEX.contains(
+            "const anchor = launch.originPos ? {pos:launch.originPos} : playerAnchor(player.id);"
+        ));
+        assert!(INDEX.contains("const player = launch.player ||"));
+    }
+
     #[test]
     fn the_spectator_feed_trades_per_item_research_for_era_firsts() {
         let mut game = Game::new(2, 18, 12, 7, 25, 0);
