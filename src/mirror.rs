@@ -5662,6 +5662,44 @@ fn mirrored_city_state_name(game: &crate::game::Game, minor: &StateMinor) -> Opt
         .map(|spec| spec.name.clone())
 }
 
+/// Accept `{}`, `[]`, `null`, or a populated object for a map-valued host field.
+///
+/// ⚠ **The mod's JSON encoder emits `[]` for an empty table.** `encode` counts a
+/// table's entries and takes the array branch whenever `#v == n`, which an empty
+/// table satisfies because both are zero. So a Lua field that is logically an
+/// empty map arrives as a JSON *array*, serde refuses to read a sequence into a
+/// `BTreeMap`, and the failure is not scoped to the field — **the entire
+/// `StateSnapshot` fails to deserialize and the board is silently lost.**
+///
+/// That happened. `great_person_points` shipped in #983 without this, every
+/// player has zero Great Person points on turn 1, and three consecutive live
+/// attempts reported "no revealed terrain or no state yet" with 0 orders from
+/// turn 1, stalled at turn 6 on an unanswered research prompt, and were killed
+/// by the watchdog. The mod now returns `nil` when the table is empty; this is
+/// the second half of that repair, so a future map-valued export cannot take the
+/// board down the same way before anyone notices the encoder's behaviour.
+fn map_or_empty_sequence<'de, D>(
+    deserializer: D,
+) -> Result<Option<BTreeMap<String, f64>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(serde::Deserialize)]
+    #[serde(untagged)]
+    enum MapOrSequence {
+        Map(BTreeMap<String, f64>),
+        /// Only ever empty in practice; a populated array has no key to carry.
+        Sequence(Vec<serde_json::Value>),
+        Null,
+    }
+
+    Ok(match MapOrSequence::deserialize(deserializer)? {
+        MapOrSequence::Map(map) => Some(map),
+        MapOrSequence::Sequence(_) => Some(BTreeMap::new()),
+        MapOrSequence::Null => None,
+    })
+}
+
 /// The whole board as one `state` event described it.
 #[derive(Clone, Debug, Default, serde::Deserialize)]
 pub struct StateSnapshot {
@@ -5801,7 +5839,7 @@ pub struct StateSnapshot {
     /// class, and how close the leading rival is. Without this the race is all
     /// zeros in every live game, so the Campus project's entire reason to exist
     /// (Great Scientist points) is invisible to the planner that chooses it.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub great_person_points: Option<BTreeMap<String, f64>>,
     /// Total Governor Titles obtained and spent according to Firaxis. These are
     /// separate from the roster because a title can be held unspent.
@@ -10561,6 +10599,49 @@ mod host_fact_tests {
             }],
         )
         .is_none());
+    }
+
+    /// ⚠ THE REGRESSION THIS EXISTS TO PREVENT, PINNED AS A TEST.
+    ///
+    /// The mod's `encode` emits `[]` for an empty Lua table — it takes the array
+    /// branch whenever `#v == n`, and an empty table satisfies that with both
+    /// zero. `great_person_points` shipped in #983 as a plain `BTreeMap`, every
+    /// player has no Great Person points on turn 1, and serde refusing a
+    /// sequence took **the whole StateSnapshot** down with it, not just the
+    /// field. Three consecutive live attempts reported "no revealed terrain or
+    /// no state yet" and 0 orders from turn 1, stalled at turn 6 on an
+    /// unanswered research prompt, and were killed by the watchdog.
+    ///
+    /// The empty array must parse, and — this is the part that actually
+    /// mattered — everything *around* it must survive.
+    #[test]
+    fn an_empty_great_person_table_arrives_as_a_json_array_and_must_not_lose_the_board() {
+        let raw = r#"{"turn": 92, "gold": 140, "science": 7.5,
+                      "great_person_points": [],
+                      "techs": ["TECH_POTTERY"]}"#;
+        let state: StateSnapshot =
+            serde_json::from_str(raw).expect("an empty map encoded as [] must still parse");
+        assert_eq!(
+            state.great_person_points,
+            Some(BTreeMap::new()),
+            "an empty array is an empty race, not a missing field"
+        );
+        assert_eq!(state.turn, 92, "and the rest of the board must survive it");
+        assert_eq!(state.gold, 140);
+        assert_eq!(state.techs, vec!["TECH_POTTERY".to_string()]);
+
+        // The populated and absent forms keep working.
+        let populated: StateSnapshot = serde_json::from_str(
+            r#"{"turn": 3, "great_person_points": {"GREAT_PERSON_CLASS_SCIENTIST": 18.0}}"#,
+        )
+        .expect("a populated map parses");
+        assert_eq!(
+            populated.great_person_points.unwrap()["GREAT_PERSON_CLASS_SCIENTIST"],
+            18.0
+        );
+        let absent: StateSnapshot =
+            serde_json::from_str(r#"{"turn": 3}"#).expect("an absent field parses");
+        assert_eq!(absent.great_person_points, None);
     }
 
     /// The Great Person race the planner prices against must actually exist.

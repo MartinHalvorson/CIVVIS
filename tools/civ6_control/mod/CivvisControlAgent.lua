@@ -5459,12 +5459,27 @@ local function exportState(player, pid, turn)
 			local points = player:GetGreatPeoplePoints();
 			if points == nil then return nil; end
 			local out = {};
+			local any = false;
 			for row in GameInfo.GreatPersonClasses() do
 				local total = points:GetPointsTotal(row.Index);
 				if total ~= nil and total > 0 then
 					out[row.GreatPersonClassType] = total;
+					any = true;
 				end
 			end
+			-- ⚠⚠ RETURN nil, NOT AN EMPTY TABLE. `encode` above counts entries and
+			-- emits `[]` for any table where `#v == n`, which an empty table
+			-- satisfies (0 == 0). So `{}` goes out as `[]`, the Rust field is a
+			-- map, serde refuses a sequence, and **the whole StateSnapshot fails
+			-- to deserialize** — not just this field.
+			--
+			-- That is not hypothetical. It took every live game down: three
+			-- consecutive attempts on d0fdcfb reported "no revealed terrain or no
+			-- state yet" and 0 orders from turn 1, stalled at turn 6 with the
+			-- research prompt unanswered, and were killed by the watchdog. Every
+			-- player has zero Great Person points on turn 1, so this fired in
+			-- every game immediately.
+			if not any then return nil; end
 			return out;
 		end, nil),
 		governor_points = governor_points,
