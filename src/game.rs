@@ -27727,7 +27727,11 @@ impl Game {
     /// Final Gathering Storm satisfaction bands after the December 2020
     /// restoration: Ecstatic begins at +5 and Happy at +3; the negative
     /// bands remain Displeased -1/-2 through Revolt at -7 or worse.
-    fn amenity_yield_mult_for(surplus: i64) -> f64 {
+    /// `pub(crate)` so the AI can price an Amenity as what it is — a step on
+    /// this band — instead of keeping its own copy of the table. A copy would
+    /// drift from the engine silently, which is the exact failure mode the
+    /// planner has already paid for elsewhere.
+    pub(crate) fn amenity_yield_mult_for(surplus: i64) -> f64 {
         if surplus >= 5 {
             1.20
         } else if surplus >= 3 {

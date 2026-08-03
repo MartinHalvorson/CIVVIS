@@ -1505,7 +1505,49 @@ pub struct AdvancedAi {
     /// [`AdvancedAi::joint_tactics_census`].
     tactics_plans: usize,
     tactics_decisions: usize,
+
+    /// Price an Amenity as the multiplier it is rather than as a flat bonus.
+    ///
+    /// Amenities are not a yield. `Game::amenity_yield_mult_for` is a band on
+    /// the city's surplus that multiplies **every** yield it produces: 1.10 at
+    /// +3, 1.0 at 0, 0.90 at -1, **0.80 at -3, 0.70 at -5**, 0.60 below that.
+    /// A city one step up that band keeps more food, production, gold, culture,
+    /// faith and science, permanently, than most buildings add.
+    ///
+    /// The planner prices it as `amenity_gain * (55 + need * 35)` — a constant
+    /// per point, blind to what the city actually makes. At a -5 deficit that
+    /// is 230 for an Entertainment Complex, which after the
+    /// `raw / (7 + turns)` normalisation is about 26. A Campus in the same city
+    /// scores about 37 on its yields plus a `balanced_core` bonus the
+    /// Entertainment Complex has no entry for, in any lane, alongside no
+    /// `strategic_family` entry, in any lane. So it is never the argmax, and
+    /// the measurement agrees: across five consecutive live games CIVVIS
+    /// ordered an Entertainment Complex **zero times**, while the empire in the
+    /// best of them ran all four cities at -4/-5 for the whole late game — 0.70
+    /// to 0.80 on everything, including the science those same games are short
+    /// of.
+    ///
+    /// This values the actual band step against the city's own weighted output,
+    /// so relief is worth much more in a large unhappy city than in a small
+    /// content one, and worth nothing at all where the surplus is already
+    /// comfortable. That is the same correction
+    /// [`AdvancedAi::research_economy`] makes for beakers: stop pricing a
+    /// multiplier as if it were a flat quantity.
+    ///
+    /// Off in [`AdvancedAi::legacy`] and [`AdvancedAi::pre_policy_envoy`] so an
+    /// evaluator control can measure it.
+    pub amenity_relief: bool,
 }
+
+/// How many turns of the recovered yield an Amenity step is worth paying for.
+///
+/// The band step is permanent, so the honest horizon is the rest of the game.
+/// This is deliberately far shorter: a district still has to be built, the city
+/// may be lost, and the planner's other terms are calibrated against
+/// `raw / (7 + turns)` rather than against a lifetime. Twelve turns of recovered
+/// output puts a genuine Amenity crisis on par with a specialty district and
+/// leaves a comfortable city's marginal Amenity worth almost nothing.
+const AMENITY_RELIEF_TURNS: f64 = 12.0;
 
 impl Default for AdvancedAi {
     fn default() -> Self {
@@ -1557,6 +1599,7 @@ impl AdvancedAi {
         ai.envoy_priority = true;
         ai.adjacency_site_planning = true;
         ai.settler_commit = true;
+        ai.amenity_relief = true;
         ai
     }
 
@@ -1729,6 +1772,7 @@ impl AdvancedAi {
             tactics_resolved: BTreeSet::new(),
             tactics_plans: 0,
             tactics_decisions: 0,
+            amenity_relief: false,
         }
     }
 
@@ -3873,6 +3917,47 @@ impl AdvancedAi {
             _ => 15.0,
         };
         value
+    }
+
+    /// What one step up the Amenity band is worth to this city, priced against
+    /// the yield that step multiplies.
+    ///
+    /// `gain` is Amenities added, not a value. The band is read from the engine
+    /// (`Game::amenity_yield_mult_for`) rather than copied here, so the planner
+    /// cannot drift away from the rule it is reasoning about.
+    ///
+    /// Returns 0 when the flag is off, when nothing is gained, or when the city
+    /// is already high enough on the band that the step changes no multiplier —
+    /// which is most cities most of the time, and is the point: this must not
+    /// become a standing appetite for Amenities everywhere.
+    fn amenity_relief_value(
+        &self,
+        g: &Game,
+        city: &crate::game::City,
+        gain: f64,
+        strategy: GrandStrategy,
+    ) -> f64 {
+        if !self.amenity_relief || gain <= 0.0 {
+            return 0.0;
+        }
+        let surplus = g.city_amenity_surplus(city);
+        let before = Game::amenity_yield_mult_for(surplus);
+        let after = Game::amenity_yield_mult_for(surplus + gain.round() as i64);
+        let step = after - before;
+        if step <= f64::EPSILON {
+            return 0.0;
+        }
+        // The city's own output is what the step multiplies, so a large unhappy
+        // city is where relief is worth paying for and a small one is not.
+        // `city_yields` already has the current multiplier applied, so dividing
+        // it back out recovers the unmultiplied base the step actually acts on.
+        let produced = self.yield_value(g.city_yields(city.id), strategy);
+        let base = if before > f64::EPSILON {
+            produced / before
+        } else {
+            produced
+        };
+        base * step * AMENITY_RELIEF_TURNS
     }
 
     fn yield_value(&self, yields: Yields, strategy: GrandStrategy) -> f64 {
@@ -10387,6 +10472,7 @@ impl AdvancedAi {
                     self.yield_value(spec.yields, plan.strategy) * 42.0
                         + spec.housing * (22.0 + housing_need * 18.0)
                         + spec.amenity * (30.0 + amenity_need * 22.0)
+                        + self.amenity_relief_value(g, city, spec.amenity, plan.strategy)
                         + great_work_slots
                             * if plan.strategy == GrandStrategy::Culture {
                                 180.0
@@ -10632,6 +10718,7 @@ impl AdvancedAi {
                     + spec.defense * if threatened { 5.0 } else { 1.5 }
                     + housing_gain * (32.0 + housing_need * 18.0)
                     + amenity_gain * (55.0 + amenity_need * 35.0)
+                    + self.amenity_relief_value(g, city, amenity_gain, plan.strategy)
                     + spec.loyalty * if city.loyalty < 76.0 { 22.0 } else { 7.0 }
                     + spec.air_slots.max(0) as f64
                         * if plan.strategy == GrandStrategy::Conquest || counts.aircraft > 0 {
@@ -16770,6 +16857,109 @@ mod tests {
         install_ai_test_district(game, city, "holy_site");
         game.cities.get_mut(&city).unwrap().buildings =
             vec![crate::name!("shrine"), crate::name!("temple")];
+    }
+
+    /// An unhappy city must be able to buy its way back up the Amenity band.
+    ///
+    /// Across five consecutive live games CIVVIS ordered an Entertainment
+    /// Complex zero times, while the best of those empires ran all four cities
+    /// at -4/-5 for the whole late game — 0.70 to 0.80 on every yield it made.
+    #[test]
+    fn an_unhappy_city_pays_for_the_district_that_restores_its_yields() {
+        let mut game = Game::new(2, 32, 24, 6_301, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        let city = game.player_city_ids(0)[0];
+        game.players[0].civics.insert(crate::name!("games_recreation"));
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.turn = 90;
+        let ai = AdvancedAi::new();
+        // The band is a step function, so a one-Amenity district only matters
+        // where the city sits on an edge (-5 -> -4, -3 -> -2, -1 -> 0). Grow the
+        // fixture until it is genuinely on one rather than assuming a size does
+        // it: `amenities_required` moves with population and with the ruleset.
+        let deficit_pop = (6..26)
+            .find(|pop| {
+                game.cities.get_mut(&city).unwrap().pop = *pop;
+                let surplus = game.city_amenity_surplus(&game.cities[&city]);
+                surplus < 0
+                    && ai.amenity_relief_value(
+                        &game,
+                        &game.cities[&city],
+                        1.0,
+                        GrandStrategy::Religion,
+                    ) > 0.0
+            })
+            .expect("some population puts this city on an unhappy band edge");
+        game.cities.get_mut(&city).unwrap().pop = deficit_pop;
+        assert!(
+            game.city_amenity_surplus(&game.cities[&city]) < 0,
+            "the fixture must actually be unhappy, or it measures nothing"
+        );
+
+        let legacy = AdvancedAi::legacy();
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Religion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let counts = ai.counts(&game, 0);
+        let site = game
+            .district_sites(city, crate::name!("entertainment_complex"))
+            .into_iter()
+            .next()
+            .expect("a legal Entertainment Complex site");
+        let entertainment = Item::District {
+            district: crate::name!("entertainment_complex"),
+            pos: site,
+        };
+
+        let treated = ai.production_value(&game, 0, city, &entertainment, &plan, &counts);
+        let control = legacy.production_value(&game, 0, city, &entertainment, &plan, &counts);
+        assert!(
+            treated > control * 1.5,
+            "relief from a -5 deficit multiplies every yield this city makes: \
+             {treated} vs {control}"
+        );
+    }
+
+    /// ...and a comfortable city must not develop a standing appetite for
+    /// Amenities it has no use for. The band is flat above zero, so a step that
+    /// crosses no boundary is worth nothing and must be priced at nothing.
+    #[test]
+    fn a_content_city_pays_nothing_extra_for_an_amenity_it_does_not_need() {
+        let mut game = Game::new(2, 32, 24, 6_302, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        let city = game.player_city_ids(0)[0];
+        game.players[0].civics.insert(crate::name!("games_recreation"));
+        game.turn = 90;
+        assert!(
+            game.city_amenity_surplus(&game.cities[&city]) >= 0,
+            "a size-1 city with the starting Amenities is not in deficit"
+        );
+
+        let ai = AdvancedAi::new();
+        let city_ref = &game.cities[&city];
+        assert_eq!(
+            ai.amenity_relief_value(&game, city_ref, 1.0, GrandStrategy::Religion),
+            0.0,
+            "one more Amenity here crosses no band boundary and buys nothing"
+        );
     }
 
     #[test]
