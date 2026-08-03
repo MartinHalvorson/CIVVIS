@@ -386,8 +386,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 ///   this is provably byte-identical and not merely measured to be.
 ///
 /// A compatibility re-pin.
+///
+///
+/// #977 raises the wartime army target when the enemy outweighs us, behind
+/// `army_target_weighs_the_enemy` — `false` in `AdvancedAi::new()` and set only
+/// by `civvis_orders`. `wartime_army_target` returns its `shipped` argument
+/// unchanged on that flag before it reads a single player, so every configured,
+/// legacy and Elo agent wants exactly the army it always wanted. A
+/// compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5344_3e1a_5cbc_f96b;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xfd17_944d_7c35_e7ac;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
