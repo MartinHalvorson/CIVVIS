@@ -6383,6 +6383,12 @@ const CITY_KEYS: &[&str] = &[
     "production_cost", "production_turns", "food", "loyalty_per_turn", "falls_to",
     "x", "y", "pop", "capital", "defense", "damage", "max_damage", "wall_damage",
     "max_wall_damage", "loyalty",
+    // The host's own amenity ledger and the multiplier it puts on every non-food
+    // yield. `the_schema_allowlists_cover_every_declared_field` caught these missing
+    // on the first run, which is the whole reason that test exists.
+    "amenities", "amenities_needed", "happiness", "happiness_yield_mult",
+    "amenities_luxuries", "amenities_entertainment", "amenities_civics",
+    "amenities_city_states", "amenities_war_weariness", "amenities_bankruptcy",
 ];
 
 const UNIT_KEYS: &[&str] = &[
