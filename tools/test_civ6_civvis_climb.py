@@ -592,3 +592,85 @@ class WarFromPlanGuardTests(_Harness, unittest.TestCase):
             encoding="utf-8")
         self.assertIn('if "--civvis-war-from-plan" in raw_argv:', source)
         self.assertIn("replay-only", source)
+
+
+class EndScreenEvidenceTests(unittest.TestCase):
+    """`reached_end_screen` was keyed on an event that has NEVER been emitted.
+
+    ⚠⚠⚠ Measured across every run on this machine: 250 runs, 145
+    `autoclose_armed` for `EndGameMenu`, and ZERO `autoclose`. `armed` fires when
+    the context registers its handler — at game START, line 19 of a real run — and
+    the `autoclose` this looked for cannot happen at all, because Civilization VI
+    halts the Game Core when it shows the end-of-game screen and the shim ticks off
+    the frame loop that just stopped.
+
+    So the column read `None` on all 250 rows while its name promised the opposite.
+    """
+
+    # ⚠ NOT `_outcome`: `unittest.TestCase` uses `self._outcome` for its own
+    # `_Outcome` result recorder, so that name silently shadows the framework
+    # and every call fails with "'_Outcome' object is not callable".
+    def _row(self, events, tmp):
+        run = Path(tmp) / "civvis-x"
+        run.mkdir()
+        (run / "events.jsonl").write_text(
+            "\n".join(json.dumps(e) for e in events) + "\n")
+        saved = climb.RUN_ROOT
+        climb.RUN_ROOT = Path(tmp)
+        try:
+            return climb.outcome_of("civvis-x")
+        finally:
+            climb.RUN_ROOT = saved
+
+    def test_a_terminal_event_means_the_game_reached_its_end(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._row([
+                {"kind": "turn", "turn": 250, "score": 479},
+                {"kind": "victory", "turn": 251, "won": False, "team": 4},
+            ], tmp)
+        self.assertTrue(record["reached_end_screen"])
+        self.assertEqual(record["end_screen_turn"], 251)
+
+    def test_a_rivals_victory_still_counts_as_the_game_ending(self):
+        """⚠ The question is 'did the game reach its end', not 'did we win'.
+        `won()` remains the only thing that decides whose victory it was."""
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._row([
+                {"kind": "victory", "turn": 251, "won": False, "team": 4},
+            ], tmp)
+        self.assertTrue(record["reached_end_screen"])
+        self.assertFalse(climb.won(record))
+
+    def test_the_armed_event_alone_is_not_an_ending(self):
+        """⚠ `autoclose_armed` fires at game START. Counting it would mark every
+        run as having reached its end screen, including the ones that hung."""
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._row([
+                {"kind": "autoclose_armed", "screen": "EndGameMenu", "seconds": 10.0},
+                {"kind": "turn", "turn": 42},
+            ], tmp)
+        self.assertIsNone(record["reached_end_screen"])
+
+    def test_a_hung_run_is_not_reported_as_ended(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            record = self._row([{"kind": "turn", "turn": 87}], tmp)
+        self.assertIsNone(record["reached_end_screen"])
+
+
+class FinalScreenHoldTests(unittest.TestCase):
+    """The hold has to live in the harness, because the mod's clock cannot run."""
+
+    def test_the_harness_holds_before_it_stops_the_game(self):
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        hold = source.index("holding the final screen")
+        stop = source.index("game_stopped = launcher.stop()")
+        self.assertLess(hold, stop,
+                        "holding after the game is killed holds nothing")
+
+    def test_the_hold_only_happens_when_the_game_actually_ended(self):
+        """⚠ A stall or a wrong-modes refusal has nothing worth looking at, and
+        holding there would add ten seconds to every failure in a batch."""
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
+            encoding="utf-8")
+        self.assertIn('if state["outcome"] and args.end_game_seconds > 0:', source)
