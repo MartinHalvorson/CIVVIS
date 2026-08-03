@@ -9175,25 +9175,27 @@ function drawFeatureEffects(t, x, y) {
 }
 
 // Strategic terrain marks are tiny map symbols, not reduced illustrations.
-// Marsh uses a shallow inverse-hill silhouette: a broad, low W that reads as
-// wet ground without competing with units, yields, or improvements.
+// Marsh uses a shallow inverse-hill silhouette: a broad, very low W that reads
+// as wet ground without competing with units, yields, or improvements. Keep
+// its vertical profile at one third of the original 15 px design.
 function drawStrategicMarsh(x, y) {
+  const h = 1 / 3;
   cx.save();
   cx.lineCap = "round"; cx.lineJoin = "round";
   cx.fillStyle = "#86cddd";
   cx.strokeStyle = "#285f79";
   cx.lineWidth = 1.8;
   cx.beginPath();
-  cx.moveTo(x - 15, y - 7);
-  cx.bezierCurveTo(x - 13, y - 1, x - 12, y + 5, x - 7, y + 5);
-  cx.bezierCurveTo(x - 3.5, y + 5, x - 3, y - 1, x, y - 1);
-  cx.bezierCurveTo(x + 3, y - 1, x + 3.5, y + 5, x + 7, y + 5);
-  cx.bezierCurveTo(x + 12, y + 5, x + 13, y - 1, x + 15, y - 7);
-  cx.lineTo(x + 15, y - 2);
-  cx.bezierCurveTo(x + 12.5, y + 5, x + 11, y + 8, x + 7, y + 8);
-  cx.bezierCurveTo(x + 3.5, y + 8, x + 3, y + 2, x, y + 2);
-  cx.bezierCurveTo(x - 3, y + 2, x - 3.5, y + 8, x - 7, y + 8);
-  cx.bezierCurveTo(x - 11, y + 8, x - 12.5, y + 5, x - 15, y - 2);
+  cx.moveTo(x - 15, y - 7 * h);
+  cx.bezierCurveTo(x - 13, y - h, x - 12, y + 5 * h, x - 7, y + 5 * h);
+  cx.bezierCurveTo(x - 3.5, y + 5 * h, x - 3, y - h, x, y - h);
+  cx.bezierCurveTo(x + 3, y - h, x + 3.5, y + 5 * h, x + 7, y + 5 * h);
+  cx.bezierCurveTo(x + 12, y + 5 * h, x + 13, y - h, x + 15, y - 7 * h);
+  cx.lineTo(x + 15, y - 2 * h);
+  cx.bezierCurveTo(x + 12.5, y + 5 * h, x + 11, y + 8 * h, x + 7, y + 8 * h);
+  cx.bezierCurveTo(x + 3.5, y + 8 * h, x + 3, y + 2 * h, x, y + 2 * h);
+  cx.bezierCurveTo(x - 3, y + 2 * h, x - 3.5, y + 8 * h, x - 7, y + 8 * h);
+  cx.bezierCurveTo(x - 11, y + 8 * h, x - 12.5, y + 5 * h, x - 15, y - 2 * h);
   cx.closePath();
   cx.fill(); cx.stroke();
   cx.restore();
