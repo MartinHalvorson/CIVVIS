@@ -223,7 +223,14 @@ fn civ6_build_name(item: &civvis::game::Item) -> Option<String> {
         Item::Unit { unit } => Some(civ6_unit_type(unit)),
         Item::Building { building } => Some(civ6_building_type(building)),
         Item::District { district, .. } => Some(civ6_district_type(district)),
-        Item::Wonder { wonder, .. } => Some(format!("BUILDING_{}", upper(wonder))),
+        // ⚠ A WONDER IS A BUILDING AND MUST USE THE BUILDING TABLE. #959 put the
+        // divergent spellings in `civ6_building_type`, but this arm still formatted its
+        // own name, so the three wonders Civilization VI spells differently
+        // — `BUILDING_HALICARNASSUS_MAUSOLEUM`, `BUILDING_STATUE_LIBERTY`,
+        // `BUILDING_UNIVERSITY_SANKORE` — kept going out mechanically uppercased and
+        // kept being refused. Two arms formatting the same table one line apart is the
+        // shape that made this a bug twice.
+        Item::Wonder { wonder, .. } => Some(civ6_building_type(wonder)),
         // ⚠ CIVVIS'S DISTRICT PROJECTS ARE NOT NAMED LIKE CIVILIZATION VI'S, and the
         // mechanical uppercase below produced names the game has never heard of.
         //
@@ -3674,6 +3681,47 @@ mod tests {
         // Already fixed before this change; keep it pinned so the table stays whole.
         assert_eq!(building("medieval_walls"), "BUILDING_CASTLE");
         assert_eq!(project("campus_research_grants"), "PROJECT_ENHANCE_DISTRICT_CAMPUS");
+    }
+
+    /// ⚠ A wonder reaches Civilization VI as a BUILDING, so it must use the building
+    /// table — #959 added the divergent spellings but left `Item::Wonder` formatting its
+    /// own name one line away, so all three kept going out wrong. This asserts the two
+    /// arms agree, which is the property that was actually missing.
+    #[test]
+    fn a_wonder_and_a_building_translate_through_the_same_table() {
+        use civvis::game::Item;
+        use civvis::name::Name;
+
+        for name in ["mausoleum_at_halicarnassus", "statue_of_liberty",
+                     "university_of_sankore", "stonehenge", "great_bath"] {
+            let as_wonder = civ6_build_name(&Item::Wonder {
+                wonder: Name::new(name),
+                pos: (0, 0),
+            })
+            .expect("a wonder always names something");
+            assert_eq!(
+                as_wonder,
+                civ6_building_type(&Name::new(name)),
+                "{name} must translate the same way whichever Item variant carries it"
+            );
+        }
+
+        assert_eq!(
+            civ6_build_name(&Item::Wonder {
+                wonder: Name::new("mausoleum_at_halicarnassus"),
+                pos: (0, 0)
+            })
+            .as_deref(),
+            Some("BUILDING_HALICARNASSUS_MAUSOLEUM")
+        );
+        // The plot is part of the decision and must survive the shared table.
+        assert_eq!(
+            civ6_build_pos(&Item::Wonder {
+                wonder: Name::new("stonehenge"),
+                pos: (3, 4)
+            }),
+            Some(civvis::hex::axial_to_offset(3, 4))
+        );
     }
 
     /// The outbound table must not silently shrink relative to CIVVIS's own ruleset.
