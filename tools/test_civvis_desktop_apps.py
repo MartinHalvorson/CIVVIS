@@ -50,6 +50,13 @@ class DesktopAppsTests(unittest.TestCase):
             self.assertIn(expected, rendered["wasm"])
         self.assertIn('readonly civvis_port="8785"', rendered["rust"])
         self.assertIn('readonly civvis_port="8790"', rendered["wasm"])
+        for launcher in rendered.values():
+            self.assertIn(
+                'if status_matches_build "${civvis_status}"; then\n'
+                '    # A live file server can begin serving a newly installed bundle',
+                launcher,
+            )
+            self.assertIn('    open_civvis_page true\n    exit 0', launcher)
 
     def test_repository_defaults_match_the_launcher_contract(self):
         desktop.verify_default_contract(ROOT, self.template_path)

@@ -173,7 +173,10 @@ fi
 
 civvis_status="$(read_civvis_status)"
 if status_matches_build "${civvis_status}"; then
-    open_civvis_page
+    # A live file server can begin serving a newly installed bundle from the
+    # same path before this launcher runs. Refresh the reused tab so its page,
+    # WASM module, title, and provenance all come from the matching bundle.
+    open_civvis_page true
     exit 0
 fi
 
