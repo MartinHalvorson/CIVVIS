@@ -8048,8 +8048,11 @@ mod tests {
             "function setResourceDisplay(mode) {",
             "resourceDisplay.onchange = () => setResourceDisplay(resourceDisplay.value);",
             "function drawResourceWordBadge(t, x, y, rim = resourceBadgeRim(t)) {",
-            "drawResourcePictogram(t.resource, iconX, ry - .1, RES_WORD_ICON_SIZE);",
-            "cx.strokeText(label, textX, ry + .25, textWidth);",
+            "drawResourcePictogram(t.resource, rx, iconY - .1, RES_WORD_ICON_SIZE);",
+            "cx.strokeText(label, rx, textY, RES_WORD_MAX_WIDTH);",
+            "if (!resourceIsImproved(t)) return \"#fffdf3\";",
+            "? jerseyLanes(owner)[1] : rim;",
+            "function drawResourcePillageStrike(x, y, halfWidth, ink) {",
             "if (RESOURCE_DISPLAY === \"symbol_word\" && cam.scale >= RES_WORD_LABEL_SCALE) {",
             "drawResourceSymbolBadge(t, x, y, rim);",
         ] {
@@ -8061,6 +8064,52 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "let SHOW_ROCKET_ANIMATIONS = localStorage.getItem(\"civvis-show-rocket-animations\") !== \"0\";"
         ));
+        // The map's painter order is part of its interaction contract: roads
+        // are ground infrastructure, resource marks sit below command tokens,
+        // and the optional yield overlay is the reader's top-most map layer.
+        // Keep both projections in lockstep so switching to the globe does not
+        // invert the information hierarchy.
+        let flat_map = EMBEDDED_INDEX.find("function draw() {").unwrap();
+        let flat = &EMBEDDED_INDEX[flat_map..];
+        let flat_roads = flat.find("drawFlatStrategicRoads(tiles);").unwrap();
+        let flat_borders = flat.find("// --- territory borders:").unwrap();
+        let flat_resources = flat
+            .find("if (resourceMarkerVisible(t)) drawResourceBadge(t, x, y);")
+            .unwrap();
+        let flat_units = flat.find("// --- units").unwrap();
+        let flat_yields = flat
+            .find("drawFlatTileYieldOverlay(tiles, workedSet, visSet);")
+            .unwrap();
+        assert!(
+            flat_roads < flat_borders
+                && flat_borders < flat_resources
+                && flat_resources < flat_units
+                && flat_units < flat_yields,
+            "flat-map painter order must be roads, borders/resources, units, then yields"
+        );
+        let globe_map = EMBEDDED_INDEX.find("function drawPlanetMap() {").unwrap();
+        let globe = &EMBEDDED_INDEX[globe_map..];
+        let globe_roads = globe
+            .find("drawPlanetStrategicRoads(cells, turnVisible, spectator);")
+            .unwrap();
+        let globe_borders = globe
+            .find("if (radius >= SKY_MARKERS) drawPlanetFrontiers(cells);")
+            .unwrap();
+        let globe_terrain = globe
+            .find("if (scale > .42) drawPlanetStrategicTerrain(cells, turnVisible, spectator);")
+            .unwrap();
+        let globe_units = globe.find("const visibleUnits").unwrap();
+        let globe_yields = globe
+            .find("drawPlanetTileYieldOverlay(cells, turnVisible, spectator);")
+            .unwrap();
+        assert!(
+            globe_roads < globe_borders
+                && globe_borders < globe_terrain
+                && globe_terrain < globe_units
+                && globe_units < globe_yields,
+            "globe painter order must match the flat map's road/resource/unit/yield hierarchy"
+        );
+        assert!(EMBEDDED_INDEX.contains("const LUMBER_MILL_ICON_SCALE = 1.3;"));
         for satellite_animation in [
             "function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;",
             "function drawFlatSatellites(now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;",
