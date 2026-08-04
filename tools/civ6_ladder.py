@@ -78,7 +78,6 @@ def record(summary_path: Path) -> int:
         "score": summary.get("last_score"),
         "map_size": summary.get("map_size"),
         "speed": summary.get("speed"),
-        "seed": summary.get("seed"),
         "reason": summary.get("reason"),
     }
     state["attempts"].append(entry)

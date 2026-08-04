@@ -1,7 +1,13 @@
 # Reactor conversion without oscillation
 
-Status: **preregistered and implemented on draft PR #622; the exact default-off
-null is queued behind the shared simulator, and no focal seed has been read**.
+Status: **development screen stopped; retain stock `AdvancedAi`**.
+
+## Archive status
+
+The evaluator is preserved at `experiments/closed/reactor_conversion_eval.rs`
+and is not part of the default Cargo target set. To reproduce an historical
+check, add `--features closed-experiments` to the recorded Cargo command. A new
+treatment needs a new preregistration rather than a retry of this closed result.
 
 ## Production observation
 
