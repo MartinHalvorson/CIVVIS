@@ -571,7 +571,10 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// entrants return before the changed line is ever reached and the anchor's
 /// behaviour is bit-for-bit what it was. A compatibility re-pin;
 /// `elo_anchor_never_reaches_the_settler_commit_path` checks the claim.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xff17_907d_9c43_c225;
+/// ⚠ Re-pinned for test-only seeded-map fixture hardening after Natural
+/// Wonder silhouettes changed. Both edits are inside `#[cfg(test)]` modules;
+/// no controller path is compiled into an Elo game.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x74e1_449b_5bb7_e189;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -12167,6 +12167,23 @@ mod tests {
         let cid = g.player_city_ids(0)[0];
         let ai = BasicAi::new();
 
+        // This is a treasury test, so give it explicit Builder work instead of
+        // depending on which features a seeded map happens to draw nearby.
+        let work = g.cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != g.cities[&cid].pos)
+            .unwrap();
+        {
+            let tile = g.map.tiles.get_mut(&work).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.hills = false;
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+        }
+
         // One city keeps 125 gold and spends 200 on its missing builder.
         g.players[0].gold = 325.0;
         assert!(ai.spend_gold(&mut g, 0, &[cid], 0, 0, 0, 1, 1, 0));
