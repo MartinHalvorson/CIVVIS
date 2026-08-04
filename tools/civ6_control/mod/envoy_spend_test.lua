@@ -25,7 +25,9 @@ local function stub()
 	})
 end
 setmetatable(_G, { __index = function(_, k)
-	if k == "CivvisEnvoySpendOrder" then return rawget(_G, k) end
+	if k == "CivvisEnvoySpendOrder" or k == "CivvisEnvoyIsALostAuction" then
+		return rawget(_G, k)
+	end
 	return stub()
 end })
 
@@ -163,6 +165,47 @@ check("beginTurn spends envoys", callAt ~= nil, true)
 -- It must land inside beginTurn, i.e. before playTurn starts.
 check("the spend is in beginTurn, not playTurn",
 	callAt ~= nil and playAt ~= nil and callAt < playAt, true)
+
+
+-- ⚠⚠⚠ THE LOST AUCTION. `need` is `most + 1 - mine`, recomputed every turn, so a
+-- city-state a rival keeps outbidding shows need 1-2 forever and looks like the
+-- cheapest flip on the board every turn. The first full live run with the lane
+-- working placed **113 envoys and held ONE suzerainty**: Jakarta swallowed 28
+-- and was never ours (ours=28, most=30), Cardiff 10 against 12, Vatican City 8
+-- against 13. 46 envoys — four flips — into three auctions we lost.
+local lost = rawget(_G, "CivvisEnvoyIsALostAuction")
+check("lost-auction predicate is exported", type(lost) == "function", true)
+
+-- A fresh or cheap claim is never a lost auction, however far behind.
+check("no investment yet is not a lost auction", lost({ mine = 0, need = 9 }), false)
+check("small investment is not a lost auction", lost({ mine = 5, need = 9 }), false)
+-- Invested but WINNING (or nearly) is not a lost auction either.
+check("invested and 1 behind is not lost", lost({ mine = 20, need = 1 }), false)
+check("invested and 2 behind is not lost", lost({ mine = 20, need = 2 }), false)
+-- The real ones, from the run.
+check("Jakarta (28 in, 3 behind) is lost", lost({ mine = 28, need = 3 }), true)
+check("Vatican City (8 in, 6 behind) is lost", lost({ mine = 8, need = 6 }), true)
+check("boundary: 6 in and 3 behind is lost", lost({ mine = 6, need = 3 }), true)
+
+-- End to end: a lost auction must not be OFFERED while a winnable flip exists.
+local board = {
+  { id = 1, mine = 28, need = 3, ours = false, takes = true },  -- Jakarta
+  { id = 2, mine = 8,  need = 6, ours = false, takes = true },  -- Vatican City
+  { id = 3, mine = 0,  need = 4, ours = false, takes = true },  -- a fresh claim
+}
+local ordered = spendOrder(board)
+check("only the winnable claim is offered", #ordered, 1)
+check("and it is the fresh one", ordered[1].id, 3)
+
+-- ⚠ If EVERY claim is a lost auction the token still has to go somewhere — an
+-- envoy held at the end of the game bought nothing. Closest to flipping wins.
+local allLost = {
+  { id = 1, mine = 28, need = 5, ours = false, takes = true },
+  { id = 2, mine = 9,  need = 3, ours = false, takes = true },
+}
+local fallback = spendOrder(allLost)
+check("all-lost board still spends", #fallback, 2)
+check("fallback takes the closest to flipping", fallback[1].id, 2)
 
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
