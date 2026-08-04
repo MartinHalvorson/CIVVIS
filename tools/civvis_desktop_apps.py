@@ -2,8 +2,10 @@
 """Build, refresh, install, and verify local Rust and WASM CIVVIS macOS apps.
 
 Both apps are cut from one pinned Git revision, rendered from one launcher
-template, signed before installation, and swapped under one process lock.  The
-previous bundles are archived instead of overwritten.
+template, signed before installation, and swapped under one process lock. The
+private installed bundles are exposed through stable Desktop links so a
+background launch agent never needs write access to macOS's protected Desktop
+folder. Previous bundles are archived instead of overwritten.
 """
 
 import argparse
@@ -92,6 +94,8 @@ class BuildArtifacts:
 class InstalledSwap:
     archives: Tuple[Tuple[pathlib.Path, pathlib.Path], ...]
     targets: Tuple[pathlib.Path, ...]
+    links: Tuple[Tuple[pathlib.Path, Optional[str]], ...]
+    desktop: pathlib.Path
 
 
 class DesktopAppError(RuntimeError):
@@ -253,8 +257,12 @@ def build_artifacts(
 ) -> BuildArtifacts:
     build_root = state_dir / ("build-" + revision.short + "-" + compact_stamp())
     source = build_root / "source"
-    native_target = build_root / "native-target"
-    wasm_target = build_root / "wasm-target"
+    # Cargo outputs are safe to reuse across pinned detached worktrees and make
+    # the perpetual refresh cadence practical. The immutable artifacts copied
+    # into each app still live under this build's timestamped root.
+    cargo_cache = state_dir / "cargo-cache"
+    native_target = cargo_cache / "native-target"
+    wasm_target = cargo_cache / "wasm-target"
     wasm_site = build_root / "wasm-site"
     build_root.mkdir(parents=True)
     run(("git", "worktree", "add", "--detach", str(source), revision.commit), cwd=repo)
@@ -509,40 +517,105 @@ def unused_archive(previous: pathlib.Path, label: str, short: str, stamp: str) -
     return candidate
 
 
+def symlink_points_to(link: pathlib.Path, target: pathlib.Path) -> bool:
+    if not link.is_symlink():
+        return False
+    held = pathlib.Path(os.readlink(link))
+    if not held.is_absolute():
+        held = link.parent / held
+    return held.resolve(strict=False) == target.resolve(strict=False)
+
+
+def restore_links(links: Sequence[Tuple[pathlib.Path, Optional[str]]]) -> None:
+    for link, previous_target in reversed(links):
+        if link.is_symlink():
+            link.unlink()
+        if previous_target is not None:
+            link.symlink_to(previous_target, target_is_directory=True)
+
+
 def install_apps(apps_root: pathlib.Path, desktop: pathlib.Path, state_dir: pathlib.Path) -> InstalledSwap:
-    desktop.mkdir(parents=True, exist_ok=True)
+    if not desktop.is_dir():
+        desktop.mkdir(parents=True)
     previous = state_dir / "previous"
     previous.mkdir(parents=True, exist_ok=True)
+    installed_root = state_dir / "installed"
+    installed_root.mkdir(parents=True, exist_ok=True)
     stamp = compact_stamp()
     incoming: List[Tuple[pathlib.Path, pathlib.Path]] = []
     archived: List[Tuple[pathlib.Path, pathlib.Path]] = []
     installed: List[Tuple[pathlib.Path, pathlib.Path]] = []
+    links: List[Tuple[pathlib.Path, Optional[str]]] = []
     try:
         for spec in APPS:
             staged = apps_root / spec.bundle_name
-            temporary = desktop / ("." + spec.bundle_name + ".incoming-" + str(os.getpid()))
-            if temporary.exists():
+            temporary = installed_root / (
+                "." + spec.bundle_name + ".incoming-" + str(os.getpid())
+            )
+            if temporary.exists() or temporary.is_symlink():
                 raise DesktopAppError("stale incoming bundle exists: " + str(temporary))
             shutil.copytree(staged, temporary, copy_function=shutil.copy2)
             incoming.append((temporary, staged))
 
         for spec in APPS:
-            names = (spec.label, *spec.legacy_labels)
-            for label in names:
-                target = desktop / (label + ".app")
-                if not target.exists():
-                    continue
+            target = installed_root / spec.bundle_name
+            if target.is_symlink():
+                raise DesktopAppError("installed bundle must not be a symlink: " + str(target))
+            if target.exists():
                 archive = unused_archive(
-                    previous, label, commit_from_build_note(target), stamp
+                    previous, spec.label, commit_from_build_note(target), stamp
                 )
                 shutil.move(str(target), str(archive))
                 archived.append((archive, target))
 
         for spec, (temporary, staged) in zip(APPS, incoming):
-            target = desktop / spec.bundle_name
+            target = installed_root / spec.bundle_name
             shutil.move(str(temporary), str(target))
             installed.append((target, staged))
+
+        for spec in APPS:
+            target = desktop / spec.bundle_name
+            installed_target = installed_root / spec.bundle_name
+            if not symlink_points_to(target, installed_target):
+                previous_target = None
+                if target.is_symlink():
+                    previous_target = os.readlink(target)
+                    target.unlink()
+                elif target.exists():
+                    archive = unused_archive(
+                        previous, spec.label, commit_from_build_note(target), stamp
+                    )
+                    shutil.move(str(target), str(archive))
+                    archived.append((archive, target))
+                temporary_link = desktop / (
+                    "." + spec.bundle_name + ".link-" + str(os.getpid())
+                )
+                if temporary_link.exists() or temporary_link.is_symlink():
+                    raise DesktopAppError("stale Desktop link exists: " + str(temporary_link))
+                links.append((target, previous_target))
+                try:
+                    temporary_link.symlink_to(installed_target, target_is_directory=True)
+                    os.replace(temporary_link, target)
+                finally:
+                    if temporary_link.is_symlink():
+                        temporary_link.unlink()
+
+            for legacy_label in spec.legacy_labels:
+                legacy = desktop / (legacy_label + ".app")
+                if legacy.is_symlink():
+                    links.append((legacy, os.readlink(legacy)))
+                    legacy.unlink()
+                elif legacy.exists():
+                    archive = unused_archive(
+                        previous,
+                        legacy_label,
+                        commit_from_build_note(legacy),
+                        stamp,
+                    )
+                    shutil.move(str(legacy), str(archive))
+                    archived.append((archive, legacy))
     except Exception:
+        restore_links(links)
         for target, staged in reversed(installed):
             if target.exists():
                 shutil.rmtree(target)
@@ -556,6 +629,8 @@ def install_apps(apps_root: pathlib.Path, desktop: pathlib.Path, state_dir: path
     return InstalledSwap(
         archives=tuple(archived),
         targets=tuple(target for target, _ in installed),
+        links=tuple(links),
+        desktop=desktop,
     )
 
 
@@ -563,6 +638,7 @@ def rollback_install(swap: InstalledSwap, relaunch: bool = False) -> None:
     # The generated source bundles remain in the build directory, so removing
     # a failed installed copy loses nothing. Restore every previous bundle to
     # its original Desktop name before asking it to launch again.
+    restore_links(swap.links)
     for target in reversed(swap.targets):
         if target.exists():
             shutil.rmtree(target)
@@ -571,13 +647,13 @@ def rollback_install(swap: InstalledSwap, relaunch: bool = False) -> None:
             shutil.move(str(archive), str(target))
     if relaunch and swap.targets:
         for spec in APPS:
-            target = swap.targets[0].parent / spec.bundle_name
+            target = swap.desktop / spec.bundle_name
             if target.exists():
                 subprocess.run(("/usr/bin/open", "-n", str(target)), check=False)
 
 
 REFRESH_AGENT_LABEL = "ai.civvis.desktop-refresh"
-REFRESH_INTERVAL_SECONDS = 600
+REFRESH_INTERVAL_SECONDS = 60
 REFRESH_REBUILD_AGE_MINUTES = 10
 
 

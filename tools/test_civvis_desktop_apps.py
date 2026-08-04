@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import pathlib
 import plistlib
 import subprocess
@@ -192,7 +193,13 @@ class DesktopAppsTests(unittest.TestCase):
 
             self.assertEqual(len(swap.archives), 2)
             for app in desktop.APPS:
-                installed = desktop_dir / app.bundle_name / "Contents/Resources"
+                desktop_app = desktop_dir / app.bundle_name
+                installed = desktop_app / "Contents/Resources"
+                self.assertTrue(desktop_app.is_symlink())
+                self.assertEqual(
+                    desktop_app.resolve(),
+                    (state / "installed" / app.bundle_name).resolve(),
+                )
                 self.assertTrue((installed / "new").is_file())
                 self.assertFalse((installed / "old").exists())
             for old, _ in swap.archives:
@@ -227,6 +234,56 @@ class DesktopAppsTests(unittest.TestCase):
                     (desktop_dir / (app.legacy_labels[0] + ".app")).exists()
                 )
                 self.assertTrue((desktop_dir / app.bundle_name).is_dir())
+
+    def test_refresh_swaps_private_bundles_without_rewriting_desktop_links(self):
+        with tempfile.TemporaryDirectory() as held:
+            root = pathlib.Path(held)
+            desktop_dir = root / "Desktop"
+            state = root / "state"
+            staged_roots = (root / "first", root / "second")
+            for generation, apps in enumerate(staged_roots, start=1):
+                for app in desktop.APPS:
+                    resources = apps / app.bundle_name / "Contents/Resources"
+                    resources.mkdir(parents=True)
+                    (resources / "generation").write_text(
+                        str(generation), encoding="utf-8"
+                    )
+                    (resources / "BUILD.txt").write_text(
+                        "Commit: {}\n".format(str(generation) * 40),
+                        encoding="utf-8",
+                    )
+
+            desktop.install_apps(staged_roots[0], desktop_dir, state)
+            links = {
+                app.mode: (
+                    os.readlink(desktop_dir / app.bundle_name),
+                    (desktop_dir / app.bundle_name).lstat().st_ino,
+                )
+                for app in desktop.APPS
+            }
+
+            desktop_dir.chmod(0o555)
+            try:
+                with mock.patch.object(
+                    pathlib.Path,
+                    "symlink_to",
+                    side_effect=AssertionError("refresh rewrote a Desktop link"),
+                ):
+                    desktop.install_apps(staged_roots[1], desktop_dir, state)
+            finally:
+                desktop_dir.chmod(0o755)
+
+            for app in desktop.APPS:
+                link = desktop_dir / app.bundle_name
+                self.assertEqual(
+                    (os.readlink(link), link.lstat().st_ino), links[app.mode]
+                )
+                self.assertEqual(
+                    (link / "Contents/Resources/generation").read_text(
+                        encoding="utf-8"
+                    ),
+                    "2",
+                )
 
     def test_install_lock_exposes_only_a_live_refresh_pid(self):
         with tempfile.TemporaryDirectory() as held:
@@ -287,7 +344,7 @@ class DesktopAppsTests(unittest.TestCase):
                 payload = desktop.refresh_agent_payload(
                     ROOT, home / "Desktop", home / "state"
                 )
-        self.assertEqual(payload["StartInterval"], 600)
+        self.assertEqual(payload["StartInterval"], 60)
         self.assertEqual(desktop.REFRESH_REBUILD_AGE_MINUTES, 10)
         arguments = payload["ProgramArguments"]
         self.assertIn("refresh", arguments)
