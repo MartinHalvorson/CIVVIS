@@ -1813,6 +1813,28 @@ fn main() {
         "per_civ": rated.as_ref().map(|c| c.per_civ),
         "lane": rated.as_ref().and_then(|c| c.lane.clone()),
         "victory": victory.clone(),
+        // ⚠⚠ SAY WHAT THIS BINARY ACTUALLY CARRIES, EVERY RUN.
+        //
+        // A stale binary is invisible: `summary.json` records no revision, and
+        // three of thirty-two recent live runs were executing a pre-fix build,
+        // each losing most of a city's production to a defect already fixed on
+        // `main`. They were identifiable only because they emitted a build name
+        // a later commit had corrected — an accident that will not repeat for
+        // the next stale build.
+        //
+        // `LIVE_BRIDGE_TREATMENTS` is the canonical list of what
+        // `enable_live_bridge` turns on, and a test already forces the two to
+        // agree. So a binary that predates a repair emits a SHORTER list, and
+        // the difference names exactly which repairs were missing. That also
+        // gives any A/B the one thing it needs and has never had: which
+        // treatments were actually live in the arm it measured.
+        //
+        // `revision` beside it is the supervisor's label when there is one —
+        // `CIVVIS_COMMIT`, or a promoted `civvis-<sha>` executable name. It is
+        // `null` for an ordinary development build, which is honest: the
+        // treatment list is the identity that always reports.
+        "revision": civvis::server::runtime_commit_or_none(),
+        "treatments": civvis::elo::LIVE_BRIDGE_TREATMENTS,
     }));
 
     // ★★★★ HOLD THE SITE ACROSS A TURN THE SETTLER COULD NOT MOVE.
