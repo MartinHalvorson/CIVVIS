@@ -13051,8 +13051,11 @@ function planetCameraTargetFor(pos) {
   return [column, (Math.PI / 2 - latitude) / Math.PI * span];
 }
 function planetStageCenter() {
-  const frame = observedFrameRect();
-  return [(frame.left + frame.right) / 2, (frame.top + frame.bottom) / 2];
+  // The globe and its wider sky are painted into the canvas, and that canvas
+  // is the viewer-defined map area. HUD reservations have already shaped an
+  // automatically fitted area; applying them again here would shift a planet
+  // away from the center of the rectangle the viewer set.
+  return [MAPW / 2, MAPH / 2];
 }
 
 // Orthographic: the hemisphere facing the camera, as a globe is actually seen —
