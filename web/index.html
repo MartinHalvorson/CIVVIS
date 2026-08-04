@@ -13420,6 +13420,32 @@ function skyPointerWorld(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN) {
   }
   return best ? best.body : SKY_EARTH;
 }
+// The named arrivals are controls as well as scenery.  Unlike `skyPointerWorld`
+// this is deliberately a real hit test: its broad halos make wheel zooming
+// forgiving, but a click in empty sky must not unexpectedly launch a flight.
+// The extra margin keeps a coin-sized world practical to select without making
+// neighbouring bodies indistinguishable.
+function skyArrivalHit(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN) {
+  if (!planetMap() || !knowsGlobe()) return null;
+  const margin = Math.max(8, Math.min(22, skyStageSpan() * .025));
+  let best = null;
+  for (const stop of skyWorldStops()) {
+    const {body} = stop;
+    // While Earth fills the frame, canvas clicks still belong to its playable
+    // tiles. Once it is a sky object, it joins the other arrival targets.
+    if (body.id === "earth") {
+      if (radius >= SKY_SURFACE) continue;
+    } else if (body.separation * radius <= 2.5) {
+      // Match the point where the renderer lets a body emerge from its parent.
+      continue;
+    }
+    const [x, y] = skyBodyScreen(body, radius, pan);
+    const reach = skyDrawnRadius(body, radius) + margin;
+    const claim = Math.hypot(x - sx, y - sy) / Math.max(1, reach);
+    if (claim <= 1 && (!best || claim < best.claim)) best = {stop, claim};
+  }
+  return best?.stop || null;
+}
 // How much of the pointer's authority a world takes for itself. A marble is a
 // destination — a pointer on it means *go there*, and there is no ground on a
 // four-pixel disc to mean anything else — while a world that fills the stage is
@@ -24685,7 +24711,15 @@ cv.addEventListener("click", ev => {
   if (suppressControlClick) { suppressControlClick = false; ev.preventDefault(); return; }
   if (dragMoved) { dragMoved = false; return; }
   const r = cv.getBoundingClientRect();
-  const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
+  const sx = ev.clientX - r.left, sy = ev.clientY - r.top;
+  // M/A/R and tack mode are explicit map actions, so they keep precedence over
+  // the sky's direct-travel gesture. Ordinary clicks on a named sky world fly
+  // to that world through the same animated route as its navigation button.
+  if (!tackMode && !interfaceMode) {
+    const target = skyArrivalHit(sx, sy);
+    if (target) { skyGoToWorld(target.id); return; }
+  }
+  const pos = pixelToHex(sx, sy);
   if (!pos || !state) return;
   const k = key(pos);
   if (tackMode) {
