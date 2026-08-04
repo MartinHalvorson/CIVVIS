@@ -9362,6 +9362,53 @@ mod tests {
     }
 
     #[test]
+    fn browser_tile_yields_paint_above_strategic_units() {
+        let flat = EMBEDDED_INDEX
+            .split("function draw()")
+            .nth(1)
+            .and_then(|tail| tail.split("// ------------------------------------------------------- nuclear detonation").next())
+            .expect("flat strategic renderer");
+        let flat_units = flat.find("  // --- units").expect("flat unit pass");
+        let flat_yields = flat
+            .find("drawFlatTileYields(tiles, workedSet);")
+            .expect("flat yield overlay");
+        assert!(
+            flat_yields > flat_units,
+            "flat tile yields must be painted after unit tokens"
+        );
+
+        let planet = EMBEDDED_INDEX
+            .split("function drawPlanetMap()")
+            .nth(1)
+            .and_then(|tail| tail.split("function draw() ").next())
+            .expect("planet strategic renderer");
+        let planet_units = planet
+            .find("const visibleUnits = empireLens ? [] : state.units;")
+            .expect("planet unit pass");
+        let planet_yields = planet
+            .find("drawPlanetStrategicTileYields(cells, turnVisible, spectator);")
+            .expect("planet yield overlay");
+        assert!(
+            planet_yields > planet_units,
+            "planet tile yields must be painted after unit tokens"
+        );
+
+        for renderer in [
+            "function drawFlatTileYields(tiles, workedSet)",
+            "function drawPlanetStrategicTileYields(cells, visible, spectator)",
+        ] {
+            let body = EMBEDDED_INDEX
+                .split(renderer)
+                .nth(1)
+                .expect("tile-yield overlay renderer");
+            assert!(
+                body.contains("if (!SHOW_YIELDS) return;"),
+                "the Appearance toggle must still gate {renderer}"
+            );
+        }
+    }
+
+    #[test]
     fn strategic_volcanic_soil_splats_from_the_volcano_facing_edge() {
         let splat = EMBEDDED_INDEX
             .split("function drawStrategicVolcanicSoil")

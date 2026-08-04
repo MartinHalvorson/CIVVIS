@@ -10330,6 +10330,18 @@ function drawTileYields(t, x, y, worked) {
   cx.restore();
 }
 
+// Yields are a map-reading aid, so they need to remain readable when a unit
+// occupies their tile. Keep this as a late overlay pass rather than making the
+// unit renderer know about tile economics.
+function drawFlatTileYields(tiles, workedSet) {
+  if (!SHOW_YIELDS) return;
+  for (const t of tiles) {
+    if (t.district || t.wonder) continue;
+    const [x, yy] = hexXY(t.pos[0], t.pos[1]);
+    drawTileYields(t, x, yy - elev(t), workedSet.has(key(t.pos)));
+  }
+}
+
 function tri(ax, ay, bx, by, ccx, ccy) {
   cx.beginPath(); cx.moveTo(ax, ay); cx.lineTo(bx, by); cx.lineTo(ccx, ccy);
   cx.closePath(); cx.fill();
@@ -17667,6 +17679,18 @@ function drawPlanetStrategicResourceBadge(entry, visible, spectator) {
     drawResourceBadge(entry.tile, 0, 0));
 }
 
+function drawPlanetStrategicTileYields(cells, visible, spectator) {
+  if (!SHOW_YIELDS) return;
+  const worked = new Set(state.cities.flatMap(city =>
+    city.citizens ? city.citizens.worked_tiles.map(key) : []));
+  for (const entry of cells) {
+    const {tile} = entry;
+    if (tile.district || tile.wonder) continue;
+    withPlanetStrategicCell(entry, visible, spectator, () =>
+      drawTileYields(tile, 0, 0, worked.has(key(tile.pos))));
+  }
+}
+
 function drawPlanetStrategicTerrain(cells, visible, spectator) {
   drawPlanetStrategicRoads(cells, visible, spectator);
   drawPlanetStrategicCliffs(cells, visible, spectator);
@@ -17677,8 +17701,6 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
   }
   const naturalWonders = buildPlanetNaturalWonderPlacements(cells);
   const campSet = new Set(state.camps.map(key));
-  const worked = new Set(state.cities.flatMap(city =>
-    city.citizens ? city.citizens.worked_tiles.map(key) : []));
   const occupied = new Set(state.units.map(unit => key(unit.pos)));
   const districtBuildings = districtBuildingsByTile();
   const occupiedResources = [];
@@ -17716,7 +17738,6 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
       }
       if (t.district) drawDistrict(t, 0, 0, districtBuildings.get(tileKey));
       if (t.wonder) drawWorldWonderIcon(t.wonder, 0, 0);
-      if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, 0, 0, worked.has(tileKey));
     });
   }
   return occupiedResources;
@@ -18699,6 +18720,9 @@ function drawPlanetMap() {
     if (commandTokenClip) cx.restore();
     cx.restore();
   }
+  // Paint yield markers after the command tokens so the Appearance toggle
+  // remains useful on occupied tiles in the globe view as well.
+  drawPlanetStrategicTileYields(cells, turnVisible, spectator);
   // As on the flat map, a resource beneath a unit waits until the figure is
   // painted. Its lower strategic seat stays readable instead of losing one
   // arbitrary third to the token in the center of the cell.
@@ -19134,7 +19158,6 @@ function draw() {
     }
     if (t.district) drawDistrict(t, x, y, districtBuildings.get(k));
     if (t.wonder) drawWorldWonderIcon(t.wonder, x, y);
-    if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, x, y, workedSet.has(k));
   }
   // Lens passes replace or grade the finished ground while leaving the map's
   // geometry and controls alone. Empire goes first because Settler's site
@@ -19633,6 +19656,9 @@ function draw() {
     cx.globalAlpha = 1;
     if (strategicTokenClip) cx.restore();
   }
+  // Match the globe pass: yield markers belong above an occupied tile's unit,
+  // without changing which tiles the existing Appearance setting includes.
+  drawFlatTileYields(tiles, workedSet);
   // The deposits the figures were standing on. Held back above so a badge is
   // not a third hidden behind the unit occupying its tile; drawn here, in the
   // same seat and at the same weight, only after the figures are down.
