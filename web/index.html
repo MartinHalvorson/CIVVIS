@@ -1448,11 +1448,11 @@
      stays on screen and is not carried is a promise about the run that the run
      does not keep. See docs/CIV6_GAME_MODE.md. */
   body.playing-civ6 .civ6-hidden { display: none; }
-  /* Whether this computer can play it at all, and what a run it can see is
-     doing. The mode is offered everywhere and refused where it cannot run, so
-     the refusal has somewhere to be read: a dead Steam client once cost eleven
-     ladder attempts, each recorded as a loss rather than as an attempt that
-     never happened. */
+  /* Whether this computer can play the verification-only mode at all, and what
+     a run it can see is doing. It is retained everywhere and refused where it
+     cannot run, so the refusal has somewhere to be read: a dead Steam client
+     once cost eleven ladder attempts, each recorded as a loss rather than as
+     an attempt that never happened. */
   #civ6-status { display: none; grid-column: 1 / -1; margin: 1px 0 2px; }
   body.playing-civ6 #civ6-status { display: block; }
   #civ6-status .civ6-line {
@@ -3630,7 +3630,7 @@
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
-          <option value="civ6">Play Firaxis Civ 6 with computer control</option>
+          <option value="civ6" hidden>Play Firaxis Civ 6 with computer control</option>
           <option disabled>Multiplayer · later</option>
         </select></label>
         <div id="civ6-status">
@@ -28045,10 +28045,10 @@ function readVictorySetting(id) {
   return box ? box.checked : true;
 }
 // What this computer can do about the other game, and what a run it can see is
-// doing. The mode is offered everywhere and refused where it cannot run, so the
-// refusal needs somewhere to be read: a run that silently never starts is how a
-// dead Steam client cost eleven ladder attempts, every one of them recorded as
-// a loss rather than as an attempt that never happened.
+// doing. The verification-only mode is retained everywhere and refused where it
+// cannot run, so the refusal needs somewhere to be read: a run that silently
+// never starts is how a dead Steam client cost eleven ladder attempts, every one
+// of them recorded as a loss rather than an attempt that never began.
 async function refreshCiv6Status() {
   if (civ6StatusInFlight) return;
   civ6StatusInFlight = true;
