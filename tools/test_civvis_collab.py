@@ -693,6 +693,23 @@ class PolicyTests(unittest.TestCase):
         )
         self.assertEqual(errors, [])
 
+    def test_a_newer_prs_coordination_acknowledges_an_older_ready_pr(self):
+        """A later task cannot be named by an older PR's already-ready body."""
+        advisories = []
+        errors = collab.validate_pr(
+            pr(self.branch, body(), draft=False),
+            files=["src/game.rs"],
+            commit_subjects=[],
+            ranges={"src/game.rs": [(100, 140)]},
+            other_ranges={5: {"src/game.rs": [(130, 160)]}},
+            other_coordination={5: {9}},
+            advisories=advisories,
+        )
+        self.assertEqual(errors, [])
+        self.assertTrue(
+            any("PR #5 already declares coordination with PR #9" in note for note in advisories)
+        )
+
     def test_ready_pr_must_complete_checkboxes(self):
         errors = collab.validate_pr(
             pr(self.branch, body(checked=False), draft=False),
