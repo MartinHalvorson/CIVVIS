@@ -5567,6 +5567,11 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("st?.server_commit_time"));
         assert!(EMBEDDED_INDEX.contains("st?.server_built_at"));
         assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
+        assert!(EMBEDDED_INDEX.contains("id=\"buildmark-commit\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "https://github.com/MartinHalvorson/CIVVIS/commit/${encodeURIComponent(commit)}"
+        ));
+        assert!(EMBEDDED_INDEX.contains("View commit ${shortCommit} on GitHub"));
         assert!(EMBEDDED_INDEX.contains("return parts.join(\" \") || \"0m\""));
         assert!(EMBEDDED_INDEX.contains("Commit is ${formatBuildAge(commitDate)} old"));
         assert!(EMBEDDED_INDEX.contains("Build is ${formatBuildAge(buildDate)} old"));

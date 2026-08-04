@@ -1599,6 +1599,12 @@
     letter-spacing: .035em; backdrop-filter: blur(8px); opacity: .82;
   }
   #buildmark[hidden] { display: none; }
+  #buildmark-commit {
+    color: #c6d9d1; pointer-events: auto; text-decoration-color: transparent;
+    text-underline-offset: 2px;
+  }
+  #buildmark-commit:hover { color: #eef8f4; text-decoration-color: currentColor; }
+  #buildmark-commit:focus-visible { outline: 1px solid #b8d8cb; outline-offset: 2px; }
   .tip-primary, .tip-unit {
     display: inline-block; color: #fffaf0; font-size: var(--type-body); font-weight: 850; line-height: 1.45;
   }
@@ -3948,7 +3954,9 @@
           aria-label="Resize the command deck from its right edge; use Left and Right Arrow keys or drag"
           title="Drag the command deck's right edge to resize · double-click to reset"></button>
 </div>
-<div id="buildmark" hidden aria-label="CIVVIS build revision"></div>
+<div id="buildmark" hidden>
+  <a id="buildmark-commit" target="_blank" rel="noopener noreferrer"></a><span id="buildmark-details"></span>
+</div>
 <script>
 "use strict";
 const SIDEBAR_SECTION_STATE_KEY = "civvis-sidebar-sections-v1";
@@ -7300,20 +7308,26 @@ function syncBuildMarkerPosition() {
 }
 function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
+  const commitLink = document.getElementById("buildmark-commit");
+  const details = document.getElementById("buildmark-details");
   const commit = st?.server_commit;
   const commitTime = st?.server_commit_time;
   const builtAt = st?.server_built_at;
   const wasmBytes = Number(st?.server_wasm_bytes);
   const commitDate = typeof commitTime === "string" ? new Date(commitTime) : null;
   const buildDate = typeof builtAt === "string" ? new Date(builtAt) : null;
-  if (!marker || typeof commit !== "string" || commit === "unknown" ||
+  if (!marker || !commitLink || !details ||
+      typeof commit !== "string" || commit === "unknown" ||
       !commitDate || !Number.isFinite(commitDate.getTime()) ||
       !buildDate || !Number.isFinite(buildDate.getTime())) {
     if (marker) marker.hidden = true;
     return;
   }
-  marker.textContent = `${commit.slice(0, 7)} · ` +
-    `Commit is ${formatBuildAge(commitDate)} old · ` +
+  const shortCommit = commit.slice(0, 7);
+  commitLink.textContent = shortCommit;
+  commitLink.href = `https://github.com/MartinHalvorson/CIVVIS/commit/${encodeURIComponent(commit)}`;
+  commitLink.setAttribute("aria-label", `View commit ${shortCommit} on GitHub`);
+  details.textContent = ` · Commit is ${formatBuildAge(commitDate)} old · ` +
     `Build is ${formatBuildAge(buildDate)} old` +
     (Number.isSafeInteger(wasmBytes) && wasmBytes > 0
       ? ` · WASM is ${formatBinarySize(wasmBytes)}` : "");
