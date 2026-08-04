@@ -2960,8 +2960,96 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- in the state that matters. The rule has three parts now: never put what you need
 	-- below an open-ended target; check what ELSE is down there; and check the target is
 	-- reachable in the state you actually care about.
-	local DEVELOP = { "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
+	local DEVELOP = { "DISTRICT_CAMPUS",
+	                  -- ⚠⚠ FIFTH APPEARANCE OF THIS CLASS, and this time nothing was
+	                  -- misspelled — the entry was simply never written. This list had
+	                  -- **no `DISTRICT_AQUEDUCT`, no `DISTRICT_NEIGHBORHOOD` and no
+	                  -- `BUILDING_SEWER`**, so the rung that decides more builds than
+	                  -- any other could not raise a city's housing ceiling at all.
+	                  --
+	                  -- Housing is what caps population, and population is what science
+	                  -- IS (~1.16 science per citizen). `Game::housing_growth_mult`
+	                  -- halves growth below headroom 2 and quarters it below 1.
+	                  -- Measured over 12,969 host-exported city-turns across the 18
+	                  -- live runs carrying `GetHousing()`: median headroom **1**,
+	                  -- **71.2% of city-turns below the break-even**, mean growth
+	                  -- multiplier **0.515**, and 87.9% throttled at pop >= 8.
+	                  --
+	                  -- And this rung built ZERO of the repair. Of 3,708 live builds
+	                  -- (`events.jsonl` `kind:build`), by deciding program:
+	                  --
+	                  --   Aqueduct  5 -- civvis 5, ladder **0**
+	                  --   Bath      4 -- civvis 4, ladder **0**
+	                  --   Neighborhood 0 -- nobody, ever
+	                  --   Library  59 -- civvis 5, **develop 54**
+	                  --   University 119 -- civvis 1, **develop 118**
+	                  --
+	                  -- So the science BUILDINGS were almost entirely this rung's while
+	                  -- the housing districts were entirely CIVVIS's, at a 20.8/79.2
+	                  -- split. #1087 repairs CIVVIS's side; this repairs this one.
+	                  --
+	                  -- ⚠⚠ BUT DATE THAT SPLIT BEFORE COSTING ANYTHING FROM IT. Every
+	                  -- figure above comes from runs BEFORE `civvis-20260802T140355Z`.
+	                  -- `kind:build` is emitted only from this file's own production
+	                  -- sweep, and that sweep is skipped when a city already has current
+	                  -- production — so once CIVVIS began applying `produce` through the
+	                  -- orders channel the event went silent. It is **zero in all 60+
+	                  -- runs since**, including all 19 that carry the housing export,
+	                  -- while those runs log 3,658 order-turns at `source: civvis` and
+	                  -- 2,754 applied `produce` orders.
+	                  --
+	                  -- So the CURRENT split is UNMEASURED, and this rung is most likely
+	                  -- a FALLBACK now rather than the majority decider. That does not
+	                  -- make the omission harmless — the fallback still fires whenever
+	                  -- CIVVIS's own choice is unplayable, which those same 19 runs
+	                  -- record **482** times — but this is defence in depth, not the
+	                  -- main lane, and nobody should price it as the main lane until
+	                  -- `kind:build` (or an equivalent) reports again.
+	                  --
+	                  -- ⚠ PLACED AFTER THE CAMPUS, DELIBERATELY. The Campus is the
+	                  -- larger funnel gap — 49 of 100 live end-of-game cities were
+	                  -- never ordered one, at a median pop of 7 — and the ladder takes
+	                  -- the FIRST playable entry, so putting housing above it would
+	                  -- trade one gap for another. It goes above the Library because a
+	                  -- Library's science is a flat bonus while population compounds,
+	                  -- and the Aqueduct is the cheapest entry in this list (36).
+	                  --
+	                  -- ⚠ It cannot preempt an early Campus in any case: the Aqueduct
+	                  -- needs `engineering` and the Campus only `writing`, so before
+	                  -- Engineering `playable` skips this line and the ladder moves on.
+	                  -- That is also why placing it high is low-risk rather than a
+	                  -- re-ranking of the science chain.
+	                  --
+	                  -- ⚠⚠ KNOWN LIMITATION, DECLARED RATHER THAN DISCOVERED LATER:
+	                  -- this list names BASE districts, and a civilization whose unique
+	                  -- REPLACES one cannot build the base type at all — `CanProduce`
+	                  -- says no and the ladder falls through, silently, for that civ.
+	                  -- It affects the entries added here and the ones already present
+	                  -- equally:
+	                  --
+	                  --   Bath (Rome)          replaces Aqueduct
+	                  --   Mbanza (Kongo)       replaces Neighborhood
+	                  --   Seowon (Korea)       replaces Campus
+	                  --   Observatory (Maya)   replaces Campus
+	                  --   Acropolis (Greece)   replaces Theater
+	                  --
+	                  -- So Rome gets no housing from this rung and Korea no Campus,
+	                  -- exactly as before this change. CIVVIS's own side resolves this
+	                  -- with `civ_district`; the ladder has no equivalent and giving it
+	                  -- one is a separate change with its own measurement, because it
+	                  -- moves the Campus and Theater lines too. Fixing it here would
+	                  -- mean re-ranking families this PR is not measuring.
+	                  "DISTRICT_AQUEDUCT",
+	                  "BUILDING_LIBRARY",
 	                  "BUILDING_UNIVERSITY", "BUILDING_RESEARCH_LAB",
+	                  -- The late-game housing pair, below the science chain because
+	                  -- both arrive with civics this agent reaches long after the
+	                  -- Campus is settled. `BUILDING_SEWER` is +2 housing on
+	                  -- `sanitation`; `DISTRICT_NEIGHBORHOOD` is 2-6 on `urbanization`,
+	                  -- scaled by the site's Appeal. Neither has ever been built in a
+	                  -- live run, and a Sewer stands in only 19 of 100 end-of-game
+	                  -- cities.
+	                  "DISTRICT_NEIGHBORHOOD", "BUILDING_SEWER",
 	                  "DISTRICT_THEATER", "BUILDING_AMPHITHEATER",
 	                  -- ⚠⚠ `BUILDING_MUSEUM_ART` / `BUILDING_MUSEUM_ARTIFACT`, NOT
 	                  -- `BUILDING_ART_MUSEUM` / `BUILDING_ARCHAEOLOGICAL_MUSEUM`.
