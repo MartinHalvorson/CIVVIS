@@ -10,8 +10,8 @@ use crate::parallel::WorkPool;
 use crate::rng::Rng;
 use crate::rules::{
     building_yield_effect_key, grant_ability_effect_key, unit_purchase_discount_effect_key,
-    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, FutureTreeLayout,
-    ResourceIndustryEffects, Rules, SpeedSpec, Yields, ERA_NAMES,
+    volcanic_soil_valid_terrain, AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec,
+    FutureTreeLayout, ResourceIndustryEffects, Rules, SpeedSpec, Yields, ERA_NAMES,
 };
 use crate::specmap::SpecMap;
 
@@ -27239,6 +27239,27 @@ impl Game {
             if natural_wonder {
                 continue;
             }
+            // `Features_XP2.ValidForReplacement` is the exact list of ordinary
+            // ground cover an eruption may bury. Fissures and other permanent
+            // features still suffer the blast, but remain what they were.
+            let replaceable_feature = tile.feature.as_deref().is_none_or(|feature| {
+                matches!(
+                    feature,
+                    "forest"
+                        | "jungle"
+                        | "marsh"
+                        | "floodplains"
+                        | "grassland_floodplains"
+                        | "plains_floodplains"
+                        | "oasis"
+                        | "volcanic_soil"
+                        | "burning_forest"
+                        | "burnt_forest"
+                        | "burning_jungle"
+                        | "burnt_jungle"
+                )
+            });
+            let can_leave_soil = volcanic_soil_valid_terrain(tile) && replaceable_feature;
             let immune = self.disaster_immune(position, None);
             self.strike_disaster_tile(position, &spec, severity, None, &mut rng);
             self.disaster_population_loss(position, spec.population_loss(severity));
@@ -27246,11 +27267,12 @@ impl Game {
                 continue;
             }
             // Ash buries whatever was growing and leaves Volcanic Soil.
-            if rng.chance(spec.fertility_chance(severity)) {
+            if can_leave_soil && rng.chance(spec.fertility_chance(severity)) {
                 let tile = self.map.tiles.get_mut(&position).unwrap();
-                if tile.wonder.is_none() && tile.district.is_none() {
-                    tile.feature = Some(crate::name!("volcanic_soil"));
-                }
+                // Volcanic Soil ships both ValidWonderPlacement and
+                // ValidDistrictPlacement, so an eruption may deposit it under
+                // either kind of built site.
+                tile.feature = Some(crate::name!("volcanic_soil"));
             }
         }
         self.note_disaster(volcano, "a volcano erupted".to_string());

@@ -150,14 +150,11 @@
        screens. JavaScript publishes only the part that actually overlaps this
        area, so the standings can start clear of it in either arrangement. */
     --player-hud-left: 0px;
-    /* A ceiling on the masthead, whatever the player count or a dragged layout
-       asks for, so a table of twelve cannot swallow the world underneath it.
-       Rows past it scroll inside the ribbon, which is what the row locks are
-       for. */
-    /* Eight rows are the readable masthead before it becomes a table to
-       browse. A twelve-player exhibition therefore scrolls even on a tall
-       display, while a smaller game still pays only for the rows it has. */
-    --player-hud-max-height: min(38vh, 280px);
+    /* The masthead ends at its final civilization row rather than at an
+       arbitrary share of the screen. Before a world arrives, reserve the
+       two-seat floor: it keeps the era and turn counter visible. */
+    --player-hud-content-height: 106px;
+    --player-hud-max-height: min(var(--player-hud-content-height), calc(100% - 8px));
   }
   /* The map area: the rectangle of #maparea the world is drawn into. It is the
      whole of it until the panels crowd it or a viewer sets it by hand, and
@@ -2190,9 +2187,8 @@
 
   /* The standings are the map's masthead, with the turn plate as the left cell
      and the table filling every pixel through the victory tracker's left edge.
-     The player count changes its height, not that horizontal contract. Every
-     civilization keeps one fixed-height row; after eight rows the table
-     scrolls instead of swallowing the map. */
+     The player count changes its height, not that horizontal contract: every
+     civilization shown here receives one fixed-height row. */
   #playerhud {
     position: absolute; z-index: 7; pointer-events: auto;
     top: 0; left: var(--player-hud-left, 0px); right: var(--victory-hud-width); width: auto;
@@ -2408,7 +2404,8 @@
   body.hud-columns-resizing * { cursor: col-resize !important; }
   body.hud-columns-resizing #playerhud { user-select: none; }
   /* Every row keeps the same readable height instead of being squeezed to fit
-     the panel, so a large table scrolls rather than shrinking into illegibility. */
+     the panel. A custom or physically constrained HUD scrolls rather than
+     shrinking the rows into illegibility. */
   #playerhud .diplomacy-ribbon {
     flex: 1; min-width: 0; min-height: 0; display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -5432,14 +5429,43 @@ function bindMapAreaEditor() {
 // the right edge, the minimap in the lower-left corner — so a returning viewer
 // sees the rail instead of three panels pinned where they no longer belong.
 const HUD_LAYOUT_STORAGE_KEY = "civvis-hud-layout-v3";
+const PLAYER_HUD_CHROME_HEIGHT = 50;
+const PLAYER_HUD_ROW_HEIGHT = 26;
+const PLAYER_HUD_ROW_GAP = 2;
+const PLAYER_HUD_ROW_PITCH = PLAYER_HUD_ROW_HEIGHT + PLAYER_HUD_ROW_GAP;
+const PLAYER_HUD_MIN_ROWS = 2;
+// Two civilization rows leave the turn plate room through its counter and
+// everything above it; its lower settings may use any height the roster adds.
+const PLAYER_HUD_MIN_HEIGHT = PLAYER_HUD_CHROME_HEIGHT + PLAYER_HUD_MIN_ROWS * PLAYER_HUD_ROW_PITCH;
+
+function playerHudRowPitch() {
+  const hud = document.getElementById("playerhud");
+  const style = hud ? getComputedStyle(hud) : null;
+  const height = Number.parseFloat(style?.getPropertyValue("--hud-row-height"));
+  const gap = Number.parseFloat(style?.getPropertyValue("--hud-row-gap"));
+  return (Number.isFinite(height) ? height : PLAYER_HUD_ROW_HEIGHT) +
+    (Number.isFinite(gap) ? gap : PLAYER_HUD_ROW_GAP);
+}
+
+function playerHudContentHeight(rows) {
+  return Math.max(PLAYER_HUD_MIN_HEIGHT, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());
+}
+
+function playerHudMaxContentHeight() {
+  // A saved layout is restored before the first world state supplies its row
+  // count. Leave that first restore bounded only by the map; drawPlayerHud()
+  // publishes the exact roster ceiling once it knows the rows.
+  const height = Number.parseFloat(area.style.getPropertyValue("--player-hud-content-height"));
+  return Number.isFinite(height) ? height : Infinity;
+}
+
 const HUD_WIDGETS = {
   // A player row is one line: the turn plate, an identity and twelve fixed metric
   // columns side by side, which is why the standings want the map's width and
-  // very little of its height. They are capped below two-fifths of that height
-  // however they are sized — by the player count, by a dragged edge, or by a
-  // layout saved earlier — so a large table never swallows the world.
-  players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:154,
-            maxHeightRatio:.38, avoidsSidebar:true},
+  // exactly one row of height per civilization. The content ceiling also keeps
+  // a dragged or restored HUD from leaving empty space below its last row.
+  players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:PLAYER_HUD_MIN_HEIGHT,
+            maxHeight:playerHudMaxContentHeight, avoidsSidebar:true},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
 };
@@ -5940,7 +5966,12 @@ function syncResponsiveTypeBox(root, width, height) {
   // multiplier is baked into the shares the columns are emitted at — so the
   // band changing has to rewrite them. Reading the new band from the observer
   // that set it is what keeps the two out of a race.
-  if (rebanded && root.id === "playerhud") syncPlayerHudColumns();
+  if (rebanded && root.id === "playerhud") {
+    syncPlayerHudColumns();
+    // Roomy mastheads use taller rows. Recalculate the roster ceiling when a
+    // width change crosses that band so every civilization remains visible.
+    if (state && hudLayoutGesture?.name !== "players") drawPlayerHud();
+  }
   if (root.id === "victoryhud") {
     const ratio = width / Math.max(1, height);
     root.dataset.typeShape = width >= 300 && (ratio >= 2.15 || (width >= 520 && height <= 260))
@@ -6155,11 +6186,14 @@ function hudWidgetMetrics(element) {
 }
 
 // The tallest a widget may be: the map it floats over, less its margins, and
-// less again for any widget that claims only a share of the height.
+// less again for any widget that claims a content or proportional ceiling.
 function hudWidgetMaxHeight(config) {
-  const ceiling = config.maxHeightRatio
+  const contentCeiling = typeof config.maxHeight === "function"
+    ? config.maxHeight()
+    : Number.isFinite(config.maxHeight) ? config.maxHeight : Infinity;
+  const ratioCeiling = config.maxHeightRatio
     ? area.clientHeight * config.maxHeightRatio : Infinity;
-  return Math.max(1, Math.min(area.clientHeight - 8, ceiling));
+  return Math.max(1, Math.min(area.clientHeight - 8, contentCeiling, ratioCeiling));
 }
 
 // A saved player-HUD position is local to #maparea. On a desktop the command
@@ -9650,8 +9684,8 @@ function paintNaturalWonder(feature, x, y, footprint) {
 }
 
 // Volcanic Soil is fallout, not three unrelated stones. In Strategic, anchor
-// the deposit to the entire edge shared with its volcano, then let it taper to
-// the tile centre. The fallback covers old saves and second-ring eruption
+// an ash-and-earth fan to the entire edge shared with its volcano, then let it
+// taper into the tile. The fallback covers old saves and second-ring eruption
 // deposits: it is coordinate-seeded, so the mark remains static while still
 // entering through a deliberate edge instead of floating in the hex.
 function drawStrategicVolcanicSoil(t, x, y) {
@@ -9678,28 +9712,35 @@ function drawStrategicVolcanicSoil(t, x, y) {
   cx.rotate(Math.atan2(sourceY, sourceX));
   cx.lineJoin = "round"; cx.lineCap = "round";
 
-  cx.fillStyle = "#2d2926";
+  // The darkest, freshest deposit stays at the volcano edge; its softer inner
+  // tip leaves enough terrain visible to read this as material thrown outward,
+  // rather than a separate feature sitting in the middle of the tile.
+  const soilFan = cx.createLinearGradient(0, 0, S + 2, 0);
+  soilFan.addColorStop(0, "rgba(83,55,41,.20)");
+  soilFan.addColorStop(.42, "rgba(70,45,34,.76)");
+  soilFan.addColorStop(1, "rgba(38,32,29,.96)");
+  cx.fillStyle = soilFan;
   cx.beginPath();
   cx.moveTo(S + 2, -S);
-  cx.bezierCurveTo(24, -18, 17, -13, 11, -11);
-  cx.bezierCurveTo(6, -9, 2, -5, 0, 0);
-  cx.bezierCurveTo(3, 5, 7, 9, 12, 10.5);
-  cx.bezierCurveTo(18, 13, 25, 18, S + 2, S);
+  cx.bezierCurveTo(27, -18, 18, -14, 10, -10);
+  cx.bezierCurveTo(4, -7, 1, -3, -1, 0);
+  cx.bezierCurveTo(3, 4, 8, 9, 14, 11);
+  cx.bezierCurveTo(21, 14, 29, 18, S + 2, S);
   cx.closePath(); cx.fill();
 
-  // Iron-rich earth showing through the charcoal gives the compact symbol a
-  // soil read, while the forked seams preserve the force and direction of the
-  // eruption without making a dormant deposit look like live lava.
-  cx.fillStyle = "#5b3b2d";
-  for (const [dx, dy, radius] of [[4, -4, 3], [8, 7, 2.5], [14, -10, 2]]) {
-    cx.beginPath(); cx.arc(dx, dy, radius, 0, 7); cx.fill();
-  }
-  cx.strokeStyle = "#845039"; cx.lineWidth = 1.35;
+  // Muted iron-rich seams and compact clods retain a soil read without making
+  // a dormant deposit look like live lava. Every mark starts near the volcano
+  // and narrows with the fan, preserving its outward direction.
+  cx.strokeStyle = "#89513a"; cx.lineWidth = 1.3;
   cx.beginPath();
-  cx.moveTo(29, 0); cx.bezierCurveTo(20, -1, 10, 2, 1, 0);
-  cx.moveTo(14, 1); cx.lineTo(8, 6); cx.lineTo(2, 5);
-  cx.moveTo(19, -2); cx.lineTo(12, -7); cx.lineTo(5, -6);
+  cx.moveTo(31, -15); cx.bezierCurveTo(22, -11, 11, -7, 1, -1);
+  cx.moveTo(32, 0); cx.bezierCurveTo(21, 0, 10, 2, 1, 0);
+  cx.moveTo(31, 14); cx.bezierCurveTo(22, 10, 12, 7, 3, 4);
   cx.stroke();
+  cx.fillStyle = "#5f3d2e";
+  for (const [dx, dy, rx, ry] of [[18, -6, 2.2, 1.35], [12, 7, 1.8, 1.1], [6, -2, 1.35, .85]]) {
+    cx.beginPath(); cx.ellipse(dx, dy, rx, ry, 0, 0, 7); cx.fill();
+  }
   cx.restore();
 }
 
@@ -9709,11 +9750,21 @@ function drawStrategicMountainIcon(x, y, volcano) {
   cx.translate(x, y);
   cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE);
   cx.fillStyle = volcano ? "#4a4140" : "#6f747c";
-  tri(-14, 10, 0, -14, 14, 10);
   if (volcano) {
+    // A crater is a horizontal opening, so its rim must meet a truncated cone
+    // at the ellipse's widest points. The old pointed mountain put the crater
+    // part-way down its slope, making the orange oval visibly float.
+    const rimY = -7, rimHalfWidth = 5.3, baseY = 19, baseHalfWidth = 16;
+    cx.beginPath();
+    cx.moveTo(-baseHalfWidth, baseY);
+    cx.lineTo(-rimHalfWidth, rimY);
+    cx.lineTo(rimHalfWidth, rimY);
+    cx.lineTo(baseHalfWidth, baseY);
+    cx.closePath(); cx.fill();
     cx.fillStyle = "#ef6b2e";
-    cx.beginPath(); cx.ellipse(0, -9, 4.5, 2.2, 0, 0, 7); cx.fill();
+    cx.beginPath(); cx.ellipse(0, rimY, rimHalfWidth, 1.35, 0, 0, 7); cx.fill();
   } else {
+    tri(-14, 10, 0, -14, 14, 10);
     cx.fillStyle = "#555a61";
     tri(0, -14, 0, 10, 14, 10);
   }
@@ -20455,15 +20506,17 @@ function drawPlayerHud() {
   const lockedKeys = lockedSeats();
   // One line per row across the masthead — who this is and their twelve values
   // side by side — so a row is only as tall as its medallion: 26px, plus the
-  // 2px gap under it. The fixed 50px is the heading, the column heads, the
-  // gaps and the panel's padding; the floor keeps the turn plate's age, count,
-  // and two settings groups legible at a two-player table. Anything past the
-  // ceiling scrolls, so this is what the panel would *like* rather than what
-  // it is allowed to take.
-  const requestedHeight = Math.max(154, 50 + rows * 28);
+  // 2px gap under it. The fixed chrome and two-seat floor protect the turn
+  // counter; every additional civilization gets exactly one more row.
+  const requestedHeight = playerHudContentHeight(rows);
   const mapArea = document.getElementById("maparea");
+  mapArea.style.setProperty("--player-hud-content-height", `${requestedHeight}px`);
   if (!HUD_LAYOUT.players) {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
+  } else if (hudLayoutGesture?.name !== "players") {
+    const metrics = hudWidgetMetrics(hud);
+    if (metrics.height > hudWidgetMaxHeight(HUD_WIDGETS.players))
+      applyHudWidgetMetrics("players", metrics);
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
   const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
