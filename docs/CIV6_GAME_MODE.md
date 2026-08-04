@@ -1,17 +1,18 @@
 # Play Firaxis Civ 6 with computer control
 
-The lobby's Game mode select offers two worlds, and both of them are ours: an
-AI-only simulation and a single-player game, played in the engine in
-`src/game.rs`. This is the third entry, and the world it starts is not ours at
-all — it is a real game of Sid Meier's Civilization VI, running on this
-computer, with CIVVIS occupying a seat and playing it.
+The lobby's Game mode select offers two public worlds, and both of them are
+ours: an AI-only simulation and a single-player game, played in the engine in
+`src/game.rs`. For browser verification it retains a hidden third `civ6`
+option. The world that option starts is not ours at all — it is a real game of
+Sid Meier's Civilization VI, running on this computer, with CIVVIS occupying a
+seat and playing it.
 
 `tools/civ6_play.py` has been able to do that since #541. What it has never had
 is a relationship with the screen a game is set up on: it is a terminal command
-with its own vocabulary, and a person who has just chosen a difficulty and a map
-in the lobby has to translate both by hand into `--difficulty
-DIFFICULTY_EMPEROR --map Continents.lua` and run it somewhere else. The mode is
-that translation, made selectable.
+with its own vocabulary, and a browser verification needs to translate a
+difficulty and a map into `--difficulty DIFFICULTY_EMPEROR --map
+Continents.lua` and run it somewhere else. The hidden mode is that translation,
+kept selectable for verification.
 
 ## What kind of mode it is
 
@@ -36,10 +37,11 @@ once it starts.
 
 ## The settings are Civilization VI's, not ours
 
-Selecting the mode re-points the setup panel at the other game's vocabulary,
-because that is the game being configured. Three of the four settings that
-survive the switch are ones Civilization VI and CIVVIS already agree on, which
-is not a coincidence: `src/setup.rs` was built from Civilization VI's own tables.
+When browser verification selects the mode, it re-points the setup panel at the
+other game's vocabulary, because that is the game being configured. Three of
+the four settings that survive the switch are ones Civilization VI and CIVVIS
+already agree on, which is not a coincidence: `src/setup.rs` was built from
+Civilization VI's own tables.
 
 | Lobby setting | Civilization VI | Carried by |
 | --- | --- | --- |
@@ -63,8 +65,8 @@ The map roster is not read from the installation. It is the `Maps` rows of
 `DLC/Expansion1|2/Config/*_StandardMaps.xml`, transcribed with their
 `SortIndex` order into `src/civ6.rs`. Reading them live would make the lobby's
 contents depend on a game being installed on whatever machine serves the page,
-which is exactly backwards: the mode is offered everywhere, then refused with a
-reason where it cannot run.
+which is exactly backwards: the verification-only mode is retained everywhere,
+then refused with a reason where it cannot run.
 
 A transcription's failure mode is a typo, and a wrong script name is not
 refused at the door — the run configures, launches, and comes up on whatever
@@ -159,9 +161,9 @@ somebody might close is how you lose a Deity attempt at turn 180.
 starts a real game in the real window; the CIVVIS page it was started from still
 shows whatever world it was showing. Mirroring the board into the CIVVIS viewer
 is a separate line of work — `src/mirror.rs`, PR #683 — and this mode is the
-lobby half of the same feature. When both are in, selecting the mode and
-pressing start gets you the real game on the left and CIVVIS's reading of it on
-the right.
+lobby half of the same feature. When both are in, browser verification can
+select the mode and press start to get the real game on the left and CIVVIS's
+reading of it on the right.
 
 Until then the mode is worth having on its own: it is the difference between a
 ladder attempt being a terminal command somebody has to remember the flags for

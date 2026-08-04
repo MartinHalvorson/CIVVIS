@@ -4354,9 +4354,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // a question about the machine and another game's files, and a page
         // watching a simulation must be able to ask it between turns.
         //
-        // The mode is offered on every computer and refused on the ones that
-        // cannot run it, so this always answers. A silent no is what made a
-        // dead Steam client cost eleven ladder attempts.
+        // The verification-only mode is available on every computer and
+        // refused on the ones that cannot run it, so this always answers. A
+        // silent no is what made a dead Steam client cost eleven ladder
+        // attempts.
         ("GET", "/civ6") => {
             let host = civ6::Host::probe();
             respond_json(
@@ -7233,6 +7234,30 @@ mod tests {
             "player && !player.is_barbarian && player.civ && owners.has(String(player.id))"
         ));
         assert!(EMBEDDED_INDEX.contains("if (Array.isArray(pos) && visible.has(key(pos))"));
+        let civilization_sync = EMBEDDED_INDEX
+            .split_once("function syncMapSearchCivilizations(st = state) {")
+            .expect("civilization-filter synchronizer")
+            .1
+            .split_once("\nfunction computeMapSearchMatches(")
+            .expect("end of civilization-filter synchronizer")
+            .0;
+        assert!(civilization_sync.contains(
+            "const optionsChanged = !mapSearchCivilizationOptions(select, entries);"
+        ));
+        assert!(civilization_sync.contains(
+            "if (optionsChanged && document.activeElement === select) return false;"
+        ));
+        assert!(civilization_sync.contains(
+            "if (optionsChanged) {\n    select.replaceChildren(...entries.map"
+        ));
+        assert_eq!(
+            civilization_sync.matches("select.replaceChildren").count(),
+            1,
+            "the native civilization picker must stay intact when the visible roster is unchanged"
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "mapSearchCiv.addEventListener(\"blur\", () => {\n  // Apply a roster change held back while the native picker was expanded.\n  if (!syncMapSearchCivilizations()) return;"
+        ));
         assert!(EMBEDDED_INDEX.contains("syncMapSearchCivilizations(st);"));
         assert!(EMBEDDED_INDEX.contains("drawFlatMapSearchHighlights(tiles);"));
         assert!(EMBEDDED_INDEX.contains("drawPlanetMapSearchHighlights(cells);"));
@@ -9461,6 +9486,27 @@ mod tests {
     }
 
     #[test]
+    fn mountain_and_volcano_tiles_use_dark_shared_ground_with_glowing_lava() {
+        assert!(EMBEDDED_INDEX.contains("const MOUNTAIN_TILE_COLOR = \"#49453e\";"));
+        assert!(EMBEDDED_INDEX.contains("const VOLCANO_TILE_COLOR = \"#292421\";"));
+        assert!(EMBEDDED_INDEX.contains("tile.feature === \"volcano\""));
+        assert!(EMBEDDED_INDEX.contains("tileGroundColor(cell.tile, \"#4b5960\")"));
+        assert!(EMBEDDED_INDEX.contains("const base = tileGroundColor(t);"));
+        assert!(EMBEDDED_INDEX.contains("tileGroundColor(cell.tile, \"#44545a\")"));
+        assert!(EMBEDDED_INDEX.contains("const terrainColor = tileGroundColor(t);"));
+
+        let icon = EMBEDDED_INDEX
+            .split("function drawStrategicMountainIcon")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawFeatureEffects").next())
+            .expect("shared strategic mountain icon renderer");
+        assert!(icon.contains("cx.fillStyle = volcano ? \"#37302d\" : \"#565149\""));
+        assert!(icon.contains("cx.shadowColor = \"#ff4b19\""));
+        assert!(icon.contains("cx.shadowBlur = 9"));
+        assert!(icon.contains("cx.fillStyle = \"#ffb23c\""));
+    }
+
+    #[test]
     fn instance_tagged_spectator_url_routes_to_the_embedded_page() {
         assert_eq!(request_path("/"), "/");
         assert_eq!(request_path("/?instance=9232"), "/");
@@ -10565,7 +10611,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
         // Leader and difficulty still do follow the selection. The leader row
         // carries a second class because a third mode hides it for a different
-        // reason — see `browser_offers_the_civilization_vi_mode`.
+        // reason — see `browser_keeps_the_civilization_vi_mode_available_for_verification`.
         assert!(EMBEDDED_INDEX.contains("body.spectating .human-setting { display: none; }"));
         assert!(EMBEDDED_INDEX.contains("class=\"small human-setting civ6-hidden\">Leader"));
         assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Difficulty"));
@@ -10575,8 +10621,8 @@ mod tests {
             .contains("if (SPEC) document.getElementById(\"gamemode\").value = \"ai_sim\";"));
     }
 
-    /// The third mode plays the other game, so the panel it is chosen in has
-    /// to stop describing one of ours.
+    /// The verification-only mode plays the other game, so the panel it is
+    /// chosen in has to stop describing one of ours.
     ///
     /// Every assertion here is a setting that would otherwise stay on screen
     /// and be silently dropped. `CivvisControlSetup.lua` writes ruleset, map,
@@ -10585,10 +10631,11 @@ mod tests {
     /// is a promise about the run that the run does not keep — and the run
     /// takes hours to disprove it.
     #[test]
-    fn browser_offers_the_civilization_vi_mode() {
-        // The mode is in the list, named after what it does.
+    fn browser_keeps_the_civilization_vi_mode_available_for_verification() {
+        // This route remains selectable by verification, but it is not a
+        // public choice in the left-panel game-mode list.
         assert!(EMBEDDED_INDEX.contains(
-            "<option value=\"civ6\">Play Firaxis Civ 6 with computer control</option>"
+            "<option value=\"civ6\" hidden>Play Firaxis Civ 6 with computer control</option>"
         ));
         // A third body state, not a variation on either of the other two.
         assert!(EMBEDDED_INDEX
@@ -10629,9 +10676,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("button.disabled = blocked || !!setupError;"));
     }
 
-    /// The mode is offered on every computer and refused on the ones that
-    /// cannot run it, so both of its endpoints always answer — and the refusal
-    /// is a sentence a person can act on rather than a missing response.
+    /// The verification-only mode is available on every computer and refused
+    /// on the ones that cannot run it, so both of its endpoints always answer
+    /// — and the refusal is a sentence a person can act on rather than a
+    /// missing response.
     #[test]
     fn the_civ6_endpoints_answer_on_any_host() {
         let port = TcpListener::bind(("127.0.0.1", 0))
