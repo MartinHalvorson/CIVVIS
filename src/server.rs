@@ -9366,7 +9366,12 @@ mod tests {
         let flat = EMBEDDED_INDEX
             .split("function draw()")
             .nth(1)
-            .and_then(|tail| tail.split("// ------------------------------------------------------- nuclear detonation").next())
+            .and_then(|tail| {
+                tail.split(
+                    "// ------------------------------------------------------- nuclear detonation",
+                )
+                .next()
+            })
             .expect("flat strategic renderer");
         let flat_units = flat.find("  // --- units").expect("flat unit pass");
         let flat_yields = flat
@@ -9400,6 +9405,7 @@ mod tests {
             let body = EMBEDDED_INDEX
                 .split(renderer)
                 .nth(1)
+                .and_then(|tail| tail.split("\nfunction ").next())
                 .expect("tile-yield overlay renderer");
             assert!(
                 body.contains("if (!SHOW_YIELDS) return;"),
