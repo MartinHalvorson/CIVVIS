@@ -121,7 +121,8 @@ function askForIt(wrong) {
 async function asset(request, env, gated) {
   const response = await env.ASSETS.fetch(request);
   const headers = new Headers(response.headers);
-  const path = new URL(request.url).pathname;
+  const url = new URL(request.url);
+  const path = url.pathname;
 
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -131,16 +132,16 @@ async function asset(request, env, gated) {
     // `WebAssembly.instantiateStreaming` refuses anything else.
     headers.set("Content-Type", "application/wasm");
   }
-  if (path.includes("/assets/")) {
-    // Sprite atlases are content and change rarely — true in both lanes.
-    headers.set("Cache-Control", "public, max-age=86400");
+  const versionedBuildFile = url.searchParams.has("v") && (
+    path.endsWith(".js") || path.endsWith(".wasm") || path.includes("/assets/")
+  );
+  if (versionedBuildFile) {
+    // publish.sh derives `v` from these exact bytes. They may therefore live
+    // in a browser cache indefinitely: changed content always has a new URL.
+    headers.set("Cache-Control", "public, max-age=31536000, immutable");
   } else {
-    // Everything else keeps its name across builds — the engine above all —
-    // so it must be revalidated rather than trusted: a cached module from the
-    // last published build beside a freshly published page is a mismatch
-    // nobody can see. One small conditional request; the 8MB body only moves
-    // when the build changed. This now covers the root lane too, which
-    // matters more there: `/` republishes on promotion, not on a schedule.
+    // HTML and legacy/unversioned URLs are moving pointers. Revalidate them on
+    // every visit so an old page or hand-written URL cannot pin a past build.
     headers.set("Cache-Control", "public, max-age=0, must-revalidate");
   }
   return new Response(response.body, { status: response.status, headers });
