@@ -4878,13 +4878,12 @@ impl BasicAi {
             return false;
         }
         for cid in city_ids {
-            if !g.can_produce(
-                pid,
-                *cid,
-                &Item::Unit {
-                    unit: Name::new(unit),
-                },
-            ) {
+            let item = Item::Unit {
+                unit: Name::new(unit),
+            };
+            // `can_produce` answers "can this city BUILD it"; a host purchase
+            // refusal is a different set. Both must pass before spending gold.
+            if !g.can_produce(pid, *cid, &item) || g.purchase_is_blocked(*cid, &item) {
                 continue;
             }
             if g.apply(
@@ -4934,6 +4933,7 @@ impl BasicAi {
                     let price = spec.cost * 4.0;
                     if price > budget + 1e-9
                         || !g.can_produce(pid, *cid, &Item::Unit { unit: *name })
+                        || g.purchase_is_blocked(*cid, &Item::Unit { unit: *name })
                     {
                         continue;
                     }
@@ -5000,6 +5000,12 @@ impl BasicAi {
                 if spec.wonder
                     || !g.can_produce(
                         pid,
+                        *cid,
+                        &Item::Building {
+                            building: *building,
+                        },
+                    )
+                    || g.purchase_is_blocked(
                         *cid,
                         &Item::Building {
                             building: *building,
@@ -12222,6 +12228,77 @@ mod tests {
             Action::BuyBuilding { building, currency, .. }
                 if building == "monument" && currency == "gold"
         )));
+    }
+
+    /// ⚠⚠ A HOST PURCHASE REFUSAL MUST REACH THE BUYERS THAT NEVER ENUMERATE.
+    ///
+    /// `purchase_action_is_blocked` was applied only where legal actions are
+    /// enumerated, but `buy_gold_infrastructure`, `buy_gold_unit` and
+    /// `buy_gold_military` each build an `Action::Buy*` themselves and call
+    /// `apply` directly. They gated on `can_produce`, which reads
+    /// `blocked_production` — a DIFFERENT set meaning "cannot build here", not
+    /// "the host will not sell this here".
+    ///
+    /// Live run `civvis-20260804T091315Z` re-bought the same Granary in the same
+    /// city on turns 114, 117, 121, 122, 123 and 128; 8 of that game's 9
+    /// purchases were refused. Replaying those turns after this change, the
+    /// Granary is gone and the gold goes to a Shrine instead.
+    #[test]
+    fn a_refused_purchase_is_not_re_offered_to_the_direct_buyers() {
+        let mut g = Game::new_full(1, 20, 14, 320, 30, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|id| g.units[id].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = g.player_city_ids(0)[0];
+        g.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .retain(|building| building != "monument");
+        let ai = BasicAi::new();
+        g.players[0].gold = 365.0;
+
+        // Baseline: the Monument is both priced and reachable by the direct buyer.
+        assert!(
+            g.building_gold_purchase_cost(0, cid, "monument").is_some(),
+            "precondition: the Monument is purchasable before the host refuses it"
+        );
+
+        // Now the host refuses to sell a Monument in this city.
+        g.replace_blocked_purchases(std::collections::BTreeMap::from([(
+            cid,
+            std::collections::BTreeSet::from(["building:monument".to_string()]),
+        )]));
+
+        assert_eq!(
+            g.building_gold_purchase_cost(0, cid, "monument"),
+            None,
+            "a refused purchase must stop being priced — this is the choke point \
+             every buyer reaches the offer through"
+        );
+        assert!(
+            !g.legal_actions(0).iter().any(|action| matches!(
+                action,
+                Action::BuyBuilding { building, .. } if building == "monument"
+            )),
+            "and it must leave the enumeration too"
+        );
+
+        // The direct buyer must not spend gold on it either — this is the path
+        // that bypassed the enumeration and re-proposed it every turn.
+        let before = g.players[0].gold;
+        ai.spend_gold(&mut g, 0, &[cid], 1, 1, 1, 2, 1, 1);
+        assert!(
+            !g.cities[&cid].buildings.iter().any(|b| b == "monument"),
+            "the direct gold buyer must respect a host purchase refusal"
+        );
+        assert!(
+            g.players[0].gold <= before,
+            "and must not have paid for the refused building"
+        );
     }
 
     #[test]
