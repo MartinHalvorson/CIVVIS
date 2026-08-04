@@ -5548,7 +5548,7 @@ impl BasicAi {
             })
     }
 
-    fn pick_item(
+    pub fn pick_item(
         &self,
         g: &Game,
         pid: usize,
@@ -5693,6 +5693,17 @@ impl BasicAi {
                 self.combined_arms_unit(g, pid, cid, melee, ranged)
             };
             if let Some(m) = picked {
+                // ⚠ THE BRANCH THAT WINS MUST SAY SO.
+                //
+                // A one-city run built 18 heavy chariots across 90 turns while its
+                // own plan asked for seven cities, and NOTHING in the journal said
+                // which branch of `pick_item` took the choice. An offline probe with
+                // the deployment genome returned a settler for the same board, so
+                // the two disagreed with no way to tell which was wrong.
+                think!(self.journal, Cities, Detail,
+                       "Military floor takes the build";
+                       "holding {military} against a floor of {military_floor:.1}{}",
+                       if missing_siege_arm { ", and the siege arm is missing" } else { "" });
                 return Some(Item::Unit { unit: Name::new(&m) });
             }
         }
@@ -5774,17 +5785,46 @@ impl BasicAi {
                 return Some(Item::Unit { unit: Name::new(&unit) });
             }
         }
-        if !self.minor
-            && !self.barb
-            && ((n_cities + settlers) as f64) < self.w.city_target
-            && settlers == 0
-            && (city_pop as f64) >= self.w.settler_min_pop
-            && (g.turn as f64) < self.w.settler_stop_turn
-            && self.has_practical_settle_site(g, pid)
-        {
-            return Some(Item::Unit {
-                unit: crate::name!("settler"),
-            });
+        // ⚠ Five conditions in one `&&` chain, and an empire that ends the game
+        // with one city cannot say which of them refused. Named individually so
+        // "the site search found nothing" is distinguishable from "the window
+        // closed" without attaching a debugger to a finished run.
+        if !self.minor && !self.barb {
+            let room = ((n_cities + settlers) as f64) < self.w.city_target;
+            let none_in_flight = settlers == 0;
+            let grown = (city_pop as f64) >= self.w.settler_min_pop;
+            let in_window = (g.turn as f64) < self.w.settler_stop_turn;
+            if room && none_in_flight && grown && in_window {
+                if self.has_practical_settle_site(g, pid) {
+                    return Some(Item::Unit {
+                        unit: crate::name!("settler"),
+                    });
+                }
+                think!(self.journal, Cities, Detail,
+                       "No settler: every reachable site is refused";
+                       "{n_cities} cities against a target of {:.1}, and the site \
+                        search found nothing within reach",
+                       self.w.city_target);
+            } else if self.journal.wants(crate::reasoning::Level::Detail) {
+                let mut why: Vec<&str> = Vec::new();
+                if !room {
+                    why.push("already at the city target");
+                }
+                if !none_in_flight {
+                    why.push("a settler is already in flight");
+                }
+                if !grown {
+                    why.push("the city is below settler_min_pop");
+                }
+                if !in_window {
+                    why.push("past settler_stop_turn");
+                }
+                think!(self.journal, Cities, Detail,
+                       "No settler: {}", why.join(", ");
+                       "{n_cities} cities and {settlers} settlers against a target \
+                        of {:.1}, turn {} of {:.0}",
+                       self.w.city_target, g.turn, self.w.settler_stop_turn);
+            }
         }
         if (builders as f64) < self.w.builder_per_city * n_cities as f64
             && Self::has_builder_work(g, pid)
@@ -6634,7 +6674,7 @@ impl BasicAi {
         total
     }
 
-    fn valid_settle_site(&self, g: &Game, pid: usize, pos: Pos) -> bool {
+    pub fn valid_settle_site(&self, g: &Game, pid: usize, pos: Pos) -> bool {
         let Some(tile) = g.map.get(pos) else {
             return false;
         };
@@ -6650,7 +6690,7 @@ impl BasicAi {
                 .is_none_or(|cid| g.cities[&cid].owner == pid)
     }
 
-    fn has_practical_settle_site(&self, g: &Game, pid: usize) -> bool {
+    pub fn has_practical_settle_site(&self, g: &Game, pid: usize) -> bool {
         let shipbuilding = g.players[pid].techs.contains(&crate::name!("shipbuilding"));
         let cartography = g.players[pid].techs.contains(&crate::name!("cartography"));
         // Before embarkation, a city only commits to a site close enough to

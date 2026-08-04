@@ -77,8 +77,8 @@ def find_chrome() -> str:
 
 
 # The site carries the same viewer twice: the promoted stable build at the
-# root and the automatic head build under /beta. Each lane is checked
-# separately (`--mount root` / `--mount beta`) because they are different
+# root and the automatic head build under /test. Each lane is checked
+# separately (`--mount root` / `--mount test`) because they are different
 # engines from different commits, and a deploy that plays in one lane and not
 # the other is exactly the mistake worth catching. The lane-independent pages
 # are asserted both times; that costs nothing and keeps either invocation
@@ -88,7 +88,7 @@ def find_chrome() -> str:
 # when it is not, so the required-files list asks for a strategic map atlas in
 # whichever form this build actually chose.
 def required(mount: str) -> list:
-    lane = "" if mount == "root" else "beta/"
+    lane = "" if mount == "root" else "test/"
     return [
         "home/index.html" if mount == "root" else "index.html",
         "download/index.html",
@@ -99,6 +99,9 @@ def required(mount: str) -> list:
         f"{lane}build.json",
         (f"{lane}assets/feature-atlas.webp", f"{lane}assets/feature-atlas.png"),
         "_worker.js",
+        # Its existence is behaviour: without it, Pages answers unknown paths
+        # with the front page instead of a 404.
+        "404.html",
     ]
 
 
@@ -300,7 +303,7 @@ def check_gate(dist: pathlib.Path) -> list[str]:
     uploaded a site with no routing at all. Nothing failed. So the routing is
     asked rather than assumed, against the real runtime under wrangler.
 
-    What it asserts changed when the beta was opened. It used to prove the
+    What it asserts changed when the test lane was opened. It used to prove the
     door was shut; it now proves it is *open*, which is the property that
     matters when a channel is pointing people at it — a stray `BETA_PASSWORD`
     left in the Pages environment would be just as invisible, and just as
@@ -357,17 +360,30 @@ def check_gate(dist: pathlib.Path) -> list[str]:
         if b"releases/latest/download/" not in get("/download/").read():
             problems.append("/download/ is not serving the downloads page")
 
-        # And so is the beta. A `BETA_PASSWORD` left in the Pages environment
+        # And so is the test lane. A `TEST_PASSWORD` left in the Pages environment
         # would put a door back in front of everyone the channel sends here,
         # and would look exactly like a working site from every other angle.
-        beta = get("/beta/").read()
-        if b"Beta build" in beta and b"shim.js" not in beta:
-            problems.append("/beta/ is asking for a password; is BETA_PASSWORD set?")
-        elif b"shim.js" not in beta:
-            problems.append("/beta/ is not serving the viewer")
+        head_lane = get("/test/").read()
+        if b"Test build" in head_lane and b"shim.js" not in head_lane:
+            problems.append("/test/ is asking for a password; is TEST_PASSWORD set?")
+        elif b"shim.js" not in head_lane:
+            problems.append("/test/ is not serving the viewer")
+
+        # /beta — the lane's day-one name — is scrapped, and dead paths in
+        # general answer 404. The second probe is what proves 404.html is
+        # doing its job: without it, Pages serves the front page for any
+        # unknown HTML path (its single-page-app fallback), which is how a
+        # "scrapped" URL came back from the dead once already.
+        for dead in ("/beta/", "/no-such-page"):
+            try:
+                get(dead)
+                problems.append(f"{dead} still answers; it is meant to 404")
+            except urllib.error.HTTPError as gone:
+                if gone.code != 404:
+                    problems.append(f"{dead} answers HTTP {gone.code} rather than 404")
 
         # Both engines reach their pages as modules, not as HTML apologies.
-        for lane in ("/civvis.wasm", "/beta/civvis.wasm"):
+        for lane in ("/civvis.wasm", "/test/civvis.wasm"):
             module = get(lane)
             if module.read(4) != b"\x00asm":
                 problems.append(f"{lane} is not being served as a WebAssembly module")
@@ -394,9 +410,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--dist", default=str(here / "dist"))
     parser.add_argument(
         "--mount",
-        choices=("beta", "root"),
-        default="beta",
-        help="which lane to open in the browser: 'beta' (default, and the shape "
+        choices=("test", "root"),
+        default="test",
+        help="which lane to open in the browser: 'test' (default, and the shape "
              "publish.sh emits on its own) or 'root' (the promoted stable lane "
              "of an assembled two-lane site)",
     )
@@ -415,7 +431,7 @@ def main(argv: list[str] | None = None) -> int:
              "beta/worker_test.py covers the same ground with only Chrome)",
     )
     args = parser.parse_args(argv)
-    lane = "" if args.mount == "root" else "beta/"
+    lane = "" if args.mount == "root" else "test/"
     if args.screenshot is None:
         args.screenshot = str(here / f"verify-{args.mount}.png")
 
@@ -443,10 +459,17 @@ def main(argv: list[str] | None = None) -> int:
         if absolute in page:
             print(f"    the published viewer still asks for {absolute}", file=sys.stderr)
             return 1
+    preload = (
+        '<link rel="preload" href="civvis.wasm" as="fetch" '
+        'type="application/wasm" crossorigin fetchpriority="high">'
+    )
+    if preload not in page:
+        print("    the published viewer does not preload the WASM module", file=sys.stderr)
+        return 1
     if '<script src="shim.js"></script>' not in page:
         print("    the published viewer does not load the shim", file=sys.stderr)
         return 1
-    print(f"    the viewer is relative-pathed for /{lane} and loads the shim")
+    print(f"    the viewer is relative-pathed for /{lane}, preloads WASM, and loads the shim")
 
     # The download page names its binaries; the release workflow builds
     # binaries under names it chooses. Nothing connects the two but agreement,
@@ -478,7 +501,7 @@ def main(argv: list[str] | None = None) -> int:
         if gate_problems:
             print("\nFAILED: the site would not route correctly", file=sys.stderr)
             return 1
-        print("    / is the stable lane; /home, /download and /beta all answer")
+        print("    / is the stable lane; /home, /download and /test all answer")
 
     if not pathlib.Path(args.chrome).exists():
         print(f"    no Chrome at {args.chrome}; skipping the browser check", file=sys.stderr)

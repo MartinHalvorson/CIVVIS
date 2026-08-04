@@ -460,13 +460,17 @@
 
   // ----------------------------------------------------------- first impression
 
-  // A megabyte and a half of engine arrives before the page can draw anything.
-  // Say so, rather than showing a blank screen for the download.
+  // The local game can take a moment to prepare on a first visit. Say what is
+  // actually happening in visitor language rather than exposing the engine
+  // implementation or implying that a server is being started.
   const curtain = document.createElement("div");
   curtain.id = "civvis-beta-loading";
+  curtain.setAttribute("role", "status");
+  curtain.setAttribute("aria-live", "polite");
   curtain.innerHTML =
     '<div class="civvis-beta-mark">CIVVIS</div>' +
-    '<div class="civvis-beta-note">loading the engine</div>';
+    '<div class="civvis-beta-note">Starting a new world</div>' +
+    '<div class="civvis-beta-detail">Runs in this browser</div>';
   const style = document.createElement("style");
   style.textContent = `
     #civvis-beta-loading {
@@ -480,14 +484,24 @@
     #civvis-beta-loading.gone { opacity: 0; pointer-events: none; }
     .civvis-beta-mark { font-size: 40px; letter-spacing: 0.34em; text-indent: 0.34em; }
     .civvis-beta-note { font-size: 13px; letter-spacing: 0.18em; color: #6f8279; text-transform: uppercase; }
+    .civvis-beta-detail { font: 12px/1.4 system-ui, sans-serif; color: #9eaea6; }
     @media (prefers-reduced-motion: reduce) { #civvis-beta-loading { transition: none; } }
   `;
+  const LOADING_NOTICE_DELAY_MS = 350;
+  let loadingFinished = false;
+  let loadingNoticeTimer = null;
   const raise = () => {
+    if (loadingFinished || curtain.isConnected) return;
     document.head.appendChild(style);
     document.body.appendChild(curtain);
   };
-  if (document.body) raise();
-  else document.addEventListener("DOMContentLoaded", raise, { once: true });
+  // Fast cached visits should go straight to the game rather than flash a
+  // full-screen status card. First visits still get a clear explanation after
+  // a short grace period, once there is something worth explaining.
+  loadingNoticeTimer = setTimeout(() => {
+    if (document.body) raise();
+    else document.addEventListener("DOMContentLoaded", raise, { once: true });
+  }, LOADING_NOTICE_DELAY_MS);
 
   // The engine is ready when it has answered something. `/runtime` is the
   // cheapest question there is — it builds no observation at all.
@@ -499,6 +513,9 @@
       report.error = String(error.message || error);
     })
     .then(() => {
+      loadingFinished = true;
+      clearTimeout(loadingNoticeTimer);
+      if (!curtain.isConnected) return;
       curtain.classList.add("gone");
       setTimeout(() => curtain.remove(), 450);
     });
