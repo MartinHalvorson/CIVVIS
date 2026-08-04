@@ -360,6 +360,7 @@ def validate_pr(
     other_files: Optional[Dict[int, Set[str]]] = None,
     ranges: Optional[Dict[str, Optional[List[Tuple[int, int]]]]] = None,
     other_ranges: Optional[Dict[int, Dict[str, Optional[List[Tuple[int, int]]]]]] = None,
+    other_coordination: Optional[Dict[int, Set[int]]] = None,
     advisories: Optional[List[str]] = None,
     added_lines: Optional[Dict[str, Sequence[str]]] = None,
 ) -> List[str]:
@@ -429,12 +430,23 @@ def validate_pr(
                 f"no action needed: {', '.join(shared[:5])}"
             )
             continue
-        if other_number in coordinated:
-            continue
         preview = ", ".join(collisions[:5])
         detail = (
             f"edits collide with PR #{other_number} on the same lines of {preview}"
         )
+        if other_number in coordinated:
+            continue
+        # A newly started task records its existing neighbours automatically.
+        # Its older neighbour cannot have known that future PR number when it
+        # first became ready, so accept that explicit reverse declaration too.
+        # This keeps a harmless CI re-run or main refresh from blocking the
+        # older PR solely because its body predates the newer task.
+        if number in (other_coordination or {}).get(other_number, set()):
+            notes.append(
+                f"{detail} — PR #{other_number} already declares coordination "
+                f"with PR #{number}"
+            )
+            continue
         if draft:
             notes.append(
                 f"{detail} — resolve before marking ready, or add '#{other_number}' "
@@ -551,6 +563,7 @@ def check_pr_action(event_path: Path, token: str, repository: str) -> int:
     # Only PRs that share at least one path can collide, so fetch patches for
     # those alone instead of every open PR on the repository.
     other_ranges: Dict[int, Dict[str, Optional[List[Tuple[int, int]]]]] = {}
+    other_coordination: Dict[int, Set[int]] = {}
     for other in open_prs:
         other_number = int(other["number"])
         if other_number == number:
@@ -558,6 +571,10 @@ def check_pr_action(event_path: Path, token: str, repository: str) -> int:
         shared = set(pr_files(repository, other_number, token)) & set(files)
         if shared:
             other_ranges[other_number] = pr_file_ranges(repository, other_number, token)
+            other_claims = parse_claims(str(other.get("body") or ""))
+            other_coordination[other_number] = split_coordination(
+                other_claims.get("coordinated", "")
+            )
     advisories: List[str] = []
     errors = validate_pr(
         current,
@@ -565,6 +582,7 @@ def check_pr_action(event_path: Path, token: str, repository: str) -> int:
         commit_subjects=subjects,
         ranges=ranges,
         other_ranges=other_ranges,
+        other_coordination=other_coordination,
         advisories=advisories,
         added_lines=pr_added_lines(repository, number, token),
     )
@@ -2220,12 +2238,21 @@ def audit_repo(root: Path) -> Dict[str, List[str]]:
                 for key, value in pr_ranges.items()
                 if key != number and set(value) & set(pr_ranges[number])
             }
+            other_coordination = {
+                key: split_coordination(
+                    parse_claims(str(pr_views[key].get("body") or "")).get(
+                        "coordinated", ""
+                    )
+                )
+                for key in others
+            }
             violations = validate_pr(
                 view,
                 files=files,
                 commit_subjects=subjects,
                 ranges=pr_ranges[number],
                 other_ranges=others,
+                other_coordination=other_coordination,
             )
             for violation in violations:
                 errors.append(f"PR #{number}: {violation}")
