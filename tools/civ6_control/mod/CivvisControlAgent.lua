@@ -6095,6 +6095,124 @@ local function sqlText(fn)
 	return table.concat(parts, ";");
 end
 
+-- ⚠⚠ CAN THIS CONTEXT ASSIGN A CITIZEN AT ALL? ASK, DO NOT ASSUME.
+--
+-- Specialists are the last untouched science lane and the gap is large.
+-- Measured over the 19 live runs carrying the host export, 100 end-of-game
+-- cities: **53 specialist assignments in total**, of which **45.3% sit on a
+-- Commercial Hub and 26.4% on a Campus**. Of the 50 cities that HAVE a Campus,
+-- 28 have no specialist anywhere and **only 8 have even one ON the Campus**.
+-- Every one of those placements is Civilization VI's own citizen governor,
+-- because this agent READS citizens (`IsPlotWorked`, `GetWorkerCount`) and has
+-- never written one.
+--
+-- The human city panel does it from THIS context. `PlotInfo.lua`'s
+-- `OnClickCitizen`:
+--
+--     tParameters[CityCommandTypes.PARAM_MANAGE_CITIZEN] =
+--         UI.GetInterfaceModeParameter(CityCommandTypes.PARAM_MANAGE_CITIZEN);
+--     tParameters[CityCommandTypes.PARAM_X] = kPlot:GetX();
+--     tParameters[CityCommandTypes.PARAM_Y] = kPlot:GetY();
+--     CityManager.RequestCommand(pCity, CityCommandTypes.MANAGE, tParameters);
+--
+-- ⚠ The open question is `PARAM_MANAGE_CITIZEN`. The shipped UI reads it from
+-- `UI.GetInterfaceModeParameter`, i.e. from being inside
+-- `InterfaceModeTypes.CITY_MANAGEMENT` — which an unattended agent is not.
+-- Whether the command accepts the value passed directly is UNTESTED, and this
+-- project has a ledger full of requests that returned without throwing and
+-- changed nothing: "the request did not throw" is not "the engine took it".
+--
+-- So this ASKS AND DOES NOT ACT. `CanStartCommand` is the same read-only shape
+-- as the `CanProduce(hash, false, true)` predicate that settled the production
+-- channel, and it is tried against several candidate parameter values so the
+-- log names which one — if any — the engine accepts. Nothing here can change a
+-- game: no `RequestCommand` call exists in this function.
+--
+-- Off unless `cfg.ProbeCitizens` is set, like `ProbeChannels` above.
+local function probeCitizenSlots(turn)
+	local pid = Game.GetLocalPlayer();
+	if pid == nil or pid < 0 then return; end
+	local player = Players[pid];
+	if player == nil then return; end
+	-- Candidate values for the parameter the shipped UI reads out of the
+	-- interface mode. `nil` is listed first and deliberately: if the command is
+	-- legal without it, nothing else here matters.
+	local candidates = {
+		{ name = "absent", value = nil },
+		{ name = "true", value = true },
+		{ name = "one", value = 1 },
+		{ name = "zero", value = 0 },
+	};
+	local cities = try(function() return player:GetCities(); end);
+	if cities == nil then return; end
+	local probed = 0;
+	for _, city in cities:Members() do
+		if probed >= (cfg.ProbeCitizenCities or 3) then break; end
+		local cityId = try(function() return city:GetID(); end, -1);
+		-- ⚠ Walk the city's PLOTS, not `GetDistricts()`. This file already
+		-- records why (`exportState`): a plot carries the type and the position
+		-- together, and the collection's per-member accessors vary across this
+		-- build. The export reads `plot:GetDistrictType()` for exactly that
+		-- reason, so the probe reads it the same way.
+		local ownedPlots = try(function()
+			return Map.GetCityPlots():GetPurchasedPlots(city);
+		end);
+		if ownedPlots ~= nil then
+			for _, plotIndex in ipairs(ownedPlots) do
+				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+				local dx = plot ~= nil and try(function() return plot:GetX(); end, -1) or -1;
+				local dy = plot ~= nil and try(function() return plot:GetY(); end, -1) or -1;
+				local dtype = nil;
+				if plot ~= nil then
+					local d = try(function() return plot:GetDistrictType(); end, -1);
+					if d ~= nil and d >= 0 then
+						dtype = try(function() return GameInfo.Districts[d].DistrictType; end);
+					end
+				end
+				-- The City Centre takes no specialist, so it is not evidence
+				-- either way and only adds noise to the log.
+				if dtype ~= nil and dtype ~= "DISTRICT_CITY_CENTER" and dx >= 0 then
+					local workers = try(function() return plot:GetWorkerCount(); end, -1);
+					local verdicts = {};
+					for _, candidate in ipairs(candidates) do
+						-- ⚠⚠ EVERY PART OF BUILDING THE TABLE IS INSIDE THE
+						-- `pcall`, NOT JUST THE CALL. `CityCommandTypes.PARAM_*`
+						-- is a bare index: if this build does not define one of
+						-- these names it is `nil`, and `params[nil] = dx` raises
+						-- "table index is nil" — which is a CHUNK-KILLING error
+						-- outside a protected call, and this file has already
+						-- lost whole runs to a script that stopped loading with
+						-- nothing in any log naming it. A probe must not be able
+						-- to take the agent down.
+						local ok, can = pcall(function()
+							local params = {};
+							params[CityCommandTypes.PARAM_X] = dx;
+							params[CityCommandTypes.PARAM_Y] = dy;
+							if candidate.value ~= nil then
+								params[CityCommandTypes.PARAM_MANAGE_CITIZEN] =
+									candidate.value;
+							end
+							return CityManager.CanStartCommand(
+								city, CityCommandTypes.MANAGE, params, true);
+						end);
+						verdicts[#verdicts + 1] = candidate.name .. "="
+							.. (ok and tostring(can) or "threw");
+					end
+					emit("civvis_citizen_probe", {
+						turn = turn,
+						city = cityId,
+						district = dtype,
+						x = dx, y = dy,
+						workers = workers,
+						verdicts = table.concat(verdicts, ","),
+					});
+				end
+			end
+		end
+		probed = probed + 1;
+	end
+end
+
 local function probeChannels(turn)
 	local report = { turn = turn };
 	-- Bare globals, not `_G[name]`: each Civ 6 UI context runs in its own
@@ -8018,6 +8136,13 @@ end
 -- fallback turn would guarantee the next turn falls back too.
 local function beginTurn(player, pid, turn)
 	if cfg.ProbeChannels then probeChannels(turn); end
+	-- Every `ProbeCitizenEvery` turns rather than every turn: the answer cannot
+	-- change within a game, and one line per district per city per turn would
+	-- drown the log the rest of the run has to be read out of.
+	if cfg.ProbeCitizens
+		and (turn % (cfg.ProbeCitizenEvery or 25)) == 0 then
+		probeCitizenSlots(turn);
+	end
 	-- ⚠⚠⚠ ENVOYS ARE SPENT ON THE TURN, NOT ON THE PROMPT. `chooseEnvoy` was
 	-- reachable only from the `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` handler,
 	-- and that blocker is far rarer than the comment above `chooseEnvoy`
