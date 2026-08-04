@@ -15459,6 +15459,10 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     cx.fill();
   }
 
+  // Volcanic Soil is ground rather than an icon. Like the flat strategic map,
+  // it goes on top of its terrain but below territory, the survey grid, and
+  // every piece of constructed or natural detail.
+  if (scale > .42) drawPlanetStrategicVolcanicSoil(cells, visible, spectator);
 
   // Ownership is a transparent command-map layer over finished ground.
   for (const cell of cells) {
@@ -15483,6 +15487,432 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
       cx.stroke();
     }
   }
+}
+
+// The globe used to substitute a few text characters for the command map's
+// terrain language. That made the same forest, hill, geothermal fissure, or
+// Natural Wonder read as a different object when the camera crossed from a
+// chart to the planet. These helpers retain the flat map's authored marks and
+// put them in each projected cell at the equivalent local strategic scale.
+const PLANET_STRATEGIC_INRADIUS = S * SQ3 / 2 * Math.min(1, YS);
+
+function planetStrategicScale(entry) {
+  return planetCellInradius(entry) / PLANET_STRATEGIC_INRADIUS;
+}
+
+function planetStrategicWeight(entry) {
+  return Math.max(.125, Math.round(planetStrategicScale(entry) * 8) / 8);
+}
+
+function planetStrategicAlpha(entry, visible, spectator) {
+  return spectator || visible.has(key(entry.tile.pos)) ? 1 : .52;
+}
+
+// A strategic glyph belongs to its ground even at the limb. Clipping it to the
+// real projected face prevents an upright mark from leaking across a crushed
+// hex or out into space, while the local transform gives it the same proportions
+// it has on the flat map at the matching zoom.
+function withPlanetStrategicCell(entry, visible, spectator, paint) {
+  if (planetCellInradius(entry) < 2) return false;
+  const scale = planetStrategicScale(entry);
+  cx.save();
+  planetPath(cx, entry.points); cx.clip();
+  cx.globalAlpha *= planetStrategicAlpha(entry, visible, spectator);
+  cx.translate(entry.center.x, entry.center.y);
+  cx.scale(scale, scale);
+  paint(scale);
+  cx.restore();
+  return true;
+}
+
+function planetStrategicGroup(groups, entry) {
+  const weight = planetStrategicWeight(entry);
+  const alpha = planetStrategicAlpha(entry, groups.visible, groups.spectator);
+  const groupKey = `${weight}:${alpha}`;
+  let group = groups.byWeight.get(groupKey);
+  if (!group) {
+    group = {weight, alpha, segments:[]};
+    groups.byWeight.set(groupKey, group);
+  }
+  return group;
+}
+
+function drawPlanetStrategicVolcanicSoil(cells, visible, spectator) {
+  for (const entry of cells) {
+    const {tile, cell, points, center} = entry;
+    if (tile.feature !== "volcanic_soil" || points.length < 3) continue;
+    let sourceSide = -1;
+    for (let side = 0; side < points.length; side++) {
+      const neighbor = TMAP.get(cell.nbrs[side]);
+      if (neighbor?.feature === "volcano") { sourceSide = side; break; }
+    }
+    if (sourceSide < 0)
+      sourceSide = Math.floor(hash2(tile.pos[0] * 29 + 7, tile.pos[1] * 31 + 11) * points.length);
+    const a = points[sourceSide], b = points[(sourceSide + 1) % points.length];
+    const sourceX = (a.x + b.x) / 2 - center.x;
+    const sourceY = (a.y + b.y) / 2 - center.y;
+    withPlanetStrategicCell(entry, visible, spectator, () => {
+      cx.rotate(Math.atan2(sourceY, sourceX));
+      cx.lineJoin = "round"; cx.lineCap = "round";
+      cx.fillStyle = "#2d2926";
+      cx.beginPath();
+      cx.moveTo(S + 2, -S);
+      cx.bezierCurveTo(24, -18, 17, -13, 11, -11);
+      cx.bezierCurveTo(6, -9, 2, -5, 0, 0);
+      cx.bezierCurveTo(3, 5, 7, 9, 12, 10.5);
+      cx.bezierCurveTo(18, 13, 25, 18, S + 2, S);
+      cx.closePath(); cx.fill();
+      cx.fillStyle = "#5b3b2d";
+      for (const [dx, dy, radius] of [[4, -4, 3], [8, 7, 2.5], [14, -10, 2]]) {
+        cx.beginPath(); cx.arc(dx, dy, radius, 0, 7); cx.fill();
+      }
+      cx.strokeStyle = "#845039"; cx.lineWidth = 1.35;
+      cx.beginPath();
+      cx.moveTo(29, 0); cx.bezierCurveTo(20, -1, 10, 2, 1, 0);
+      cx.moveTo(14, 1); cx.lineTo(8, 6); cx.lineTo(2, 5);
+      cx.moveTo(19, -2); cx.lineTo(12, -7); cx.lineTo(5, -6);
+      cx.stroke();
+    });
+  }
+}
+
+function drawPlanetStrategicRoads(cells, visible, spectator) {
+  const cityTiles = new Set(state.cities.map(city => key(city.pos)));
+  const roaded = tile => !!tile && (tile.road > 0 || cityTiles.has(key(tile.pos)));
+  const groups = {byWeight:new Map(), visible, spectator};
+  for (const entry of cells) {
+    const {tile, cell, points, center} = entry;
+    if (planetCellInradius(entry) < 3 || !roaded(tile)) continue;
+    let linked = false;
+    for (let side = 0; side < points.length; side++) {
+      if (!roaded(TMAP.get(cell.nbrs[side]))) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      planetStrategicGroup(groups, entry).segments.push([
+        center.x, center.y, (a.x + b.x) / 2, (a.y + b.y) / 2,
+      ]);
+      linked = true;
+    }
+    // A city road or an isolated stretch is still a piece of infrastructure;
+    // the flat renderer leaves its round-capped center mark instead of making
+    // it disappear just because it has not joined a second road yet.
+    if (!linked)
+      planetStrategicGroup(groups, entry).segments.push([
+        center.x, center.y, center.x, center.y,
+      ]);
+  }
+  if (!groups.byWeight.size) return;
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [width, color, alpha] of [[5.6, "#2b2015", .4], [3.0, "#c0a67e", .85]]) {
+    for (const group of groups.byWeight.values()) {
+      cx.strokeStyle = color; cx.lineWidth = width * group.weight;
+      cx.globalAlpha = alpha * group.alpha;
+      cx.beginPath();
+      for (const [ax, ay, bx, by] of group.segments) {
+        cx.moveTo(ax, ay); cx.lineTo(bx, by);
+      }
+      cx.stroke();
+    }
+  }
+  cx.restore();
+}
+
+function drawPlanetStrategicCliffs(cells, visible, spectator) {
+  const done = new Set();
+  const groups = {byWeight:new Map(), visible, spectator};
+  for (const entry of cells) {
+    const {tile, cell, points, center} = entry;
+    if (planetCellInradius(entry) < 3 || !tile.cliff_edges?.some(Boolean)) continue;
+    for (let side = 0; side < points.length; side++) {
+      if (!tile.cliff_edges[side]) continue;
+      const first = cell.ids[side], second = cell.ids[(side + 1) % cell.ids.length];
+      const edgeKey = first < second ? `${first}_${second}` : `${second}_${first}`;
+      if (done.has(edgeKey)) continue;
+      done.add(edgeKey);
+      const a = points[side], b = points[(side + 1) % points.length];
+      const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
+      let nx = -dy / length, ny = dx / length;
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      if ((center.x - mx) * nx + (center.y - my) * ny < 0) { nx = -nx; ny = -ny; }
+      const group = planetStrategicGroup(groups, entry);
+      group.segments.push([a.x, a.y, b.x, b.y]);
+      const tickLength = 4.6 * planetStrategicScale(entry);
+      for (let step = 1; step <= 3; step++) {
+        const fraction = step / 4, px = a.x + dx * fraction, py = a.y + dy * fraction;
+        group.ticks ||= [];
+        group.ticks.push([px, py, px + nx * tickLength, py + ny * tickLength]);
+      }
+    }
+  }
+  if (!groups.byWeight.size) return;
+  cx.save(); cx.lineCap = "round";
+  for (const [lineKind, width, color, alpha] of [
+    ["segments", 3.4, "#241d14", .8], ["segments", 1.5, "#b3a68d", .85],
+    ["ticks", 1.5, "#2b2318", .7],
+  ]) {
+    for (const group of groups.byWeight.values()) {
+      const segments = group[lineKind];
+      if (!segments?.length) continue;
+      cx.strokeStyle = color; cx.lineWidth = width * group.weight;
+      cx.globalAlpha = alpha * group.alpha;
+      cx.beginPath();
+      for (const [ax, ay, bx, by] of segments) {
+        cx.moveTo(ax, ay); cx.lineTo(bx, by);
+      }
+      cx.stroke();
+    }
+  }
+  cx.restore();
+}
+
+function drawPlanetStrategicRivers(cells, visible, spectator) {
+  const done = new Set();
+  const groups = {byWeight:new Map(), visible, spectator};
+  for (const entry of cells) {
+    const {tile, cell, points, center} = entry;
+    if (planetCellInradius(entry) < 3 || !tile.river_edges?.some(Boolean)) continue;
+    for (let side = 0; side < points.length; side++) {
+      if (!tile.river_edges[side]) continue;
+      const neighbor = TMAP.get(cell.nbrs[side]);
+      if (!neighbor || isWater(tile) || isWater(neighbor)) continue;
+      const first = cell.ids[side], second = cell.ids[(side + 1) % cell.ids.length];
+      const edgeKey = first < second ? `${first}_${second}` : `${second}_${first}`;
+      if (done.has(edgeKey)) continue;
+      done.add(edgeKey);
+      const a = points[side], b = points[(side + 1) % points.length];
+      const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
+      let nx = -dy / length, ny = dx / length;
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      if ((center.x - mx) * nx + (center.y - my) * ny < 0) { nx = -nx; ny = -ny; }
+      const bend = (hash2(first * 41 + second * 7, first * 47 + second * 11) - .5) * length * .45;
+      planetStrategicGroup(groups, entry).segments.push([
+        a.x, a.y, mx + nx * bend, my + ny * bend, b.x, b.y,
+      ]);
+    }
+  }
+  if (!groups.byWeight.size) return;
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [color, width, alpha] of [
+    ["#173f58", 7.2, .72], ["#429bca", 4.6, .98], ["#c3eff8", 1.15, .58],
+  ]) {
+    for (const group of groups.byWeight.values()) {
+      cx.strokeStyle = color; cx.lineWidth = width * group.weight;
+      cx.globalAlpha = alpha * group.alpha;
+      cx.beginPath();
+      for (const [ax, ay, qx, qy, bx, by] of group.segments) {
+        cx.moveTo(ax, ay); cx.quadraticCurveTo(qx, qy, bx, by);
+      }
+      cx.stroke();
+    }
+  }
+  cx.restore();
+}
+
+function buildPlanetNaturalWonderPlacements(cells) {
+  const placements = new Map();
+  const byPosition = new Map(cells.map(entry => [key(entry.tile.pos), entry]));
+  const visited = new Set();
+  for (const entry of cells) {
+    const entryKey = key(entry.tile.pos);
+    if (!isNaturalWonder(entry.tile.feature) || visited.has(entryKey)) continue;
+    const entries = [], stack = [entry];
+    visited.add(entryKey);
+    while (stack.length) {
+      const current = stack.pop();
+      entries.push(current);
+      for (const neighborKey of current.cell.nbrs) {
+        const neighbor = byPosition.get(neighborKey);
+        if (!neighbor || neighbor.tile.feature !== entry.tile.feature) continue;
+        const neighborPosition = key(neighbor.tile.pos);
+        if (visited.has(neighborPosition)) continue;
+        visited.add(neighborPosition);
+        stack.push(neighbor);
+      }
+    }
+    const owner = entries.reduce((nearest, candidate) =>
+      candidate.center.z > nearest.center.z ? candidate : nearest);
+    placements.set(key(owner.tile.pos), {feature:entry.tile.feature, entries});
+  }
+  return placements;
+}
+
+function drawPlanetNaturalWonder(placement, visible, spectator) {
+  const entries = placement.entries;
+  const x = entries.reduce((sum, entry) => sum + entry.center.x, 0) / entries.length;
+  const y = entries.reduce((sum, entry) => sum + entry.center.y, 0) / entries.length;
+  const scale = entries.reduce((sum, entry) => sum + planetStrategicScale(entry), 0) / entries.length;
+  const alpha = entries.reduce((sum, entry) =>
+    sum + planetStrategicAlpha(entry, visible, spectator), 0) / entries.length;
+  cx.save();
+  cx.beginPath();
+  for (const entry of entries) {
+    entry.points.forEach((point, index) => index
+      ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y));
+    cx.closePath();
+  }
+  cx.clip();
+  cx.globalAlpha *= alpha;
+  cx.translate(x, y); cx.scale(scale, scale);
+  const drawn = paintNaturalWonder(placement.feature, 0, 0, entries);
+  if (!drawn) {
+    cx.fillStyle = "#f0ce62";
+    cx.beginPath(); cx.arc(0, 0, 10, 0, Math.PI * 2); cx.fill();
+    cx.fillStyle = "#382b08"; cx.font = "bold 13px serif";
+    cx.textAlign = "center"; cx.textBaseline = "middle";
+    cx.fillText("✦", 0, .5);
+  }
+  cx.restore();
+}
+
+function drawPlanetStrategicFloodplains(entry, visible, spectator) {
+  const {tile, cell, points, center} = entry;
+  const riverSides = [];
+  for (let side = 0; side < points.length; side++) {
+    if (tile.river_edges?.[side]) riverSides.push(side);
+  }
+  if (!riverSides.length)
+    riverSides.push(Math.floor(hash2(tile.pos[0] * 31 + 5, tile.pos[1] * 37 + 9) * points.length));
+  const scale = planetStrategicScale(entry);
+  cx.save();
+  planetPath(cx, points); cx.clip();
+  cx.globalAlpha *= planetStrategicAlpha(entry, visible, spectator);
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const side of riverSides) {
+    const a = points[side], b = points[(side + 1) % points.length];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    for (const [inset, color, width] of [[.33, "#346f8c", 1.9], [.55, "#72aec0", 1.25]]) {
+      const ax = a.x + (center.x - a.x) * inset, ay = a.y + (center.y - a.y) * inset;
+      const bx = b.x + (center.x - b.x) * inset, by = b.y + (center.y - b.y) * inset;
+      const qx = mx + (center.x - mx) * (inset * .82), qy = my + (center.y - my) * (inset * .82);
+      cx.strokeStyle = color; cx.lineWidth = width * scale;
+      cx.beginPath(); cx.moveTo(ax, ay); cx.quadraticCurveTo(qx, qy, bx, by); cx.stroke();
+    }
+  }
+  cx.restore();
+}
+
+function drawPlanetStrategicResourceBadge(entry, visible, spectator) {
+  withPlanetStrategicCell(entry, visible, spectator, () =>
+    drawResourceBadge(entry.tile, 0, 0));
+}
+
+function drawPlanetStrategicTerrain(cells, visible, spectator) {
+  drawPlanetStrategicRoads(cells, visible, spectator);
+  drawPlanetStrategicCliffs(cells, visible, spectator);
+  drawPlanetStrategicRivers(cells, visible, spectator);
+  for (const entry of cells) {
+    if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(entry.tile.feature))
+      drawPlanetStrategicFloodplains(entry, visible, spectator);
+  }
+  const naturalWonders = buildPlanetNaturalWonderPlacements(cells);
+  const campSet = new Set(state.camps.map(key));
+  const worked = new Set(state.cities.flatMap(city =>
+    city.citizens ? city.citizens.worked_tiles.map(key) : []));
+  const occupied = new Set(state.units.map(unit => key(unit.pos)));
+  const occupiedResources = [];
+
+  for (const entry of cells) {
+    const {tile: t} = entry;
+    const tileKey = key(t.pos);
+    if (isNaturalWonder(t.feature)) {
+      const placement = naturalWonders.get(tileKey);
+      if (placement) drawPlanetNaturalWonder(placement, visible, spectator);
+      continue;
+    }
+    withPlanetStrategicCell(entry, visible, spectator, () => {
+      if (t.feature === "volcano") {
+        drawStrategicMountainIcon(0, 0, true);
+        drawFeatureEffects(t, 0, 0);
+        return;
+      }
+      if (t.terrain === "mountain") {
+        drawStrategicMountainIcon(0, 0, false);
+        return;
+      }
+      if (t.hills) {
+        const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
+        const hillBaseY = S * YS / 2;
+        cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
+        cx.beginPath();
+        cx.ellipse(-7 * hillWidth, hillBaseY, 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
+        cx.ellipse(6 * hillWidth, hillBaseY, 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
+        cx.stroke();
+      }
+      if (["forest", "jungle", "burning_forest", "burnt_forest",
+           "burning_jungle", "burnt_jungle"].includes(t.feature)) {
+        const jungle = t.feature.includes("jungle"), lift = t.hills ? -7 : 0;
+        for (const [dx, dy] of [[-9, -2], [1, 2], [9, 5]]) {
+          const tx = dx, ty = dy + 4 + lift;
+          if (jungle) {
+            cx.strokeStyle = "#4a3a24"; cx.lineWidth = 1.8;
+            cx.beginPath(); cx.moveTo(tx, ty); cx.lineTo(tx, ty - 12); cx.stroke();
+            cx.fillStyle = "#1d5c33";
+            cx.beginPath(); cx.ellipse(tx, ty - 13, 7.5, 3.4, 0, 0, 7); cx.fill();
+          } else {
+            cx.fillStyle = "#1e4d24";
+            tri(tx - 7, ty, tx, ty - 14, tx + 7, ty);
+          }
+        }
+      } else if (t.feature === "marsh") {
+        drawStrategicMarsh(0, 0);
+      } else if (t.feature === "oasis") {
+        cx.save();
+        cx.scale(2, 2); cx.translate(-2.5, 1.5);
+        cx.fillStyle = "#3d7aa6"; cx.beginPath();
+        cx.ellipse(0, 3, 8.5, 5.5, 0, 0, 7); cx.fill();
+        cx.font = "13px sans-serif"; cx.fillText("🌴", 7, -5);
+        cx.restore();
+      } else if (t.feature === "reef") {
+        cx.fillStyle = "#72d3c2";
+        for (const [dx, dy, radius] of [[-7, 2, 4], [1, -3, 5], [8, 5, 3]]) {
+          cx.beginPath(); cx.arc(dx, dy, radius, 0, 7); cx.fill();
+        }
+      } else if (t.feature === "geothermal_fissure") {
+        const gy = -4;
+        cx.fillStyle = "#66b6b3"; cx.strokeStyle = "#286f72"; cx.lineWidth = 1.1;
+        for (const [dx, dy, rx, ry] of [[-7, 5, 7.8, 2.8], [7, 7, 6.5, 2.3]]) {
+          cx.beginPath(); cx.ellipse(dx, gy + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
+        }
+        cx.fillStyle = "#dcece8"; cx.strokeStyle = "#8fbfc4"; cx.lineWidth = .9;
+        cx.beginPath(); cx.moveTo(-2.2, gy + 3);
+        cx.bezierCurveTo(-1.4, gy - 3, -1.1, gy - 10, 0, gy - 16);
+        cx.bezierCurveTo(1.2, gy - 10, 1.6, gy - 3, 2.2, gy + 3);
+        cx.closePath(); cx.fill(); cx.stroke();
+        cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.5;
+        cx.beginPath();
+        cx.arc(0, gy - 14, 4.5, 3.55, 5.9);
+        cx.moveTo(-1, gy - 12); cx.lineTo(-4, gy - 8);
+        cx.moveTo(1, gy - 12); cx.lineTo(4, gy - 8);
+        cx.stroke();
+      } else if (t.feature === "ice") {
+        cx.fillStyle = "#dfeff3"; cx.strokeStyle = "#7db3c5"; cx.lineWidth = 1.4;
+        cx.beginPath(); cx.moveTo(-15, -3); cx.lineTo(-5, -12);
+        cx.lineTo(13, -8); cx.lineTo(16, 7); cx.lineTo(0, 11);
+        cx.lineTo(-13, 6); cx.closePath(); cx.fill(); cx.stroke();
+      } else if (t.feature === "impact_zone") {
+        cx.fillStyle = "#292523"; cx.strokeStyle = "#d16a2f"; cx.lineWidth = 2;
+        cx.beginPath(); cx.arc(0, 0, 11, 0, 7); cx.fill(); cx.stroke();
+      }
+      drawFeatureEffects(t, 0, 0);
+      if (t.improvement === "barbarian_camp" || campSet.has(tileKey)) {
+        drawBarbarianCamp(0, 0);
+      } else if (t.improvement) {
+        drawImprovement(t, 0, 0);
+      }
+      if (SHOW_RESOURCES && t.resource &&
+          (SHOW_ARTIFACT_SITES || !ARTIFACT_RESOURCES.has(t.resource))) {
+        if (occupied.has(tileKey)) occupiedResources.push(entry);
+        else drawResourceBadge(t, 0, 0);
+      }
+      if (t.district) drawDistrict(t, 0, 0);
+      if (t.wonder) drawWonder(0, 0);
+      if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, 0, 0, worked.has(tileKey));
+    });
+  }
+  return occupiedResources;
+}
+
+function drawPlanetStrategicResourceBadges(entries, visible, spectator) {
+  for (const entry of entries) drawPlanetStrategicResourceBadge(entry, visible, spectator);
 }
 
 function mixLensColor(first, second, amount) {
@@ -16120,6 +16550,12 @@ function drawPlanetMap() {
   // pixel and its border is a smear, which is the same reason the grid stops.
   if (radius >= SKY_MARKERS) drawPlanetFrontiers(cells);
 
+  // The planet is another projection of the strategic map, not a lower-detail
+  // terrain mode. Its rivers, cliffs, landmarks, improvements, deposits and
+  // yields therefore use the same authored vocabulary as the flat board.
+  const occupiedPlanetResourceCells = scale > .42
+    ? drawPlanetStrategicTerrain(cells, turnVisible, spectator) : [];
+
   const highlighted = new Map();
   if (sel) {
     for (const pos of sel.reachable || []) highlighted.set(key(pos), "#74d7ff");
@@ -16140,23 +16576,6 @@ function drawPlanetMap() {
     ? planetChartHorizon(camera, scale, planetStageReach(centerX, centerY))
     : null;
 
-  if (!empireLens && scale > .42) {
-    cx.textAlign = "center"; cx.textBaseline = "middle";
-    cx.font = `${Math.max(9, Math.min(15, 10 * scale))}px serif`;
-    for (const cell of cells) {
-      if (cell.tile.resource && cell.center.z >= (onSheet ?? .08)) {
-        cx.globalAlpha = .78;
-        drawResourcePictogram(cell.tile.resource, cell.center.x, cell.center.y,
-                              Math.max(11, Math.min(18, 12 * scale)));
-        cx.globalAlpha = 1;
-        continue;
-      }
-      const glyph = planetFeatureGlyph(cell.tile);
-      if (!glyph || cell.center.z < (onSheet ?? .08)) continue;
-      cx.globalAlpha = .58; cx.fillStyle = "#111b17";
-      cx.fillText(glyph, cell.center.x, cell.center.y); cx.globalAlpha = 1;
-    }
-  }
   if (mapLens === "settler") drawPlanetSettlerLens(cells);
   else if (mapLens === "empire") drawEmpireDetailsPlanet(cells);
   else if (mapLens) drawThematicLensPlanet(cells);
@@ -16244,6 +16663,11 @@ function drawPlanetMap() {
     drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
     if (commandTokenClip) cx.restore();
   }
+  // As on the flat map, a resource beneath a unit waits until the figure is
+  // painted. Its lower strategic seat stays readable instead of losing one
+  // arbitrary third to the token in the center of the cell.
+  if (!empireLens)
+    drawPlanetStrategicResourceBadges(occupiedPlanetResourceCells, turnVisible, spectator);
   for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
     if (!cell) continue;
