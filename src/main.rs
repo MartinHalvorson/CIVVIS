@@ -1760,6 +1760,65 @@ fn main() {
                 }
             }
         }
+        "league-init" => {
+            let dir = arg_text(&args, "--league", "");
+            let Some(league) = (!dir.is_empty())
+                .then(|| civvis::league::initialize_shipped_league(&dir))
+                .flatten()
+            else {
+                eprintln!("league-init needs a writable --league directory");
+                std::process::exit(2);
+            };
+            println!("{}", serde_json::json!({
+                "status": "ready",
+                "round": league.round,
+                "strategies": league.strategies.len(),
+            }));
+        }
+        "rate-game" => {
+            let dir = arg_text(&args, "--league", "");
+            if dir.is_empty() {
+                eprintln!("rate-game needs a writable --league directory");
+                std::process::exit(2);
+            }
+            let report: civvis::league::LiveGameReport =
+                match serde_json::from_reader(std::io::stdin().lock()) {
+                    Ok(report) => report,
+                    Err(error) => {
+                        eprintln!("invalid live-game report: {error}");
+                        std::process::exit(2);
+                    }
+                };
+            if civvis::league::initialize_shipped_league(&dir).is_none() {
+                eprintln!("could not initialize the live league at {dir}");
+                std::process::exit(1);
+            }
+            let Some(record) = civvis::league::record_ranked_game_once(
+                &dir,
+                &report.result_id,
+                &report.seats,
+                report.seed,
+                report.turn,
+                &report.victory,
+            ) else {
+                eprintln!("the live-game report is invalid or names an unknown strategy");
+                std::process::exit(2);
+            };
+            let league = record.league();
+            println!("{}", serde_json::json!({
+                "status": record.status(),
+                "round": league.round,
+                "strategies": report.seats.iter().filter_map(|seat| {
+                    league.strategies.iter().find(|strategy| strategy.name == seat.strategy)
+                }).map(|strategy| serde_json::json!({
+                    "name": strategy.name,
+                    "rating": strategy.rating,
+                    "rd": strategy.rd,
+                    "games": strategy.games,
+                    "wins": strategy.wins,
+                })).collect::<Vec<_>>(),
+            }));
+        }
         "evolve" => {
             let players = arg(&args, "--players", 4);
             civvis::evolve::evolve(&civvis::evolve::EvoCfg {
@@ -2109,7 +2168,7 @@ fn main() {
         }
         _ => {
             println!(
-                "usage: civvis <simulate|soak|benchmark|tournament|league|rating|play|evolve|validate|pedia> \
+                "usage: civvis <simulate|soak|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
                       [--map land_only|lakes|inland_sea|grand_canals|grand_canals_2|pangaea|continents|small_continents|islands|water_world|true_start_earth] \

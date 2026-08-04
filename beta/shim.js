@@ -35,8 +35,11 @@
     "/state", "/status", "/runtime", "/rules", "/pedia", "/save", "/saves",
     "/load", "/action", "/step", "/autoplay", "/play-on", "/route", "/view",
     "/spectator-status", "/next-game-settings", "/new", "/supervisor-new",
-    "/pace", "/next-game",
+    "/pace", "/next-game", "/host-league",
   ]);
+  const LOCAL_DESKTOP_HOST = here.pathname.startsWith("/wasm/");
+  const HOST_LEAGUE_URL = new URL("league.json", here);
+  const HOST_RESULT_URL = new URL("league-result", here);
 
   // Keep the browser build to the same four choices as the socket server.
   // It starts at ten seconds until the page posts its persisted preference.
@@ -148,11 +151,116 @@
     return true;
   }
 
+  // --------------------------------------------------------- live rankings
+
+  let hostLeagueReady = null;
+
+  async function refreshHostLeague() {
+    if (!LOCAL_DESKTOP_HOST) return null;
+    const response = await networkFetch(HOST_LEAGUE_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error(`league host returned HTTP ${response.status}`);
+    const league = await response.json();
+    const loaded = await ask("POST", "/host-league", JSON.stringify(league));
+    if (loaded.error) throw new Error(loaded.error);
+    if (!report.buildCommit) {
+      const runtime = await ask("GET", "/runtime", "");
+      report.buildCommit = runtime.commit || "unknown";
+    }
+    report.leagueRound = loaded.round;
+    return loaded;
+  }
+
+  function ensureHostLeague() {
+    if (!LOCAL_DESKTOP_HOST) return Promise.resolve(null);
+    if (hostLeagueReady === null) {
+      hostLeagueReady = refreshHostLeague().catch((error) => {
+        report.leagueError = String(error.message || error);
+        hostLeagueReady = null;
+        return null;
+      });
+    }
+    return hostLeagueReady;
+  }
+
+  function resultFingerprint(value) {
+    let hash = 0xcbf29ce484222325n;
+    for (const byte of new TextEncoder().encode(value)) {
+      hash ^= BigInt(byte);
+      hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+    }
+    return hash.toString(16).padStart(16, "0");
+  }
+
+  function terminalLeagueReport(state) {
+    const players = (state.players || []).filter(
+      (player) => typeof player.ai_player_strategy === "string" &&
+        !player.is_minor && !player.is_barbarian,
+    );
+    if (players.length < 2) return null;
+    const winner = Number(state.winner);
+    players.sort((left, right) => {
+      const leftWon = left.id === winner;
+      const rightWon = right.id === winner;
+      if (leftWon !== rightWon) return leftWon ? -1 : 1;
+      const score = Number(right.score || 0) - Number(left.score || 0);
+      return score || Number(left.id) - Number(right.id);
+    });
+    const seats = players.map((player, place) => {
+      const previous = players[place - 1];
+      const sameRank = previous && previous.id !== winner && player.id !== winner &&
+        Number(previous.score || 0) === Number(player.score || 0);
+      return {
+        strategy: player.ai_player_strategy,
+        leader: String(player.leader || player.civ),
+        civilization: String(player.civ),
+        rank: sameRank ? null : place,
+        won: player.id === winner,
+      };
+    });
+    for (let place = 0; place < seats.length; place++) {
+      if (seats[place].rank === null) seats[place].rank = seats[place - 1].rank;
+    }
+    const evidence = {
+      seed: Number(state.seed),
+      turn: Number(state.victory_turn ?? state.turn),
+      victory: String(state.victory_type || "score"),
+      seats,
+    };
+    const identity = JSON.stringify({ build: report.buildCommit, winner: state.winner, ...evidence });
+    evidence.result_id = `wasm-v1:${evidence.seed}:${resultFingerprint(identity)}`;
+    return evidence;
+  }
+
+  async function recordTerminalResult(state) {
+    if (!LOCAL_DESKTOP_HOST) return null;
+    const evidence = terminalLeagueReport(state);
+    if (evidence === null) return null;
+    const receiptKey = `civvis.league-result.${evidence.result_id}`;
+    const response = await networkFetch(HOST_RESULT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(evidence),
+      cache: "no-store",
+    });
+    const answer = await response.json();
+    if (!response.ok || answer.error) {
+      throw new Error(answer.error || `league host returned HTTP ${response.status}`);
+    }
+    try { localStorage.setItem(receiptKey, "recorded"); } catch (error) { /* host receipt wins */ }
+    report.leagueRound = answer.round;
+    // Feed the just-updated ratings back into the module before it rolls the
+    // successor world. The next seats and every Elo badge now use this game.
+    await refreshHostLeague();
+    return answer;
+  }
+
   // ------------------------------------------------------- clock and finale
 
   let pace = 0;
   let paused = false;
   let finaleEndsAt = null;
+  let finaleResultId = null;
+  let finaleRating = null;
 
   // A result holds the screen for the selected interval and then the next
   // world opens. Reading it off each answer keeps the countdown attached to
@@ -166,8 +274,20 @@
     const finished = state.winner !== undefined && state.winner !== null;
     if (!finished) {
       finaleEndsAt = null;
+      finaleResultId = null;
+      finaleRating = null;
       return state;
     }
+    const evidence = terminalLeagueReport(state);
+    if (evidence && (finaleResultId !== evidence.result_id || finaleRating === null)) {
+      finaleResultId = evidence.result_id;
+      finaleRating = recordTerminalResult(state).catch((error) => {
+        report.leagueError = String(error.message || error);
+        finaleRating = null;
+        throw error;
+      });
+    }
+    if (finaleRating !== null) await finaleRating;
     if (finaleEndsAt === null) finaleEndsAt = performance.now() + betweenGameCountdownMs;
     const left = finaleEndsAt - performance.now();
     if (left > 0) {
@@ -333,9 +453,9 @@
     // The engine is given the request target rather than the URL: several
     // routes read their parameters straight off the query string.
     const relative = target.startsWith("http") ? path + new URL(target).search : target;
-    return serve(method, relative, options_.body || "").catch(
-      (error) => json({ error: String(error.message || error) }),
-    );
+    return ensureHostLeague()
+      .then(() => serve(method, relative, options_.body || ""))
+      .catch((error) => json({ error: String(error.message || error) }));
   };
 
   // ----------------------------------------------------------- first impression

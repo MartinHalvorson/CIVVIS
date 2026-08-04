@@ -1837,6 +1837,21 @@ impl Session {
     }
 
     pub fn new(params: Params) -> Session {
+        let (league, seat_from_roster) = Self::load_params_league(&params);
+        Self::new_with_league(params, league, seat_from_roster)
+    }
+
+    /// Construct a world against a roster supplied by its host.
+    ///
+    /// Native sessions normally load from `Params::league_dir`. A browser
+    /// module has no filesystem, so the local desktop host hands it the same
+    /// live roster as the native spectator and asks it to seat directly from
+    /// that snapshot.
+    fn new_with_league(
+        params: Params,
+        mut league: Option<crate::league::League>,
+        seat_from_roster: bool,
+    ) -> Session {
         // Seat 0 is the person at the keyboard, which is what decides who the
         // difficulty hands its bonuses to. A spectated game has nobody there.
         let human_seats = if params.spectate {
@@ -1871,7 +1886,6 @@ impl Session {
         // The hierarchical agent is the stock major-civilization default when
         // no league strategy is seated. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
-        let (mut league, seat_from_roster) = Self::load_params_league(&params);
         let (mut ais, mut seat_strategy) = Self::ai_fleet(
             &game,
             league.as_ref(),
@@ -2334,6 +2348,13 @@ impl Session {
             // per-seat name from `name_ai_players` reads better and is just
             // as true.
             if let (true, Some(s)) = (self.seat_from_roster, self.seat_entry(id)) {
+                // Stable rating identity, distinct from both the friendly
+                // username and the controller's one-word tactical label.
+                // Hosted browser games return this exact value when filing
+                // the terminal result into the persistent league.
+                if !s.human {
+                    player["ai_player_strategy"] = json!(s.name);
+                }
                 player["ai_username"] = json!(s.username);
                 player["ai_strat_label"] = json!(s.label());
             }
@@ -10847,6 +10868,11 @@ mod tests {
             .unwrap();
         assert_eq!(session.seat_strategy[0], Some(target));
         assert_eq!(session.seat_entry(0).unwrap().name, "strategic");
+        assert_eq!(
+            session.state()["players"][0]["ai_player_strategy"],
+            json!("strategic"),
+            "terminal evidence carries the stable league identity"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
