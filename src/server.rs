@@ -11798,6 +11798,55 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
+    #[test]
+    fn browser_next_action_prefers_nearby_unvisited_units_before_revisiting() {
+        let start = EMBEDDED_INDEX
+            .find("const nextActionVisited = new Set();")
+            .expect("next action should retain a visited-unit pass");
+        let end = EMBEDDED_INDEX[start..]
+            .find("// Civ 6's explicit previous/next-unit controls")
+            .map(|offset| start + offset)
+            .expect("the ordinary unit cycle should remain separate from next action");
+        let action_pass = &EMBEDDED_INDEX[start..end];
+
+        // Mark the current unit before looking for candidates, so the action
+        // moves onward instead of selecting the unit already under review.
+        let mark_current = action_pass
+            .find("if (origin) nextActionVisited.add(origin.id);")
+            .expect("next action should mark the current unit visited");
+        let fresh_candidates = action_pass
+            .find("let candidates = waiting.filter(unit => !nextActionVisited.has(unit.id));")
+            .expect("next action should prefer unvisited units");
+        assert!(
+            mark_current < fresh_candidates,
+            "the current unit must be visited before the fresh candidate set is made"
+        );
+        let revisit = action_pass
+            .find("if (!candidates.length) {")
+            .expect("next action should reopen visited units after a full pass");
+        assert!(
+            fresh_candidates < revisit,
+            "visited units may be reconsidered only after every fresh candidate"
+        );
+        assert!(action_pass.contains("nextActionVisited.clear();"));
+        assert!(action_pass.contains("candidates = waiting.filter(unit => !origin || unit.id !== origin.id);"));
+        // `whexDist` keeps the nearest-unit promise true across wrapped map
+        // seams instead of measuring the long way around the world.
+        assert!(action_pass.contains(
+            "whexDist(origin.pos, first.pos) - whexDist(origin.pos, second.pos)"
+        ));
+        assert!(action_pass.contains("nextActionVisited.add(sel.id);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function nextAction() {\n  if (!state || SPEC) return;\n  advanceToNextActionUnit(true);"
+        ));
+        // Period/comma and Tab remain a reversible roster cycle rather than
+        // acquiring an unmatched proximity-based "previous" behavior.
+        assert!(EMBEDDED_INDEX.contains("if (step > 0) { advanceToNextUnit(true); return; }"));
+        assert!(EMBEDDED_INDEX.contains(
+            "{id: \"NextUnitTab\", key: \"Tab\", run: () => advanceToNextUnit(true)}"
+        ));
+    }
+
     /// Resting over a tile reports it, the way Civ 6's plot tooltip does — and
     /// it keeps doing so after the map has been panned or the simulation advances.
     ///
