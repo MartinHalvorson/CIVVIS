@@ -3936,8 +3936,8 @@
       <span><kbd>F8</kbd>Diplomacy</span><span><kbd>^ D</kbd>Quick Deals</span>
       <span><kbd>^ A</kbd>Auto-play</span><span><kbd>^ U</kbd>Hide the command deck</span>
       <span><kbd>= / −</kbd>Zoom without a keypad</span><span><kbd>Tab</kbd>Next unit needing orders</span>
-      <span><kbd>Alt/⌥ drag</kbd>Rotate</span><span><kbd>^ ← →</kbd>Rotate</span>
-      <span><kbd>^ R</kbd>Face north · reset the view</span><span><kbd>⇧ scroll</kbd>Rotate</span>
+      <span><kbd>Alt/⌥ drag</kbd>Rotate · tilt</span><span><kbd>^ ← →</kbd>Rotate</span>
+      <span><kbd>^ R</kbd>Face north · reset the view</span><span><kbd>⇧ scroll</kbd>Rotate · <kbd>⌥ scroll</kbd>tilt</span>
     </div>
   </details>
   <button id="side-resize-handle" type="button" role="separator" aria-orientation="vertical"
@@ -5100,10 +5100,10 @@ function animateDiff(prev, next) {
   }
 }
 const easeIO = e => e < 0.5 ? 2 * e * e : 1 - (1 - e) * (2 - 2 * e);
-const cam = { x: 0, y: 0, scale: 1 };
+const cam = { x: 0, y: 0, scale: 1, rot: 0, tilt: 0 };
 let cameraFlight = null, cameraZoom = null;
 function stoppedCameraInertia(extra = {}) {
-  return {vx:0, vy:0, vrot:0, spin:null,
+  return {vx:0, vy:0, vrot:0, vtilt:0, spin:null,
           skyPan:null, skyTurn:null, ...extra};
 }
 let cameraInertia = stoppedCameraInertia();
@@ -6542,6 +6542,31 @@ syncPlayerHudColumns();
 
 const DEFAULT_YS = MAP_PROJECTION;
 const YS = DEFAULT_YS;
+// Pitch is expressed from straight down, where zero is the existing command
+// map.  The rendered ground is then foreshortened by its cosine, which opens
+// the upper part of a close globe into a horizon instead of merely scaling the
+// UI.  The range stops before a strategic tile becomes an unreadable line.
+const CAMERA_TILT_STORAGE_KEY = "civvis-camera-tilt-v1";
+const MIN_CAMERA_TILT = 0;
+const MAX_CAMERA_TILT = Math.PI * .36;
+function clampCameraTilt(value) {
+  return Math.max(MIN_CAMERA_TILT,
+                  Math.min(MAX_CAMERA_TILT, Number.isFinite(value) ? value : 0));
+}
+function cameraTiltProjection(tilt = cam.tilt) {
+  return Math.cos(clampCameraTilt(tilt));
+}
+// The flat map already has its dimetric base projection.  Pitch is an
+// additional camera transform, so all of the existing geometry retains its
+// normal appearance when the camera is straight down.
+function mapProjectionY() {
+  return YS * cameraTiltProjection();
+}
+function loadCameraTilt() {
+  try { return clampCameraTilt(Number(localStorage.getItem(CAMERA_TILT_STORAGE_KEY))); }
+  catch (_) { return 0; }
+}
+cam.tilt = loadCameraTilt();
 function key(p) { return p[0] + "," + p[1]; }
 let jerseyCacheState = null, jerseyCache = [];
 function playerJerseys() {
@@ -6765,6 +6790,13 @@ function setRot(r, persist = true) {
     // you left this map at, not one inherited from the last map you watched.
     localStorage.setItem("civvis-rot", String(r));
     if (HOME_ROT_WORLD !== null) localStorage.setItem("civvis-rot-world", String(HOME_ROT_WORLD));
+  }
+}
+function setTilt(tilt, persist = true) {
+  cam.tilt = clampCameraTilt(tilt);
+  if (persist) {
+    try { localStorage.setItem(CAMERA_TILT_STORAGE_KEY, String(cam.tilt)); }
+    catch (_) {}
   }
 }
 // ------------------------------------------------------------ which way is up
@@ -7266,7 +7298,7 @@ requestAnimationFrame(scheduleSidebarGeometry);
 
 function screenToWorld(sx, sy) {
   const vx = (sx - MAPW / 2) / cam.scale;
-  const vy = (sy - MAPH / 2) / cam.scale / YS;
+  const vy = (sy - MAPH / 2) / cam.scale / mapProjectionY();
   return [COSR * vx + SINR * vy + cam.x, -SINR * vx + COSR * vy + cam.y];
 }
 function axialRound(wx, wy) {
@@ -14405,6 +14437,28 @@ function planetEarthCenter(radius = planetEarthRadius()) {
   const [stageX, stageY] = planetStageCenter();
   return [stageX - SKY_PAN.x * radius, stageY - SKY_PAN.y * radius];
 }
+// Globe geometry is still calculated in its honest orthographic coordinates.
+// Pitch is applied afterwards as the camera's ground-plane transform, which
+// means a marker, its tile, and the globe limb all share exactly one plane.
+function planetGroundScreenY(y, centerY) {
+  return centerY + (y - centerY) * cameraTiltProjection();
+}
+function planetGroundInputY(y, centerY) {
+  return centerY + (y - centerY) / cameraTiltProjection();
+}
+function planetGroundPoint(point, centerY) {
+  return {...point, y:planetGroundScreenY(point.y, centerY)};
+}
+function applyPlanetGroundTilt(centerY) {
+  const projection = cameraTiltProjection();
+  if (projection >= .999999) return;
+  cx.translate(0, centerY);
+  cx.scale(1, projection);
+  cx.translate(0, -centerY);
+}
+function planetGroundDrag(dx, dy) {
+  return [dx, dy / cameraTiltProjection()];
+}
 // The world the camera is actually looking at: the one big enough to fill the
 // stage and standing near the middle of it. Dragging means turn-this-world when
 // there is an answer and move-the-camera when there is not, which is what makes
@@ -14545,7 +14599,9 @@ function skyPointerWorld(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN) {
   let best = null;
   for (const body of skyKnownWorlds()) {
     const [bx, by] = skyBodyScreen(body, radius, pan);
-    const claim = Math.hypot(bx - sx, by - sy) / (skyDrawnRadius(body, radius) + halo);
+    const pointerY = body.id === "earth" ? planetGroundInputY(sy, by) : sy;
+    const claim = Math.hypot(bx - sx, by - pointerY) /
+      (skyDrawnRadius(body, radius) + halo);
     if (!best || claim < best.claim) best = {body, claim};
   }
   return best ? best.body : SKY_EARTH;
@@ -14613,7 +14669,8 @@ function skySurfacePoint(body, sx, sy, radius, pan = SKY_PAN) {
   const basis = skyWorldBasis(body);
   const drawn = skyDrawnRadius(body, radius);
   const [bx, by] = skyBodyScreen(body, radius, pan);
-  const ox = sx - bx, oy = sy - by;
+  const ox = sx - bx;
+  const oy = (body.id === "earth" ? planetGroundInputY(sy, by) : sy) - by;
   const reach = Math.hypot(ox, oy);
   const angle = skySurfaceAngle(reach, drawn, body.id === "earth" && !knowsGlobe());
   if (angle === null) return null;
@@ -14659,7 +14716,8 @@ function skyLean(lean, ease) {
   const radius = planetEarthRadius();
   const basis = skyWorldBasis(body);
   const [bx, by] = skyBodyScreen(body, radius);
-  const ox = lean.sx - bx, oy = lean.sy - by;
+  const ox = lean.sx - bx;
+  const oy = planetGroundInputY(lean.sy, by) - by;
   const reach = Math.hypot(ox, oy);
   const angle = skySurfaceAngle(reach, skyDrawnRadius(body, radius),
                                 body.id === "earth" && !knowsGlobe());
@@ -18357,6 +18415,13 @@ function drawPlanetMap() {
   // picture; the disc behind it is two fills either way and costs nothing.
   const earthInFrame = skyOnCanvas({x:centerX, y:centerY, r:radius});
 
+  // Everything that belongs to the Earth is painted in one tilted plane. This
+  // is deliberately outside the individual icon painters: a unit, building,
+  // badge, border, and its host cell cannot disagree about how far toward the
+  // horizon the camera has turned. The sky remains in screen space below.
+  cx.save();
+  applyPlanetGroundTilt(centerY);
+
   // The ocean sphere under the tiles: it fills the limb no tile quite reaches
   // and gives the globe its roundness. On a chart there is no limb and no ball
   // to be round, so the same wash is spread to the corners of the sheet instead
@@ -18409,7 +18474,9 @@ function drawPlanetMap() {
   const cells = earthInFrame ? planetCells(camera, scale, centerX, centerY) : [];
   drawPlanetGround(cells, camera, scale, radius, centerX, centerY, turnVisible, spectator);
   for (const {tile, points, center} of cells)
-    PLANET_HIT_CELLS.push({pos:tile.pos, points, z:center.z});
+    PLANET_HIT_CELLS.push({pos:tile.pos,
+                           points:points.map(point => planetGroundPoint(point, centerY)),
+                           z:center.z});
 
   // Frontiers go over the finished ground, the way they do on a flat board, and
   // below everything a viewer clicks. Under a coin-sized world a tile is a
@@ -18558,6 +18625,7 @@ function drawPlanetMap() {
     cx.lineWidth = Math.max(.5, Math.min(1.4, radius * .06));
     cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.stroke();
   }
+  cx.restore();
   drawPlanetSky(camera, radius, centerX, centerY);
   cx.setTransform(1, 0, 0, 1, 0, 0);
   return true;
@@ -18577,15 +18645,23 @@ function draw() {
   const SC = DPR * cam.scale;
   const OX = DPR * MAPW / 2;
   const OY = DPR * MAPH / 2;
-  cx.setTransform(SC, 0, 0, SC, OX, OY);
+  // The strategic renderer already supplies its dimetric geometry. Pitch is a
+  // second, camera-owned transform around the ground plane, so every painted
+  // landmark and command token recedes with its tile instead of remaining a
+  // face-on billboard above it.
+  cx.setTransform(SC, 0, 0, SC * cameraTiltProjection(), OX, OY);
   // Everything the eye can actually reach, projected once. The renderer used to
   // walk all three and a half thousand tiles of a full-size map through a dozen
   // layers whatever the camera was pointed at; a survey screenful is nearer
   // three hundred. Culling here is worth more than every micro-optimisation in
   // the layers below put together.
   const halfW = MAPW / (2 * cam.scale) + S * 3;
-  const topY = -MAPH / (2 * cam.scale) - S * 5;
-  const botY = MAPH / (2 * cam.scale) + S * 3.5;
+  // Pitch opens a taller stretch of ground into the same screen height.  Cull
+  // against that unforeshortened reach or the newly revealed horizon would
+  // empty out before its tiles arrived there.
+  const pitchReach = cameraTiltProjection();
+  const topY = -MAPH / (2 * cam.scale * pitchReach) - S * 5;
+  const botY = MAPH / (2 * cam.scale * pitchReach) + S * 3.5;
   // --- antique chart under undiscovered territory. This exists in Strategic
   // too: changing display detail must never turn the unknown back into a black
   // tactical mask. Known terrain is painted afterward and therefore clips the
@@ -24411,14 +24487,15 @@ function cameraYBounds(scale = cam.scale) {
   if (Math.abs(SINR) > 0.001) return null;
   const actualScale = Math.max(.01, scale);
   const focusBounds = mapFocusBounds();
-  const aboveFocus = (MAPH / 2 - focusBounds.top) / (actualScale * YS);
-  const belowFocus = (focusBounds.bottom - MAPH / 2) / (actualScale * YS);
+  const projection = mapProjectionY();
+  const aboveFocus = (MAPH / 2 - focusBounds.top) / (actualScale * projection);
+  const belowFocus = (focusBounds.bottom - MAPH / 2) / (actualScale * projection);
   const top = -S;
-  const bottom = S * 1.5 * Math.max(0, state.map.height - 1) + S + 0 / YS;
+  const bottom = S * 1.5 * Math.max(0, state.map.height - 1) + S + 0 / projection;
   if (bottom - top <= aboveFocus + belowFocus) {
     const middle = (top + bottom) / 2;
     const focus = (focusBounds.top + focusBounds.bottom) / 2;
-    const centered = middle - (focus - MAPH / 2) / (actualScale * YS);
+    const centered = middle - (focus - MAPH / 2) / (actualScale * projection);
     return { min:centered, max:centered };
   }
   return { min:top + aboveFocus, max:bottom - belowFocus };
@@ -24606,7 +24683,7 @@ function cameraCenterForWorld(wx, wy, scale = cam.scale, focus = mapFocusPoint()
   // and a moving HUD edge keeps the same ground beneath the stage center.
   const actualScale = Math.max(.01, scale);
   const vx = (focus.x - MAPW / 2) / actualScale;
-  const vy = (focus.y - MAPH / 2) / actualScale / YS;
+  const vy = (focus.y - MAPH / 2) / actualScale / mapProjectionY();
   return [wx - (COSR * vx + SINR * vy),
           wy - (-SINR * vx + COSR * vy)];
 }
@@ -24637,7 +24714,7 @@ function applyCameraAnchor(wx, wy, sx, sy, scale = cam.scale) {
   cam.scale = planetMap() ? planetScaleClamp(scale)
                           : Math.max(.25, Math.min(3.2, scale));
   const vx = (sx - MAPW / 2) / cam.scale;
-  const vy = (sy - MAPH / 2) / cam.scale / YS;
+  const vy = (sy - MAPH / 2) / cam.scale / mapProjectionY();
   cam.x = clampCameraX(wx - (COSR * vx + SINR * vy));
   cam.y = clampCameraY(wy - (-SINR * vx + COSR * vy));
 }
@@ -24655,14 +24732,15 @@ function flyCameraTo(pos, scale = cam.scale) {
   }
   cameraFlight = {x, y:clampCameraY(y, scale), scale:Math.max(.25, Math.min(3.2, scale))};
 }
-function orbitCamera(deltaRot = 0) {
+function orbitCamera(deltaRot = 0, deltaTilt = 0) {
   takeCameraControl();
+  const tilt = clampCameraTilt(cam.tilt + deltaTilt);
   if (REDUCED_MOTION_QUERY.matches) {
-    setRot(cam.rot + deltaRot);
+    setRot(cam.rot + deltaRot); setTilt(tilt);
     draw(); drawMini(); return;
   }
   cameraFlight = {x:cam.x, y:cam.y, scale:cam.scale,
-                  rot:cam.rot + deltaRot};
+                  rot:cam.rot + deltaRot, tilt};
 }
 function nudgeCamera(screenX, screenY) {
   takeCameraControl();
@@ -24671,11 +24749,12 @@ function nudgeCamera(screenX, screenY) {
     // The arrows move a globe the way a drag does, so they cross a pole instead
     // of stopping at it. The camera goes where asked, so the ground under it
     // travels the other way.
-    applyPlanetBasis(planetTurn(basis, -screenX, -screenY));
+    const [dx, dy] = planetGroundDrag(-screenX, -screenY);
+    applyPlanetBasis(planetTurn(basis, dx, dy));
     draw(); drawMini();
     return;
   }
-  const vx = screenX / cam.scale, vy = screenY / cam.scale / YS;
+  const vx = screenX / cam.scale, vy = screenY / cam.scale / mapProjectionY();
   const dx = COSR * vx + SINR * vy, dy = -SINR * vx + COSR * vy;
   cameraFlight = {x:clampCameraX(cam.x + dx), y:clampCameraY(cam.y + dy),
                   scale:cam.scale};
@@ -24821,17 +24900,23 @@ function advanceUserCameraMotion(now = performance.now()) {
     cam.x += (cameraFlight.x - cam.x) * ease;
     cam.y += (cameraFlight.y - cam.y) * ease;
     cam.scale += (cameraFlight.scale - cam.scale) * ease;
-    let rotLeft = 0;
+    let rotLeft = 0, tiltLeft = 0;
     if (cameraFlight.rot !== undefined) {
       rotLeft = Math.atan2(Math.sin(cameraFlight.rot - cam.rot), Math.cos(cameraFlight.rot - cam.rot));
       setRot(cam.rot + rotLeft * ease);
     }
+    if (cameraFlight.tilt !== undefined) {
+      tiltLeft = cameraFlight.tilt - cam.tilt;
+      setTilt(cam.tilt + tiltLeft * ease, false);
+    }
     cam.y = clampCameraY(cam.y);
     active = true;
     if (Math.abs(cameraFlight.x - cam.x) + Math.abs(cameraFlight.y - cam.y) < .35 &&
-        Math.abs(cameraFlight.scale - cam.scale) < .001 && Math.abs(rotLeft) < .001) {
+        Math.abs(cameraFlight.scale - cam.scale) < .001 && Math.abs(rotLeft) < .001 &&
+        Math.abs(tiltLeft) < .001) {
       cam.x = cameraFlight.x; cam.y = cameraFlight.y; cam.scale = cameraFlight.scale;
       if (cameraFlight.rot !== undefined) setRot(cameraFlight.rot);
+      if (cameraFlight.tilt !== undefined) setTilt(cameraFlight.tilt);
       cameraFlight = null;
     }
   }
@@ -24841,7 +24926,7 @@ function advanceUserCameraMotion(now = performance.now()) {
     const spin = cameraInertia.spin, skyPan = cameraInertia.skyPan;
     const skyTurn = cameraInertia.skyTurn;
     const speed = Math.abs(cameraInertia.vx) + Math.abs(cameraInertia.vy) +
-      Math.abs(cameraInertia.vrot) * 80 +
+      Math.abs(cameraInertia.vrot) * 80 + Math.abs(cameraInertia.vtilt) * 80 +
       (spin ? Math.abs(spin.rate) * 80 : 0) +
       (skyPan ? Math.hypot(skyPan.vx, skyPan.vy) * planetEarthRadius() : 0) +
       (skyTurn ? Math.hypot(skyTurn.vlongitude, skyTurn.vlatitude) * 80 : 0);
@@ -24860,6 +24945,8 @@ function advanceUserCameraMotion(now = performance.now()) {
       }
       cam.x += cameraInertia.vx * dt; cam.y += cameraInertia.vy * dt;
       if (Math.abs(cameraInertia.vrot) > .00001) setRot(cam.rot + cameraInertia.vrot * dt);
+      if (Math.abs(cameraInertia.vtilt) > .00001)
+        setTilt(cam.tilt + cameraInertia.vtilt * dt, false);
       // A coast that runs past a veiled bound is handed to the spring rather
       // than stopped at it, carrying the speed it arrived with, so a throw and
       // its rebound read as one motion instead of a collision.
@@ -24868,13 +24955,17 @@ function advanceUserCameraMotion(now = performance.now()) {
       const decay = Math.pow(.003, dt / 1000);
       cameraInertia.vx *= decay; cameraInertia.vy *= decay;
       cameraInertia.vrot *= decay;
+      cameraInertia.vtilt *= decay;
       if (spin) spin.rate *= decay;
       if (skyPan) { skyPan.vx *= decay; skyPan.vy *= decay; }
       if (skyTurn) {
         skyTurn.vlongitude *= decay; skyTurn.vlatitude *= decay;
       }
       active = true;
-    } else cameraInertia = stoppedCameraInertia();
+    } else {
+      if (Math.abs(cameraInertia.vtilt) > .00001) setTilt(cam.tilt);
+      cameraInertia = stoppedCameraInertia();
+    }
     // Not inside the speed test above: a chart let go while it is stretched has
     // no throw left in it at all, and that is precisely when it must spring.
     if (settleCameraBounce(dt)) active = true;
@@ -25048,7 +25139,7 @@ function fitFullWorldView(preservePresentation = false) {
   const usableWidth = Math.max(1, frame.right - frame.left - padding * 2);
   const usableHeight = Math.max(1, frame.bottom - frame.top - padding * 2);
   const scale = Math.min(3.2, usableWidth / (maxX - minX),
-                         usableHeight / ((maxY - minY) * YS));
+                         usableHeight / ((maxY - minY) * mapProjectionY()));
   const {x:desiredX, y:desiredY} = mapFocusPoint();
 
   cameraFlight = null; cameraZoom = null; clearCameraInertia();
@@ -25056,7 +25147,8 @@ function fitFullWorldView(preservePresentation = false) {
   // The composition offset is a screen measurement, so it is taken off along
   // the camera's own axes before the centre is carried back into world space.
   const focusX = (minX + maxX) / 2 - (desiredX - MAPW / 2) / cam.scale;
-  const focusY = (minY + maxY) / 2 - (desiredY - MAPH / 2) / (cam.scale * YS);
+  const focusY = (minY + maxY) / 2 -
+    (desiredY - MAPH / 2) / (cam.scale * mapProjectionY());
   cam.x = COSR * focusX + SINR * focusY;
   cam.y = clampCameraY(-SINR * focusX + COSR * focusY, cam.scale);
   return {x:cam.x, y:cam.y, scale:cam.scale};
@@ -25175,13 +25267,13 @@ function observedViewGoal(anchors, oneEmpire = Number.isInteger(state?.view_play
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
   const {width:usableWidth, height:usableHeight} = observedStageFit();
-  const spanX = maxX - minX, spanY = (maxY - minY) * YS;
+  const spanX = maxX - minX, spanY = (maxY - minY) * mapProjectionY();
   const fitX = spanX > 0 ? usableWidth / spanX : Infinity;
   const fitY = spanY > 0 ? usableHeight / spanY : Infinity;
   const scale = Math.max(.2, Math.min(maximum, fitX, fitY));
   const {x:desiredX, y:desiredY} = mapFocusPoint();
   const desiredViewX = (desiredX - MAPW / 2) / scale;
-  const desiredViewY = (desiredY - MAPH / 2) / (scale * YS);
+  const desiredViewY = (desiredY - MAPH / 2) / (scale * mapProjectionY());
   const cameraViewX = (minX + maxX) / 2 - desiredViewX;
   const cameraViewY = (minY + maxY) / 2 - desiredViewY;
 
@@ -25203,7 +25295,7 @@ function observedPlanetViewGoal(anchors, maximum) {
   const minX = Math.min(...xs), maxX = Math.max(...xs);
   const minY = Math.min(...ys), maxY = Math.max(...ys);
   const {width:usableWidth, height:usableHeight} = observedStageFit();
-  const spanX = maxX - minX, spanY = (maxY - minY) * YS;
+  const spanX = maxX - minX, spanY = (maxY - minY) * mapProjectionY();
   const fitX = spanX > 0 ? usableWidth / spanX : Infinity;
   const fitY = spanY > 0 ? usableHeight / spanY : Infinity;
   // An empire's span is measured across the unrolled sheet, so one with a
@@ -25369,7 +25461,10 @@ area.addEventListener("wheel", ev => {
   if (ev.target !== cv) return;
   ev.preventDefault();
   if (ev.altKey) {
-    orbitCamera(0, Math.max(-.14, Math.min(.14, ev.deltaY * .0015)));
+    // Wheel up lowers the camera toward the horizon; wheel down returns it
+    // toward the overhead strategic view. It is the vertical half of the same
+    // Alt/Option gesture whose horizontal half turns the map.
+    orbitCamera(0, Math.max(-.14, Math.min(.14, -ev.deltaY * .0015)));
     return;
   }
   if (ev.shiftKey) {
@@ -25468,9 +25563,9 @@ cv.addEventListener("pointerdown", ev => {
     cameraFlight = null; cameraZoom = null; clearCameraInertia();
     dragState = { pointerId:ev.pointerId, x: ev.clientX, y: ev.clientY,
                   cx: cam.x, cy: cam.y,
-                  rotate: ev.altKey, rot0: cam.rot,
-                  lastX:cam.x, lastY:cam.y, lastRot:cam.rot,
-                  lastT:performance.now(), vx:0, vy:0, vrot:0,
+                  rotate: ev.altKey, rot0: cam.rot, tilt0:cam.tilt,
+                  lastX:cam.x, lastY:cam.y, lastRot:cam.rot, lastTilt:cam.tilt,
+                  lastT:performance.now(), vx:0, vy:0, vrot:0, vtilt:0,
                   // A globe is turned rather than slid, so it drags from the
                   // orientation it was grabbed at and reports its speed in
                   // pixels of arc instead of columns and rows.
@@ -25500,13 +25595,17 @@ window.addEventListener("pointermove", ev => {
       takeCameraControl(); dragState.controlled = true;
     }
     if (dragMoved && dragState.rotate) {
-      // Option/Alt-drag rotates the strategic map.
+      // Option/Alt-drag is the map's camera gesture: horizontal motion turns
+      // the bearing; vertical motion pitches the ground down toward a horizon.
       altTap = false;
       setRot(dragState.rot0 - dx * 0.008);
+      setTilt(dragState.tilt0 - dy * 0.0032);
       const now = performance.now(), dt = Math.max(1, now - dragState.lastT);
       const vr = (cam.rot - dragState.lastRot) / dt;
+      const vt = (cam.tilt - dragState.lastTilt) / dt;
       dragState.vrot = dragState.vrot * .55 + vr * .45;
-      dragState.lastRot = cam.rot; dragState.lastT = now;
+      dragState.vtilt = dragState.vtilt * .55 + vt * .45;
+      dragState.lastRot = cam.rot; dragState.lastTilt = cam.tilt; dragState.lastT = now;
       draw(); drawMini();
     } else if (dragMoved && skyDragApply(dragState, dx, dy)) {
       draw(); drawMini();
@@ -25515,17 +25614,19 @@ window.addEventListener("pointermove", ev => {
       // pixel of drag is then the same arc at the equator, at a pole, and
       // straight across one: the world follows the pointer over the top and
       // keeps going down the far side.
-      applyPlanetBasis(planetTurn(dragState.basis, dx, dy));
+      const [turnX, turnY] = planetGroundDrag(dx, dy);
+      applyPlanetBasis(planetTurn(dragState.basis, turnX, turnY));
       dragState.turned = true;
       const now = performance.now(), dt = Math.max(1, now - dragState.lastT);
       const vpx = (ev.clientX - dragState.lastPX) / dt;
-      const vpy = (ev.clientY - dragState.lastPY) / dt;
+      const [, turnDY] = planetGroundDrag(0, ev.clientY - dragState.lastPY);
+      const vpy = turnDY / dt;
       dragState.vpx = dragState.vpx * .55 + vpx * .45;
       dragState.vpy = dragState.vpy * .55 + vpy * .45;
       dragState.lastPX = ev.clientX; dragState.lastPY = ev.clientY; dragState.lastT = now;
       draw(); drawMini();
     } else if (dragMoved) {
-      const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
+      const dvx = dx / cam.scale, dvy = dy / cam.scale / mapProjectionY();
       [cam.x, cam.y] = holdCameraInBounds(
         dragState.cx - (COSR * dvx + SINR * dvy),
         dragState.cy - (-SINR * dvx + COSR * dvy));
@@ -25568,7 +25669,8 @@ function endMapPointer(ev) {
       // spins about its final 3D axis, another world keeps turning, and an
       // empty-sky drag coasts the camera through the system.
       cameraInertia = released.rotate
-        ? stoppedCameraInertia({vrot:released.vrot * .32})
+        ? stoppedCameraInertia({vrot:released.vrot * .32,
+                                vtilt:released.vtilt * .25})
         : released.skyMotion?.kind === "pan"
         ? stoppedCameraInertia({skyPan:{vx:released.skyMotion.vx,
                                         vy:released.skyMotion.vy}})
@@ -25696,17 +25798,19 @@ cv.addEventListener("pointermove", ev => {
     if (touchGesture.controlled && skyDragApply(touchGesture, dx, dy)) {
       draw(); drawMini();
     } else if (touchGesture.controlled && touchGesture.basis) {
-      applyPlanetBasis(planetTurn(touchGesture.basis, dx, dy));
+      const [turnX, turnY] = planetGroundDrag(dx, dy);
+      applyPlanetBasis(planetTurn(touchGesture.basis, turnX, turnY));
       touchGesture.turned = true;
       const now = performance.now(), dt = Math.max(1, now - touchGesture.lastT);
       const vpx = (point.x - touchGesture.lastPX) / dt;
-      const vpy = (point.y - touchGesture.lastPY) / dt;
+      const [, turnDY] = planetGroundDrag(0, point.y - touchGesture.lastPY);
+      const vpy = turnDY / dt;
       touchGesture.vpx = touchGesture.vpx * .55 + vpx * .45;
       touchGesture.vpy = touchGesture.vpy * .55 + vpy * .45;
       touchGesture.lastPX = point.x; touchGesture.lastPY = point.y; touchGesture.lastT = now;
       draw(); drawMini();
     } else if (touchGesture.controlled) {
-      const dvx = dx / cam.scale, dvy = dy / cam.scale / YS;
+      const dvx = dx / cam.scale, dvy = dy / cam.scale / mapProjectionY();
       [cam.x, cam.y] = holdCameraInBounds(
         touchGesture.cx - (COSR * dvx + SINR * dvy),
         touchGesture.cy - (-SINR * dvx + COSR * dvy));
@@ -26978,7 +27082,8 @@ const CIVVIS_BINDINGS = [
   {id: "ZoomInRow", key: "=", spectator: true, run: () => { takeCameraControl(true); zoomAt(skyZoomStep(1.35)); }},
   {id: "ZoomOutRow", key: "-", spectator: true, run: () => { takeCameraControl(true); zoomAt(skyZoomStep(1 / 1.35)); }},
   {id: "AutoPlay", key: "a", ctrl: true, run: () => autoplay(autoplayRequest())},
-  {id: "ResetFacing", key: "r", ctrl: true, spectator: true, run: () => resetMapFacing()},
+  {id: "ResetFacing", key: "r", ctrl: true, spectator: true,
+   run: () => resetMapFacing(-cam.tilt)},
   {id: "HidePanel", key: "u", ctrl: true, spectator: true, run: () => togglePanel()},
   {id: "OrbitLeft", key: "ArrowLeft", ctrl: true, spectator: true, run: () => orbitCamera(-Math.PI / 12, 0)},
   {id: "OrbitRight", key: "ArrowRight", ctrl: true, spectator: true, run: () => orbitCamera(Math.PI / 12, 0)},
@@ -27088,8 +27193,7 @@ document.addEventListener("keyup", ev => {
   if (ev.key !== "Alt") return;
   ev.preventDefault();
   if (altTap) {
-    setRot(restingRot());
-    draw(); drawMini();
+    resetMapFacing(-cam.tilt);
   }
   altTap = false;
 });
