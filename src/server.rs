@@ -7895,8 +7895,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("option.disabled = !split;"));
         // The world size decides which splits exist, so it re-fits them before
         // the panel's own delegated listener stages what is now selected.
-        assert!(EMBEDDED_INDEX
-            .contains("document.getElementById(\"np\").addEventListener(\"change\", syncTeams);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.getElementById(\"np\").addEventListener(\"change\", () => {\n  syncTeams();\n  syncWorldSetupInputs();\n});"
+        ));
         // The server is handed the seat-by-seat assignment, never the rule
         // that produced it; a world on screen is read back the other way.
         assert!(EMBEDDED_INDEX.contains("teams: teamAssignment(np, readSetting(\"teams\")),"));
@@ -10625,7 +10626,7 @@ mod tests {
         // starts is how a dead Steam client cost eleven ladder attempts.
         assert!(EMBEDDED_INDEX.contains("civ6Status = await fetchJSON(\"/civ6\");"));
         assert!(EMBEDDED_INDEX.contains("`Cannot start: ${status.blocked}`"));
-        assert!(EMBEDDED_INDEX.contains("button.disabled = blocked;"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = blocked || !!setupError;"));
     }
 
     /// The mode is offered on every computer and refused on the ones that
