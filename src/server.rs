@@ -9243,97 +9243,49 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("${p.alive ? \"\" : \"dead\"}"));
     }
 
-    /// The viewer's controls are Civilization VI's, read out of the game's own
-    /// `InputConfiguration.xml` (`InputActionDefaultGestures`, plus the rows
-    /// the two expansions add). Every pair below is one row of that table, so
-    /// a binding cannot be quietly moved or dropped without this failing.
-    /// `docs/CIV6_KEYBINDINGS.md` carries the same table in prose, including
-    /// the Civ 6 actions this build has nothing to bind to.
+    /// The operator intentionally keeps a small, closed action map. These
+    /// assertions make every added shortcut an explicit product decision.
     #[test]
-    fn browser_key_bindings_are_civ6s_own() {
+    fn browser_key_bindings_match_the_requested_set() {
         for (action, key) in [
-            // UI
-            ("ToggleTechTree", "t"),
-            ("ToggleCivicsTree", "c"),
-            ("ToggleGovernment", "F7"),
-            ("ToggleReligion", "l"),
-            ("ToggleGreatPeople", "o"),
-            ("ToggleCityStates", "F2"),
-            ("ToggleEspionage", "F3"),
-            ("ToggleTradeRoutes", "F4"),
-            ("ToggleGovernors", "F10"),
-            ("OpenCivilopedia", "F9"),
-            ("ToggleFSMap", "End"),
-            // Units
-            ("FoundCity", "b"),
-            ("MoveTo", "m"),
+            ("NextAction", "1"),
+            ("SettlerLens", "2"),
+            ("PlaceTack", "3"),
             ("Fortify", "f"),
-            ("FortifyUntilHeal", "h"),
-            ("Attack", "a"),
-            ("RangedAttack", "r"),
-            ("AutoExplore", "e"),
-            ("SkipTurn", " "),
-            ("Sleep", "z"),
-            ("Alert", "v"),
-            // Global
-            ("EndTurn", "Enter"),
-            ("ToggleGrid", "g"),
-            ("ToggleResources", "q"),
-            ("ToggleYield", "y"),
-            ("PauseMenu", "Home"),
-            ("QuickSave", "F5"),
-            ("QuickLoad", "F6"),
-            ("OnlinePause", "p"),
-            ("PrevUnit", ","),
-            ("NextUnit", "."),
-            ("PrevCity", "["),
-            ("NextCity", "]"),
-            ("CapitalCity", "\\\\"),
-            // Camera
-            ("CameraPanLeft", "ArrowLeft"),
-            ("CameraPanRight", "ArrowRight"),
-            ("CameraPanUp", "ArrowUp"),
-            ("CameraPanDown", "ArrowDown"),
-            ("ZoomIn", "NumpadAdd"),
-            ("ZoomOut", "NumpadSubtract"),
+            ("Alert", "a"),
+            ("PreviousCity", "ArrowLeft"),
+            ("NextCity", "ArrowRight"),
         ] {
             let row = format!("{{id: \"{action}\", key: \"{key}\"");
             assert!(
                 EMBEDDED_INDEX.contains(&row),
-                "Civ 6's {action} must stay on {key}: no `{row}` in the viewer"
+                "required {action} is missing from the {key} shortcut"
             );
         }
-        // The pedia's history is Civ 6's only chorded pair.
-        assert!(EMBEDDED_INDEX
-            .contains("{id: \"CivilopediaBack\", key: \",\", ctrl: true"));
-        assert!(EMBEDDED_INDEX
-            .contains("{id: \"CivilopediaForward\", key: \".\", ctrl: true"));
-
-        // Three keys are the operator's deliberate overrides and keep their
-        // CIVVIS meaning; Civ 6 spends them on lenses that do not exist here.
-        for (action, key) in [("NextAction", "1"), ("SettlerLens", "2"), ("PlaceTack", "3")] {
-            assert!(
-                EMBEDDED_INDEX.contains(&format!("{{id: \"{action}\", key: \"{key}\"")),
-                "the {key} override must stay {action}"
-            );
-        }
-        // Everything CIVVIS adds sits on a chord or a key Civ 6 leaves free,
-        // so arriving from Civ 6 cannot find a shadowed binding.
-        for chord in [
-            "{id: \"AutoPlay\", key: \"a\", ctrl: true",
-            "{id: \"HidePanel\", key: \"u\", ctrl: true",
-            "{id: \"QuickDeals\", key: \"d\", ctrl: true",
-        ] {
-            assert!(EMBEDDED_INDEX.contains(chord), "missing CIVVIS chord: {chord}");
-        }
-        assert!(EMBEDDED_INDEX.contains("{id: \"Diplomacy\", key: \"F8\""));
+        let shortcuts = EMBEDDED_INDEX
+            .split_once("const CIVVIS_SHORTCUTS = [")
+            .and_then(|(_, tail)| {
+                tail.split_once("];\n// One lookup per key.")
+                    .map(|(rows, _)| rows)
+            })
+            .expect("the closed shortcut table");
+        assert_eq!(shortcuts.matches("{id: \"").count(), 7);
+        assert!(!EMBEDDED_INDEX.contains("const CIV6_BINDINGS = ["));
+        assert!(!EMBEDDED_INDEX.contains("let altTap"));
+        let legend = EMBEDDED_INDEX
+            .split_once("<summary>Keyboard shortcuts</summary>")
+            .and_then(|(_, tail)| tail.split_once("</details>").map(|(panel, _)| panel))
+            .expect("the keyboard shortcut legend");
+        assert_eq!(legend.matches("<kbd>").count(), 7);
+        assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 7);
+        assert!(legend.contains("<span><kbd>3</kbd>Add a map tack</span>"));
         assert!(EMBEDDED_INDEX.contains(
-            "let altTap = false; // tapping Alt/Option (no drag) faces north and levels the map"
+            "return myCities().slice().sort((left, right) => Number(left.id) - Number(right.id));"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "if (altTap) {\n    resetMapFacing(-cam.tilt);"
+            "? cities.find(city => city.is_capital) || cities[0]"
         ));
-        assert!(!EMBEDDED_INDEX.contains("{id: \"ResetFacing\", key: \"r\", ctrl: true"));
+        assert!(EMBEDDED_INDEX.contains(": cities[cities.length - 1];"));
 
         // Movement: a left click only selects, a left drag pans, a secondary
         // press/release moves units, and the middle button centres. This is the
@@ -9352,7 +9304,7 @@ mod tests {
             .split_once("cv.addEventListener(\"click\", ev => {")
             .expect("the map must have an ordinary click handler")
             .1
-            .split_once("\n});\n\n// Civ 6's ordinary unit order gesture")
+            .split_once("\nfunction issueSelectedUnitOrder(pos)")
             .expect("the selection handler must end before the movement handler")
             .0;
         assert!(!ordinary_click.contains("move_to"));
@@ -9367,7 +9319,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"
         ));
-        assert!(EMBEDDED_INDEX.contains("if (ev.metaKey) return undefined;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return undefined;"
+        ));
     }
 
     #[test]
@@ -12012,12 +11966,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "function nextAction() {\n  if (!state || SPEC) return;\n  advanceToNextActionUnit(true);"
         ));
-        // Period/comma and Tab remain a reversible roster cycle rather than
-        // acquiring an unmatched proximity-based "previous" behavior.
+        // The requested fixed action map invokes the new selector from key 1;
+        // unit roster cycling is no longer a global keyboard shortcut.
         assert!(EMBEDDED_INDEX.contains("if (step > 0) { advanceToNextUnit(true); return; }"));
         assert!(EMBEDDED_INDEX.contains(
-            "{id: \"NextUnitTab\", key: \"Tab\", run: () => advanceToNextUnit(true)}"
+            "{id: \"NextAction\", key: \"1\", run: () => nextAction()},"
         ));
+        assert!(!EMBEDDED_INDEX.contains("id: \"NextUnitTab\""));
     }
 
     /// Resting over a tile reports it, the way Civ 6's plot tooltip does — and
