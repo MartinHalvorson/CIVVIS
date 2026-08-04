@@ -9396,7 +9396,7 @@ mod tests {
     }
 
     #[test]
-    fn strategic_mountains_and_volcanoes_share_a_fifty_percent_larger_icon() {
+    fn strategic_mountains_and_volcanoes_are_centered_top_down_landforms() {
         let icon = EMBEDDED_INDEX
             .split("const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;")
             .nth(1)
@@ -9405,13 +9405,36 @@ mod tests {
         assert!(icon.contains(
             "cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE)"
         ));
+        assert!(icon.contains("const mountainRadius = volcano ? 15 : 15.5;"));
+        assert!(icon.contains("cx.arc(0, 0, mountainRadius, 0, 7);"));
         assert!(icon.contains(
-            "const rimY = -7, rimHalfWidth = 5.3, baseY = 19, baseHalfWidth = 16"
+            "const rimRadius = 10.5, craterRadius = 6.2, lavaRadius = 3.7;"
         ));
-        assert!(icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
-        assert!(icon.contains("cx.ellipse(0, rimY, rimHalfWidth, 1.35"));
+        assert!(icon.contains("cx.arc(0, 0, craterRadius, 0, 7);"));
+        assert!(icon.contains("const peakX = 0, peakY = 0;"));
+        assert!(icon.contains("cx.quadraticCurveTo(-6, 1, peakX, peakY);"));
+        assert!(!icon.contains("const rimY = -7"));
+        assert!(!icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false)"));
+
+        let wonder = EMBEDDED_INDEX
+            .split("  volcano(x, y, k, art) {")
+            .nth(1)
+            .and_then(|tail| tail.split("  ruins(x, y, k, art) {").next())
+            .expect("top-down Natural Wonder volcano renderer");
+        assert!(wonder.contains("const calderaRadius = 14 * k;"));
+        assert!(wonder.contains("cx.arc(x, y, calderaRadius, 0, 7);"));
+        assert!(!wonder.contains("wonderFace(x, y, k, art.tint"));
+
+        let effects = EMBEDDED_INDEX
+            .split("function drawFeatureEffects")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawStrategicMarsh").next())
+            .expect("volcano feature effects renderer");
+        assert!(effects.contains("const erupting = t.volcano_state === 2;"));
+        assert!(effects.contains("[[8, .82], [12, .44]]"));
+        assert!(!effects.contains("[-5,-18,5]"));
     }
 
     #[test]
