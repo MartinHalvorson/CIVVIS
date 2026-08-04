@@ -312,6 +312,7 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 "projects": r.projects,
                 "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
                 "civ6_leaders": crate::game::CIV6_LEADER_POOL.as_slice(),
+                "leader_pools": crate::leader_roster::browser_pools(),
                 "great_people": r.great_people, "governors": r.governors,
                 "map_sizes": CIV6_MAP_SIZES,
                 "difficulties": r.difficulties, "speeds": r.speeds,

@@ -3612,7 +3612,8 @@
         </select></label>
         <label class="small game-advanced-setting civ6-hidden" data-advanced-order="20">Leader Pool<select id="leaderpool" style="margin-top:4px">
           <option value="civ6" selected>Civ 6 Leaders</option>
-          <option value="expanded">Expanded</option>
+          <option value="historical">Expanded Historical Figures</option>
+          <option value="today" disabled>Today's Leaders — roster pending</option>
         </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
@@ -7951,9 +7952,10 @@ async function boot() {
       if ([...select.options].some(option => option.value === chosen)) select.value = chosen;
     }
     syncEarthShape();
-    // A leader is a civilization plus the person who leads it; the ruleset
-    // knows both, and their agendas, so the setup screen never invents names.
-    if (RULES.civs && typeof RULES.civs === "object") {
+    // Roster data names both the civilization and its leader, even when that
+    // neutral historical identity is intentionally absent from this game's
+    // modeled Civilization VI rules.
+    if (Array.isArray(RULES.leader_pools)) {
       syncLeaderPool();
     }
     if (RULES.difficulties && typeof RULES.difficulties === "object") {
@@ -8987,7 +8989,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
     document.getElementById("gamespeed").value = st.game_speed || "standard";
-    document.getElementById("leaderpool").value = st.leader_pool || "civ6";
+    document.getElementById("leaderpool").value = normalizedLeaderPoolId(st.leader_pool || "civ6");
     syncLeaderPool();
     // The seat a person is playing and the handicap they are playing it on are
     // settings of this world too, so the panel adopts them alongside the map
@@ -28173,7 +28175,7 @@ function applyQueuedSimulationSettings(settings) {
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
   document.getElementById("gamespeed").value = settings.speed;
-  document.getElementById("leaderpool").value = settings.leader_pool || "civ6";
+  document.getElementById("leaderpool").value = normalizedLeaderPoolId(settings.leader_pool || "civ6");
   syncLeaderPool();
   document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
   if (settings.start_era) document.getElementById("startera").value = settings.start_era;
@@ -28328,23 +28330,40 @@ function syncMapRoster(civ6) {
   syncEarthShape();
 }
 
-// The broad historical ruleset remains available, but a normal lobby offers
-// only civilizations that Civilization VI itself ships. The same pool fills
-// random AI seats on the server and filters the person's explicit leader
-// choice here, so "Random leader" and a named pick describe one roster.
+function normalizedLeaderPoolId(id) {
+  return id === "expanded" ? "historical" : id;
+}
+
+// The server owns the ordered roster data.  That makes the picker match the
+// identities it can actually seat, including future Today's Leaders records
+// that do not have an entry in the Civilization VI rules data.
 function syncLeaderPool() {
   const select = document.getElementById("leader");
   const pool = document.getElementById("leaderpool");
-  if (!select || !pool || !RULES || !RULES.civs || typeof RULES.civs !== "object") return;
+  if (!select || !pool || !RULES || !Array.isArray(RULES.leader_pools)) return;
   const selected = select.value;
-  const civ6 = new Set(Array.isArray(RULES.civ6_leaders) ? RULES.civ6_leaders : []);
-  const leaders = Object.entries(RULES.civs)
-    .filter(([civ]) => pool.value === "expanded" || civ6.has(civ))
-    .map(([civ, spec]) => ({civ, leader: spec.leader || civ, note: spec.note || ""}))
+  const requested = normalizedLeaderPoolId(pool.value);
+  const pools = RULES.leader_pools;
+  const active = pools.find(entry => entry.id === requested && entry.available)
+    || pools.find(entry => entry.available);
+  if (!active) return;
+  pool.innerHTML = pools.map(entry =>
+    `<option value="${escapeAttr(entry.id)}"${entry.available ? "" : " disabled"}` +
+    ` title="${escapeAttr(entry.description || "")}">${escapeAttr(entry.name)}</option>`
+  ).join("");
+  pool.value = active.id;
+  const leaders = (active.leaders || [])
+    .map(entry => ({
+      civ: entry.civ,
+      leader: entry.leader || entry.civ,
+      latitude: Number(entry.latitude),
+      longitude: Number(entry.longitude),
+    }))
     .sort((first, second) => first.leader.localeCompare(second.leader));
   select.innerHTML = `<option value="">Random leader</option>` + leaders.map(entry =>
-    `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
-    `${entry.leader} of ${entry.civ}</option>`).join("");
+    `<option value="${escapeAttr(entry.civ)}" title="${escapeAttr(
+      `True Start: ${entry.latitude.toFixed(2)}°, ${entry.longitude.toFixed(2)}°`
+    )}">${escapeAttr(entry.leader)} of ${escapeAttr(entry.civ)}</option>`).join("");
   if (leaders.some(entry => entry.civ === selected)) select.value = selected;
 }
 
