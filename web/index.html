@@ -1527,9 +1527,9 @@
   }
   #buildmark {
     /* The authored World minimap owns the lower-right corner at z-index 6.
-       Keeping this one layer beneath it makes the provenance unobtrusive at
-       first, then reveals it naturally when that movable map leaves home. */
-    position: fixed; z-index: 5;
+       Keep provenance one layer above it so commit and build age remain
+       visible even before anyone moves or closes the minimap. */
+    position: fixed; z-index: 7;
     right: max(7px, env(safe-area-inset-right)); bottom: max(5px, env(safe-area-inset-bottom));
     max-width: calc(100vw - 14px); padding: 3px 6px;
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
