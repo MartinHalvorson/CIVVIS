@@ -4204,8 +4204,11 @@ const RESOURCE_PICTOGRAM = {
 // a 16px disc on a hex 62 across: legible only if you already knew what you
 // were looking for. Disc, rim, survey dot and pictogram share one scale, so the
 // badge remains one coherent annotation rather than independently sized parts.
-const RES_BADGE_K = 1.5;
+// 1.72 keeps the material silhouette legible at ordinary command-map scale
+// while the derived seat still leaves the outer rim inside its owning hex.
+const RES_BADGE_K = 1.72;
 const RES_BADGE_R = 8.2 * RES_BADGE_K;
+const RES_BADGE_DETAIL_SCALE = 0.58;
 // How far out along the bottom-corner ray the badge is seated, as a fraction
 // of S. Derived rather than tuned: a seat `d` out along a corner ray stands
 // (S - d) * SQ3/2 from either of the two edges that meet at that corner, and
@@ -4359,6 +4362,39 @@ const FAMILY_COLOR = {
 };
 const districtColor = d =>
   DISTRICT_COLOR[d] || FAMILY_COLOR[DISTRICT_FAMILY[d]] || "#ddd";
+// The broad family silhouette makes a district legible from a distance; its
+// completed buildings then give the tile a small but real sense of growth. A
+// unique building uses the same architectural language as the building it
+// replaces, with a few cases named here where its role is more useful than its
+// spelling (a Madrasa still reads as a school, a Film Studio as a broadcast
+// house). Everything else has a family-and-tier fallback below.
+const DISTRICT_BUILDING_KIND = {
+  library:"books", madrasa:"books", navigation_school:"books", alchemical_society:"lab",
+  university:"academy", research_lab:"lab",
+  shrine:"shrine", temple:"temple", stave_church:"shrine", prasat:"temple",
+  cathedral:"temple", dar_e_mehr:"shrine", gurdwara:"temple", meeting_house:"shrine",
+  mosque:"temple", pagoda:"shrine", stupa:"shrine", synagogue:"temple", wat:"temple",
+  market:"market", sukiennice:"market", grand_bazaar:"market", gilded_vault:"bank",
+  bank:"bank", stock_exchange:"tower",
+  barracks:"fort", basilikoi_paides:"fort", ordu:"fort", stable:"stable", armory:"fort",
+  military_academy:"academy",
+  lighthouse:"lighthouse", shipyard:"shipyard", seaport:"port",
+  amphitheater:"theater", marae:"theater", art_museum:"museum", archaeological_museum:"museum",
+  broadcast_center:"broadcast", film_studio:"broadcast",
+  workshop:"workshop", electronics_factory:"factory", factory:"factory",
+  coal_power_plant:"plant", oil_power_plant:"plant", nuclear_power_plant:"plant",
+  arena:"arena", tlachtli:"arena", thermal_bath:"bath", zoo:"park", stadium:"stadium",
+  ferris_wheel:"ferris", aquarium:"aquarium", aquatics_center:"stadium",
+  food_market:"market", shopping_mall:"mall",
+  hangar:"hangar", airport:"airport",
+  consulate:"civic", chancery:"civic",
+  grove:"grove", sanctuary:"sanctuary",
+  hydroelectric_dam:"plant",
+  ancestral_hall:"civic", audience_chamber:"civic", warlords_throne:"civic",
+  foreign_ministry:"civic", intelligence_agency:"tower", grand_masters_chapel:"shrine",
+  queens_bibliotheque:"books", national_history_museum:"museum", royal_society:"civic",
+  war_department:"fort",
+};
 // Text yields — tooltips and the sidebar, where a yield is a word in a line
 // rather than a mark on the map. The map's numbered-marker palette lives with
 // `drawTileYields`.
@@ -9790,12 +9826,13 @@ function drawFeatureEffects(t, x, y) {
   }
 }
 
-// Strategic terrain marks are tiny map symbols, not reduced illustrations.
-// Marsh uses a shallow inverse-hill silhouette: a broad, very low W that reads
-// as wet ground without competing with units, yields, or improvements. Keep
-// its vertical profile at one third of the original 15 px design.
+// Strategic terrain marks are map symbols rather than reduced illustrations.
+// They are large enough to remain visible around a unit token, but the tile
+// pass clips them to their owning hex before they touch the neighbouring map.
+// Marsh keeps its low, broad inverse-hill silhouette so it reads as wet ground
+// rather than a fourth kind of tree.
 function drawStrategicMarsh(x, y) {
-  const h = 1 / 3;
+  const h = .6;
   cx.save();
   cx.lineCap = "round"; cx.lineJoin = "round";
   cx.fillStyle = "#86cddd";
@@ -9849,6 +9886,182 @@ function drawStrategicFloodplains(t, x, y) {
       cx.stroke();
     }
   }
+  cx.restore();
+}
+
+// A strategic unit can fill most of its cell at survey zoom, so a small
+// centre-sized forest or reef disappears underneath it. Feature art grows from
+// the tile centre and the flat renderer clips it back to its exact hex; Planet
+// cells already establish that clip with `withPlanetStrategicCell`.
+const STRATEGIC_FEATURE_ICON_SCALE = 1.42;
+const STRATEGIC_FEATURE_MARKS = new Set([
+  "forest", "jungle", "burning_forest", "burnt_forest",
+  "burning_jungle", "burnt_jungle", "marsh", "oasis", "reef",
+  "geothermal_fissure", "ice", "impact_zone"
+]);
+
+function drawStrategicHillIcon(x, y) {
+  const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
+  const hillBaseY = y + S * YS / 2;
+  cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
+  cx.beginPath();
+  cx.ellipse(x - 7 * hillWidth, hillBaseY,
+             6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
+  cx.ellipse(x + 6 * hillWidth, hillBaseY,
+             6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
+  cx.stroke();
+}
+
+function drawStrategicWoodlandIcon(t, x, y) {
+  const jungle = t.feature.includes("jungle");
+  const lift = t.hills ? -7 : 0;
+  cx.save();
+  cx.translate(x, y);
+  cx.scale(STRATEGIC_FEATURE_ICON_SCALE, STRATEGIC_FEATURE_ICON_SCALE);
+  cx.translate(-x, -y);
+  if (jungle) {
+    // Rainforest sweeps down and right, using broad canopies rather than firs.
+    for (const [dx, dy, height, spread] of [[-10, -3, 12, 7.5],
+                                              [1, 3, 15, 8.5],
+                                              [10, 7, 11, 6.8]]) {
+      const tx = x + dx, base = y + dy + 4 + lift;
+      cx.strokeStyle = "#4a3a24"; cx.lineWidth = 1.9;
+      cx.beginPath(); cx.moveTo(tx, base); cx.lineTo(tx, base - height); cx.stroke();
+      cx.fillStyle = "#174c2c";
+      cx.beginPath(); cx.ellipse(tx, base - height - 1, spread, 3.8, 0, 0, 7); cx.fill();
+      cx.fillStyle = "#2a7040";
+      cx.beginPath(); cx.ellipse(tx - 1.2, base - height - 2.5,
+                                 spread * .72, 2.35, -.12, 0, 7); cx.fill();
+    }
+  } else {
+    // Woods climb from lower right to upper left. That reversed diagonal keeps
+    // their pointed fir stand distinct from rainforest beneath an army token.
+    for (const [dx, dy, height, spread] of [[10, 9, 13, 6.5],
+                                              [0, 1, 16, 7.5],
+                                              [-10, -7, 18, 8.5]]) {
+      const tx = x + dx, base = y + dy + 4 + lift;
+      cx.strokeStyle = "#142d1b"; cx.lineWidth = 1.15;
+      cx.beginPath(); cx.moveTo(tx, base + 1); cx.lineTo(tx, base - height * .28); cx.stroke();
+      cx.fillStyle = "#183f23";
+      tri(tx - spread, base, tx, base - height, tx + spread, base);
+      cx.fillStyle = "#2a6634";
+      tri(tx - spread * .68, base - height * .24,
+          tx, base - height * .84, tx + spread * .68, base - height * .24);
+    }
+  }
+  cx.restore();
+}
+
+function drawStrategicReefIcon(x, y) {
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  // Interlocking shallow pools make the base asymmetrical rather than a boat
+  // hull. Rounded coral clusters then read as a living reef at survey scale.
+  cx.fillStyle = "#1d7f94"; cx.strokeStyle = "#0d4657"; cx.lineWidth = 1.3;
+  for (const [dx, dy, rx, ry] of [[-10, 4, 8, 4.2], [-1, 0, 9, 5.3], [10, 4, 7, 3.8]]) {
+    cx.beginPath(); cx.ellipse(x + dx, y + dy, rx, ry, -.12, 0, 7); cx.fill(); cx.stroke();
+  }
+  const coralCluster = (px, py, radius, fill, edge) => {
+    cx.fillStyle = fill; cx.strokeStyle = edge; cx.lineWidth = 1;
+    const lobes = [[0, -.55], [-.52, -.12], [.52, -.12], [-.35, .42], [.35, .42]];
+    for (const [lx, ly] of lobes) {
+      cx.beginPath();
+      cx.arc(px + lx * radius, py + ly * radius, radius * .48, 0, 7);
+      cx.fill(); cx.stroke();
+    }
+    cx.fillStyle = "rgba(255,245,205,.62)";
+    cx.beginPath(); cx.arc(px, py, radius * .17, 0, 7); cx.fill();
+  };
+  coralCluster(x - 9, y + 3, 6.2, "#e78568", "#6c4038");
+  coralCluster(x, y - 2, 7.4, "#edbb63", "#76522f");
+  coralCluster(x + 9, y + 4, 5.4, "#79bfa0", "#315f5b");
+  cx.strokeStyle = "rgba(213,255,245,.72)"; cx.lineWidth = 1.05;
+  cx.beginPath();
+  cx.arc(x - 13, y + 1, 4.5, .3, 2.35);
+  cx.arc(x + 12, y + 7, 3.7, 3.5, 5.7);
+  cx.stroke();
+  cx.restore();
+}
+
+function drawStrategicOasisIcon(x, y) {
+  cx.save();
+  cx.translate(x, y); cx.scale(2, 2); cx.translate(-2.5, 1.5);
+  cx.fillStyle = "#3d7aa6"; cx.beginPath();
+  cx.ellipse(0, 3, 8.5, 5.5, 0, 0, 7); cx.fill();
+  cx.font = "13px sans-serif"; cx.fillText("🌴", 7, -5);
+  cx.restore();
+}
+
+function drawStrategicGeothermalFissureIcon(x, y) {
+  const gy = y - 4;
+  cx.fillStyle = "#66b6b3"; cx.strokeStyle = "#286f72"; cx.lineWidth = 1.1;
+  for (const [dx, dy, rx, ry] of [[-7, 5, 7.8, 2.8], [7, 7, 6.5, 2.3]]) {
+    cx.beginPath(); cx.ellipse(x + dx, gy + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
+  }
+  cx.fillStyle = "#dcece8";
+  cx.strokeStyle = "#8fbfc4"; cx.lineWidth = .9;
+  cx.beginPath(); cx.moveTo(x - 2.2, gy + 3);
+  cx.bezierCurveTo(x - 1.4, gy - 3, x - 1.1, gy - 10, x, gy - 16);
+  cx.bezierCurveTo(x + 1.2, gy - 10, x + 1.6, gy - 3, x + 2.2, gy + 3);
+  cx.closePath(); cx.fill(); cx.stroke();
+  cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.5;
+  cx.beginPath();
+  cx.arc(x, gy - 14, 4.5, 3.55, 5.9);
+  cx.moveTo(x - 1, gy - 12); cx.lineTo(x - 4, gy - 8);
+  cx.moveTo(x + 1, gy - 12); cx.lineTo(x + 4, gy - 8);
+  cx.stroke();
+}
+
+function drawStrategicIceIcon(x, y) {
+  cx.fillStyle = "#dfeff3"; cx.strokeStyle = "#7db3c5"; cx.lineWidth = 1.4;
+  cx.beginPath(); cx.moveTo(x - 15, y - 3); cx.lineTo(x - 5, y - 12);
+  cx.lineTo(x + 13, y - 8); cx.lineTo(x + 16, y + 7); cx.lineTo(x, y + 11);
+  cx.lineTo(x - 13, y + 6); cx.closePath(); cx.fill(); cx.stroke();
+}
+
+function drawStrategicTerrainMark(t, x, y) {
+  if (t.feature === "volcano") { drawStrategicMountainIcon(x, y, true); return; }
+  if (t.terrain === "mountain") { drawStrategicMountainIcon(x, y, false); return; }
+  if (t.hills) drawStrategicHillIcon(x, y);
+  if (["forest", "jungle", "burning_forest", "burnt_forest",
+       "burning_jungle", "burnt_jungle"].includes(t.feature)) {
+    drawStrategicWoodlandIcon(t, x, y);
+    return;
+  }
+  if (!STRATEGIC_FEATURE_MARKS.has(t.feature)) return;
+  cx.save();
+  cx.translate(x, y);
+  cx.scale(STRATEGIC_FEATURE_ICON_SCALE, STRATEGIC_FEATURE_ICON_SCALE);
+  cx.translate(-x, -y);
+  if (t.feature === "marsh") {
+    drawStrategicMarsh(x, y);
+  } else if (t.feature === "oasis") {
+    drawStrategicOasisIcon(x, y);
+  } else if (t.feature === "reef") {
+    drawStrategicReefIcon(x, y);
+  } else if (t.feature === "geothermal_fissure") {
+    drawStrategicGeothermalFissureIcon(x, y);
+  } else if (t.feature === "ice") {
+    drawStrategicIceIcon(x, y);
+  } else if (t.feature === "impact_zone") {
+    cx.fillStyle = "#292523"; cx.strokeStyle = "#d16a2f"; cx.lineWidth = 2;
+    cx.beginPath(); cx.arc(x, y, 11, 0, 7); cx.fill(); cx.stroke();
+  }
+  cx.restore();
+}
+
+function drawFlatStrategicTerrainMark(t, x, y) {
+  cx.save();
+  // Terrain may fill its tile, but it may never spill over a neighbour's edge.
+  hexPath(x, y, S - .55); cx.clip();
+  drawStrategicTerrainMark(t, x, y);
+  cx.restore();
+}
+
+function drawFlatStrategicFloodplains(t, x, y) {
+  cx.save();
+  hexPath(x, y, S - .55); cx.clip();
+  drawStrategicFloodplains(t, x, y);
   cx.restore();
 }
 
@@ -9977,16 +10190,246 @@ function tri(ax, ay, bx, by, ccx, ccy) {
   cx.closePath(); cx.fill();
 }
 
+// Districts are pieces of a city rather than badges laid on top of the map.
+// Keep their visual centre just above the tile centre: the front terrace can
+// still touch the ground, while the skyline has room to read as architecture.
+const DISTRICT_ICON_LIFT = 3.5;
+
+function districtIconPositions(value) {
+  if (!Array.isArray(value)) return [];
+  if (value.length === 2 && value.every(Number.isFinite)) return [value];
+  return value.filter(pos => Array.isArray(pos) && pos.length === 2 &&
+    pos.every(Number.isFinite));
+}
+
+function districtIconFamily(district) {
+  return DISTRICT_FAMILY[district] || district || "civic";
+}
+
+// The public map tile knows its district, while a city's private payload knows
+// which buildings it has. Join those two pieces once per render instead of
+// guessing from a district's age or drawing every possible tier. Spectators
+// receive the same full city data; a normal player only sees building detail
+// for cities whose private state the server has already revealed.
+function districtBuildingsByTile() {
+  const byTile = new Map();
+  for (const city of state?.cities || []) {
+    const sites = [];
+    for (const [district, encoded] of Object.entries(city.districts || {})) {
+      for (const pos of districtIconPositions(encoded)) sites.push({district, pos});
+    }
+    if (!sites.length || !city.buildings?.length) continue;
+    const pillaged = new Set(city.pillaged_buildings || []);
+    for (const id of city.buildings) {
+      const district = RULES?.buildings?.[id]?.district;
+      if (!district || district === "city_center") continue;
+      const family = districtIconFamily(district);
+      // A district family can appear more than once (for example a
+      // Neighborhood). City-level building state has no site coordinate, so
+      // seat its one building on the first stable site rather than duplicating
+      // it across every instance.
+      const site = sites.find(candidate => districtIconFamily(candidate.district) === family);
+      if (!site) continue;
+      const tileKey = key(site.pos);
+      const entries = byTile.get(tileKey) || [];
+      entries.push({id, pillaged:pillaged.has(id)});
+      byTile.set(tileKey, entries);
+    }
+  }
+  for (const entries of byTile.values()) {
+    entries.sort((a, b) => (RULES?.buildings?.[a.id]?.cost || 0) -
+      (RULES?.buildings?.[b.id]?.cost || 0) || a.id.localeCompare(b.id));
+  }
+  return byTile;
+}
+
+function districtBuildingKind(id, family, index) {
+  if (DISTRICT_BUILDING_KIND[id]) return DISTRICT_BUILDING_KIND[id];
+  const tiers = {
+    campus:["books", "academy", "lab"], faith:["shrine", "temple", "temple"],
+    war:["fort", "stable", "academy"], trade:["market", "bank", "tower"],
+    harbor:["lighthouse", "shipyard", "port"], culture:["theater", "museum", "broadcast"],
+    industry:["workshop", "factory", "plant"], fun:["arena", "park", "stadium"],
+    water:["plant"], homes:["market", "mall"], air:["hangar", "airport"],
+    civic:["civic", "civic", "tower"], preserve:["grove", "sanctuary"],
+  };
+  const sequence = tiers[family] || ["house"];
+  return sequence[Math.min(index, sequence.length - 1)];
+}
+
+// A completed building is deliberately a tiny structure, not an emoji or a
+// text label. The small set of rooflines and landmarks is enough to distinguish
+// a school from a market or a factory at map scale, while sharing one material
+// and outline language with the district terrace underneath it.
+function drawDistrictBuilding(kind, x, y, scale, pillaged) {
+  const ink = "#1a2025", stone = "#ece8d8", roof = "#a65342";
+  const rect = (left, top, width, height, fill = stone) => {
+    cx.fillStyle = fill; cx.beginPath(); cx.rect(left, top, width, height); cx.fill(); cx.stroke();
+  };
+  const roofed = (width = 7, height = 5, roofColor = roof) => {
+    rect(-width / 2, -height, width, height);
+    cx.fillStyle = roofColor; cx.beginPath();
+    cx.moveTo(-width / 2 - 1.1, -height); cx.lineTo(0, -height - 4.2);
+    cx.lineTo(width / 2 + 1.1, -height); cx.closePath(); cx.fill(); cx.stroke();
+  };
+  cx.save();
+  cx.translate(x, y); cx.scale(scale, scale);
+  cx.lineJoin = "round"; cx.lineCap = "round";
+  cx.strokeStyle = ink; cx.lineWidth = 1.05;
+  if (pillaged) cx.globalAlpha = .5;
+
+  if (kind === "books") {
+    rect(-4.2, -5.2, 8.4, 5.2);
+    cx.fillStyle = "#6da7c8";
+    for (const bx of [-2.5, -.7, 1.1]) cx.fillRect(bx, -4.5, 1.1, 3.1);
+    cx.fillStyle = roof; cx.beginPath();
+    cx.moveTo(-5, -5.2); cx.lineTo(0, -9); cx.lineTo(5, -5.2); cx.closePath(); cx.fill(); cx.stroke();
+  } else if (kind === "academy" || kind === "lab") {
+    rect(-3.8, -4.2, 7.6, 4.2, kind === "lab" ? "#b8d8d2" : stone);
+    cx.fillStyle = kind === "lab" ? "#71b9c4" : stone;
+    cx.beginPath(); cx.arc(0, -4.1, 3.8, Math.PI, 0); cx.fill(); cx.stroke();
+    cx.beginPath(); cx.moveTo(1.5, -7.2); cx.lineTo(4.7, -10.1); cx.stroke();
+    if (kind === "lab") { cx.fillStyle = "#d6f5ee"; cx.beginPath(); cx.arc(4.8, -10.2, 1.2, 0, 7); cx.fill(); }
+  } else if (kind === "shrine" || kind === "temple") {
+    rect(-3.4, -5.3, 6.8, 5.3, stone);
+    cx.fillStyle = kind === "temple" ? "#d7c48e" : "#bd7159";
+    cx.beginPath(); cx.moveTo(-4.5, -5.3); cx.lineTo(0, -9.5); cx.lineTo(4.5, -5.3);
+    cx.closePath(); cx.fill(); cx.stroke();
+    cx.beginPath(); cx.moveTo(0, -9.5); cx.lineTo(0, -12); cx.stroke();
+  } else if (kind === "market") {
+    rect(-4.5, -4.8, 9, 4.8);
+    cx.fillStyle = "#d9ad4e"; cx.beginPath();
+    cx.moveTo(-5.2, -4.8); cx.lineTo(-3.5, -8.3); cx.lineTo(3.5, -8.3);
+    cx.lineTo(5.2, -4.8); cx.closePath(); cx.fill(); cx.stroke();
+    cx.strokeStyle = "#9b5541"; cx.lineWidth = 1.2;
+    for (const bx of [-2.1, .2, 2.5]) { cx.beginPath(); cx.moveTo(bx, -8.1); cx.lineTo(bx + .7, -5); cx.stroke(); }
+  } else if (kind === "bank" || kind === "tower" || kind === "civic") {
+    const height = kind === "tower" ? 10.6 : 7.2;
+    rect(-3.5, -height, 7, height, kind === "bank" ? "#d9c67d" : stone);
+    if (kind === "civic" || kind === "museum") {
+      cx.fillStyle = "#c7b789"; cx.beginPath();
+      cx.moveTo(-4.8, -height); cx.lineTo(0, -height - 3.2); cx.lineTo(4.8, -height);
+      cx.closePath(); cx.fill(); cx.stroke();
+    }
+    cx.strokeStyle = "#637d8a"; cx.lineWidth = .75;
+    for (const bx of [-1.9, 0, 1.9]) { cx.beginPath(); cx.moveTo(bx, -height + 1.3); cx.lineTo(bx, -1.2); cx.stroke(); }
+  } else if (kind === "fort" || kind === "stable") {
+    rect(-4.4, -6.2, 8.8, 6.2, kind === "stable" ? "#b48b61" : "#97938a");
+    if (kind === "fort") {
+      cx.fillStyle = "#97938a";
+      for (const bx of [-4.4, -1.45, 1.5]) cx.fillRect(bx, -8.2, 2.4, 2.2);
+      cx.strokeRect(-4.4, -8.2, 8.8, 2.2);
+    } else {
+      cx.fillStyle = roof; cx.beginPath();
+      cx.moveTo(-5.4, -6.2); cx.lineTo(0, -10); cx.lineTo(5.4, -6.2); cx.closePath(); cx.fill(); cx.stroke();
+    }
+  } else if (kind === "lighthouse") {
+    cx.fillStyle = stone; cx.beginPath();
+    cx.moveTo(-2.6, 0); cx.lineTo(-1.6, -9.5); cx.lineTo(1.6, -9.5); cx.lineTo(2.6, 0);
+    cx.closePath(); cx.fill(); cx.stroke();
+    cx.fillStyle = "#d9574f"; cx.fillRect(-2.2, -11.2, 4.4, 1.7); cx.strokeRect(-2.2, -11.2, 4.4, 1.7);
+  } else if (kind === "shipyard" || kind === "port") {
+    cx.strokeStyle = "#705239"; cx.lineWidth = 1.4;
+    cx.beginPath(); cx.moveTo(-5, -.5); cx.lineTo(5, -.5); cx.stroke();
+    for (const bx of [-3.5, 1.5]) { cx.beginPath(); cx.moveTo(bx, -.5); cx.lineTo(bx, 2); cx.stroke(); }
+    cx.strokeStyle = ink; cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(1.5, -.5); cx.lineTo(1.5, -10); cx.lineTo(5.4, -5.8); cx.stroke();
+    if (kind === "port") { cx.fillStyle = "#d5d0bd"; cx.beginPath(); cx.ellipse(-3, -2.8, 3, 1.8, 0, 0, 7); cx.fill(); cx.stroke(); }
+  } else if (kind === "theater" || kind === "arena" || kind === "stadium") {
+    const wide = kind === "stadium" ? 5.8 : kind === "arena" ? 4.7 : 4.1;
+    cx.fillStyle = kind === "theater" ? "#d5c5df" : stone;
+    cx.beginPath(); cx.ellipse(0, -2.8, wide, 3.6, 0, Math.PI, 0); cx.fill(); cx.stroke();
+    cx.strokeStyle = ink; cx.lineWidth = .9;
+    cx.beginPath(); cx.ellipse(0, -2.8, wide * .52, 1.55, 0, Math.PI, 0); cx.stroke();
+    if (kind === "stadium") { cx.strokeStyle = "#d9ad4e"; cx.beginPath(); cx.moveTo(-wide, -6); cx.lineTo(-wide, -9); cx.moveTo(wide, -6); cx.lineTo(wide, -9); cx.stroke(); }
+  } else if (kind === "museum" || kind === "broadcast") {
+    if (kind === "museum") {
+      rect(-4.2, -5.5, 8.4, 5.5); cx.fillStyle = "#c8c0aa"; cx.beginPath();
+      cx.moveTo(-5, -5.5); cx.lineTo(0, -9); cx.lineTo(5, -5.5); cx.closePath(); cx.fill(); cx.stroke();
+    } else {
+      rect(-3.2, -4.3, 6.4, 4.3, "#aab6be");
+      cx.beginPath(); cx.moveTo(0, -4.3); cx.lineTo(0, -11); cx.stroke();
+      for (const side of [-1, 1]) { cx.beginPath(); cx.moveTo(0, -9); cx.lineTo(side * 3.1, -6.7); cx.stroke(); }
+    }
+  } else if (kind === "workshop" || kind === "factory" || kind === "plant") {
+    rect(-5, -5.2, 10, 5.2, kind === "plant" ? "#889ca0" : "#88796a");
+    cx.fillStyle = "#b5a069"; cx.beginPath();
+    cx.moveTo(-5.6, -5.2); cx.lineTo(-2.5, -8.5); cx.lineTo(.3, -5.2);
+    cx.lineTo(2.6, -8.5); cx.lineTo(5.6, -5.2); cx.closePath(); cx.fill(); cx.stroke();
+    if (kind !== "workshop") { rect(2.3, -10.5, 2.4, 5.5, "#77685f"); }
+    if (kind === "plant") { cx.fillStyle = "#e6d565"; cx.beginPath(); cx.moveTo(-1, -7.5); cx.lineTo(1.2, -7.5); cx.lineTo(0, -4.3); cx.lineTo(2.1, -4.3); cx.lineTo(-1.4, -.9); cx.lineTo(-.4, -4.1); cx.lineTo(-2, -4.1); cx.closePath(); cx.fill(); }
+  } else if (kind === "park" || kind === "grove" || kind === "sanctuary") {
+    const foliage = kind === "sanctuary" ? "#5f8e6b" : "#3e7a45";
+    for (const [tx, ty, size] of [[-2.7, 0, .72], [1.8, -1.2, 1], [4, .5, .55]]) {
+      cx.fillStyle = foliage; cx.beginPath();
+      cx.moveTo(tx - 3 * size, ty); cx.lineTo(tx, ty - 7 * size); cx.lineTo(tx + 3 * size, ty);
+      cx.closePath(); cx.fill(); cx.stroke();
+    }
+  } else if (kind === "ferris") {
+    cx.strokeStyle = "#f1df91"; cx.lineWidth = 1.15; cx.beginPath(); cx.arc(0, -5, 4.8, 0, 7); cx.stroke();
+    for (let angle = 0; angle < 7; angle += Math.PI / 3) {
+      cx.beginPath(); cx.moveTo(0, -5); cx.lineTo(Math.cos(angle) * 4.8, -5 + Math.sin(angle) * 4.8); cx.stroke();
+    }
+    cx.beginPath(); cx.moveTo(-3.5, 0); cx.lineTo(0, -2.2); cx.lineTo(3.5, 0); cx.stroke();
+  } else if (kind === "aquarium" || kind === "bath") {
+    cx.fillStyle = kind === "bath" ? "#bcd9d1" : "#73b7c8";
+    cx.beginPath(); cx.ellipse(0, -2.5, 5.1, 3.2, 0, 0, 7); cx.fill(); cx.stroke();
+    cx.strokeStyle = "#e9f6ed"; cx.lineWidth = .85; cx.beginPath(); cx.arc(0, -2.5, 2.6, .15, 2.9); cx.stroke();
+  } else if (kind === "hangar" || kind === "airport") {
+    cx.fillStyle = "#b7c2c7"; cx.beginPath(); cx.arc(-1.3, -1.3, 4.7, Math.PI, 0); cx.fill(); cx.stroke();
+    cx.strokeStyle = "#f2efe2"; cx.lineWidth = 1.15; cx.setLineDash([2, 2]);
+    cx.beginPath(); cx.moveTo(-5.5, 1.6); cx.lineTo(5.5, .2); cx.stroke(); cx.setLineDash([]);
+    if (kind === "airport") { cx.strokeStyle = ink; cx.beginPath(); cx.moveTo(2, -4); cx.lineTo(4.2, -7); cx.stroke(); }
+  } else if (kind === "mall") {
+    rect(-5.2, -5.1, 10.4, 5.1, "#d9c8a5");
+    cx.fillStyle = "#7da6b7"; cx.fillRect(-3.6, -3.9, 7.2, 1.8); cx.strokeRect(-3.6, -3.9, 7.2, 1.8);
+  } else {
+    roofed();
+  }
+
+  if (pillaged) {
+    cx.strokeStyle = "#d8443a"; cx.lineWidth = 1.35;
+    cx.beginPath(); cx.moveTo(-4.6, 1); cx.lineTo(4.6, -10.4); cx.stroke();
+  }
+  cx.restore();
+}
+
+function drawDistrictBuildingCluster(buildings, family) {
+  if (!buildings?.length) return;
+  const visible = buildings.length > 3 ? buildings.slice(-3) : buildings;
+  const seats = visible.length === 1 ? [[0, 3.6, 1.05]]
+    : visible.length === 2 ? [[-4.6, 4.2, .9], [4.8, 2.8, 1.02]]
+    : [[-7, 4.25, .79], [0, 2.45, .98], [7, 4.25, .79]];
+  // A few tiny streets stop three separate glyphs from looking like a row of
+  // UI pips. Their shared origin makes the cluster read as one district.
+  cx.save();
+  cx.strokeStyle = "rgba(33,38,42,.34)"; cx.lineWidth = .75;
+  for (const [sx, sy] of seats) {
+    cx.beginPath(); cx.moveTo(0, 5.7); cx.lineTo(sx, sy + .3); cx.stroke();
+  }
+  cx.restore();
+  visible.forEach((building, index) => {
+    const entry = typeof building === "string" ? {id:building} : building;
+    const [sx, sy, scale] = seats[index];
+    drawDistrictBuilding(districtBuildingKind(entry.id, family, index), sx, sy, scale,
+                         Boolean(entry.pillaged));
+  });
+}
+
 // A district was a bright rounded chip with one letter stamped on it, which is
 // a label rather than a place — and with only eight of the thirty-five kinds
 // given a color, most of them were a white chip reading "H" or "A". They are
 // built now, in the same painted language as improvements: a terrace in the
-// family's color so the district reads from survey zoom, and a silhouette on it
-// so you know which one without counting letters.
-function drawDistrict(t, x, y) {
+// family's color so the district reads from survey zoom, a landmark tells you
+// its purpose, and the completed structures in front tell you how far it has
+// grown without opening the city panel.
+function drawDistrict(t, x, y, buildings = []) {
   const fam = DISTRICT_FAMILY[t.district] || "civic";
   const col = districtColor(t.district);
+  const anchorX = x, anchorY = y - DISTRICT_ICON_LIFT;
   cx.save();
+  cx.translate(anchorX, anchorY);
+  x = 0; y = 0;
   if (t.pillaged) cx.globalAlpha = 0.6;
   cx.lineJoin = "round";
   const dir = -LITF;
@@ -10109,10 +10552,12 @@ function drawDistrict(t, x, y) {
     for (const px of [-6, -2, 2, 6]) cx.fillRect(x + px - 1.1, y - 5, 2.2, 6.5);
     cx.strokeRect(x - 7.4, y - 5, 14.8, 6.5);
   }
+  drawDistrictBuildingCluster(buildings, fam);
   cx.restore();
   if (t.pillaged) {
     cx.strokeStyle = "#d8443a"; cx.lineWidth = 2.4; cx.lineCap = "round";
-    cx.beginPath(); cx.moveTo(x - 9, y + 8); cx.lineTo(x + 9, y - 10); cx.stroke();
+    cx.beginPath(); cx.moveTo(anchorX - 9, anchorY + 8);
+    cx.lineTo(anchorX + 9, anchorY - 10); cx.stroke();
     cx.lineCap = "butt";
   }
 }
@@ -10553,21 +10998,46 @@ function drawResourceBadge(t, x, y) {
   const rim = rc === "strategic" ? "#ff9d5c"
     : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
   const [rx, ry] = resourceBadgeSlot(x, y, S * RES_BADGE_SEAT);
-  const detailedResource = FINE();
+  // Resource art is useful before the rest of the fine pass is. At this
+  // larger size a material silhouette still distinguishes wheat, iron, and
+  // fish at ordinary map zoom; the farthest survey view stays a class mark.
+  const detailedResource = cam.scale >= RES_BADGE_DETAIL_SCALE;
   if (detailedResource) {
-    cx.fillStyle = "#161c14cc";
+    // A two-step dark plate separates the pictogram from every terrain tone;
+    // the class-coloured rim still reads strategic/luxury/bonus at a glance.
+    cx.fillStyle = "#07110fe0";
+    cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R + 1.2, 0, 7); cx.fill();
+    cx.fillStyle = "#16231ce8";
     cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R, 0, 7); cx.fill();
-    cx.strokeStyle = rim + "dd"; cx.lineWidth = 1.5 * RES_BADGE_K; cx.stroke();
-    drawResourcePictogram(t.resource, rx, ry, RES_BADGE_R * 1.55);
+    cx.strokeStyle = rim + "ee"; cx.lineWidth = 1.7 * RES_BADGE_K; cx.stroke();
+    cx.strokeStyle = "rgba(255,250,222,.28)"; cx.lineWidth = .55 * RES_BADGE_K;
+    cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R - 1.3 * RES_BADGE_K, 0, 7); cx.stroke();
+    drawResourcePictogram(t.resource, rx, ry, RES_BADGE_R * 1.74);
   } else {
-    // Zoomed out to survey the map, the icon inside the badge is under a pixel
-    // and unreadable, and a few hundred dark discs read as the map being
-    // spotted with holes. What is still worth knowing at that range is that a
-    // deposit is there and what class it is — so it becomes a legible dot in
-    // the class color instead of an illegible badge.
+    // At the farthest survey scale, an individual material silhouette becomes
+    // noise. Keep a deposit prominent with a distinct mark for each class.
+    const dot = 4.15 * RES_BADGE_K;
+    cx.fillStyle = "#0b1511d8";
+    cx.beginPath(); cx.arc(rx, ry, dot + 1.05, 0, 7); cx.fill();
     cx.fillStyle = rim;
-    cx.beginPath(); cx.arc(rx, ry, 3.6 * RES_BADGE_K, 0, 7); cx.fill();
-    cx.strokeStyle = "#161c14bb"; cx.lineWidth = 1.2 * RES_BADGE_K; cx.stroke();
+    cx.beginPath(); cx.arc(rx, ry, dot, 0, 7); cx.fill();
+    cx.strokeStyle = "#101914d8"; cx.lineWidth = 1.1 * RES_BADGE_K; cx.stroke();
+    cx.fillStyle = "#101914";
+    if (rc === "strategic") {
+      tri(rx, ry - dot * .52, rx + dot * .52, ry, rx, ry + dot * .52);
+      tri(rx, ry - dot * .52, rx - dot * .52, ry, rx, ry + dot * .52);
+    } else if (rc === "luxury") {
+      cx.beginPath();
+      for (let point = 0; point < 8; point++) {
+        const angle = -Math.PI / 2 + point * Math.PI / 4;
+        const radius = point % 2 ? dot * .32 : dot * .63;
+        const px = rx + Math.cos(angle) * radius, py = ry + Math.sin(angle) * radius;
+        point ? cx.lineTo(px, py) : cx.moveTo(px, py);
+      }
+      cx.closePath(); cx.fill();
+    } else {
+      cx.beginPath(); cx.arc(rx, ry, dot * .4, 0, 7); cx.fill();
+    }
   }
 }
 
@@ -10750,20 +11220,53 @@ function drawImprovement(t, x, y) {
       cx.beginPath(); cx.ellipse(x + bx + 4, y + by + 1.2, 3.4, 1.1, 0, 0, 7); cx.fill();
     }
   } else if (imp === "mine") {
-    const heapSun = new Path2D();                   // spoil heap, two slopes
-    heapSun.moveTo(x - 2, y - 4); heapSun.lineTo(x - 2 + dir * 9, y + 8);
-    heapSun.lineTo(x - 2, y + 8); heapSun.closePath();
-    const heapShade = new Path2D();
-    heapShade.moveTo(x - 2, y - 4); heapShade.lineTo(x - 2 - dir * 9, y + 8);
-    heapShade.lineTo(x - 2, y + 8); heapShade.closePath();
-    cx.fillStyle = tone("#6b6f77", 1.22); cx.fill(heapSun);
-    cx.fillStyle = tone("#6b6f77", .6); cx.fill(heapShade);
-    cx.fillStyle = "#12161c";                       // adit mouth
-    cx.beginPath(); cx.arc(x - 2, y + 8, 3.6, Math.PI, 0); cx.fill();
-    cx.fillStyle = "rgba(210,226,240,.2)";          // lintel catching the sky
-    cx.beginPath(); cx.arc(x - 2, y + 8, 3.6, Math.PI, Math.PI * 1.35); cx.fill();
-    shaft(x + 6, y + 8, x + 10, y - 3, 1.6, dir, "#a8813f");
-    shaft(x + 10, y - 3, x + 4.5, y - 1.5, 1.2, dir, "#8e6c33");
+    // A mine needs a dark portal and timber headframe — a tiny spoil triangle
+    // reads as a quarry or just another grey rock at ordinary map zoom.
+    const spoil = new Path2D();
+    spoil.moveTo(x - 14, y + 8); spoil.quadraticCurveTo(x - 10, y - 2, x - 3, y - 8);
+    spoil.quadraticCurveTo(x + 5, y - 6, x + 13, y + 8);
+    spoil.lineTo(x - 14, y + 8); spoil.closePath();
+    cx.fillStyle = matteMat("#66707a", dir, 13); cx.fill(spoil);
+    cx.strokeStyle = "rgba(25,31,35,.78)"; cx.lineWidth = 1.1; cx.stroke(spoil);
+    cx.fillStyle = "rgba(198,211,218,.24)";
+    cx.beginPath(); cx.moveTo(x - 11, y + 6); cx.quadraticCurveTo(x - 7, y - 1, x - 2, y - 5);
+    cx.lineTo(x - 2, y + 7); cx.closePath(); cx.fill();
+    cx.strokeStyle = "rgba(38,43,45,.68)"; cx.lineWidth = .95;
+    cx.beginPath();
+    cx.moveTo(x - 12, y + 6); cx.lineTo(x - 5, y + 2);
+    cx.moveTo(x + 2, y - 4); cx.lineTo(x + 9, y + 6);
+    cx.stroke();
+
+    // Timbered adit: bright posts make a doorway around the black opening.
+    const adit = new Path2D();
+    adit.moveTo(x - 9, y + 8); adit.lineTo(x - 9, y + 2.5);
+    adit.quadraticCurveTo(x - 9, y - 3, x - 4, y - 3);
+    adit.quadraticCurveTo(x + 1, y - 3, x + 1, y + 2.5);
+    adit.lineTo(x + 1, y + 8); adit.closePath();
+    cx.fillStyle = "#0b1215"; cx.fill(adit);
+    cx.strokeStyle = "#bd8d4d"; cx.lineWidth = 2.05;
+    cx.beginPath();
+    cx.moveTo(x - 8, y + 8); cx.lineTo(x - 8, y + 2.5);
+    cx.quadraticCurveTo(x - 8, y - 1.8, x - 4, y - 1.8);
+    cx.quadraticCurveTo(x, y - 1.8, x, y + 2.5);
+    cx.lineTo(x, y + 8); cx.stroke();
+    cx.strokeStyle = "rgba(255,220,150,.46)"; cx.lineWidth = .7;
+    cx.beginPath(); cx.moveTo(x - 6.7, y + 7); cx.lineTo(x - 6.7, y + 1.5); cx.stroke();
+
+    // The A-frame rises above the spoil mound, so this still says "mine" when
+    // nearby terrain and unit art share the centre of the tile.
+    cx.strokeStyle = "#9d713a"; cx.lineWidth = 1.65;
+    cx.beginPath();
+    cx.moveTo(x + 4, y + 8); cx.lineTo(x + 8, y - 11); cx.lineTo(x + 13, y + 8);
+    cx.moveTo(x + 5.8, y + 1); cx.lineTo(x + 11.3, y + 1);
+    cx.moveTo(x + 6.8, y - 5); cx.lineTo(x + 9.8, y - 5);
+    cx.stroke();
+    cx.fillStyle = "#e1bd63"; cx.strokeStyle = "#2b261d"; cx.lineWidth = 1;
+    cx.beginPath(); cx.arc(x + 8.3, y - 5, 2.45, 0, 7); cx.fill(); cx.stroke();
+    cx.strokeStyle = "#4d3822"; cx.lineWidth = .9;
+    cx.beginPath(); cx.moveTo(x + 8.3, y - 2.5); cx.lineTo(x + 8.3, y + 5.4); cx.stroke();
+    cx.fillStyle = "#4d5960";
+    cx.beginPath(); cx.roundRect(x + 5.8, y + 4.6, 5, 3.1, .7); cx.fill();
   } else if (imp === "lumber_mill") {
     for (const [lx, ly] of [[-8, 4], [-1, 4], [-4.5, -1.5]]) {
       ball(x + lx, y + ly, 3.4, "#8a6033", dir, "rgba(40,28,14,.7)", .9);
@@ -16322,6 +16825,7 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
   const worked = new Set(state.cities.flatMap(city =>
     city.citizens ? city.citizens.worked_tiles.map(key) : []));
   const occupied = new Set(state.units.map(unit => key(unit.pos)));
+  const districtBuildings = districtBuildingsByTile();
   const occupiedResources = [];
 
   for (const entry of cells) {
@@ -16342,70 +16846,8 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
         drawStrategicMountainIcon(0, 0, false);
         return;
       }
-      if (t.hills) {
-        const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
-        const hillBaseY = S * YS / 2;
-        cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
-        cx.beginPath();
-        cx.ellipse(-7 * hillWidth, hillBaseY, 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
-        cx.ellipse(6 * hillWidth, hillBaseY, 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
-        cx.stroke();
-      }
-      if (["forest", "jungle", "burning_forest", "burnt_forest",
-           "burning_jungle", "burnt_jungle"].includes(t.feature)) {
-        const jungle = t.feature.includes("jungle"), lift = t.hills ? -7 : 0;
-        for (const [dx, dy] of [[-9, -2], [1, 2], [9, 5]]) {
-          const tx = dx, ty = dy + 4 + lift;
-          if (jungle) {
-            cx.strokeStyle = "#4a3a24"; cx.lineWidth = 1.8;
-            cx.beginPath(); cx.moveTo(tx, ty); cx.lineTo(tx, ty - 12); cx.stroke();
-            cx.fillStyle = "#1d5c33";
-            cx.beginPath(); cx.ellipse(tx, ty - 13, 7.5, 3.4, 0, 0, 7); cx.fill();
-          } else {
-            cx.fillStyle = "#1e4d24";
-            tri(tx - 7, ty, tx, ty - 14, tx + 7, ty);
-          }
-        }
-      } else if (t.feature === "marsh") {
-        drawStrategicMarsh(0, 0);
-      } else if (t.feature === "oasis") {
-        cx.save();
-        cx.scale(2, 2); cx.translate(-2.5, 1.5);
-        cx.fillStyle = "#3d7aa6"; cx.beginPath();
-        cx.ellipse(0, 3, 8.5, 5.5, 0, 0, 7); cx.fill();
-        cx.font = "13px sans-serif"; cx.fillText("🌴", 7, -5);
-        cx.restore();
-      } else if (t.feature === "reef") {
-        cx.fillStyle = "#72d3c2";
-        for (const [dx, dy, radius] of [[-7, 2, 4], [1, -3, 5], [8, 5, 3]]) {
-          cx.beginPath(); cx.arc(dx, dy, radius, 0, 7); cx.fill();
-        }
-      } else if (t.feature === "geothermal_fissure") {
-        const gy = -4;
-        cx.fillStyle = "#66b6b3"; cx.strokeStyle = "#286f72"; cx.lineWidth = 1.1;
-        for (const [dx, dy, rx, ry] of [[-7, 5, 7.8, 2.8], [7, 7, 6.5, 2.3]]) {
-          cx.beginPath(); cx.ellipse(dx, gy + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
-        }
-        cx.fillStyle = "#dcece8"; cx.strokeStyle = "#8fbfc4"; cx.lineWidth = .9;
-        cx.beginPath(); cx.moveTo(-2.2, gy + 3);
-        cx.bezierCurveTo(-1.4, gy - 3, -1.1, gy - 10, 0, gy - 16);
-        cx.bezierCurveTo(1.2, gy - 10, 1.6, gy - 3, 2.2, gy + 3);
-        cx.closePath(); cx.fill(); cx.stroke();
-        cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.5;
-        cx.beginPath();
-        cx.arc(0, gy - 14, 4.5, 3.55, 5.9);
-        cx.moveTo(-1, gy - 12); cx.lineTo(-4, gy - 8);
-        cx.moveTo(1, gy - 12); cx.lineTo(4, gy - 8);
-        cx.stroke();
-      } else if (t.feature === "ice") {
-        cx.fillStyle = "#dfeff3"; cx.strokeStyle = "#7db3c5"; cx.lineWidth = 1.4;
-        cx.beginPath(); cx.moveTo(-15, -3); cx.lineTo(-5, -12);
-        cx.lineTo(13, -8); cx.lineTo(16, 7); cx.lineTo(0, 11);
-        cx.lineTo(-13, 6); cx.closePath(); cx.fill(); cx.stroke();
-      } else if (t.feature === "impact_zone") {
-        cx.fillStyle = "#292523"; cx.strokeStyle = "#d16a2f"; cx.lineWidth = 2;
-        cx.beginPath(); cx.arc(0, 0, 11, 0, 7); cx.fill(); cx.stroke();
-      }
+      if (t.hills || STRATEGIC_FEATURE_MARKS.has(t.feature))
+        drawStrategicTerrainMark(t, 0, 0);
       drawFeatureEffects(t, 0, 0);
       if (t.improvement === "barbarian_camp" || campSet.has(tileKey)) {
         drawBarbarianCamp(0, 0);
@@ -16417,7 +16859,7 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
         if (occupied.has(tileKey)) occupiedResources.push(entry);
         else drawResourceBadge(t, 0, 0);
       }
-      if (t.district) drawDistrict(t, 0, 0);
+      if (t.district) drawDistrict(t, 0, 0, districtBuildings.get(tileKey));
       if (t.wonder) drawWonder(0, 0);
       if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, 0, 0, worked.has(tileKey));
     });
@@ -17451,6 +17893,7 @@ function draw() {
   const campSet = new Set(state.camps.map(key));
   const workedSet = new Set(state.cities.flatMap(c =>
     c.citizens ? c.citizens.worked_tiles.map(key) : []));
+  const districtBuildings = districtBuildingsByTile();
   const unitOwnerByTile = new Map(state.units.map(u => [key(u.pos), u.owner]));
   // Deposits whose tile has somebody standing on it: their badge waits until
   // after the figures. See drawResourceBadge.
@@ -17782,99 +18225,18 @@ function draw() {
       continue;
     }
     if (t.feature === "volcano") {
-      drawStrategicMountainIcon(x, y, true);
+      drawFlatStrategicTerrainMark(t, x, y);
       drawFeatureEffects(t, x, y);
       continue;
     }
     if (t.terrain === "mountain") {
-      drawStrategicMountainIcon(x, y, false);
+      drawFlatStrategicTerrainMark(t, x, y);
       continue;
     }
-    if (t.hills) {
-      // Keep the 20%-wider footprint and fixed lower-corner baseline, but draw
-      // the lobes twice as tall so the landform reads clearly at survey zoom.
-      const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
-      // Seat the base on the horizontal through the hex's two lower outside
-      // corners. Deriving it from the projected hex keeps the glyph aligned if
-      // tile size or Strategic's pitch ever changes.
-      const hillBaseY = y + S * YS / 2;
-      cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
-      cx.beginPath();
-      cx.ellipse(x - 7 * hillWidth, hillBaseY,
-                 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
-      cx.ellipse(x + 6 * hillWidth, hillBaseY,
-                 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
-      cx.stroke();
-    }
-    if (["forest", "jungle", "burning_forest", "burnt_forest",
-                "burning_jungle", "burnt_jungle"].includes(t.feature)) {
-      const jungle = t.feature.includes("jungle");
-      // On a hill the stand rides up onto the crest instead of sinking into it.
-      const lift = t.hills ? -7 : 0;
-      // Same stand, drawn as a glyph: firs for woods, a bare trunk under a
-      // spread canopy for rainforest, so the two never read as each other.
-      for (const [dx, dy] of [[-9, -2], [1, 2], [9, 5]]) {
-        const tx = x + dx, ty = y + dy + 4 + lift;
-        if (jungle) {
-          cx.strokeStyle = "#4a3a24"; cx.lineWidth = 1.8;
-          cx.beginPath(); cx.moveTo(tx, ty); cx.lineTo(tx, ty - 12); cx.stroke();
-          cx.fillStyle = "#1d5c33";
-          cx.beginPath(); cx.ellipse(tx, ty - 13, 7.5, 3.4, 0, 0, 7); cx.fill();
-        } else {
-          cx.fillStyle = "#1e4d24";
-          tri(tx - 7, ty, tx, ty - 14, tx + 7, ty);
-        }
-      }
-    } else if (t.feature === "marsh") {
-      drawStrategicMarsh(x, y);
-    } else if (t.feature === "oasis") {
-      // The original 17 x 11 pond and 13 px palm form a roughly 22 x 20 mark
-      // whose visual midpoint is (2.5, -1.5) from the hex centre. A 2.0 scale
-      // is 20% smaller than 2.5; subtract the original midpoint before scaling
-      // so the resized oasis remains centred in its owning tile.
-      cx.save();
-      cx.translate(x, y); cx.scale(2, 2); cx.translate(-2.5, 1.5);
-      cx.fillStyle = "#3d7aa6"; cx.beginPath();
-      cx.ellipse(0, 3, 8.5, 5.5, 0, 0, 7); cx.fill();
-      cx.font = "13px sans-serif"; cx.fillText("🌴", 7, -5);
-      cx.restore();
-    } else if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(t.feature)) {
-      drawStrategicFloodplains(t, x, y);
-    } else if (t.feature === "reef") {
-      cx.fillStyle = "#72d3c2";
-      for (const [dx,dy,r] of [[-7,2,4],[1,-3,5],[8,5,3]]) {
-        cx.beginPath(); cx.arc(x + dx, y + dy, r, 0, 7); cx.fill();
-      }
-    } else if (t.feature === "geothermal_fissure") {
-      // Lift the whole landmark clear of the hills beneath it. The pools keep
-      // their heights but are exactly 30% wider, so they read at survey zoom
-      // without making the fissure taller or pushing it farther down the tile.
-      const gy = y - 4;
-      cx.fillStyle = "#66b6b3"; cx.strokeStyle = "#286f72"; cx.lineWidth = 1.1;
-      for (const [dx, dy, rx, ry] of [[-7, 5, 7.8, 2.8], [7, 7, 6.5, 2.3]]) {
-        cx.beginPath(); cx.ellipse(x + dx, gy + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
-      }
-      cx.fillStyle = "#dcece8";
-      cx.strokeStyle = "#8fbfc4"; cx.lineWidth = .9;
-      cx.beginPath(); cx.moveTo(x - 2.2, gy + 3);
-      cx.bezierCurveTo(x - 1.4, gy - 3, x - 1.1, gy - 10, x, gy - 16);
-      cx.bezierCurveTo(x + 1.2, gy - 10, x + 1.6, gy - 3, x + 2.2, gy + 3);
-      cx.closePath(); cx.fill(); cx.stroke();
-      cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.5;
-      cx.beginPath();
-      cx.arc(x, gy - 14, 4.5, 3.55, 5.9);
-      cx.moveTo(x - 1, gy - 12); cx.lineTo(x - 4, gy - 8);
-      cx.moveTo(x + 1, gy - 12); cx.lineTo(x + 4, gy - 8);
-      cx.stroke();
-    } else if (t.feature === "ice") {
-      cx.fillStyle = "#dfeff3"; cx.strokeStyle = "#7db3c5"; cx.lineWidth = 1.4;
-      cx.beginPath(); cx.moveTo(x - 15, y - 3); cx.lineTo(x - 5, y - 12);
-      cx.lineTo(x + 13, y - 8); cx.lineTo(x + 16, y + 7); cx.lineTo(x, y + 11);
-      cx.lineTo(x - 13, y + 6); cx.closePath(); cx.fill(); cx.stroke();
-    } else if (t.feature === "impact_zone") {
-      cx.fillStyle = "#292523"; cx.strokeStyle = "#d16a2f"; cx.lineWidth = 2;
-      cx.beginPath(); cx.arc(x, y, 11, 0, 7); cx.fill(); cx.stroke();
-    }
+    if (t.hills || STRATEGIC_FEATURE_MARKS.has(t.feature))
+      drawFlatStrategicTerrainMark(t, x, y);
+    if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(t.feature))
+      drawFlatStrategicFloodplains(t, x, y);
     drawFeatureEffects(t, x, y);
     if (t.improvement === "barbarian_camp" || campSet.has(k)) {
       drawBarbarianCamp(x, y);
@@ -17895,7 +18257,7 @@ function draw() {
       if (unitOwnerByTile.has(k)) occupiedResourceTiles.push([t, x, y]);
       else drawResourceBadge(t, x, y);
     }
-    if (t.district) drawDistrict(t, x, y);
+    if (t.district) drawDistrict(t, x, y, districtBuildings.get(k));
     if (t.wonder) drawWonder(x, y);
     if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, x, y, workedSet.has(k));
   }
