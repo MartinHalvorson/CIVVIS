@@ -1974,6 +1974,12 @@
   kbd { display: inline-grid; min-width: 19px; height: 18px; place-items: center; margin-right: 5px; padding: 0 4px; border-radius: 5px; color: #cbd5d0; background: #091310; border: 1px solid #354c44; box-shadow: inset 0 -1px #000; font: 700 var(--type-label)/1 var(--font-ui); }
   #newgame-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
   #newgame-options button { margin: 0; }
+  #newgame-options input[type="number"] {
+    box-sizing: border-box; max-width: 100%; width: 100%; padding: 8px 10px; border-radius: 8px;
+    color: var(--text); background: #0d1816; border: 1px solid #385149; outline: none;
+  }
+  #newgame-options input[type="number"]:focus { border-color: var(--gold); box-shadow: 0 0 0 3px #d7b66a1d; }
+  #newgame-options .setup-number-hint { display: block; margin-top: 3px; color: var(--faint); font-size: var(--type-label); line-height: 1.3; }
   #saves-group { grid-column: 1 / -1; }
   .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
@@ -3690,6 +3696,9 @@
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
         </select></label>
+        <label class="small civ6-hidden">City-states<input id="citystates" type="number" min="0" max="182" step="1"
+          inputmode="numeric" placeholder="Map default" aria-describedby="citystates-hint"
+          title="Leave blank to use the map-size default; enter 0 for no city-states"><small class="setup-number-hint" id="citystates-hint">Leave blank to use the map-size default.</small></label>
         <label class="small civ6-hidden">Start era<select id="startera" style="margin-top:4px">
           <option value="stone_age" disabled>Stone Age · later</option>
           <option value="ancient" selected>Ancient</option>
@@ -3701,6 +3710,12 @@
           <option value="epic">Epic · 750 turns</option>
           <option value="marathon">Marathon · 1500 turns</option>
         </select></label>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="50">Turn limit<input id="turnlimit" type="number" min="1" max="4294967295" step="1"
+          inputmode="numeric" placeholder="Speed default" aria-describedby="turnlimit-hint"
+          title="Leave blank to use the selected game speed's normal turn limit"><small class="setup-number-hint" id="turnlimit-hint">Leave blank to use the selected game speed's normal turn limit.</small></label>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="60">Map seed<input id="mapseed" type="number" min="0" max="9007199254740991" step="1"
+          inputmode="numeric" placeholder="Random" aria-describedby="mapseed-hint"
+          title="Leave blank for a fresh random map; use a seed to replay one exactly"><small class="setup-number-hint" id="mapseed-hint">Leave blank for a fresh random map.</small></label>
         <div class="utility-group" id="saves-group" style="display:none">
           <div class="city-group-head" style="margin-bottom:6px">Saved games<span id="saves-count"></span></div>
           <div id="saves-list"></div>
@@ -3748,7 +3763,7 @@
           </div>
         </div>
         <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
-          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Rules, roster, teams &amp; climate · 4 of 8 mods</small></span></summary>
+          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Rules, roster, teams, limits &amp; climate · 4 of 8 mods</small></span></summary>
           <div class="advanced-settings-body" id="game-advanced-settings-body"></div>
         </details>
       </div>
@@ -4040,7 +4055,7 @@ function initAdvancedSettings() {
   const game = document.getElementById("newgame-options");
   const gameAdvanced = document.getElementById("game-advanced-settings");
   moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
-  const basic = ["gamemode", "mapshape", "maptype", "leader", "difficulty", "np",
+  const basic = ["gamemode", "mapshape", "maptype", "leader", "difficulty", "np", "citystates",
     "startera", "gamespeed", "futureera"]
     .map(id => document.getElementById(id).closest("label"));
   basic.push(document.getElementById("victory-options"), document.getElementById("saves-group"));
@@ -4083,7 +4098,7 @@ function initAdvancedSettings() {
   const syncModSummary = () => {
     const selected = modBoxes.filter(box => box.checked).map(box => box.dataset.gameMod);
     document.getElementById("game-advanced-summary").textContent =
-      `Rules, roster, teams & climate · ${selected.length} of ${modBoxes.length} mods`;
+      `Rules, roster, teams, limits & climate · ${selected.length} of ${modBoxes.length} mods`;
     return selected;
   };
   syncModSummary();
@@ -8055,6 +8070,7 @@ async function boot() {
       ).join("");
       // The sizes this build offers decide which team splits it can seat.
       syncTeams();
+      syncWorldSetupInputs();
     }
     if (Array.isArray(RULES.map_scripts)) {
       document.getElementById("maptype").innerHTML = RULES.map_scripts.map(script =>
@@ -8097,6 +8113,7 @@ async function boot() {
         `<option value="${speed.id}" title="${speed.description}">${speed.name} · ${speed.turn_limit} turns</option>`
       ).join("");
       document.getElementById("gamespeed").value = "online";
+      syncWorldSetupInputs();
     }
     // The ruleset carries the other game's vocabulary too, and the mode may
     // already be selected by the time it lands.
@@ -9109,12 +9126,18 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // reloads over a running team game reads that game back rather than
     // offering to restart it as a free-for-all.
     syncTeams();
+    const cityStates = st.players.filter(player => player.is_minor && !player.is_barbarian).length;
+    setOptionalWorldNumber("citystates", cityStates, defaultCityStatesForPlayers(majors));
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
     document.getElementById("maptype").value = st.map.script || "pangaea";
     document.getElementById("mapshape").value = st.map.shape || "planet";
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
     document.getElementById("gamespeed").value = st.game_speed || "standard";
+    setOptionalWorldNumber("turnlimit", st.max_turns,
+      defaultTurnLimitForSpeed(st.game_speed));
+    setOptionalWorldNumber("mapseed", st.seed);
+    syncWorldSetupInputs();
     document.getElementById("leaderpool").value = st.leader_pool || "civ6";
     syncLeaderPool();
     // The seat a person is playing and the handicap they are playing it on are
@@ -28084,7 +28107,11 @@ document.getElementById("leaderpool").addEventListener("change", syncLeaderPool)
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
-document.getElementById("np").addEventListener("change", syncTeams);
+document.getElementById("np").addEventListener("change", () => {
+  syncTeams();
+  syncWorldSetupInputs();
+});
+document.getElementById("gamespeed").addEventListener("change", syncWorldSetupInputs);
 document.getElementById("savebtn").onclick = () => writeSave();
 syncSetupMode();
 syncEarthShape();
@@ -28145,6 +28172,79 @@ function readSetting(id) {
 function readVictorySetting(id) {
   const box = document.getElementById(id);
   return box ? box.checked : true;
+}
+// A blank numeric field means "use the normal setting for this map or speed".
+// Number inputs still accept pasted text, so keep the payload on whole safe
+// integers and make a bad value visible on the start control instead of
+// silently replacing it with a different world.
+function readOptionalWholeSetting(id) {
+  const input = document.getElementById(id);
+  if (!input || !input.value.trim()) return null;
+  const value = input.valueAsNumber;
+  return input.validity.valid && Number.isSafeInteger(value) ? value : null;
+}
+function worldSetupInputError() {
+  for (const [id, label] of [
+    ["citystates", "City-states"],
+    ["turnlimit", "Turn limit"],
+    ["mapseed", "Map seed"],
+  ]) {
+    const input = document.getElementById(id);
+    if (input && input.value.trim() && readOptionalWholeSetting(id) === null)
+      return `${label} must be a whole number in the range shown`;
+  }
+  return "";
+}
+function mapSizeForPlayers(players) {
+  return Array.isArray(RULES?.map_sizes)
+    ? RULES.map_sizes.find(size => Number(size.default_players) === Number(players))
+    : null;
+}
+function defaultCityStatesForPlayers(players = +readSetting("np")) {
+  return Number(mapSizeForPlayers(players)?.default_city_states);
+}
+function defaultTurnLimitForSpeed(speed = readSetting("gamespeed")) {
+  const entry = Array.isArray(RULES?.game_speeds)
+    ? RULES.game_speeds.find(candidate => candidate.id === speed)
+    : null;
+  return Number(entry?.turn_limit);
+}
+function setOptionalWorldNumber(id, value, defaultValue = Number.NaN) {
+  const input = document.getElementById(id);
+  const number = Number(value);
+  const min = Number(input?.min || 0);
+  const max = Number(input?.max || Number.MAX_SAFE_INTEGER);
+  const automatic = Number.isSafeInteger(defaultValue) && number === defaultValue;
+  if (input) input.value = Number.isSafeInteger(number) && number >= min && number <= max && !automatic
+    ? String(number) : "";
+}
+function syncWorldSetupInputs() {
+  const cityStates = document.getElementById("citystates");
+  const cityStatesHint = document.getElementById("citystates-hint");
+  const cityStateDefault = defaultCityStatesForPlayers();
+  const cityStateLimit = Number(RULES?.city_state_limit);
+  if (cityStates) {
+    if (Number.isSafeInteger(cityStateLimit) && cityStateLimit >= 0)
+      cityStates.max = String(cityStateLimit);
+    const detail = Number.isSafeInteger(cityStateDefault)
+      ? `${cityStateDefault} city-states for this world size`
+      : "the map-size default";
+    cityStates.placeholder = `Map default · ${detail}`;
+    cityStates.title = `Leave blank to use ${detail}; enter 0 for no city-states`;
+    if (cityStatesHint)
+      cityStatesHint.textContent = `Leave blank to use ${detail}; enter 0 for none.`;
+  }
+  const turnLimit = document.getElementById("turnlimit");
+  const turnLimitHint = document.getElementById("turnlimit-hint");
+  const turnDefault = defaultTurnLimitForSpeed();
+  if (turnLimit) {
+    const detail = Number.isSafeInteger(turnDefault)
+      ? `${turnDefault} turns at this speed`
+      : "the selected game speed's normal limit";
+    turnLimit.placeholder = `Speed default · ${detail}`;
+    turnLimit.title = `Leave blank to use ${detail}`;
+    if (turnLimitHint) turnLimitHint.textContent = `Leave blank to use ${detail}.`;
+  }
 }
 // What this computer can do about the other game, and what a run it can see is
 // doing. The verification-only mode is retained everywhere and refused where it
@@ -28219,6 +28319,9 @@ function selectedSimulationSettings() {
     [track.id, readVictorySetting(`victory-${track.id}`)]));
   const leader = readSetting("leader");
   const difficulty = readSetting("difficulty");
+  const cityStates = readOptionalWholeSetting("citystates");
+  const turnLimit = readOptionalWholeSetting("turnlimit");
+  const mapSeed = readOptionalWholeSetting("mapseed");
   // In the Civilization VI mode the map control holds one of that game's
   // scripts, so it travels as `civ6_map` and `map_script` keeps a world this
   // engine could still build — the payload has to stay a valid description of a
@@ -28238,6 +28341,9 @@ function selectedSimulationSettings() {
           // assignment that rule makes of this many civilizations.
           teams: teamAssignment(np, readSetting("teams")),
           victory_conditions: victoryConditions,
+          ...(cityStates === null ? {} : {num_city_states: cityStates}),
+          ...(turnLimit === null ? {} : {max_turns: turnLimit}),
+          ...(mapSeed === null ? {} : {seed: mapSeed}),
           spectate: gameMode === "ai_sim",
           ...(civ6 ? {mode: "civ6", civ6_map: civ6Map} : {}),
           // A spectated world has nobody to hand a leader or a handicap to.
@@ -28310,12 +28416,18 @@ function applyQueuedSimulationSettings(settings) {
   // The staged size decides which splits exist, so it is in place first and
   // the queued assignment is read back as the rule that would produce it.
   syncTeams();
+  setOptionalWorldNumber("citystates", settings.city_states,
+    defaultCityStatesForPlayers(settings.players));
   document.getElementById("teams").value = teamRuleFromArray(settings.teams);
   document.getElementById("maptype").value = settings.map;
   if (settings.shape) document.getElementById("mapshape").value = settings.shape;
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
   document.getElementById("gamespeed").value = settings.speed;
+  setOptionalWorldNumber("turnlimit", settings.turns,
+    defaultTurnLimitForSpeed(settings.speed));
+  setOptionalWorldNumber("mapseed", settings.seed);
+  syncWorldSetupInputs();
   document.getElementById("leaderpool").value = settings.leader_pool || "civ6";
   syncLeaderPool();
   document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
@@ -28328,6 +28440,7 @@ function applyQueuedSimulationSettings(settings) {
 function updateRestartSimulationButton() {
   const button = document.getElementById("restart-sim");
   const settings = selectedSimulationSettings();
+  const setupError = worldSetupInputError();
   // Picking single player turns the specbar's one start control into the way
   // into that game: it becomes Start new game, and always reads as a change
   // from the world on screen.
@@ -28343,13 +28456,13 @@ function updateRestartSimulationButton() {
   button.classList.toggle("human-start", human);
   // A refusal is shown rather than hidden: the button stays, says so, and the
   // reason sits above it.
-  button.disabled = blocked;
+  button.disabled = blocked || !!setupError;
   button.querySelector(".lbl").textContent = civ6
     ? "Play Firaxis Civ 6"
     : human
     ? "Start new game"
     : "Restart sim";
-  button.title = civ6
+  button.title = setupError || (civ6
     ? blocked
       ? `Cannot start: ${civ6Status.blocked}`
       : "Start a real Civilization VI game on this computer and play it"
@@ -28357,7 +28470,7 @@ function updateRestartSimulationButton() {
     ? "Start a single-player game with the selected settings"
     : changed
     ? "Restart with the selected settings"
-    : "Restart with the same settings";
+    : "Restart with the same settings");
   button.querySelector(".sub").textContent = civ6
     ? "on this computer"
     : human || changed
@@ -28365,8 +28478,9 @@ function updateRestartSimulationButton() {
     : "same settings";
 }
 function stageSelectedSimulationSettings() {
-  const payload = selectedSimulationSettings();
   updateRestartSimulationButton();
+  if (worldSetupInputError()) return;
+  const payload = selectedSimulationSettings();
   settingsStageChain = settingsStageChain.catch(() => {}).then(async () => {
     const queued = await fetchJSON("/next-game-settings", {method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -28376,8 +28490,10 @@ function stageSelectedSimulationSettings() {
   settingsStageChain.catch(error => showNewSimulationError(error, "save settings"));
 }
 function newSimulationPayload() {
-  return {...selectedSimulationSettings(),
-          seed: Math.floor(Math.random() * 1e9), force: true};
+  const setupError = worldSetupInputError();
+  if (setupError) throw new Error(setupError);
+  const settings = selectedSimulationSettings();
+  return {...settings, seed: settings.seed ?? Math.floor(Math.random() * 1e9), force: true};
 }
 const simulationBusyControls = new Map();
 function setNewSimulationBusy(busy) {
