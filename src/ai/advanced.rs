@@ -12427,6 +12427,24 @@ impl AdvancedAi {
         g.apply(pid, &Action::Produce { city, item }).is_ok()
     }
 
+    /// Does this turn resolve the delay `settler_blocked_turns` measures?
+    ///
+    /// ⚠ Named rather than inlined because the inline version was one operand of
+    /// an `||` shared with `settler_stalls`, and the two counters want OPPOSITE
+    /// answers on a retarget. `settler_stalls` bounds commitment to one target, so
+    /// a retarget must reset it. `settler_blocked_turns` measures total unresolved
+    /// delay and, by its own documentation, "survives a target change so a stranded
+    /// civilian stops monopolizing the empire-wide in-flight allowance".
+    ///
+    /// Only progress toward the SAME target resolves anything. A stranded settler
+    /// retargets every turn precisely because it can reach nothing, so treating a
+    /// retarget as progress cleared the counter every turn and
+    /// `settler_in_flight_allowed` never saw it cross
+    /// `SETTLER_REPLACEMENT_BLOCKED_TURNS`.
+    fn settler_delay_is_resolved(retargeted: bool, closer: bool) -> bool {
+        closer && !retargeted
+    }
+
     fn settler_in_flight_allowed(
         &self,
         desired_cities: usize,
@@ -14719,14 +14737,39 @@ impl AdvancedAi {
         // buying turns either. It is stored beside the target and compared
         // against it, which makes a retarget self-invalidating.
         let distance = g.wdist(g.units[&uid].pos, target);
-        let advanced = match self.settler_closest.get(&uid) {
-            Some((cached, closest)) => *cached != target || distance < *closest,
-            None => true,
+        // ⚠⚠⚠ TWO DIFFERENT QUESTIONS, AND COLLAPSING THEM DISARMED THE ONE
+        // MECHANISM THAT RESCUES A STRANDED SETTLER.
+        //
+        // `retargeted` asks "is this a different target than last turn"; `closer`
+        // asks "did this settler actually make progress". `advanced` is their OR,
+        // which is right for `settler_stalls` — that counter bounds commitment to
+        // ONE target, so a retarget must reset it.
+        //
+        // It is wrong for `settler_blocked_turns`, whose own documentation says it
+        // "survives a target change so a stranded civilian stops monopolizing the
+        // empire-wide in-flight allowance". A stranded settler is *precisely* the
+        // one that retargets every turn — it can reach nothing, so the site ranking
+        // hands it a different best tile each turn — so clearing on `advanced`
+        // cleared it every single turn. The counter never reached
+        // `SETTLER_REPLACEMENT_BLOCKED_TURNS` (3) and the replacement branch in
+        // `settler_in_flight_allowed` never once ran in a live game.
+        //
+        // Measured on live run `civvis-20260804T011632Z` (Rome/Trajan, 5e16528):
+        // one settler stranded from t113 to t213 — 84 turns at FULL movement, the
+        // journal retargeting each turn — and NO settler was ordered between t85
+        // and the end of the run, while `desired_cities` stood at 6 or 7 for 109
+        // turns and the empire held 5 cities it could plainly afford to grow past.
+        let (retargeted, closer) = match self.settler_closest.get(&uid) {
+            Some((cached, closest)) => (*cached != target, distance < *closest),
+            None => (false, true),
         };
+        let advanced = retargeted || closer;
         if advanced {
             self.settler_closest.insert(uid, (target, distance));
             self.settler_stalls.remove(&uid);
-            self.settler_blocked_turns.remove(&uid);
+            if Self::settler_delay_is_resolved(retargeted, closer) {
+                self.settler_blocked_turns.remove(&uid);
+            }
         } else {
             *self.settler_blocked_turns.entry(uid).or_insert(0) += 1;
             let stalls = self.settler_stalls.entry(uid).or_insert(0);
@@ -23110,6 +23153,36 @@ mod tests {
         let mut fresh = game;
         assert!(fresh.map.set_river_edge(center, first[5], true));
         assert_eq!(AdvancedAi::settlement_base_housing(&fresh, center), 5.0);
+    }
+
+    #[test]
+    fn a_retarget_does_not_resolve_a_settler_delay() {
+        // ⚠ The existing release test sets `settler_blocked_turns` by hand, so it
+        // passes whether or not the counter can ever REACH the threshold in play.
+        // This pins the reset rule that decides whether it does.
+        //
+        // Measured on live run `civvis-20260804T011632Z`: a settler stranded 84
+        // turns at full movement while retargeting every turn, so the old
+        // `advanced = retargeted || closer` reset cleared the counter on each of
+        // them. No settler was ordered for the last 128 turns of that run while
+        // `desired_cities` was 6-7 and the empire held 5.
+        assert!(
+            !AdvancedAi::settler_delay_is_resolved(true, false),
+            "a retarget with no progress must NOT clear the empire-wide counter"
+        );
+        assert!(
+            !AdvancedAi::settler_delay_is_resolved(true, true),
+            "closer to a DIFFERENT target is not progress on the delay that stalled \
+             the pipeline; the strand is what the counter measures"
+        );
+        assert!(
+            AdvancedAi::settler_delay_is_resolved(false, true),
+            "genuine progress toward the same target resolves the delay"
+        );
+        assert!(
+            !AdvancedAi::settler_delay_is_resolved(false, false),
+            "same target, no progress: still blocked"
+        );
     }
 
     #[test]

@@ -1869,6 +1869,67 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(read.call_count, 5)
         stop_build.assert_called_once_with(worker)
 
+    def test_finished_boundary_preserves_verified_runtime_build_time(self):
+        args = SimpleNamespace(
+            port=8766,
+            players=4,
+            width=60,
+            height=38,
+            city_states=6,
+            turns=500,
+            map="pangaea",
+            speed="standard",
+            cooldown=0.0,
+            poll=0.01,
+            build_retry=0.01,
+            source_check_interval=30.0,
+            unresponsive_timeout=20.0,
+            busy_timeout=0.0,
+            stall_timeout=30.0,
+            checkpoint_interval=5.0,
+            max_resume_attempts=2,
+            live_refresh_grace=1800.0,
+            no_open=True,
+            adopt_pid=321,
+        )
+        active = {"seed": 9, "turn": 42, "current": 2, "winner": None}
+        finished = {
+            **active,
+            "turn": 70,
+            "winner": 1,
+            "victory_type": "science",
+            "players": [],
+        }
+        successor = {"seed": 10, "turn": 1, "current": 0, "winner": None}
+        replacement = SimpleNamespace(pid=654)
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "save.json"
+            with (
+                patch.object(supervisor, "parse_args", return_value=args),
+                patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(supervisor, "process_alive", return_value=True),
+                patch.object(supervisor, "source_snapshot", return_value="verified"),
+                patch.object(supervisor, "runtime_matches", return_value=True),
+                patch.object(supervisor, "promoted_runtime_id", return_value=None),
+                patch.object(
+                    supervisor,
+                    "read_state",
+                    side_effect=[active, finished, finished, KeyboardInterrupt],
+                ),
+                patch.object(supervisor, "archive_result"),
+                patch.object(supervisor, "refresh_runtime_metadata") as refresh,
+                patch.object(supervisor, "write_runtime_metadata") as rewrite,
+                patch.object(supervisor, "start_server", return_value=replacement),
+                patch.object(supervisor, "wait_for_server", return_value=successor),
+                patch.object(supervisor, "stop_server"),
+                patch.object(supervisor.time, "sleep"),
+            ):
+                self.assertEqual(supervisor.main(), 0)
+
+        refresh.assert_called_once_with("verified")
+        rewrite.assert_not_called()
+
     def test_finished_server_starts_successor_without_waiting_for_a_build(self):
         args = SimpleNamespace(
             port=8766,
