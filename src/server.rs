@@ -7777,34 +7777,33 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(38vh, 280px);"));
         assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
         assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(154, 50 + rows * 28);"));
-        assert!(EMBEDDED_INDEX
-            .contains("const requestedWidth = 854 + Math.max(0, rows - 1) * 100;"));
-        assert!(EMBEDDED_INDEX.contains(
-            "mapArea.style.setProperty(\"--player-hud-width\", `${requestedWidth}px`);"
-        ));
         assert!(EMBEDDED_INDEX.contains(
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
         ));
         assert!(EMBEDDED_INDEX.contains("playerRibbon.scrollTop = playerScroll;"));
-        // The masthead grows toward the victory tracker but never beneath it,
-        // and the tracker is the only instrument beside it along the top edge.
-        // Measuring that seam against --hud-rail-width — the wider reservation
-        // the minimap needs in the bottom corner — left 192px of empty map
-        // between the two panels at 1600px while the values were squeezed to
-        // 27px each. The rail width still governs the minimap.
-        assert!(EMBEDDED_INDEX.contains("--hud-rail-width:"));
+        // The wide-screen default has three exact seams: the player HUD fills
+        // from the left edge through the victory tracker's left edge, the
+        // tracker owns ten percent of screen width and reaches the minimap's
+        // top, and the lower-right world minimap measures its frame diagonal
+        // against the screen diagonal. Custom drag layouts still override these
+        // values inline, but an uncustomized viewer always returns here.
+        assert!(EMBEDDED_INDEX.contains("--victory-hud-width: 10vw;"));
         assert!(EMBEDDED_INDEX.contains(
-            "width: min(var(--player-hud-width, 100%),\n      \
-             calc(100% - var(--victory-hud-width) - 20px));"
+            "top: 0; left: 0; right: var(--victory-hud-width); width: auto;"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "width: min(var(--hud-rail-width), var(--hud-rail-share)); \
-             height: var(--minimap-height);"
+            "width: var(--world-minimap-width); height: var(--minimap-height);"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "height: min(var(--victory-hud-height, 100%),\n      \
-             calc(100% - var(--minimap-height) - 32px));"
+            "top: 0; bottom: var(--minimap-height);\n    \
+             width: var(--victory-hud-width); height: auto;"
         ));
+        assert!(EMBEDDED_INDEX.contains("const WORLD_MINIMAP_DIAGONAL_SHARE = .17;"));
+        assert!(EMBEDDED_INDEX.contains("Math.hypot(window.innerWidth, window.innerHeight)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "Math.hypot(WORLD_MINIMAP_REFERENCE_WIDTH, WORLD_MINIMAP_REFERENCE_HEIGHT)"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("--player-hud-width"));
         // Every path keeps its top three plus the player's own civilization
         // when that row is lower in this particular victory race.
         assert!(EMBEDDED_INDEX.contains("const focusId = SPEC ? state.view_player : state.player;"));
