@@ -37600,7 +37600,16 @@ impl Game {
         self.blocked_purchases = blocked;
     }
 
-    fn purchase_is_blocked(&self, cid: u32, item: &Item) -> bool {
+    /// Whether the host recently refused to let this city BUY this item.
+    ///
+    /// ⚠ `pub(crate)` because the legal-action enumeration is not the only way a
+    /// purchase happens. `buy_gold_infrastructure`, `buy_gold_unit`,
+    /// `buy_gold_military` and the missionary buyer all build an `Action::Buy*`
+    /// themselves and call `apply` directly, so a gate that lives only in the
+    /// enumeration never runs for them — which is exactly how the same Granary
+    /// was re-bought in the same city on turns 114, 117, 121, 122, 123 and 128 of
+    /// live run `civvis-20260804T091315Z`, 8 of that game's 9 purchases refused.
+    pub(crate) fn purchase_is_blocked(&self, cid: u32, item: &Item) -> bool {
         let Some(blocked) = self.blocked_purchases.get(&cid) else {
             return false;
         };
@@ -38683,7 +38692,26 @@ impl Game {
             if u.kind == "settler" && !p.is_minor && self.can_found_city(uid) {
                 acts.push(Action::FoundCity { unit: uid });
             }
-            if (u.kind == "builder" || !spec.builds.is_empty()) && u.charges > 0 {
+            // ⚠ MOVEMENT IS REQUIRED TO BUILD, AND BUILDING SPENDS ALL OF IT.
+            //
+            // Civilization VI refuses `BUILD_IMPROVEMENT` from a unit with no
+            // movement left, and completing one zeroes the unit's movement. So a
+            // builder that has already improved a tile this turn cannot improve
+            // another, and CIVVIS was proposing exactly that.
+            //
+            // Measured on live run `civvis-20260804T091315Z`: **all 19
+            // `improve_refused` events** in the game had the right improvement for
+            // the terrain, on a tile we owned, with the enabling tech researched,
+            // with build charges remaining, and with the builder standing on the
+            // target — and every one had `moves=0` after spending a charge that
+            // same turn. Nothing else distinguished them.
+            //
+            // The project branch four lines below already required `moves_left`;
+            // this one did not, which is what made the omission visible.
+            if (u.kind == "builder" || !spec.builds.is_empty())
+                && u.charges > 0
+                && u.moves_left > 0.0
+            {
                 for imp in self.valid_improvements(pid, u.pos) {
                     if (u.kind == "builder"
                         && !self.rules.improvements[&imp].builder_buildable)
@@ -43888,6 +43916,17 @@ impl Game {
                 > 0.0
             || !self.can_produce(
                 pid,
+                cid,
+                &Item::Building {
+                    building: Name::new(building),
+                },
+            )
+            // ⚠ `can_produce` reads `blocked_production`; a PURCHASE refusal lands
+            // in `blocked_purchases`, a different set with a different meaning —
+            // "the host will not sell this here right now" rather than "this city
+            // cannot build it". Without this the two never met and a refused
+            // purchase was re-offered every turn.
+            || self.purchase_is_blocked(
                 cid,
                 &Item::Building {
                     building: Name::new(building),
