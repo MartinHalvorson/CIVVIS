@@ -581,7 +581,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// production Advanced constructor. The focused regression test asserts that
 /// split and the production assignment; the frozen anchor never takes either
 /// new movement branch.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xce3b_35b8_de1d_84b5;
+/// ⚠ #1162 routes the charged Toa, Legion, and Nau through shared improvement
+/// planning. `AdvancedAi::legacy()` and `BasicAi` can now select real new
+/// improvement actions, so this is deliberately a protocol-v6 change rather
+/// than a compatibility re-pin; the fresh source fingerprint documents that
+/// the new ledger starts from this exact shared controller.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6755_6cf8_962a_4e29;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
