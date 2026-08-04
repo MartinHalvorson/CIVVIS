@@ -8176,11 +8176,13 @@ async function send(action) {
   render(await fetchJSON("/action", { method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({action}) }));
-  // A unit that has spent itself hands the turn to the next one, the way Civ 6
-  // does. Anything else — a half-move, a city order — leaves the selection be.
+  // A unit that has spent itself hands the turn to the closest unvisited one,
+  // so an action pass works through nearby groups before returning to a unit
+  // the player already considered. Anything else — a half-move, a city order
+  // — leaves the selection be.
   if (action.unit !== undefined && state && !SPEC && state.winner === null &&
       (!sel || sel.id !== action.unit || !unitNeedsOrders(sel))) {
-    advanceToNextUnit(true);
+    advanceToNextActionUnit(true);
   } else {
     drawTurnLoop();
   }
@@ -27167,10 +27169,53 @@ function orderUnit(order) {
     return;
   }
   unitOrders.set(sel.id, {order, turn: state.turn, hp: sel.hp});
-  advanceToNextUnit(true);
+  advanceToNextActionUnit(true);
 }
-// Spending a unit's last move should hand the player the next one, the way
-// Civ 6 does — otherwise every order ends with a hunt across the map.
+// Next action is a turn-local pass through units that need orders. It begins
+// with the closest unvisited unit to the selected one, so a cluster can be
+// worked as a cluster. Once every waiting unit has appeared, the pass resets
+// and previously visited units become eligible again.
+const nextActionVisited = new Set();
+let nextActionVisitWorld = null, nextActionVisitTurn = null;
+function resetNextActionVisitsForCurrentTurn() {
+  if (nextActionVisitWorld === state.seed && nextActionVisitTurn === state.turn) return;
+  nextActionVisitWorld = state.seed;
+  nextActionVisitTurn = state.turn;
+  nextActionVisited.clear();
+}
+function closestActionUnit(candidates, origin) {
+  return candidates.slice().sort((first, second) => {
+    if (!origin) return first.id - second.id;
+    return whexDist(origin.pos, first.pos) - whexDist(origin.pos, second.pos) ||
+      first.id - second.id;
+  })[0];
+}
+function advanceToNextActionUnit(force = false) {
+  const waiting = unitsNeedingOrders();
+  if (!waiting.length) { sel = null; draw(); drawSide(); drawUbar(); drawTurnLoop(); return; }
+  if (!force && sel && unitNeedsOrders(sel)) { drawTurnLoop(); return; }
+  resetNextActionVisitsForCurrentTurn();
+  const origin = sel;
+  if (origin) nextActionVisited.add(origin.id);
+  let candidates = waiting.filter(unit => !nextActionVisited.has(unit.id));
+  if (!candidates.length) {
+    // Every remaining unit has already had a turn in this pass. Do not strand
+    // them: start a fresh pass, but move away from the current unit when a
+    // different unit is available.
+    nextActionVisited.clear();
+    if (origin) nextActionVisited.add(origin.id);
+    candidates = waiting.filter(unit => !origin || unit.id !== origin.id);
+    if (!candidates.length) candidates = waiting;
+  }
+  sel = closestActionUnit(candidates, origin);
+  nextActionVisited.add(sel.id);
+  selCity = null;
+  centerOn(sel.pos);
+  draw(); drawSide(); drawUbar(); drawTurnLoop();
+}
+// Civ 6's explicit previous/next-unit controls retain their stable roster
+// order. That keeps the period/comma pair reversible while Next action does
+// the nearby action pass above.
 function advanceToNextUnit(force = false) {
   const waiting = unitsNeedingOrders();
   if (!waiting.length) { sel = null; draw(); drawSide(); drawUbar(); drawTurnLoop(); return; }
@@ -27271,7 +27316,7 @@ async function resumeAllTravel() {
 
 function nextAction() {
   if (!state || SPEC) return;
-  advanceToNextUnit(true);
+  advanceToNextActionUnit(true);
 }
 
 // A blocker is {kind, icon, label, detail, tone, act}. `act` takes the player
@@ -27315,7 +27360,7 @@ function turnBlockers() {
   if (waiting.length)
     out.push({kind: "units", icon: "⚑", tone: "action", count: waiting.length,
       label: waiting.length === 1 ? "A unit needs orders" : `${waiting.length} units need orders`,
-      detail: "Move it, fortify it, or skip its turn.", act: () => advanceToNextUnit(true)});
+      detail: "Move it, fortify it, or skip its turn.", act: () => advanceToNextActionUnit(true)});
   return out;
 }
 
@@ -27508,7 +27553,7 @@ function openTurnIfNew() {
   captureTurnNotices();
   drawTurnLoop();
   resumeAllTravel();
-  if (!sel && !selCity) advanceToNextUnit(true);
+  if (!sel && !selCity) advanceToNextActionUnit(true);
 }
 function togglePanel(force, persist = true) {
   const priorFocus = currentMapFocusWorld();
@@ -27683,7 +27728,7 @@ function healHere() {
   // holding it out of the cycle for damage it does not have would be a unit
   // the player has to remember to wake.
   if (sel.hp < 100) unitOrders.set(sel.id, {order: "heal", turn: state.turn, hp: sel.hp});
-  advanceToNextUnit(true);
+  advanceToNextActionUnit(true);
 }
 // Auto-explore. The engine has no explore order, but it does have the
 // long-range router the travel orders already use, so exploring is a standing
@@ -27729,7 +27774,7 @@ function exploreHere() {
   // The first leg walks before the seat moves on. Handing the player the next
   // unit while this one is still posting its moves would hand them a board
   // that is about to change under them.
-  resumeExplore(id).then(() => advanceToNextUnit(true));
+  resumeExplore(id).then(() => advanceToNextActionUnit(true));
 }
 
 // ---- screens. Civ 6 gives each panel one key that opens it and closes it.
