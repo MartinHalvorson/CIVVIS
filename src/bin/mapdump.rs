@@ -7,8 +7,8 @@
 //!
 //! Usage: mapdump [--seed N] [--width N] [--height N]
 //!                 [--script land_only|lakes|inland_sea|grand_canals|
-//!                  grand_canals_2|pangaea|continents|small_continents|
-//!                  islands|water_world|true_start_earth]
+//!                  grand_canals_2|pangaea|earth|true_start_earth|continents|
+//!                  small_continents|fjords|islands|water_world]
 //!                 [--shape flat|planet] [--poles poles|randomized]
 //!                 [--maps N] [--quiet]
 //!
