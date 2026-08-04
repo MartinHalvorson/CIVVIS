@@ -3629,6 +3629,10 @@
           <option value="historical">Expanded Historical Figures</option>
           <option value="today" disabled>Today's Leaders — roster pending</option>
         </select></label>
+        <label class="small civ6-hidden">Scenario<select id="scenario" style="margin-top:4px">
+          <option value="custom" selected>Custom Game</option>
+          <option value="earth_today">Earth Today</option>
+        </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
@@ -4073,7 +4077,7 @@ function initAdvancedSettings() {
   const game = document.getElementById("newgame-options");
   const gameAdvanced = document.getElementById("game-advanced-settings");
   moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
-  const basic = ["gamemode", "mapshape", "maptype", "leader", "difficulty", "np", "citystates",
+  const basic = ["scenario", "gamemode", "mapshape", "maptype", "leader", "difficulty", "np", "citystates",
     "startera", "gamespeed", "futureera"]
     .map(id => document.getElementById(id).closest("label"));
   basic.push(document.getElementById("victory-options"), document.getElementById("saves-group"));
@@ -8150,7 +8154,13 @@ async function boot() {
     }
     // The ruleset carries the other game's vocabulary too, and the mode may
     // already be selected by the time it lands.
+    const scenarioChanged = applySelectedScenario();
     syncSetupMode();
+    syncScenarioFromSettings();
+    // A person can choose Earth Today before `/rules` has supplied the Future
+    // Era option. Apply it again now that every preset value exists, then
+    // replace that early partial staging request with the complete scenario.
+    if (scenarioChanged) stageSelectedSimulationSettings();
     fillStrategies(RULES);
     render(adoptTiles(await fetchJSON("/state" + paintedQuery())));
     if (bootAttempts) { bootAttempts = 0; clearBootRetrying(); }
@@ -28561,6 +28571,45 @@ let civ6Status = null;
 let civ6StatusTimer = null;
 let civ6StatusInFlight = false;
 let civvisMapOptions = null;
+// A scenario is a starting point, not a lock. The selector stays on Earth
+// Today while its three defining settings hold, so speed, size and every
+// other filter remain free for the person setting up the game.
+const GAME_SCENARIOS = Object.freeze({
+  custom: Object.freeze({}),
+  earth_today: Object.freeze({
+    mapshape: "planet",
+    maptype: "true_start_earth",
+    startera: "future",
+  }),
+});
+function scenarioControlCanUse(id, value) {
+  const control = document.getElementById(id);
+  return !!control && [...control.options].some(option => option.value === value);
+}
+function earthTodayScenarioMatches() {
+  return Object.entries(GAME_SCENARIOS.earth_today)
+    .every(([id, value]) => readSetting(id) === value);
+}
+function syncScenarioFromSettings() {
+  const scenario = document.getElementById("scenario");
+  if (!scenario) return;
+  scenario.value = earthTodayScenarioMatches() ? "earth_today" : "custom";
+}
+function applySelectedScenario() {
+  const scenario = document.getElementById("scenario");
+  const preset = GAME_SCENARIOS[scenario?.value] || GAME_SCENARIOS.custom;
+  let changed = false;
+  for (const [id, value] of Object.entries(preset)) {
+    const control = document.getElementById(id);
+    if (scenarioControlCanUse(id, value) && control.value !== value) {
+      control.value = value;
+      changed = true;
+    }
+  }
+  syncEarthShape();
+  return changed;
+}
+document.getElementById("scenario").addEventListener("change", applySelectedScenario);
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
@@ -28895,6 +28944,7 @@ function applyQueuedSimulationSettings(settings) {
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
+  syncScenarioFromSettings();
 }
 function updateRestartSimulationButton() {
   const button = document.getElementById("restart-sim");
@@ -29005,6 +29055,7 @@ function syncSetupMode() {
   document.body.classList.toggle("spectating", mode === "ai_sim");
   document.body.classList.toggle("playing-civ6", civ6);
   syncMapRoster(civ6);
+  syncScenarioFromSettings();
   // The control's label is not relabelled from here. This runs once during
   // load, before the settings state it would read has been initialised, and
   // `#newgame-options`'s delegated change listener already relabels it on
@@ -29350,7 +29401,10 @@ async function playOnPastVictory(mode, paused) {
   }
 }
 document.getElementById("restart-sim").onclick = startNewSimulation;
-document.getElementById("newgame-options").addEventListener("change", stageSelectedSimulationSettings);
+document.getElementById("newgame-options").addEventListener("change", event => {
+  if (event.target.id !== "scenario") syncScenarioFromSettings();
+  stageSelectedSimulationSettings();
+});
 // The three logs' filters. They are read back from storage before the first
 // frame, so a reader who narrowed to one civilization's policy cards last
 // night is still there this morning.
