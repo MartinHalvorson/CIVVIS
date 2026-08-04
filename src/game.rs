@@ -20275,13 +20275,35 @@ impl Game {
     /// prices are twice the Production difference on top of the base cost.
     pub fn unit_upgrade_price(&self, pid: usize, kind: &str) -> Option<(Name, f64, f64)> {
         let target = self.unit_upgrade_target(pid, Name::new(kind))?;
-        let from = self.rules.units.get(kind)?.cost;
-        let spec = self.rules.units.get(&target)?;
+        self.unit_upgrade_price_to(pid, Name::new(kind), target)
+            .map(|(gold, resources)| (target, gold, resources))
+    }
+
+    /// Quote a direct upgrade before its technology is owned.
+    ///
+    /// A timed campaign must reserve the bill while researching the successor,
+    /// earlier than [`Self::unit_upgrade_target`] can expose it as an action.
+    /// This keeps the game-speed and policy discounts in the engine and checks
+    /// the civilization-specific replacement edge used by the real upgrade.
+    pub fn unit_upgrade_price_to(
+        &self,
+        pid: usize,
+        kind: impl AsName,
+        target: impl AsName,
+    ) -> Option<(f64, f64)> {
+        let kind = kind.as_name();
+        let target = target.as_name();
+        let generic = self.rules.units.get_interned(kind)?.upgrade_to?;
+        if self.player_unit_replacement(pid, generic) != target {
+            return None;
+        }
+        let from = self.rules.units.get_interned(kind)?.cost;
+        let spec = self.rules.units.get_interned(target)?;
         let gold = self
             .game_speed
             .scale((10.0 + 2.0 * (spec.cost - from).max(0.0)).max(15.0));
         let (gold, resources) = self.upgrade_costs(pid, gold, spec.resource_cost);
-        Some((target, gold, resources))
+        Some((gold, resources))
     }
 
     /// Civ VI upgrades happen in friendly territory, before the unit has done
@@ -25960,8 +25982,11 @@ impl Game {
             .max(self.unit_bombard_strength(u))
     }
 
-    pub fn city_housing(&self, city: &City) -> f64 {
-        // fresh water (river/oasis) = 5, coastal = 3, otherwise 2 (Civ 6)
+    /// Whether the city centre stands on fresh water, and whether it is
+    /// coastal. Both decide the housing floor, and an Aqueduct's whole worth
+    /// is the gap between the two floors — so the test lives in one place and
+    /// `city_housing` and `aqueduct_housing_gain` read it from here.
+    fn city_water(&self, city: &City) -> (bool, bool) {
         let center = &self.map.tiles[&city.pos];
         let fresh = self.grants_city_state_unique_bonus(city.owner, "Mohenjo-Daro")
             || center.has_river()
@@ -25976,8 +26001,18 @@ impl Game {
                 .map(|t| matches!(t.terrain.as_str(), "coast" | "ocean"))
                 .unwrap_or(false)
         });
-        let has_aqueduct = self.city_has_active_district_family(city, crate::name!("aqueduct"));
-        let mut h = if has_aqueduct {
+        (fresh, coastal)
+    }
+
+    /// The housing a city centre carries before any building, improvement or
+    /// district adds to it: fresh water 5, coastal 3, otherwise 2, and an
+    /// Aqueduct raises the floor to 7 on fresh water or 6 without it (Civ 6).
+    ///
+    /// ⚠ Stated ONCE. `aqueduct_housing_gain` is this function's difference
+    /// across `has_aqueduct`, so a governor deciding whether an Aqueduct is
+    /// worth building cannot disagree with the model that pays for it.
+    pub(crate) fn city_housing_floor(fresh: bool, coastal: bool, has_aqueduct: bool) -> f64 {
+        if has_aqueduct {
             if fresh {
                 7.0
             } else {
@@ -25989,7 +26024,37 @@ impl Game {
             3.0
         } else {
             2.0
-        };
+        }
+    }
+
+    /// What an Aqueduct this city does not yet have would add to its housing:
+    /// **+2** on fresh water, **+3** coastal, **+4** on a dry inland centre.
+    /// Zero once one is standing.
+    ///
+    /// This is the largest single housing step available to an early city and
+    /// the district that supplies it is the cheapest in the ruleset (36), which
+    /// is why the chooser is given the number rather than a flat weight — the
+    /// dry city that needs it most gains twice what a river city does.
+    pub fn aqueduct_housing_gain(&self, city: &City) -> f64 {
+        if self.city_has_active_district_family(city, crate::name!("aqueduct")) {
+            return 0.0;
+        }
+        let (fresh, coastal) = self.city_water(city);
+        Self::city_housing_floor(fresh, coastal, true)
+            - Self::city_housing_floor(fresh, coastal, false)
+    }
+
+    /// Housing headroom: what the city may still grow into before
+    /// `housing_growth_mult` starts throttling it. Negative once population
+    /// has overrun the ceiling.
+    pub fn city_housing_headroom(&self, city: &City) -> f64 {
+        self.city_housing(city) - city.pop as f64
+    }
+
+    pub fn city_housing(&self, city: &City) -> f64 {
+        let (fresh, coastal) = self.city_water(city);
+        let has_aqueduct = self.city_has_active_district_family(city, crate::name!("aqueduct"));
+        let mut h = Self::city_housing_floor(fresh, coastal, has_aqueduct);
         if self.city_has_palace(city) {
             h += self.rules.buildings["palace"].housing;
         }
@@ -32312,6 +32377,41 @@ impl Game {
         Some(step)
     }
 
+    /// Exact number of hex steps in the deterministic long-range route used by
+    /// [`Self::route_step`], stopping within `stop_range` of `to`.
+    ///
+    /// Strategic planning needs the whole march length, not merely proof that
+    /// a first step exists. Reuse the router and its cached path so campaign
+    /// feasibility, staging movement, and launch estimates cannot disagree.
+    pub fn route_distance(&self, uid: u32, to: Pos, stop_range: i32) -> Option<usize> {
+        let unit = self.units.get(&uid)?;
+        let start = unit.pos;
+        let range = stop_range.max(0);
+        if self.wdist(start, to) <= range {
+            return Some(0);
+        }
+        self.route_step(uid, to, range)?;
+        let territory_access = self.unit_territory_access(unit);
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
+        self.routing
+            .borrow()
+            .paths
+            .iter()
+            .find(|route| {
+                route.unit == uid
+                    && route.target == to
+                    && route.range == range
+                    && route.access_key == access_key
+            })
+            .and_then(|route| {
+                route
+                    .path
+                    .iter()
+                    .position(|position| *position == start)
+                    .map(|index| route.path.len().saturating_sub(index + 1))
+            })
+    }
+
     /// Everything which can change whether this unit may cross a border
     /// without changing the map itself. Player access is already the complete
     /// shared predicate; city owners distinguish a same-turn city transfer
@@ -32945,7 +33045,11 @@ impl Game {
             .any(|district| self.district_is_family(district, family))
     }
 
-    fn city_specialty_district_count(&self, city: &City) -> usize {
+    /// The districts Civilization VI counts as *specialty* — the ones the
+    /// Insulae and Medina Quarter housing cards key off. `pub(crate)` so the
+    /// policy chooser asks this instead of keeping a second list of district
+    /// families that would drift the first time Firaxis moved one.
+    pub(crate) fn city_specialty_district_count(&self, city: &City) -> usize {
         city.districts
             .keys()
             .filter(|district| self.rules.districts[district].specialty)
@@ -37342,7 +37446,7 @@ impl Game {
     /// Resolve a generic upgrade target to this civilization's unique
     /// replacement. For example, Nubian Slingers advance to Pitati Archers
     /// instead of creating Archers that Nubia is not allowed to train.
-    fn player_unit_replacement(&self, pid: usize, unit: impl AsName) -> Name {
+    pub fn player_unit_replacement(&self, pid: usize, unit: impl AsName) -> Name {
         let unit = unit.as_name();
         self.rules
             .units

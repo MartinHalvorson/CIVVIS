@@ -2960,8 +2960,96 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- in the state that matters. The rule has three parts now: never put what you need
 	-- below an open-ended target; check what ELSE is down there; and check the target is
 	-- reachable in the state you actually care about.
-	local DEVELOP = { "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
+	local DEVELOP = { "DISTRICT_CAMPUS",
+	                  -- ⚠⚠ FIFTH APPEARANCE OF THIS CLASS, and this time nothing was
+	                  -- misspelled — the entry was simply never written. This list had
+	                  -- **no `DISTRICT_AQUEDUCT`, no `DISTRICT_NEIGHBORHOOD` and no
+	                  -- `BUILDING_SEWER`**, so the rung that decides more builds than
+	                  -- any other could not raise a city's housing ceiling at all.
+	                  --
+	                  -- Housing is what caps population, and population is what science
+	                  -- IS (~1.16 science per citizen). `Game::housing_growth_mult`
+	                  -- halves growth below headroom 2 and quarters it below 1.
+	                  -- Measured over 12,969 host-exported city-turns across the 18
+	                  -- live runs carrying `GetHousing()`: median headroom **1**,
+	                  -- **71.2% of city-turns below the break-even**, mean growth
+	                  -- multiplier **0.515**, and 87.9% throttled at pop >= 8.
+	                  --
+	                  -- And this rung built ZERO of the repair. Of 3,708 live builds
+	                  -- (`events.jsonl` `kind:build`), by deciding program:
+	                  --
+	                  --   Aqueduct  5 -- civvis 5, ladder **0**
+	                  --   Bath      4 -- civvis 4, ladder **0**
+	                  --   Neighborhood 0 -- nobody, ever
+	                  --   Library  59 -- civvis 5, **develop 54**
+	                  --   University 119 -- civvis 1, **develop 118**
+	                  --
+	                  -- So the science BUILDINGS were almost entirely this rung's while
+	                  -- the housing districts were entirely CIVVIS's, at a 20.8/79.2
+	                  -- split. #1087 repairs CIVVIS's side; this repairs this one.
+	                  --
+	                  -- ⚠⚠ BUT DATE THAT SPLIT BEFORE COSTING ANYTHING FROM IT. Every
+	                  -- figure above comes from runs BEFORE `civvis-20260802T140355Z`.
+	                  -- `kind:build` is emitted only from this file's own production
+	                  -- sweep, and that sweep is skipped when a city already has current
+	                  -- production — so once CIVVIS began applying `produce` through the
+	                  -- orders channel the event went silent. It is **zero in all 60+
+	                  -- runs since**, including all 19 that carry the housing export,
+	                  -- while those runs log 3,658 order-turns at `source: civvis` and
+	                  -- 2,754 applied `produce` orders.
+	                  --
+	                  -- So the CURRENT split is UNMEASURED, and this rung is most likely
+	                  -- a FALLBACK now rather than the majority decider. That does not
+	                  -- make the omission harmless — the fallback still fires whenever
+	                  -- CIVVIS's own choice is unplayable, which those same 19 runs
+	                  -- record **482** times — but this is defence in depth, not the
+	                  -- main lane, and nobody should price it as the main lane until
+	                  -- `kind:build` (or an equivalent) reports again.
+	                  --
+	                  -- ⚠ PLACED AFTER THE CAMPUS, DELIBERATELY. The Campus is the
+	                  -- larger funnel gap — 49 of 100 live end-of-game cities were
+	                  -- never ordered one, at a median pop of 7 — and the ladder takes
+	                  -- the FIRST playable entry, so putting housing above it would
+	                  -- trade one gap for another. It goes above the Library because a
+	                  -- Library's science is a flat bonus while population compounds,
+	                  -- and the Aqueduct is the cheapest entry in this list (36).
+	                  --
+	                  -- ⚠ It cannot preempt an early Campus in any case: the Aqueduct
+	                  -- needs `engineering` and the Campus only `writing`, so before
+	                  -- Engineering `playable` skips this line and the ladder moves on.
+	                  -- That is also why placing it high is low-risk rather than a
+	                  -- re-ranking of the science chain.
+	                  --
+	                  -- ⚠⚠ KNOWN LIMITATION, DECLARED RATHER THAN DISCOVERED LATER:
+	                  -- this list names BASE districts, and a civilization whose unique
+	                  -- REPLACES one cannot build the base type at all — `CanProduce`
+	                  -- says no and the ladder falls through, silently, for that civ.
+	                  -- It affects the entries added here and the ones already present
+	                  -- equally:
+	                  --
+	                  --   Bath (Rome)          replaces Aqueduct
+	                  --   Mbanza (Kongo)       replaces Neighborhood
+	                  --   Seowon (Korea)       replaces Campus
+	                  --   Observatory (Maya)   replaces Campus
+	                  --   Acropolis (Greece)   replaces Theater
+	                  --
+	                  -- So Rome gets no housing from this rung and Korea no Campus,
+	                  -- exactly as before this change. CIVVIS's own side resolves this
+	                  -- with `civ_district`; the ladder has no equivalent and giving it
+	                  -- one is a separate change with its own measurement, because it
+	                  -- moves the Campus and Theater lines too. Fixing it here would
+	                  -- mean re-ranking families this PR is not measuring.
+	                  "DISTRICT_AQUEDUCT",
+	                  "BUILDING_LIBRARY",
 	                  "BUILDING_UNIVERSITY", "BUILDING_RESEARCH_LAB",
+	                  -- The late-game housing pair, below the science chain because
+	                  -- both arrive with civics this agent reaches long after the
+	                  -- Campus is settled. `BUILDING_SEWER` is +2 housing on
+	                  -- `sanitation`; `DISTRICT_NEIGHBORHOOD` is 2-6 on `urbanization`,
+	                  -- scaled by the site's Appeal. Neither has ever been built in a
+	                  -- live run, and a Sewer stands in only 19 of 100 end-of-game
+	                  -- cities.
+	                  "DISTRICT_NEIGHBORHOOD", "BUILDING_SEWER",
 	                  "DISTRICT_THEATER", "BUILDING_AMPHITHEATER",
 	                  -- ⚠⚠ `BUILDING_MUSEUM_ART` / `BUILDING_MUSEUM_ARTIFACT`, NOT
 	                  -- `BUILDING_ART_MUSEUM` / `BUILDING_ARCHAEOLOGICAL_MUSEUM`.
@@ -5349,12 +5437,36 @@ local function exportState(player, pid, turn)
 	-- reachable: `CanResearch` would let CIVVIS build from a tree it does not
 	-- have.  The active node and its progress are separate facts, needed so a
 	-- persistent reconstruction does not forget an in-flight choice each turn.
+	-- ⚠⚠ THE EUREKA IS THE LARGEST SCIENCE DISCOUNT IN THE GAME AND NOBODY ASKED
+	-- FOR IT. **62 of 77 technologies carry a boost** worth 40-50% of their cost,
+	-- and `AdvancedAi::tech_value` already pays **+28** for a tech whose boost is
+	-- triggered -- but nothing has ever sent that fact. The state export carried
+	-- `techs`, `research` and `research_progress` and no boost field at all, and
+	-- `mirror.rs` imported none, so in every live game the agent's
+	-- `boosted_techs` is whatever its own simulation happened to derive rather
+	-- than what Civilization VI actually granted.
+	--
+	-- Same class as the Amenity export (#967) and the Housing export (#1007):
+	-- the valuation is right and the input is absent. It matters here because the
+	-- median live empire ends on **30 technologies of 77** -- taking the
+	-- discounted ones first is the cheapest tech-count there is.
+	--
+	-- `HasBoostBeenTriggered` is the shipped predicate: `TechTree.lua` reads it
+	-- as `pPlayerTechs:HasBoostBeenTriggered(iTech)` and `CivicsTree.lua` the same
+	-- for civics. Boosts are reported for technologies the empire does NOT yet
+	-- have -- a triggered boost on a completed tech is spent and says nothing
+	-- about what to research next.
 	local techs, civics = {}, {};
+	local boosted_techs, boosted_civics = {}, {};
 	local ptechs = try(function() return player:GetTechs(); end);
 	if ptechs ~= nil then
 		for row in GameInfo.Technologies() do
 			if try(function() return ptechs:HasTech(row.Index); end, false) then
 				techs[#techs + 1] = row.TechnologyType;
+			elseif try(function()
+				return ptechs:HasBoostBeenTriggered(row.Index);
+			end, false) then
+				boosted_techs[#boosted_techs + 1] = row.TechnologyType;
 			end
 		end
 	end
@@ -5376,6 +5488,10 @@ local function exportState(player, pid, turn)
 		for row in GameInfo.Civics() do
 			if try(function() return pculture:HasCivic(row.Index); end, false) then
 				civics[#civics + 1] = row.CivicType;
+			elseif try(function()
+				return pculture:HasBoostBeenTriggered(row.Index);
+			end, false) then
+				boosted_civics[#boosted_civics + 1] = row.CivicType;
 			end
 		end
 	end
@@ -5643,6 +5759,18 @@ local function exportState(player, pid, turn)
 	emit("state", {
 		turn = turn,
 		techs = techs,
+		-- ⚠ Boosts on technologies and civics the empire does NOT yet hold. A
+		-- triggered boost on something already researched is spent and says
+		-- nothing about what to take next.
+		--
+		-- ⚠ An empty table is CORRECT here and must stay a plain table: `encode`
+		-- emits `[]` whenever `#v == n`, which `{}` satisfies, and the Rust side
+		-- is a `Vec<String>` — so `[]` is exactly what serde wants. That is the
+		-- opposite of the Great-Person-points field below, which is a MAP and
+		-- must return `nil` rather than `{}` precisely because `{}` would go out
+		-- as `[]` and take the whole StateSnapshot down with it.
+		boosted_techs = boosted_techs,
+		boosted_civics = boosted_civics,
 		civics = civics,
 		research = research,
 		research_progress = research_progress,
@@ -6005,6 +6133,124 @@ local function sqlText(fn)
 	end
 	if #parts == 0 then return "rows:0"; end
 	return table.concat(parts, ";");
+end
+
+-- ⚠⚠ CAN THIS CONTEXT ASSIGN A CITIZEN AT ALL? ASK, DO NOT ASSUME.
+--
+-- Specialists are the last untouched science lane and the gap is large.
+-- Measured over the 19 live runs carrying the host export, 100 end-of-game
+-- cities: **53 specialist assignments in total**, of which **45.3% sit on a
+-- Commercial Hub and 26.4% on a Campus**. Of the 50 cities that HAVE a Campus,
+-- 28 have no specialist anywhere and **only 8 have even one ON the Campus**.
+-- Every one of those placements is Civilization VI's own citizen governor,
+-- because this agent READS citizens (`IsPlotWorked`, `GetWorkerCount`) and has
+-- never written one.
+--
+-- The human city panel does it from THIS context. `PlotInfo.lua`'s
+-- `OnClickCitizen`:
+--
+--     tParameters[CityCommandTypes.PARAM_MANAGE_CITIZEN] =
+--         UI.GetInterfaceModeParameter(CityCommandTypes.PARAM_MANAGE_CITIZEN);
+--     tParameters[CityCommandTypes.PARAM_X] = kPlot:GetX();
+--     tParameters[CityCommandTypes.PARAM_Y] = kPlot:GetY();
+--     CityManager.RequestCommand(pCity, CityCommandTypes.MANAGE, tParameters);
+--
+-- ⚠ The open question is `PARAM_MANAGE_CITIZEN`. The shipped UI reads it from
+-- `UI.GetInterfaceModeParameter`, i.e. from being inside
+-- `InterfaceModeTypes.CITY_MANAGEMENT` — which an unattended agent is not.
+-- Whether the command accepts the value passed directly is UNTESTED, and this
+-- project has a ledger full of requests that returned without throwing and
+-- changed nothing: "the request did not throw" is not "the engine took it".
+--
+-- So this ASKS AND DOES NOT ACT. `CanStartCommand` is the same read-only shape
+-- as the `CanProduce(hash, false, true)` predicate that settled the production
+-- channel, and it is tried against several candidate parameter values so the
+-- log names which one — if any — the engine accepts. Nothing here can change a
+-- game: no `RequestCommand` call exists in this function.
+--
+-- Off unless `cfg.ProbeCitizens` is set, like `ProbeChannels` above.
+local function probeCitizenSlots(turn)
+	local pid = Game.GetLocalPlayer();
+	if pid == nil or pid < 0 then return; end
+	local player = Players[pid];
+	if player == nil then return; end
+	-- Candidate values for the parameter the shipped UI reads out of the
+	-- interface mode. `nil` is listed first and deliberately: if the command is
+	-- legal without it, nothing else here matters.
+	local candidates = {
+		{ name = "absent", value = nil },
+		{ name = "true", value = true },
+		{ name = "one", value = 1 },
+		{ name = "zero", value = 0 },
+	};
+	local cities = try(function() return player:GetCities(); end);
+	if cities == nil then return; end
+	local probed = 0;
+	for _, city in cities:Members() do
+		if probed >= (cfg.ProbeCitizenCities or 3) then break; end
+		local cityId = try(function() return city:GetID(); end, -1);
+		-- ⚠ Walk the city's PLOTS, not `GetDistricts()`. This file already
+		-- records why (`exportState`): a plot carries the type and the position
+		-- together, and the collection's per-member accessors vary across this
+		-- build. The export reads `plot:GetDistrictType()` for exactly that
+		-- reason, so the probe reads it the same way.
+		local ownedPlots = try(function()
+			return Map.GetCityPlots():GetPurchasedPlots(city);
+		end);
+		if ownedPlots ~= nil then
+			for _, plotIndex in ipairs(ownedPlots) do
+				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+				local dx = plot ~= nil and try(function() return plot:GetX(); end, -1) or -1;
+				local dy = plot ~= nil and try(function() return plot:GetY(); end, -1) or -1;
+				local dtype = nil;
+				if plot ~= nil then
+					local d = try(function() return plot:GetDistrictType(); end, -1);
+					if d ~= nil and d >= 0 then
+						dtype = try(function() return GameInfo.Districts[d].DistrictType; end);
+					end
+				end
+				-- The City Centre takes no specialist, so it is not evidence
+				-- either way and only adds noise to the log.
+				if dtype ~= nil and dtype ~= "DISTRICT_CITY_CENTER" and dx >= 0 then
+					local workers = try(function() return plot:GetWorkerCount(); end, -1);
+					local verdicts = {};
+					for _, candidate in ipairs(candidates) do
+						-- ⚠⚠ EVERY PART OF BUILDING THE TABLE IS INSIDE THE
+						-- `pcall`, NOT JUST THE CALL. `CityCommandTypes.PARAM_*`
+						-- is a bare index: if this build does not define one of
+						-- these names it is `nil`, and `params[nil] = dx` raises
+						-- "table index is nil" — which is a CHUNK-KILLING error
+						-- outside a protected call, and this file has already
+						-- lost whole runs to a script that stopped loading with
+						-- nothing in any log naming it. A probe must not be able
+						-- to take the agent down.
+						local ok, can = pcall(function()
+							local params = {};
+							params[CityCommandTypes.PARAM_X] = dx;
+							params[CityCommandTypes.PARAM_Y] = dy;
+							if candidate.value ~= nil then
+								params[CityCommandTypes.PARAM_MANAGE_CITIZEN] =
+									candidate.value;
+							end
+							return CityManager.CanStartCommand(
+								city, CityCommandTypes.MANAGE, params, true);
+						end);
+						verdicts[#verdicts + 1] = candidate.name .. "="
+							.. (ok and tostring(can) or "threw");
+					end
+					emit("civvis_citizen_probe", {
+						turn = turn,
+						city = cityId,
+						district = dtype,
+						x = dx, y = dy,
+						workers = workers,
+						verdicts = table.concat(verdicts, ","),
+					});
+				end
+			end
+		end
+		probed = probed + 1;
+	end
 end
 
 local function probeChannels(turn)
@@ -7930,6 +8176,13 @@ end
 -- fallback turn would guarantee the next turn falls back too.
 local function beginTurn(player, pid, turn)
 	if cfg.ProbeChannels then probeChannels(turn); end
+	-- Every `ProbeCitizenEvery` turns rather than every turn: the answer cannot
+	-- change within a game, and one line per district per city per turn would
+	-- drown the log the rest of the run has to be read out of.
+	if cfg.ProbeCitizens
+		and (turn % (cfg.ProbeCitizenEvery or 25)) == 0 then
+		probeCitizenSlots(turn);
+	end
 	-- ⚠⚠⚠ ENVOYS ARE SPENT ON THE TURN, NOT ON THE PROMPT. `chooseEnvoy` was
 	-- reachable only from the `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` handler,
 	-- and that blocker is far rarer than the comment above `chooseEnvoy`
