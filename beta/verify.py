@@ -443,10 +443,17 @@ def main(argv: list[str] | None = None) -> int:
         if absolute in page:
             print(f"    the published viewer still asks for {absolute}", file=sys.stderr)
             return 1
+    preload = (
+        '<link rel="preload" href="civvis.wasm" as="fetch" '
+        'type="application/wasm" crossorigin fetchpriority="high">'
+    )
+    if preload not in page:
+        print("    the published viewer does not preload the WASM module", file=sys.stderr)
+        return 1
     if '<script src="shim.js"></script>' not in page:
         print("    the published viewer does not load the shim", file=sys.stderr)
         return 1
-    print(f"    the viewer is relative-pathed for /{lane} and loads the shim")
+    print(f"    the viewer is relative-pathed for /{lane}, preloads WASM, and loads the shim")
 
     # The download page names its binaries; the release workflow builds
     # binaries under names it chooses. Nothing connects the two but agreement,
