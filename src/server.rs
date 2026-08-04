@@ -9334,9 +9334,10 @@ mod tests {
         assert!(splat.contains("neighbor?.feature === \"volcano\""));
         assert!(splat.contains("cx.rotate(Math.atan2(sourceY, sourceX))"));
         assert!(splat.contains("hexPath(x, y, S); cx.clip();"));
+        assert!(splat.contains("const soilFan = cx.createLinearGradient(0, 0, S + 2, 0)"));
         assert!(splat.contains("cx.moveTo(S + 2, -S)"));
-        assert!(splat.contains("cx.bezierCurveTo(6, -9, 2, -5, 0, 0)"));
-        assert!(splat.contains("cx.bezierCurveTo(18, 13, 25, 18, S + 2, S)"));
+        assert!(splat.contains("cx.bezierCurveTo(4, -7, 1, -3, -1, 0)"));
+        assert!(splat.contains("cx.bezierCurveTo(21, 14, 29, 18, S + 2, S)"));
         assert!(!splat.contains("performance.now"));
         assert!(!splat.contains("requestAnimationFrame"));
 
@@ -9366,8 +9367,11 @@ mod tests {
         assert!(icon.contains(
             "cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE)"
         ));
+        assert!(icon.contains(
+            "const rimY = -7, rimHalfWidth = 5.3, baseY = 19, baseHalfWidth = 16"
+        ));
         assert!(icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
-        assert!(icon.contains("cx.ellipse(0, -9, 4.5, 2.2"));
+        assert!(icon.contains("cx.ellipse(0, rimY, rimHalfWidth, 1.35"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false)"));
     }
