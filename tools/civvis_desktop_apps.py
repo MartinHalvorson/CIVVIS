@@ -30,6 +30,7 @@ from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 REPOSITORY_URL = "https://github.com/MartinHalvorson/CIVVIS"
 FULL_COMMIT = re.compile(r"^[0-9a-f]{40}$")
+GENERATED_BUILD_NAME = re.compile(r"^build-[0-9a-f]+-\d{8}T\d{6}Z$")
 TEMPLATE_TOKENS = ("MODE", "LABEL", "COMMIT", "COMMIT_TIME", "BUILT_AT", "REPO")
 DEFAULT_PRESET = (
     "AI simulation; Small 74x46 flat Continents; 6 majors;\n"
@@ -249,6 +250,30 @@ def runtime_source_snapshot(source: pathlib.Path) -> str:
     return digest.hexdigest()
 
 
+def reusable_cargo_targets(state_dir: pathlib.Path) -> Tuple[pathlib.Path, pathlib.Path]:
+    cargo_cache = state_dir / "cargo-cache"
+    cargo_cache.mkdir(parents=True, exist_ok=True)
+    builds = sorted(
+        (
+            path
+            for path in state_dir.iterdir()
+            if path.is_dir() and GENERATED_BUILD_NAME.fullmatch(path.name)
+        ),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    targets = (cargo_cache / "native-target", cargo_cache / "wasm-target")
+    for target in targets:
+        if target.exists():
+            continue
+        for build in builds:
+            legacy = build / target.name
+            if legacy.is_dir():
+                shutil.move(str(legacy), str(target))
+                break
+    return targets
+
+
 def build_artifacts(
     repo: pathlib.Path,
     revision: Revision,
@@ -260,9 +285,7 @@ def build_artifacts(
     # Cargo outputs are safe to reuse across pinned detached worktrees and make
     # the perpetual refresh cadence practical. The immutable artifacts copied
     # into each app still live under this build's timestamped root.
-    cargo_cache = state_dir / "cargo-cache"
-    native_target = cargo_cache / "native-target"
-    wasm_target = cargo_cache / "wasm-target"
+    native_target, wasm_target = reusable_cargo_targets(state_dir)
     wasm_site = build_root / "wasm-site"
     build_root.mkdir(parents=True)
     run(("git", "worktree", "add", "--detach", str(source), revision.commit), cwd=repo)
@@ -759,12 +782,11 @@ def prune_generated_state(
     state_dir: pathlib.Path, keep_builds: int = 2, keep_archives: int = 4
 ) -> None:
     """Bound disk use for an updater designed to run indefinitely."""
-    build_name = re.compile(r"^build-[0-9a-f]+-\d{8}T\d{6}Z$")
     builds = sorted(
         (
             path
             for path in state_dir.iterdir()
-            if path.is_dir() and build_name.fullmatch(path.name)
+            if path.is_dir() and GENERATED_BUILD_NAME.fullmatch(path.name)
         ),
         key=lambda path: path.stat().st_mtime,
         reverse=True,

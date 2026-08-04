@@ -350,6 +350,29 @@ class DesktopAppsTests(unittest.TestCase):
         self.assertIn("refresh", arguments)
         self.assertIn("--no-launch", arguments)
 
+    def test_first_cached_build_reuses_the_newest_legacy_cargo_targets(self):
+        with tempfile.TemporaryDirectory() as held:
+            state = pathlib.Path(held)
+            older = state / "build-aaaaaaa-20260803T220000Z"
+            newer = state / "build-bbbbbbb-20260803T230000Z"
+            for index, build in enumerate((older, newer), start=1):
+                for name in ("native-target", "wasm-target"):
+                    target = build / name
+                    target.mkdir(parents=True)
+                    (target / "generation").write_text(str(index), encoding="utf-8")
+                desktop.os.utime(build, (index, index))
+
+            native, wasm = desktop.reusable_cargo_targets(state)
+
+            self.assertEqual(
+                (native / "generation").read_text(encoding="utf-8"), "2"
+            )
+            self.assertEqual(
+                (wasm / "generation").read_text(encoding="utf-8"), "2"
+            )
+            self.assertFalse((newer / "native-target").exists())
+            self.assertFalse((newer / "wasm-target").exists())
+
     def test_endless_refresh_prunes_only_old_generated_artifacts(self):
         with tempfile.TemporaryDirectory() as held:
             state = pathlib.Path(held)
