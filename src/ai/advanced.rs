@@ -23801,15 +23801,6 @@ mod tests {
             })
             .expect("the map has a quiet land origin");
         let settler = game.spawn_test_unit("settler", 0, origin);
-        let next = game
-            .nbrs(origin)
-            .into_iter()
-            .find(|position| {
-                game.map.get(*position).is_some_and(|tile| {
-                    !game.rules.is_water(tile) && game.rules.is_passable(tile)
-                })
-            })
-            .expect("the start has a land neighbor");
         let target = game
             .wdisk(origin, 2)
             .into_iter()
@@ -23818,9 +23809,12 @@ mod tests {
                     && game.map.get(*position).is_some_and(|tile| {
                         !game.rules.is_water(tile) && game.rules.is_passable(tile)
                     })
-                    && game.route_step(settler, *position, 0) == Some(next)
+                    && game.route_step(settler, *position, 0).is_some()
             })
-            .expect("the start has a two-tile route through the selected neighbor");
+            .expect("the start has a reachable two-tile target");
+        let next = game
+            .route_step(settler, target, 0)
+            .expect("the target has a first route step");
         let threat = game
             .nbrs(next)
             .into_iter()
@@ -30613,6 +30607,11 @@ mod tests {
     #[test]
     fn force_replans_focus_after_each_battlefield_action() {
         let mut g = Game::new_full(2, 24, 16, 79, 80, 0, false);
+        // Only the staged attackers belong in this force. Organic starting
+        // units can otherwise split them into separate command-radius groups.
+        for unit in g.player_unit_ids(0) {
+            g.remove_unit(unit);
+        }
         g.at_war.insert((0, 1));
         let front_candidates = quietest_first(
             &g,
