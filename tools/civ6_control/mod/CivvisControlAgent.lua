@@ -7889,6 +7889,30 @@ end
 -- fallback turn would guarantee the next turn falls back too.
 local function beginTurn(player, pid, turn)
 	if cfg.ProbeChannels then probeChannels(turn); end
+	-- ⚠⚠⚠ ENVOYS ARE SPENT ON THE TURN, NOT ON THE PROMPT. `chooseEnvoy` was
+	-- reachable only from the `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` handler,
+	-- and that blocker is far rarer than the comment above `chooseEnvoy`
+	-- assumes: an isolation run on 2026-08-04 with `EnvoyEnabled` on went **58
+	-- turns without it firing once**, while holding five free envoys with four
+	-- city-states met. Zero `envoy` events, so the lane could not have been
+	-- measured even though it was switched on.
+	--
+	-- That also explains the deployment symptom on its own terms: runs finish
+	-- holding 55, 56 and 69 unspent envoys. Waiting to be asked is not a
+	-- strategy when the question is not reliably asked.
+	--
+	-- ⚠ This does NOT enable the lane. `chooseEnvoy` still returns immediately
+	-- unless `cfg.EnvoyEnabled` is set, which is still off by default because
+	-- the three SIGSEGVs have not been cleared. What it changes is that the
+	-- isolation run can now actually exercise the code it is testing.
+	--
+	-- ⚠ `beginTurn`, not `playTurn`: deployment runs with `--civvis-decides`, so
+	-- `playTurn` never executes. A call added there would have been inert in
+	-- exactly the configuration that matters — the same trap the `come_ashore`
+	-- comment records for the tactical path.
+	if cfg.EnvoyEnabled then
+		pcall(function() chooseEnvoy(player, pid, turn); end);
+	end
 	-- Refreshed here rather than in the fallback so that the export, CIVVIS and the
 	-- built-ins all describe the same war picture.
 	warTarget = findWarTarget(player, pid);
