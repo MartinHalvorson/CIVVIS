@@ -1052,63 +1052,39 @@
     pointer-events: none;
   }
   #zoomctl {
-    position: relative; z-index: 1; display: flex; flex: 0 0 auto; flex-direction: row;
+    position: relative; z-index: 1; display: flex; flex: 0 1 auto; flex-direction: row;
+    width: max-content; max-width: 100%; min-width: 0;
     gap: 5px; padding: 5px; border-radius: 13px; background: #0a1512cb; border: 1px solid #3c554c;
     box-shadow: 0 12px 26px #0006; backdrop-filter: blur(12px);
     pointer-events: auto;
   }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
+  #zoomctl > button { flex: 0 0 34px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
-  /* The sky's destinations are camera controls. They join the compass and
-     zoom keys in the same physical strip, with their names retained in the
-     native labels/tooltips while the compact glyphs leave room for the map. */
-  #skyworlds {
-    display: flex; align-items: center; align-self: stretch; gap: 0; min-width: 0;
-    padding: 0 3px; border-left: 1px solid #ffffff0c; border-right: 1px solid #ffffff0c;
-  }
-  #skyworlds[hidden] { display: none; }
-  #skyworlds button {
-    width: 34px; min-width: 34px; height: 34px; display: grid; place-items: center;
-    margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent;
-    color: #b8c7c0; font-size: 16px;
-  }
-  #skyworlds button + button { border-left: 1px solid #ffffff0c; }
-  #skyworlds button:hover { transform: none; color: #fff6dc; background: #183027; }
-  #skyworlds button.active { color: #fff0c5; background: #4b422699; }
-  #skyworlds .skynav-mark { font-size: 17px; }
-  #skyworlds .skynav-label { display: none; }
-  #skyworlds + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
-  /* The sky bar rides above the lower-left zoom instruments and is
-     taken out of the dock's flow to get there: the dock is the map's bottom
-     strip and its height is a reservation the framing already pays for, so a
-     second row in the flow would have moved the world every time the camera
-     left the globe. Standing over the map instead costs nothing, and the sky
-     keeps its captions clear of the bar the same way it does of every other
-     widget. */
+  /* Keep the complete sky route in the map-control reading order: after zoom
+     out and before the one control that dismisses the bar. The route itself
+     may be wider than a compact map, so its middle scrolls while the minus and
+     exit controls remain reachable at either side. */
   #skynav {
-    position: absolute; z-index: 1; left: 0; bottom: calc(100% + 50px);
-    max-width: 100%; display: flex; flex-wrap: wrap; align-items: center;
-    gap: 4px; padding: 5px; border-radius: 13px;
-    background: #0a1512d8; border: 1px solid #3c554c;
-    box-shadow: 0 12px 26px #0006; backdrop-filter: blur(12px);
-    pointer-events: auto;
+    display: flex; flex: 1 1 auto; align-items: center; align-self: stretch;
+    min-width: 0; overflow-x: auto; overscroll-behavior-x: contain;
+    padding: 0 3px; border-left: 1px solid #ffffff0c; scrollbar-width: none;
   }
   #skynav[hidden] { display: none; }
-  .skynav-group { display: flex; align-items: center; gap: 3px; min-width: 0; }
+  #skynav::-webkit-scrollbar { display: none; }
+  .skynav-group { display: flex; flex: 0 0 auto; align-items: center; gap: 0; min-width: 0; }
   .skynav-group[hidden] { display: none; }
-  .skynav-group + .skynav-group { padding-left: 5px; border-left: 1px solid #ffffff14; }
+  .skynav-group + .skynav-group { margin-left: 3px; padding-left: 3px; border-left: 1px solid #ffffff14; }
   #skynav button {
-    width: auto; min-width: 0; height: 30px; margin: 0; padding: 0 9px;
+    width: auto; min-width: 34px; height: 34px; margin: 0; padding: 0 8px;
     display: inline-flex; align-items: center; gap: 5px;
-    border: 1px solid transparent; border-radius: 8px; background: transparent;
+    border: 0; border-radius: 0; background: transparent;
     color: #b8c7c0; font-size: var(--type-caption); font-weight: 800;
     white-space: nowrap;
   }
-  #skynav button:hover { transform: none; border-color: #4d6b60; background: #183027; }
+  #skynav button:hover { transform: none; background: #183027; }
   #skynav button.active {
-    border-color: #d7b66a9c; color: #fff6dc;
-    background: linear-gradient(135deg, #4b4226cc, #173128e8);
-    box-shadow: inset 0 1px #ffffff16, 0 0 13px #d7b66a1c;
+    color: #fff6dc; background: #4b422699;
   }
   .skynav-mark { color: #e6c978; font-size: 14px; line-height: 1; }
   #skynav button.active .skynav-mark { color: #ffe6a4; }
@@ -2757,7 +2733,6 @@
   body.overlay-victory-hidden #victoryhud,
   body.overlay-minimap-hidden .minimap-frame,
   body.overlay-controls-hidden #zoomctl,
-  body.overlay-controls-hidden #skynav,
   body.overlay-lenses-hidden #map-lenses { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
@@ -3329,31 +3304,28 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="map-controls-dock">
-    <!-- The sky's scale shots and zoom ladder stand over the lower-left map
-         controls. Its Earth, Moon, Mars, and Exoplanet arrivals live inline
-         with those controls between north and zoom-in. -->
-    <div id="skynav" hidden role="group" aria-label="Sky navigation">
-      <div class="skynav-group" id="skynav-scales" role="group" aria-label="Frame a scale"></div>
-      <div class="skynav-group skynav-rungs">
-        <input id="skyladder" type="range" min="0" max="1000" step="1" value="1000"
-          aria-label="How far out the camera stands"
-          title="The whole zoom, end to end — left is the far stop, right is the ground">
-        <span id="skyspan" title="How wide the stage is">—</span>
-      </div>
-    </div>
     <!-- Left to right: collapse the deck, set the map area, face north, zoom
-         to a world, zoom in, zoom out, and dismiss. Dismissal is last because
-         it is the only one that removes the bar, and it hides itself while the
-         deck is collapsed — Interface Settings is the way back and that is
-         inside the deck. -->
+         in, zoom out, navigate the solar system, and dismiss. The full sky
+         route begins immediately after minus and ends immediately before
+         dismiss; Interface Settings is the way back and that is inside the
+         deck. -->
     <div id="zoomctl">
       <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
       <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
       <button id="mapareaset" type="button" aria-pressed="false" title="Set map area — drag the four edges" aria-label="Set map area">⛶</button>
       <button id="compass" type="button" title="Face north · R" aria-label="Face north"><span id="compass-needle"></span></button>
-      <div id="skyworlds" hidden role="group" aria-label="Fly to a world"></div>
       <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
       <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
+      <div id="skynav" hidden role="group" aria-label="Sky navigation">
+        <div class="skynav-group" id="skynav-worlds" role="group" aria-label="Fly to local worlds"></div>
+        <div class="skynav-group" id="skynav-scales" role="group" aria-label="Solar-system route"></div>
+        <div class="skynav-group skynav-rungs">
+          <input id="skyladder" type="range" min="0" max="1000" step="1" value="1000"
+            aria-label="How far out the camera stands"
+            title="The whole zoom, end to end — left is the far stop, right is the ground">
+          <span id="skyspan" title="How wide the stage is">—</span>
+        </div>
+      </div>
       <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Interface Settings" title="Hide map controls · restore in Interface Settings">✕</button>
     </div>
   </div>
@@ -16098,7 +16070,7 @@ function skySpanLabel(radii) {
 // frame would be reading a number the bar itself moved. The two thresholds are
 // a hysteresis, so a zoom that comes to rest on the line does not blink.
 const skyNavBar = document.getElementById("skynav");
-const skyNavWorldRow = document.getElementById("skyworlds");
+const skyNavWorldRow = document.getElementById("skynav-worlds");
 const skyNavScaleRow = document.getElementById("skynav-scales");
 const skyNavLadder = document.getElementById("skyladder");
 const skyNavSpan = document.getElementById("skyspan");
@@ -16125,7 +16097,7 @@ function skyNavShowing() {
 // Its box, in canvas coordinates, so a caption out there dodges the bar the
 // same way it dodges the standings and the world map.
 function skyNavBox(viewRect) {
-  const boxes = [skyNavBar, skyNavWorldRow]
+  const boxes = [skyNavBar]
     .filter(element => element && !element.hidden)
     .map(element => element.getBoundingClientRect())
     .filter(box => box.width && box.height);
@@ -16200,18 +16172,22 @@ function syncSkyNav() {
     .map(stop => `${stop.id}/${stop.label}/${stop.title}`).join(",");
   if (key !== SKY_NAV_KEY) {
     SKY_NAV_KEY = key; SKY_NAV_MARK = "";
-    // Earth through Exoplanet are destinations, so they sit in the map control
-    // strip between north and zoom. The wider scale shots stay in the sky bar
-    // above it, where their labels and the zoom ladder have room to breathe.
-    skyNavWorldRow.replaceChildren(...worlds.map(stop => skyNavButton("world", stop)));
-    skyNavWorldRow.hidden = !worlds.length;
-    skyNavScaleRow.replaceChildren(...scales.map(stop => skyNavButton("scale", stop)));
-    skyNavScaleRow.hidden = !scales.length;
+    // The old route is deliberately one readable sequence in the control bar:
+    // Earth, Moon, Mars, Solar system, Voyage, Exoplanet. The distant world
+    // follows the two whole-route shots, rather than leaving an icon-only
+    // shortcut up by the compass and making the route read in two places.
+    const local = worlds.filter(stop => stop.id !== "exo");
+    const onward = [...scales, ...worlds.filter(stop => stop.id === "exo")];
+    skyNavWorldRow.replaceChildren(...local.map(stop => skyNavButton("world", stop)));
+    skyNavWorldRow.hidden = !local.length;
+    skyNavScaleRow.replaceChildren(...onward.map(stop =>
+      skyNavButton(stop.body ? "world" : "scale", stop)));
+    skyNavScaleRow.hidden = !onward.length;
   }
   const here = skyNavHere();
   if (here !== SKY_NAV_MARK) {
     SKY_NAV_MARK = here;
-    for (const button of document.querySelectorAll("#skynav [data-sky-stop], #skyworlds [data-sky-stop]")) {
+    for (const button of document.querySelectorAll("#skynav [data-sky-stop]")) {
       const on = button.dataset.skyStop === here;
       button.classList.toggle("active", on);
       button.setAttribute("aria-pressed", on ? "true" : "false");
