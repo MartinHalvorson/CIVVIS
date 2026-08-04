@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Does the same seed now produce the same world? The check that unlocks measurement.
 
-`MapRandomSeed` and `GameRandomSeed` ship with NO DefaultValue, which is why the
-fixed-seed flag was inert: four runs launched with `--seed 425255 --fixed-seed` drew
-capitals at (44,20), (19,30) and (13,27) and civs AMERICA / SWEDEN / KOREA / SWEDEN. The
-setup-defaults `UpdateDatabase` now writes both seed rows (verified in the live config
-cache), so this asks whether that reaches world generation.
+`MapRandomSeed` and `GameRandomSeed` ship with NO DefaultValue. The control setup
+requested both values in four explicit seed probes launched with `--seed 425255`, but
+they still drew capitals at (44,20), (19,30) and (13,27) and civs AMERICA / SWEDEN /
+KOREA / SWEDEN. The
+setup-defaults `UpdateDatabase` writes both seed rows (verified in the live config cache),
+so this asks whether that reaches world generation.
 
 # Why this is worth more than the map type
 
 Without a reproducible world, **no A/B on real Civ 6 can be paired** — map luck dominates
-and swamps any treatment, which is why `tools/civ6_ab.py` and `tools/civ6_near_ab.py` are
-both invalid as written. Every finding today had to be argued as a MECHANISM claim
+and swamps any treatment. The former paired runners were retired rather than left to
+produce invalid results. Every finding today has to be argued as a MECHANISM claim
 ("0 buildings became a monument", "loyalty -23/turn became +17") because outcome claims
 were unavailable. Pinning the world restores outcome comparison, and that is the
 foundation under every future measurement here — including "did this change win more
@@ -34,8 +35,8 @@ generation time — just as it is not the source of MAP_SCRIPT. The UpdateDataba
 reaches the DATABASE and not WORLD GENERATION.
 
 Keep this tool: re-run it after any change that claims to pin the map, because the claim is
-cheap to make and this is the only thing that settles it. But do not re-run it expecting a
-different answer from another edit to `Parameters`.
+cheap to make and this is the only thing that settles it. A passing probe permits a newly
+preregistered paired experiment; it does not revive either retired runner.
 
 ⚠ `--max-turns` sets the GAME's turn limit and does NOT stop the harness early: an arm asked
 for 4 turns played to 38. The capital is in the first `state` export, so read it and kill the
@@ -91,27 +92,27 @@ def first_world(run_dir: Path) -> dict | None:
     }
 
 
-def run_arm(seed: int, turns: int, timeout: int) -> dict | None:
-    before = {p.name for p in RUNS.glob("settler-*")} if RUNS.is_dir() else set()
+def run_arm(seed: int, arm: int, turns: int, timeout: int) -> dict | None:
+    tag = f"seed-check-{seed}-{arm}-{time.time_ns()}"
     cmd = [
-        sys.executable, str(HERE / "civ6_climb.py"),
-        "--only", "DIFFICULTY_SETTLER",
+        sys.executable, str(HERE / "civ6_play.py"),
+        "--tag", tag,
+        "--difficulty", "DIFFICULTY_SETTLER",
         "--map", "Pangaea.lua", "--map-size", "MAPSIZE_TINY",
         "--speed", "GAMESPEED_ONLINE",
-        "--seed", str(seed), "--fixed-seed",
-        "--max-turns", str(turns), "--attempts", "1",
+        "--seed", str(seed), "--seed-probe",
+        "--max-turns", str(turns),
         "--timeout", str(timeout), "--lock-wait", "120",
         "--report-every", "1", "--export-state",
         "--window-side", "right", "--window-frac", "0.5", "--window-vfrac", "0.5",
     ]
     print(f"\n=== seed {seed}, {turns} turns ===", flush=True)
     subprocess.run(cmd, check=False)
-    after = {p.name for p in RUNS.glob("settler-*")} if RUNS.is_dir() else set()
-    fresh = sorted(after - before)
-    if not fresh:
+    run_dir = RUNS / tag
+    if not run_dir.is_dir():
         print("  no run directory appeared", flush=True)
         return None
-    return first_world(RUNS / fresh[-1])
+    return first_world(run_dir)
 
 
 def main() -> int:
@@ -124,13 +125,14 @@ def main() -> int:
     args = ap.parse_args()
 
     worlds = []
-    for _ in range(args.arms):
-        world = run_arm(args.seed, args.turns, args.timeout)
+    for arm in range(args.arms):
+        world = run_arm(args.seed, arm, args.turns, args.timeout)
         if world:
             worlds.append(world)
             print(f"  -> {world}", flush=True)
-        # ⚠ Quit between arms: killing a harness leaves Civ 6 holding the run lock,
-        # and civ6_climb counts a lock collision as a spent attempt.
+        # ⚠ Quit between arms: killing a harness leaves Civ 6 holding the run lock.
+        # The ladder treats that collision as a spent attempt, so clear it before
+        # returning control to any normal campaign.
         subprocess.run(["osascript", "-e", 'tell application "Civ6" to quit'],
                        capture_output=True)
         time.sleep(6)
@@ -156,9 +158,8 @@ def main() -> int:
     if len(caps) == 1 and None not in caps:
         print(f"→ CAPITAL IS REPRODUCIBLE at {caps.pop()}: the seed reaches world gen.")
         if len(civs) == 1 and len(maps) == 1:
-            print("  civ and map also identical — PAIRED EXPERIMENTS ARE AVAILABLE.")
-            print("  ⚠ Un-invalidate civ6_ab.py / civ6_near_ab.py before trusting them: "
-                  "they were written against a seed that did nothing.")
+            print("  civ and map also identical — a newly preregistered paired experiment "
+                  "is now possible.")
         else:
             print(f"  ⚠ but civ varies {civs} and/or map varies {maps} — the world "
                   "repeats and the SEAT does not, so pairing is still not sound.")
