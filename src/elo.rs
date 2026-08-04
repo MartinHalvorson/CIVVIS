@@ -343,6 +343,12 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// this when rules, default setup, or scoring semantics change enough that an
 /// Elo point no longer measures the same experiment.
 ///
+/// **v6 (2026-08-04) — military unique improvements enter AI planning.** Charged
+/// Toa, Legions, and Nau now spend their unique improvement actions when a legal
+/// site exists, with the advanced controller valuing defensive frontier works and
+/// Feitoria trade yields. This is live in both the shared Basic path and the
+/// `advanced_v1` serial path, so results can no longer share a ledger with v5.
+///
 /// **v5 (2026-08-03) — the pantheon price follows game speed.** The faith cost had
 /// three spellings; the legality gate, the spend in `do_choose_pantheon` and the
 /// AI's own gate in `ai.rs` now all read `Game::pantheon_faith_cost()`.
@@ -355,7 +361,7 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// argument is ever wrong. Rows before and after v5 are not comparable at Online,
 /// Quick, Epic or Marathon, where the price genuinely moved (12.5 / 16.75 / 37.5 /
 /// 75 against a flat 25).
-pub const ELO_PROTOCOL_VERSION: u32 = 5;
+pub const ELO_PROTOCOL_VERSION: u32 = 6;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// Immutable protocol-v1 baseline retained for historical comparison after
