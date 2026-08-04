@@ -1,13 +1,15 @@
-// The door on /beta, and the whole site's request handler.
+// The whole site's request handler.
 //
-// A published build is not finished work and is not meant to be found by
-// everyone; this asks for a password before serving anything under /beta,
-// the engine included. It is a soft gate by design — one shared password, no
-// accounts — but a real one: the password is checked at Cloudflare's edge and
-// is never part of anything the browser downloads.
+// The site is two builds of the same program plus the pages around them:
 //
-// Set BETA_PASSWORD in the Pages project's environment variables to change it
-// without a deploy.
+//   /        the STABLE lane — the promoted build, deliberately chosen
+//   /beta    the HEAD lane — republished automatically from the latest main
+//   /home    the landing page (a real file at home/index.html)
+//   /download, /rust, /wasm — the native binaries and the moving pointers
+//
+// Both lanes are the same viewer with relative asset paths, so each works at
+// its mount point without rewrites; they differ only in which commit their
+// engine was compiled from, and each states its commit in its own build.json.
 //
 // **This is a `_worker.js`, deliberately, and it must stay one.** Cloudflare
 // Pages also supports a `functions/` directory, and that is the obvious way to
@@ -16,27 +18,12 @@
 // the deploy from anywhere but the project root and the gate is silently left
 // behind: the upload succeeds, the site works, and the beta is wide open with
 // nothing to show that anything went wrong. It happened once here already,
-// which is why `verify.py` now proves the gate challenges rather than assuming
+// which is why `verify.py` now proves the routing answers rather than assuming
 // it is there. A `_worker.js` sits *inside* the deployed directory and cannot
 // be separated from it.
 
 const COOKIE = "civvis_beta";
 const WEEK = 60 * 60 * 24 * 7;
-
-/// Where `civvis.ai` itself sends people.
-///
-/// The domain's job is to be the channel's address: somebody who types
-/// `civvis.ai` wants the videos, not a page about them. So `/` forwards, and
-/// the landing page — which is still the only thing linking `/beta` and
-/// `/download` — lives at `/home`.
-///
-/// The forward is a **302**, not a 301. A permanent redirect is cached by
-/// browsers effectively for ever, so a 301 here would strand every past
-/// visitor on YouTube on the day this becomes a real front page. Set
-/// `ROOT_REDIRECT` in the Pages environment to another URL to send `/`
-/// somewhere else, or to `off` to serve the landing page at `/` instead —
-/// either way without a deploy.
-const CHANNEL = "https://www.youtube.com/@civvis";
 
 /// Give a build channel a stable address without teaching browsers that its
 /// current destination can never change. Both destinations are themselves
@@ -144,48 +131,42 @@ async function asset(request, env, gated) {
     // `WebAssembly.instantiateStreaming` refuses anything else.
     headers.set("Content-Type", "application/wasm");
   }
-  if (path.startsWith("/beta/assets/")) {
-    // Sprite atlases are content and change rarely.
+  if (path.includes("/assets/")) {
+    // Sprite atlases are content and change rarely — true in both lanes.
     headers.set("Cache-Control", "public, max-age=86400");
-  } else if (path.startsWith("/beta/")) {
-    // The engine keeps its name across builds, so it must be revalidated
-    // rather than trusted: a cached module from the last published build
-    // beside a freshly published page is a mismatch nobody can see. One small
-    // conditional request; the 6MB body only moves when the build changed.
+  } else {
+    // Everything else keeps its name across builds — the engine above all —
+    // so it must be revalidated rather than trusted: a cached module from the
+    // last published build beside a freshly published page is a mismatch
+    // nobody can see. One small conditional request; the 8MB body only moves
+    // when the build changed. This now covers the root lane too, which
+    // matters more there: `/` republishes on promotion, not on a schedule.
     headers.set("Cache-Control", "public, max-age=0, must-revalidate");
   }
   return new Response(response.body, { status: response.status, headers });
-}
-
-/// Serve one of the site's own files under a different path.
-///
-/// `ASSETS.fetch` keys off the URL it is handed, so the landing page can be
-/// deployed once as `index.html` and still answer at `/home` — no second copy
-/// to keep in step with the first. Fetch the asset at `/`, not `/index.html`:
-/// Pages canonicalizes the latter back to `/`, returning a redirect instead of
-/// the landing-page body when this runs under the real asset binding.
-function assetAt(request, path) {
-  const url = new URL(request.url);
-  url.pathname = path;
-  return new Request(url, request);
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // `/` is the stable simulator. `ROOT_REDIRECT` in the Pages environment
+    // sends the root somewhere else without a deploy — a **302**, never a 301,
+    // because browsers cache a permanent redirect effectively for ever and
+    // this pointer exists to be movable. (It once defaulted to the YouTube
+    // channel, before the root became the product; the landing page and the
+    // viewer's own header still link the channel.)
     if (url.pathname === "/" || url.pathname === "/index.html") {
-      const destination = env.ROOT_REDIRECT || CHANNEL;
-      if (destination !== "off") {
+      const destination = env.ROOT_REDIRECT;
+      if (destination && destination !== "off") {
         return new Response(null, {
           status: 302,
           headers: { Location: destination, "Cache-Control": "no-store" },
         });
       }
     }
-    if (url.pathname === "/home" || url.pathname === "/home/") {
-      return asset(assetAt(request, "/"), env, false);
-    }
+    // `/home` needs no case here: the landing page is a real file at
+    // home/index.html, and Pages resolves the directory index on its own.
     if (url.pathname === "/rust" || url.pathname === "/rust/") {
       return buildChannel(url, "/download/");
     }
