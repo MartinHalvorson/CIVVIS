@@ -59,6 +59,27 @@ local civvisBuild = {};
 -- deliberately turn-scoped: a strategic resource or prerequisite can change later,
 -- but retrying the same impossible choice in every blocker pass cannot help.
 local refusedByCity = {};
+-- ⚠⚠ CITY LOSS IS NOT AN EVENT, AND IT IS THE CONSTRAINT ON EVERYTHING.
+--
+-- 36% of live runs reaching turn 150 end with ONE city, and **96% of those
+-- founded cities and lost them** — peaks of 3, 4, 5, 6, even 7. Median peak is
+-- 4 and median final is 2; 61% of runs lose at least one city and **32% of all
+-- cities ever founded are lost**. Score is 194 at one city against 603 at seven.
+-- Population is what science is, so this is the science ceiling.
+--
+-- And nothing reports it. There is no `kind` in `events.jsonl` for a city
+-- changing hands, so the only way to study it has been to diff the periodic
+-- state exports and read each city's LAST SEEN condition. That inference put
+-- military capture at 41% and loyalty at 43% over 181 lost cities — but the
+-- military share is a FLOOR, not a number, because a city taken BETWEEN two
+-- exports is never observed damaged and lands in the wrong bucket.
+--
+-- This remembers the roster every turn instead, so a loss is caught at turn
+-- resolution with the city's condition on the turn before it went. That is the
+-- difference between a 181-row inference and a census, and it is the cheap
+-- prerequisite to pricing either half of the holding problem — both of which
+-- have already absorbed many attempts and measured null.
+local lastRoster = {};
 -- Emitted once: a defeat is not a per-turn condition.
 local defeatReported = false;
 
@@ -7976,7 +7997,75 @@ end
 -- Split out of `playTurn` because the export must happen whether or not CIVVIS
 -- replies: it is the only thing the brain has to read, so skipping it on a
 -- fallback turn would guarantee the next turn falls back too.
+-- Emit a `city_lost` for every city that was ours last turn and is not now,
+-- carrying the condition it was in when we last held it.
+--
+-- ⚠ Deliberately compares against the PREVIOUS TURN's roster rather than a
+-- periodic export. A city taken between two exports is invisible to the diff
+-- that was being used before; at turn resolution it cannot be.
+--
+-- ⚠ `loyalty` and `damage` are the condition ONE TURN BEFORE the loss, which is
+-- the honest thing to report: the turn it fell we no longer own it and cannot
+-- read it. A city at loyalty 100 and undamaged the turn before it went was
+-- almost certainly taken by force — half of all losses look like that.
+local function reportLostCities(player, pid, turn)
+	local cities = try(function() return player:GetCities(); end);
+	if cities == nil then return; end
+	local now = {};
+	for _, city in cities:Members() do
+		local id = try(function() return city:GetID(); end);
+		if id ~= nil then
+			local x = try(function() return city:GetX(); end, -1);
+			local y = try(function() return city:GetY(); end, -1);
+			-- The file's own accessors, not recalled ones. `cityLoyalty` returns
+			-- nil on a Vanilla ruleset with no `GetCulturalIdentity`, and
+			-- `cityDefence` reads damage off the DISTRICT at the plot — a city
+			-- has no `GetDamage`, and calling one that does not exist is how
+			-- every wall was once exported as pristine.
+			local loyalty, perTurn, fallsTo = cityLoyalty(city);
+			local _, damage, _, wallDamage = cityDefence(x, y);
+			now[id] = {
+				name = try(function() return Locale.Lookup(city:GetName()); end, "?"),
+				pop = try(function() return city:GetPopulation(); end, -1),
+				loyalty = loyalty, per_turn = perTurn, falls_to = fallsTo,
+				damage = damage, wall = wallDamage,
+				turn = turn,
+			};
+		end
+	end
+	-- Only report once a roster has been recorded, or turn 1 announces the loss
+	-- of every city we never had.
+	if next(lastRoster) ~= nil then
+		for id, was in pairs(lastRoster) do
+			if now[id] == nil then
+				-- ⭐ `falls_to` is the game telling us outright who the city was
+				-- going to fall to — it drives the banner's own
+				-- "LOC_LOYALTY_CITY_WILL_FALL_TO_TT" warning. Present means the
+				-- loss was LOYALTY and was forecast; absent with damage means it
+				-- was TAKEN. That is the distinction the offline diff could not
+				-- draw, and it is why the military share of city loss has only
+				-- ever been a floor.
+				emit("city_lost", {
+					turn = turn,
+					city = id,
+					name = was.name,
+					held_until = was.turn,
+					pop_when_held = was.pop,
+					loyalty_when_held = was.loyalty,
+					loyalty_rate_when_held = was.per_turn,
+					falls_to_when_held = was.falls_to,
+					damage_when_held = was.damage,
+					wall_damage_when_held = was.wall,
+				});
+			end
+		end
+	end
+	lastRoster = now;
+end
+
 local function beginTurn(player, pid, turn)
+	-- First, before anything else this turn can change the roster.
+	pcall(function() reportLostCities(player, pid, turn); end);
 	if cfg.ProbeChannels then probeChannels(turn); end
 	-- Every `ProbeCitizenEvery` turns rather than every turn: the answer cannot
 	-- change within a game, and one line per district per city per turn would
