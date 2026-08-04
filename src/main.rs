@@ -512,7 +512,19 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// A compatibility re-pin.
 ///
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd3b7_82d6_34dc_7985;
+/// ⚠ And again for the pantheon price, which now reads `Game::pantheon_faith_cost()`
+/// instead of a bare `25.0` in the `ai.rs` gate. `pantheon_faith_cost` is
+/// `game_speed.scale(PANTHEON_FAITH_STANDARD)`, and `GameSpeed::default()` is
+/// `Standard`, whose `cost_percent` is 100 — so at the speed every legacy and Elo
+/// entrant plays, the expression evaluates to exactly `25.0` and the gate is
+/// bit-for-bit what it was. Only Online, Quick, Epic and Marathon move, and those
+/// were charging a price the game does not.
+/// ⚠ The value below is recomputed over the MERGED sources: main re-pinned this
+/// constant for its own change while this branch was open, so neither side's
+/// number is right after the merge — only a fresh fingerprint is.
+/// `elo_anchor_speed_is_standard_so_the_pantheon_repin_is_free` checks the
+/// Standard-speed claim rather than asserting it.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xaa1d_13d5_e7d6_64ad;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -2128,6 +2140,28 @@ mod tests {
         let explicit = vec!["simulate".to_string(), "--jobs".to_string(), "9".to_string()];
         assert_eq!(jobs_arg(&explicit), 9);
         assert_eq!(single_simulation_jobs_arg(&explicit), 9);
+    }
+
+    /// The re-pin above claims the pantheon change is free for the Elo anchor
+    /// because every legacy entrant plays at Standard, where the scaled price is
+    /// exactly the old literal. ⚠ That is a load-bearing claim guarding a whole
+    /// ratings ledger, and prose does not hold — the `_G` incident on 2026-08-03
+    /// had TWO prose warnings in the repo and still shipped. Check it.
+    #[test]
+    fn elo_anchor_speed_is_standard_so_the_pantheon_repin_is_free() {
+        use civvis::setup::GameSpeed;
+        assert_eq!(
+            GameSpeed::default(),
+            GameSpeed::Standard,
+            "if the default speed ever moves, the re-pin above stops being free and \
+             ELO_PROTOCOL_VERSION must be bumped instead"
+        );
+        assert_eq!(
+            GameSpeed::Standard.scale(civvis::game::PANTHEON_FAITH_STANDARD),
+            25.0,
+            "the scaled price must equal the literal it replaced, or the anchor's \
+             behaviour changed and this is not a compatibility re-pin"
+        );
     }
 
     #[test]
