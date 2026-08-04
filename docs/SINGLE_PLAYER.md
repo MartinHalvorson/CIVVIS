@@ -118,7 +118,7 @@ the action from the UI without a debugger.
 | World Congress | `congress_vote` | yes — Government panel |
 | Ages | `choose_dedication`, `choose_secret_society` | yes — Government panel |
 | Conquest | `keep_city`, `raze_city`, `liberate_city` | yes — modal |
-| Setup | difficulty, leader choice, save and load | yes — Game setup ▸ Single player, with a leader, a difficulty and the server's saves |
+| Setup | shared world setup, difficulty, leader choice, save and load | yes — Game setup ▸ Single player, with the same world settings as an AI simulation plus a leader, a difficulty and the server's saves |
 | Auto-play | `POST /autoplay` | yes — a league strategy and a turn count under the End Turn button |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
@@ -181,11 +181,22 @@ A world already on screen overrides that default: open the page on a running
 game should not have to notice that the button beside their empire has quietly
 started offering to replace it with a simulation.
 
-Single player asks the two things a Civ 6 lobby asks that this one could not:
-which leader you are, and how hard the rivals play. Both selects are filled
-from the live ruleset, so a mod that adds a civilization or a difficulty
-appears in them without a client change. Neither is offered for an AI-only
-world, because there is nobody to hand them to.
+Single player starts from the same world setup as an AI-only simulation:
+ruleset, leader pool, teams, world shape and climate, map, size, city-state
+count, start and future eras, speed, optional turn cap, victory conditions and
+an optional reproducible map seed. Leaving city-states or the turn cap blank
+uses the normal value for the selected size or speed; leaving the seed blank
+asks for a fresh map. The running world's seed is shown back in the field, so
+the ordinary Restart action can reproduce it exactly; clearing it deliberately
+asks for a new roll. Those are world facts, so changing mode never drops them.
+They are hidden only for the separate Firaxis-Civ-6 control mode, where that
+game cannot carry them.
+
+On top of those shared choices, single player asks the two things a Civ 6 lobby
+asks that this one could not: which leader you are, and how hard the rivals
+play. Both selects are filled from the live ruleset, so a mod that adds a
+civilization or a difficulty appears in them without a client change. Neither
+is offered for an AI-only world, because there is nobody to hand them to.
 
 One control on screen starts the next world, and which one it is follows the
 world you are looking at rather than the mode you have just picked: the
