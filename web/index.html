@@ -1088,6 +1088,8 @@
   #map-lenses button[data-map-lens="political"] .map-lens-icon { color: #df9a86; }
   #map-lenses button[data-map-lens="tourism"] .map-lens-icon { color: #e9b5dd; }
   #map-lenses button[data-map-lens="empire"] .map-lens-icon { color: #9ed8ca; }
+  #map-lenses button[data-map-lens="loyalty"] .map-lens-icon { color: #f1a59a; }
+  #map-lenses button[data-map-lens="power"] .map-lens-icon { color: #8ed7e6; }
   #map-lenses kbd {
     min-width: 15px; height: 15px; margin: 0; padding: 0;
     border-color: #ffffff16; color: #899b94; font-size: var(--type-caption);
@@ -3329,6 +3331,16 @@
           <span class="map-lens-icon" aria-hidden="true">♪</span>
           <span class="map-lens-label">Tourism</span>
         </button>
+        <button type="button" data-map-lens="loyalty" aria-pressed="false"
+          title="Loyalty lens — population pressure and city loyalty (8)">
+          <span class="map-lens-icon" aria-hidden="true">⚑</span>
+          <span class="map-lens-label">Loyalty</span><kbd aria-hidden="true">8</kbd>
+        </button>
+        <button type="button" data-map-lens="power" aria-pressed="false"
+          title="Power lens — city generation, demand, and status (0)">
+          <span class="map-lens-icon" aria-hidden="true">⚡</span>
+          <span class="map-lens-label">Power</span><kbd aria-hidden="true">0</kbd>
+        </button>
         <button id="map-lens-exit" type="button" hidden
           title="Exit the active map lens" aria-label="Exit the active map lens">
           <span class="map-lens-icon" aria-hidden="true">⊘</span>
@@ -3897,6 +3909,7 @@
       <span class="shortcut-head">CIVVIS additions</span>
       <span><kbd>1</kbd>Next action</span><span><kbd>2</kbd>Settler lens</span>
       <span><kbd>3</kbd>Map tacks</span><span><kbd>4</kbd>Empire lens</span>
+      <span><kbd>8</kbd>Loyalty lens</span><span><kbd>0</kbd>Power lens</span>
       <span><kbd>F8</kbd>Diplomacy</span><span><kbd>^ D</kbd>Quick Deals</span>
       <span><kbd>^ A</kbd>Auto-play</span><span><kbd>^ U</kbd>Hide the command deck</span>
       <span><kbd>= / −</kbd>Zoom without a keypad</span><span><kbd>Tab</kbd>Next unit needing orders</span>
@@ -16324,6 +16337,67 @@ function mapLensContext(tiles) {
   const tourismHigh = Math.max(1, ...tiles.map(tile => Number(tile.tourism) || 0));
   return {cities, tourismHigh};
 }
+function loyaltyLensStatus(city) {
+  const loyalty = Number(city?.loyalty), rate = Number(city?.loyalty_per_turn);
+  if (!Number.isFinite(loyalty) || !Number.isFinite(rate)) return null;
+  const falling = rate < -.05;
+  const danger = loyalty <= 25 || rate <= -5;
+  return {
+    loyalty:Math.max(0, Math.min(100, loyalty)), rate,
+    fill:danger ? "#b84342" : falling ? "#cf8540" : "#43966d",
+    label:falling ? "falling" : "loyal",
+  };
+}
+function powerLensStatus(city) {
+  const supply = Number(city?.power_supply), demand = Number(city?.power_demand);
+  if (!Number.isFinite(supply) || !Number.isFinite(demand) ||
+      typeof city?.powered !== "boolean") return null;
+  if (demand <= .05) return supply > .05
+    ? {kind:"source", fill:"#44ae99", supply, demand, label:"generating"}
+    : {kind:"idle", fill:"#647f87", supply, demand, label:"no demand"};
+  if (city.powered && supply + .001 >= demand) return supply > demand + .05
+    ? {kind:"surplus", fill:"#6fc8ad", supply, demand, label:"surplus"}
+    : {kind:"powered", fill:"#5aa7d0", supply, demand, label:"powered"};
+  return {kind:"shortage", fill:"#d85e50", supply, demand, label:"needs power"};
+}
+function loyaltyLensDistance(a, b) {
+  if (!state || !worldWrapsX()) return hexDist(a, b);
+  const bColumn = offsetColumn(b);
+  let best = Infinity;
+  for (const delta of [-state.map.width, 0, state.map.width]) {
+    const copy = [bColumn + delta - Math.floor(b[1] / 2), b[1]];
+    best = Math.min(best, hexDist(a, copy));
+  }
+  return best;
+}
+function loyaltyLensSources(city) {
+  const target = state.players[city.owner];
+  if (!target) return [];
+  const sources = [];
+  for (const source of state.cities) {
+    if (source.id === city.id || source.owner === city.owner) continue;
+    const player = state.players[source.owner];
+    if (!player || (player.is_barbarian && !player.is_free_city) ||
+        player.is_minor || player.is_free_city) continue;
+    if (Number.isInteger(player.team) && Number.isInteger(target.team) &&
+        player.team === target.team) continue;
+    // The seated civilization's cultural alliances neutralize population
+    // pressure. A spectator has no per-pair relationship payload, so it draws
+    // only the public population vector instead of guessing at one.
+    const alliance = !SPEC && city.owner === state.player
+      ? state.me?.alliances?.[source.owner] : null;
+    if (alliance?.kind === "cultural") continue;
+    const distance = loyaltyLensDistance(city.pos, source.pos);
+    if (distance > 9) continue;
+    let perCitizen = ["golden", "heroic"].includes(player.age) ? 1.5
+      : player.age === "dark" ? .5 : 1;
+    if (source.is_capital && source.original_owner === source.owner) perCitizen++;
+    const pressure = Math.max(0, Number(source.pop) || 0) * (10 - distance) * perCitizen;
+    if (pressure > 0) sources.push({source, pressure});
+  }
+  return sources.sort((left, right) => right.pressure - left.pressure ||
+    left.source.id - right.source.id);
+}
 function politicalLensColor(owner) {
   const player = state.players[owner];
   if (!player) return "#464c4b";
@@ -16366,6 +16440,18 @@ function lensTileStyle(tile, context) {
     const quality = Math.sqrt(value / context.tourismHigh);
     return {fill:mixLensColor("#9b4f9d", "#f1cf66", quality), alpha:.64 + quality * .24};
   }
+  if (mapLens === "loyalty") {
+    const status = context.cities.get(tile.owner_city) &&
+      loyaltyLensStatus(context.cities.get(tile.owner_city));
+    return status ? {fill:status.fill, alpha:.68}
+      : {fill:isWater(tile) ? "#17313c" : "#3f4745", alpha:.58};
+  }
+  if (mapLens === "power") {
+    const status = context.cities.get(tile.owner_city) &&
+      powerLensStatus(context.cities.get(tile.owner_city));
+    return status ? {fill:status.fill, alpha:.68}
+      : {fill:isWater(tile) ? "#17313c" : "#3d484e", alpha:.58};
+  }
   return null;
 }
 function lensTileValue(tile) {
@@ -16400,6 +16486,125 @@ function drawReligiousPressureRing(x, y, city, scale = 1) {
   cx.strokeStyle = "#0a1110"; cx.lineWidth = .85 * scale;
   cx.beginPath(); cx.arc(x, y, radius + 2.2 * scale, 0, Math.PI * 2); cx.stroke();
   cx.restore();
+}
+function drawLoyaltyPressureArrow(x, y, dx, dy, pressure, owner, scale = 1) {
+  const distance = Math.hypot(dx, dy);
+  if (!(distance > .1)) return;
+  const ux = dx / distance, uy = dy / distance, px = -uy, py = ux;
+  const inner = 12 * scale, outer = 27 * scale;
+  const tipX = x + ux * inner, tipY = y + uy * inner;
+  const tailX = x + ux * outer, tailY = y + uy * outer;
+  const width = (1.15 + Math.min(3.2, Math.sqrt(pressure) * .18)) * scale;
+  const head = (4.5 + width * .8) * scale;
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  cx.globalAlpha = .84; cx.strokeStyle = "#091210"; cx.lineWidth = width + 2.1 * scale;
+  cx.beginPath(); cx.moveTo(tailX, tailY); cx.lineTo(tipX, tipY); cx.stroke();
+  cx.strokeStyle = pcol(owner); cx.lineWidth = width;
+  cx.beginPath(); cx.moveTo(tailX, tailY); cx.lineTo(tipX, tipY); cx.stroke();
+  cx.fillStyle = pcol(owner); cx.beginPath();
+  cx.moveTo(tipX, tipY);
+  cx.lineTo(tipX + ux * head + px * head * .58, tipY + uy * head + py * head * .58);
+  cx.lineTo(tipX + ux * head - px * head * .58, tipY + uy * head - py * head * .58);
+  cx.closePath(); cx.fill();
+  cx.restore();
+}
+function loyaltyLensFlatDirection(city, source) {
+  // Use the exact placement the map renderer chose for each city. That keeps
+  // an arrow aimed at the visible copy when the player wraps either chart axis.
+  const [targetX, targetY] = hexXY(city.pos[0], city.pos[1]);
+  const [sourceX, sourceY] = hexXY(source.pos[0], source.pos[1]);
+  return [sourceX - targetX, sourceY - targetY];
+}
+function lensPowerAmount(value) {
+  const rounded = Math.round(value * 10) / 10;
+  return String(Number.isInteger(rounded) ? rounded : rounded.toFixed(1));
+}
+function drawLoyaltyLensCity(x, y, city, directionFor, scale = 1) {
+  for (const {source, pressure} of loyaltyLensSources(city).slice(0, 5)) {
+    const direction = directionFor(source);
+    if (direction) drawLoyaltyPressureArrow(x, y, direction[0], direction[1],
+      pressure, source.owner, scale);
+  }
+  const status = loyaltyLensStatus(city);
+  if (!status) return;
+  const width = 31 * scale, height = 4.4 * scale, barY = y + 15 * scale;
+  cx.save();
+  cx.globalAlpha = .94; cx.fillStyle = "#101715";
+  cx.fillRect(x - width / 2 - scale, barY - scale, width + 2 * scale, height + 2 * scale);
+  cx.fillStyle = "#8e3f3d"; cx.fillRect(x - width / 2, barY, width, height);
+  cx.fillStyle = status.fill;
+  cx.fillRect(x - width / 2, barY, width * status.loyalty / 100, height);
+  cx.globalAlpha = 1; cx.textAlign = "center"; cx.textBaseline = "top";
+  cx.font = `850 ${8.2 * scale}px Inter,sans-serif`;
+  cx.lineWidth = 2.6 * scale; cx.strokeStyle = "#07100e"; cx.fillStyle = "#fff5d9";
+  const rate = Math.round(status.rate);
+  const label = `${Math.round(status.loyalty)} ${rate >= 0 ? "+" : ""}${rate}`;
+  cx.strokeText(label, x, barY + height + 2.1 * scale);
+  cx.fillText(label, x, barY + height + 2.1 * scale);
+  cx.restore();
+}
+function drawPowerLensCity(x, y, city, scale = 1) {
+  const status = powerLensStatus(city);
+  if (!status) return;
+  const radius = (13 + Math.min(5, Math.sqrt(Math.max(1, city.pop || 1)))) * scale;
+  cx.save(); cx.globalAlpha = .18; cx.fillStyle = status.fill;
+  cx.beginPath(); cx.arc(x, y, radius, 0, Math.PI * 2); cx.fill();
+  cx.globalAlpha = .96; cx.strokeStyle = "#091210"; cx.lineWidth = 3.7 * scale;
+  cx.setLineDash(status.kind === "shortage" ? [3.2 * scale, 2 * scale] : []);
+  cx.beginPath(); cx.arc(x, y, radius, 0, Math.PI * 2); cx.stroke();
+  cx.strokeStyle = status.fill; cx.lineWidth = 1.65 * scale;
+  cx.beginPath(); cx.arc(x, y, radius, 0, Math.PI * 2); cx.stroke(); cx.setLineDash([]);
+  cx.textAlign = "center"; cx.textBaseline = "top";
+  cx.font = `850 ${8.2 * scale}px Inter,sans-serif`;
+  cx.lineWidth = 2.6 * scale; cx.strokeStyle = "#07100e"; cx.fillStyle = "#fff5d9";
+  const label = `${lensPowerAmount(status.supply)}/${lensPowerAmount(status.demand)} ⚡`;
+  cx.strokeText(label, x, y + radius + 4 * scale);
+  cx.fillText(label, x, y + radius + 4 * scale);
+  cx.restore();
+}
+function drawLoyaltyLensFlat(tiles) {
+  const shown = new Set(tiles.map(tile => key(tile.pos)));
+  for (const city of state.cities) {
+    if (!shown.has(key(city.pos))) continue;
+    const tile = TMAP.get(key(city.pos));
+    if (!tile) continue;
+    const [x, yy] = hexXY(city.pos[0], city.pos[1]);
+    drawLoyaltyLensCity(x, yy - elev(tile), city,
+      source => loyaltyLensFlatDirection(city, source), UI_K());
+  }
+}
+function drawPowerLensFlat(tiles) {
+  const shown = new Set(tiles.map(tile => key(tile.pos)));
+  for (const city of state.cities) {
+    if (!shown.has(key(city.pos))) continue;
+    const tile = TMAP.get(key(city.pos));
+    if (!tile) continue;
+    const [x, yy] = hexXY(city.pos[0], city.pos[1]);
+    drawPowerLensCity(x, yy - elev(tile), city, UI_K());
+  }
+}
+function planetLensScale(cell) {
+  return Math.max(.52, Math.min(1.12, planetCellInradius(cell) / 13));
+}
+function drawLoyaltyLensPlanet(cells) {
+  const cellsByPosition = new Map(cells.map(cell => [key(cell.tile.pos), cell]));
+  for (const city of state.cities) {
+    const cell = cellsByPosition.get(key(city.pos));
+    if (!cell || cell.center.z <= .04) continue;
+    drawLoyaltyLensCity(cell.center.x, cell.center.y, city, source => {
+      const sourceCell = cellsByPosition.get(key(source.pos));
+      return sourceCell && sourceCell.center.z > .04
+        ? [sourceCell.center.x - cell.center.x, sourceCell.center.y - cell.center.y] : null;
+    }, planetLensScale(cell));
+  }
+}
+function drawPowerLensPlanet(cells) {
+  const cellsByPosition = new Map(cells.map(cell => [key(cell.tile.pos), cell]));
+  for (const city of state.cities) {
+    const cell = cellsByPosition.get(key(city.pos));
+    if (cell && cell.center.z > .04)
+      drawPowerLensCity(cell.center.x, cell.center.y, city, planetLensScale(cell));
+  }
 }
 function drawFlatLensGroupLabels(tiles, context) {
   if (mapLens !== "continent") return;
@@ -16449,7 +16654,8 @@ function drawThematicLensFlat(tiles) {
       const [x, yy] = hexXY(city.pos[0], city.pos[1]);
       drawReligiousPressureRing(x, yy - elev(tile), city, UI_K());
     }
-  }
+  } else if (mapLens === "loyalty") drawLoyaltyLensFlat(tiles);
+  else if (mapLens === "power") drawPowerLensFlat(tiles);
   cx.restore();
 }
 
@@ -16497,7 +16703,8 @@ function drawThematicLensPlanet(cells) {
       const cell = cellsByPosition.get(key(city.pos));
       if (cell && cell.center.z > .04) drawReligiousPressureRing(cell.center.x, cell.center.y, city);
     }
-  }
+  } else if (mapLens === "loyalty") drawLoyaltyLensPlanet(cells);
+  else if (mapLens === "power") drawPowerLensPlanet(cells);
 }
 
 function districtAdjacencyLabel(tile) {
@@ -22693,6 +22900,8 @@ const MAP_LENS_INFO = {
   political:"POLITICAL LENS — territory uses civilization colors · city-states are dark",
   tourism:"TOURISM LENS — highlighted tiles show exact current Tourism per turn",
   empire:"EMPIRE LENS — city borders · districts and adjacency · wonders (4 to exit)",
+  loyalty:"LOYALTY LENS — population-pressure arrows · city Loyalty and change per turn (8)",
+  power:"POWER LENS — city generation, demand, and powered status (0)",
 };
 const SETTLE_DISK = [];
 for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++)
@@ -24613,6 +24822,23 @@ function tileTipLines(t, pos, tileKey) {
         `${entry.religion ? titleCase(entry.religion) : "No religion"} ` +
         `${Math.round(entry.pressure * 100 / total)}%`).join(" · "));
     }
+    if (mapLens === "loyalty") {
+      const status = loyaltyLensStatus(city);
+      if (status) {
+        const rate = Math.round(status.rate);
+        lines.push(`⚑ Loyalty: ${Math.round(status.loyalty)}/100 · ` +
+          `${rate >= 0 ? "+" : ""}${rate} per turn · ${status.label}`);
+      }
+      const sources = loyaltyLensSources(city).slice(0, 3);
+      if (sources.length) lines.push("⚑ Incoming population pressure: " +
+        sources.map(({source, pressure}) => `${state.players[source.owner]?.civ || source.name} ` +
+          `${Math.round(pressure)}`).join(" · "));
+    }
+    if (mapLens === "power") {
+      const status = powerLensStatus(city);
+      if (status) lines.push(`⚡ Power: ${lensPowerAmount(status.supply)} supplied / ` +
+        `${lensPowerAmount(status.demand)} needed · ${status.label}`);
+    }
   }
   return lines;
 }
@@ -25449,6 +25675,10 @@ const CIV6_BINDINGS = [
   {id: "PrevCity", key: "[", run: () => cycleCity(-1)},
   {id: "NextCity", key: "]", run: () => cycleCity(1)},
   {id: "CapitalCity", key: "\\", run: () => goToCapital()},
+  // Category LENS. CIVVIS reserves 1–4 for its established board controls,
+  // while Civ 6's remaining numeric lens keys stay direct map shortcuts.
+  {id: "LoyaltyLens", key: "8", spectator: true, run: () => setMapLens("loyalty")},
+  {id: "PowerLens", key: "0", spectator: true, run: () => setMapLens("power")},
   // Category CAMERA. Civ 6 pans with the arrow keys and zooms on the numeric
   // keypad; the row keys below are CIVVIS aliases on a laptop that has no
   // keypad at all.
