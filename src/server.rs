@@ -968,6 +968,11 @@ pub struct Shared {
     /// the whole restart behind it too.
     next_game_params: Mutex<Option<Params>>,
     pub pace_ms: AtomicU64,
+    /// How long a completed spectator game remains on its result screen.
+    /// This is a viewer preference, not part of the simulated world: each
+    /// browser persists and reasserts its choice when the supervisor starts a
+    /// fresh process.
+    pub between_game_countdown_ms: AtomicU64,
     pub paused: AtomicBool,
     pub restart_in: AtomicU64, // ms until auto-restart; u64::MAX = not pending
     /// Measured wall time of a full game turn, including pacing sleeps.
@@ -1189,22 +1194,12 @@ impl FrameDelivery {
     }
 }
 
-/// The result screen counts down for ten seconds before the next world. Not
-/// "at least ten", not "ten by default" — ten.
-///
-/// Ten is the whole product's one answer to "how long does a finished game
-/// stay up", and the browser's own countdown on a single-player finale is the
-/// same constant.
-///
-/// **This deliberately has no input.** It used to be `--restart-ms`, floored
-/// by the server and fed by the supervisor's `--cooldown`, and the number the
-/// viewer read was whichever value had won that chain. Twice in one evening
-/// the exhibition put a countdown on screen that nobody had chosen — first two
-/// minutes, then, once a ceiling was added, exactly that ceiling. A dial whose
-/// only effect is a number on a screen, and which every layer can override, is
-/// not a setting; it is a way for the screen to be wrong. `--restart-ms` and
-/// `--cooldown` are now accepted and ignored.
-const RESULT_COUNTDOWN_MS: u64 = 10_000;
+/// The result screen starts at ten seconds, with the exact choices offered in
+/// the observer settings. Keeping this short, closed set prevents a stale
+/// client or an arbitrary HTTP request from turning the result screen into an
+/// unexpectedly long hold.
+const DEFAULT_BETWEEN_GAME_COUNTDOWN_MS: u64 = 10_000;
+const BETWEEN_GAME_COUNTDOWN_OPTIONS_MS: [u64; 4] = [0, 3_000, 5_000, 10_000];
 /// How long after its last request a viewer is still considered present, and
 /// so still owed a frame for every turn.
 ///
@@ -1258,10 +1253,17 @@ fn spectator_step_completes_frame(
         || game.winner.is_some() != finished_before
 }
 
-/// Ten seconds, whatever anybody asked for. Kept as a function so the two
-/// places that arm the countdown cannot each grow their own idea of it.
-fn final_countdown_ms() -> u64 {
-    RESULT_COUNTDOWN_MS
+/// The result countdown can only use the four values the viewer can select.
+fn valid_between_game_countdown_ms(value: u64) -> Option<u64> {
+    BETWEEN_GAME_COUNTDOWN_OPTIONS_MS
+        .contains(&value)
+        .then_some(value)
+}
+
+/// Read the viewer-selected hold through one helper so both places that arm
+/// and advance the countdown agree on the active value.
+fn final_countdown_ms(sh: &Shared) -> u64 {
+    sh.between_game_countdown_ms.load(Ordering::Relaxed)
 }
 
 /// Give an unrated AI seat a compact, deterministic handle. The first half of
@@ -3386,8 +3388,8 @@ fn auto_step_loop(sh: Arc<Shared>) {
             }
             if s.game.winner.is_some() {
                 let t0 = *over_since.get_or_insert_with(Instant::now);
-                let left =
-                    final_countdown_ms().saturating_sub(t0.elapsed().as_millis() as u64);
+                let left = final_countdown_ms(&sh)
+                    .saturating_sub(t0.elapsed().as_millis() as u64);
                 sh.restart_in.store(left, Ordering::Relaxed);
                 if left == 0 {
                     s.start_automatic_next_game(sh.take_next_game_params());
@@ -3423,12 +3425,13 @@ fn auto_step_loop(sh: Arc<Shared>) {
                 // countdown in the same breath. Arming it on the next pass
                 // instead left `/state` reporting no countdown at all for a
                 // beat, so the result screen opened on "preparing the next
-                // world" and only then began counting down from ten — and the
-                // window in which "one more turn" can be pressed is exactly
-                // the window the countdown describes.
+                // world" and only then began counting. The viewer must get
+                // every millisecond of the selected window to choose one more
+                // turn.
                 if s.game.winner.is_some() {
                     over_since = Some(Instant::now());
-                    sh.restart_in.store(final_countdown_ms(), Ordering::Relaxed);
+                    sh.restart_in
+                        .store(final_countdown_ms(&sh), Ordering::Relaxed);
                 }
                 // A turn is one step per seat, so a seat waits for its own
                 // share of the turn budget and the round adds up to the pace.
@@ -3516,6 +3519,8 @@ fn decorate(o: &mut Value, sh: &Shared) {
         o["restart_in"] = json!(r.div_ceil(1000));
     }
     o["pace"] = json!(sh.pace_ms.load(Ordering::Relaxed));
+    o["between_game_countdown_ms"] =
+        json!(sh.between_game_countdown_ms.load(Ordering::Relaxed));
     o["paused"] = json!(sh.paused.load(Ordering::Relaxed));
     o["frame_sequence"] = json!(sh.frame_sequence.load(Ordering::Relaxed));
     // Both in milliseconds per game turn: what the current pace is actually
@@ -3764,6 +3769,18 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 sh.pace_ms.store(v.min(60_000), Ordering::Relaxed);
                 sh.turn_us.store(0, Ordering::Relaxed); // re-measure at the new pace
             }
+            let countdown_error = parsed["between_game_countdown_ms"]
+                .as_u64()
+                .and_then(|value| match valid_between_game_countdown_ms(value) {
+                    Some(value) => {
+                        sh.between_game_countdown_ms
+                            .store(value, Ordering::Relaxed);
+                        None
+                    }
+                    None => Some(
+                        "between-game countdown must be one of 0, 3000, 5000, or 10000 milliseconds",
+                    ),
+                });
             if let Some(v) = parsed["paused"].as_bool() {
                 sh.paused.store(v, Ordering::Relaxed);
             }
@@ -3774,6 +3791,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let mut o = session.state();
             drop(session);
             decorate(&mut o, sh);
+            if let Some(error) = countdown_error {
+                o["error"] = json!(error);
+            }
             respond_json(stream, &o);
         }
         ("GET", "/save") => {
@@ -4334,10 +4354,11 @@ mod tests {
         automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
         new_game_params, publishes_player_turn_frames, query_value, request_path, save_path,
         seat_delay_ms, spectator_frame, spectator_step_completes_frame, strategy_roster,
-        tile_mark, viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session,
-        Shared, SpectatorFrame, EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS,
-        EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, RESULT_COUNTDOWN_MS, SAVE_DIR,
-        STATE_LONG_POLL, VIEWER_ACTIVE,
+        tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
+        ChronicleState, FrameDelivery, Params, Session, Shared, SpectatorFrame,
+        BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
+        EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
+        MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
     };
     use crate::game::{
         Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
@@ -4350,7 +4371,7 @@ mod tests {
     use serde_json::{json, Value};
     use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
-    use std::sync::atomic::{AtomicBool, AtomicU64};
+    use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{mpsc, Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
 
@@ -4494,24 +4515,35 @@ mod tests {
         assert!(movement_seen, "the opening round exercised no unit movement");
     }
 
-    /// Ten seconds, and nothing can ask for anything else.
-    ///
-    /// This was a dial — `--restart-ms`, floored by the server, fed by the
-    /// supervisor's `--cooldown`. The number a viewer read was whichever value
-    /// had won that chain, and twice in one evening the exhibition counted
-    /// down from a duration nobody had chosen: first two minutes, then, once a
-    /// ceiling existed, exactly that ceiling. The dial is gone. The one thing
-    /// this must never again be is *configurable*.
+    /// The setting is intentionally narrow: these are the exact choices on
+    /// the page, and no arbitrary browser request can turn a result into an
+    /// unbounded hold.
     #[test]
-    fn the_result_countdown_is_ten_seconds_with_no_input() {
-        assert_eq!(final_countdown_ms(), 10_000);
-        assert_eq!(RESULT_COUNTDOWN_MS, 10_000);
-        // The browser's own finale countdown is the same ten seconds, so a
-        // person and the exhibition are offered the identical window.
-        assert!(EMBEDDED_INDEX.contains(&format!(
-            "const FINALE_RESTART_SECONDS = {};",
-            RESULT_COUNTDOWN_MS / 1_000
-        )));
+    fn between_game_countdown_is_limited_to_the_four_lobby_choices() {
+        assert_eq!(BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, [0, 3_000, 5_000, 10_000]);
+        for value in BETWEEN_GAME_COUNTDOWN_OPTIONS_MS {
+            assert_eq!(valid_between_game_countdown_ms(value), Some(value));
+        }
+        for value in [1, 2_999, 3_001, 7_000, 10_001] {
+            assert_eq!(valid_between_game_countdown_ms(value), None);
+        }
+
+        let shared = shared_for(Session::new(current()));
+        assert_eq!(final_countdown_ms(&shared), DEFAULT_BETWEEN_GAME_COUNTDOWN_MS);
+        for value in BETWEEN_GAME_COUNTDOWN_OPTIONS_MS {
+            shared
+                .between_game_countdown_ms
+                .store(value, Ordering::Relaxed);
+            assert_eq!(final_countdown_ms(&shared), value);
+        }
+
+        assert!(EMBEDDED_INDEX.contains("id=\"between-game-countdown\""));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"0\">None</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"3000\">3s</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"5000\">5s</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"10000\" selected>10s</option>"));
+        assert!(EMBEDDED_INDEX.contains("const BETWEEN_GAME_COUNTDOWN_KEY"));
+        assert!(EMBEDDED_INDEX.contains("betweenGameCountdownMs()"));
     }
 
     #[test]
@@ -4573,6 +4605,7 @@ mod tests {
             next_game_params: Mutex::new(session.take_resumed_next_game_params()),
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
+            between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
             paused: AtomicBool::new(false),
             restart_in: AtomicU64::new(u64::MAX),
             turn_us: AtomicU64::new(0),
@@ -5502,8 +5535,8 @@ mod tests {
     /// The countdown used to be armed on the stepper's *next* pass, so for a
     /// beat `/state` carried a winner and no `restart_in` at all and the
     /// result screen opened on "preparing the next world" before it started
-    /// counting. That beat is the difference between ten seconds to press
-    /// "one more turn" and however much of ten seconds is left over.
+    /// counting. That beat is the difference between the selected window to
+    /// press "one more turn" and however much of it is left over.
     #[test]
     fn a_result_arrives_with_its_countdown_and_can_be_played_past() {
         let port = TcpListener::bind(("127.0.0.1", 0))
@@ -5526,6 +5559,13 @@ mod tests {
             assert!(Instant::now() < deadline, "spectator server never came up");
             std::thread::sleep(Duration::from_millis(50));
         }
+        let configured: Value = serde_json::from_str(
+            &http_post(port, "/pace", "{\"between_game_countdown_ms\":3000}")
+                .expect("configure result countdown"),
+        )
+        .expect("countdown configuration is JSON");
+        assert_eq!(configured["error"], Value::Null);
+        assert_eq!(configured["between_game_countdown_ms"], json!(3_000));
 
         let read = |target: &str| -> Value {
             serde_json::from_str(&http_get(port, target).expect("a state")).expect("state is JSON")
@@ -5539,16 +5579,18 @@ mod tests {
             assert!(Instant::now() < deadline, "the short game never ended");
             std::thread::sleep(Duration::from_millis(20));
         };
-        // Every state that carries a winner carries the countdown with it.
+        // Every state that carries a winner carries the selected countdown
+        // with it, including its unrounded remainder for the page's own clock.
         assert_eq!(
             decided["restart_in"],
-            json!(RESULT_COUNTDOWN_MS / 1_000),
-            "a result was published without the ten seconds it is owed"
+            json!(3),
+            "a result was published without the selected three seconds"
         );
+        assert_eq!(decided["between_game_countdown_ms"], json!(3_000));
         let restart_in_ms = decided["restart_in_ms"]
             .as_u64()
             .expect("the page receives an unrounded remainder");
-        assert!(restart_in_ms > 0 && restart_in_ms <= RESULT_COUNTDOWN_MS);
+        assert!(restart_in_ms > 0 && restart_in_ms <= 3_000);
         assert_eq!(
             restart_in_ms.div_ceil(1_000),
             decided["restart_in"].as_u64().unwrap(),
@@ -5597,6 +5639,64 @@ mod tests {
         assert_eq!(held["turn"], played_on["turn"]);
         assert!(held["winner"].is_null());
         assert_eq!(held["paused"], json!(true));
+    }
+
+    #[test]
+    fn no_between_game_countdown_starts_the_successor_without_a_result_hold() {
+        let port = TcpListener::bind(("127.0.0.1", 0))
+            .expect("a free port")
+            .local_addr()
+            .unwrap()
+            .port();
+        let mut params = current();
+        params.spectate = true;
+        params.num_players = 2;
+        params.num_city_states = 1;
+        params.width = 24;
+        params.height = 16;
+        params.seed = 20_260_804;
+        params.max_turns = 1;
+        std::thread::spawn(move || super::serve_with_game(port, false, params, None, false));
+
+        let runtime = |port| -> Value {
+            serde_json::from_str(&http_get(port, "/runtime").expect("runtime"))
+                .expect("runtime is JSON")
+        };
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let initial_seed = loop {
+            if let Some(seed) = http_get(port, "/runtime")
+                .and_then(|body| serde_json::from_str::<Value>(&body).ok())
+                .and_then(|state| state["seed"].as_u64())
+            {
+                break seed;
+            }
+            assert!(Instant::now() < deadline, "spectator server never came up");
+            std::thread::sleep(Duration::from_millis(25));
+        };
+        let configured: Value = serde_json::from_str(
+            &http_post(
+                port,
+                "/pace",
+                "{\"ms\":0,\"between_game_countdown_ms\":0}",
+            )
+            .expect("configure no result hold"),
+        )
+        .expect("countdown configuration is JSON");
+        assert_eq!(configured["error"], Value::Null);
+        assert_eq!(configured["between_game_countdown_ms"], json!(0));
+
+        let deadline = Instant::now() + Duration::from_secs(8);
+        loop {
+            let successor_seed = runtime(port)["seed"].as_u64().expect("runtime seed");
+            if successor_seed != initial_seed {
+                break;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the zero-second setting left the finished game on screen"
+            );
+            std::thread::sleep(Duration::from_millis(25));
+        }
     }
 
     /// Two tabs on one exhibition are two promises, not one.
@@ -5858,20 +5958,15 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("Connecting to the server — retrying (attempt ${attempt})"));
     }
 
-    /// A finished game holds the screen for the same length of time whoever
-    /// was playing it. The browser counts a single-player finale down itself
-    /// and the server counts the exhibition's, so the two numbers live in
-    /// different languages and had already drifted to ten and five — one
-    /// result screen unhurried, the other hustling the verdict away.
+    /// Both result paths use the selected setting: a human finale reads the
+    /// control directly, while the exhibition paints the exact server value.
     #[test]
-    fn the_page_counts_a_finale_down_from_the_same_ten_seconds_the_server_does() {
-        assert!(
-            EMBEDDED_INDEX.contains(&format!(
-                "const FINALE_RESTART_SECONDS = {};",
-                RESULT_COUNTDOWN_MS / 1_000
-            )),
-            "the browser's finale countdown must be the server's countdown"
-        );
+    fn the_page_counts_a_finale_down_from_the_selected_between_game_interval() {
+        assert!(EMBEDDED_INDEX.contains(
+            "finaleCountdownDeadline = Date.now() + betweenGameCountdownMs();"
+        ));
+        assert!(EMBEDDED_INDEX.contains("Number(st.restart_in_ms)"));
+        assert!(EMBEDDED_INDEX.contains("between_game_countdown_ms"));
     }
 
     /// A full spectator state intentionally waits for either the next frame or
@@ -7602,21 +7697,36 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "basic.push(document.getElementById(\"victory-options\"), document.getElementById(\"saves-group\"));"
         ));
-        // Interface Settings keeps the tile switches together at the head of
-        // its advanced drawer, before the overlay layout controls.
+        // Interface Settings keeps its map and spaceflight switches together
+        // at the head of its advanced drawer, before the overlay layout controls.
         let display_advanced = [
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"10\"><span><input type=\"checkbox\" id=\"gridchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"20\"><span><input type=\"checkbox\" id=\"reschk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"30\"><span><input type=\"checkbox\" id=\"yieldchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"40\"><span><input type=\"checkbox\" id=\"artifactchk\"",
+            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"45\"><span><input type=\"checkbox\" id=\"rocketanimchk\" checked> Show rocket &amp; satellite animations",
             "class=\"overlay-options display-advanced-setting\" data-advanced-order=\"50\"",
         ];
         assert!(
             display_advanced.windows(2).all(|pair| {
                 EMBEDDED_INDEX.find(pair[0]).unwrap() < EMBEDDED_INDEX.find(pair[1]).unwrap()
             }),
-            "tile switches should lead Interface Settings advanced controls"
+            "map and spaceflight switches should lead Interface Settings advanced controls"
         );
+        assert!(EMBEDDED_INDEX.contains(
+            "let SHOW_ROCKET_ANIMATIONS = localStorage.getItem(\"civvis-show-rocket-animations\") !== \"0\";"
+        ));
+        for satellite_animation in [
+            "function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;",
+            "function drawFlatSatellites(now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;",
+            "return (SHOW_ROCKET_ANIMATIONS && crews.satellite.length > 0) || crews.expedition.length > 0;",
+            "return SHOW_ROCKET_ANIMATIONS && (activeSkyLaunches().length > 0 ||",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(satellite_animation),
+                "rocket animation setting must also govern satellites: {satellite_animation}"
+            );
+        }
         // Teams are a division of the table, so they sit beside the setting
         // that says who is at it. A world opens free-for-all, and the splits a
         // size can seat are named in the option rather than left to be found
@@ -9296,6 +9406,7 @@ mod tests {
             next_game_params: Mutex::new(session.take_resumed_next_game_params()),
             session: Mutex::new(session),
             pace_ms: AtomicU64::new(0),
+            between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
             paused: AtomicBool::new(false),
             restart_in: AtomicU64::new(u64::MAX),
             turn_us: AtomicU64::new(0),
@@ -10485,10 +10596,12 @@ mod tests {
     /// A spectated finale is counted down by the supervisor. A finished human
     /// game has nobody driving it, so its own result screen counts down to the
     /// next game — and every way of saying "I am still here" has to stop it,
-    /// or the offer to keep the world is only an offer for ten seconds.
+    /// or the offer to keep the world is only an offer for the selected hold.
     #[test]
     fn a_human_finale_counts_itself_down_to_the_next_game() {
-        assert!(EMBEDDED_INDEX.contains("const FINALE_RESTART_SECONDS = 10;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "finaleCountdownDeadline = Date.now() + betweenGameCountdownMs();"
+        ));
         assert!(EMBEDDED_INDEX.contains("id=\"finale-restart\""));
         assert!(EMBEDDED_INDEX
             .contains("button.textContent = `${FINALE_RESTART_LABEL} (${left})`;"));
@@ -11816,6 +11929,7 @@ pub fn serve_with_game(
         next_game_params: Mutex::new(session.take_resumed_next_game_params()),
         session: Mutex::new(session),
         pace_ms: AtomicU64::new(1_000), // one second per turn by default
+        between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
         paused: AtomicBool::new(initially_paused),
         restart_in: AtomicU64::new(u64::MAX),
         turn_us: AtomicU64::new(0),

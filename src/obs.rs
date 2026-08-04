@@ -2220,11 +2220,10 @@ mod tests {
         assert!(INDEX.contains("length:starshipLength * 2"));
         assert!(INDEX.contains("halfWidth:starshipHalfWidth * 4"));
 
-        // Launches default to visible, retain a viewer preference, and can be
-        // switched off without leaving a temporary flight hiding its finished
-        // mission marker.
+        // Spaceflight visuals default to visible, retain a viewer preference,
+        // and treat the perpetual satellite orbit like a rocket animation.
         assert!(INDEX.contains(
-            "<input type=\"checkbox\" id=\"rocketanimchk\" checked> Show rocket animations"
+            "<input type=\"checkbox\" id=\"rocketanimchk\" checked> Show rocket &amp; satellite animations"
         ));
         assert!(INDEX.contains(
             "let SHOW_ROCKET_ANIMATIONS = localStorage.getItem(\"civvis-show-rocket-animations\") !== \"0\";"
@@ -2232,6 +2231,12 @@ mod tests {
         assert!(INDEX.contains("function setShowRocketAnimations(on)"));
         assert!(INDEX.contains("if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;"));
         assert!(INDEX.contains("rockets.onchange = () => setShowRocketAnimations(rockets.checked);"));
+        assert!(INDEX.contains(
+            "function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;"
+        ));
+        assert!(INDEX.contains(
+            "function drawFlatSatellites(now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;"
+        ));
 
         // State-diff detection is shared, then each projection owns a flight
         // path while both call the same rocket-art renderer.
@@ -2245,9 +2250,9 @@ mod tests {
         assert!(INDEX.contains(
             "drawFlatSatellites(now0);\n  drawFlatLaunches(now0);\n  drawNuclearBlasts(now0);"
         ));
-        assert!(
-            INDEX.contains("return activeSkyLaunches().length > 0 ||\n    (flatSkyShown() > .02")
-        );
+        assert!(INDEX.contains(
+            "return SHOW_ROCKET_ANIMATIONS && (activeSkyLaunches().length > 0 ||\n    (flatSkyShown() > .02"
+        ));
     }
 
     /// The simulation is allowed to finish many turns while one mission
