@@ -3488,6 +3488,7 @@
             </select>
           </div>
         </div>
+        <label class="setting-row"><span><input type="checkbox" id="rocketanimchk" checked> Show rocket animations</span></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="10"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="20"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="30"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
@@ -4538,6 +4539,9 @@ const MAP_PROJECTION = 0.92;
 const REDUCED_MOTION_QUERY = window.matchMedia("(prefers-reduced-motion: reduce)");
 let SHOW_YIELDS = localStorage.getItem("civvis-show-yields") === "1";
 let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") === "1";
+// Space-race launches are on unless a viewer explicitly turns their transient
+// flight effects off. The completed mission remains visible either way.
+let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations") !== "0";
 // Civ 6 binds G to the hex grid and Q to the resource icons, so both have to
 // be things a player can actually turn off here. The grid is off by default
 // because a clean strategic map is easier to scan; resources are on because
@@ -12257,7 +12261,7 @@ const SKY_LAUNCH_FLIGHTS = {
   expedition:{project:SKY_CHAIN.expedition, duration:3000, body:"exo", rocket:"starship_xl"},
 };
 function queueSkyLaunches(prev, next, now = performance.now()) {
-  if (!prev || !next || prev.seed !== next.seed || REDUCED_MOTION_QUERY.matches) return;
+  if (!SHOW_ROCKET_ANIMATIONS || !prev || !next || prev.seed !== next.seed || REDUCED_MOTION_QUERY.matches) return;
   const before = new Map((prev.players || []).map(player => [player.id, player]));
   const majors = (next.players || []).filter(player =>
     player.alive && !player.is_minor && !player.is_barbarian);
@@ -24747,6 +24751,16 @@ function setShowResources(on) {
   if (box) box.checked = SHOW_RESOURCES;
   if (state) draw();
 }
+function setShowRocketAnimations(on) {
+  SHOW_ROCKET_ANIMATIONS = !!on;
+  localStorage.setItem("civvis-show-rocket-animations", SHOW_ROCKET_ANIMATIONS ? "1" : "0");
+  const box = document.getElementById("rocketanimchk");
+  if (box) box.checked = SHOW_ROCKET_ANIMATIONS;
+  // A disabled transient effect must not continue to hide the completed
+  // mission's permanent marker or keep the animation ticker awake.
+  if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;
+  if (state) draw();
+}
 function syncFlatMapWrapControls() {
   const group = document.getElementById("flat-map-wrap-settings");
   if (group) group.hidden = !!state && planetMap();
@@ -26063,6 +26077,11 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   const res = document.getElementById("reschk");
   res.checked = SHOW_RESOURCES;
   res.onchange = () => setShowResources(res.checked);
+}
+{
+  const rockets = document.getElementById("rocketanimchk");
+  rockets.checked = SHOW_ROCKET_ANIMATIONS;
+  rockets.onchange = () => setShowRocketAnimations(rockets.checked);
 }
 {
   const wrapXBox = document.getElementById("wrapxchk");
