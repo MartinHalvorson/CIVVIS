@@ -1786,6 +1786,11 @@ pub struct AdvancedAi {
     /// and `insulae` in 1, while 71.7% of city-turns are housing-capped. Off for
     /// the frozen native controllers.
     pub housing_cards: bool,
+    /// Let the research chooser aim at the tech that raises the housing ceiling.
+    /// See `unreachable_housing_tech`: 27% of live runs never unlock
+    /// `engineering` at all and the rest reach it at a median turn 116. Off for
+    /// the frozen native controllers.
+    pub housing_research: bool,
 
     /// This turn's floor on the science weight, refreshed by
     /// [`AdvancedAi::refresh_research_weight`] once per decision.
@@ -2150,6 +2155,7 @@ impl AdvancedAi {
             research_economy: false,
             campus_every_city: false,
             housing_cards: false,
+            housing_research: false,
             research_weight: 0.0,
         }
     }
@@ -2488,6 +2494,12 @@ impl AdvancedAi {
         // against the Amenity band's 0.872 — and 60.3% / 40.0% of city-turns
         // already carry the 2 / 3 specialty districts these cards need.
         self.enable_housing_cards();
+        // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
+        // live runs the median empire ends on **30 techs of 77**, `engineering`
+        // is reached by only **73%** and at a median turn **116** — which is why
+        // the live median Aqueduct order lands at turn 164. Making the district
+        // reachable in the build lists cannot beat the tech that gates it.
+        self.enable_housing_research();
     }
 
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
@@ -2553,6 +2565,15 @@ impl AdvancedAi {
 
     pub fn disable_housing_cards(&mut self) {
         self.housing_cards = false;
+    }
+
+    /// Aim research at the housing ceiling when the empire is paying it.
+    pub fn enable_housing_research(&mut self) {
+        self.housing_research = true;
+    }
+
+    pub fn disable_housing_research(&mut self) {
+        self.housing_research = false;
     }
 
     /// Require a faith-bought soldier's gold upkeep to be payable. Native
@@ -6090,6 +6111,74 @@ impl AdvancedAi {
         best.map(|(_, tech)| Box::leak(tech.to_string().into_boxed_str()) as &'static str)
     }
 
+    /// The tech that lets a housing-capped empire raise its own ceiling.
+    ///
+    /// ⚠⚠ THE RESEARCH CHOOSER HAS A GOAL FOR SCIENCE AND NONE FOR GROWTH, AND
+    /// GROWTH IS WHERE THE SCIENCE COMES FROM. Housing is the dominant band:
+    /// over 13,214 host-exported city-turns **71.7% are housing-capped**
+    /// (headroom < 2) at a mean growth multiplier of **0.510**, against the
+    /// Amenity band's 0.872. Science is ~1.16 per citizen, so the housing
+    /// ceiling is the science ceiling.
+    ///
+    /// And the repair is behind a tech the argmax never aims at. Measured over
+    /// 94 live runs (median final tech count **30 of 77**):
+    ///
+    /// | tech | unlocks | runs reaching it | median turn |
+    /// |---|---|---|---|
+    /// | `writing` | Library | 90% | 59 |
+    /// | `education` | University | 73% | 107 |
+    /// | **`engineering`** | **Aqueduct** | **73%** | **116** |
+    /// | `sanitation` | Sewer | **11%** | 170 |
+    /// | `chemistry` | Research Lab | **11%** | 195 |
+    ///
+    /// So **27% of runs never unlock the Aqueduct at all**, and the ones that do
+    /// get it at turn 116 — which is why the live median Aqueduct ORDER lands at
+    /// turn 164. Making the district reachable in the build lists (#1087, #1091)
+    /// cannot beat the tech that gates it.
+    ///
+    /// Same shape and the same last-place slot as
+    /// `unreachable_science_building_tech`: a goal that exists because the
+    /// target is absent from what the argmax will ever take on merit, not
+    /// because it ranks below something else. Gated on the empire ACTUALLY being
+    /// housing-capped, so a comfortable empire never diverts a beaker to it.
+    fn unreachable_housing_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if !self.housing_research {
+            return None;
+        }
+        // Only when the ceiling is genuinely being paid. `housing_growth_mult`
+        // pays 1.0 at headroom 2 and halves below it, so 2 is the break-even.
+        let capped = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .any(|city| g.city_housing_headroom(city) < HOUSING_CARD_HEADROOM);
+        if !capped {
+            return None;
+        }
+        // The cheapest un-researched tech that unlocks a district this empire
+        // could actually place. Asking the ruleset rather than naming
+        // `engineering` keeps this correct if Firaxis moves the Aqueduct, and
+        // picks up the Sewer's tech on the rare game that gets that far.
+        let mut best: Option<(f64, &str)> = None;
+        for (family, spec) in g.rules.districts.iter() {
+            let raises_housing = matches!(family.as_str(), "aqueduct" | "neighborhood");
+            if !raises_housing {
+                continue;
+            }
+            let Some(tech) = spec.tech.as_deref() else {
+                continue;
+            };
+            if g.players[pid].techs.contains(&Name::new(tech)) {
+                continue;
+            }
+            let cost = g.rules.techs.get(&Name::new(tech)).map(|t| t.cost).unwrap_or(0.0);
+            if best.is_none_or(|(cheapest, _)| cost < cheapest) {
+                best = Some((cost, tech));
+            }
+        }
+        best.map(|(_, tech)| Box::leak(tech.to_string().into_boxed_str()) as &'static str)
+    }
+
     fn advanced_research(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         // Explicit evaluator targets and the adaptive live plan must drive the
         // same prerequisite search.  Previously only `victory_target` enabled
@@ -6163,6 +6252,12 @@ impl AdvancedAi {
             // worthless prerequisite the argmax will never take on merit.
             let forced_goal =
                 forced_goal.or_else(|| self.unreachable_science_building_tech(g, pid));
+            // And after THAT, the growth ceiling: a Campus the empire can reach
+            // still only makes beakers out of citizens it is allowed to have.
+            // Behind the science goal on purpose — this never takes a slot the
+            // science chain wanted, it takes one the argmax would have spent on
+            // whatever happened to be cheapest.
+            let forced_goal = forced_goal.or_else(|| self.unreachable_housing_tech(g, pid));
             let goal_pick = forced_goal.and_then(|goal| {
                 available
                     .iter()
@@ -33908,5 +34003,63 @@ mod research_probe {
             HOUSING_CARD_HEADROOM, 2.0,
             "the break-even of the engine's own growth band, not a margin"
         );
+    }
+    /// Off by default, set only by the live bridge, holdable off on its own.
+    #[test]
+    fn only_the_live_bridge_aims_research_at_the_housing_ceiling() {
+        assert!(!AdvancedAi::new().housing_research);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.housing_research);
+        live.disable_housing_research();
+        assert!(!live.housing_research);
+    }
+
+    /// ⚠ It must be INERT for an empire that is not paying the ceiling, and it
+    /// must name the Aqueduct's tech — asked of the ruleset, not hardcoded.
+    #[test]
+    fn the_housing_goal_fires_only_while_the_ceiling_is_being_paid() {
+        let mut game = crate::game::Game::new(2, 32, 24, 9_101, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &crate::game::Action::FoundCity { unit: settler })
+            .expect("found city");
+        let cid = game.player_city_ids(0)[0];
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_live_bridge();
+
+        // A size-1 city has room to grow, so nothing is being paid.
+        game.cities.get_mut(&cid).unwrap().pop = 1;
+        assert!(
+            game.city_housing_headroom(&game.cities[&cid]) >= HOUSING_CARD_HEADROOM,
+            "a new city is not housing-capped"
+        );
+        assert_eq!(
+            ai.unreachable_housing_tech(&game, 0),
+            None,
+            "a comfortable empire must not divert a beaker to this"
+        );
+
+        // Grow it until the engine's own band bites.
+        let capped = (2..40)
+            .find(|pop| {
+                game.cities.get_mut(&cid).unwrap().pop = *pop;
+                game.city_housing_headroom(&game.cities[&cid]) < HOUSING_CARD_HEADROOM
+            })
+            .expect("some population overruns this city's housing");
+        game.cities.get_mut(&cid).unwrap().pop = capped;
+        assert_eq!(
+            ai.unreachable_housing_tech(&game, 0),
+            Some("engineering"),
+            "and a capped one is sent at the Aqueduct's tech"
+        );
+
+        // And the whole path short-circuits for a frozen controller.
+        let legacy = AdvancedAi::legacy();
+        assert_eq!(legacy.unreachable_housing_tech(&game, 0), None);
     }
 }
