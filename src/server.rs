@@ -3136,6 +3136,7 @@ fn simulation_settings(params: &Params) -> Value {
     .filter_map(|(enabled, name)| enabled.then_some(name))
     .collect::<Vec<_>>();
     json!({
+        "seed": params.seed,
         "players": params.num_players,
         "width": params.width,
         "height": params.height,
@@ -3198,6 +3199,16 @@ fn strategy_roster(session: &Session) -> Value {
         }));
     }
     json!(rows)
+}
+
+/// An explicit turn cap is a real configuration value, not a cast through an
+/// arbitrary JSON number. Zero cannot produce a playable game and a number
+/// wider than the engine's `u32` cap used to wrap into a surprising length.
+fn requested_turn_limit(request: &Value) -> Option<u32> {
+    request["max_turns"]
+        .as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0)
 }
 
 fn new_game_params(current: &Params, request: &Value) -> Params {
@@ -3267,8 +3278,8 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.speed = v.id().to_string();
         p.max_turns = v.turn_limit();
     }
-    if let Some(v) = request["max_turns"].as_u64() {
-        p.max_turns = v as u32;
+    if let Some(v) = requested_turn_limit(request) {
+        p.max_turns = v;
     }
     if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
         p.leader_pool = v;
@@ -3317,7 +3328,12 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.height = v as i32;
     }
     if let Some(v) = request["num_city_states"].as_u64() {
-        p.num_city_states = v as usize;
+        // Each city-state needs a distinct identity and Suzerain bonus. The
+        // same cap is exposed through `/rules` for the browser and applies to
+        // direct clients as a final guard.
+        p.num_city_states = usize::try_from(v)
+            .unwrap_or(usize::MAX)
+            .min(Rules::shared().city_states.roster.len());
     }
     if let Some(v) = request["spectate"].as_bool() {
         p.spectate = v;
@@ -3343,7 +3359,7 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             p.game_speed = GameSpeed::from_id(v).unwrap_or(GameSpeed::Standard);
             // A speed carries its own turn budget; adopt it unless the client
             // asked for a specific one in the same request.
-            p.max_turns = request["max_turns"].as_u64().unwrap_or(spec.turns as u64) as u32;
+            p.max_turns = requested_turn_limit(request).unwrap_or(spec.turns);
         }
     }
     p
@@ -4025,6 +4041,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "wonders": r.wonders,
                     "projects": r.projects,
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
+                    "city_state_limit": r.city_states.roster.len(),
                     "civ6_leaders": CIV6_LEADER_POOL.as_slice(),
                     "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
@@ -4337,9 +4354,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // a question about the machine and another game's files, and a page
         // watching a simulation must be able to ask it between turns.
         //
-        // The mode is offered on every computer and refused on the ones that
-        // cannot run it, so this always answers. A silent no is what made a
-        // dead Steam client cost eleven ladder attempts.
+        // The verification-only mode is available on every computer and
+        // refused on the ones that cannot run it, so this always answers. A
+        // silent no is what made a dead Steam client cost eleven ladder
+        // attempts.
         ("GET", "/civ6") => {
             let host = civ6::Host::probe();
             respond_json(
@@ -4412,8 +4430,8 @@ mod tests {
     use super::{
         automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
         new_game_params, publishes_player_turn_frames, query_value, request_path, save_path,
-        seat_delay_ms, spectator_frame, spectator_step_completes_frame, strategy_roster,
-        tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
+        seat_delay_ms, spectator_frame, spectator_step_completes_frame, staged_next_game_params,
+        strategy_roster, tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
         ChronicleState, FrameDelivery, Params, Session, Shared, SpectatorFrame,
         BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
         EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
@@ -6880,6 +6898,50 @@ mod tests {
         );
         assert_eq!(custom.game_speed, GameSpeed::Marathon);
         assert_eq!(custom.max_turns, 99);
+
+        // The browser's custom cap is shared by single player and the
+        // exhibition. Invalid values must not wrap the engine's u32 field or
+        // turn a playable match into a zero-turn result.
+        for invalid in [0, u64::from(u32::MAX) + 1] {
+            let ignored = new_game_params(
+                &current(),
+                &json!({"game_speed": "quick", "max_turns": invalid}),
+            );
+            assert_eq!(ignored.max_turns, GameSpeed::Quick.turn_limit());
+        }
+    }
+
+    /// The shared lobby fields are not spectator-only metadata. They shape a
+    /// human world in exactly the same way as an AI exhibition, and the
+    /// normalized state is what the native supervisor and wasm router both
+    /// hand back to the browser after staging.
+    #[test]
+    fn shared_world_setup_round_trips_city_states_turn_cap_and_seed() {
+        let request = json!({
+            "num_players": 6,
+            "num_city_states": 2,
+            "game_speed": "epic",
+            "max_turns": 1_234,
+            "seed": 8_765_432,
+            "spectate": false,
+        });
+        let params = new_game_params(&current(), &request);
+        assert_eq!(params.num_city_states, 2);
+        assert_eq!(params.max_turns, 1_234);
+        assert_eq!(params.seed, 8_765_432);
+        assert!(!params.spectate);
+
+        let settings = simulation_settings(&params);
+        assert_eq!(settings["city_states"], json!(2));
+        assert_eq!(settings["turns"], json!(1_234));
+        assert_eq!(settings["seed"], json!(8_765_432));
+
+        // Staging retains world settings but leaves the active world's mode
+        // alone; an automatic successor may never silently turn into a game
+        // nobody is controlling.
+        let staged = staged_next_game_params(&current(), &request);
+        assert!(staged.spectate == current().spectate);
+        assert_eq!(simulation_settings(&staged), settings);
     }
 
     /// The first question the lobby asks. One ruleset is modeled, so the
@@ -7175,6 +7237,30 @@ mod tests {
             "player && !player.is_barbarian && player.civ && owners.has(String(player.id))"
         ));
         assert!(EMBEDDED_INDEX.contains("if (Array.isArray(pos) && visible.has(key(pos))"));
+        let civilization_sync = EMBEDDED_INDEX
+            .split_once("function syncMapSearchCivilizations(st = state) {")
+            .expect("civilization-filter synchronizer")
+            .1
+            .split_once("\nfunction computeMapSearchMatches(")
+            .expect("end of civilization-filter synchronizer")
+            .0;
+        assert!(civilization_sync.contains(
+            "const optionsChanged = !mapSearchCivilizationOptions(select, entries);"
+        ));
+        assert!(civilization_sync.contains(
+            "if (optionsChanged && document.activeElement === select) return false;"
+        ));
+        assert!(civilization_sync.contains(
+            "if (optionsChanged) {\n    select.replaceChildren(...entries.map"
+        ));
+        assert_eq!(
+            civilization_sync.matches("select.replaceChildren").count(),
+            1,
+            "the native civilization picker must stay intact when the visible roster is unchanged"
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "mapSearchCiv.addEventListener(\"blur\", () => {\n  // Apply a roster change held back while the native picker was expanded.\n  if (!syncMapSearchCivilizations()) return;"
+        ));
         assert!(EMBEDDED_INDEX.contains("syncMapSearchCivilizations(st);"));
         assert!(EMBEDDED_INDEX.contains("drawFlatMapSearchHighlights(tiles);"));
         assert!(EMBEDDED_INDEX.contains("drawPlanetMapSearchHighlights(cells);"));
@@ -7229,6 +7315,12 @@ mod tests {
                 "the {setting} setting still offers a non-answer"
             );
         }
+        for input in ["citystates", "turnlimit", "mapseed"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("id=\"{input}\" type=\"number\"")),
+                "browser setup is missing the {input} numeric input"
+            );
+        }
         for victory in ["science", "culture", "religious", "diplomatic", "domination", "score"] {
             assert!(EMBEDDED_INDEX.contains(&format!(
                 "id=\"victory-{victory}\" checked>"
@@ -7237,9 +7329,12 @@ mod tests {
         // The lobby reads its own controls once, with no resolving pass and no
         // remembered marks between the panel and the payload.
         assert!(EMBEDDED_INDEX.contains("const payload = selectedSimulationSettings();"));
-        assert!(EMBEDDED_INDEX.contains("return {...selectedSimulationSettings(),"));
+        assert!(EMBEDDED_INDEX.contains("const settings = selectedSimulationSettings();"));
+        assert!(EMBEDDED_INDEX.contains("seed: settings.seed ?? Math.floor(Math.random() * 1e9)"));
         assert!(EMBEDDED_INDEX.contains("const changed = human || (activeSimulationSettingsKey"));
         assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\","));
+        assert!(EMBEDDED_INDEX.contains("num_city_states: cityStates"));
+        assert!(EMBEDDED_INDEX.contains("max_turns: turnLimit"));
         // None of the machinery that used to stand in for an unmade decision
         // survives anywhere in the client.
         for gone in [
@@ -7793,6 +7888,7 @@ mod tests {
         let display_advanced = [
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"10\"><span><input type=\"checkbox\" id=\"gridchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"20\"><span><input type=\"checkbox\" id=\"reschk\"",
+            "class=\"speed-row display-advanced-setting resource-display-setting\" data-advanced-order=\"25\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"30\"><span><input type=\"checkbox\" id=\"yieldchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"40\"><span><input type=\"checkbox\" id=\"artifactchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"45\"><span><input type=\"checkbox\" id=\"rocketanimchk\" checked> Show rocket &amp; satellite animations",
@@ -7804,6 +7900,31 @@ mod tests {
             }),
             "map and spaceflight switches should lead Interface Settings advanced controls"
         );
+        // Resource names are the default detailed-map treatment, but the
+        // existing compact symbol stays an explicit, persisted choice and the
+        // only treatment at survey scale.
+        for resource_display in [
+            "id=\"resourcedisplay\" aria-label=\"Resource display\"",
+            "<option value=\"symbol_word\" selected>Symbol &amp; word</option>",
+            "<option value=\"symbol\">Symbol</option>",
+            ".resource-display-setting { grid-template-columns: minmax(0, 1fr); gap: 4px; }",
+            ".resource-display-setting > select { width: 100%; }",
+            ".advanced-settings-body > .resource-display-setting { grid-column: 1 / -1; }",
+            "const RESOURCE_DISPLAY_STORAGE_KEY = \"civvis-resource-display\";",
+            "let RESOURCE_DISPLAY = localStorage.getItem(RESOURCE_DISPLAY_STORAGE_KEY) === \"symbol\"",
+            "function setResourceDisplay(mode) {",
+            "resourceDisplay.onchange = () => setResourceDisplay(resourceDisplay.value);",
+            "function drawResourceWordBadge(t, x, y, rim = resourceBadgeRim(t)) {",
+            "drawResourcePictogram(t.resource, iconX, ry - .1, RES_WORD_ICON_SIZE);",
+            "cx.strokeText(label, textX, ry + .25, textWidth);",
+            "if (RESOURCE_DISPLAY === \"symbol_word\" && cam.scale >= RES_WORD_LABEL_SCALE) {",
+            "drawResourceSymbolBadge(t, x, y, rim);",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(resource_display),
+                "resource display contract is missing: {resource_display}"
+            );
+        }
         assert!(EMBEDDED_INDEX.contains(
             "let SHOW_ROCKET_ANIMATIONS = localStorage.getItem(\"civvis-show-rocket-animations\") !== \"0\";"
         ));
@@ -7828,8 +7949,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("option.disabled = !split;"));
         // The world size decides which splits exist, so it re-fits them before
         // the panel's own delegated listener stages what is now selected.
-        assert!(EMBEDDED_INDEX
-            .contains("document.getElementById(\"np\").addEventListener(\"change\", syncTeams);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.getElementById(\"np\").addEventListener(\"change\", () => {\n  syncTeams();\n  syncWorldSetupInputs();\n});"
+        ));
         // The server is handed the seat-by-seat assignment, never the rule
         // that produced it; a world on screen is read back the other way.
         assert!(EMBEDDED_INDEX.contains("teams: teamAssignment(np, readSetting(\"teams\")),"));
@@ -8176,13 +8298,13 @@ mod tests {
             "grid-template-columns: minmax(0, 1fr) 11px minmax(0, 1fr);"
         ), "Start and Now flank one fixed-width trend column");
         assert!(EMBEDDED_INDEX.contains(
-            "<span title=\"Win odds at the start of the game, per cent\">START</span>"
+            "playerHudSortHead(\"win_start\", \"START\", \"Win odds at the start of the game\")"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "<span class=\"odds-trend-head\" title=\"Trend from start to now\">Δ</span>"
+            "playerHudSortHead(\"win_delta\", \"Δ\", \"Change in win odds\", \"odds-trend-head\")"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "<span title=\"Win odds now, per cent\">NOW</span>"
+            "playerHudSortHead(\"win\", \"NOW\", \"Current win odds\")"
         ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
             "the identity track is written once and then only from the column model");
@@ -8226,7 +8348,7 @@ mod tests {
             .split_once("const PLAYER_HUD_COLUMNS = [")
             .expect("player HUD column model")
             .1
-            .split_once("];\n// One bar per seam")
+            .split_once("];\n")
             .expect("end of player HUD column model")
             .0;
         assert_hud_stat_order(stat_columns, "player HUD column model");
@@ -8288,6 +8410,43 @@ mod tests {
         // One bar per seam between two adjacent data columns, dragged to move
         // width from the column on its left into the column on its right.
         assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
+        // Every fact in the player-HUD column model can order its rows. The
+        // Watch-as and lock cells are actions, deliberately outside that model,
+        // so an operator never has to sort a meaningless column just to reach
+        // ELO, a yield, or an active plan.
+        assert!(EMBEDDED_INDEX.contains(
+            "...PLAYER_HUD_COLUMNS.map(column => column.key), \"win_start\", \"win_delta\","
+        ));
+        assert!(EMBEDDED_INDEX.contains("const HUD_SORT_STORAGE_KEY = \"civvis-player-hud-sort-v1\";"));
+        assert!(EMBEDDED_INDEX.contains("function playerHudSortValue(player, key, stats)"));
+        assert!(EMBEDDED_INDEX.contains("function sortedPlayerHudPlayers(players, statsByPlayer)"));
+        assert!(EMBEDDED_INDEX.contains("function togglePlayerHudSort(key)"));
+        assert!(EMBEDDED_INDEX.contains("if (leftValue === null || rightValue === null) {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (leftValue !== rightValue) return leftValue === null ? 1 : -1;"
+        ), "unavailable values stay below observed values in either sort direction");
+        assert!(EMBEDDED_INDEX.contains(
+            "if (rawValue === null || rawValue === undefined || rawValue === \"\") return null;"
+        ), "a missing statistic is distinct from a numeric zero when sorting");
+        assert!(EMBEDDED_INDEX.contains("if (key === \"win_start\") return oddsValue(player.odds_start);"));
+        assert!(EMBEDDED_INDEX.contains("if (key === \"win_delta\") {"));
+        assert!(EMBEDDED_INDEX.contains("return oddsValue(player.odds_now);"),
+            "the NOW Win heading should order by its current estimate");
+        for key in ["civ", "leader", "player", "elo", "win_start", "win_delta", "win", "age", "plan"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("playerHudSortHead(\"{key}\"")),
+                "the {key} heading should be sortable"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains("playerHudSortHead(kind, label, title, kind)"),
+            "every generated statistic heading should be sortable");
+        assert!(!EMBEDDED_INDEX.contains("playerHudSortHead(\"watch\""),
+            "Watch-as stays an action instead of a sort target");
+        assert!(EMBEDDED_INDEX.contains("class=\"hud-sort-head\" data-hud-sort=\"${key}\""));
+        assert!(EMBEDDED_INDEX.contains("const sort = ev.target.closest?.(\"[data-hud-sort]\");"));
+        assert!(EMBEDDED_INDEX.contains("#playerhud .hud-sort-cell[data-hud-sort-active=\"true\"]"));
+        assert!(EMBEDDED_INDEX.contains("const scoreRankedMajors = state.players"));
+        assert!(EMBEDDED_INDEX.contains("const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer);"));
         assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
         assert!(EMBEDDED_INDEX.contains("function aimPlayerHudSeam(seam, targetWidth)"));
         assert!(EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam="));
@@ -9424,6 +9583,27 @@ mod tests {
     }
 
     #[test]
+    fn mountain_and_volcano_tiles_use_dark_shared_ground_with_glowing_lava() {
+        assert!(EMBEDDED_INDEX.contains("const MOUNTAIN_TILE_COLOR = \"#49453e\";"));
+        assert!(EMBEDDED_INDEX.contains("const VOLCANO_TILE_COLOR = \"#292421\";"));
+        assert!(EMBEDDED_INDEX.contains("tile.feature === \"volcano\""));
+        assert!(EMBEDDED_INDEX.contains("tileGroundColor(cell.tile, \"#4b5960\")"));
+        assert!(EMBEDDED_INDEX.contains("const base = tileGroundColor(t);"));
+        assert!(EMBEDDED_INDEX.contains("tileGroundColor(cell.tile, \"#44545a\")"));
+        assert!(EMBEDDED_INDEX.contains("const terrainColor = tileGroundColor(t);"));
+
+        let icon = EMBEDDED_INDEX
+            .split("function drawStrategicMountainIcon")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawFeatureEffects").next())
+            .expect("shared strategic mountain icon renderer");
+        assert!(icon.contains("cx.fillStyle = volcano ? \"#37302d\" : \"#565149\""));
+        assert!(icon.contains("cx.shadowColor = \"#ff4b19\""));
+        assert!(icon.contains("cx.shadowBlur = 9"));
+        assert!(icon.contains("cx.fillStyle = \"#ffb23c\""));
+    }
+
+    #[test]
     fn instance_tagged_spectator_url_routes_to_the_embedded_page() {
         assert_eq!(request_path("/"), "/");
         assert_eq!(request_path("/?instance=9232"), "/");
@@ -9504,6 +9684,7 @@ mod tests {
         assert_eq!(
             decorated_state(&shared)["next_game_settings"],
             json!({
+                "seed": 1,
                 "players": 6,
                 "width": 74,
                 "height": 46,
@@ -9662,6 +9843,7 @@ mod tests {
         assert_eq!(
             state["supervisor_request"]["settings"],
             json!({
+                "seed": 1,
                 "players": 4,
                 "width": 60,
                 "height": 38,
@@ -10444,6 +10626,9 @@ mod tests {
         for piece in [
             "id=\"leader\"",
             "id=\"difficulty\"",
+            "id=\"citystates\"",
+            "id=\"turnlimit\"",
+            "id=\"mapseed\"",
             "id=\"saves-group\"",
             "function syncSetupMode()",
             "async function refreshSaves()",
@@ -10466,6 +10651,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "...(gameMode === \"ai_sim\" ? {} : {civs: civ6 || !leader ? [] : [leader], difficulty})"
         ));
+        // City-state count, turn cap and seed are common world settings. They
+        // remain available for both CIVVIS modes, while the leader and
+        // difficulty above remain the single-player additions.
+        assert!(EMBEDDED_INDEX.contains("class=\"small civ6-hidden\">City-states"));
+        assert!(EMBEDDED_INDEX.contains("function syncWorldSetupInputs()"));
+        assert!(EMBEDDED_INDEX.contains("setOptionalWorldNumber(\"mapseed\", st.seed);"));
         // A build without the save endpoints hides the group rather than
         // offering one that cannot work.
         assert!(EMBEDDED_INDEX.contains("catch (error) { group.style.display = \"none\";"));
@@ -10517,7 +10708,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
         // Leader and difficulty still do follow the selection. The leader row
         // carries a second class because a third mode hides it for a different
-        // reason — see `browser_offers_the_civilization_vi_mode`.
+        // reason — see `browser_keeps_the_civilization_vi_mode_available_for_verification`.
         assert!(EMBEDDED_INDEX.contains("body.spectating .human-setting { display: none; }"));
         assert!(EMBEDDED_INDEX.contains("class=\"small human-setting civ6-hidden\">Leader"));
         assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Difficulty"));
@@ -10527,8 +10718,8 @@ mod tests {
             .contains("if (SPEC) document.getElementById(\"gamemode\").value = \"ai_sim\";"));
     }
 
-    /// The third mode plays the other game, so the panel it is chosen in has
-    /// to stop describing one of ours.
+    /// The verification-only mode plays the other game, so the panel it is
+    /// chosen in has to stop describing one of ours.
     ///
     /// Every assertion here is a setting that would otherwise stay on screen
     /// and be silently dropped. `CivvisControlSetup.lua` writes ruleset, map,
@@ -10537,10 +10728,11 @@ mod tests {
     /// is a promise about the run that the run does not keep — and the run
     /// takes hours to disprove it.
     #[test]
-    fn browser_offers_the_civilization_vi_mode() {
-        // The mode is in the list, named after what it does.
+    fn browser_keeps_the_civilization_vi_mode_available_for_verification() {
+        // This route remains selectable by verification, but it is not a
+        // public choice in the left-panel game-mode list.
         assert!(EMBEDDED_INDEX.contains(
-            "<option value=\"civ6\">Play Firaxis Civ 6 with computer control</option>"
+            "<option value=\"civ6\" hidden>Play Firaxis Civ 6 with computer control</option>"
         ));
         // A third body state, not a variation on either of the other two.
         assert!(EMBEDDED_INDEX
@@ -10553,7 +10745,10 @@ mod tests {
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // teams
             "class=\"small human-setting civ6-hidden\">Leader",
             "class=\"small civ6-hidden\">World shape",
+            "class=\"small civ6-hidden\">City-states",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // thermal
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\"", // turn limit
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\"", // map seed
             "class=\"small civ6-hidden\">Start era",
             "class=\"small civ6-hidden\">Future Era",
             "class=\"victory-options civ6-hidden\"",
@@ -10575,12 +10770,13 @@ mod tests {
         // starts is how a dead Steam client cost eleven ladder attempts.
         assert!(EMBEDDED_INDEX.contains("civ6Status = await fetchJSON(\"/civ6\");"));
         assert!(EMBEDDED_INDEX.contains("`Cannot start: ${status.blocked}`"));
-        assert!(EMBEDDED_INDEX.contains("button.disabled = blocked;"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = blocked || !!setupError;"));
     }
 
-    /// The mode is offered on every computer and refused on the ones that
-    /// cannot run it, so both of its endpoints always answer — and the refusal
-    /// is a sentence a person can act on rather than a missing response.
+    /// The verification-only mode is available on every computer and refused
+    /// on the ones that cannot run it, so both of its endpoints always answer
+    /// — and the refusal is a sentence a person can act on rather than a
+    /// missing response.
     #[test]
     fn the_civ6_endpoints_answer_on_any_host() {
         let port = TcpListener::bind(("127.0.0.1", 0))
