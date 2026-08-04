@@ -1404,6 +1404,12 @@ mod tests {
         // A controlled housing-capped city needs two food from its two worked
         // tiles. It also has a culture option and a production option.
         g.map.clear_rivers();
+        // Natural Wonders just outside the ownership ring can pay adjacent
+        // food into otherwise blank tiles. Remove that external input so the
+        // governor is choosing only among the three yields staged below.
+        for pos in g.wdisk(center, 2) {
+            g.map.tiles.get_mut(&pos).unwrap().feature = None;
+        }
         for pos in g.cities[&cid].owned_tiles.clone() {
             let tile = g.map.tiles.get_mut(&pos).unwrap();
             tile.terrain = crate::name!("desert");
@@ -1412,6 +1418,14 @@ mod tests {
             tile.improvement = None;
             tile.district = None;
             tile.hills = false;
+        }
+        // The initial ownership ring can be smaller than the six adjacent
+        // tiles. Flatten every neighbor so an unowned coast or oasis cannot
+        // silently give this deliberately housing-capped fixture growth room.
+        for pos in g.nbrs(center) {
+            let tile = g.map.tiles.get_mut(&pos).unwrap();
+            tile.terrain = crate::name!("desert");
+            tile.feature = None;
         }
         g.map.tiles.get_mut(&ring[0]).unwrap().terrain = crate::name!("grassland");
         g.map.tiles.get_mut(&ring[1]).unwrap().hills = true;

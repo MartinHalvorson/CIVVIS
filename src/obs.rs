@@ -2630,6 +2630,9 @@ mod tests {
     #[test]
     fn score_meter_is_the_turn_clock_scaled_by_the_share_of_the_leader() {
         let mut game = Game::new_full(4, 26, 18, 81_006, 100, 1, false);
+        // Give the meter an explicit leader instead of relying on generated
+        // starts to have founded and scored before this observation-only test.
+        game.observed_score.insert(0, 100);
         game.turn = 25;
         let leading = game
             .players
