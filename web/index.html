@@ -3302,7 +3302,7 @@
       <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
       <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
       <button id="mapareaset" type="button" aria-pressed="false" title="Set map area — drag the four edges" aria-label="Set map area">⛶</button>
-      <button id="compass" type="button" title="Face north · R" aria-label="Face north"><span id="compass-needle"></span></button>
+      <button id="compass" type="button" title="Face north" aria-label="Face north"><span id="compass-needle"></span></button>
       <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
       <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
       <div id="skynav" hidden role="group" aria-label="Sky navigation">
@@ -7058,8 +7058,8 @@ function updateCompass() {
   // squares the chart to the axis the world repeats in, which is a real thing
   // to put the map back to.
   compassButton.disabled = !found && !around;
-  const title = found ? "Face north · R"
-    : around ? `Square the chart to the world's axis · R · ${northTechLabel()} finds north`
+  const title = found ? "Face north"
+    : around ? `Square the chart to the world's axis · ${northTechLabel()} finds north`
     : `Bearing unknown · a way round the world squares the chart · ${northTechLabel()} finds north`;
   if (compassButton.title === title) return;
   compassButton.title = title;
