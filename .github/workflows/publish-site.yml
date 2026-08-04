@@ -6,14 +6,14 @@ name: publish-site
 #            only when somebody runs the promote-site workflow, because
 #            whether a build is worth being the front page is a judgement,
 #            and no gate can make it.
-#   /beta    the HEAD lane: origin/main as of this run, republished on a
+#   /test    the HEAD lane: origin/main as of this run, republished on a
 #            schedule. It exists so the newest engine is always playable
 #            without anyone deciding anything.
 #
 # Every deployment carries both lanes. That is not an implementation shortcut,
 # it is what Cloudflare Pages deployments are: immutable snapshots of a whole
 # directory. There is no such thing as updating half a site, so each deploy
-# rebuilds the stable lane from its pinned tag and the beta lane from head,
+# rebuilds the stable lane from its pinned tag and the test lane from head,
 # assembles one directory, and ships it. Both lanes therefore always exist,
 # and a promotion is nothing but moving the tag and deploying again.
 #
@@ -21,7 +21,7 @@ name: publish-site
 # deployments a month. This repository has recently merged several hundred
 # commits a day; deploying each one would exhaust the month inside two days.
 # Four scheduled deploys a day is ~125 a month, which leaves the rest of the
-# quota for promotions and manual runs. If beta staleness ever matters more
+# quota for promotions and manual runs. If test-lane staleness ever matters more
 # than the margin, "0 */2 * * *" is 372 a month and still fits.
 #
 # Without the Cloudflare secrets this still builds and checks both lanes and
@@ -108,37 +108,37 @@ jobs:
           echo "head=$head" >> "$GITHUB_OUTPUT"
           echo "stable=$stable" >> "$GITHUB_OUTPUT"
           echo "stable lane: $stable"
-          echo "beta lane:   $head"
+          echo "test lane:   $head"
 
       - name: Build the stable lane
         run: ./beta/publish.sh --commit "${{ steps.lanes.outputs.stable }}" --out "$PWD/lane-stable"
 
-      - name: Build the beta lane
+      - name: Build the test lane
         run: |
           if [ "${{ steps.lanes.outputs.stable }}" = "${{ steps.lanes.outputs.head }}" ]; then
             # Same commit, same bundle; a second three-minute wasm build would
             # prove nothing. cp keeps the two-lane assembly identical either way.
-            cp -R lane-stable lane-beta
+            cp -R lane-stable lane-test
           else
-            ./beta/publish.sh --commit "${{ steps.lanes.outputs.head }}" --out "$PWD/lane-beta"
+            ./beta/publish.sh --commit "${{ steps.lanes.outputs.head }}" --out "$PWD/lane-test"
           fi
 
       # One site from the two lanes. publish.sh emits a single-lane shape —
-      # landing at index.html, viewer under beta/ — and the viewer is
+      # landing at index.html, viewer under test/ — and the viewer is
       # relative-pathed, so it works at any mount point. The head build
       # provides the shell (landing, download page, _worker.js, its viewer as
-      # /beta); the stable build's viewer is then mounted at the root; the
+      # /test); the stable build's viewer is then mounted at the root; the
       # landing page becomes a real file at /home.
       - name: Assemble the site
         run: |
           set -euo pipefail
           rm -rf site
-          cp -R lane-beta site
+          cp -R lane-test site
           mkdir -p site/home
           mv site/index.html site/home/index.html
-          cp -R lane-stable/beta/. site/
+          cp -R lane-stable/test/. site/
           echo "root  $(python3 -c "import json;print(json.load(open('site/build.json'))['short'])")"
-          echo "beta  $(python3 -c "import json;print(json.load(open('site/beta/build.json'))['short'])")"
+          echo "test  $(python3 -c "import json;print(json.load(open('site/test/build.json'))['short'])")"
 
       - name: Check the routing
         run: ./beta/worker_test.py
@@ -146,8 +146,8 @@ jobs:
       - name: Check the stable lane plays
         run: ./beta/verify.py --dist site --mount root --seconds 40
 
-      - name: Check the beta lane plays
-        run: ./beta/verify.py --dist site --mount beta --seconds 40 --no-gate
+      - name: Check the test lane plays
+        run: ./beta/verify.py --dist site --mount test --seconds 40 --no-gate
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -156,7 +156,7 @@ jobs:
           path: |
             site
             beta/verify-root.png
-            beta/verify-beta.png
+            beta/verify-test.png
           if-no-files-found: warn
           retention-days: 14
 
@@ -201,10 +201,10 @@ jobs:
             echo "| lane | commit |"
             echo "| --- | --- |"
             echo "| civvis.ai (stable) | \`$(python3 -c "import json;print(json.load(open('site/build.json'))['short'])")\` |"
-            echo "| civvis.ai/beta (head) | \`$(python3 -c "import json;print(json.load(open('site/beta/build.json'))['short'])")\` |"
+            echo "| civvis.ai/test (head) | \`$(python3 -c "import json;print(json.load(open('site/test/build.json'))['short'])")\` |"
             echo
             echo "- https://civvis.ai — the promoted build"
-            echo "- https://civvis.ai/beta/ — the latest main"
+            echo "- https://civvis.ai/test/ — the latest main"
             echo "- https://civvis.ai/home — the landing page"
             echo "- https://civvis.ai/download/ — the native binaries"
           } >> "$GITHUB_STEP_SUMMARY"
