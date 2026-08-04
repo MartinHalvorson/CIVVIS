@@ -3136,6 +3136,7 @@ fn simulation_settings(params: &Params) -> Value {
     .filter_map(|(enabled, name)| enabled.then_some(name))
     .collect::<Vec<_>>();
     json!({
+        "seed": params.seed,
         "players": params.num_players,
         "width": params.width,
         "height": params.height,
@@ -3198,6 +3199,16 @@ fn strategy_roster(session: &Session) -> Value {
         }));
     }
     json!(rows)
+}
+
+/// An explicit turn cap is a real configuration value, not a cast through an
+/// arbitrary JSON number. Zero cannot produce a playable game and a number
+/// wider than the engine's `u32` cap used to wrap into a surprising length.
+fn requested_turn_limit(request: &Value) -> Option<u32> {
+    request["max_turns"]
+        .as_u64()
+        .and_then(|value| u32::try_from(value).ok())
+        .filter(|value| *value > 0)
 }
 
 fn new_game_params(current: &Params, request: &Value) -> Params {
@@ -3267,8 +3278,8 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.speed = v.id().to_string();
         p.max_turns = v.turn_limit();
     }
-    if let Some(v) = request["max_turns"].as_u64() {
-        p.max_turns = v as u32;
+    if let Some(v) = requested_turn_limit(request) {
+        p.max_turns = v;
     }
     if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
         p.leader_pool = v;
@@ -3317,7 +3328,12 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.height = v as i32;
     }
     if let Some(v) = request["num_city_states"].as_u64() {
-        p.num_city_states = v as usize;
+        // Each city-state needs a distinct identity and Suzerain bonus. The
+        // same cap is exposed through `/rules` for the browser and applies to
+        // direct clients as a final guard.
+        p.num_city_states = usize::try_from(v)
+            .unwrap_or(usize::MAX)
+            .min(Rules::shared().city_states.roster.len());
     }
     if let Some(v) = request["spectate"].as_bool() {
         p.spectate = v;
@@ -3343,7 +3359,7 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             p.game_speed = GameSpeed::from_id(v).unwrap_or(GameSpeed::Standard);
             // A speed carries its own turn budget; adopt it unless the client
             // asked for a specific one in the same request.
-            p.max_turns = request["max_turns"].as_u64().unwrap_or(spec.turns as u64) as u32;
+            p.max_turns = requested_turn_limit(request).unwrap_or(spec.turns);
         }
     }
     p
@@ -4025,6 +4041,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "wonders": r.wonders,
                     "projects": r.projects,
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
+                    "city_state_limit": r.city_states.roster.len(),
                     "civ6_leaders": CIV6_LEADER_POOL.as_slice(),
                     "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
@@ -4413,8 +4430,8 @@ mod tests {
     use super::{
         automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
         new_game_params, publishes_player_turn_frames, query_value, request_path, save_path,
-        seat_delay_ms, spectator_frame, spectator_step_completes_frame, strategy_roster,
-        tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
+        seat_delay_ms, spectator_frame, spectator_step_completes_frame, staged_next_game_params,
+        strategy_roster, tile_mark, valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot,
         ChronicleState, FrameDelivery, Params, Session, Shared, SpectatorFrame,
         BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
         EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
@@ -4434,6 +4451,43 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{mpsc, Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn browser_gives_every_shipped_improvement_a_named_tile_marker() {
+        let markers = EMBEDDED_INDEX
+            .split_once("const IMPROVEMENT_MARKERS = Object.freeze({")
+            .expect("the improvement marker registry")
+            .1
+            .split_once("\n});")
+            .expect("the end of the improvement marker registry")
+            .0;
+        for improvement in crate::rules::Rules::embedded().improvements.keys() {
+            assert!(
+                markers.contains(&format!("\n  {}:", improvement.as_str())),
+                "{improvement} has no deliberate browser tile marker"
+            );
+        }
+
+        let renderer = EMBEDDED_INDEX
+            .split_once("function drawImprovement(t, x, y) {")
+            .expect("the improvement renderer")
+            .1
+            .split_once("\n// Every city drew")
+            .expect("the end of the improvement renderer")
+            .0;
+        assert!(renderer.contains("const marker = IMPROVEMENT_MARKERS[imp] || \"unknown\";"));
+        let marker_branch = renderer
+            .find("} else if (marker !== \"unknown\") {")
+            .expect("the named-marker branch");
+        let anonymous_fallback = renderer
+            .find("// Everything rarer still reads as a built installation")
+            .expect("the anonymous fallback");
+        assert!(
+            marker_branch < anonymous_fallback,
+            "known improvements must reach their marker before the generic fallback"
+        );
+        assert!(renderer.contains("paintImprovementMarker(marker, t, x, y, dir);"));
+    }
 
     /// The pace a viewer picks is what a turn costs, so the seats' waits have
     /// to add back up to it — at any player count, with minors on their
@@ -6881,6 +6935,50 @@ mod tests {
         );
         assert_eq!(custom.game_speed, GameSpeed::Marathon);
         assert_eq!(custom.max_turns, 99);
+
+        // The browser's custom cap is shared by single player and the
+        // exhibition. Invalid values must not wrap the engine's u32 field or
+        // turn a playable match into a zero-turn result.
+        for invalid in [0, u64::from(u32::MAX) + 1] {
+            let ignored = new_game_params(
+                &current(),
+                &json!({"game_speed": "quick", "max_turns": invalid}),
+            );
+            assert_eq!(ignored.max_turns, GameSpeed::Quick.turn_limit());
+        }
+    }
+
+    /// The shared lobby fields are not spectator-only metadata. They shape a
+    /// human world in exactly the same way as an AI exhibition, and the
+    /// normalized state is what the native supervisor and wasm router both
+    /// hand back to the browser after staging.
+    #[test]
+    fn shared_world_setup_round_trips_city_states_turn_cap_and_seed() {
+        let request = json!({
+            "num_players": 6,
+            "num_city_states": 2,
+            "game_speed": "epic",
+            "max_turns": 1_234,
+            "seed": 8_765_432,
+            "spectate": false,
+        });
+        let params = new_game_params(&current(), &request);
+        assert_eq!(params.num_city_states, 2);
+        assert_eq!(params.max_turns, 1_234);
+        assert_eq!(params.seed, 8_765_432);
+        assert!(!params.spectate);
+
+        let settings = simulation_settings(&params);
+        assert_eq!(settings["city_states"], json!(2));
+        assert_eq!(settings["turns"], json!(1_234));
+        assert_eq!(settings["seed"], json!(8_765_432));
+
+        // Staging retains world settings but leaves the active world's mode
+        // alone; an automatic successor may never silently turn into a game
+        // nobody is controlling.
+        let staged = staged_next_game_params(&current(), &request);
+        assert!(staged.spectate == current().spectate);
+        assert_eq!(simulation_settings(&staged), settings);
     }
 
     /// The first question the lobby asks. One ruleset is modeled, so the
@@ -7251,6 +7349,12 @@ mod tests {
                 "the {setting} setting still offers a non-answer"
             );
         }
+        for input in ["citystates", "turnlimit", "mapseed"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("id=\"{input}\" type=\"number\"")),
+                "browser setup is missing the {input} numeric input"
+            );
+        }
         for victory in ["science", "culture", "religious", "diplomatic", "domination", "score"] {
             assert!(EMBEDDED_INDEX.contains(&format!(
                 "id=\"victory-{victory}\" checked>"
@@ -7259,9 +7363,12 @@ mod tests {
         // The lobby reads its own controls once, with no resolving pass and no
         // remembered marks between the panel and the payload.
         assert!(EMBEDDED_INDEX.contains("const payload = selectedSimulationSettings();"));
-        assert!(EMBEDDED_INDEX.contains("return {...selectedSimulationSettings(),"));
+        assert!(EMBEDDED_INDEX.contains("const settings = selectedSimulationSettings();"));
+        assert!(EMBEDDED_INDEX.contains("seed: settings.seed ?? Math.floor(Math.random() * 1e9)"));
         assert!(EMBEDDED_INDEX.contains("const changed = human || (activeSimulationSettingsKey"));
         assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\","));
+        assert!(EMBEDDED_INDEX.contains("num_city_states: cityStates"));
+        assert!(EMBEDDED_INDEX.contains("max_turns: turnLimit"));
         // None of the machinery that used to stand in for an unmade decision
         // survives anywhere in the client.
         for gone in [
@@ -7815,6 +7922,7 @@ mod tests {
         let display_advanced = [
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"10\"><span><input type=\"checkbox\" id=\"gridchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"20\"><span><input type=\"checkbox\" id=\"reschk\"",
+            "class=\"speed-row display-advanced-setting resource-display-setting\" data-advanced-order=\"25\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"30\"><span><input type=\"checkbox\" id=\"yieldchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"40\"><span><input type=\"checkbox\" id=\"artifactchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"45\"><span><input type=\"checkbox\" id=\"rocketanimchk\" checked> Show rocket &amp; satellite animations",
@@ -7826,6 +7934,31 @@ mod tests {
             }),
             "map and spaceflight switches should lead Interface Settings advanced controls"
         );
+        // Resource names are the default detailed-map treatment, but the
+        // existing compact symbol stays an explicit, persisted choice and the
+        // only treatment at survey scale.
+        for resource_display in [
+            "id=\"resourcedisplay\" aria-label=\"Resource display\"",
+            "<option value=\"symbol_word\" selected>Symbol &amp; word</option>",
+            "<option value=\"symbol\">Symbol</option>",
+            ".resource-display-setting { grid-template-columns: minmax(0, 1fr); gap: 4px; }",
+            ".resource-display-setting > select { width: 100%; }",
+            ".advanced-settings-body > .resource-display-setting { grid-column: 1 / -1; }",
+            "const RESOURCE_DISPLAY_STORAGE_KEY = \"civvis-resource-display\";",
+            "let RESOURCE_DISPLAY = localStorage.getItem(RESOURCE_DISPLAY_STORAGE_KEY) === \"symbol\"",
+            "function setResourceDisplay(mode) {",
+            "resourceDisplay.onchange = () => setResourceDisplay(resourceDisplay.value);",
+            "function drawResourceWordBadge(t, x, y, rim = resourceBadgeRim(t)) {",
+            "drawResourcePictogram(t.resource, iconX, ry - .1, RES_WORD_ICON_SIZE);",
+            "cx.strokeText(label, textX, ry + .25, textWidth);",
+            "if (RESOURCE_DISPLAY === \"symbol_word\" && cam.scale >= RES_WORD_LABEL_SCALE) {",
+            "drawResourceSymbolBadge(t, x, y, rim);",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(resource_display),
+                "resource display contract is missing: {resource_display}"
+            );
+        }
         assert!(EMBEDDED_INDEX.contains(
             "let SHOW_ROCKET_ANIMATIONS = localStorage.getItem(\"civvis-show-rocket-animations\") !== \"0\";"
         ));
@@ -7850,8 +7983,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("option.disabled = !split;"));
         // The world size decides which splits exist, so it re-fits them before
         // the panel's own delegated listener stages what is now selected.
-        assert!(EMBEDDED_INDEX
-            .contains("document.getElementById(\"np\").addEventListener(\"change\", syncTeams);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.getElementById(\"np\").addEventListener(\"change\", () => {\n  syncTeams();\n  syncWorldSetupInputs();\n});"
+        ));
         // The server is handed the seat-by-seat assignment, never the rule
         // that produced it; a world on screen is read back the other way.
         assert!(EMBEDDED_INDEX.contains("teams: teamAssignment(np, readSetting(\"teams\")),"));
@@ -8181,13 +8315,13 @@ mod tests {
             "grid-template-columns: minmax(0, 1fr) 11px minmax(0, 1fr);"
         ), "Start and Now flank one fixed-width trend column");
         assert!(EMBEDDED_INDEX.contains(
-            "<span title=\"Win odds at the start of the game, per cent\">START</span>"
+            "playerHudSortHead(\"win_start\", \"START\", \"Win odds at the start of the game\")"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "<span class=\"odds-trend-head\" title=\"Trend from start to now\">Δ</span>"
+            "playerHudSortHead(\"win_delta\", \"Δ\", \"Change in win odds\", \"odds-trend-head\")"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "<span title=\"Win odds now, per cent\">NOW</span>"
+            "playerHudSortHead(\"win\", \"NOW\", \"Current win odds\")"
         ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
             "the identity track is written once and then only from the column model");
@@ -8231,7 +8365,7 @@ mod tests {
             .split_once("const PLAYER_HUD_COLUMNS = [")
             .expect("player HUD column model")
             .1
-            .split_once("];\n// One bar per seam")
+            .split_once("];\n")
             .expect("end of player HUD column model")
             .0;
         assert_hud_stat_order(stat_columns, "player HUD column model");
@@ -8293,6 +8427,43 @@ mod tests {
         // One bar per seam between two adjacent data columns, dragged to move
         // width from the column on its left into the column on its right.
         assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
+        // Every fact in the player-HUD column model can order its rows. The
+        // Watch-as and lock cells are actions, deliberately outside that model,
+        // so an operator never has to sort a meaningless column just to reach
+        // ELO, a yield, or an active plan.
+        assert!(EMBEDDED_INDEX.contains(
+            "...PLAYER_HUD_COLUMNS.map(column => column.key), \"win_start\", \"win_delta\","
+        ));
+        assert!(EMBEDDED_INDEX.contains("const HUD_SORT_STORAGE_KEY = \"civvis-player-hud-sort-v1\";"));
+        assert!(EMBEDDED_INDEX.contains("function playerHudSortValue(player, key, stats)"));
+        assert!(EMBEDDED_INDEX.contains("function sortedPlayerHudPlayers(players, statsByPlayer)"));
+        assert!(EMBEDDED_INDEX.contains("function togglePlayerHudSort(key)"));
+        assert!(EMBEDDED_INDEX.contains("if (leftValue === null || rightValue === null) {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (leftValue !== rightValue) return leftValue === null ? 1 : -1;"
+        ), "unavailable values stay below observed values in either sort direction");
+        assert!(EMBEDDED_INDEX.contains(
+            "if (rawValue === null || rawValue === undefined || rawValue === \"\") return null;"
+        ), "a missing statistic is distinct from a numeric zero when sorting");
+        assert!(EMBEDDED_INDEX.contains("if (key === \"win_start\") return oddsValue(player.odds_start);"));
+        assert!(EMBEDDED_INDEX.contains("if (key === \"win_delta\") {"));
+        assert!(EMBEDDED_INDEX.contains("return oddsValue(player.odds_now);"),
+            "the NOW Win heading should order by its current estimate");
+        for key in ["civ", "leader", "player", "elo", "win_start", "win_delta", "win", "age", "plan"] {
+            assert!(
+                EMBEDDED_INDEX.contains(&format!("playerHudSortHead(\"{key}\"")),
+                "the {key} heading should be sortable"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains("playerHudSortHead(kind, label, title, kind)"),
+            "every generated statistic heading should be sortable");
+        assert!(!EMBEDDED_INDEX.contains("playerHudSortHead(\"watch\""),
+            "Watch-as stays an action instead of a sort target");
+        assert!(EMBEDDED_INDEX.contains("class=\"hud-sort-head\" data-hud-sort=\"${key}\""));
+        assert!(EMBEDDED_INDEX.contains("const sort = ev.target.closest?.(\"[data-hud-sort]\");"));
+        assert!(EMBEDDED_INDEX.contains("#playerhud .hud-sort-cell[data-hud-sort-active=\"true\"]"));
+        assert!(EMBEDDED_INDEX.contains("const scoreRankedMajors = state.players"));
+        assert!(EMBEDDED_INDEX.contains("const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer);"));
         assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
         assert!(EMBEDDED_INDEX.contains("function aimPlayerHudSeam(seam, targetWidth)"));
         assert!(EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam="));
@@ -9396,7 +9567,7 @@ mod tests {
     }
 
     #[test]
-    fn strategic_mountains_and_volcanoes_share_a_fifty_percent_larger_icon() {
+    fn strategic_mountains_and_volcanoes_are_centered_top_down_landforms() {
         let icon = EMBEDDED_INDEX
             .split("const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;")
             .nth(1)
@@ -9405,13 +9576,36 @@ mod tests {
         assert!(icon.contains(
             "cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE)"
         ));
+        assert!(icon.contains("const mountainRadius = volcano ? 15 : 15.5;"));
+        assert!(icon.contains("cx.arc(0, 0, mountainRadius, 0, 7);"));
         assert!(icon.contains(
-            "const rimY = -7, rimHalfWidth = 5.3, baseY = 19, baseHalfWidth = 16"
+            "const rimRadius = 10.5, craterRadius = 6.2, lavaRadius = 3.7;"
         ));
-        assert!(icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
-        assert!(icon.contains("cx.ellipse(0, rimY, rimHalfWidth, 1.35"));
+        assert!(icon.contains("cx.arc(0, 0, craterRadius, 0, 7);"));
+        assert!(icon.contains("const peakX = 0, peakY = 0;"));
+        assert!(icon.contains("cx.quadraticCurveTo(-6, 1, peakX, peakY);"));
+        assert!(!icon.contains("const rimY = -7"));
+        assert!(!icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false)"));
+
+        let wonder = EMBEDDED_INDEX
+            .split("  volcano(x, y, k, art) {")
+            .nth(1)
+            .and_then(|tail| tail.split("  ruins(x, y, k, art) {").next())
+            .expect("top-down Natural Wonder volcano renderer");
+        assert!(wonder.contains("const calderaRadius = 14 * k;"));
+        assert!(wonder.contains("cx.arc(x, y, calderaRadius, 0, 7);"));
+        assert!(!wonder.contains("wonderFace(x, y, k, art.tint"));
+
+        let effects = EMBEDDED_INDEX
+            .split("function drawFeatureEffects")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawStrategicMarsh").next())
+            .expect("volcano feature effects renderer");
+        assert!(effects.contains("const erupting = t.volcano_state === 2;"));
+        assert!(effects.contains("[[8, .82], [12, .44]]"));
+        assert!(!effects.contains("[-5,-18,5]"));
     }
 
     #[test]
@@ -9516,6 +9710,7 @@ mod tests {
         assert_eq!(
             decorated_state(&shared)["next_game_settings"],
             json!({
+                "seed": 1,
                 "players": 6,
                 "width": 74,
                 "height": 46,
@@ -9674,6 +9869,7 @@ mod tests {
         assert_eq!(
             state["supervisor_request"]["settings"],
             json!({
+                "seed": 1,
                 "players": 4,
                 "width": 60,
                 "height": 38,
@@ -10456,6 +10652,9 @@ mod tests {
         for piece in [
             "id=\"leader\"",
             "id=\"difficulty\"",
+            "id=\"citystates\"",
+            "id=\"turnlimit\"",
+            "id=\"mapseed\"",
             "id=\"saves-group\"",
             "function syncSetupMode()",
             "async function refreshSaves()",
@@ -10478,6 +10677,12 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "...(gameMode === \"ai_sim\" ? {} : {civs: civ6 || !leader ? [] : [leader], difficulty})"
         ));
+        // City-state count, turn cap and seed are common world settings. They
+        // remain available for both CIVVIS modes, while the leader and
+        // difficulty above remain the single-player additions.
+        assert!(EMBEDDED_INDEX.contains("class=\"small civ6-hidden\">City-states"));
+        assert!(EMBEDDED_INDEX.contains("function syncWorldSetupInputs()"));
+        assert!(EMBEDDED_INDEX.contains("setOptionalWorldNumber(\"mapseed\", st.seed);"));
         // A build without the save endpoints hides the group rather than
         // offering one that cannot work.
         assert!(EMBEDDED_INDEX.contains("catch (error) { group.style.display = \"none\";"));
@@ -10566,7 +10771,10 @@ mod tests {
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // teams
             "class=\"small human-setting civ6-hidden\">Leader",
             "class=\"small civ6-hidden\">World shape",
+            "class=\"small civ6-hidden\">City-states",
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // thermal
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\"", // turn limit
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\"", // map seed
             "class=\"small civ6-hidden\">Start era",
             "class=\"small civ6-hidden\">Future Era",
             "class=\"victory-options civ6-hidden\"",
@@ -10588,7 +10796,7 @@ mod tests {
         // starts is how a dead Steam client cost eleven ladder attempts.
         assert!(EMBEDDED_INDEX.contains("civ6Status = await fetchJSON(\"/civ6\");"));
         assert!(EMBEDDED_INDEX.contains("`Cannot start: ${status.blocked}`"));
-        assert!(EMBEDDED_INDEX.contains("button.disabled = blocked;"));
+        assert!(EMBEDDED_INDEX.contains("button.disabled = blocked || !!setupError;"));
     }
 
     /// The verification-only mode is available on every computer and refused
@@ -11627,6 +11835,55 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
+    #[test]
+    fn browser_next_action_prefers_nearby_unvisited_units_before_revisiting() {
+        let start = EMBEDDED_INDEX
+            .find("const nextActionVisited = new Set();")
+            .expect("next action should retain a visited-unit pass");
+        let end = EMBEDDED_INDEX[start..]
+            .find("// Civ 6's explicit previous/next-unit controls")
+            .map(|offset| start + offset)
+            .expect("the ordinary unit cycle should remain separate from next action");
+        let action_pass = &EMBEDDED_INDEX[start..end];
+
+        // Mark the current unit before looking for candidates, so the action
+        // moves onward instead of selecting the unit already under review.
+        let mark_current = action_pass
+            .find("if (origin) nextActionVisited.add(origin.id);")
+            .expect("next action should mark the current unit visited");
+        let fresh_candidates = action_pass
+            .find("let candidates = waiting.filter(unit => !nextActionVisited.has(unit.id));")
+            .expect("next action should prefer unvisited units");
+        assert!(
+            mark_current < fresh_candidates,
+            "the current unit must be visited before the fresh candidate set is made"
+        );
+        let revisit = action_pass
+            .find("if (!candidates.length) {")
+            .expect("next action should reopen visited units after a full pass");
+        assert!(
+            fresh_candidates < revisit,
+            "visited units may be reconsidered only after every fresh candidate"
+        );
+        assert!(action_pass.contains("nextActionVisited.clear();"));
+        assert!(action_pass.contains("candidates = waiting.filter(unit => !origin || unit.id !== origin.id);"));
+        // `whexDist` keeps the nearest-unit promise true across wrapped map
+        // seams instead of measuring the long way around the world.
+        assert!(action_pass.contains(
+            "whexDist(origin.pos, first.pos) - whexDist(origin.pos, second.pos)"
+        ));
+        assert!(action_pass.contains("nextActionVisited.add(sel.id);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function nextAction() {\n  if (!state || SPEC) return;\n  advanceToNextActionUnit(true);"
+        ));
+        // Period/comma and Tab remain a reversible roster cycle rather than
+        // acquiring an unmatched proximity-based "previous" behavior.
+        assert!(EMBEDDED_INDEX.contains("if (step > 0) { advanceToNextUnit(true); return; }"));
+        assert!(EMBEDDED_INDEX.contains(
+            "{id: \"NextUnitTab\", key: \"Tab\", run: () => advanceToNextUnit(true)}"
+        ));
+    }
+
     /// Resting over a tile reports it, the way Civ 6's plot tooltip does — and
     /// it keeps doing so after the map has been panned or the simulation advances.
     ///
@@ -11778,8 +12035,8 @@ mod tests {
     }
 
     /// The map controls read left to right in the order a viewer reaches for
-    /// them: collapse the command deck, set the map area, face north, choose a
-    /// sky destination when one is available, zoom in, zoom out, dismiss.
+    /// them: collapse the command deck, set the map area, face north, zoom in,
+    /// zoom out, choose a sky route when one is available, dismiss.
     /// Dismissal is last because it is the only one that removes the bar, and
     /// it hides itself while the deck is collapsed — Interface Settings is the
     /// only way back and it lives inside the deck.
@@ -11798,9 +12055,9 @@ mod tests {
             "id=\"paneltoggle\"",
             "id=\"mapareaset\"",
             "id=\"compass\"",
-            "id=\"skyworlds\"",
             "id=\"zin\"",
             "id=\"zout\"",
+            "id=\"skynav\"",
             "data-overlay-close=\"controls\"",
         ] {
             let at = dock
@@ -11824,33 +12081,41 @@ mod tests {
     /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did
     /// not make them navigable. Sixty-five notches is a distance nobody
     /// scrolls, and every one of them has to be aimed over empty space. So the
-    /// sky carries its own way about: the four places the gearing already
-    /// calls arrivals in the map controls, the shots that hold a whole scale,
-    /// and the zoom laid out end to end as a ladder — one sky bar standing
-    /// over those controls, up only while there is a sky to cross.
+    /// sky carries its own way about: the places the gearing already calls
+    /// arrivals, the shots that hold a whole scale, and the zoom laid out end
+    /// to end as a ladder — one complete route inside the map controls, up
+    /// only while there is a sky to cross.
     #[test]
     fn the_sky_carries_its_own_way_about() {
-        // It is part of the map controls: the same dock, the same dismissal.
-        // Its scale shots and ladder stand *above* the zoom buttons rather
-        // than in the dock's flow, because the dock's height is ground the
-        // framing already reserves and a second row in the flow would move the
-        // world every time the camera left the globe. The world arrivals are
-        // compact map controls between north and zoom-in.
+        // It is part of the map controls: the same dock, same row, and same
+        // dismissal. The complete labelled route follows zoom-out and precedes
+        // the exit, rather than splitting compact world glyphs by the compass
+        // from the solar-system route above the map.
         let dock = EMBEDDED_INDEX
             .split_once("<div id=\"map-controls-dock\">")
             .expect("the map control dock")
             .1;
         let bar = dock.find("id=\"skynav\"").expect("the sky navigator");
         let zoom = dock.find("<div id=\"zoomctl\">").expect("the zoom controls");
+        let minus = dock.find("id=\"zout\"").expect("the zoom-out control");
+        let exit = dock
+            .find("data-overlay-close=\"controls\"")
+            .expect("the map-control dismissal");
         assert!(
-            bar < zoom,
-            "the sky navigator reads before the zoom buttons it stands over"
+            zoom < bar,
+            "the sky navigator belongs inside the map-control strip"
         );
-        assert!(EMBEDDED_INDEX.contains("body.overlay-controls-hidden #skynav"));
+        assert!(
+            minus < bar && bar < exit,
+            "the complete sky route follows minus and precedes map-control exit"
+        );
         assert!(EMBEDDED_INDEX.contains("#skynav[hidden] { display: none; }"));
-        assert!(EMBEDDED_INDEX.contains("bottom: calc(100% + 50px)"));
+        assert!(EMBEDDED_INDEX.contains("overflow-x: auto;"));
+        assert!(EMBEDDED_INDEX.contains("#zoomctl > button { flex: 0 0 34px; }"));
+        assert!(!EMBEDDED_INDEX.contains("body.overlay-controls-hidden #skynav"));
+        assert!(!EMBEDDED_INDEX.contains("bottom: calc(100% + 50px)"));
         for part in [
-            "id=\"skyworlds\"",
+            "id=\"skynav-worlds\"",
             "id=\"skynav-scales\"",
             "id=\"skyladder\"",
             "id=\"skyspan\"",
@@ -11860,12 +12125,9 @@ mod tests {
                 "the sky navigator is missing {part}"
             );
         }
-        let compass = dock.find("id=\"compass\"").expect("the north control");
-        let worlds = dock.find("id=\"skyworlds\"").expect("the world controls");
-        let zoom_in = dock.find("id=\"zin\"").expect("the zoom-in control");
         assert!(
-            compass < worlds && worlds < zoom_in,
-            "Earth through Exoplanet should sit between face north and zoom in"
+            !EMBEDDED_INDEX.contains("id=\"skyworlds\""),
+            "the compact icon-only skyworlds strip is gone"
         );
         // Only home takes the bar down, and only while home fills the frame:
         // home is the one world with a board on it. Every other world is
@@ -11952,17 +12214,28 @@ mod tests {
         // no zoom can now reach.
         assert!(EMBEDDED_INDEX.contains("label:\"Solar system\", mark:\"☉\""));
         assert!(EMBEDDED_INDEX.contains("stops.push({id:\"voyage\", label:\"Voyage\""));
-        // Earth through Exoplanet are direct flight controls. The wider scale
-        // shots keep their names in the bar over the map, where they can sit
-        // beside the full-range zoom ladder without crowding the control row.
+        // The complete old route lives in the control row in the order a
+        // journey reads: the local arrivals Earth, Moon, and Mars; the solar
+        // system and Voyage shots; then the destination called Exoplanet. The
+        // destination is still a world flight, even though it follows the
+        // scale shots in the row.
         assert!(EMBEDDED_INDEX.contains(
-            "skyNavWorldRow.replaceChildren(...worlds.map(stop => skyNavButton(\"world\", stop)));"
+            "const local = worlds.filter(stop => stop.id !== \"exo\");"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "skyNavScaleRow.replaceChildren(...scales.map(stop => skyNavButton(\"scale\", stop)));"
+            "const onward = [...scales, ...worlds.filter(stop => stop.id === \"exo\")];"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "document.querySelectorAll(\"#skynav [data-sky-stop], #skyworlds [data-sky-stop]\")"
+            "skyNavWorldRow.replaceChildren(...local.map(stop => skyNavButton(\"world\", stop)));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "skyNavScaleRow.replaceChildren(...onward.map(stop =>"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "skyNavButton(stop.body ? \"world\" : \"scale\", stop)"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.querySelectorAll(\"#skynav [data-sky-stop]\")"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "button.setAttribute(\"aria-label\", kind === \"world\" ?"

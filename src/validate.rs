@@ -133,13 +133,20 @@ impl<'a> Check<'a> {
         }
     }
 
-    /// Unique content for a civilization we have not shipped yet is inert
-    /// rather than broken: nothing can own it, so nothing can build it. That
-    /// is worth saying out loud, but it is not a defect in the ruleset.
+    /// Unique content for an empire we have not shipped yet is inert rather
+    /// than broken: nothing can own it, so nothing can build it. City-state
+    /// improvements name their Suzerain in the same field, however, and are
+    /// reachable through that city's Envoy gate rather than a major civ.
     fn civ(&mut self, subject: &str, field: &str, value: Option<&String>) {
         let civs = &self.rules.civs;
         if let Some(value) = value {
-            if !civs.contains_key(value) {
+            let city_state = self
+                .rules
+                .city_states
+                .roster
+                .iter()
+                .any(|seat| seat.name == *value);
+            if !civs.contains_key(value) && !city_state {
                 self.warn(
                     subject,
                     format!("{field} names {value:?}, an undefined civilization — unreachable until it ships"),
@@ -962,6 +969,30 @@ mod tests {
             .map(|finding| finding.to_string())
             .collect();
         assert!(errors.is_empty(), "ruleset errors:\n{}", errors.join("\n"));
+    }
+
+    #[test]
+    fn city_state_unique_improvements_are_not_reported_as_unreachable_civilizations() {
+        let rules = Rules::embedded();
+        let findings = validate(&rules);
+        for (id, improvement) in &rules.improvements {
+            let city_state_owner = improvement.unique_to.as_ref().is_some_and(|owner| {
+                rules
+                    .city_states
+                    .roster
+                    .iter()
+                    .any(|seat| seat.name == *owner)
+            });
+            if city_state_owner {
+                assert!(
+                    !findings.iter().any(|finding| {
+                        finding.subject == format!("improvements/{id}")
+                            && finding.message.contains("undefined civilization")
+                    }),
+                    "city-state improvement {id} should be reachable through suzerainty"
+                );
+            }
+        }
     }
 
     /// A broken reference is caught rather than reaching the engine.

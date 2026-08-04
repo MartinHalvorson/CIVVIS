@@ -1915,7 +1915,9 @@ mod tests {
             next_column, plan_column,
             "the resizable AGE column belongs immediately before PLAN"
         );
-        assert!(INDEX.contains("title=\"Civilization age\">AGE</span>"));
+        assert!(INDEX.contains(
+            "playerHudSortHead(\"age\", \"AGE\", \"Civilization age\")"
+        ));
         assert!(INDEX.contains("diplomacy-identity-field diplomacy-age"));
     }
 
