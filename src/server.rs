@@ -102,6 +102,17 @@ fn launched_built_at() -> Option<String> {
 /// This deliberately reads the launch environment or promoted executable name
 /// instead of `option_env!`: a compile-time revision would force a complete
 /// optimized rebuild even when the source code itself has not changed.
+/// The revision a supervisor selected, or `None` for an unstamped build.
+///
+/// ⚠ Deliberately NOT `runtime_commit("unknown")`: a run log that says
+/// `"revision": "unknown"` reads like a failed lookup, while `null` says
+/// plainly that nobody stamped this build. The identity that always reports is
+/// the treatment list emitted beside it — see `civvis_orders`'s genome line.
+pub fn runtime_commit_or_none() -> Option<String> {
+    let commit = runtime_commit("");
+    (!commit.is_empty()).then_some(commit)
+}
+
 pub(crate) fn runtime_commit(fallback: &str) -> String {
     #[cfg(target_arch = "wasm32")]
     {
@@ -1837,6 +1848,21 @@ impl Session {
     }
 
     pub fn new(params: Params) -> Session {
+        let (league, seat_from_roster) = Self::load_params_league(&params);
+        Self::new_with_league(params, league, seat_from_roster)
+    }
+
+    /// Construct a world against a roster supplied by its host.
+    ///
+    /// Native sessions normally load from `Params::league_dir`. A browser
+    /// module has no filesystem, so the local desktop host hands it the same
+    /// live roster as the native spectator and asks it to seat directly from
+    /// that snapshot.
+    fn new_with_league(
+        params: Params,
+        mut league: Option<crate::league::League>,
+        seat_from_roster: bool,
+    ) -> Session {
         // Seat 0 is the person at the keyboard, which is what decides who the
         // difficulty hands its bonuses to. A spectated game has nobody there.
         let human_seats = if params.spectate {
@@ -1871,7 +1897,6 @@ impl Session {
         // The hierarchical agent is the stock major-civilization default when
         // no league strategy is seated. Minors/barbarians retain the cheaper
         // baseline because they do not need empire-level planning.
-        let (mut league, seat_from_roster) = Self::load_params_league(&params);
         let (mut ais, mut seat_strategy) = Self::ai_fleet(
             &game,
             league.as_ref(),
@@ -2186,6 +2211,33 @@ impl Session {
                 "readiness": (force.readiness * 100.0).round() / 100.0,
                 "strength_ratio": (force.strength_ratio * 100.0).round() / 100.0,
             })).collect::<Vec<_>>(),
+            "war": plan.war.as_ref().map(|war| json!({
+                "enabled": war.enabled,
+                "selective": war.selective,
+                "rapid": war.rapid,
+                "active": war.active,
+                "phase": war.phase,
+                "target_player": war.target_player,
+                "objective_city": city(war.objective_city),
+                "breakthrough_tech": war.breakthrough_tech,
+                "assault_unit": war.assault_unit,
+                "predecessor": war.predecessor,
+                "breach_unit": war.breach_unit,
+                "required_bodies": war.required_bodies,
+                "ready_bodies": war.ready_bodies,
+                "staged_bodies": war.staged_bodies,
+                "breach_ready": war.breach_ready,
+                "upgrade_gold_reserved": (war.upgrade_gold_reserved * 10.0).round() / 10.0,
+                "appointed_turn": war.appointed_turn,
+                "appointments": war.appointments,
+                "breakthroughs": war.breakthroughs,
+                "mobilizations": war.mobilizations,
+                "declarations": war.declarations,
+                "complete_package_declarations": war.complete_package_declarations,
+                "objectives_captured": war.objectives_captured,
+                "objectives_captured_within_ten": war.objectives_captured_within_ten,
+                "aborts": war.aborts,
+            })),
         })
     }
 
@@ -2309,6 +2361,13 @@ impl Session {
             // per-seat name from `name_ai_players` reads better and is just
             // as true.
             if let (true, Some(s)) = (self.seat_from_roster, self.seat_entry(id)) {
+                // Stable rating identity, distinct from both the friendly
+                // username and the controller's one-word tactical label.
+                // Hosted browser games return this exact value when filing
+                // the terminal result into the persistent league.
+                if !s.human {
+                    player["ai_player_strategy"] = json!(s.name);
+                }
                 player["ai_username"] = json!(s.username);
                 player["ai_strat_label"] = json!(s.label());
             }
@@ -9797,6 +9856,71 @@ mod tests {
         assert!(plan["forces"].is_array());
     }
 
+    #[test]
+    fn unified_war_plan_crosses_the_json_and_browser_contract() {
+        let session = Session::new(current());
+        let plan = crate::ai::PlanReport {
+            strategy: "conquest",
+            victory_target: None,
+            rush: false,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: 37,
+            peace_offers: Vec::new(),
+            forces: Vec::new(),
+            war: Some(crate::ai::WarPlanReport {
+                enabled: true,
+                selective: true,
+                rapid: true,
+                active: true,
+                phase: Some("strike"),
+                target_player: Some(1),
+                objective_city: None,
+                breakthrough_tech: Some(crate::name!("apprenticeship")),
+                assault_unit: Some(crate::name!("man_at_arms")),
+                predecessor: Some(crate::name!("swordsman")),
+                breach_unit: Some(crate::name!("battering_ram")),
+                required_bodies: 4,
+                ready_bodies: 4,
+                staged_bodies: 3,
+                breach_ready: true,
+                upgrade_gold_reserved: 123.46,
+                appointed_turn: Some(21),
+                appointments: 2,
+                breakthroughs: 2,
+                mobilizations: 1,
+                declarations: 1,
+                complete_package_declarations: 1,
+                objectives_captured: 0,
+                objectives_captured_within_ten: 0,
+                appointment_to_tech_turns: 12,
+                tech_to_declaration_turns: 4,
+                declaration_to_capture_turns: 0,
+                appointment_to_tech_samples: vec![12],
+                tech_to_declaration_samples: vec![4],
+                declaration_to_capture_samples: Vec::new(),
+                aborts: std::collections::BTreeMap::from([("target no longer alive", 2)]),
+            }),
+        };
+
+        let wire = session.plan_json(&plan);
+        assert_eq!(wire["war"]["selective"], json!(true));
+        assert_eq!(wire["war"]["rapid"], json!(true));
+        assert_eq!(wire["war"]["phase"], json!("strike"));
+        assert_eq!(wire["war"]["breakthrough_tech"], json!("apprenticeship"));
+        assert_eq!(wire["war"]["ready_bodies"], json!(4));
+        assert_eq!(wire["war"]["staged_bodies"], json!(3));
+        assert_eq!(wire["war"]["upgrade_gold_reserved"], json!(123.5));
+        assert_eq!(wire["war"]["aborts"]["target no longer alive"], json!(2));
+        assert!(EMBEDDED_INDEX.contains("const warPlan = plan?.war || null;"));
+        assert!(EMBEDDED_INDEX.contains("warPlan.selective"));
+        assert!(EMBEDDED_INDEX.contains("warPlan.rapid"));
+        assert!(EMBEDDED_INDEX.contains("row(\"Attack phase\""));
+        assert!(EMBEDDED_INDEX.contains("row(\"Strike package\""));
+    }
+
     /// The Active AI strategy panel reads one civilization's plan beside what it
     /// is actually spending its science and culture on. The observation only
     /// ever carries the *observed* seat's study, in `me`, and above the world
@@ -10763,6 +10887,11 @@ mod tests {
             .unwrap();
         assert_eq!(session.seat_strategy[0], Some(target));
         assert_eq!(session.seat_entry(0).unwrap().name, "strategic");
+        assert_eq!(
+            session.state()["players"][0]["ai_player_strategy"],
+            json!("strategic"),
+            "terminal evidence carries the stable league identity"
+        );
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

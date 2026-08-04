@@ -19863,6 +19863,21 @@ function civDossier(p, rank, relation) {
   const strategy = plan?.strategy || p.ai_strategy || "";
   const planAge = plan ? Math.max(0, (state.turn || 0) - (plan.assessed_turn || 0)) : null;
   const forces = plan?.forces || [];
+  const warPlan = plan?.war || null;
+  const warRows = warPlan?.active
+    ? row("Attack phase", `${titleCase(warPlan.phase || "forming")}${warPlan.rapid ? " · Rapid" : warPlan.selective ? " · Selective" : ""}`,
+        warPlan.rapid
+          ? "One fully prebuilt organic Conquest package with a short launch window"
+          : warPlan.selective
+          ? "One organic Conquest target, one appointment, a mostly prebuilt army, and a fully staged superior launch"
+          : "One appointed target, breakthrough, military package, treasury reserve, staging gate and declaration lifecycle") +
+      row("Breakthrough", titleCase(warPlan.breakthrough_tech || ""),
+        `${warPlan.ready_bodies || 0}/${warPlan.required_bodies || 4} modern assault bodies ready · ` +
+        `${warPlan.staged_bodies || 0} staged · ${exactStat(warPlan.upgrade_gold_reserved || 0)} Gold still reserved`) +
+      row("Strike package", `${warPlan.ready_bodies || 0}/${warPlan.required_bodies || 4} ${titleCase(warPlan.assault_unit || "bodies")}` +
+        (warPlan.breach_unit ? ` · ${titleCase(warPlan.breach_unit)}` : " · no breach needed"),
+        warPlan.breach_ready ? "The required breach element is ready" : "The breach element is still missing")
+    : "";
   const forceChips = forces.slice(0, 6).map(force =>
     `<span class="force-chip ${force.posture}" title="${titleCase(force.posture)} · ${force.units} ${force.domain === "sea" ? "naval" : "land"} units` +
     ` · objective ${force.objective?.[0]},${force.objective?.[1]} · local strength ${Math.round((force.strength_ratio || 0) * 100)}%` +
@@ -19948,6 +19963,7 @@ function civDossier(p, rank, relation) {
         plan.target_city
           ? `Working towards ${plan.target_city.name}, a ${plan.target_city.owner_civ} city at ${plan.target_city.pos?.[0]},${plan.target_city.pos?.[1]}`
           : plan.target_civ ? `${plan.target_civ} is the civilization this plan is measured against` : "") +
+      warRows +
       row("Defending", plan.threatened_city ? plan.threatened_city.name : "Nothing under threat",
         plan.threatened_city
           ? `${plan.threatened_city.name} at ${plan.threatened_city.pos?.[0]},${plan.threatened_city.pos?.[1]} is the city this plan expects to lose first`
@@ -21426,6 +21442,7 @@ function strategyPlanHtml(p) {
       `<span>${label}</span><b>${value}</b></div>`;
   const planAge = plan ? Math.max(0, (state.turn || 0) - (plan.assessed_turn || 0)) : null;
   const forces = plan?.forces || [];
+  const warPlan = plan?.war || null;
   const chips = forces.slice(0, 4).map(force =>
     `<span class="force-chip ${force.posture}" title="${reasonEscape(`${titleCase(force.posture)} · ` +
       `${force.units} ${force.domain === "sea" ? "naval" : "land"} units · objective ` +
@@ -21449,6 +21466,16 @@ function strategyPlanHtml(p) {
       row("Cities", `${p.cities} of ${plan.desired_cities}`,
         "Cities held against the cities this plan wants") +
       row("Campaign", target, target ? "The city or civilization this plan is measured against" : "") +
+      (warPlan?.active
+        ? row("Attack phase", `${titleCase(warPlan.phase || "forming")}${warPlan.rapid ? " · Rapid" : warPlan.selective ? " · Selective" : ""}`,
+            warPlan.rapid
+              ? "One ready-force Conquest appointment shared by research, treasury, diplomacy and movement"
+              : warPlan.selective
+              ? "One organic Conquest appointment shared by research, production, treasury, diplomacy and movement"
+              : "The phase shared by research, production, treasury, diplomacy and movement") +
+          row("Strike package", `${warPlan.ready_bodies || 0}/${warPlan.required_bodies || 4} ${titleCase(warPlan.assault_unit || "bodies")} · ${warPlan.staged_bodies || 0} staged`,
+            `${titleCase(warPlan.breakthrough_tech || "Breakthrough")} · ${exactStat(warPlan.upgrade_gold_reserved || 0)} Gold reserved`)
+        : "") +
       row("Defending", plan.threatened_city ? reasonEscape(plan.threatened_city.name) : "",
         plan.threatened_city ? "The city this plan expects to lose first" : "") +
       (chips

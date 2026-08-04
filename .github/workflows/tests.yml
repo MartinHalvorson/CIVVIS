@@ -137,6 +137,58 @@ jobs:
             exit 1
           fi
           echo "no _G references outside comments"
+      # ⚠⚠⚠ A LADDER ENTRY THE GAME HAS NO TYPE FOR IS INVISIBLE — the ladder
+      # just moves to the next line, every request still logs `applied: true`,
+      # and nothing anywhere says the entry can never fire.
+      #
+      # This class has now appeared FIVE times in these scripts:
+      # `BUILDING_ANCIENT_WALLS` (no such type; the development rung's only
+      # defensive entry, unbuildable on every turn of every run),
+      # `BUILDING_ART_MUSEUM` and `BUILDING_ARCHAEOLOGICAL_MUSEUM` (the rows
+      # read subject-last — `BUILDING_MUSEUM_ART`, `BUILDING_MUSEUM_ARTIFACT`),
+      # the floor's obsolete units in #748, and the seven district entries below
+      # an open-ended gate. Each was repaired by fixing that one name. None of
+      # them added a way to find the next one, and the `BUILDING_WALLS` comment
+      # describing the trap sat three lines below two live instances of it.
+      #
+      # `civvis_orders` closed this class on the Rust side in #959 with
+      # `every_name_the_order_channel_can_emit_exists_in_civilization_vi`. That
+      # guards the lane deciding 20.8% of live builds. This guards the other
+      # 79.2%.
+      #
+      # ⚠ Comments are stripped first, deliberately: the warnings above name the
+      # bad spellings on purpose and must stay legible.
+      - name: Every type the ladder names exists in Civilization VI
+        run: |
+          set -eu
+          python3 - <<'PY'
+          import json, pathlib, re, sys
+
+          shipped = set(json.loads(pathlib.Path("data/civ6_type_names.json").read_text()))
+          # Harvested from the shipped rule files by tools/civ6_type_names.py, which
+          # excludes DLC/CivvisControl — our own mod is installed into the game's
+          # Assets tree, so a scan including it reads our invented names back as
+          # proof the game has them. That is exactly how BUILDING_ARCHAEOLOGICAL_MUSEUM
+          # looked legitimate on first inspection.
+          if len(shipped) < 400:
+              sys.exit(f"snapshot has only {len(shipped)} names; it is not the shipped ruleset")
+
+          bad = []
+          for path in sorted(pathlib.Path("tools").glob("civ6*/**/*.lua")):
+              code = "\n".join(re.sub(r"--.*$", "", line) for line in path.read_text().splitlines())
+              for name in sorted(set(re.findall(r'"((?:DISTRICT|BUILDING|UNIT|PROJECT|IMPROVEMENT)_[A-Z0-9_]+)"', code))):
+                  if name not in shipped:
+                      bad.append(f"{path}: {name}")
+
+          if bad:
+              print("\n".join(bad))
+              sys.exit(
+                  "\nCivilization VI ships no such type. A ladder entry that cannot fire is "
+                  "invisible -- the ladder moves to the next line and the run looks healthy. "
+                  "Check the shipped spelling in Cache/DebugGameplay.sqlite."
+              )
+          print("every ladder type literal exists in Civilization VI")
+          PY
       - name: Envoy spend order
         run: lua5.1 tools/civ6_control/mod/envoy_spend_test.lua
       - name: Stranded settler gate

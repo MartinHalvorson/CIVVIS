@@ -469,6 +469,31 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `false` exactly. So every configured, legacy and Elo agent explores and
 /// moves exactly as it always did. A compatibility re-pin.
 ///
+/// #1087 lets the baseline governor raise the housing ceiling — the Aqueduct
+/// and the Neighborhood — behind `BasicAi::housing_districts`. That field is
+/// `false` in both `BasicAi` constructors and is set only by
+/// `enable_live_bridge`; the added block in `pick_item` short-circuits on it
+/// before it reads a city, so `advanced_v1` ranks the same district families in
+/// the same order. `Game::city_housing` is refactored onto `city_water` and
+/// `city_housing_floor` without changing a single band, so the housing it
+/// returns is unchanged for every caller. A compatibility re-pin.
+///
+/// #1095 keeps asking for a Campus in every city that can still repay one,
+/// behind `AdvancedAi::campus_every_city` — `false` in the constructor and set
+/// only by `enable_live_bridge`. Both of its paths short-circuit on the flag:
+/// `balanced_core`'s exemption is `campus_every_city && family == "campus"`,
+/// which is `false` for every legacy agent and reproduces the half-empire cliff
+/// exactly, and the coverage term keeps `research_horizon` unless the flag is
+/// set. So `advanced_v1` prices every district exactly as it did. A
+/// compatibility re-pin.
+///
+/// #1099 puts `medina_quarter` and `insulae` in the deck when a city is short
+/// of housing, behind `AdvancedAi::housing_cards` — `false` in the constructor
+/// and set only by `enable_live_bridge`. The block short-circuits on the flag
+/// before it reads a city, so every legacy and Elo agent slots exactly the cards
+/// it always slotted. `Game::city_specialty_district_count` only widens from
+/// private to `pub(crate)`. A compatibility re-pin.
+///
 /// ⚠ Re-pinned twice in this PR. The first version was inert — it patched
 /// `BasicAi::tactical_step`, which a live probe showed the deployed controller
 /// never calls; the working change is in
@@ -524,6 +549,21 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// number is right after the merge — only a fresh fingerprint is.
 /// `elo_anchor_speed_is_standard_so_the_pantheon_repin_is_free` checks the
 /// Standard-speed claim rather than asserting it.
+/// ⚠ Re-pinned for the unified timed-war appointment. The behavior is behind
+/// `AdvancedAi::timed_war`, initialized `false` by `configured` and enabled
+/// only by the evaluator-only `AdvancedAi::timing_attack` constructor. Every
+/// shared call site short-circuits on an absent `war_plan`; frozen legacy and
+/// `advanced_v1` therefore retain the same research, spending, production,
+/// diplomacy, movement, and upgrade decisions. Focused construction tests
+/// additionally assert that `advanced` reports the treatment off.
+/// ⚠ Re-pinned for selective timing v2. Its additional chooser and launch
+/// gates require both `timed_war` and `selective_timed_war`; both initialize
+/// `false`, and only the evaluator-only `selective_timing_attack` constructor
+/// enables them. The typed-arm test checks production `advanced`, v1, and v2
+/// independently, while focused tests cover the selective-only branches.
+/// ⚠ Re-pinned again for ready-force v3. `rapid_timed_war` also initializes
+/// `false`, is enabled only by the evaluator constructor, and only narrows the
+/// already-gated chooser before a `WarPlan` exists.
 /// ⚠ And again for `settler_blocked_turns` surviving a retarget. That reset lives
 /// AFTER `advanced_settler_step`'s `if !self.settler_commit { return moved; }`
 /// early return, and `settler_commit` is `false` in every default constructor —
@@ -531,7 +571,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// entrants return before the changed line is ever reached and the anchor's
 /// behaviour is bit-for-bit what it was. A compatibility re-pin;
 /// `elo_anchor_never_reaches_the_settler_commit_path` checks the claim.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdaa4_72cd_3a32_b238;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xa600_a103_f8bd_1081;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -1735,6 +1775,65 @@ fn main() {
                 }
             }
         }
+        "league-init" => {
+            let dir = arg_text(&args, "--league", "");
+            let Some(league) = (!dir.is_empty())
+                .then(|| civvis::league::initialize_shipped_league(&dir))
+                .flatten()
+            else {
+                eprintln!("league-init needs a writable --league directory");
+                std::process::exit(2);
+            };
+            println!("{}", serde_json::json!({
+                "status": "ready",
+                "round": league.round,
+                "strategies": league.strategies.len(),
+            }));
+        }
+        "rate-game" => {
+            let dir = arg_text(&args, "--league", "");
+            if dir.is_empty() {
+                eprintln!("rate-game needs a writable --league directory");
+                std::process::exit(2);
+            }
+            let report: civvis::league::LiveGameReport =
+                match serde_json::from_reader(std::io::stdin().lock()) {
+                    Ok(report) => report,
+                    Err(error) => {
+                        eprintln!("invalid live-game report: {error}");
+                        std::process::exit(2);
+                    }
+                };
+            if civvis::league::initialize_shipped_league(&dir).is_none() {
+                eprintln!("could not initialize the live league at {dir}");
+                std::process::exit(1);
+            }
+            let Some(record) = civvis::league::record_ranked_game_once(
+                &dir,
+                &report.result_id,
+                &report.seats,
+                report.seed,
+                report.turn,
+                &report.victory,
+            ) else {
+                eprintln!("the live-game report is invalid or names an unknown strategy");
+                std::process::exit(2);
+            };
+            let league = record.league();
+            println!("{}", serde_json::json!({
+                "status": record.status(),
+                "round": league.round,
+                "strategies": report.seats.iter().filter_map(|seat| {
+                    league.strategies.iter().find(|strategy| strategy.name == seat.strategy)
+                }).map(|strategy| serde_json::json!({
+                    "name": strategy.name,
+                    "rating": strategy.rating,
+                    "rd": strategy.rd,
+                    "games": strategy.games,
+                    "wins": strategy.wins,
+                })).collect::<Vec<_>>(),
+            }));
+        }
         "evolve" => {
             let players = arg(&args, "--players", 4);
             civvis::evolve::evolve(&civvis::evolve::EvoCfg {
@@ -2084,7 +2183,7 @@ fn main() {
         }
         _ => {
             println!(
-                "usage: civvis <simulate|soak|benchmark|tournament|league|rating|play|evolve|validate|pedia> \
+                "usage: civvis <simulate|soak|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
                       [--map land_only|lakes|inland_sea|grand_canals|grand_canals_2|pangaea|continents|small_continents|islands|water_world|true_start_earth] \
