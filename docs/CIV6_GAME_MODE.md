@@ -82,9 +82,9 @@ nothing carries it:
   screen has the dropdown, but the run is configured through
   `MapConfiguration`/`GameConfiguration` from `CivvisControlSetup.lua`, which
   sets ruleset, map, size, difficulty and speed and nothing else. The seat's
-  civilization is whatever the game deals, every run. `--fixed-seed` does not
-  change this ([[civvis-civ6-fixed-seed-is-inert]]): map, start *and* civ are
-  random per run.
+  civilization is whatever the game deals, every run. The control mod's requested
+  seed values do not reach world generation ([[civvis-civ6-fixed-seed-is-inert]]):
+  map, start *and* civ are random per run.
 - **World shape**, **thermal distribution** — CIVVIS map-generator settings
   with no equivalent. Civilization VI wraps east-west and that is all.
 - **Teams**, **victory conditions**, **start era**, **leader pool** —

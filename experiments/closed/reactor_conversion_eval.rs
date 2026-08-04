@@ -1,4 +1,4 @@
-//! Matched evaluation of marginal power-plant conversion valuation.
+//! Archived matched evaluation of marginal power-plant conversion valuation.
 //!
 //! The treatment changes only how the focal `AdvancedAi` values the three
 //! ordinary conversion projects: target utility minus the utility of the
