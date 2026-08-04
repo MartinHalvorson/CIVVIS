@@ -142,6 +142,28 @@ local tied = {
 }
 check("ties resolve by id", spendOrder(tied)[1].id, 4)
 
+
+-- ⚠⚠ THE CALL MUST BE IN `beginTurn`, NOT `playTurn`. Deployment runs with
+-- `--civvis-decides`, so `playTurn` never executes; a spend added there would be
+-- inert in exactly the configuration that matters. This is a structural check on
+-- the shipped source — it cannot run the engine, but it can prove the call sits
+-- in the function that deployment actually reaches, and after `chooseEnvoy` is
+-- defined so the name resolves.
+local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")
+local defAt = src:find("local function chooseEnvoy", 1, true)
+local beginAt = src:find("local function beginTurn", 1, true)
+local playAt = src:find("local function playTurn", 1, true)
+check("chooseEnvoy is defined", defAt ~= nil, true)
+check("beginTurn exists", beginAt ~= nil, true)
+check("chooseEnvoy is defined before beginTurn", defAt < beginAt, true)
+
+-- The spend call, wherever it is.
+local callAt = src:find("chooseEnvoy(player, pid, turn)", beginAt, true)
+check("beginTurn spends envoys", callAt ~= nil, true)
+-- It must land inside beginTurn, i.e. before playTurn starts.
+check("the spend is in beginTurn, not playTurn",
+	callAt ~= nil and playAt ~= nil and callAt < playAt, true)
+
 if failures > 0 then
 	print(string.format("\n%d check(s) failed", failures))
 	os.exit(1)
