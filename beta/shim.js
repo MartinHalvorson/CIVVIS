@@ -17,8 +17,8 @@
 //   * **The clock.** A spectated turn is paced in wall-clock milliseconds. The
 //     module plays the turn; the wait that spaces turns out belongs on a
 //     thread that is allowed to be idle.
-//   * **The finale countdown.** Ten seconds between a result and the next
-//     world, counted where there is a clock to count with.
+//   * **The finale countdown.** The viewer-selected interval between a result
+//     and the next world, counted where there is a clock to count with.
 //   * **Saved games.** There is no disk. `localStorage` holds them, and the
 //     engine only ever sees a save as an uploaded game.
 
@@ -38,9 +38,10 @@
     "/pace", "/next-game",
   ]);
 
-  // Ten seconds of result screen, which is the rule the desktop build counts
-  // down from and the window in which "one more turn" can still be pressed.
-  const FINALE_MS = 10000;
+  // Keep the browser build to the same four choices as the socket server.
+  // It starts at ten seconds until the page posts its persisted preference.
+  const FINALE_OPTIONS_MS = new Set([0, 3000, 5000, 10000]);
+  let betweenGameCountdownMs = 10000;
   // What the server sleeps for while paused, so a paused page asking for the
   // next turn over and over costs a poll every so often instead of one per
   // animation frame.
@@ -153,17 +154,21 @@
   let paused = false;
   let finaleEndsAt = null;
 
-  // A result holds the screen for ten seconds and then the next world opens.
-  // Reading it off each answer keeps the countdown attached to the state the
-  // page is actually looking at, rather than to a timer running beside it.
+  // A result holds the screen for the selected interval and then the next
+  // world opens. Reading it off each answer keeps the countdown attached to
+  // the state the page is actually looking at, rather than to a timer running
+  // beside it.
   async function withFinale(state) {
     if (!state || typeof state !== "object") return state;
+    const configured = state.between_game_countdown_ms;
+    if (typeof configured === "number" && FINALE_OPTIONS_MS.has(configured))
+      betweenGameCountdownMs = configured;
     const finished = state.winner !== undefined && state.winner !== null;
     if (!finished) {
       finaleEndsAt = null;
       return state;
     }
-    if (finaleEndsAt === null) finaleEndsAt = performance.now() + FINALE_MS;
+    if (finaleEndsAt === null) finaleEndsAt = performance.now() + betweenGameCountdownMs;
     const left = finaleEndsAt - performance.now();
     if (left > 0) {
       state.restart_in = Math.ceil(left / 1000);
@@ -243,6 +248,10 @@
 
     if (method === "POST" && path === "/pace") {
       if (typeof parsed.ms === "number") pace = parsed.ms;
+      if (typeof parsed.between_game_countdown_ms === "number" &&
+          FINALE_OPTIONS_MS.has(parsed.between_game_countdown_ms)) {
+        betweenGameCountdownMs = parsed.between_game_countdown_ms;
+      }
       if (typeof parsed.paused === "boolean") {
         paused = parsed.paused;
         // Pausing voids a running countdown, exactly as it does on a socket.
