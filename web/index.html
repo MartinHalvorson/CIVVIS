@@ -1877,6 +1877,12 @@
   .spec-controls #restart-sim.primary .sub { color: #51401f; }
   .speed-row, .view-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; margin-top: 9px; }
   .speed-row span, .view-row span { color: var(--muted); font-size: var(--type-small); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  /* The narrow desktop deck makes the long label wrap before it sacrifices the
+     chosen quality's readable name. Other observation rows retain their
+     established proportions. */
+  .render-resolution-row { grid-template-columns: minmax(0, 1fr) minmax(104px, 1fr); }
+  .render-resolution-row > span, .render-resolution-row > select { min-width: 0; }
+  .render-resolution-row > span { overflow-wrap: anywhere; }
   .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--muted); font-size: var(--type-secondary); cursor: pointer; }
   .setting-row span { display: flex; align-items: center; gap: 7px; }
   .setting-row kbd { margin: 0; }
@@ -3509,7 +3515,7 @@
               <option value="10000">Slow</option>
             </select>
           </div>
-          <div class="speed-row"><span>Render resolution</span>
+          <div class="speed-row render-resolution-row"><span>Render resolution</span>
             <select id="renderresolution" aria-label="Map render resolution"
                     title="Changes map and minimap sharpness; does not change simulation speed">
               <option value="native" selected>Native</option>
