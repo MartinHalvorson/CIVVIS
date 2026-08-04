@@ -14,6 +14,7 @@ pub mod fractal;
 pub mod game;
 pub mod hex;
 pub mod league;
+pub mod leader_roster;
 pub mod mapgen;
 pub mod mirror;
 pub mod name;
