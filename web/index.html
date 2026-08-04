@@ -1594,13 +1594,13 @@
     max-width: calc(100vw - 14px); padding: 3px 6px;
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
     color: #9aaca5; background: #07110fbd; border: 1px solid #40534b99;
-    border-radius: 5px; box-shadow: 0 4px 14px #0007; pointer-events: none;
+    border-radius: 5px; box-shadow: 0 4px 14px #0007; pointer-events: auto;
     font: 750 var(--type-micro)/1.35 var(--font-ui); font-variant-numeric: tabular-nums;
     letter-spacing: .035em; backdrop-filter: blur(8px); opacity: .82;
   }
   #buildmark[hidden] { display: none; }
   #buildmark-commit {
-    color: #c6d9d1; pointer-events: auto; text-decoration-color: transparent;
+    color: #c6d9d1; cursor: pointer; pointer-events: auto; text-decoration-color: transparent;
     text-underline-offset: 2px;
   }
   #buildmark-commit:hover { color: #eef8f4; text-decoration-color: currentColor; }
