@@ -395,6 +395,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy and Elo agent wants exactly the army it always wanted. A
 /// compatibility re-pin.
 ///
+/// #1056 skips policy cards that multiply a suzerainty count of zero, behind
+/// `suzerain_cards_need_a_suzerainty`, `false` in `AdvancedAi::new()` and set
+/// only by `enable_live_bridge`. `strategic_policies` reorders nothing on that
+/// flag before it counts a single city-state, so every configured, legacy and
+/// Elo agent picks exactly the deck it always picked. A compatibility re-pin.
+///
 /// #981 adds `BasicAi::loyalty_emergency`, which ranks loyalty trouble by TURNS
 /// TO FLIP rather than by level, behind the new `loyalty_rate_alarm` flag. The
 /// flag is `false` in both `BasicAi` constructors and `loyalty_emergency`
@@ -506,7 +512,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// A compatibility re-pin.
 ///
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2eb6_44b1_b1b3_7a36;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd3b7_82d6_34dc_7985;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
