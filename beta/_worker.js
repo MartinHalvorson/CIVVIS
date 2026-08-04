@@ -174,9 +174,19 @@ export default {
       return buildChannel(url, "/test/");
     }
 
-    // /beta — the lane's name for its first day — is scrapped, not
-    // forwarded: it falls through to the asset layer, which has nothing
-    // there, and 404s like any other path that does not exist.
+    // /beta — the lane's name for its first day — is scrapped. Answered with
+    // an explicit 404 rather than left to fall through, because falling
+    // through does not do what it looks like it does: for an unknown HTML
+    // path Pages serves the root index.html (its single-page-app fallback),
+    // which would quietly resurrect the old name as a second copy of the
+    // front page. The CI routing gate caught exactly that.
+    if (url.pathname === "/beta" || url.pathname.startsWith("/beta/")) {
+      return new Response("Not found", {
+        status: 404,
+        headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" },
+      });
+    }
+
     if (!url.pathname.startsWith("/test")) return asset(request, env, false);
 
     // The test lane is open.

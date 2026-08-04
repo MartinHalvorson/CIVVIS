@@ -87,6 +87,9 @@ cp "$repo_root/beta/download.html" "$out/download/index.html"
 # The gate travels *inside* the deployed directory. See beta/_worker.js for
 # why this is not a `functions/` directory.
 cp "$repo_root/beta/_worker.js" "$out/_worker.js"
+# Its very existence switches Pages from single-page-app fallback (unknown
+# path -> the front page, 200) to honest 404s. See the comment inside it.
+cp "$repo_root/beta/404.html" "$out/404.html"
 
 # The viewer, copied and then made to work one directory down. Each
 # substitution is checked, because a silently unmatched one publishes a page
@@ -161,11 +164,21 @@ missing = sorted(wanted - have)
 if missing:
     raise SystemExit(f"the viewer asks for assets this build does not ship: {', '.join(missing)}")
 
-# The interception has to be installed before the page's own first script runs.
+# Start the largest critical request while the viewer is still parsing. The
+# shim starts the worker immediately afterwards, and its `fetch()` shares this
+# CORS-enabled preload instead of racing the sprite atlases for a connection.
+# The interception still has to be installed before the page's own first script
+# runs.
 head = "<head>"
 if page.count(head) != 1:
     raise SystemExit("the viewer does not have exactly one <head>")
-page = page.replace(head, head + '\n<script src="shim.js"></script>', 1)
+page = page.replace(
+    head,
+    head + '\n<link rel="preload" href="civvis.wasm" as="fetch" '
+    'type="application/wasm" crossorigin fetchpriority="high">'
+    '\n<script src="shim.js"></script>',
+    1,
+)
 
 target.write_text(page, encoding="utf-8")
 print(f"   viewer written to {target} ({len(page):,} bytes)")
