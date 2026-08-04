@@ -11036,6 +11036,22 @@ function radialSprite(stops) {
 // Status marks keep their on-screen size as the map zooms out, so a unit's
 // state stays readable at the scale you actually survey an empire at.
 const UI_K = () => 1 / Math.min(1, Math.max(cam.scale, 0.5));
+// Roads naturally become thinner under the canvas transform as the view pulls
+// back, but a complete network can still overpower the terrain at survey zoom.
+// Fade its contrast there while retaining enough of the actual network to read
+// an empire's connected infrastructure.
+function roadProminence(scale = cam.scale) {
+  const progress = Math.max(0, Math.min(1, (scale - .25) / .65));
+  const eased = progress * progress * (3 - 2 * progress);
+  return .16 + .84 * eased;
+}
+
+// Route state belongs to tiles, not to cities. This is also the condition the
+// game uses for a road movement discount: each side of the step must carry a
+// route before the edge is connected.
+function hasRoad(tile) {
+  return !!tile && tile.road > 0;
+}
 // Strategic's unit *is* its token, so its footprint is stated in hexes instead
 // of in fixed screen pixels. At the flat map's far zoom it can use 90% of the
 // hex's inscribed diameter; at the close zoom it uses 50%. Zoom is
@@ -16110,15 +16126,14 @@ function drawPlanetStrategicVolcanicSoil(cells, visible, spectator) {
 }
 
 function drawPlanetStrategicRoads(cells, visible, spectator) {
-  const cityTiles = new Set(state.cities.map(city => key(city.pos)));
-  const roaded = tile => !!tile && (tile.road > 0 || cityTiles.has(key(tile.pos)));
+  const prominence = roadProminence();
   const groups = {byWeight:new Map(), visible, spectator};
   for (const entry of cells) {
     const {tile, cell, points, center} = entry;
-    if (planetCellInradius(entry) < 3 || !roaded(tile)) continue;
+    if (planetCellInradius(entry) < 3 || !hasRoad(tile)) continue;
     let linked = false;
     for (let side = 0; side < points.length; side++) {
-      if (!roaded(TMAP.get(cell.nbrs[side]))) continue;
+      if (!hasRoad(TMAP.get(cell.nbrs[side]))) continue;
       const a = points[side], b = points[(side + 1) % points.length];
       planetStrategicGroup(groups, entry).segments.push([
         center.x, center.y, (a.x + b.x) / 2, (a.y + b.y) / 2,
@@ -16138,7 +16153,7 @@ function drawPlanetStrategicRoads(cells, visible, spectator) {
   for (const [width, color, alpha] of [[5.6, "#2b2015", .4], [3.0, "#c0a67e", .85]]) {
     for (const group of groups.byWeight.values()) {
       cx.strokeStyle = color; cx.lineWidth = width * group.weight;
-      cx.globalAlpha = alpha * group.alpha;
+      cx.globalAlpha = alpha * group.alpha * prominence;
       cx.beginPath();
       for (const [ax, ay, bx, by] of group.segments) {
         cx.moveTo(ax, ay); cx.lineTo(bx, by);
@@ -17468,7 +17483,6 @@ function draw() {
   const visible = new Set(state.visible.map(key));
   const visSet = new Set((state.turn_visible || state.visible).map(key));
   const campSet = new Set(state.camps.map(key));
-  const cityTiles = new Set(state.cities.map(c => key(c.pos)));
   const workedSet = new Set(state.cities.flatMap(c =>
     c.citizens ? c.citizens.worked_tiles.map(key) : []));
   const unitOwnerByTile = new Map(state.units.map(u => [key(u.pos), u.owner]));
@@ -17647,23 +17661,18 @@ function draw() {
     }
   }
   cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
-  // --- roads: the arteries of an empire, and until now the one piece of tile
-  // state the map never showed. Each roaded tile runs a spur to the midpoint of
-  // every shared edge with a roaded neighbor, so the spurs meet and the network
-  // reads as continuous route rather than a row of disconnected dashes.
-  const roaded = p => {
-    const t2 = TMAP.get(key(p));
-    return !!(t2 && t2.road) || cityTiles.has(key(p));
-  };
+  // --- roads: each real route tile runs a spur to the midpoint of every shared
+  // edge with another route tile, so the picture follows the game's actual
+  // two-tile movement connection rather than treating every city as a road.
   const roadSegs = [];
   for (const t of tiles) {
-    if (!roaded(t.pos)) continue;
+    if (!hasRoad(t)) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
     let linked = false;
     for (let i = 0; i < 6; i++) {
       const n = nbrTile(t.pos, DIRS[i]);
-      if (!n || !roaded(n.pos)) continue;
+      if (!hasRoad(n)) continue;
       // share the seam elevation the way rivers do, so a spur meets its
       // opposite number exactly even across a height change
       const ey = yy - (elev(t) + elev(n)) / 2;
@@ -17676,9 +17685,10 @@ function draw() {
     if (!linked) roadSegs.push([x, y, x, y]);   // a lone stretch still reads
   }
   if (roadSegs.length) {
+    const prominence = roadProminence();
     cx.lineCap = "round"; cx.lineJoin = "round";
     for (const [w, c, a] of [[5.6, "#2b2015", 0.4], [3.0, "#c0a67e", 0.85]]) {
-      cx.strokeStyle = c; cx.lineWidth = w; cx.globalAlpha = a;
+      cx.strokeStyle = c; cx.lineWidth = w; cx.globalAlpha = a * prominence;
       cx.beginPath();
       for (const [ax, ay, bx, by] of roadSegs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
       cx.stroke();
