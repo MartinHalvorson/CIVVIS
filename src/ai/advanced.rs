@@ -1783,6 +1783,24 @@ pub struct AdvancedAi {
     /// Off in [`AdvancedAi::legacy`] and [`AdvancedAi::pre_policy_envoy`] so an
     /// evaluator control can measure it; on in the promoted production agent.
     pub research_economy: bool,
+    /// Keep asking for a Campus in every city that can still repay one.
+    ///
+    /// Two terms in the district valuation stop the empire at half coverage:
+    /// `balanced_core`'s `district_count * 2 < city_count` cliff, and
+    /// `RESEARCH_CAMPUS_COVERAGE`'s game-fraction horizon. Live end-of-game
+    /// Campus coverage over 19 runs is **exactly 50 of 100 cities**. Off for
+    /// the frozen native controllers.
+    pub campus_every_city: bool,
+    /// Put the two reachable housing cards in the deck. See
+    /// `HOUSING_DECK_INSERT`: `medina_quarter` is slotted in 0 of 107 live runs
+    /// and `insulae` in 1, while 71.7% of city-turns are housing-capped. Off for
+    /// the frozen native controllers.
+    pub housing_cards: bool,
+    /// Let the research chooser aim at the tech that raises the housing ceiling.
+    /// See `unreachable_housing_tech`: 27% of live runs never unlock
+    /// `engineering` at all and the rest reach it at a median turn 116. Off for
+    /// the frozen native controllers.
+    pub housing_research: bool,
 
     /// This turn's floor on the science weight, refreshed by
     /// [`AdvancedAi::refresh_research_weight`] once per decision.
@@ -1818,6 +1836,28 @@ const RESEARCH_CITIZEN_TILT: f64 = 0.28;
 /// A city with no Campus, in any lane, once one is legal here.
 const RESEARCH_CAMPUS_COVERAGE: f64 = 300.0;
 
+/// How long a Campus takes to repay itself, as a fraction of the turn budget.
+///
+/// ⚠⚠ THE HORIZON WAS THE WRONG SHAPE, AND IT IS WHY THE LATE CITIES HAVE NO
+/// CAMPUS. `research_horizon` is `(max_turns - turn) / max_turns` — a fraction
+/// of the WHOLE GAME — so a Campus is priced at 0.40 at turn 150 and 0.24 at
+/// turn 190 even though 100 and 60 turns of compounding remain. Meanwhile every
+/// term it competes against is a FLAT constant that never decays:
+/// `(Culture, theater_square)` **850**, `government_plaza` `first_copy` **420**,
+/// `(Diplomacy, diplomatic_quarter)` **360**, `(Religion, holy_site)` 210,
+/// `(Recovery, industrial_zone)` 190. So the Campus term shrinks all game while
+/// its rivals hold, and the cities that never get one are exactly the
+/// late-founded ones — median first produce order turn **67 against 40**, median
+/// lifetime **94 city-turns against 181**.
+///
+/// A Campus is 54 production and pays a yield every turn afterwards, so what
+/// matters is whether it can REPAY, not what fraction of the game is left.
+/// 0.16 of the budget is 40 turns at the deployment's 250, which is comfortably
+/// past payback. Beyond that window the value is full; inside it, it ramps to
+/// zero so a Campus begun at turn 245 still does not outbid a defender — which
+/// is the reason the original horizon was there.
+const RESEARCH_CAMPUS_PAYBACK: f64 = 0.16;
+
 /// A Campus standing without the building that pays for it. The debt is per
 /// missing copy and independent of the lane, unlike `wartime_infrastructure_debt`
 /// which pays the same shape only while the empire is fighting.
@@ -1829,6 +1869,41 @@ const RESEARCH_BUILDING_DEBT: f64 = 240.0;
 /// must keep its opening, and the deck is longer than the slot count, so this
 /// only wins a slot that would otherwise have gone to the tail of the list.
 const RESEARCH_DECK_INSERT: usize = 4;
+
+/// Where the two reachable HOUSING cards enter a lane's preference list, on the
+/// same terms as `RESEARCH_DECK_INSERT`: behind the lane's leading cards, never
+/// in front of them.
+///
+/// ⚠⚠ NEITHER IS REACHABLE TODAY, AND HOUSING IS THE DOMINANT GROWTH CAP.
+/// Measured over 13,214 host-exported city-turns: **71.7% are housing-capped**
+/// (headroom < 2) against 62.3% amenity-capped, and the mean housing growth
+/// multiplier is **0.510** against the Amenity band's 0.872. Yet across **107
+/// live runs**:
+///
+/// | card | effect | runs slotted |
+/// |---|---|---|
+/// | `medina_quarter` | +2 Housing at 3+ specialty districts | **0 / 107** |
+/// | `insulae` | +1 Housing at 2+ specialty districts | **1 / 107** |
+/// | `new_deal` | +4 Housing, +2 Amenities at 3+ | 1 / 107 |
+///
+/// `medina_quarter` appears **nowhere in `src/`** — it exists in the ruleset and
+/// no code has ever named it. `insulae` is 8th in `BasicAi`'s `POLICY_PRIORITY`,
+/// behind three economic cards that fill the early economic slots first.
+/// `new_deal` IS in every strategic list but needs `suffrage`, which these games
+/// do not reach — so the two cards an empire can actually unlock are the two it
+/// never plays.
+///
+/// Eligibility is real, not theoretical: **60.3%** of city-turns have 2+
+/// specialty districts and **40.0%** have 3+. Applying each card only to the
+/// cities that qualify, the mean housing growth multiplier moves 0.510 →
+/// **0.609 with Insulae (+19%)**, → **0.638 with Medina Quarter (+25%)**, →
+/// **0.734 with both (+44%)**.
+const HOUSING_DECK_INSERT: usize = 4;
+
+/// The headroom below which a city is worth spending a policy slot on. This is
+/// `BasicAi::HOUSING_HEADROOM_TARGET` — the break-even of the engine's own
+/// growth band, where `housing_growth_mult` stops paying 1.0 and starts halving.
+const HOUSING_CARD_HEADROOM: f64 = 2.0;
 
 impl Default for AdvancedAi {
     fn default() -> Self {
@@ -2106,6 +2181,9 @@ impl AdvancedAi {
             tactics_plans: 0,
             tactics_decisions: 0,
             research_economy: false,
+            campus_every_city: false,
+            housing_cards: false,
+            housing_research: false,
             research_weight: 0.0,
         }
     }
@@ -2425,6 +2503,31 @@ impl AdvancedAi {
         // as #999 and #1003: a repair the governor making most of the builds
         // could not reach.
         self.enable_housing_districts();
+        // ⚠⚠ AND THE EMPIRE STOPS BUILDING CAMPUSES AT HALF ITS CITIES.
+        // `balanced_core` pays a Campus +130 only while `district_count * 2 <
+        // city_count`, so the term switches off at half coverage — and measured
+        // over 19 live runs, end-of-game Campus coverage is **exactly 50 of 100
+        // cities**. The counterweight #958 added is per-city and lane-
+        // independent, but it is scaled by a GAME-FRACTION horizon while every
+        // term it competes against is a flat constant, so it decays to 120 by
+        // turn 150 against a Theatre Square's 850. The cities that never get a
+        // Campus are the late-founded ones, and the science funnel cascades
+        // from it: 50% Campus, 39% Library, 20% University, 3% Research Lab.
+        self.enable_campus_every_city();
+        // ⚠⚠ AND THE TWO HOUSING CARDS THE EMPIRE CAN REACH ARE NEVER PLAYED.
+        // `medina_quarter` (+2 Housing at 3+ specialty districts) is slotted in
+        // **0 of 107 live runs** and appears nowhere in `src/`; `insulae` (+1 at
+        // 2+) in **1**. Housing is the dominant growth cap — 71.7% of 13,214
+        // host-exported city-turns sit under it at a mean multiplier of 0.510,
+        // against the Amenity band's 0.872 — and 60.3% / 40.0% of city-turns
+        // already carry the 2 / 3 specialty districts these cards need.
+        self.enable_housing_cards();
+        // ⚠⚠ AND THE REPAIR IS BEHIND A TECH THE ARGMAX NEVER AIMS AT. Over 94
+        // live runs the median empire ends on **30 techs of 77**, `engineering`
+        // is reached by only **73%** and at a median turn **116** — which is why
+        // the live median Aqueduct order lands at turn 164. Making the district
+        // reachable in the build lists cannot beat the tech that gates it.
+        self.enable_housing_research();
     }
 
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
@@ -2468,6 +2571,37 @@ impl AdvancedAi {
 
     pub fn disable_housing_districts(&mut self) {
         self.base.housing_districts = false;
+    }
+
+    /// Keep asking for a Campus in every city that can still repay one. See
+    /// `AdvancedAi::campus_every_city`: live end-of-game Campus coverage is
+    /// exactly 50 of 100 cities, which is what `balanced_core`'s half-empire
+    /// cliff asks for.
+    pub fn enable_campus_every_city(&mut self) {
+        self.campus_every_city = true;
+    }
+
+    pub fn disable_campus_every_city(&mut self) {
+        self.campus_every_city = false;
+    }
+
+    /// Put `medina_quarter` and `insulae` in the deck when a city is short of
+    /// housing and already carries the districts they key off.
+    pub fn enable_housing_cards(&mut self) {
+        self.housing_cards = true;
+    }
+
+    pub fn disable_housing_cards(&mut self) {
+        self.housing_cards = false;
+    }
+
+    /// Aim research at the housing ceiling when the empire is paying it.
+    pub fn enable_housing_research(&mut self) {
+        self.housing_research = true;
+    }
+
+    pub fn disable_housing_research(&mut self) {
+        self.housing_research = false;
     }
 
     /// Require a faith-bought soldier's gold upkeep to be payable. Native
@@ -5703,6 +5837,16 @@ impl AdvancedAi {
         ((budget - g.turn as f64) / budget).clamp(0.0, 1.0)
     }
 
+    /// Can a Campus begun now still repay itself? Full value while more than
+    /// `RESEARCH_CAMPUS_PAYBACK` of the budget remains, ramping to zero inside
+    /// that window. See the constant for why a game-fraction horizon was the
+    /// wrong shape for a district that repays in a few dozen turns.
+    fn campus_payback_horizon(g: &Game) -> f64 {
+        let budget = g.max_turns.max(1) as f64;
+        let window = (budget * RESEARCH_CAMPUS_PAYBACK).max(1.0);
+        ((budget - g.turn as f64) / window).clamp(0.0, 1.0)
+    }
+
     /// Set this turn's science floor. Called once per decision, before any
     /// pricing runs.
     fn refresh_research_weight(&mut self, g: &Game) {
@@ -6064,6 +6208,74 @@ impl AdvancedAi {
         best.map(|(_, tech)| Box::leak(tech.to_string().into_boxed_str()) as &'static str)
     }
 
+    /// The tech that lets a housing-capped empire raise its own ceiling.
+    ///
+    /// ⚠⚠ THE RESEARCH CHOOSER HAS A GOAL FOR SCIENCE AND NONE FOR GROWTH, AND
+    /// GROWTH IS WHERE THE SCIENCE COMES FROM. Housing is the dominant band:
+    /// over 13,214 host-exported city-turns **71.7% are housing-capped**
+    /// (headroom < 2) at a mean growth multiplier of **0.510**, against the
+    /// Amenity band's 0.872. Science is ~1.16 per citizen, so the housing
+    /// ceiling is the science ceiling.
+    ///
+    /// And the repair is behind a tech the argmax never aims at. Measured over
+    /// 94 live runs (median final tech count **30 of 77**):
+    ///
+    /// | tech | unlocks | runs reaching it | median turn |
+    /// |---|---|---|---|
+    /// | `writing` | Library | 90% | 59 |
+    /// | `education` | University | 73% | 107 |
+    /// | **`engineering`** | **Aqueduct** | **73%** | **116** |
+    /// | `sanitation` | Sewer | **11%** | 170 |
+    /// | `chemistry` | Research Lab | **11%** | 195 |
+    ///
+    /// So **27% of runs never unlock the Aqueduct at all**, and the ones that do
+    /// get it at turn 116 — which is why the live median Aqueduct ORDER lands at
+    /// turn 164. Making the district reachable in the build lists (#1087, #1091)
+    /// cannot beat the tech that gates it.
+    ///
+    /// Same shape and the same last-place slot as
+    /// `unreachable_science_building_tech`: a goal that exists because the
+    /// target is absent from what the argmax will ever take on merit, not
+    /// because it ranks below something else. Gated on the empire ACTUALLY being
+    /// housing-capped, so a comfortable empire never diverts a beaker to it.
+    fn unreachable_housing_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
+        if !self.housing_research {
+            return None;
+        }
+        // Only when the ceiling is genuinely being paid. `housing_growth_mult`
+        // pays 1.0 at headroom 2 and halves below it, so 2 is the break-even.
+        let capped = g
+            .cities
+            .values()
+            .filter(|city| city.owner == pid)
+            .any(|city| g.city_housing_headroom(city) < HOUSING_CARD_HEADROOM);
+        if !capped {
+            return None;
+        }
+        // The cheapest un-researched tech that unlocks a district this empire
+        // could actually place. Asking the ruleset rather than naming
+        // `engineering` keeps this correct if Firaxis moves the Aqueduct, and
+        // picks up the Sewer's tech on the rare game that gets that far.
+        let mut best: Option<(f64, &str)> = None;
+        for (family, spec) in g.rules.districts.iter() {
+            let raises_housing = matches!(family.as_str(), "aqueduct" | "neighborhood");
+            if !raises_housing {
+                continue;
+            }
+            let Some(tech) = spec.tech.as_deref() else {
+                continue;
+            };
+            if g.players[pid].techs.contains(&Name::new(tech)) {
+                continue;
+            }
+            let cost = g.rules.techs.get(&Name::new(tech)).map(|t| t.cost).unwrap_or(0.0);
+            if best.is_none_or(|(cheapest, _)| cost < cheapest) {
+                best = Some((cost, tech));
+            }
+        }
+        best.map(|(_, tech)| Box::leak(tech.to_string().into_boxed_str()) as &'static str)
+    }
+
     fn advanced_research(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         // Explicit evaluator targets and the adaptive live plan must drive the
         // same prerequisite search.  Previously only `victory_target` enabled
@@ -6137,6 +6349,12 @@ impl AdvancedAi {
             // worthless prerequisite the argmax will never take on merit.
             let forced_goal =
                 forced_goal.or_else(|| self.unreachable_science_building_tech(g, pid));
+            // And after THAT, the growth ceiling: a Campus the empire can reach
+            // still only makes beakers out of citizens it is allowed to have.
+            // Behind the science goal on purpose — this never takes a slot the
+            // science chain wanted, it takes one the argmax would have spent on
+            // whatever happened to be cheapest.
+            let forced_goal = forced_goal.or_else(|| self.unreachable_housing_tech(g, pid));
             let goal_pick = forced_goal.and_then(|goal| {
                 available
                     .iter()
@@ -6764,6 +6982,28 @@ impl AdvancedAi {
                 desired.retain(|card| !RESEARCH_MULTIPLIERS.contains(card));
                 let at = desired.len().min(RESEARCH_DECK_INSERT);
                 desired.splice(at..at, RESEARCH_MULTIPLIERS);
+            }
+        }
+        // The same shape for the growth band the empire actually pays. A card
+        // that multiplies something we do not have is worth zero, so this is
+        // gated on a city that is BOTH short of housing and already carrying
+        // enough specialty districts for the card to fire — never on the mere
+        // existence of the card. See `HOUSING_DECK_INSERT` for the corpus.
+        //
+        // Medina Quarter before Insulae: +2 against +1, and a city with three
+        // specialty districts has two, so the stronger card is never blocked by
+        // the weaker one taking the slot first.
+        if self.housing_cards {
+            const HOUSING_CARDS: [&str; 2] = ["medina_quarter", "insulae"];
+            let pays = city_ids.iter().any(|cid| {
+                let city = &g.cities[cid];
+                g.city_housing_headroom(city) < HOUSING_CARD_HEADROOM
+                    && g.city_specialty_district_count(city) >= 2
+            });
+            if pays {
+                desired.retain(|card| !HOUSING_CARDS.contains(card));
+                let at = desired.len().min(HOUSING_DECK_INSERT);
+                desired.splice(at..at, HOUSING_CARDS);
             }
         }
         // ⚠⚠ A CARD THAT MULTIPLIES SOMETHING WE DO NOT HAVE IS WORTH ZERO, and
@@ -13147,7 +13387,26 @@ impl AdvancedAi {
                                 .any(|built| g.district_family(*built) == family)
                     })
                     .count();
-                let balanced_core = if district_count * 2 < city_count {
+                // ⚠⚠ THIS IS A CLIFF AT HALF THE EMPIRE, AND THE EMPIRE STOPS
+                // THERE. `district_count` is how many of MY cities hold this
+                // family, so the bonus vanishes the moment half of them do.
+                // Measured over 19 live runs, end-of-game Campus coverage is
+                // **exactly 50 of 100 cities** — the empire builds Campuses
+                // until it is told half is enough, and then stops.
+                //
+                // Defensible for a Harbor or an Industrial Zone, whose effects
+                // are empire-wide. Not for the district the whole science chain
+                // hangs off: every Campus carries its OWN Library and
+                // University slots, and the funnel cascades from it — 50%
+                // Campus, 39% Library, 20% University, **3% Research Lab**.
+                // Per-city science correlates 0.709 with a Library and 0.629
+                // with a Campus over 13,004 city-turns.
+                //
+                // So the Campus is exempted from the cliff and keeps asking in
+                // every city. The other four families are untouched.
+                let core_capped = district_count * 2 >= city_count;
+                let campus_keeps_asking = self.campus_every_city && family == "campus";
+                let balanced_core = if !core_capped || campus_keeps_asking {
                     match family.as_str() {
                         "campus" | "theater_square" | "commercial_hub" => 130.0,
                         "harbor" | "industrial_zone" => 90.0,
@@ -13348,7 +13607,16 @@ impl AdvancedAi {
                         .keys()
                         .any(|built| g.district_family(*built) == family)
                 {
-                    RESEARCH_CAMPUS_COVERAGE * Self::research_horizon(g)
+                    // ⚠ A PAYBACK horizon, not a game-fraction one. See
+                    // `RESEARCH_CAMPUS_PAYBACK`: the old scaling priced this at
+                    // 0.40 with a hundred turns of compounding left, while every
+                    // rival term is a flat constant that never decays.
+                    RESEARCH_CAMPUS_COVERAGE
+                        * if self.campus_every_city {
+                            Self::campus_payback_horizon(g)
+                        } else {
+                            Self::research_horizon(g)
+                        }
                 } else {
                     0.0
                 };
@@ -33853,5 +34121,186 @@ mod research_probe {
         assert!(live.base.housing_districts, "the deployment turns it on");
         live.disable_housing_districts();
         assert!(!live.base.housing_districts, "and the control arm holds it off");
+    }
+    /// Off by default, set only by the live bridge, and holdable off on its own
+    /// so the arm is a controlled comparison.
+    #[test]
+    fn only_the_live_bridge_keeps_asking_for_a_campus() {
+        assert!(!AdvancedAi::new().campus_every_city);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.campus_every_city);
+        live.disable_campus_every_city();
+        assert!(!live.campus_every_city);
+    }
+
+    /// ⚠ The whole point: a Campus with a hundred turns left must not be priced
+    /// as if the game were nearly over. The old game-fraction horizon said 0.40
+    /// at turn 150 of 250; the payback horizon says full value, and only ramps
+    /// down inside the window where a Campus genuinely cannot repay.
+    #[test]
+    fn the_campus_horizon_measures_payback_not_the_fraction_of_the_game_left() {
+        let mut g = crate::game::Game::new(2, 16, 12, 5, 250, 0);
+
+        for (turn, want_full) in [(1u32, true), (150, true), (209, true)] {
+            g.turn = turn;
+            let payback = AdvancedAi::campus_payback_horizon(&g);
+            assert_eq!(
+                payback, 1.0,
+                "at turn {turn} of 250 a Campus still repays; got {payback}"
+            );
+            assert!(want_full);
+        }
+
+        // At turn 150 the OLD shape had already discounted it to 0.40, against
+        // rivals that never decay at all — a Theatre Square is a flat 850.
+        g.turn = 150;
+        let old = AdvancedAi::research_horizon(&g);
+        assert!(
+            old < 0.45,
+            "the game-fraction horizon is what starved the late cities: {old}"
+        );
+
+        // Inside the payback window it still ramps to nothing, which is why the
+        // horizon existed: a Campus begun at turn 245 must not outbid a defender.
+        g.turn = 230;
+        let late = AdvancedAi::campus_payback_horizon(&g);
+        assert!((0.0..=0.6).contains(&late), "turn 230 of 250 ramps down: {late}");
+        g.turn = 250;
+        assert_eq!(AdvancedAi::campus_payback_horizon(&g), 0.0);
+        g.turn = 260;
+        assert_eq!(
+            AdvancedAi::campus_payback_horizon(&g),
+            0.0,
+            "and it never goes negative past the budget"
+        );
+    }
+
+    /// The `balanced_core` cliff is exempted for the Campus ONLY. The other
+    /// four families keep the half-empire cap they were written with.
+    #[test]
+    fn only_the_campus_is_exempt_from_the_half_empire_cliff() {
+        let src = include_str!("advanced.rs");
+        let block = src
+            .split("let core_capped = district_count * 2 >= city_count;")
+            .nth(1)
+            .expect("the cliff is computed once")
+            .split("};")
+            .next()
+            .expect("the balanced_core block ends");
+        assert!(
+            block.contains("self.campus_every_city && family == \"campus\""),
+            "the exemption must name the Campus and nothing else"
+        );
+        for family in ["theater_square", "commercial_hub", "harbor", "industrial_zone"] {
+            assert!(
+                !block.contains(&format!("family == \"{family}\"")),
+                "{family} must keep the half-empire cap"
+            );
+        }
+    }
+    /// Off by default, set only by the live bridge, holdable off on its own.
+    #[test]
+    fn only_the_live_bridge_plays_the_housing_cards() {
+        assert!(!AdvancedAi::new().housing_cards);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.housing_cards);
+        live.disable_housing_cards();
+        assert!(!live.housing_cards);
+    }
+
+    /// ⚠ The two cards must be the ones the empire can actually unlock, and
+    /// they must be REAL rows in the shipped ruleset — a card name the game does
+    /// not have is the defect class this project has hit six times.
+    #[test]
+    fn the_housing_cards_exist_and_are_the_reachable_pair() {
+        let rules = crate::rules::Rules::shipped();
+        for card in ["medina_quarter", "insulae"] {
+            let spec = rules
+                .policies
+                .get(&crate::name::Name::new(card))
+                .unwrap_or_else(|| panic!("{card} is a shipped policy"));
+            assert_eq!(
+                spec.slot, "economic",
+                "{card} competes for an economic slot, which is what the insert \
+                 point assumes"
+            );
+        }
+        // `new_deal` is the strongest housing card and is ALREADY in every
+        // strategic list — it is excluded here because it needs `suffrage`,
+        // which these games do not reach (slotted in 1 of 107 live runs).
+        assert!(rules
+            .policies
+            .contains_key(&crate::name::Name::new("new_deal")));
+    }
+
+    /// The insert sits behind the lane's leading cards, exactly like the
+    /// research pair — a lane keeps its opening and pays for this from the tail.
+    #[test]
+    fn the_housing_cards_go_behind_the_lanes_own_opening() {
+        assert_eq!(HOUSING_DECK_INSERT, RESEARCH_DECK_INSERT);
+        assert_eq!(
+            HOUSING_CARD_HEADROOM, 2.0,
+            "the break-even of the engine's own growth band, not a margin"
+        );
+    }
+    /// Off by default, set only by the live bridge, holdable off on its own.
+    #[test]
+    fn only_the_live_bridge_aims_research_at_the_housing_ceiling() {
+        assert!(!AdvancedAi::new().housing_research);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.housing_research);
+        live.disable_housing_research();
+        assert!(!live.housing_research);
+    }
+
+    /// ⚠ It must be INERT for an empire that is not paying the ceiling, and it
+    /// must name the Aqueduct's tech — asked of the ruleset, not hardcoded.
+    #[test]
+    fn the_housing_goal_fires_only_while_the_ceiling_is_being_paid() {
+        let mut game = crate::game::Game::new(2, 32, 24, 9_101, 250, 0);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &crate::game::Action::FoundCity { unit: settler })
+            .expect("found city");
+        let cid = game.player_city_ids(0)[0];
+
+        let mut ai = AdvancedAi::new();
+        ai.enable_live_bridge();
+
+        // A size-1 city has room to grow, so nothing is being paid.
+        game.cities.get_mut(&cid).unwrap().pop = 1;
+        assert!(
+            game.city_housing_headroom(&game.cities[&cid]) >= HOUSING_CARD_HEADROOM,
+            "a new city is not housing-capped"
+        );
+        assert_eq!(
+            ai.unreachable_housing_tech(&game, 0),
+            None,
+            "a comfortable empire must not divert a beaker to this"
+        );
+
+        // Grow it until the engine's own band bites.
+        let capped = (2..40)
+            .find(|pop| {
+                game.cities.get_mut(&cid).unwrap().pop = *pop;
+                game.city_housing_headroom(&game.cities[&cid]) < HOUSING_CARD_HEADROOM
+            })
+            .expect("some population overruns this city's housing");
+        game.cities.get_mut(&cid).unwrap().pop = capped;
+        assert_eq!(
+            ai.unreachable_housing_tech(&game, 0),
+            Some("engineering"),
+            "and a capped one is sent at the Aqueduct's tech"
+        );
+
+        // And the whole path short-circuits for a frozen controller.
+        let legacy = AdvancedAi::legacy();
+        assert_eq!(legacy.unreachable_housing_tech(&game, 0), None);
     }
 }

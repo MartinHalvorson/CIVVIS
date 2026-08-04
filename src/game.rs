@@ -33045,7 +33045,11 @@ impl Game {
             .any(|district| self.district_is_family(district, family))
     }
 
-    fn city_specialty_district_count(&self, city: &City) -> usize {
+    /// The districts Civilization VI counts as *specialty* — the ones the
+    /// Insulae and Medina Quarter housing cards key off. `pub(crate)` so the
+    /// policy chooser asks this instead of keeping a second list of district
+    /// families that would drift the first time Firaxis moved one.
+    pub(crate) fn city_specialty_district_count(&self, city: &City) -> usize {
         city.districts
             .keys()
             .filter(|district| self.rules.districts[district].specialty)
