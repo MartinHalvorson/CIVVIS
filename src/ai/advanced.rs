@@ -5,7 +5,7 @@
 //! civilian work, and military movement pursue the same medium-term goal.
 use super::{
     Ai, BasicAi, BasicUnitPlanState, ForceReport, PlanReport, PolicyDeck, UnitDoctrine,
-    WarPlanReport, Weights,
+    UnitMemory, WarPlanReport, Weights,
 };
 use crate::belief::{BeliefState, CitySighting};
 use crate::name::Name;
@@ -2018,6 +2018,7 @@ impl AdvancedAi {
         ai.base.siege_muster = true;
         ai.base.home_defense = true;
         ai.base.tactical_strategy = true;
+        ai.base.unit_objective_memory = true;
         ai.bounded_recovery = true;
         ai
     }
@@ -2040,6 +2041,13 @@ impl AdvancedAi {
     /// this, and the two want completely different repairs.
     pub fn settler_target(&self, uid: u32) -> Option<Pos> {
         self.settler_targets.get(&uid).copied()
+    }
+
+    /// The durable objective/threat/retreat state for one individual unit.
+    /// This is the Advanced controller's observer-facing view of the shared
+    /// BasicAI unit ledger, including memory carried across mirror rebuilds.
+    pub fn unit_memory(&self, uid: u32) -> Option<UnitMemory> {
+        self.base.unit_memory(uid)
     }
 
     /// Forget unit-keyed memory in this agent and its baseline, keeping the plan.
@@ -2260,6 +2268,13 @@ impl AdvancedAi {
     /// focused evaluator controls.
     pub fn enable_tactical_strategy(&mut self) {
         self.base.tactical_strategy = true;
+    }
+
+    /// Let a unit retain its campaign objective and a short, threat-driven
+    /// retreat across turns. Production Advanced enables this by default; the
+    /// explicit method keeps focused evaluators able to opt in deliberately.
+    pub fn enable_unit_objective_memory(&mut self) {
+        self.base.unit_objective_memory = true;
     }
 
     /// Stop the defensive-war posture from becoming permanent. Native
@@ -16633,6 +16648,25 @@ impl AdvancedAi {
         } else {
             Vec::new()
         };
+        // The production memory path needs the same fog-safe hostile frame
+        // even when a focused evaluator leaves tactical roles off. It records
+        // only the danger this controller was allowed to see at turn start.
+        let danger_hostiles: Vec<u32> = if self.base.unit_objective_memory {
+            g.units
+                .values()
+                .filter(|other| {
+                    enemies.contains(&other.owner)
+                        && g.unit_visible_to(other.id, pid)
+                        && visible.as_ref().is_none_or(|visible| {
+                            g.sees(visible, other.pos)
+                                && self.battlefront_unit_visible(g, pid, other.id)
+                        })
+                })
+                .map(|other| other.id)
+                .collect()
+        } else {
+            Vec::new()
+        };
         let score = |g: &Game, tile: Pos| -> f64 {
             let objective_distance = g.wdist(tile, target);
             let (progress, cohesion, threat_caution, spacing) = match role {
@@ -16761,6 +16795,18 @@ impl AdvancedAi {
             }
         }
         if let Some((candidate, pos)) = best {
+            if self.base.unit_objective_memory {
+                let advancing = g.wdist(pos, target) < g.wdist(upos, target);
+                let danger = self
+                    .base
+                    .projected_counter_damage(g, uid, pos, &danger_hostiles);
+                if advancing && self.base.remember_dangerous_approach(g, uid, pos, danger) {
+                    return self
+                        .base
+                        .retreat_step(g, pid, uid)
+                        .unwrap_or_else(|| self.base.fortify_or_stop(g, pid, uid));
+                }
+            }
             let should_move = if holding_role_position {
                 candidate > stay + 1e-9
             } else {
@@ -16801,6 +16847,17 @@ impl AdvancedAi {
                 })
             {
                 if self.base.move_beats_holding(g, uid, score(g, pos), stay) {
+                    if self.base.unit_objective_memory {
+                        let danger = self
+                            .base
+                            .projected_counter_damage(g, uid, pos, &danger_hostiles);
+                        if self.base.remember_dangerous_approach(g, uid, pos, danger) {
+                            return self
+                                .base
+                                .retreat_step(g, pid, uid)
+                                .unwrap_or_else(|| self.base.fortify_or_stop(g, pid, uid));
+                        }
+                    }
                     // Same rule as the local arm above: recorded through
                     // `path_move` so the next same-turn step cannot undo it.
                     return self.base.tactical_apply_move(g, pid, uid, pos);
@@ -17949,6 +18006,11 @@ impl AdvancedAi {
         let rules = std::sync::Arc::clone(&g.rules);
         let spec = &rules.units[unit.kind];
         let doctrine = BasicAi::unit_doctrine(g, uid);
+        if self.base.unit_objective_memory && spec.class == "military" {
+            if let Some(city) = plan.target_city {
+                self.base.remember_capture_objective(g, pid, uid, city);
+            }
+        }
         let unwanted_settler_adjacent = decline_settlers
             && g.nbrs(unit.pos).into_iter().any(|position| {
                 g.units_at(position).iter().any(|other| {
@@ -17972,6 +18034,11 @@ impl AdvancedAi {
         });
         if !unwanted_settler_adjacent && !holding_threatened_city {
             if let Some(acted) = self.base.healing_step(g, pid, uid) {
+                return acted;
+            }
+        }
+        if self.base.unit_objective_memory {
+            if let Some(acted) = self.base.retreat_step(g, pid, uid) {
                 return acted;
             }
         }
@@ -18331,6 +18398,7 @@ impl AdvancedAi {
                     plan.target_city
                         .and_then(|cid| g.cities.get(&cid).map(|c| c.pos))
                 })
+                .or_else(|| self.base.capture_objective_target(g, pid, uid))
                 .or_else(|| self.base.nearest_enemy(g, pid, uid, &enemies))
         };
         if let Some(orders) = &group {
@@ -19952,6 +20020,61 @@ mod tests {
             last_reviewed_turn: game.turn,
             recovery_assessments: 0,
         }
+    }
+
+    #[test]
+    fn production_units_keep_their_assigned_capture_city_across_turns() {
+        let (mut game, _, objective) = timed_war_fixture(940_000);
+        game.at_war.insert((0, 1));
+        let target = game.cities[&objective].pos;
+        let origin = game
+            .wdisk(target, 4)
+            .into_iter()
+            .find(|position| {
+                g_is_open_land(&game, *position) && game.units_at(*position).is_empty()
+            })
+            .expect("fixture needs an open land approach to the objective city");
+        let unit = game.spawn_test_unit("warrior", 0, origin);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(objective),
+            threatened_city: None,
+            desired_cities: 2,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut ai = AdvancedAi::new();
+        assert!(ai.base.unit_objective_memory);
+        assert!(!AdvancedAi::legacy().base.unit_objective_memory);
+
+        let _ = ai.advanced_military_step(&mut game, 0, unit, &plan);
+        let first = ai
+            .unit_memory(unit)
+            .expect("production military unit receives the campaign assignment");
+        assert!(matches!(
+            first.objective,
+            Some(crate::ai::UnitObjective::CaptureCity {
+                city,
+                target: remembered_target,
+                started_turn,
+                last_confirmed_turn,
+            }) if city == objective
+                && remembered_target == target
+                && started_turn == game.turn
+                && last_confirmed_turn == game.turn
+        ));
+
+        game.turn += 1;
+        let _ = ai.advanced_military_step(&mut game, 0, unit, &plan);
+        assert!(matches!(
+            ai.unit_memory(unit).and_then(|memory| memory.objective),
+            Some(crate::ai::UnitObjective::CaptureCity {
+                started_turn,
+                last_confirmed_turn,
+                ..
+            }) if started_turn + 1 == last_confirmed_turn
+        ));
     }
 
     fn clear_military(game: &mut Game, pid: usize) {
