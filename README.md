@@ -16,6 +16,14 @@ shares that exact plan across research, military production, upgrade Gold,
 staging, declaration, and the first-city capture. The spectator dossier and
 `ai_eval` expose its phase, package readiness, timing, captures, and aborts.
 
+Its frozen 60-pair live-profile screen proved that the lifecycle works but
+rejected the broad policy: it exposed 97.7% of treatment seats and scored only
+20.8% paired wins. Production `advanced` therefore remains unchanged. The
+follow-up `advanced_timing_attack_selective` arm is preregistered to reuse the
+same unified executor only when ordinary strategy already chose Conquest and
+three of four assault bodies already exist; it gets one appointment and must
+stage all four bodies at 1.25 local strength before declaring.
+
 See [docs/WAR_TIMING.md](docs/WAR_TIMING.md) for the frozen mechanism and
 promotion gates. A small smoke comparison can be run with:
 

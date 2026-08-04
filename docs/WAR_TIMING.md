@@ -1,7 +1,8 @@
 # The midgame power-spike appointment
 
-Status: **implemented as the default-off `advanced_timing_attack` evaluator arm;
-the frozen 8-player outcome screen has not been run**.
+Status: **v1 is implemented as the default-off `advanced_timing_attack`
+evaluator arm and was rejected by its frozen 8-player outcome screen. A
+selective v2 is preregistered below; production `advanced` remains unchanged**.
 
 The implementation is one controller-owned `WarPlan`, not a collection of
 bonuses. Its lifecycle is validated before decisions and consumed by research,
@@ -10,9 +11,11 @@ staging, diplomacy, declaration, tactical finishing, the reasoning journal,
 spectator JSON/HUD, and `ai_eval`. Twelve focused deterministic tests cover the
 frozen mechanism contract, including the typed evaluator boundary and the
 minor-controller exclusion; a separate server contract test carries the plan
-through JSON into both browser renderers. The live screen below remains the preregistered
-outcome read; passing it is still required before enabling this behavior in
-production `advanced`.
+through JSON into both browser renderers. The frozen v1 screen below rejected
+the broad treatment despite proving that the complete lifecycle executes. The
+selective v2 amendment preserves the same controller-owned plan and executor
+but sharply limits when an appointment may be made and strengthens its launch
+gate.
 
 This is the next military experiment after the ancient-rush line was retired
 on the live Continents/Planet cell. It is deliberately not another ancient
@@ -232,9 +235,9 @@ Implementation is incomplete until focused tests prove all of the following:
 The focused suite is followed by `cargo test --profile ci --locked` and the
 engine soak required by `CONTRIBUTING.md`.
 
-## Frozen live-profile screen
+## Frozen v1 live-profile screen
 
-The first outcome read is a paired policy screen on fresh maps:
+The first outcome read was the following paired policy screen on fresh maps:
 
 ```text
 ai_eval advanced_timing_attack advanced --players 8 --width 84 --height 54 \
@@ -243,14 +246,14 @@ ai_eval advanced_timing_attack advanced --players 8 --width 84 --height 54 \
   --victories science,culture,domination --seed 10100000 --jobs 6
 ```
 
-The evaluator must add treatment-only lifecycle diagnostics before this run:
+The evaluator reports treatment-only lifecycle diagnostics:
 seat-games with a plan; plans reaching breakthrough/mobilize/declaration;
 median appointment-to-tech, tech-to-declaration, and declaration-to-first
 objective capture; declarations with a complete modern package; objectives
 captured within 10 turns; abort reasons; and treatment player-turn exposure.
 These are mechanism diagnostics and never replace wins.
 
-The treatment advances only if every term passes:
+The treatment could advance only if every term passed:
 
 - 15% to 75% of treatment seat-games form a power-spike appointment;
 - at least 60% of its elective declarations carry the complete modern package;
@@ -260,6 +263,31 @@ The treatment advances only if every term passes:
 - favorable map directions outnumber adverse directions;
 - paired terminal-score share is at least 50%; and
 - the repository's unchanged promotion gate does not retain `advanced`.
+
+### Frozen v1 result: reject universal mobilization
+
+The completed screen ran all 60 pairs (120 games, average 232.8 turns). It
+decisively retained `advanced`: the timing arm won 12 games (10.0%) against 82
+(68.3%), produced a 20.8% paired score (95% Wilson interval 12.5%..32.7%), and
+had 2 favorable, 13 neutral, and 45 adverse map directions. Its terminal-score
+share was 39.2%, with all 60 maps adverse on that measure. The promotion gate
+crossed to `RETAIN advanced` at map 20.
+
+The mechanism itself was active, not inert. Treatment seats formed plans in
+469 of 480 seat-games (97.7%) and spent 53.0% of their player-turns in an
+active appointment. There were 1,029 appointments, 919 breakthroughs, 1,043
+mobilizations, and 417 declarations; every declaration carried the complete
+package. There were 115 objective captures, including 100 within ten turns of
+declaration (24.0% of declared appointments), with median appointment-to-tech,
+tech-to-declaration, and declaration-to-capture times of 10, 26, and 5 turns.
+
+That is a useful negative result. The unified machinery reliably aligned
+research, production, treasury, staging, diplomacy, and combat, but making it
+available to nearly every seat and repeatedly remobilizing damaged economies
+was strategically destructive. Treatment empires finished with lower mean
+cities (7.63 vs 9.81), population (67.5 vs 103.5), technology (57.0 vs 63.8),
+civics (37.8 vs 46.6), and military strength (721.5 vs 1,370.2). V1 remains a
+reproducible evaluator arm and stays off by default.
 
 ### Reduced implementation preflight (not a promotion read)
 
@@ -283,21 +311,73 @@ not comparisons fitted to the control, which has no corresponding appointment
 state. If fewer than 12 plans declare, the capability claim is unresolved and
 the screen stops.
 
-## Disjoint holdout and strongest-controller transfer
+## Selective v2 amendment (preregistered before its focal seeds)
 
-Passing every screen term earns one unchanged 240-map holdout at seed 10,110,000
+V2 is a new default-off evaluator arm named
+`advanced_timing_attack_selective`. It reuses the v1 `WarPlan`, lifecycle,
+research path, exact production and upgrade accounting, invalidations,
+diplomacy, staging movement, tactical executor, and observer telemetry. It is
+not a second war system. Before reading any v2 focal seed, the only mechanism
+changes are frozen as follows:
+
+1. A civilization may make at most one v2 appointment in a game.
+2. Its ordinary, unmodified strategic assessment must already be `Conquest`
+   with a living target player. The appointment chooser may consider only that
+   same target; the treatment cannot manufacture a conquest strategy or swap
+   in an easier victim.
+3. At appointment time, at least three of the four assault bodies must already
+   exist or be queued as the chosen assault unit, a stronger successor, or its
+   direct upgradeable predecessor. V2 may finish and modernize a real army; it
+   may not redirect an empire into building a strike force from scratch.
+4. Declaration requires all four modern assault bodies on the legal staging
+   ring, rather than three staged with the fourth one turn away.
+5. Local friendly-to-hostile strength at the objective must be at least 1.25,
+   rather than v1's 1.0. The breakthrough, compatible breach capability,
+   legal-war, and home-safety gates remain mandatory.
+
+These are fixed causal changes aimed at the two v1 failures: excessive
+exposure/economic displacement and an underpowered opening. There is no
+leader-name rule, new combat bonus, changed tactical odds, threshold sweep, or
+seed-specific exception. The v1 arm remains frozen for reproduction.
+
+### Frozen v2 screen
+
+The first v2 outcome read uses disjoint maps and otherwise the same live
+profile:
+
+```text
+ai_eval advanced_timing_attack_selective advanced --players 8 \
+  --width 84 --height 54 --city-states 12 --pairs 60 --turns 250 \
+  --speed online --map continents --shape planet --poles poles \
+  --randomize-civs --victories science,culture,domination \
+  --seed 10130000 --jobs 6
+```
+
+V2 advances only if every original screen term passes: 15%..75% treatment
+seat-game exposure, at least 60% complete-package declarations, at least 35%
+ten-turn captures with 12 or more declarations, paired score at least 52%,
+more favorable than adverse map directions, terminal-score share at least
+50%, and no `RETAIN advanced` promotion decision. Fewer than 12 declarations
+is unresolved, not a pass. This is one frozen read; failure is reported and
+keeps the treatment default-off.
+
+## Disjoint v2 holdout and strongest-controller transfer
+
+Passing every v2 screen term earns one unchanged 240-map holdout at seed
+10,140,000
 on the same profile. Coverage must remain in 15%..75%, complete-package
 declarations at or above 60%, ten-turn captures at or above 35% with at least
 30 declarations, terminal-score share at or above 50%, favorable directions
 above adverse, and the unchanged win gate must say `PROMOTE`.
 
-Only that result enables `timed_war` by default in `AdvancedAi`. Because the
+Only that result enables selective timing appointments by default in
+`AdvancedAi`. Because the
 implementation sits below the wrappers, defaulting it transfers the behavior
 mechanically to evolved, Strategic, production-rollout, and Policy-fallback
 agents; it does **not** establish strength transfer. One final 60-map screen
-then compares a named `strategic_deep_timing` entrant with the published
-`strategic_deep` on seed 10,120,000 and the identical live profile. It must
-load the same embedded genome/value artifact provenance in both arms. The
+then compares a named `strategic_deep_timing_selective` entrant with the
+published `strategic_deep` on seed 10,150,000 and the identical live profile.
+It must load the same embedded genome/value artifact provenance in both arms. The
 strongest controller keeps the default only if the treatment forms at least
 12 appointments, favorable directions are not fewer than adverse, terminal
 score is at least 50%, and the unchanged promotion gate does not retain the
