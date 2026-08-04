@@ -1052,63 +1052,39 @@
     pointer-events: none;
   }
   #zoomctl {
-    position: relative; z-index: 1; display: flex; flex: 0 0 auto; flex-direction: row;
+    position: relative; z-index: 1; display: flex; flex: 0 1 auto; flex-direction: row;
+    width: max-content; max-width: 100%; min-width: 0;
     gap: 5px; padding: 5px; border-radius: 13px; background: #0a1512cb; border: 1px solid #3c554c;
     box-shadow: 0 12px 26px #0006; backdrop-filter: blur(12px);
     pointer-events: auto;
   }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
+  #zoomctl > button { flex: 0 0 34px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
-  /* The sky's destinations are camera controls. They join the compass and
-     zoom keys in the same physical strip, with their names retained in the
-     native labels/tooltips while the compact glyphs leave room for the map. */
-  #skyworlds {
-    display: flex; align-items: center; align-self: stretch; gap: 0; min-width: 0;
-    padding: 0 3px; border-left: 1px solid #ffffff0c; border-right: 1px solid #ffffff0c;
-  }
-  #skyworlds[hidden] { display: none; }
-  #skyworlds button {
-    width: 34px; min-width: 34px; height: 34px; display: grid; place-items: center;
-    margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent;
-    color: #b8c7c0; font-size: 16px;
-  }
-  #skyworlds button + button { border-left: 1px solid #ffffff0c; }
-  #skyworlds button:hover { transform: none; color: #fff6dc; background: #183027; }
-  #skyworlds button.active { color: #fff0c5; background: #4b422699; }
-  #skyworlds .skynav-mark { font-size: 17px; }
-  #skyworlds .skynav-label { display: none; }
-  #skyworlds + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
-  /* The sky bar rides above the lower-left zoom instruments and is
-     taken out of the dock's flow to get there: the dock is the map's bottom
-     strip and its height is a reservation the framing already pays for, so a
-     second row in the flow would have moved the world every time the camera
-     left the globe. Standing over the map instead costs nothing, and the sky
-     keeps its captions clear of the bar the same way it does of every other
-     widget. */
+  /* Keep the complete sky route in the map-control reading order: after zoom
+     out and before the one control that dismisses the bar. The route itself
+     may be wider than a compact map, so its middle scrolls while the minus and
+     exit controls remain reachable at either side. */
   #skynav {
-    position: absolute; z-index: 1; left: 0; bottom: calc(100% + 50px);
-    max-width: 100%; display: flex; flex-wrap: wrap; align-items: center;
-    gap: 4px; padding: 5px; border-radius: 13px;
-    background: #0a1512d8; border: 1px solid #3c554c;
-    box-shadow: 0 12px 26px #0006; backdrop-filter: blur(12px);
-    pointer-events: auto;
+    display: flex; flex: 1 1 auto; align-items: center; align-self: stretch;
+    min-width: 0; overflow-x: auto; overscroll-behavior-x: contain;
+    padding: 0 3px; border-left: 1px solid #ffffff0c; scrollbar-width: none;
   }
   #skynav[hidden] { display: none; }
-  .skynav-group { display: flex; align-items: center; gap: 3px; min-width: 0; }
+  #skynav::-webkit-scrollbar { display: none; }
+  .skynav-group { display: flex; flex: 0 0 auto; align-items: center; gap: 0; min-width: 0; }
   .skynav-group[hidden] { display: none; }
-  .skynav-group + .skynav-group { padding-left: 5px; border-left: 1px solid #ffffff14; }
+  .skynav-group + .skynav-group { margin-left: 3px; padding-left: 3px; border-left: 1px solid #ffffff14; }
   #skynav button {
-    width: auto; min-width: 0; height: 30px; margin: 0; padding: 0 9px;
+    width: auto; min-width: 34px; height: 34px; margin: 0; padding: 0 8px;
     display: inline-flex; align-items: center; gap: 5px;
-    border: 1px solid transparent; border-radius: 8px; background: transparent;
+    border: 0; border-radius: 0; background: transparent;
     color: #b8c7c0; font-size: var(--type-caption); font-weight: 800;
     white-space: nowrap;
   }
-  #skynav button:hover { transform: none; border-color: #4d6b60; background: #183027; }
+  #skynav button:hover { transform: none; background: #183027; }
   #skynav button.active {
-    border-color: #d7b66a9c; color: #fff6dc;
-    background: linear-gradient(135deg, #4b4226cc, #173128e8);
-    box-shadow: inset 0 1px #ffffff16, 0 0 13px #d7b66a1c;
+    color: #fff6dc; background: #4b422699;
   }
   .skynav-mark { color: #e6c978; font-size: 14px; line-height: 1; }
   #skynav button.active .skynav-mark { color: #ffe6a4; }
@@ -2757,7 +2733,6 @@
   body.overlay-victory-hidden #victoryhud,
   body.overlay-minimap-hidden .minimap-frame,
   body.overlay-controls-hidden #zoomctl,
-  body.overlay-controls-hidden #skynav,
   body.overlay-lenses-hidden #map-lenses { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
@@ -3329,31 +3304,28 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="map-controls-dock">
-    <!-- The sky's scale shots and zoom ladder stand over the lower-left map
-         controls. Its Earth, Moon, Mars, and Exoplanet arrivals live inline
-         with those controls between north and zoom-in. -->
-    <div id="skynav" hidden role="group" aria-label="Sky navigation">
-      <div class="skynav-group" id="skynav-scales" role="group" aria-label="Frame a scale"></div>
-      <div class="skynav-group skynav-rungs">
-        <input id="skyladder" type="range" min="0" max="1000" step="1" value="1000"
-          aria-label="How far out the camera stands"
-          title="The whole zoom, end to end — left is the far stop, right is the ground">
-        <span id="skyspan" title="How wide the stage is">—</span>
-      </div>
-    </div>
     <!-- Left to right: collapse the deck, set the map area, face north, zoom
-         to a world, zoom in, zoom out, and dismiss. Dismissal is last because
-         it is the only one that removes the bar, and it hides itself while the
-         deck is collapsed — Interface Settings is the way back and that is
-         inside the deck. -->
+         in, zoom out, navigate the solar system, and dismiss. The full sky
+         route begins immediately after minus and ends immediately before
+         dismiss; Interface Settings is the way back and that is inside the
+         deck. -->
     <div id="zoomctl">
       <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
       <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
       <button id="mapareaset" type="button" aria-pressed="false" title="Set map area — drag the four edges" aria-label="Set map area">⛶</button>
       <button id="compass" type="button" title="Face north · R" aria-label="Face north"><span id="compass-needle"></span></button>
-      <div id="skyworlds" hidden role="group" aria-label="Fly to a world"></div>
       <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
       <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
+      <div id="skynav" hidden role="group" aria-label="Sky navigation">
+        <div class="skynav-group" id="skynav-worlds" role="group" aria-label="Fly to local worlds"></div>
+        <div class="skynav-group" id="skynav-scales" role="group" aria-label="Solar-system route"></div>
+        <div class="skynav-group skynav-rungs">
+          <input id="skyladder" type="range" min="0" max="1000" step="1" value="1000"
+            aria-label="How far out the camera stands"
+            title="The whole zoom, end to end — left is the far stop, right is the ground">
+          <span id="skyspan" title="How wide the stage is">—</span>
+        </div>
+      </div>
       <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Interface Settings" title="Hide map controls · restore in Interface Settings">✕</button>
     </div>
   </div>
@@ -4350,11 +4322,11 @@ const CIV6_UNIT_ICON_TYPES = [
   "man_at_arms", "maryannu_chariot_archer", "mechanized_infantry", "medic",
   "military_engineer", "missile_cruiser", "missionary", "mobile_sam",
   "modern_armor", "modern_at", "musketman", "naturalist",
-  "nuclear_submarine", "observation_balloon", "oromo_cavalry", "pike_and_shot", "pikeman",
+  "nau", "nuclear_submarine", "observation_balloon", "oromo_cavalry", "pike_and_shot", "pikeman",
   "pitati_archer", "privateer", "quadrireme", "ranger", "rock_band",
   "rocket_artillery", "saka_horse_archer", "scout", "settler", "siege_tower",
   "skirmisher", "slinger", "spearman", "spec_ops", "spy", "submarine",
-  "supply_convoy", "swordsman", "tagma", "tank", "trader", "trebuchet",
+  "supply_convoy", "swordsman", "tagma", "tank", "toa", "trader", "trebuchet",
   "war_cart", "warrior", "winged_hussar", "warrior_monk"
 ];
 const CIV6_UNIT_ICON_INDEX = new Map(
@@ -8172,11 +8144,13 @@ async function send(action) {
   render(await fetchJSON("/action", { method: "POST",
     headers: {"Content-Type": "application/json"},
     body: JSON.stringify({action}) }));
-  // A unit that has spent itself hands the turn to the next one, the way Civ 6
-  // does. Anything else — a half-move, a city order — leaves the selection be.
+  // A unit that has spent itself hands the turn to the closest unvisited one,
+  // so an action pass works through nearby groups before returning to a unit
+  // the player already considered. Anything else — a half-move, a city order
+  // — leaves the selection be.
   if (action.unit !== undefined && state && !SPEC && state.winner === null &&
       (!sel || sel.id !== action.unit || !unitNeedsOrders(sel))) {
-    advanceToNextUnit(true);
+    advanceToNextActionUnit(true);
   } else {
     drawTurnLoop();
   }
@@ -9893,17 +9867,24 @@ const WONDER_PAINTER = {
     }
   },
   volcano(x, y, k, art) {
-    wonderShadow(x, y, 15 * k);
-    wonderFace(x, y, k, art.tint, 24 * k, 13 * k);
-    if (art.ice) {
-      cx.fillStyle = "#dce8ed";
-      tri(x - 6 * k * LITF, y - 16 * k, x, y - 24 * k, x + 5 * k * LITF, y - 16 * k);
-    } else {
-      cx.fillStyle = "#ef5b25";
-      cx.beginPath(); cx.ellipse(x, y - 23 * k, 3.4 * k, 1.4 * k, 0, 0, 7); cx.fill();
-    }
-    cx.fillStyle = "rgba(150,150,148,.42)";
-    cx.beginPath(); cx.ellipse(x + 2 * k, y - 31 * k, 6 * k, 4 * k, 0, 0, 7); cx.fill();
+    // A volcano seen from a map is a caldera, not a side-on cone. Its rim,
+    // dark throat, and hot centre all share one centre so it remains a simple
+    // round landform at every Natural Wonder footprint size.
+    const calderaRadius = 14 * k;
+    cx.fillStyle = "rgba(0,0,0,.20)";
+    cx.beginPath(); cx.arc(x + 1.35 * k, y + 1.7 * k, calderaRadius, 0, 7); cx.fill();
+    cx.fillStyle = shade(art.tint, .74);
+    cx.beginPath(); cx.arc(x, y, calderaRadius, 0, 7); cx.fill();
+    cx.strokeStyle = shade(art.tint, 1.34); cx.lineWidth = 2.7 * k;
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .72, 0, 7); cx.stroke();
+    cx.strokeStyle = shade(art.tint, .58); cx.lineWidth = 2.1 * k;
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .52, 0, 7); cx.stroke();
+    cx.fillStyle = art.ice ? "#9baab0" : "#221714";
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .38, 0, 7); cx.fill();
+    cx.fillStyle = art.ice ? "#dce8ed" : "#ef5b25";
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .23, 0, 7); cx.fill();
+    cx.strokeStyle = art.ice ? "#f4fbfd" : "#ffbd4b"; cx.lineWidth = 1.25 * k;
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .15, 0, 7); cx.stroke();
   },
   ruins(x, y, k, art) {
     wonderShadow(x, y, 15 * k);
@@ -10095,34 +10076,52 @@ function drawStrategicVolcanicSoil(t, x, y) {
 
 const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;
 function drawStrategicMountainIcon(x, y, volcano) {
+  const mountainRadius = volcano ? 15 : 15.5;
   cx.save();
   cx.translate(x, y);
   cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE);
   cx.fillStyle = volcano ? "#37302d" : "#565149";
+  cx.beginPath(); cx.arc(0, 0, mountainRadius, 0, 7); cx.fill();
   if (volcano) {
-    // A crater is a horizontal opening, so its rim must meet a truncated cone
-    // at the ellipse's widest points. The old pointed mountain put the crater
-    // part-way down its slope, making the orange oval visibly float.
-    const rimY = -7, rimHalfWidth = 5.3, baseY = 19, baseHalfWidth = 16;
-    cx.beginPath();
-    cx.moveTo(-baseHalfWidth, baseY);
-    cx.lineTo(-rimHalfWidth, rimY);
-    cx.lineTo(rimHalfWidth, rimY);
-    cx.lineTo(baseHalfWidth, baseY);
-    cx.closePath(); cx.fill();
+    // A centered caldera keeps this landmark top-down. The warmer northwest
+    // rim and darker southeast rim add just enough depth without changing the
+    // plan-view silhouette into a cone laid on its side.
+    const rimRadius = 10.5, craterRadius = 6.2, lavaRadius = 3.7;
+    cx.strokeStyle = "#705d51"; cx.lineWidth = 2.8;
+    cx.beginPath(); cx.arc(0, 0, rimRadius, 0, 7); cx.stroke();
+    cx.strokeStyle = "#9f8873"; cx.lineWidth = 1.8;
+    cx.beginPath(); cx.arc(0, 0, rimRadius, Math.PI * 1.08, Math.PI * 1.82); cx.stroke();
+    cx.fillStyle = "#171210";
+    cx.beginPath(); cx.arc(0, 0, craterRadius, 0, 7); cx.fill();
     // Two hot cores over a soft bloom make this read as emitted lava light,
-    // not an orange badge pasted onto the now-near-black basalt.
+    // not an orange badge pasted onto the now-round basalt rim.
     cx.shadowColor = "#ff4b19";
     cx.shadowBlur = 9;
     cx.fillStyle = "#f04f1f";
-    cx.beginPath(); cx.ellipse(0, rimY, rimHalfWidth, 1.35, 0, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(0, 0, lavaRadius, 0, 7); cx.fill();
     cx.shadowBlur = 4;
     cx.fillStyle = "#ffb23c";
-    cx.beginPath(); cx.ellipse(0, rimY, rimHalfWidth * .68, .72, 0, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(-.8, -.8, lavaRadius * .52, 0, 7); cx.fill();
   } else {
-    tri(-14, 10, 0, -14, 14, 10);
-    cx.fillStyle = "#3c3934";
-    tri(0, -14, 0, 10, 14, 10);
+    // Closed contour bands keep the mountain's footprint on the ground. Four
+    // ridges trace inward to the middle peak, so it reads as elevation rather
+    // than as a sideways triangle hovering over its tile.
+    const peakX = 0, peakY = 0;
+    cx.fillStyle = "#6d675b";
+    cx.beginPath(); cx.arc(peakX, peakY, 10.6, 0, 7); cx.fill();
+    cx.fillStyle = "#817967";
+    cx.beginPath(); cx.arc(peakX, peakY, 5.7, 0, 7); cx.fill();
+    cx.strokeStyle = "#37332e"; cx.lineWidth = 1.25; cx.lineCap = "round";
+    cx.beginPath();
+    cx.moveTo(-12, 7); cx.quadraticCurveTo(-6, 1, peakX, peakY);
+    cx.moveTo(12, 7); cx.quadraticCurveTo(6, 1, peakX, peakY);
+    cx.moveTo(-7, -11); cx.quadraticCurveTo(-3, -5, peakX, peakY);
+    cx.moveTo(7, -11); cx.quadraticCurveTo(3, -5, peakX, peakY);
+    cx.stroke();
+    cx.strokeStyle = "#a89c85"; cx.lineWidth = 1.2;
+    cx.beginPath(); cx.arc(peakX, peakY, 13.3, Math.PI * 1.15, Math.PI * 1.9); cx.stroke();
+    cx.fillStyle = "#c9bda4";
+    cx.beginPath(); cx.arc(peakX, peakY, 2.25, 0, 7); cx.fill();
   }
   cx.restore();
 }
@@ -10142,10 +10141,18 @@ function drawFeatureEffects(t, x, y) {
     cx.beginPath(); cx.ellipse(x, y + 4, 22, 11, 0, 0, 7); cx.fill();
   }
   if (t.feature === "volcano" && t.volcano_state > 0) {
-    cx.fillStyle = t.volcano_state === 2 ? "#ff6b2ac8" : "#aeb7b4a8";
-    for (const [dx, dy, radius] of [[-5,-18,5],[2,-27,7],[9,-38,8]]) {
-      cx.beginPath(); cx.arc(x + dx, y + dy, radius, 0, Math.PI * 2); cx.fill();
+    // Eruption energy moves outward from the centered crater, rather than
+    // turning into a vertical plume that changes the volcano back into a
+    // side-view object.
+    const erupting = t.volcano_state === 2;
+    cx.save();
+    cx.strokeStyle = erupting ? "#ff6b2a" : "#aeb7b4";
+    cx.lineWidth = erupting ? 2.15 : 1.6;
+    for (const [radius, alpha] of erupting ? [[8, .82], [12, .44]] : [[8, .50], [12, .24]]) {
+      cx.globalAlpha = alpha;
+      cx.beginPath(); cx.arc(x, y, radius, 0, Math.PI * 2); cx.stroke();
     }
+    cx.restore();
   }
   const movingDisaster = (state?.active_disasters || []).find(event =>
     ["blizzard", "dust_storm", "tornado", "hurricane"].includes(event.kind) &&
@@ -12092,8 +12099,254 @@ function drawBarbarianCamp(x, y) {
   cx.restore();
 }
 
+// Every improvement serialized by the ruleset has a deliberate tile marker.
+// The common build forms below keep the strategic map legible without reducing
+// less-frequent civilization, city-state, scenario, and secret-society sites to
+// the old anonymous walled-house fallback.  Keep these IDs in lockstep with
+// data/improvements.json; the embedded-browser contract checks the full set.
+const IMPROVEMENT_MARKERS = Object.freeze({
+  airstrip: "airstrip",
+  alcazar: "citadel",
+  ancient_tower_defense: "tower",
+  ancient_trap_defense: "trap",
+  archaeological_dig: "dig",
+  barbarian_camp: "barbarian",
+  batey: "arena",
+  buried_treasure: "treasure",
+  camp: "camp",
+  chateau: "chateau",
+  chemamull: "totem",
+  city_park: "park",
+  colossal_head: "colossal_head",
+  corporation: "factory",
+  farm: "farm",
+  feitoria: "feitoria",
+  fishery: "boat",
+  fishing_boats: "boat",
+  floating_treasure: "treasure",
+  fort: "fort",
+  geothermal_plant: "geothermal",
+  golf_course: "golf",
+  goody_hut: "hut",
+  great_wall: "wall",
+  grieving_gift: "gift",
+  hacienda: "hacienda",
+  ice_hockey_rink: "rink",
+  improvised_trap: "trap",
+  industry: "factory",
+  kampung: "kampung",
+  kurgan: "burial",
+  lumber_mill: "mill",
+  mahavihara: "temple",
+  maori_pa: "pa",
+  mekewap: "teepee",
+  meteor_goody: "meteor",
+  mine: "mine",
+  missile_silo: "fort",
+  mission: "mission",
+  moai: "moai",
+  modern_tower_defense: "tower",
+  modern_trap_defense: "trap",
+  monastery: "monastery",
+  mound: "mound",
+  mountain_tunnel: "tunnel",
+  national_park: "park",
+  nazca_line: "nazca",
+  nubian_pyramid: "pyramid",
+  offshore_oil_rig: "oil",
+  offshore_wind_farm: "wind",
+  oil_well: "oil",
+  open_air_museum: "museum",
+  outback_station: "outback",
+  pairidaeza: "garden",
+  pasture: "pasture",
+  plantation: "plantation",
+  polder: "polder",
+  popped_goody: "popped",
+  qhapaq_nan: "tunnel",
+  quarry: "quarry",
+  rock_concert: "stage",
+  rock_hewn_church: "church",
+  roman_fort: "roman_fort",
+  seaside_resort: "resort",
+  seastead: "boat",
+  shipwreck_excavation: "shipwreck",
+  ski_resort: "ski",
+  solar_farm: "solar",
+  sphinx: "sphinx",
+  stepwell: "stepwell",
+  supply_drop: "supply",
+  terrace_farm: "terrace",
+  trading_dome: "dome",
+  vampire_castle: "vampire",
+  wind_farm: "wind",
+  ziggurat: "ziggurat"
+});
+
+function paintImprovementMarker(marker, t, x, y, dir) {
+  const outlined = (path, fill, edge = "rgba(28,24,19,.75)", width = 1) => {
+    cx.fillStyle = fill; cx.fill(path); cx.strokeStyle = edge; cx.lineWidth = width; cx.stroke(path);
+  };
+  const roofed = (wall, roofColor, height = 9, width = 8, cross = false) => {
+    const walls = new Path2D();
+    walls.roundRect(x - width, y + 7 - height, width * 2, height, 1.4);
+    outlined(walls, matteMat(wall, dir, width), "rgba(37,28,18,.74)", 1);
+    const roof = new Path2D();
+    roof.moveTo(x, y - height - 4); roof.lineTo(x + dir * (width + 3), y + 7 - height);
+    roof.lineTo(x - dir * (width + 3), y + 7 - height); roof.closePath();
+    outlined(roof, matteMat(roofColor, dir, width + 2), "rgba(37,28,18,.78)", 1);
+    cx.fillStyle = "rgba(30,25,20,.72)"; cx.fillRect(x - 1.8, y + 2, 3.6, 5);
+    if (cross) {
+      cx.strokeStyle = "#ead5a1"; cx.lineWidth = 1.45;
+      cx.beginPath(); cx.moveTo(x, y - height - 7); cx.lineTo(x, y - height - 1);
+      cx.moveTo(x - 2.3, y - height - 4.3); cx.lineTo(x + 2.3, y - height - 4.3); cx.stroke();
+    }
+  };
+  const monument = (stone, head = false) => {
+    const base = new Path2D(); base.roundRect(x - 10, y + 4, 20, 4.5, 1.4);
+    outlined(base, matteMat(stone, dir, 10));
+    const body = new Path2D();
+    body.moveTo(x - 5.2, y + 4); body.lineTo(x - 4.2, y - 10);
+    body.lineTo(x + 4.2, y - 10); body.lineTo(x + 5.2, y + 4); body.closePath();
+    outlined(body, matteMat(stone, dir, 5.2));
+    if (head) {
+      cx.fillStyle = tone(stone, 1.18); cx.beginPath(); cx.ellipse(x, y - 12.2, 4.3, 3.5, 0, 0, 7); cx.fill();
+      cx.strokeStyle = "rgba(31,26,20,.7)"; cx.lineWidth = .85; cx.stroke();
+      cx.fillStyle = "rgba(27,24,19,.8)"; cx.fillRect(x - 2.1, y - 12.5, 1.2, .9); cx.fillRect(x + .9, y - 12.5, 1.2, .9);
+    }
+  };
+  const palisade = (roman = false, high = false) => {
+    const height = high ? 17 : 13;
+    cx.fillStyle = roman ? "#aaa28f" : "#835633";
+    for (let i = -3; i <= 3; i++) {
+      const px = x + i * 4.2;
+      cx.beginPath(); cx.moveTo(px - 1.5, y + 7); cx.lineTo(px - 1.25, y - height + (i & 1 ? 2 : 0));
+      cx.lineTo(px, y - height - 2 + (i & 1 ? 2 : 0)); cx.lineTo(px + 1.25, y - height + (i & 1 ? 2 : 0));
+      cx.lineTo(px + 1.5, y + 7); cx.closePath(); cx.fill();
+    }
+    cx.strokeStyle = roman ? "#504b41" : "#3c2719"; cx.lineWidth = 1.2;
+    cx.beginPath(); cx.moveTo(x - 15, y + 1.5); cx.lineTo(x + 15, y + 1.5); cx.stroke();
+    if (roman) { cx.fillStyle = "#b63c35"; cx.fillRect(x + dir * 7 - 1.5, y - height - 7, 3, 7); }
+  };
+
+  switch (marker) {
+    case "citadel":
+    case "vampire":
+      palisade(true, false);
+      if (marker === "vampire") { cx.fillStyle = "#9a2e43"; cx.beginPath(); cx.arc(x, y - 7, 3.1, 0, 7); cx.fill(); }
+      break;
+    case "roman_fort": palisade(true, false); break;
+    case "pa": palisade(false, false); break;
+    case "tower":
+      palisade(true, true); cx.fillStyle = "#827d72"; cx.fillRect(x - 4.5, y - 15, 9, 20);
+      cx.strokeStyle = "#3c3933"; cx.lineWidth = 1; cx.strokeRect(x - 4.5, y - 15, 9, 20);
+      break;
+    case "trap":
+      cx.strokeStyle = "#8b5c34"; cx.lineWidth = 2;
+      for (const dx of [-8, -3, 3, 8]) { cx.beginPath(); cx.moveTo(x + dx - 2, y + 7); cx.lineTo(x + dx, y - 5); cx.lineTo(x + dx + 2, y + 7); cx.stroke(); }
+      break;
+    case "chateau": roofed("#cbbca2", "#75524a", 12, 9, false); cx.fillStyle = "#d8d0be"; cx.fillRect(x - 2, y - 17, 4, 8); break;
+    case "mission": roofed("#e1d5b8", "#9d5f45", 10, 7, true); break;
+    case "church": roofed("#b9ad98", "#567384", 11, 7, true); break;
+    case "monastery": roofed("#b99873", "#774d35", 9, 9, false); break;
+    case "temple": roofed("#c6aa71", "#a44638", 8, 10, false); cx.fillStyle = "#e6cd78"; cx.fillRect(x - 9, y - 8, 18, 2); break;
+    case "museum": roofed("#d8d6c5", "#476b78", 7, 11, false); cx.strokeStyle = "#e8d9aa"; cx.lineWidth = 1; for (let i = -7; i <= 7; i += 3.5) { cx.beginPath(); cx.moveTo(x + i, y); cx.lineTo(x + i, y + 7); cx.stroke(); } break;
+    case "hacienda": roofed("#d4b57a", "#a4553f", 7, 10, false); cx.fillStyle = "#6b984f"; cx.beginPath(); cx.ellipse(x - 10, y + 4, 3, 2, 0, 0, 7); cx.fill(); break;
+    case "kampung":
+      roofed("#b9845c", "#c7a247", 6, 8, false); cx.strokeStyle = "#6a482e"; cx.lineWidth = 1.3;
+      for (const dx of [-5, 5]) { cx.beginPath(); cx.moveTo(x + dx, y + 7); cx.lineTo(x + dx, y + 12); cx.stroke(); } break;
+    case "teepee":
+      cx.fillStyle = "#c7b388"; cx.beginPath(); cx.moveTo(x - 9, y + 7); cx.lineTo(x, y - 11); cx.lineTo(x + 9, y + 7); cx.closePath(); cx.fill();
+      cx.strokeStyle = "#5a4430"; cx.lineWidth = 1; cx.stroke(); break;
+    case "dome":
+      cx.fillStyle = "#b78344"; cx.beginPath(); cx.ellipse(x, y + 4, 11, 5, 0, 0, 7); cx.fill();
+      cx.beginPath(); cx.arc(x, y + 4, 8, Math.PI, 0); cx.fillStyle = "#d7b96e"; cx.fill(); cx.strokeStyle = "#4e3a22"; cx.stroke(); break;
+    case "factory":
+    case "geothermal":
+      cx.fillStyle = marker === "geothermal" ? "#776d61" : "#8e7461"; cx.fillRect(x - 11, y - 2, 22, 10);
+      cx.strokeStyle = "#3c3029"; cx.lineWidth = 1; cx.strokeRect(x - 11, y - 2, 22, 10);
+      cx.fillStyle = "#4c4a49"; cx.fillRect(x + dir * 6 - 2, y - 13, 4, 13);
+      if (marker === "geothermal") { cx.strokeStyle = "rgba(236,240,240,.65)"; cx.lineWidth = 2; cx.beginPath(); cx.arc(x - dir * 5, y - 7, 5, Math.PI, 0); cx.stroke(); }
+      break;
+    case "airstrip":
+      cx.fillStyle = "#59616a"; cx.fillRect(x - 14, y - 2.2, 28, 5); cx.strokeStyle = "#d8d3ad"; cx.lineWidth = 1; cx.strokeRect(x - 14, y - 2.2, 28, 5);
+      cx.strokeStyle = "#f2edc6"; cx.setLineDash([2, 2]); cx.beginPath(); cx.moveTo(x - 12, y + .3); cx.lineTo(x + 12, y + .3); cx.stroke(); cx.setLineDash([]); break;
+    case "arena":
+      cx.fillStyle = "#caa66d"; cx.beginPath(); cx.ellipse(x, y + 3, 13, 7, 0, 0, 7); cx.fill(); cx.strokeStyle = "#61472c"; cx.lineWidth = 1.2; cx.stroke();
+      cx.fillStyle = "#805e37"; cx.beginPath(); cx.ellipse(x, y + 3, 7, 3, 0, 0, 7); cx.fill(); break;
+    case "garden":
+    case "park":
+      cx.fillStyle = marker === "garden" ? "#618a46" : "#4f8751";
+      for (const [dx, dy] of [[-7,4],[0,-2],[7,4]]) { cx.beginPath(); cx.arc(x + dx, y + dy, 5, 0, 7); cx.fill(); }
+      cx.fillStyle = "#d7d0b4"; cx.fillRect(x - 10, y + 7, 20, 1.3); break;
+    case "golf":
+      cx.fillStyle = "#77a84e"; cx.beginPath(); cx.ellipse(x, y + 2, 13, 7, 0, 0, 7); cx.fill(); cx.strokeStyle = "#d6c376"; cx.lineWidth = 1; cx.stroke();
+      cx.strokeStyle = "#e8e5db"; cx.lineWidth = 1; cx.beginPath(); cx.moveTo(x + 4, y + 2); cx.lineTo(x + 4, y - 10); cx.stroke(); cx.fillStyle = "#d54a43"; cx.fillRect(x + 4, y - 10, 5, 3); break;
+    case "rink":
+      cx.fillStyle = "#9fd7e6"; cx.beginPath(); cx.roundRect(x - 13, y - 4, 26, 12, 3); cx.fill(); cx.strokeStyle = "#e6fbff"; cx.lineWidth = 1; cx.stroke();
+      cx.strokeStyle = "rgba(55,112,143,.65)"; cx.beginPath(); cx.moveTo(x - 11, y + 2); cx.lineTo(x + 11, y + 2); cx.stroke(); break;
+    case "outback":
+      cx.strokeStyle = "#9f7b4a"; cx.lineWidth = 1.2; cx.strokeRect(x - 11, y - 3, 22, 11);
+      cx.strokeStyle = "#d5d8db"; cx.lineWidth = 1.4; cx.beginPath(); cx.moveTo(x + 4, y + 7); cx.lineTo(x + 4, y - 8); cx.stroke(); for (let i = 0; i < 3; i++) { const a = -Math.PI / 2 + i * 2.094; cx.beginPath(); cx.moveTo(x + 4, y - 8); cx.lineTo(x + 4 + Math.cos(a) * 5.5, y - 8 + Math.sin(a) * 5.5); cx.stroke(); } break;
+    case "polder":
+      cx.fillStyle = "#668fb0"; cx.beginPath(); cx.ellipse(x, y + 4, 14, 6, 0, 0, 7); cx.fill();
+      cx.strokeStyle = "#d7c078"; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(x - 14, y + 5); cx.lineTo(x + 14, y + 5); cx.stroke();
+      cx.fillStyle = "#f2efe0"; cx.fillRect(x + dir * 4 - 1.5, y - 8, 3, 10); break;
+    case "terrace":
+      cx.strokeStyle = "#b69d63"; cx.lineWidth = 3; for (let i = 0; i < 3; i++) { cx.beginPath(); cx.moveTo(x - 13 + i * 3, y + 5 - i * 4); cx.lineTo(x + 13 - i * 3, y + 5 - i * 4); cx.stroke(); }
+      cx.strokeStyle = "#68a14c"; cx.lineWidth = 1.4; cx.beginPath(); cx.moveTo(x - 11, y + 2); cx.lineTo(x + 11, y + 2); cx.stroke(); break;
+    case "stepwell":
+      cx.fillStyle = "#b89b69"; cx.beginPath(); cx.roundRect(x - 10, y - 5, 20, 14, 2); cx.fill();
+      cx.fillStyle = "#4c98b6"; cx.fillRect(x - 5, y - 1, 10, 7); cx.strokeStyle = "#e4d7bb"; cx.lineWidth = 1; cx.strokeRect(x - 7, y - 3, 14, 11); break;
+    case "tunnel":
+      cx.fillStyle = "#776f63"; cx.beginPath(); cx.ellipse(x, y + 4, 13, 8, 0, Math.PI, 2 * Math.PI); cx.fill(); cx.strokeStyle = "#342f29"; cx.lineWidth = 1.3; cx.stroke();
+      cx.fillStyle = "#151c21"; cx.beginPath(); cx.ellipse(x, y + 5, 7, 5, 0, Math.PI, 2 * Math.PI); cx.fill(); break;
+    case "pyramid":
+    case "ziggurat":
+      cx.fillStyle = marker === "pyramid" ? "#d2b56f" : "#b48a55";
+      for (let i = 0; i < 3; i++) { cx.beginPath(); cx.moveTo(x - 12 + i * 3, y + 7 - i * 5); cx.lineTo(x + 12 - i * 3, y + 7 - i * 5); cx.lineTo(x + 8 - i * 3, y + 2 - i * 5); cx.lineTo(x - 8 + i * 3, y + 2 - i * 5); cx.closePath(); cx.fill(); }
+      cx.strokeStyle = "rgba(67,49,24,.7)"; cx.lineWidth = 1; cx.stroke(); break;
+    case "moai": monument("#6d6656", true); break;
+    case "colossal_head": monument("#8c7458", true); cx.fillStyle = "#b88d55"; cx.fillRect(x - 5.5, y - 18, 11, 2.6); break;
+    case "totem": monument("#7c5130", true); break;
+    case "burial":
+    case "mound":
+      cx.fillStyle = marker === "mound" ? "#9b7a4a" : "#a87942"; cx.beginPath(); cx.ellipse(x, y + 5, 13, 6, 0, Math.PI, 2 * Math.PI); cx.fill();
+      cx.strokeStyle = "#4f3823"; cx.lineWidth = 1; cx.stroke(); break;
+    case "nazca":
+      cx.strokeStyle = "#e4d197"; cx.lineWidth = 2.2; cx.beginPath(); cx.arc(x - 3, y + 2, 8, .25, Math.PI * 1.85); cx.arc(x + 3, y + 2, 3.3, Math.PI * 1.85, .25); cx.stroke(); break;
+    case "stage":
+      cx.fillStyle = "#4c506d"; cx.fillRect(x - 12, y + 1, 24, 7); cx.strokeStyle = "#22263b"; cx.lineWidth = 1; cx.strokeRect(x - 12, y + 1, 24, 7);
+      cx.fillStyle = "#edc64e"; for (const dx of [-7, 0, 7]) { cx.beginPath(); cx.arc(x + dx, y - 3, 2.1, 0, 7); cx.fill(); } break;
+    case "resort":
+      cx.fillStyle = "#efe7d4"; cx.fillRect(x - 8, y + 1, 16, 7); cx.strokeStyle = "#51402f"; cx.lineWidth = 1; cx.strokeRect(x - 8, y + 1, 16, 7);
+      cx.fillStyle = "#e35e52"; cx.beginPath(); cx.arc(x - 7, y - 2, 5, Math.PI, 0); cx.lineTo(x - 2, y - 2); cx.closePath(); cx.fill(); break;
+    case "ski":
+      cx.strokeStyle = "#edf5fb"; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(x - 11, y + 8); cx.lineTo(x + 11, y - 6); cx.stroke();
+      cx.strokeStyle = "#c84a3d"; cx.lineWidth = 1.2; cx.beginPath(); cx.moveTo(x, y - 9); cx.lineTo(x, y + 4); cx.stroke(); break;
+    case "dig":
+      cx.strokeStyle = "#a87b3f"; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(x - 9, y + 6); cx.lineTo(x + 6, y - 8); cx.stroke(); cx.fillStyle = "#d7c491"; cx.fillRect(x + 3, y - 10, 6, 3); break;
+    case "shipwreck":
+      cx.fillStyle = "#775336"; cx.beginPath(); cx.moveTo(x - 12, y + 4); cx.lineTo(x + 11, y + 4); cx.lineTo(x + 5, y + 9); cx.lineTo(x - 6, y + 9); cx.closePath(); cx.fill(); cx.strokeStyle = "#342417"; cx.stroke();
+      cx.strokeStyle = "#d6c89e"; cx.lineWidth = 1; cx.beginPath(); cx.moveTo(x - 1, y + 4); cx.lineTo(x - 1, y - 9); cx.lineTo(x + 7, y - 2); cx.stroke(); break;
+    case "meteor":
+      cx.fillStyle = "#5f6570"; cx.beginPath(); cx.arc(x, y + 1, 8, 0, 7); cx.fill(); cx.strokeStyle = "#232933"; cx.lineWidth = 1.2; cx.stroke(); cx.fillStyle = "rgba(230,240,250,.35)"; cx.beginPath(); cx.arc(x - 2, y - 2, 2, 0, 7); cx.fill(); break;
+    case "treasure":
+    case "popped":
+    case "gift":
+      cx.fillStyle = marker === "gift" ? "#b84157" : "#b98d3d"; cx.fillRect(x - 7, y - 1, 14, 9); cx.strokeStyle = "#4f3821"; cx.lineWidth = 1; cx.strokeRect(x - 7, y - 1, 14, 9);
+      cx.strokeStyle = marker === "gift" ? "#f2d18a" : "#ead178"; cx.lineWidth = 1.4; cx.beginPath(); cx.moveTo(x, y - 1); cx.lineTo(x, y + 8); cx.stroke(); break;
+    case "supply":
+      cx.fillStyle = "#738652"; cx.fillRect(x - 9, y - 2, 18, 10); cx.strokeStyle = "#26321e"; cx.lineWidth = 1; cx.strokeRect(x - 9, y - 2, 18, 10);
+      cx.strokeStyle = "#d8d4b6"; cx.beginPath(); cx.moveTo(x - 5, y - 5); cx.lineTo(x + 5, y - 5); cx.stroke(); break;
+    default:
+      roofed("#8e8474", "#cfc3ab", 9, 7.5, false);
+  }
+}
+
 function drawImprovement(t, x, y) {
   const imp = t.improvement;
+  const marker = IMPROVEMENT_MARKERS[imp] || "unknown";
   // `x, y` is always the visual centre of this tile; terrain does not offset
   // improvements, even when woodland or a hill is also painted here.
   cx.save();
@@ -12369,6 +12622,8 @@ function drawImprovement(t, x, y) {
     cx.lineTo(x + 8.4, y - 3.4); cx.lineTo(x + 7.4, y - 1.2); cx.lineTo(x + 6.5, y - 3.4);
     cx.lineTo(x + 4, y - 4.2); cx.lineTo(x + 6.5, y - 4.8);
     cx.closePath(); cx.fill();
+  } else if (marker !== "unknown") {
+    paintImprovementMarker(marker, t, x, y, dir);
   } else {
     // Everything rarer still reads as a built installation rather than a smear
     // of brown: a walled base with a roof catching the same light as the tiles.
@@ -15917,7 +16172,7 @@ function skySpanLabel(radii) {
 // frame would be reading a number the bar itself moved. The two thresholds are
 // a hysteresis, so a zoom that comes to rest on the line does not blink.
 const skyNavBar = document.getElementById("skynav");
-const skyNavWorldRow = document.getElementById("skyworlds");
+const skyNavWorldRow = document.getElementById("skynav-worlds");
 const skyNavScaleRow = document.getElementById("skynav-scales");
 const skyNavLadder = document.getElementById("skyladder");
 const skyNavSpan = document.getElementById("skyspan");
@@ -15944,7 +16199,7 @@ function skyNavShowing() {
 // Its box, in canvas coordinates, so a caption out there dodges the bar the
 // same way it dodges the standings and the world map.
 function skyNavBox(viewRect) {
-  const boxes = [skyNavBar, skyNavWorldRow]
+  const boxes = [skyNavBar]
     .filter(element => element && !element.hidden)
     .map(element => element.getBoundingClientRect())
     .filter(box => box.width && box.height);
@@ -16019,18 +16274,22 @@ function syncSkyNav() {
     .map(stop => `${stop.id}/${stop.label}/${stop.title}`).join(",");
   if (key !== SKY_NAV_KEY) {
     SKY_NAV_KEY = key; SKY_NAV_MARK = "";
-    // Earth through Exoplanet are destinations, so they sit in the map control
-    // strip between north and zoom. The wider scale shots stay in the sky bar
-    // above it, where their labels and the zoom ladder have room to breathe.
-    skyNavWorldRow.replaceChildren(...worlds.map(stop => skyNavButton("world", stop)));
-    skyNavWorldRow.hidden = !worlds.length;
-    skyNavScaleRow.replaceChildren(...scales.map(stop => skyNavButton("scale", stop)));
-    skyNavScaleRow.hidden = !scales.length;
+    // The old route is deliberately one readable sequence in the control bar:
+    // Earth, Moon, Mars, Solar system, Voyage, Exoplanet. The distant world
+    // follows the two whole-route shots, rather than leaving an icon-only
+    // shortcut up by the compass and making the route read in two places.
+    const local = worlds.filter(stop => stop.id !== "exo");
+    const onward = [...scales, ...worlds.filter(stop => stop.id === "exo")];
+    skyNavWorldRow.replaceChildren(...local.map(stop => skyNavButton("world", stop)));
+    skyNavWorldRow.hidden = !local.length;
+    skyNavScaleRow.replaceChildren(...onward.map(stop =>
+      skyNavButton(stop.body ? "world" : "scale", stop)));
+    skyNavScaleRow.hidden = !onward.length;
   }
   const here = skyNavHere();
   if (here !== SKY_NAV_MARK) {
     SKY_NAV_MARK = here;
-    for (const button of document.querySelectorAll("#skynav [data-sky-stop], #skyworlds [data-sky-stop]")) {
+    for (const button of document.querySelectorAll("#skynav [data-sky-stop]")) {
       const on = button.dataset.skyStop === here;
       button.classList.toggle("active", on);
       button.setAttribute("aria-pressed", on ? "true" : "false");
@@ -27235,10 +27494,53 @@ function orderUnit(order) {
     return;
   }
   unitOrders.set(sel.id, {order, turn: state.turn, hp: sel.hp});
-  advanceToNextUnit(true);
+  advanceToNextActionUnit(true);
 }
-// Spending a unit's last move should hand the player the next one, the way
-// Civ 6 does — otherwise every order ends with a hunt across the map.
+// Next action is a turn-local pass through units that need orders. It begins
+// with the closest unvisited unit to the selected one, so a cluster can be
+// worked as a cluster. Once every waiting unit has appeared, the pass resets
+// and previously visited units become eligible again.
+const nextActionVisited = new Set();
+let nextActionVisitWorld = null, nextActionVisitTurn = null;
+function resetNextActionVisitsForCurrentTurn() {
+  if (nextActionVisitWorld === state.seed && nextActionVisitTurn === state.turn) return;
+  nextActionVisitWorld = state.seed;
+  nextActionVisitTurn = state.turn;
+  nextActionVisited.clear();
+}
+function closestActionUnit(candidates, origin) {
+  return candidates.slice().sort((first, second) => {
+    if (!origin) return first.id - second.id;
+    return whexDist(origin.pos, first.pos) - whexDist(origin.pos, second.pos) ||
+      first.id - second.id;
+  })[0];
+}
+function advanceToNextActionUnit(force = false) {
+  const waiting = unitsNeedingOrders();
+  if (!waiting.length) { sel = null; draw(); drawSide(); drawUbar(); drawTurnLoop(); return; }
+  if (!force && sel && unitNeedsOrders(sel)) { drawTurnLoop(); return; }
+  resetNextActionVisitsForCurrentTurn();
+  const origin = sel;
+  if (origin) nextActionVisited.add(origin.id);
+  let candidates = waiting.filter(unit => !nextActionVisited.has(unit.id));
+  if (!candidates.length) {
+    // Every remaining unit has already had a turn in this pass. Do not strand
+    // them: start a fresh pass, but move away from the current unit when a
+    // different unit is available.
+    nextActionVisited.clear();
+    if (origin) nextActionVisited.add(origin.id);
+    candidates = waiting.filter(unit => !origin || unit.id !== origin.id);
+    if (!candidates.length) candidates = waiting;
+  }
+  sel = closestActionUnit(candidates, origin);
+  nextActionVisited.add(sel.id);
+  selCity = null;
+  centerOn(sel.pos);
+  draw(); drawSide(); drawUbar(); drawTurnLoop();
+}
+// Civ 6's explicit previous/next-unit controls retain their stable roster
+// order. That keeps the period/comma pair reversible while Next action does
+// the nearby action pass above.
 function advanceToNextUnit(force = false) {
   const waiting = unitsNeedingOrders();
   if (!waiting.length) { sel = null; draw(); drawSide(); drawUbar(); drawTurnLoop(); return; }
@@ -27339,7 +27641,7 @@ async function resumeAllTravel() {
 
 function nextAction() {
   if (!state || SPEC) return;
-  advanceToNextUnit(true);
+  advanceToNextActionUnit(true);
 }
 
 // A blocker is {kind, icon, label, detail, tone, act}. `act` takes the player
@@ -27383,7 +27685,7 @@ function turnBlockers() {
   if (waiting.length)
     out.push({kind: "units", icon: "⚑", tone: "action", count: waiting.length,
       label: waiting.length === 1 ? "A unit needs orders" : `${waiting.length} units need orders`,
-      detail: "Move it, fortify it, or skip its turn.", act: () => advanceToNextUnit(true)});
+      detail: "Move it, fortify it, or skip its turn.", act: () => advanceToNextActionUnit(true)});
   return out;
 }
 
@@ -27576,7 +27878,7 @@ function openTurnIfNew() {
   captureTurnNotices();
   drawTurnLoop();
   resumeAllTravel();
-  if (!sel && !selCity) advanceToNextUnit(true);
+  if (!sel && !selCity) advanceToNextActionUnit(true);
 }
 function togglePanel(force, persist = true) {
   const priorFocus = currentMapFocusWorld();
@@ -27751,7 +28053,7 @@ function healHere() {
   // holding it out of the cycle for damage it does not have would be a unit
   // the player has to remember to wake.
   if (sel.hp < 100) unitOrders.set(sel.id, {order: "heal", turn: state.turn, hp: sel.hp});
-  advanceToNextUnit(true);
+  advanceToNextActionUnit(true);
 }
 // Auto-explore. The engine has no explore order, but it does have the
 // long-range router the travel orders already use, so exploring is a standing
@@ -27797,7 +28099,7 @@ function exploreHere() {
   // The first leg walks before the seat moves on. Handing the player the next
   // unit while this one is still posting its moves would hand them a board
   // that is about to change under them.
-  resumeExplore(id).then(() => advanceToNextUnit(true));
+  resumeExplore(id).then(() => advanceToNextActionUnit(true));
 }
 
 // ---- screens. Civ 6 gives each panel one key that opens it and closes it.
