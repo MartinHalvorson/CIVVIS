@@ -9822,6 +9822,65 @@ mod tests {
         assert!(plan["forces"].is_array());
     }
 
+    #[test]
+    fn unified_war_plan_crosses_the_json_and_browser_contract() {
+        let session = Session::new(current());
+        let plan = crate::ai::PlanReport {
+            strategy: "conquest",
+            victory_target: None,
+            rush: false,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: 37,
+            peace_offers: Vec::new(),
+            forces: Vec::new(),
+            war: Some(crate::ai::WarPlanReport {
+                enabled: true,
+                active: true,
+                phase: Some("strike"),
+                target_player: Some(1),
+                objective_city: None,
+                breakthrough_tech: Some(crate::name!("apprenticeship")),
+                assault_unit: Some(crate::name!("man_at_arms")),
+                predecessor: Some(crate::name!("swordsman")),
+                breach_unit: Some(crate::name!("battering_ram")),
+                required_bodies: 4,
+                ready_bodies: 4,
+                staged_bodies: 3,
+                breach_ready: true,
+                upgrade_gold_reserved: 123.46,
+                appointed_turn: Some(21),
+                appointments: 2,
+                breakthroughs: 2,
+                mobilizations: 1,
+                declarations: 1,
+                complete_package_declarations: 1,
+                objectives_captured: 0,
+                objectives_captured_within_ten: 0,
+                appointment_to_tech_turns: 12,
+                tech_to_declaration_turns: 4,
+                declaration_to_capture_turns: 0,
+                appointment_to_tech_samples: vec![12],
+                tech_to_declaration_samples: vec![4],
+                declaration_to_capture_samples: Vec::new(),
+                aborts: std::collections::BTreeMap::from([("target no longer alive", 2)]),
+            }),
+        };
+
+        let wire = session.plan_json(&plan);
+        assert_eq!(wire["war"]["phase"], json!("strike"));
+        assert_eq!(wire["war"]["breakthrough_tech"], json!("apprenticeship"));
+        assert_eq!(wire["war"]["ready_bodies"], json!(4));
+        assert_eq!(wire["war"]["staged_bodies"], json!(3));
+        assert_eq!(wire["war"]["upgrade_gold_reserved"], json!(123.5));
+        assert_eq!(wire["war"]["aborts"]["target no longer alive"], json!(2));
+        assert!(EMBEDDED_INDEX.contains("const warPlan = plan?.war || null;"));
+        assert!(EMBEDDED_INDEX.contains("row(\"Attack phase\""));
+        assert!(EMBEDDED_INDEX.contains("row(\"Strike package\""));
+    }
+
     /// The Active AI strategy panel reads one civilization's plan beside what it
     /// is actually spending its science and culture on. The observation only
     /// ever carries the *observed* seat's study, in `me`, and above the world

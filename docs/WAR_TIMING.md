@@ -9,7 +9,8 @@ production, exact upgrade pricing, discretionary-spend floors, package-only
 staging, diplomacy, declaration, tactical finishing, the reasoning journal,
 spectator JSON/HUD, and `ai_eval`. Twelve focused deterministic tests cover the
 frozen mechanism contract, including the typed evaluator boundary and the
-minor-controller exclusion. The live screen below remains the preregistered
+minor-controller exclusion; a separate server contract test carries the plan
+through JSON into both browser renderers. The live screen below remains the preregistered
 outcome read; passing it is still required before enabling this behavior in
 production `advanced`.
 
