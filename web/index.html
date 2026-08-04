@@ -10037,9 +10037,14 @@ const STRATEGIC_FEATURE_MARKS = new Set([
   "burning_jungle", "burnt_jungle", "marsh", "oasis", "reef",
   "geothermal_fissure", "ice", "impact_zone"
 ]);
+// Woodland owns the upper tile slot regardless of the terrain beneath it.
+// Hills stay seated at the lower edge and improvements retain the unshifted
+// tile centre, so a tile's three information layers never trade places.
+const STRATEGIC_WOODLAND_UPPER_HALF_LIFT = -7;
 
 function drawStrategicHillIcon(x, y) {
   const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
+  // The lower outside corners of a Strategic hex define the hill's fixed slot.
   const hillBaseY = y + S * YS / 2;
   cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
   cx.beginPath();
@@ -10052,7 +10057,9 @@ function drawStrategicHillIcon(x, y) {
 
 function drawStrategicWoodlandIcon(t, x, y) {
   const jungle = t.feature.includes("jungle");
-  const lift = t.hills ? -7 : 0;
+  // Never move woods or rainforest to make room for a hill: their shared
+  // upper-half anchor leaves the lower slot available when a hill is present.
+  const lift = STRATEGIC_WOODLAND_UPPER_HALF_LIFT;
   cx.save();
   cx.translate(x, y);
   cx.scale(STRATEGIC_FEATURE_ICON_SCALE, STRATEGIC_FEATURE_ICON_SCALE);
@@ -11808,6 +11815,8 @@ function drawBarbarianCamp(x, y) {
 
 function drawImprovement(t, x, y) {
   const imp = t.improvement;
+  // `x, y` is always the visual centre of this tile; terrain does not offset
+  // improvements, even when woodland or a hill is also painted here.
   cx.save();
   if (t.pillaged) cx.globalAlpha = 0.62;   // wrecked work, still on the ground
   cx.lineJoin = "round";
