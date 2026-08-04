@@ -196,7 +196,10 @@
 
   /* Command deck */
   #side {
-    order: -1; width: 350px; min-width: 350px; height: 100%; max-height: 100vh; max-height: 100dvh;
+    /* On desktop, the deck follows the viewport rather than a fixed pixel
+       rail: it takes 16% of the screen. Compact and mobile layouts retain
+       their own usable overrides below. */
+    order: -1; width: 16vw; min-width: 16vw; height: 100%; max-height: 100vh; max-height: 100dvh;
     min-height: 0; position: relative; z-index: 12;
     display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
     scrollbar-color: #385148 transparent; scrollbar-width: thin;
@@ -1198,7 +1201,7 @@
        covered its whole values column — tourism, civilizations converted,
        diplomatic points, score. This is the offset the player standings
        already use to clear the same rail, and both fall back to the edge when
-       the viewer hides the tracker in Display settings. */
+       the viewer hides the tracker in Interface Settings. */
     right: calc(min(var(--hud-rail-width), var(--hud-rail-share)) + 20px);
     display: none; flex-direction: column; align-items: flex-end; gap: 6px;
     overflow: hidden auto; scrollbar-width: none; pointer-events: none;
@@ -1920,7 +1923,6 @@
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
     padding: 10px 10px 11px; align-items: end;
   }
-  .advanced-settings-body > .victory-options,
   .advanced-settings-body > .mod-options,
   .advanced-settings-body > .overlay-options,
   .advanced-settings-body > .setting-row { grid-column: 1 / -1; }
@@ -2644,7 +2646,7 @@
   body.hud-layout-active.layout-resizing * { cursor: var(--layout-resize-cursor, nwse-resize) !important; }
 
   /* Collapsing the command deck collapses the deck and nothing else. Every map
-     overlay is switched from the deck's own display settings instead, so the
+     overlay is switched from the deck's own Interface Settings instead, so the
      two controls stay independent: hand the map back the deck's width without
      losing the instruments, or clear the instruments and keep the deck. Only
      the pause button follows the deck, because collapsing it takes the deck's
@@ -3217,7 +3219,7 @@
     <!-- Left to right: collapse the deck, set the map area, face north, zoom
          in, zoom out, and dismiss. Dismissal is last because it is the only
          one that removes the bar, and it hides itself while the deck is
-         collapsed — Display settings is the way back and that is inside the
+         collapsed — Interface Settings is the way back and that is inside the
          deck. -->
     <div id="zoomctl">
       <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
@@ -3226,7 +3228,7 @@
       <button id="compass" type="button" title="Face north · R" aria-label="Face north"><span id="compass-needle"></span></button>
       <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
       <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
-      <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display settings" title="Hide map controls · restore in Display settings">✕</button>
+      <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Interface Settings" title="Hide map controls · restore in Interface Settings">✕</button>
     </div>
     <div id="map-lenses" role="toolbar" aria-label="Map lenses">
       <div id="map-lens-strip" role="none">
@@ -3277,7 +3279,7 @@
           <span class="map-lens-label">Exit</span>
         </button>
       </div>
-      <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Display settings" title="Hide map lenses · restore in Display settings">✕</button>
+      <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Interface Settings" title="Hide map lenses · restore in Interface Settings">✕</button>
     </div>
   </div>
   <div id="map-area-editor" hidden aria-label="Set map area">
@@ -3324,7 +3326,7 @@
   <div id="winner" role="status" aria-live="assertive"></div>
   <div class="minimap-frame" data-layout-widget="minimap">
     <div class="minimap-label widget-drag-handle" data-widget-drag tabindex="0" role="button" aria-label="Move world minimap; use arrow keys or drag" title="Drag to move · arrow keys also move"><span>World minimap</span></div>
-    <button class="overlay-close" type="button" data-overlay-close="minimap" aria-label="Hide world minimap; restore it in Display settings" title="Hide world minimap · restore in Display settings">✕</button>
+    <button class="overlay-close" type="button" data-overlay-close="minimap" aria-label="Hide world minimap; restore it in Interface Settings" title="Hide world minimap · restore in Interface Settings">✕</button>
     <canvas id="mini" width="200" height="140"></canvas>
     <span class="minimap-hint">Click to travel</span>
   </div>
@@ -3436,135 +3438,6 @@
     </div>
   </div>
   <div class="side-scroll">
-    <details class="sidebar-section" id="setupsec" data-section="game-settings">
-      <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">⚙</span><span>Game setup</span></span>
-        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
-      </summary>
-      <div class="sec settings-sec" id="game-settings">
-      <div id="newgame-options">
-        <label class="small game-advanced-setting" data-advanced-order="10">Base game ruleset<select id="baseruleset" style="margin-top:4px">
-          <option value="civ6" selected>Civ 6</option>
-        </select></label>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="20">Leader Pool<select id="leaderpool" style="margin-top:4px">
-          <option value="civ6" selected>Civ 6 Leaders</option>
-          <option value="expanded">Expanded</option>
-        </select></label>
-        <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
-          <option value="ai_sim" selected>AI-only simulation</option>
-          <option value="single">Single player</option>
-          <option value="civ6">Play Firaxis Civ 6 with computer control</option>
-          <option disabled>Multiplayer · later</option>
-        </select></label>
-        <div id="civ6-status">
-          <div class="civ6-line"><span class="civ6-dot"></span><span id="civ6-host">Checking this computer…</span></div>
-          <div class="civ6-line civ6-run" id="civ6-run" hidden></div>
-        </div>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="30">Teams<select id="teams" style="margin-top:4px"
-          title="Permanent pre-game teams. Teammates share sight, pass each other the Eureka for a technology they have not researched, fight the same wars and win together.">
-          <option value="ffa" selected>Free-for-all</option>
-          <option value="2">2 teams</option>
-          <option value="3">3 teams</option>
-          <option value="4">4 teams</option>
-          <option value="pairs">Pairs</option>
-        </select></label>
-        <label class="small human-setting civ6-hidden">Leader<select id="leader" style="margin-top:4px">
-          <option value="">Random</option>
-        </select></label>
-        <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="40">World shape<select id="mapshape" style="margin-top:4px">
-          <option value="flat">Flat</option>
-          <option value="planet">Planet</option>
-        </select></label>
-        <label class="small">Map<select id="maptype" style="margin-top:4px">
-          <option value="land_only">Land Only</option>
-          <option value="lakes">Lakes</option>
-          <option value="inland_sea">Inland Sea</option>
-          <option value="grand_canals">Grand Canals</option>
-          <option value="grand_canals_2">Grand Canals II</option>
-          <option value="pangaea">Pangaea</option>
-          <option value="continents">Continents</option>
-          <option value="small_continents">Small Continents</option>
-          <option value="islands">Islands</option>
-          <option value="water_world">Water World</option>
-          <option value="true_start_earth">True Start Earth</option>
-        </select></label>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="50">Thermal distribution<select id="mappoles" style="margin-top:4px">
-          <option value="poles">Hot equator, cold poles</option>
-          <option value="randomized">Randomized</option>
-        </select></label>
-        <label class="small">World size<select id="np" style="margin-top:4px">
-          <option value="2">Duel · 2 civs · 3 city-states · 44×26</option>
-          <option value="4" selected>Tiny · 4 civs · 6 city-states · 60×38</option>
-          <option value="6">Small · 6 civs · 9 city-states · 74×46</option>
-          <option value="8">Standard · 8 civs · 12 city-states · 84×54</option>
-          <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
-          <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
-        </select></label>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="60">Start era<select id="startera" style="margin-top:4px">
-          <option value="stone_age" disabled>Stone Age · later</option>
-          <option value="ancient" selected>Ancient</option>
-        </select></label>
-        <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
-          <option value="online" selected>Online · 250 turns</option>
-          <option value="quick">Quick · 330 turns</option>
-          <option value="standard">Standard · 500 turns</option>
-          <option value="epic">Epic · 750 turns</option>
-          <option value="marathon">Marathon · 1500 turns</option>
-        </select></label>
-        <div class="utility-group" id="saves-group" style="display:none">
-          <div class="city-group-head" style="margin-bottom:6px">Saved games<span id="saves-count"></span></div>
-          <div id="saves-list"></div>
-          <div class="save-row">
-            <input id="savename" type="text" placeholder="name this save" maxlength="64"
-              autocomplete="off" aria-label="Save name">
-            <button id="savebtn" title="Write a save this server can offer back later">Save</button>
-          </div>
-        </div>
-        <div class="victory-options game-advanced-setting civ6-hidden" data-advanced-order="80" role="group" aria-labelledby="victory-options-title">
-          <h2 id="victory-options-title">Victory conditions</h2>
-          <div class="victory-option-grid">
-            <label class="victory-option"><input type="checkbox" id="victory-science" checked>Science</label>
-            <label class="victory-option"><input type="checkbox" id="victory-culture" checked>Culture</label>
-            <label class="victory-option"><input type="checkbox" id="victory-religious" checked>Religion</label>
-            <label class="victory-option"><input type="checkbox" id="victory-diplomatic" checked>Diplomacy</label>
-            <label class="victory-option"><input type="checkbox" id="victory-domination" checked>Domination</label>
-            <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
-          </div>
-        </div>
-        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="70">Future Era<select id="futureera" style="margin-top:4px">
-          <option value="classic" selected>Classic Future Era</option>
-        </select></label>
-        <div class="mod-options game-advanced-setting civ6-hidden" data-advanced-order="90"
-             role="group" aria-labelledby="mod-options-title">
-          <h2 id="mod-options-title">Mods</h2>
-          <div class="small mod-help">Tournament defaults are preselected. These choices are saved for the upcoming per-game mod loader; the active server ruleset is unchanged for now.</div>
-          <div class="mod-tier">
-            <div class="mod-tier-title">Civ 6 tournament defaults</div>
-            <div class="mod-option-grid">
-              <label class="mod-option"><input type="checkbox" data-game-mod="bbg" checked><span>Better Balanced Game<small>BBG · balance rules</small></span></label>
-              <label class="mod-option"><input type="checkbox" data-game-mod="bbm" checked><span>Better Balanced Maps<small>BBM · fair starts</small></span></label>
-              <label class="mod-option"><input type="checkbox" data-game-mod="mph" checked><span>Multiplayer Helper<small>MPH · lobby tools</small></span></label>
-              <label class="mod-option"><input type="checkbox" data-game-mod="bsm" checked><span>Better Spectator Mod<small>BSM · observer tools</small></span></label>
-            </div>
-          </div>
-          <div class="mod-tier">
-            <div class="mod-tier-title">Optional</div>
-            <div class="mod-option-grid">
-              <label class="mod-option"><input type="checkbox" data-game-mod="quick-deals"><span>Quick Deals<small>Trade quality of life</small></span></label>
-              <label class="mod-option"><input type="checkbox" data-game-mod="detailed-map-tacks"><span>Detailed Map Tacks<small>Planning tools</small></span></label>
-              <label class="mod-option"><input type="checkbox" data-game-mod="extended-policy-cards"><span>Extended Policy Cards<small>Policy yield previews</small></span></label>
-              <label class="mod-option"><input type="checkbox" data-game-mod="sukritacts-oceans"><span>Sukritact's Oceans<small>Expanded ocean rules</small></span></label>
-            </div>
-          </div>
-        </div>
-        <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
-          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Rules, eras, victories · 4 of 8 mods</small></span></summary>
-          <div class="advanced-settings-body" id="game-advanced-settings-body"></div>
-        </details>
-      </div>
-      </div>
-    </details>
     <div class="side-actions" aria-label="Simulation controls">
       <div class="footer-actions" id="humanfooter">
         <button class="primary" id="endturn">End turn · Enter</button>
@@ -3614,7 +3487,190 @@
         </script>
       </div>
     </div>
-
+    <details class="sidebar-section" data-section="display-settings">
+      <summary class="section-label" id="display-settings-header">
+        <span class="section-title"><span class="section-icon" aria-hidden="true">◈</span><span>Interface Settings</span></span>
+        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
+      </summary>
+      <div class="sec settings-sec" id="display-settings">
+      <div class="utility-group">
+        <div class="observer-settings" id="observer-settings">
+          <div class="view-row"><span>Watch as</span>
+            <select id="viewplayer" aria-label="Observation perspective">
+              <option value="spectator">Spectator - Full Map Visablity</option>
+            </select>
+          </div>
+          <div class="speed-row"><span>Watch pace</span>
+            <select id="specspeed" title="Simulation watch pace">
+              <option value="0">Lightning</option>
+              <option value="1000" selected>Blitz</option>
+              <option value="2000">Fast</option>
+              <option value="4000">Standard</option>
+              <option value="10000">Slow</option>
+            </select>
+          </div>
+        </div>
+        <label class="setting-row display-advanced-setting" data-advanced-order="10"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="20"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="30"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
+        <div class="overlay-options display-advanced-setting" data-advanced-order="50" role="group" aria-labelledby="overlay-options-title">
+          <h2 id="overlay-options-title">Map overlays</h2>
+          <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
+          <div class="small overlay-layout-help">In the standings, drag a thin bar in the column heading to divide two columns differently; double-click one to put that pair back. Widths are shares of the panel, so they follow it as the window resizes. ◉ locks a row: it stays in view while the rest of the table scrolls past it. Two seats of the same civilization lock separately, and a lock is remembered into the next game.</div>
+          <div class="overlay-option-grid">
+            <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
+            <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
+          </div>
+          <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
+        </div>
+        <div class="overlay-options display-advanced-setting" data-advanced-order="60" id="flat-map-wrap-settings" role="group"
+             aria-labelledby="flat-map-wrap-title">
+          <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
+          <div class="overlay-option-grid">
+            <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
+            <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
+          </div>
+        </div>
+        <details class="advanced-settings" id="display-advanced-settings" data-advanced-settings="display">
+          <summary><span class="advanced-settings-summary">Advanced Settings<small>Tile layers, overlay layout, map edges &amp; archaeology</small></span></summary>
+          <div class="advanced-settings-body" id="display-advanced-settings-body"></div>
+        </details>
+      </div>
+      </div>
+    </details>
+    <details class="sidebar-section" id="setupsec" data-section="game-settings">
+      <summary class="section-label">
+        <span class="section-title"><span class="section-icon" aria-hidden="true">⚙</span><span>Game setup</span></span>
+        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
+      </summary>
+      <div class="sec settings-sec" id="game-settings">
+      <div id="newgame-options">
+        <label class="small game-advanced-setting" data-advanced-order="10">Base game ruleset<select id="baseruleset" style="margin-top:4px">
+          <option value="civ6" selected>Civ 6</option>
+        </select></label>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="20">Leader Pool<select id="leaderpool" style="margin-top:4px">
+          <option value="civ6" selected>Civ 6 Leaders</option>
+          <option value="expanded">Expanded</option>
+        </select></label>
+        <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
+          <option value="ai_sim" selected>AI-only simulation</option>
+          <option value="single">Single player</option>
+          <option value="civ6">Play Firaxis Civ 6 with computer control</option>
+          <option disabled>Multiplayer · later</option>
+        </select></label>
+        <div id="civ6-status">
+          <div class="civ6-line"><span class="civ6-dot"></span><span id="civ6-host">Checking this computer…</span></div>
+          <div class="civ6-line civ6-run" id="civ6-run" hidden></div>
+        </div>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="30">Teams<select id="teams" style="margin-top:4px"
+          title="Permanent pre-game teams. Teammates share sight, pass each other the Eureka for a technology they have not researched, fight the same wars and win together.">
+          <option value="ffa" selected>Free-for-all</option>
+          <option value="2">2 teams</option>
+          <option value="3">3 teams</option>
+          <option value="4">4 teams</option>
+          <option value="pairs">Pairs</option>
+        </select></label>
+        <label class="small human-setting civ6-hidden">Leader<select id="leader" style="margin-top:4px">
+          <option value="">Random</option>
+        </select></label>
+        <label class="small human-setting">Difficulty<select id="difficulty" style="margin-top:4px"></select></label>
+        <label class="small civ6-hidden">World shape<select id="mapshape" style="margin-top:4px">
+          <option value="flat">Flat</option>
+          <option value="planet" selected>Planet</option>
+        </select></label>
+        <label class="small">Map<select id="maptype" style="margin-top:4px">
+          <option value="land_only">Land Only</option>
+          <option value="lakes">Lakes</option>
+          <option value="inland_sea">Inland Sea</option>
+          <option value="grand_canals">Grand Canals</option>
+          <option value="grand_canals_2">Grand Canals II</option>
+          <option value="pangaea">Pangaea</option>
+          <option value="continents">Continents</option>
+          <option value="small_continents">Small Continents</option>
+          <option value="islands">Islands</option>
+          <option value="water_world">Water World</option>
+          <option value="true_start_earth">True Start Earth</option>
+        </select></label>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="40">Thermal distribution<select id="mappoles" style="margin-top:4px">
+          <option value="poles">Hot equator, cold poles</option>
+          <option value="randomized">Randomized</option>
+        </select></label>
+        <label class="small">World size<select id="np" style="margin-top:4px">
+          <option value="2">Duel · 2 civs · 3 city-states · 44×26</option>
+          <option value="4" selected>Tiny · 4 civs · 6 city-states · 60×38</option>
+          <option value="6">Small · 6 civs · 9 city-states · 74×46</option>
+          <option value="8">Standard · 8 civs · 12 city-states · 84×54</option>
+          <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
+          <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
+        </select></label>
+        <label class="small civ6-hidden">Start era<select id="startera" style="margin-top:4px">
+          <option value="stone_age" disabled>Stone Age · later</option>
+          <option value="ancient" selected>Ancient</option>
+        </select></label>
+        <label class="small">Game speed<select id="gamespeed" style="margin-top:4px">
+          <option value="online" selected>Online · 250 turns</option>
+          <option value="quick">Quick · 330 turns</option>
+          <option value="standard">Standard · 500 turns</option>
+          <option value="epic">Epic · 750 turns</option>
+          <option value="marathon">Marathon · 1500 turns</option>
+        </select></label>
+        <div class="utility-group" id="saves-group" style="display:none">
+          <div class="city-group-head" style="margin-bottom:6px">Saved games<span id="saves-count"></span></div>
+          <div id="saves-list"></div>
+          <div class="save-row">
+            <input id="savename" type="text" placeholder="name this save" maxlength="64"
+              autocomplete="off" aria-label="Save name">
+            <button id="savebtn" title="Write a save this server can offer back later">Save</button>
+          </div>
+        </div>
+        <div class="victory-options civ6-hidden" id="victory-options" role="group" aria-labelledby="victory-options-title">
+          <h2 id="victory-options-title">Victory conditions</h2>
+          <div class="victory-option-grid">
+            <label class="victory-option"><input type="checkbox" id="victory-science" checked>Science</label>
+            <label class="victory-option"><input type="checkbox" id="victory-culture" checked>Culture</label>
+            <label class="victory-option"><input type="checkbox" id="victory-religious" checked>Religion</label>
+            <label class="victory-option"><input type="checkbox" id="victory-diplomatic" checked>Diplomacy</label>
+            <label class="victory-option"><input type="checkbox" id="victory-domination" checked>Domination</label>
+            <label class="victory-option"><input type="checkbox" id="victory-score" checked>Score</label>
+          </div>
+        </div>
+        <label class="small civ6-hidden">Future Era<select id="futureera" style="margin-top:4px">
+          <option value="classic" selected>Classic Future Era</option>
+        </select></label>
+        <div class="mod-options game-advanced-setting civ6-hidden" data-advanced-order="90"
+             role="group" aria-labelledby="mod-options-title">
+          <h2 id="mod-options-title">Mods</h2>
+          <div class="small mod-help">Tournament defaults are preselected. These choices are saved for the upcoming per-game mod loader; the active server ruleset is unchanged for now.</div>
+          <div class="mod-tier">
+            <div class="mod-tier-title">Civ 6 tournament defaults</div>
+            <div class="mod-option-grid">
+              <label class="mod-option"><input type="checkbox" data-game-mod="bbg" checked><span>Better Balanced Game<small>BBG · balance rules</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="bbm" checked><span>Better Balanced Maps<small>BBM · fair starts</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="mph" checked><span>Multiplayer Helper<small>MPH · lobby tools</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="bsm" checked><span>Better Spectator Mod<small>BSM · observer tools</small></span></label>
+            </div>
+          </div>
+          <div class="mod-tier">
+            <div class="mod-tier-title">Optional</div>
+            <div class="mod-option-grid">
+              <label class="mod-option"><input type="checkbox" data-game-mod="quick-deals"><span>Quick Deals<small>Trade quality of life</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="detailed-map-tacks"><span>Detailed Map Tacks<small>Planning tools</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="extended-policy-cards"><span>Extended Policy Cards<small>Policy yield previews</small></span></label>
+              <label class="mod-option"><input type="checkbox" data-game-mod="sukritacts-oceans"><span>Sukritact's Oceans<small>Expanded ocean rules</small></span></label>
+            </div>
+          </div>
+        </div>
+        <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
+          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Rules, roster, teams &amp; climate · 4 of 8 mods</small></span></summary>
+          <div class="advanced-settings-body" id="game-advanced-settings-body"></div>
+        </details>
+      </div>
+      </div>
+    </details>
     <!-- The column runs deepest-cause first: what a civilization is trying to
          do *now*, then why it acted, then the wars that reasoning started, then
          the world's own record of what happened. An observer reading downward
@@ -3734,61 +3790,6 @@
       <div class="sec"><div id="gov"></div></div>
     </details>
 
-    <details class="sidebar-section" data-section="display-settings">
-      <summary class="section-label" id="display-settings-header">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◈</span><span>Display settings</span></span>
-        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
-      </summary>
-      <div class="sec settings-sec" id="display-settings">
-      <div class="utility-group">
-        <div class="observer-settings" id="observer-settings">
-          <div class="view-row"><span>Watch as</span>
-            <select id="viewplayer" aria-label="Observation perspective">
-              <option value="spectator">Spectator - Full Map Visablity</option>
-            </select>
-          </div>
-          <div class="speed-row"><span>Watch pace</span>
-            <select id="specspeed" title="Simulation watch pace">
-              <option value="0">Lightning</option>
-              <option value="1000" selected>Blitz</option>
-              <option value="2000">Fast</option>
-              <option value="4000">Standard</option>
-              <option value="10000">Slow</option>
-            </select>
-          </div>
-        </div>
-        <div class="overlay-options display-advanced-setting" data-advanced-order="10" role="group" aria-labelledby="overlay-options-title">
-          <h2 id="overlay-options-title">Map overlays</h2>
-          <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
-          <div class="small overlay-layout-help">In the standings, drag a thin bar in the column heading to divide two columns differently; double-click one to put that pair back. Widths are shares of the panel, so they follow it as the window resizes. ◉ locks a row: it stays in view while the rest of the table scrolls past it. Two seats of the same civilization lock separately, and a lock is remembered into the next game.</div>
-          <div class="overlay-option-grid">
-            <label class="overlay-option"><input type="checkbox" data-overlay="players" checked>Player standings</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="victory" checked>Victory tracker</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="minimap" checked>World minimap</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="controls" checked>Map controls</label>
-            <label class="overlay-option"><input type="checkbox" data-overlay="lenses" checked>Map lenses</label>
-          </div>
-          <button class="ghost overlay-layout-reset" id="reset-overlay-layout" type="button">Reset overlay positions, sizes &amp; columns</button>
-        </div>
-        <div class="overlay-options display-advanced-setting" data-advanced-order="20" id="flat-map-wrap-settings" role="group"
-             aria-labelledby="flat-map-wrap-title">
-          <h2 id="flat-map-wrap-title">Flat map wraparound</h2>
-          <div class="overlay-option-grid">
-            <label class="overlay-option"><input type="checkbox" id="wrapxchk" checked>Left–right wraparound</label>
-            <label class="overlay-option"><input type="checkbox" id="wrapychk">Top–bottom wraparound</label>
-          </div>
-        </div>
-        <label class="setting-row"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
-        <label class="setting-row"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
-        <label class="setting-row"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
-        <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
-        <details class="advanced-settings" id="display-advanced-settings" data-advanced-settings="display">
-          <summary><span class="advanced-settings-summary">Advanced Settings<small>Overlay layout, map edges &amp; archaeology</small></span></summary>
-          <div class="advanced-settings-body" id="display-advanced-settings-body"></div>
-        </details>
-      </div>
-      </div>
-    </details>
   </div>
   <details class="shortcut-panel">
     <summary>Keyboard shortcuts</summary>
@@ -3864,9 +3865,10 @@ function initAdvancedSettings() {
   const game = document.getElementById("newgame-options");
   const gameAdvanced = document.getElementById("game-advanced-settings");
   moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
-  const basic = ["gamemode", "maptype", "leader", "difficulty", "np", "gamespeed"]
+  const basic = ["gamemode", "mapshape", "maptype", "leader", "difficulty", "np",
+    "startera", "gamespeed", "futureera"]
     .map(id => document.getElementById(id).closest("label"));
-  basic.push(document.getElementById("saves-group"));
+  basic.push(document.getElementById("victory-options"), document.getElementById("saves-group"));
   for (const node of basic) gameAdvanced.before(node);
   // The Civ 6 host line describes the mode chosen directly above it, so it
   // follows that control through the reorder rather than staying where the
@@ -3906,7 +3908,7 @@ function initAdvancedSettings() {
   const syncModSummary = () => {
     const selected = modBoxes.filter(box => box.checked).map(box => box.dataset.gameMod);
     document.getElementById("game-advanced-summary").textContent =
-      `Rules, eras, victories · ${selected.length} of ${modBoxes.length} mods`;
+      `Rules, roster, teams & climate · ${selected.length} of ${modBoxes.length} mods`;
     return selected;
   };
   syncModSummary();
@@ -7410,9 +7412,17 @@ async function boot() {
     // scattered across it.
     for (const [id, list] of [["mapshape", RULES.map_topologies], ["mappoles", RULES.map_poles]]) {
       if (!Array.isArray(list)) continue;
-      document.getElementById(id).innerHTML = list.map(entry =>
-        `<option value="${entry.id}" title="${escapeAttr(entry.description)}">${entry.name}</option>`
+      const select = document.getElementById(id);
+      const chosen = select.value;
+      // A new game opens on a globe. A live world's value still wins below,
+      // so reopening its setup describes the world actually on screen.
+      const defaultValue = id === "mapshape" && list.some(entry => entry.id === "planet")
+        ? "planet" : chosen;
+      select.innerHTML = list.map(entry =>
+        `<option value="${entry.id}" title="${escapeAttr(entry.description)}"` +
+        `${entry.id === defaultValue ? " selected" : ""}>${entry.name}</option>`
       ).join("");
+      if ([...select.options].some(option => option.value === chosen)) select.value = chosen;
     }
     syncEarthShape();
     // A leader is a civilization plus the person who leads it; the ruleset
@@ -15445,6 +15455,10 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
     cx.fill();
   }
 
+  // Volcanic Soil is ground rather than an icon. Like the flat strategic map,
+  // it goes on top of its terrain but below territory, the survey grid, and
+  // every piece of constructed or natural detail.
+  if (scale > .42) drawPlanetStrategicVolcanicSoil(cells, visible, spectator);
 
   // Ownership is a transparent command-map layer over finished ground.
   for (const cell of cells) {
@@ -15469,6 +15483,432 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
       cx.stroke();
     }
   }
+}
+
+// The globe used to substitute a few text characters for the command map's
+// terrain language. That made the same forest, hill, geothermal fissure, or
+// Natural Wonder read as a different object when the camera crossed from a
+// chart to the planet. These helpers retain the flat map's authored marks and
+// put them in each projected cell at the equivalent local strategic scale.
+const PLANET_STRATEGIC_INRADIUS = S * SQ3 / 2 * Math.min(1, YS);
+
+function planetStrategicScale(entry) {
+  return planetCellInradius(entry) / PLANET_STRATEGIC_INRADIUS;
+}
+
+function planetStrategicWeight(entry) {
+  return Math.max(.125, Math.round(planetStrategicScale(entry) * 8) / 8);
+}
+
+function planetStrategicAlpha(entry, visible, spectator) {
+  return spectator || visible.has(key(entry.tile.pos)) ? 1 : .52;
+}
+
+// A strategic glyph belongs to its ground even at the limb. Clipping it to the
+// real projected face prevents an upright mark from leaking across a crushed
+// hex or out into space, while the local transform gives it the same proportions
+// it has on the flat map at the matching zoom.
+function withPlanetStrategicCell(entry, visible, spectator, paint) {
+  if (planetCellInradius(entry) < 2) return false;
+  const scale = planetStrategicScale(entry);
+  cx.save();
+  planetPath(cx, entry.points); cx.clip();
+  cx.globalAlpha *= planetStrategicAlpha(entry, visible, spectator);
+  cx.translate(entry.center.x, entry.center.y);
+  cx.scale(scale, scale);
+  paint(scale);
+  cx.restore();
+  return true;
+}
+
+function planetStrategicGroup(groups, entry) {
+  const weight = planetStrategicWeight(entry);
+  const alpha = planetStrategicAlpha(entry, groups.visible, groups.spectator);
+  const groupKey = `${weight}:${alpha}`;
+  let group = groups.byWeight.get(groupKey);
+  if (!group) {
+    group = {weight, alpha, segments:[]};
+    groups.byWeight.set(groupKey, group);
+  }
+  return group;
+}
+
+function drawPlanetStrategicVolcanicSoil(cells, visible, spectator) {
+  for (const entry of cells) {
+    const {tile, cell, points, center} = entry;
+    if (tile.feature !== "volcanic_soil" || points.length < 3) continue;
+    let sourceSide = -1;
+    for (let side = 0; side < points.length; side++) {
+      const neighbor = TMAP.get(cell.nbrs[side]);
+      if (neighbor?.feature === "volcano") { sourceSide = side; break; }
+    }
+    if (sourceSide < 0)
+      sourceSide = Math.floor(hash2(tile.pos[0] * 29 + 7, tile.pos[1] * 31 + 11) * points.length);
+    const a = points[sourceSide], b = points[(sourceSide + 1) % points.length];
+    const sourceX = (a.x + b.x) / 2 - center.x;
+    const sourceY = (a.y + b.y) / 2 - center.y;
+    withPlanetStrategicCell(entry, visible, spectator, () => {
+      cx.rotate(Math.atan2(sourceY, sourceX));
+      cx.lineJoin = "round"; cx.lineCap = "round";
+      cx.fillStyle = "#2d2926";
+      cx.beginPath();
+      cx.moveTo(S + 2, -S);
+      cx.bezierCurveTo(24, -18, 17, -13, 11, -11);
+      cx.bezierCurveTo(6, -9, 2, -5, 0, 0);
+      cx.bezierCurveTo(3, 5, 7, 9, 12, 10.5);
+      cx.bezierCurveTo(18, 13, 25, 18, S + 2, S);
+      cx.closePath(); cx.fill();
+      cx.fillStyle = "#5b3b2d";
+      for (const [dx, dy, radius] of [[4, -4, 3], [8, 7, 2.5], [14, -10, 2]]) {
+        cx.beginPath(); cx.arc(dx, dy, radius, 0, 7); cx.fill();
+      }
+      cx.strokeStyle = "#845039"; cx.lineWidth = 1.35;
+      cx.beginPath();
+      cx.moveTo(29, 0); cx.bezierCurveTo(20, -1, 10, 2, 1, 0);
+      cx.moveTo(14, 1); cx.lineTo(8, 6); cx.lineTo(2, 5);
+      cx.moveTo(19, -2); cx.lineTo(12, -7); cx.lineTo(5, -6);
+      cx.stroke();
+    });
+  }
+}
+
+function drawPlanetStrategicRoads(cells, visible, spectator) {
+  const cityTiles = new Set(state.cities.map(city => key(city.pos)));
+  const roaded = tile => !!tile && (tile.road > 0 || cityTiles.has(key(tile.pos)));
+  const groups = {byWeight:new Map(), visible, spectator};
+  for (const entry of cells) {
+    const {tile, cell, points, center} = entry;
+    if (planetCellInradius(entry) < 3 || !roaded(tile)) continue;
+    let linked = false;
+    for (let side = 0; side < points.length; side++) {
+      if (!roaded(TMAP.get(cell.nbrs[side]))) continue;
+      const a = points[side], b = points[(side + 1) % points.length];
+      planetStrategicGroup(groups, entry).segments.push([
+        center.x, center.y, (a.x + b.x) / 2, (a.y + b.y) / 2,
+      ]);
+      linked = true;
+    }
+    // A city road or an isolated stretch is still a piece of infrastructure;
+    // the flat renderer leaves its round-capped center mark instead of making
+    // it disappear just because it has not joined a second road yet.
+    if (!linked)
+      planetStrategicGroup(groups, entry).segments.push([
+        center.x, center.y, center.x, center.y,
+      ]);
+  }
+  if (!groups.byWeight.size) return;
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [width, color, alpha] of [[5.6, "#2b2015", .4], [3.0, "#c0a67e", .85]]) {
+    for (const group of groups.byWeight.values()) {
+      cx.strokeStyle = color; cx.lineWidth = width * group.weight;
+      cx.globalAlpha = alpha * group.alpha;
+      cx.beginPath();
+      for (const [ax, ay, bx, by] of group.segments) {
+        cx.moveTo(ax, ay); cx.lineTo(bx, by);
+      }
+      cx.stroke();
+    }
+  }
+  cx.restore();
+}
+
+function drawPlanetStrategicCliffs(cells, visible, spectator) {
+  const done = new Set();
+  const groups = {byWeight:new Map(), visible, spectator};
+  for (const entry of cells) {
+    const {tile, cell, points, center} = entry;
+    if (planetCellInradius(entry) < 3 || !tile.cliff_edges?.some(Boolean)) continue;
+    for (let side = 0; side < points.length; side++) {
+      if (!tile.cliff_edges[side]) continue;
+      const first = cell.ids[side], second = cell.ids[(side + 1) % cell.ids.length];
+      const edgeKey = first < second ? `${first}_${second}` : `${second}_${first}`;
+      if (done.has(edgeKey)) continue;
+      done.add(edgeKey);
+      const a = points[side], b = points[(side + 1) % points.length];
+      const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
+      let nx = -dy / length, ny = dx / length;
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      if ((center.x - mx) * nx + (center.y - my) * ny < 0) { nx = -nx; ny = -ny; }
+      const group = planetStrategicGroup(groups, entry);
+      group.segments.push([a.x, a.y, b.x, b.y]);
+      const tickLength = 4.6 * planetStrategicScale(entry);
+      for (let step = 1; step <= 3; step++) {
+        const fraction = step / 4, px = a.x + dx * fraction, py = a.y + dy * fraction;
+        group.ticks ||= [];
+        group.ticks.push([px, py, px + nx * tickLength, py + ny * tickLength]);
+      }
+    }
+  }
+  if (!groups.byWeight.size) return;
+  cx.save(); cx.lineCap = "round";
+  for (const [lineKind, width, color, alpha] of [
+    ["segments", 3.4, "#241d14", .8], ["segments", 1.5, "#b3a68d", .85],
+    ["ticks", 1.5, "#2b2318", .7],
+  ]) {
+    for (const group of groups.byWeight.values()) {
+      const segments = group[lineKind];
+      if (!segments?.length) continue;
+      cx.strokeStyle = color; cx.lineWidth = width * group.weight;
+      cx.globalAlpha = alpha * group.alpha;
+      cx.beginPath();
+      for (const [ax, ay, bx, by] of segments) {
+        cx.moveTo(ax, ay); cx.lineTo(bx, by);
+      }
+      cx.stroke();
+    }
+  }
+  cx.restore();
+}
+
+function drawPlanetStrategicRivers(cells, visible, spectator) {
+  const done = new Set();
+  const groups = {byWeight:new Map(), visible, spectator};
+  for (const entry of cells) {
+    const {tile, cell, points, center} = entry;
+    if (planetCellInradius(entry) < 3 || !tile.river_edges?.some(Boolean)) continue;
+    for (let side = 0; side < points.length; side++) {
+      if (!tile.river_edges[side]) continue;
+      const neighbor = TMAP.get(cell.nbrs[side]);
+      if (!neighbor || isWater(tile) || isWater(neighbor)) continue;
+      const first = cell.ids[side], second = cell.ids[(side + 1) % cell.ids.length];
+      const edgeKey = first < second ? `${first}_${second}` : `${second}_${first}`;
+      if (done.has(edgeKey)) continue;
+      done.add(edgeKey);
+      const a = points[side], b = points[(side + 1) % points.length];
+      const dx = b.x - a.x, dy = b.y - a.y, length = Math.hypot(dx, dy) || 1;
+      let nx = -dy / length, ny = dx / length;
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      if ((center.x - mx) * nx + (center.y - my) * ny < 0) { nx = -nx; ny = -ny; }
+      const bend = (hash2(first * 41 + second * 7, first * 47 + second * 11) - .5) * length * .45;
+      planetStrategicGroup(groups, entry).segments.push([
+        a.x, a.y, mx + nx * bend, my + ny * bend, b.x, b.y,
+      ]);
+    }
+  }
+  if (!groups.byWeight.size) return;
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const [color, width, alpha] of [
+    ["#173f58", 7.2, .72], ["#429bca", 4.6, .98], ["#c3eff8", 1.15, .58],
+  ]) {
+    for (const group of groups.byWeight.values()) {
+      cx.strokeStyle = color; cx.lineWidth = width * group.weight;
+      cx.globalAlpha = alpha * group.alpha;
+      cx.beginPath();
+      for (const [ax, ay, qx, qy, bx, by] of group.segments) {
+        cx.moveTo(ax, ay); cx.quadraticCurveTo(qx, qy, bx, by);
+      }
+      cx.stroke();
+    }
+  }
+  cx.restore();
+}
+
+function buildPlanetNaturalWonderPlacements(cells) {
+  const placements = new Map();
+  const byPosition = new Map(cells.map(entry => [key(entry.tile.pos), entry]));
+  const visited = new Set();
+  for (const entry of cells) {
+    const entryKey = key(entry.tile.pos);
+    if (!isNaturalWonder(entry.tile.feature) || visited.has(entryKey)) continue;
+    const entries = [], stack = [entry];
+    visited.add(entryKey);
+    while (stack.length) {
+      const current = stack.pop();
+      entries.push(current);
+      for (const neighborKey of current.cell.nbrs) {
+        const neighbor = byPosition.get(neighborKey);
+        if (!neighbor || neighbor.tile.feature !== entry.tile.feature) continue;
+        const neighborPosition = key(neighbor.tile.pos);
+        if (visited.has(neighborPosition)) continue;
+        visited.add(neighborPosition);
+        stack.push(neighbor);
+      }
+    }
+    const owner = entries.reduce((nearest, candidate) =>
+      candidate.center.z > nearest.center.z ? candidate : nearest);
+    placements.set(key(owner.tile.pos), {feature:entry.tile.feature, entries});
+  }
+  return placements;
+}
+
+function drawPlanetNaturalWonder(placement, visible, spectator) {
+  const entries = placement.entries;
+  const x = entries.reduce((sum, entry) => sum + entry.center.x, 0) / entries.length;
+  const y = entries.reduce((sum, entry) => sum + entry.center.y, 0) / entries.length;
+  const scale = entries.reduce((sum, entry) => sum + planetStrategicScale(entry), 0) / entries.length;
+  const alpha = entries.reduce((sum, entry) =>
+    sum + planetStrategicAlpha(entry, visible, spectator), 0) / entries.length;
+  cx.save();
+  cx.beginPath();
+  for (const entry of entries) {
+    entry.points.forEach((point, index) => index
+      ? cx.lineTo(point.x, point.y) : cx.moveTo(point.x, point.y));
+    cx.closePath();
+  }
+  cx.clip();
+  cx.globalAlpha *= alpha;
+  cx.translate(x, y); cx.scale(scale, scale);
+  const drawn = paintNaturalWonder(placement.feature, 0, 0, entries);
+  if (!drawn) {
+    cx.fillStyle = "#f0ce62";
+    cx.beginPath(); cx.arc(0, 0, 10, 0, Math.PI * 2); cx.fill();
+    cx.fillStyle = "#382b08"; cx.font = "bold 13px serif";
+    cx.textAlign = "center"; cx.textBaseline = "middle";
+    cx.fillText("✦", 0, .5);
+  }
+  cx.restore();
+}
+
+function drawPlanetStrategicFloodplains(entry, visible, spectator) {
+  const {tile, cell, points, center} = entry;
+  const riverSides = [];
+  for (let side = 0; side < points.length; side++) {
+    if (tile.river_edges?.[side]) riverSides.push(side);
+  }
+  if (!riverSides.length)
+    riverSides.push(Math.floor(hash2(tile.pos[0] * 31 + 5, tile.pos[1] * 37 + 9) * points.length));
+  const scale = planetStrategicScale(entry);
+  cx.save();
+  planetPath(cx, points); cx.clip();
+  cx.globalAlpha *= planetStrategicAlpha(entry, visible, spectator);
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const side of riverSides) {
+    const a = points[side], b = points[(side + 1) % points.length];
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    for (const [inset, color, width] of [[.33, "#346f8c", 1.9], [.55, "#72aec0", 1.25]]) {
+      const ax = a.x + (center.x - a.x) * inset, ay = a.y + (center.y - a.y) * inset;
+      const bx = b.x + (center.x - b.x) * inset, by = b.y + (center.y - b.y) * inset;
+      const qx = mx + (center.x - mx) * (inset * .82), qy = my + (center.y - my) * (inset * .82);
+      cx.strokeStyle = color; cx.lineWidth = width * scale;
+      cx.beginPath(); cx.moveTo(ax, ay); cx.quadraticCurveTo(qx, qy, bx, by); cx.stroke();
+    }
+  }
+  cx.restore();
+}
+
+function drawPlanetStrategicResourceBadge(entry, visible, spectator) {
+  withPlanetStrategicCell(entry, visible, spectator, () =>
+    drawResourceBadge(entry.tile, 0, 0));
+}
+
+function drawPlanetStrategicTerrain(cells, visible, spectator) {
+  drawPlanetStrategicRoads(cells, visible, spectator);
+  drawPlanetStrategicCliffs(cells, visible, spectator);
+  drawPlanetStrategicRivers(cells, visible, spectator);
+  for (const entry of cells) {
+    if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(entry.tile.feature))
+      drawPlanetStrategicFloodplains(entry, visible, spectator);
+  }
+  const naturalWonders = buildPlanetNaturalWonderPlacements(cells);
+  const campSet = new Set(state.camps.map(key));
+  const worked = new Set(state.cities.flatMap(city =>
+    city.citizens ? city.citizens.worked_tiles.map(key) : []));
+  const occupied = new Set(state.units.map(unit => key(unit.pos)));
+  const occupiedResources = [];
+
+  for (const entry of cells) {
+    const {tile: t} = entry;
+    const tileKey = key(t.pos);
+    if (isNaturalWonder(t.feature)) {
+      const placement = naturalWonders.get(tileKey);
+      if (placement) drawPlanetNaturalWonder(placement, visible, spectator);
+      continue;
+    }
+    withPlanetStrategicCell(entry, visible, spectator, () => {
+      if (t.feature === "volcano") {
+        drawStrategicMountainIcon(0, 0, true);
+        drawFeatureEffects(t, 0, 0);
+        return;
+      }
+      if (t.terrain === "mountain") {
+        drawStrategicMountainIcon(0, 0, false);
+        return;
+      }
+      if (t.hills) {
+        const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
+        const hillBaseY = S * YS / 2;
+        cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
+        cx.beginPath();
+        cx.ellipse(-7 * hillWidth, hillBaseY, 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
+        cx.ellipse(6 * hillWidth, hillBaseY, 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
+        cx.stroke();
+      }
+      if (["forest", "jungle", "burning_forest", "burnt_forest",
+           "burning_jungle", "burnt_jungle"].includes(t.feature)) {
+        const jungle = t.feature.includes("jungle"), lift = t.hills ? -7 : 0;
+        for (const [dx, dy] of [[-9, -2], [1, 2], [9, 5]]) {
+          const tx = dx, ty = dy + 4 + lift;
+          if (jungle) {
+            cx.strokeStyle = "#4a3a24"; cx.lineWidth = 1.8;
+            cx.beginPath(); cx.moveTo(tx, ty); cx.lineTo(tx, ty - 12); cx.stroke();
+            cx.fillStyle = "#1d5c33";
+            cx.beginPath(); cx.ellipse(tx, ty - 13, 7.5, 3.4, 0, 0, 7); cx.fill();
+          } else {
+            cx.fillStyle = "#1e4d24";
+            tri(tx - 7, ty, tx, ty - 14, tx + 7, ty);
+          }
+        }
+      } else if (t.feature === "marsh") {
+        drawStrategicMarsh(0, 0);
+      } else if (t.feature === "oasis") {
+        cx.save();
+        cx.scale(2, 2); cx.translate(-2.5, 1.5);
+        cx.fillStyle = "#3d7aa6"; cx.beginPath();
+        cx.ellipse(0, 3, 8.5, 5.5, 0, 0, 7); cx.fill();
+        cx.font = "13px sans-serif"; cx.fillText("🌴", 7, -5);
+        cx.restore();
+      } else if (t.feature === "reef") {
+        cx.fillStyle = "#72d3c2";
+        for (const [dx, dy, radius] of [[-7, 2, 4], [1, -3, 5], [8, 5, 3]]) {
+          cx.beginPath(); cx.arc(dx, dy, radius, 0, 7); cx.fill();
+        }
+      } else if (t.feature === "geothermal_fissure") {
+        const gy = -4;
+        cx.fillStyle = "#66b6b3"; cx.strokeStyle = "#286f72"; cx.lineWidth = 1.1;
+        for (const [dx, dy, rx, ry] of [[-7, 5, 7.8, 2.8], [7, 7, 6.5, 2.3]]) {
+          cx.beginPath(); cx.ellipse(dx, gy + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
+        }
+        cx.fillStyle = "#dcece8"; cx.strokeStyle = "#8fbfc4"; cx.lineWidth = .9;
+        cx.beginPath(); cx.moveTo(-2.2, gy + 3);
+        cx.bezierCurveTo(-1.4, gy - 3, -1.1, gy - 10, 0, gy - 16);
+        cx.bezierCurveTo(1.2, gy - 10, 1.6, gy - 3, 2.2, gy + 3);
+        cx.closePath(); cx.fill(); cx.stroke();
+        cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.5;
+        cx.beginPath();
+        cx.arc(0, gy - 14, 4.5, 3.55, 5.9);
+        cx.moveTo(-1, gy - 12); cx.lineTo(-4, gy - 8);
+        cx.moveTo(1, gy - 12); cx.lineTo(4, gy - 8);
+        cx.stroke();
+      } else if (t.feature === "ice") {
+        cx.fillStyle = "#dfeff3"; cx.strokeStyle = "#7db3c5"; cx.lineWidth = 1.4;
+        cx.beginPath(); cx.moveTo(-15, -3); cx.lineTo(-5, -12);
+        cx.lineTo(13, -8); cx.lineTo(16, 7); cx.lineTo(0, 11);
+        cx.lineTo(-13, 6); cx.closePath(); cx.fill(); cx.stroke();
+      } else if (t.feature === "impact_zone") {
+        cx.fillStyle = "#292523"; cx.strokeStyle = "#d16a2f"; cx.lineWidth = 2;
+        cx.beginPath(); cx.arc(0, 0, 11, 0, 7); cx.fill(); cx.stroke();
+      }
+      drawFeatureEffects(t, 0, 0);
+      if (t.improvement === "barbarian_camp" || campSet.has(tileKey)) {
+        drawBarbarianCamp(0, 0);
+      } else if (t.improvement) {
+        drawImprovement(t, 0, 0);
+      }
+      if (SHOW_RESOURCES && t.resource &&
+          (SHOW_ARTIFACT_SITES || !ARTIFACT_RESOURCES.has(t.resource))) {
+        if (occupied.has(tileKey)) occupiedResources.push(entry);
+        else drawResourceBadge(t, 0, 0);
+      }
+      if (t.district) drawDistrict(t, 0, 0);
+      if (t.wonder) drawWonder(0, 0);
+      if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, 0, 0, worked.has(tileKey));
+    });
+  }
+  return occupiedResources;
+}
+
+function drawPlanetStrategicResourceBadges(entries, visible, spectator) {
+  for (const entry of entries) drawPlanetStrategicResourceBadge(entry, visible, spectator);
 }
 
 function mixLensColor(first, second, amount) {
@@ -16106,6 +16546,12 @@ function drawPlanetMap() {
   // pixel and its border is a smear, which is the same reason the grid stops.
   if (radius >= SKY_MARKERS) drawPlanetFrontiers(cells);
 
+  // The planet is another projection of the strategic map, not a lower-detail
+  // terrain mode. Its rivers, cliffs, landmarks, improvements, deposits and
+  // yields therefore use the same authored vocabulary as the flat board.
+  const occupiedPlanetResourceCells = scale > .42
+    ? drawPlanetStrategicTerrain(cells, turnVisible, spectator) : [];
+
   const highlighted = new Map();
   if (sel) {
     for (const pos of sel.reachable || []) highlighted.set(key(pos), "#74d7ff");
@@ -16126,23 +16572,6 @@ function drawPlanetMap() {
     ? planetChartHorizon(camera, scale, planetStageReach(centerX, centerY))
     : null;
 
-  if (!empireLens && scale > .42) {
-    cx.textAlign = "center"; cx.textBaseline = "middle";
-    cx.font = `${Math.max(9, Math.min(15, 10 * scale))}px serif`;
-    for (const cell of cells) {
-      if (cell.tile.resource && cell.center.z >= (onSheet ?? .08)) {
-        cx.globalAlpha = .78;
-        drawResourcePictogram(cell.tile.resource, cell.center.x, cell.center.y,
-                              Math.max(11, Math.min(18, 12 * scale)));
-        cx.globalAlpha = 1;
-        continue;
-      }
-      const glyph = planetFeatureGlyph(cell.tile);
-      if (!glyph || cell.center.z < (onSheet ?? .08)) continue;
-      cx.globalAlpha = .58; cx.fillStyle = "#111b17";
-      cx.fillText(glyph, cell.center.x, cell.center.y); cx.globalAlpha = 1;
-    }
-  }
   if (mapLens === "settler") drawPlanetSettlerLens(cells);
   else if (mapLens === "empire") drawEmpireDetailsPlanet(cells);
   else if (mapLens) drawThematicLensPlanet(cells);
@@ -16230,6 +16659,11 @@ function drawPlanetMap() {
     drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
     if (commandTokenClip) cx.restore();
   }
+  // As on the flat map, a resource beneath a unit waits until the figure is
+  // painted. Its lower strategic seat stays readable instead of losing one
+  // arbitrary third to the token in the center of the cell.
+  if (!empireLens)
+    drawPlanetStrategicResourceBadges(occupiedPlanetResourceCells, turnVisible, spectator);
   for (const tack of empireLens ? [] : tacks) {
     const cell = cellByKey.get(key(tack));
     if (!cell) continue;
@@ -18121,7 +18555,7 @@ function playerHudOverview() {
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
     `<span>Victory tracker</span></div>` +
-    `<button class="overlay-close" type="button" data-overlay-close="victory" aria-label="Hide victory tracker; restore it in Display settings" title="Hide victory tracker · restore in Display settings">✕</button>` +
+    `<button class="overlay-close" type="button" data-overlay-close="victory" aria-label="Hide victory tracker; restore it in Interface Settings" title="Hide victory tracker · restore in Interface Settings">✕</button>` +
     `<section class="hud-region victory-region" aria-labelledby="victory-tracker-title">` +
     `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll vertically for every path">` +
     `<div class="victory-ribbon" style="--victory-rows:${victoryCount};` +
@@ -18354,7 +18788,7 @@ function drawPlayerHud() {
   }));
   const relationById = new Map();
   const html =
-    `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Display settings" title="Hide player standings · restore in Display settings">✕</button>` +
+    `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Interface Settings" title="Hide player standings · restore in Interface Settings">✕</button>` +
     hudTurnPlate() +
     `<div class="player-standings" tabindex="0" aria-label="Player statistics; scroll horizontally for every column">` +
     `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +

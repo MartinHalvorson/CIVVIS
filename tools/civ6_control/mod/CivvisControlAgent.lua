@@ -734,6 +734,72 @@ local function stackCensus(player)
 	return worst, piles;
 end
 
+-- Where each unit stood at the end of the last turn we looked, so "has this unit
+-- moved?" can be asked at all. Keyed by unit id, which is stable for the life of
+-- the unit.
+local lastSeenAt = {};
+-- How many consecutive turns a unit has held still while it still had movement.
+local idleTurns = {};
+
+-- ⚠⚠⚠ A SETTLER THAT HAS NOT MOVED IN N TURNS IS NOT "IN FLIGHT". This is the
+-- predicate behind that sentence, lifted out so it can be tested without a
+-- running Civ 6 — everything around it is engine accessors.
+--
+-- `moves > 0` with an UNCHANGED position is the tell. A settler genuinely
+-- blocked by terrain or a unit spends its movement and stops; one that is
+-- stranded is handed full movement every turn and does nothing with it.
+-- Measured on run `civvis-20260803T231038Z`: the settler sat on a COAST tile at
+-- offset (24,36) from t153 to the end of the run, embarked, with two movement
+-- points EVERY turn, one tile from unowned grassland it had itself chosen.
+-- Fleet-wide, 38% of runs park a settler for >=15 consecutive turns at full
+-- movement (median streak 37).
+--
+-- ⚠ Why this matters far more than one wasted unit: the expansion gate is
+-- `counts.settler < SettlersInFlight`, and `SettlersInFlight` is 1. So ONE
+-- stranded settler stops the empire ordering another, forever. That run ordered
+-- no settler between turns 51 and 134 and finished four cities behind.
+local STRANDED_SETTLER_TURNS = 12;
+
+local function settlerIsStranded(idle)
+	return (idle or 0) >= STRANDED_SETTLER_TURNS;
+end
+
+-- Exposed for the offline test only. ⚠ A BARE GLOBAL, never `_G.` — Civ 6's UI
+-- Lua sandbox does not expose `_G` and indexing it raises at chunk load, which
+-- took the whole agent out once already.
+CivvisSettlerIsStranded = settlerIsStranded;
+
+-- Advance every unit's idle streak. ⚠ MUST be called exactly once per turn --
+-- see the note at the call site. A streak advanced from `countUnits` would count
+-- counting passes rather than turns.
+local function trackIdleUnits(player)
+	local seen = {};
+	eachUnit(player, function(unit)
+		local uid = try(function() return unit:GetID(); end, -1);
+		if uid < 0 then return; end
+		seen[uid] = true;
+		local x = try(function() return unit:GetX(); end, -1);
+		local y = try(function() return unit:GetY(); end, -1);
+		local moves = try(function() return unit:GetMovesRemaining(); end, 0) or 0;
+		local was = lastSeenAt[uid];
+		-- Movement left AND the same tile as last turn is the signal. A unit that
+		-- spent its movement is working, however little it achieved; a unit
+		-- handed a full allowance it never spends is stuck.
+		if was ~= nil and was.x == x and was.y == y and moves > 0 then
+			idleTurns[uid] = (idleTurns[uid] or 0) + 1;
+		else
+			idleTurns[uid] = 0;
+		end
+		lastSeenAt[uid] = { x = x, y = y };
+	end);
+	-- Dead units must not keep their streaks: Civilization VI reuses unit ids,
+	-- and inheriting a stranded streak would make a fresh settler read stranded
+	-- the moment it was trained.
+	for uid in pairs(lastSeenAt) do
+		if not seen[uid] then lastSeenAt[uid] = nil; idleTurns[uid] = nil; end
+	end
+end
+
 -- Pure. ⚠ An `upgradeUnit` call had been spliced into the military branch here,
 -- so *counting* the army issued upgrade orders — and its `return better` skipped
 -- the increment, so an upgrading unit was never counted as military. Counting
@@ -741,13 +807,20 @@ end
 -- Upgrading belongs in `orderFor`, which is where it now lives.
 local function countUnits(player)
 	local counts = { settler = 0, builder = 0, military = 0, scout = 0, siege = 0,
-	                 ranged = 0, total = 0 };
+	                 ranged = 0, total = 0, stranded_settler = 0 };
 	eachUnit(player, function(unit)
 		local name = unitTypeName(unit);
 		local row = GameInfo.Units[name];
 		counts.total = counts.total + 1;
 		if name == "UNIT_SETTLER" then
+			-- ⚠ COUNTED, THEN DISCOUNTED. The settler still exists and other
+			-- code needs to know that; what changes is only whether it holds
+			-- the expansion gate shut. See `settlerIsStranded`.
 			counts.settler = counts.settler + 1;
+			local uid = try(function() return unit:GetID(); end, -1);
+			if settlerIsStranded(idleTurns[uid]) then
+				counts.stranded_settler = counts.stranded_settler + 1;
+			end
 		elseif name == "UNIT_BUILDER" then
 			counts.builder = counts.builder + 1;
 		elseif name == "UNIT_SCOUT" then
@@ -2668,7 +2741,22 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- ⚠ Gated on being OUTMATCHED, not merely at war. A war we are winning is exactly
 	-- when taking more ground is right, and `warPressure` already draws that line.
 	if (nCities + counts.settler) < (cfg.CityTarget or 6)
-			and counts.settler < (cfg.SettlersInFlight or 1)
+			-- ⚠⚠⚠ A STRANDED SETTLER DOES NOT HOLD THIS GATE SHUT. "In flight"
+			-- means walking to a site; a settler that has not moved in twelve
+			-- turns while holding full movement is not walking anywhere, and
+			-- with `SettlersInFlight = 1` its mere existence stops the empire
+			-- ordering another one FOREVER. Run `civvis-20260803T231038Z`
+			-- ordered no settler between turns 51 and 134 for exactly this
+			-- reason and finished four cities behind; fleet-wide 38% of runs
+			-- park a settler for 15+ consecutive turns at full movement.
+			--
+			-- ⚠ This does NOT rescue the stranded settler — see
+			-- `settlerIsStranded`. It stops one stuck unit from also costing
+			-- every future one. The cap still binds on settlers that are
+			-- genuinely walking, which is the failure the cap was written for
+			-- (seventeen settlers, two cities).
+			and (counts.settler - counts.stranded_settler)
+				< (cfg.SettlersInFlight or 1)
 			and defenders >= floorNeeded
 			and not losingWar
 			and turn < (cfg.SettlerStopTurn or 9999) then
@@ -8125,6 +8213,12 @@ local function tick()
 		if turn ~= lastTurnSeen then
 			lastTurnSeen = turn;
 			turnsPlayed = turnsPlayed + 1;
+			-- ⚠ ONCE PER TURN, HERE, NOT IN `countUnits`. Counting runs several
+			-- times a turn -- the comment on `countUnits` says so and an
+			-- `upgradeUnit` spliced into it once issued orders from a counting
+			-- pass. An idle streak incremented there would count passes, not
+			-- turns, and every settler would read stranded within one turn.
+			trackIdleUnits(player);
 			attempts = 0;
 			passes = {};
 			if cfg.CivvisDecides then

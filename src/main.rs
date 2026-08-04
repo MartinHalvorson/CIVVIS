@@ -395,6 +395,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy and Elo agent wants exactly the army it always wanted. A
 /// compatibility re-pin.
 ///
+/// #1056 skips policy cards that multiply a suzerainty count of zero, behind
+/// `suzerain_cards_need_a_suzerainty`, `false` in `AdvancedAi::new()` and set
+/// only by `enable_live_bridge`. `strategic_policies` reorders nothing on that
+/// flag before it counts a single city-state, so every configured, legacy and
+/// Elo agent picks exactly the deck it always picked. A compatibility re-pin.
+///
 /// #981 adds `BasicAi::loyalty_emergency`, which ranks loyalty trouble by TURNS
 /// TO FLIP rather than by level, behind the new `loyalty_rate_alarm` flag. The
 /// flag is `false` in both `BasicAi` constructors and `loyalty_emergency`
@@ -512,10 +518,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `Standard`, whose `cost_percent` is 100 — so at the speed every legacy and Elo
 /// entrant plays, the expression evaluates to exactly `25.0` and the gate is
 /// bit-for-bit what it was. Only Online, Quick, Epic and Marathon move, and those
-/// were charging a price the game does not. A compatibility re-pin, not a
-/// behaviour change; `elo_anchor_speed_is_standard_so_the_pantheon_repin_is_free`
-/// checks that claim rather than asserting it.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0b77_c081_bd3c_38fe;
+/// were charging a price the game does not.
+/// ⚠ The value below is recomputed over the MERGED sources: main re-pinned this
+/// constant for its own change while this branch was open, so neither side's
+/// number is right after the merge — only a fresh fingerprint is.
+/// `elo_anchor_speed_is_standard_so_the_pantheon_repin_is_free` checks the
+/// Standard-speed claim rather than asserting it.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xaa1d_13d5_e7d6_64ad;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
