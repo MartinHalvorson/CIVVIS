@@ -1175,14 +1175,25 @@ mod tests {
         assert_eq!(future.start_era, future_era);
         assert_eq!(future.world_era, future_era);
         assert!(future.rules.techs.values().any(|spec| spec.era == future_era));
+        assert!(future.rules.civics.values().any(|spec| spec.era == future_era));
         for player in future.players.iter().filter(|player| !player.is_barbarian) {
             assert!(player.techs.iter().all(|tech| future.rules.techs[tech].era < future_era));
+            assert!(player
+                .civics
+                .iter()
+                .all(|civic| future.rules.civics[civic].era < future_era));
             assert!(future
                 .rules
                 .techs
                 .iter()
                 .filter(|(_, spec)| spec.era == future_era)
                 .all(|(tech, _)| !player.techs.contains(tech)));
+            assert!(future
+                .rules
+                .civics
+                .iter()
+                .filter(|(_, spec)| spec.era == future_era)
+                .all(|(civic, _)| !player.civics.contains(civic)));
         }
 
         // The whole setup survives a save, or a reloaded world would quietly
