@@ -6,6 +6,7 @@ use std::sync::Arc;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
 
 use crate::name::{AsName, Name};
+use crate::leader_roster;
 use crate::parallel::WorkPool;
 use crate::rng::Rng;
 use crate::rules::{
@@ -20,6 +21,8 @@ use crate::setup::{
 };
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
+
+pub use crate::leader_roster::LeaderPool;
 
 /// The civilizations this ruleset can seat, in seating order. A stock lobby
 /// seats majors straight down this list, so it must be at least as long as the
@@ -136,44 +139,6 @@ pub const CIV_NAMES: [&str; 105] = [
     "Indonesia",
     "Macedon",
 ];
-
-/// Which modeled leaders can fill seats the lobby leaves random.
-///
-/// `Civ6` is deliberately the default: the broader historical roster is
-/// useful for very large worlds, but it is an explicit expansion of the game
-/// this simulator models. Explicit civilization picks are always honored;
-/// this setting governs only the random fill around them.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LeaderPool {
-    #[default]
-    Civ6,
-    Expanded,
-}
-
-impl LeaderPool {
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::Civ6 => "civ6",
-            Self::Expanded => "expanded",
-        }
-    }
-
-    pub fn from_id(id: &str) -> Option<Self> {
-        match id {
-            "civ6" => Some(Self::Civ6),
-            "expanded" => Some(Self::Expanded),
-            _ => None,
-        }
-    }
-
-    pub const fn civilizations(self) -> &'static [&'static str] {
-        match self {
-            Self::Civ6 => &CIV6_LEADER_POOL,
-            Self::Expanded => &CIV_NAMES,
-        }
-    }
-}
 
 /// All fifty civilizations shipped by Civilization VI and its official DLC.
 /// Keep the names in [`CIV_NAMES`] order: deterministic non-random callers
@@ -2510,8 +2475,8 @@ mod city_name_tests {
 mod seating_tests {
     use super::*;
 
-    /// The official pool is the default, while both rosters retain the stable
-    /// seating order established by `CIV_NAMES`.
+    /// The official pool is the default and retains the stable seating order
+    /// established by `CIV_NAMES`.
     #[test]
     fn civ6_seating_is_the_default_and_keeps_the_stable_head() {
         let known: BTreeSet<Name> = Rules::shared().civs.keys().cloned().collect();
@@ -2537,8 +2502,8 @@ mod seating_tests {
     #[test]
     fn each_leader_pool_uses_every_entry_before_it_repeats() {
         let known: BTreeSet<Name> = Rules::shared().civs.keys().cloned().collect();
-        for pool in [LeaderPool::Civ6, LeaderPool::Expanded] {
-            for players in 1..=pool.civilizations().len() {
+        for pool in [LeaderPool::Civ6, LeaderPool::ExpandedHistorical] {
+            for players in 1..=pool.entries().count() {
                 let seated = seat_civs(players, &[], &known, pool);
                 assert_eq!(
                     seated.iter().collect::<BTreeSet<_>>().len(),
@@ -2575,13 +2540,21 @@ mod seating_tests {
         assert_eq!(&two[..2], ["Nubia".to_string(), "Rome".to_string()]);
         assert_eq!(two.iter().collect::<BTreeSet<_>>().len(), 4);
 
-        let expanded_pick = seat_civs(
+        let rejected_historical_pick = seat_civs(
             3,
             &["Denmark".to_string()],
             &known,
             LeaderPool::Civ6,
         );
-        assert_eq!(expanded_pick[0], "Denmark");
+        assert_eq!(rejected_historical_pick[0], CIV6_LEADER_POOL[0]);
+
+        let historical_pick = seat_civs(
+            3,
+            &["Denmark".to_string()],
+            &known,
+            LeaderPool::ExpandedHistorical,
+        );
+        assert_eq!(historical_pick[0], "Denmark");
     }
 
     /// A name from another ruleset seats a stock civilization rather than
@@ -2661,7 +2634,7 @@ mod seating_tests {
     #[test]
     fn each_random_pool_contains_exactly_its_selected_roster() {
         let known: BTreeSet<Name> = Rules::shared().civs.keys().cloned().collect();
-        for pool in [LeaderPool::Civ6, LeaderPool::Expanded] {
+        for pool in [LeaderPool::Civ6, LeaderPool::ExpandedHistorical] {
             let mut seen = BTreeSet::new();
             for seed in 0..1_000 {
                 let mut rng = Rng::new(seed);
@@ -2669,7 +2642,9 @@ mod seating_tests {
             }
             assert_eq!(
                 seen,
-                pool.civilizations().iter().map(|civ| civ.to_string()).collect(),
+                pool.entries()
+                    .map(|entry| entry.civ.clone())
+                    .collect(),
                 "randomized {pool:?} roster differs from its declared pool"
             );
         }
@@ -2680,6 +2655,25 @@ mod seating_tests {
         assert!(CIV6_LEADER_POOL.contains(&"Indonesia"));
         assert!(CIV6_LEADER_POOL.contains(&"Macedon"));
         assert!(!CIV6_LEADER_POOL.contains(&"Denmark"));
+    }
+
+    #[test]
+    fn historical_leaders_are_neutral_even_when_legacy_rules_describe_them() {
+        let legacy = Rules::embedded().civs[&Name::new("Denmark")].clone();
+        let mut options = GameOptions::new(1, 42, 28, 74_101, 40, 0);
+        options.leader_pool = LeaderPool::ExpandedHistorical;
+        options.civs = vec!["Denmark".to_string()];
+        let game = Game::new_with(options);
+
+        assert_eq!(game.players[0].civ, "Denmark");
+        assert!(!game.uses_civ6_content(0));
+        assert!(!game.has_ability(0, &legacy.ability));
+        assert!(legacy
+            .effects
+            .keys()
+            .all(|effect| game.civ_effect(0, effect) == 0.0));
+        assert!(game.rules.civs[&Name::new("Denmark")].unique_unit.is_none());
+        assert!(game.agenda_of(0).is_none());
     }
 }
 
@@ -15908,8 +15902,10 @@ pub struct GameOptions {
     /// already chosen so no two majors share an identity by accident. Empty
     /// uses that pool's stock order.
     pub civs: Vec<String>,
-    /// Roster from which every unnamed seat is filled. The official Civ VI
-    /// civilizations are the default; the full modeled roster is opt-in.
+    /// Roster from which every unnamed seat is filled. Civilization VI leaders
+    /// are the default and the only tier with modeled leader/civilization
+    /// abilities or unique units; expanded historical and future Today entries
+    /// are neutral identities.
     pub leader_pool: LeaderPool,
     /// Shuffle every civilization seat the lobby did not name. Kept opt-in so
     /// simulations and old saves retain their seed-for-seed stock seating;
@@ -15962,34 +15958,37 @@ impl GameOptions {
 /// lobby that deliberately names the same civilization twice gets it twice:
 /// a mirror match is a legitimate thing to set up, and the request is
 /// unambiguous in a way an automatic fill never is. Past the end of the
-/// roster — more majors than there are civilizations — the stock fill has
-/// nothing left to hand out and starts again at the top.
+/// selected roster — more majors than there are available leaders — the stock
+/// fill starts again at the top.
 ///
-/// A name the ruleset does not know is ignored rather than fatal: a save or a
-/// client from another ruleset should seat a stock civilization, not panic.
+/// A name outside the selected roster is ignored rather than fatal: a stale
+/// client or a save naming a retired historical figure gets a valid leader in
+/// the current pool instead of taking setup down.
 pub fn seat_civs(
     num_players: usize,
     chosen: &[String],
     known: &BTreeSet<Name>,
     leader_pool: LeaderPool,
 ) -> Vec<String> {
+    let leader_pool = leader_pool.available_or_default();
+    let roster: Vec<&str> = leader_pool.entries().map(|entry| entry.civ.as_str()).collect();
     let mut seats: Vec<Option<String>> = vec![None; num_players];
     let mut taken: BTreeSet<String> = BTreeSet::new();
     for (seat, civ) in chosen.iter().enumerate().take(num_players) {
-        if known.contains(&Name::new(civ)) {
+        if known.contains(&Name::new(civ)) && roster.contains(&civ.as_str()) {
             taken.insert(civ.clone());
             seats[seat] = Some(civ.clone());
         }
     }
-    let mut stock = leader_pool
-        .civilizations()
-        .iter()
-        .filter(|civ| !taken.contains(**civ))
-        .cycle()
-        .copied();
+    let stock: Vec<&str> = roster
+        .into_iter()
+        .filter(|civ| !taken.contains(*civ))
+        .collect();
+    assert!(!stock.is_empty(), "selected leader pool has no known leaders");
+    let mut stock = stock.into_iter().cycle();
     seats
         .into_iter()
-        .map(|seat| seat.unwrap_or_else(|| stock.next().unwrap_or(CIV_NAMES[0]).to_string()))
+        .map(|seat| seat.unwrap_or_else(|| stock.next().unwrap().to_string()))
         .collect()
 }
 
@@ -16003,26 +16002,28 @@ pub fn seat_civs_randomized(
     leader_pool: LeaderPool,
     rng: &mut Rng,
 ) -> Vec<String> {
+    let leader_pool = leader_pool.available_or_default();
+    let roster: Vec<&str> = leader_pool.entries().map(|entry| entry.civ.as_str()).collect();
     let mut seats: Vec<Option<String>> = vec![None; num_players];
     let mut taken: BTreeSet<String> = BTreeSet::new();
     for (seat, civ) in chosen.iter().enumerate().take(num_players) {
-        if known.contains(&Name::new(civ)) {
+        if known.contains(&Name::new(civ)) && roster.contains(&civ.as_str()) {
             taken.insert(civ.clone());
             seats[seat] = Some(civ.clone());
         }
     }
-    let mut stock: Vec<String> = leader_pool
-        .civilizations()
-        .iter()
-        .filter(|civ| known.contains(&Name::new(civ)) && !taken.contains(**civ))
-        .map(|civ| (*civ).to_string())
+    let mut stock: Vec<String> = roster
+        .into_iter()
+        .filter(|civ| known.contains(&Name::new(civ)) && !taken.contains(*civ))
+        .map(str::to_string)
         .collect();
     for i in (1..stock.len()).rev() {
         stock.swap(i, rng.below(i + 1));
     }
-    if stock.is_empty() {
-        stock.push(CIV_NAMES[0].to_string());
-    }
+    // `available_or_default` ensures a usable data pool; this assertion makes
+    // a malformed rules/roster integration fail at its source rather than
+    // silently inventing a civilization identity.
+    assert!(!stock.is_empty(), "selected leader pool has no known leaders");
     let mut stock = stock.into_iter().cycle();
     seats
         .into_iter()
@@ -16863,11 +16864,23 @@ impl From<GameSer> for Game {
     fn from(s: GameSer) -> Game {
         let needs_visibility_backfill = s.visibility_memory_version == 0;
         let has_unknown_terrain = s.map.tiles.values().any(|tile| tile.terrain == "unknown");
+        let seated_identities: Vec<String> = s
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .map(|player| player.civ.clone())
+            .collect();
         let mut rules = Rules::for_game(s.seed, s.future_tree_layout.as_ref(), s.future_era);
         if has_unknown_terrain {
             // Mirror-only terrain is injected after normal ruleset loading so it
             // survives a save round trip without changing the audited fingerprint.
             Arc::make_mut(&mut rules).enable_unknown_terrain();
+        }
+        if seated_identities
+            .iter()
+            .any(|civ| !leader_roster::uses_civ6_mechanics(civ))
+        {
+            leader_roster::install_neutral_identities(Arc::make_mut(&mut rules), &seated_identities);
         }
         // Both speed representations exist for save compatibility. Prefer an
         // explicit ruleset speed, except when loading an older map-script save
@@ -16899,7 +16912,7 @@ impl From<GameSer> for Game {
             future_era: s.future_era,
             moon_deposits: s.moon_deposits,
             map_script: s.map_script,
-            leader_pool: s.leader_pool,
+            leader_pool: s.leader_pool.available_or_default(),
             map_poles: s.map_poles,
             game_speed,
             max_turns: s.max_turns,
@@ -17314,16 +17327,43 @@ impl Game {
             teams.is_empty() || teams.len() == num_players,
             "team assignments must be empty or contain one entry per major player"
         );
-        let rules = Rules::for_game(seed, None, future_era);
+        let leader_pool = leader_pool.available_or_default();
+        let mut rules = Rules::for_game(seed, None, future_era);
         assert!(
             rules.difficulties.contains_key(&difficulty),
             "unknown difficulty {difficulty}"
         );
         assert!(rules.speeds.contains_key(&speed), "unknown game speed {speed}");
+        let mut known_civs = rules.civs.keys().cloned().collect::<BTreeSet<_>>();
+        known_civs.extend(
+            leader_roster::all()
+                .iter()
+                .filter(|record| record.available)
+                .map(|record| Name::new(&record.civ)),
+        );
+        let seated = if randomize_civs {
+            let mut roster_rng = Rng::new(seed ^ 0x4349_5656_4953_4349);
+            seat_civs_randomized(num_players, &civs, &known_civs, leader_pool, &mut roster_rng)
+        } else {
+            seat_civs(num_players, &civs, &known_civs, leader_pool)
+        };
+        if seated
+            .iter()
+            .any(|civ| !leader_roster::uses_civ6_mechanics(civ))
+        {
+            leader_roster::install_neutral_identities(Arc::make_mut(&mut rules), &seated);
+        }
+        let leader_starts: Vec<_> = seated
+            .iter()
+            .map(|civ| {
+                leader_roster::true_start(civ)
+                    .unwrap_or_else(|| panic!("selected leader {civ:?} has no true-start point"))
+            })
+            .collect();
         let mut rng = Rng::new(seed);
         let map_size = MapSize::from_dimensions(width, height)
             .unwrap_or_else(|| MapSize::for_players(num_players));
-        let (map, spawns) = mapgen::generate_with_script(
+        let (map, spawns) = mapgen::generate_with_script_and_leader_starts(
             &rules,
             width,
             height,
@@ -17334,6 +17374,7 @@ impl Game {
             map_script,
             map_topology,
             map_poles,
+            &leader_starts,
             &mut rng,
         );
         // After the world, deliberately: a ruleset with nothing on the Moon
@@ -17436,23 +17477,20 @@ impl Game {
             log: crate::actionlog::ActionLog::new(),
             events: EventLog::default(),
         };
-        let known_civs = g.rules.civs.keys().cloned().collect::<BTreeSet<_>>();
-        let seated = if randomize_civs {
-            let mut roster_rng = Rng::new(seed ^ 0x4349_5656_4953_4349);
-            seat_civs_randomized(num_players, &civs, &known_civs, leader_pool, &mut roster_rng)
-        } else {
-            seat_civs(num_players, &civs, &known_civs, leader_pool)
-        };
         // Civilization VI decides *which* start a civilization is given from
         // its shipped StartBias rows. Reorder the major sites to honour them
-        // before any seat is handed one; generation itself is untouched.
+        // before any seat is handed one; True Start Earth is already ordered
+        // by the selected roster’s exact coordinates and must not be moved by
+        // a generic bias afterward.
         let mut spawns = spawns;
-        mapgen::assign_starts_by_bias(
-            &g.rules,
-            &g.map,
-            &mut spawns[..num_players],
-            &seated,
-        );
+        if map_script != MapScript::TrueStartEarth {
+            mapgen::assign_starts_by_bias(
+                &g.rules,
+                &g.map,
+                &mut spawns[..num_players],
+                &seated,
+            );
+        }
         for (i, civ) in seated.iter().take(num_players).enumerate() {
             let mut player = Player::new(i, civ, false);
             player.team = teams.get(i).copied().flatten();
@@ -21448,13 +21486,32 @@ impl Game {
         }
     }
 
+    /// Whether this seat is one of the official Civilization VI identities
+    /// entitled to the ruleset's unique content.  Historical and Today roster
+    /// entries are deliberately neutral even where an older rules row happens
+    /// to share their civilization name.
+    pub fn uses_civ6_content(&self, pid: usize) -> bool {
+        self.players.get(pid).is_some_and(|player| {
+            !player.is_minor
+                && !player.is_barbarian
+                && leader_roster::uses_civ6_mechanics(&player.civ)
+        })
+    }
+
+    /// Whether this player may use content marked unique to `civilization`.
+    #[inline]
+    pub fn owns_civ_unique(&self, pid: usize, civilization: &str) -> bool {
+        self.uses_civ6_content(pid) && self.players[pid].civ == civilization
+    }
+
     /// Leader/civ ability check (data in civs.json, effects keyed by name).
     pub fn has_ability(&self, pid: usize, ability: &str) -> bool {
-        self.rules
-            .civs
-            .get(&self.players[pid].civ)
-            .map(|c| c.ability == ability)
-            .unwrap_or(false)
+        (self.uses_civ6_content(pid)
+            && self
+                .rules
+                .civs
+                .get(&self.players[pid].civ)
+                .is_some_and(|c| c.ability == ability))
             || self.modifier_grants_ability(pid, ability)
     }
 
@@ -21467,6 +21524,9 @@ impl Game {
     /// See `CivSpec::effects` for the vocabulary. Abilities the engine cannot
     /// express as a modifier stay keyed by name in [`Game::has_ability`].
     pub fn civ_effect(&self, pid: usize, effect: &str) -> f64 {
+        if !self.uses_civ6_content(pid) {
+            return 0.0;
+        }
         self.players
             .get(pid)
             .filter(|player| !player.is_minor && !player.is_barbarian)
@@ -24025,14 +24085,16 @@ impl Game {
                     {
                         continue;
                     }
-                    let civilization = self.players[pid].civ.as_str();
                     let building = self
                         .rules
                         .buildings
                         .iter()
                         .find(|(_, candidate)| {
                             candidate.replaces == Some(Name::new(family))
-                                && candidate.unique_to.as_deref() == Some(civilization)
+                                && candidate
+                                    .unique_to
+                                    .as_deref()
+                                    .is_some_and(|owner| self.owns_civ_unique(pid, owner))
                         })
                         .map(|(name, _)| Name::new(name))
                         .unwrap_or_else(|| Name::new(family));
@@ -24184,14 +24246,16 @@ impl Game {
         if self.city_has_building_family(&self.cities[&city_id], Name::new(family)) {
             return;
         }
-        let civilization = self.players[pid].civ.as_str();
         let building = self
             .rules
             .buildings
             .iter()
             .find(|(_, candidate)| {
                 candidate.replaces == Some(Name::new(family))
-                    && candidate.unique_to.as_deref() == Some(civilization)
+                    && candidate
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|owner| self.owns_civ_unique(pid, owner))
             })
             .map(|(name, _)| Name::new(name))
             .unwrap_or_else(|| Name::new(family));
@@ -26420,7 +26484,7 @@ impl Game {
         if spec
             .unique_to
             .as_deref()
-            .is_some_and(|civilization| civilization == self.players[pid].civ)
+            .is_some_and(|civilization| self.owns_civ_unique(pid, civilization))
         {
             self.first_historic_moment(
                 pid,
@@ -26500,7 +26564,7 @@ impl Game {
         if spec
             .unique_to
             .as_deref()
-            .is_some_and(|civilization| civilization == self.players[pid].civ)
+            .is_some_and(|civilization| self.owns_civ_unique(pid, civilization))
         {
             self.first_historic_moment(
                 pid,
@@ -26587,7 +26651,7 @@ impl Game {
         if spec
             .unique_to
             .as_deref()
-            .is_some_and(|civilization| civilization == self.players[pid].civ)
+            .is_some_and(|civilization| self.owns_civ_unique(pid, civilization))
         {
             self.first_historic_moment(
                 pid,
@@ -34048,43 +34112,47 @@ impl Game {
 
         // Civilization plans use ability keys rather than seat numbers, so a
         // custom ruleset may reorder civilizations without changing behavior.
-        match self.rules.civs.get(&player.civ).map(|c| c.ability.as_str()) {
-            Some("trajans_column") => {
-                weights.production += 0.30;
-                weights.culture += 0.55;
+        // The roster boundary matters here too: historical identities keep a
+        // neutral plan even where a legacy rules row shares their name.
+        if self.uses_civ6_content(city.owner) {
+            match self.rules.civs.get(&player.civ).map(|c| c.ability.as_str()) {
+                Some("trajans_column") => {
+                    weights.production += 0.30;
+                    weights.culture += 0.55;
+                }
+                Some("iteru") => {
+                    weights.production += if self.map.tiles[&city.pos].has_river() {
+                        1.00
+                    } else {
+                        0.55
+                    };
+                    weights.gold += 0.35;
+                }
+                Some("platos_republic") => weights.culture += 1.35,
+                Some("dynastic_cycle") => {
+                    weights.production += 0.30;
+                    weights.science += 0.75;
+                    weights.culture += 0.75;
+                }
+                Some("epic_quest") => {
+                    weights.production += 0.65;
+                    weights.gold += 0.45;
+                }
+                Some("gifts_for_the_tlatoani") => {
+                    weights.food += 0.20;
+                    weights.production += 0.85;
+                    weights.gold += 0.40;
+                }
+                Some("ta_seti") => {
+                    weights.food += 0.20;
+                    weights.production += 1.25;
+                }
+                Some("killer_of_cyrus") => {
+                    weights.food += 0.35;
+                    weights.production += 1.05;
+                }
+                _ => {}
             }
-            Some("iteru") => {
-                weights.production += if self.map.tiles[&city.pos].has_river() {
-                    1.00
-                } else {
-                    0.55
-                };
-                weights.gold += 0.35;
-            }
-            Some("platos_republic") => weights.culture += 1.35,
-            Some("dynastic_cycle") => {
-                weights.production += 0.30;
-                weights.science += 0.75;
-                weights.culture += 0.75;
-            }
-            Some("epic_quest") => {
-                weights.production += 0.65;
-                weights.gold += 0.45;
-            }
-            Some("gifts_for_the_tlatoani") => {
-                weights.food += 0.20;
-                weights.production += 0.85;
-                weights.gold += 0.40;
-            }
-            Some("ta_seti") => {
-                weights.food += 0.20;
-                weights.production += 1.25;
-            }
-            Some("killer_of_cyrus") => {
-                weights.food += 0.35;
-                weights.production += 1.05;
-            }
-            _ => {}
         }
 
         let at_war = self.players.iter().any(|other| {
@@ -36881,7 +36949,6 @@ impl Game {
             .as_deref()
             .filter(|resource| self.resource_visible_to(pid, resource));
         let water = self.rules.is_water(t);
-        let civ = self.players[pid].civ.as_str();
         let mut out = Vec::new();
         for (name, spec) in &self.rules.improvements {
             if name == "national_park" {
@@ -37015,7 +37082,8 @@ impl Game {
             if spec.unbuildable
                 || !self.unlocked(pid, &spec.tech, &spec.civic)
                 || spec.unique_to.as_deref().is_some_and(|owner| {
-                    owner != civ && !self.grants_city_state_unique_bonus(pid, owner)
+                    !self.owns_civ_unique(pid, owner)
+                        && !self.grants_city_state_unique_bonus(pid, owner)
                 })
                 || water != spec.water
                 || t.improvement.as_deref() == Some(name)
@@ -37061,7 +37129,10 @@ impl Game {
             // Unique replacements suppress their base improvement for that civ.
             if self.rules.improvements.values().any(|candidate| {
                 candidate.replaces == Some(*name)
-                    && candidate.unique_to.as_deref() == Some(civ)
+                    && candidate
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|owner| self.owns_civ_unique(pid, owner))
             }) {
                 continue;
             }
@@ -37843,10 +37914,13 @@ impl Game {
             && spec
                 .unique_to
                 .as_deref()
-                .is_none_or(|civilization| civilization == self.players[pid].civ)
+                .is_none_or(|civilization| self.owns_civ_unique(pid, civilization))
             && !self.rules.districts.values().any(|candidate| {
                 candidate.replaces == Some(Name::new(district))
-                    && candidate.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
+                    && candidate
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|owner| self.owns_civ_unique(pid, owner))
             })
     }
 
@@ -38157,7 +38231,10 @@ impl Game {
             .iter()
             .find(|(_, spec)| {
                 spec.replaces == Some(unit)
-                    && spec.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
+                    && spec
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|owner| self.owns_civ_unique(pid, owner))
             })
             .map(|(name, _)| *name)
             .unwrap_or(unit)
@@ -38232,8 +38309,8 @@ impl Game {
         }
         if spec
             .unique_to
-            .as_ref()
-            .is_some_and(|civilization| self.players[pid].civ != *civilization)
+            .as_deref()
+            .is_some_and(|civilization| !self.owns_civ_unique(pid, civilization))
         {
             return false;
         }
@@ -38460,12 +38537,14 @@ impl Game {
                 }
                 if spec
                     .unique_to
-                    .as_ref()
-                    .is_some_and(|civ| self.players[pid].civ != *civ)
+                    .as_deref()
+                    .is_some_and(|civ| !self.owns_civ_unique(pid, civ))
                     || self.rules.buildings.values().any(|candidate| {
                         candidate.replaces == Some(*building)
-                            && (candidate.unique_to.as_deref()
-                                == Some(self.players[pid].civ.as_str())
+                            && (candidate
+                                .unique_to
+                                .as_deref()
+                                .is_some_and(|owner| self.owns_civ_unique(pid, owner))
                                 || society_for(candidate).is_some_and(|society| {
                                     self.players[pid].secret_society.as_deref() == Some(society)
                                 }))
@@ -38579,12 +38658,14 @@ impl Game {
                     || !spec.buildable
                     || spec
                         .unique_to
-                        .as_ref()
-                        .is_some_and(|civ| self.players[pid].civ != *civ)
+                        .as_deref()
+                        .is_some_and(|civ| !self.owns_civ_unique(pid, civ))
                     || self.rules.districts.values().any(|candidate| {
                         candidate.replaces == Some(*district)
-                            && candidate.unique_to.as_deref()
-                                == Some(self.players[pid].civ.as_str())
+                            && candidate
+                                .unique_to
+                                .as_deref()
+                                .is_some_and(|owner| self.owns_civ_unique(pid, owner))
                     })
                 {
                     return false;
@@ -38826,11 +38907,14 @@ impl Game {
                 || !self.unlocked(pid, &spec.tech, &spec.civic)
                 || spec
                     .unique_to
-                    .as_ref()
-                    .is_some_and(|civ| self.players[pid].civ != *civ)
+                    .as_deref()
+                    .is_some_and(|civ| !self.owns_civ_unique(pid, civ))
                 || self.rules.districts.values().any(|candidate| {
                     candidate.replaces == Some(*name)
-                        && candidate.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
+                        && candidate
+                            .unique_to
+                            .as_deref()
+                            .is_some_and(|owner| self.owns_civ_unique(pid, owner))
                 })
             {
                 continue;
@@ -42570,7 +42654,7 @@ impl Game {
             if self.rules.improvements[imp]
                 .unique_to
                 .as_deref()
-                .is_some_and(|civilization| civilization == self.players[pid].civ)
+                .is_some_and(|civilization| self.owns_civ_unique(pid, civilization))
             {
                 self.first_historic_moment(
                     pid,
@@ -54334,7 +54418,7 @@ impl Game {
             .filter(|(_, spec)| {
                 spec.unique_to
                     .as_deref()
-                    .is_none_or(|civilization| civilization == self.players[pid].civ)
+                    .is_none_or(|civilization| self.owns_civ_unique(pid, civilization))
             })
             .map(|(name, _)| *name)
             .collect();
@@ -54615,7 +54699,6 @@ impl Game {
             .filter(|(_, spec)| spec.outer_defense > 0)
             .map(|(name, _)| *name)
             .collect();
-        let captor_civ = self.players[new_owner].civ.clone();
         let converted_districts: Vec<(Name, Pos, bool)> =
             self.cities[&cid]
                 .districts
@@ -54627,7 +54710,10 @@ impl Game {
                         .districts
                         .iter()
                         .find(|(_, spec)| {
-                            spec.unique_to.as_deref() == Some(captor_civ.as_str())
+                            spec
+                                .unique_to
+                                .as_deref()
+                                .is_some_and(|owner| self.owns_civ_unique(new_owner, owner))
                                 && spec.replaces == Some(Name::new(family.as_str()))
                         })
                         .map(|(name, _)| *name)
@@ -54658,7 +54744,10 @@ impl Game {
                 .buildings
                 .iter()
                 .find(|(_, spec)| {
-                    spec.unique_to.as_deref() == Some(captor_civ.as_str())
+                    spec
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|owner| self.owns_civ_unique(new_owner, owner))
                         && spec.replaces == Some(family)
                 })
                 .map(|(name, _)| *name)
@@ -54768,7 +54857,7 @@ impl Game {
                 .is_some_and(|spec| {
                     spec.unique_to
                         .as_deref()
-                        .is_none_or(|civilization| civilization == captor_civ)
+                        .is_none_or(|civilization| self.owns_civ_unique(new_owner, civilization))
                         && self.unlocked(new_owner, &spec.tech, &spec.civic)
                 });
             if !retained {

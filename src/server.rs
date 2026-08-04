@@ -23,6 +23,7 @@ use crate::civ6;
 use crate::game::{
     Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
 };
+use crate::leader_roster;
 use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
 use crate::rules::Rules;
@@ -3493,8 +3494,12 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.max_turns = v;
     }
     if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
-        p.leader_pool = v;
+        p.leader_pool = v.available_or_default();
     }
+    let selected_pool = p.leader_pool;
+    p.civs.retain(|civ| {
+        leader_roster::entry(civ).is_some_and(|entry| entry.available && entry.pool == selected_pool)
+    });
     // The two settings a Civ 6 lobby asks for that this protocol could not
     // carry: how hard the rivals play, and who the player is. Both are
     // validated against the live ruleset rather than trusted, because the
@@ -3506,11 +3511,14 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         }
     }
     if let Some(civs) = request["civs"].as_array() {
-        let rules = Rules::shared();
+        let selected_pool = p.leader_pool;
         p.civs = civs
             .iter()
             .filter_map(|civ| civ.as_str())
-            .filter(|civ| rules.civs.contains_key(civ))
+            .filter(|civ| {
+                leader_roster::entry(civ)
+                    .is_some_and(|entry| entry.available && entry.pool == selected_pool)
+            })
             .map(str::to_string)
             .collect();
     }
@@ -4260,6 +4268,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
                     "city_state_limit": r.city_states.roster.len(),
                     "civ6_leaders": CIV6_LEADER_POOL.as_slice(),
+                    "leader_pools": leader_roster::browser_pools(),
                     "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
                     "difficulties": r.difficulties, "speeds": r.speeds,
@@ -7161,7 +7170,7 @@ mod tests {
     #[test]
     fn a_saved_game_reloads_onto_the_same_turn() {
         let mut params = current();
-        params.leader_pool = LeaderPool::Expanded;
+        params.leader_pool = LeaderPool::ExpandedHistorical;
         let mut session = Session::new(params);
         for _ in 0..3 {
             session.act(&json!({"type": "end_turn"}));
@@ -7173,11 +7182,11 @@ mod tests {
             serde_json::from_value(serde_json::to_value(&session.game).unwrap()).unwrap();
         assert_eq!(round_tripped.turn, turn);
         assert_eq!(round_tripped.seed, session.game.seed);
-        assert_eq!(round_tripped.leader_pool, LeaderPool::Expanded);
+        assert_eq!(round_tripped.leader_pool, LeaderPool::ExpandedHistorical);
 
         let mut restored = Session::from_game(session.params.clone(), round_tripped);
         assert_eq!(restored.game.turn, turn);
-        assert_eq!(restored.params.leader_pool, LeaderPool::Expanded);
+        assert_eq!(restored.params.leader_pool, LeaderPool::ExpandedHistorical);
         assert!(restored.act(&json!({"type": "end_turn"})).is_none());
         assert!(restored.game.turn > turn, "a loaded game plays on");
     }
@@ -7440,18 +7449,23 @@ mod tests {
     }
 
     #[test]
-    fn leader_pool_defaults_to_civ6_and_accepts_expanded_explicitly() {
+    fn leader_pool_defaults_to_civ6_and_normalizes_legacy_expanded_to_historical() {
         let stock = current();
         assert_eq!(stock.leader_pool, LeaderPool::Civ6);
 
         let ignored = new_game_params(&stock, &json!({"leader_pool": "unknown"}));
         assert_eq!(ignored.leader_pool, LeaderPool::Civ6);
 
-        let expanded = new_game_params(&stock, &json!({"leader_pool": "expanded"}));
-        assert_eq!(expanded.leader_pool, LeaderPool::Expanded);
-        let session = Session::new(expanded);
-        assert_eq!(session.game.leader_pool, LeaderPool::Expanded);
-        assert_eq!(session.state()["leader_pool"], "expanded");
+        let historical = new_game_params(&stock, &json!({"leader_pool": "historical"}));
+        assert_eq!(historical.leader_pool, LeaderPool::ExpandedHistorical);
+        let session = Session::new(historical);
+        assert_eq!(session.game.leader_pool, LeaderPool::ExpandedHistorical);
+        assert_eq!(session.state()["leader_pool"], "historical");
+
+        let legacy = new_game_params(&stock, &json!({"leader_pool": "expanded"}));
+        assert_eq!(legacy.leader_pool, LeaderPool::ExpandedHistorical);
+        let unavailable_today = new_game_params(&stock, &json!({"leader_pool": "today"}));
+        assert_eq!(unavailable_today.leader_pool, LeaderPool::Civ6);
 
         let stock_session = Session::new(stock);
         assert!(stock_session
@@ -7460,6 +7474,27 @@ mod tests {
             .iter()
             .filter(|player| !player.is_minor && !player.is_barbarian)
             .all(|player| CIV6_LEADER_POOL.contains(&player.civ.as_str())));
+    }
+
+    #[test]
+    fn leader_choices_must_belong_to_the_selected_available_tier() {
+        let historical = new_game_params(
+            &current(),
+            &json!({
+                "leader_pool": "historical",
+                "civs": ["Denmark", "Rome", "Romania"],
+            }),
+        );
+        assert_eq!(historical.civs, vec!["Denmark"]);
+
+        let civ6 = new_game_params(
+            &current(),
+            &json!({
+                "leader_pool": "civ6",
+                "civs": ["Denmark", "Rome"],
+            }),
+        );
+        assert_eq!(civ6.civs, vec!["Rome"]);
     }
 
     #[test]
@@ -7952,10 +7987,19 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("start_eon"));
         assert!(EMBEDDED_INDEX.contains("id=\"leaderpool\""));
         assert!(EMBEDDED_INDEX.contains(">Civ 6 Leaders</option>"));
-        assert!(EMBEDDED_INDEX.contains(">Expanded</option>"));
+        assert!(EMBEDDED_INDEX.contains(">Expanded Historical Figures</option>"));
+        assert!(EMBEDDED_INDEX.contains(">Today's Leaders — roster pending</option>"));
+        assert!(
+            EMBEDDED_INDEX.find(">Civ 6 Leaders</option>")
+                < EMBEDDED_INDEX.find(">Expanded Historical Figures</option>")
+                && EMBEDDED_INDEX.find(">Expanded Historical Figures</option>")
+                    < EMBEDDED_INDEX.find(">Today's Leaders — roster pending</option>"),
+            "leader tiers must remain Civ 6, historical, then today"
+        );
         assert!(EMBEDDED_INDEX.contains("leader_pool: leaderPool"));
         assert!(EMBEDDED_INDEX.contains("function syncLeaderPool()"));
-        assert!(EMBEDDED_INDEX.contains("RULES.civ6_leaders"));
+        assert!(EMBEDDED_INDEX.contains("RULES.leader_pools"));
+        assert!(EMBEDDED_INDEX.contains("True Start:"));
         assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
         // The globe has its own renderer, and it is the only one: both globe
         // scripts are drawn by it, so neither needs a projection of its own.
@@ -10132,7 +10176,7 @@ mod tests {
             "num_players": 6,
             "map_script": "continents",
             "game_speed": "quick",
-            "leader_pool": "expanded",
+            "leader_pool": "historical",
             "victory_conditions": {"culture": false, "score": false},
         }));
 
@@ -10158,7 +10202,7 @@ mod tests {
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
-                "leader_pool": "expanded",
+                "leader_pool": "historical",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
@@ -10176,7 +10220,7 @@ mod tests {
         assert_eq!(session.params.num_players, 6);
         assert_eq!(session.params.map_script, MapScript::Continents);
         assert_eq!(session.params.game_speed, GameSpeed::Quick);
-        assert_eq!(session.params.leader_pool, LeaderPool::Expanded);
+        assert_eq!(session.params.leader_pool, LeaderPool::ExpandedHistorical);
         assert!(!session.game.victory_conditions.culture);
         assert!(!session.game.victory_conditions.score);
         drop(session);
@@ -10278,7 +10322,7 @@ mod tests {
                 "num_players": 4,
                 "map_script": "continents",
                 "game_speed": "quick",
-                "leader_pool": "expanded",
+                "leader_pool": "historical",
                 "victory_conditions": {"culture": false, "score": false},
             }))
             .unwrap();
@@ -10317,7 +10361,7 @@ mod tests {
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
-                "leader_pool": "expanded",
+                "leader_pool": "historical",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
@@ -11101,8 +11145,9 @@ mod tests {
                 "the setup screen is missing {piece}"
             );
         }
-        // Both selects are filled from the live ruleset, never a hardcoded list.
-        assert!(EMBEDDED_INDEX.contains("RULES.civs && typeof RULES.civs === \"object\""));
+        // The leader picker follows the live roster API, while difficulty is
+        // still supplied by the active ruleset; neither is a hardcoded list.
+        assert!(EMBEDDED_INDEX.contains("RULES.leader_pools"));
         assert!(EMBEDDED_INDEX
             .contains("RULES.difficulties && typeof RULES.difficulties === \"object\""));
         // A spectated world has nobody to hand a leader or a handicap to, and
