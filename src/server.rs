@@ -6981,6 +6981,26 @@ mod tests {
         assert_eq!(simulation_settings(&staged), settings);
     }
 
+    #[test]
+    fn earth_today_settings_build_a_planetary_future_era_world() {
+        let params = new_game_params(
+            &current(),
+            &json!({
+                "map_topology": "planet",
+                "map_script": "true_start_earth",
+                "start_era": "future",
+            }),
+        );
+        assert_eq!(params.map_topology, MapTopology::Planet);
+        assert_eq!(params.map_script, MapScript::TrueStartEarth);
+        assert_eq!(params.start_era, start_era_from_id("future").unwrap());
+
+        let session = Session::new(params);
+        assert_eq!(session.game.map_script, MapScript::TrueStartEarth);
+        assert_eq!(session.game.start_era, start_era_from_id("future").unwrap());
+        assert_eq!(session.game.world_era, start_era_from_id("future").unwrap());
+    }
+
     /// The first question the lobby asks. One ruleset is modeled, so the
     /// setting has exactly one legal answer, and an id from some other game
     /// leaves it on Civilization VI rather than being taken at face value.
@@ -7015,10 +7035,13 @@ mod tests {
         assert_eq!(medieval.start_era, start_era_from_id("medieval").unwrap());
         assert_eq!(simulation_settings(&medieval)["start_era"], "medieval");
 
-        // The Stone Age is on the ladder but has no tree behind it; "future"
-        // is an era of the ruleset that is not offered as a start; the rest
+        let future = new_game_params(&medieval, &json!({"start_era": "future"}));
+        assert_eq!(future.start_era, start_era_from_id("future").unwrap());
+        assert_eq!(simulation_settings(&future)["start_era"], "future");
+
+        // The Stone Age is on the ladder but has no tree behind it; the rest
         // are not rungs at all. Every one of them leaves the setting alone.
-        for refused in ["stone_age", "future", "dinosaur", "holocene", ""] {
+        for refused in ["stone_age", "dinosaur", "holocene", ""] {
             let asked = new_game_params(&medieval, &json!({"start_era": refused}));
             assert_eq!(
                 asked.start_era, medieval.start_era,
@@ -7086,6 +7109,36 @@ mod tests {
         let restored = Session::from_game(params, session.game.clone());
         assert_eq!(restored.params.start_era, era);
         assert_eq!(restored.params.base_ruleset, BaseRuleset::Civ6);
+    }
+
+    /// Selecting a scenario must remain an ordinary, editable setup path: the
+    /// page applies the exact Earth Today settings through the same payload it
+    /// stages for native and browser games, and a later change simply returns
+    /// the picker to Custom Game.
+    #[test]
+    fn browser_offers_the_earth_today_setup_scenario() {
+        for piece in [
+            "id=\"scenario\"",
+            "<option value=\"custom\" selected>Custom Game</option>",
+            "<option value=\"earth_today\">Earth Today</option>",
+            "const GAME_SCENARIOS = Object.freeze({",
+            "mapshape: \"planet\"",
+            "maptype: \"true_start_earth\"",
+            "startera: \"future\"",
+            "function applySelectedScenario()",
+            "function syncScenarioFromSettings()",
+            "const scenarioChanged = applySelectedScenario();",
+            "if (scenarioChanged) stageSelectedSimulationSettings();",
+            "event.target.id !== \"scenario\"",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(piece), "Earth Today scenario is missing {piece}");
+        }
+        let scenario = EMBEDDED_INDEX.find("id=\"scenario\"").unwrap();
+        let mode = EMBEDDED_INDEX.find("id=\"gamemode\"").unwrap();
+        assert!(scenario < mode, "the scenario must be asked before game mode");
+        assert!(EMBEDDED_INDEX.contains(
+            "const basic = [\"scenario\", \"gamemode\", \"mapshape\", \"maptype\","
+        ));
     }
 
     #[test]
@@ -7328,6 +7381,7 @@ mod tests {
     fn every_game_setting_is_answered_before_a_game_starts() {
         for setting in [
             "baseruleset",
+            "scenario",
             "gamemode",
             "startera",
             "futureera",
@@ -7881,8 +7935,8 @@ mod tests {
         // The lobby's reading order. `#newgame-options` is a two-column grid
         // filled row by row, so document order *is* left-then-right,
         // top-to-bottom on screen, and each row is a pair that belongs
-        // together: the rules and who plays under them, then who is at the
-        // table and how they are divided, then the world from the outside in —
+        // together: the rules, scenario and mode, then who is at the table
+        // and how they are divided, then the world from the outside in —
         // what shape it is, what is drawn on that shape, how heat is laid out
         // across it and how big it is — and last the clock, where history
         // starts and how fast it runs.
@@ -7893,6 +7947,7 @@ mod tests {
         let order = [
             "baseruleset",
             "leaderpool",
+            "scenario",
             "gamemode",
             "teams",
             "leader",
@@ -7901,6 +7956,7 @@ mod tests {
             "maptype",
             "mappoles",
             "np",
+            "citystates",
             "startera",
             "gamespeed",
             "futureera",
@@ -7912,9 +7968,9 @@ mod tests {
         });
         assert!(
             order.windows(2).all(|pair| pair[0] < pair[1]),
-            "lobby order must read ruleset/pool, mode/teams, seat, shape/map, thermal/size, eras/speed"
+            "lobby order must read ruleset/pool, scenario/mode, teams, seat, shape/map, thermal/size/city-states, eras/speed"
         );
-        let thermal_setting = order[8];
+        let thermal_setting = order[9];
         // The advanced drawer starts with the global rules, roster, teams and
         // climate. Shape and both eras are ordinary setup choices, while the
         // victory switches stay above the drawer with the rest of the game.
@@ -7927,6 +7983,7 @@ mod tests {
             assert!(EMBEDDED_INDEX.contains(advanced), "missing advanced setting: {advanced}");
         }
         for normal in [
+            "class=\"small civ6-hidden\">Scenario",
             "class=\"small civ6-hidden\">World shape",
             "class=\"small civ6-hidden\">Start era",
             "class=\"small civ6-hidden\">Future Era",
@@ -7935,7 +7992,7 @@ mod tests {
             assert!(EMBEDDED_INDEX.contains(normal), "missing normal setting: {normal}");
         }
         assert!(EMBEDDED_INDEX.contains(
-            "const basic = [\"gamemode\", \"mapshape\", \"maptype\", \"leader\", \"difficulty\", \"np\","
+            "const basic = [\"scenario\", \"gamemode\", \"mapshape\", \"maptype\", \"leader\", \"difficulty\", \"np\", \"citystates\","
         ));
         assert!(EMBEDDED_INDEX.contains("\"startera\", \"gamespeed\", \"futureera\"]"));
         assert!(EMBEDDED_INDEX.contains(
@@ -9191,97 +9248,49 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("${p.alive ? \"\" : \"dead\"}"));
     }
 
-    /// The viewer's controls are Civilization VI's, read out of the game's own
-    /// `InputConfiguration.xml` (`InputActionDefaultGestures`, plus the rows
-    /// the two expansions add). Every pair below is one row of that table, so
-    /// a binding cannot be quietly moved or dropped without this failing.
-    /// `docs/CIV6_KEYBINDINGS.md` carries the same table in prose, including
-    /// the Civ 6 actions this build has nothing to bind to.
+    /// The operator intentionally keeps a small, closed action map. These
+    /// assertions make every added shortcut an explicit product decision.
     #[test]
-    fn browser_key_bindings_are_civ6s_own() {
+    fn browser_key_bindings_match_the_requested_set() {
         for (action, key) in [
-            // UI
-            ("ToggleTechTree", "t"),
-            ("ToggleCivicsTree", "c"),
-            ("ToggleGovernment", "F7"),
-            ("ToggleReligion", "l"),
-            ("ToggleGreatPeople", "o"),
-            ("ToggleCityStates", "F2"),
-            ("ToggleEspionage", "F3"),
-            ("ToggleTradeRoutes", "F4"),
-            ("ToggleGovernors", "F10"),
-            ("OpenCivilopedia", "F9"),
-            ("ToggleFSMap", "End"),
-            // Units
-            ("FoundCity", "b"),
-            ("MoveTo", "m"),
+            ("NextAction", "1"),
+            ("SettlerLens", "2"),
+            ("PlaceTack", "3"),
             ("Fortify", "f"),
-            ("FortifyUntilHeal", "h"),
-            ("Attack", "a"),
-            ("RangedAttack", "r"),
-            ("AutoExplore", "e"),
-            ("SkipTurn", " "),
-            ("Sleep", "z"),
-            ("Alert", "v"),
-            // Global
-            ("EndTurn", "Enter"),
-            ("ToggleGrid", "g"),
-            ("ToggleResources", "q"),
-            ("ToggleYield", "y"),
-            ("PauseMenu", "Home"),
-            ("QuickSave", "F5"),
-            ("QuickLoad", "F6"),
-            ("OnlinePause", "p"),
-            ("PrevUnit", ","),
-            ("NextUnit", "."),
-            ("PrevCity", "["),
-            ("NextCity", "]"),
-            ("CapitalCity", "\\\\"),
-            // Camera
-            ("CameraPanLeft", "ArrowLeft"),
-            ("CameraPanRight", "ArrowRight"),
-            ("CameraPanUp", "ArrowUp"),
-            ("CameraPanDown", "ArrowDown"),
-            ("ZoomIn", "NumpadAdd"),
-            ("ZoomOut", "NumpadSubtract"),
+            ("Alert", "a"),
+            ("PreviousCity", "ArrowLeft"),
+            ("NextCity", "ArrowRight"),
         ] {
             let row = format!("{{id: \"{action}\", key: \"{key}\"");
             assert!(
                 EMBEDDED_INDEX.contains(&row),
-                "Civ 6's {action} must stay on {key}: no `{row}` in the viewer"
+                "required {action} is missing from the {key} shortcut"
             );
         }
-        // The pedia's history is Civ 6's only chorded pair.
-        assert!(EMBEDDED_INDEX
-            .contains("{id: \"CivilopediaBack\", key: \",\", ctrl: true"));
-        assert!(EMBEDDED_INDEX
-            .contains("{id: \"CivilopediaForward\", key: \".\", ctrl: true"));
-
-        // Three keys are the operator's deliberate overrides and keep their
-        // CIVVIS meaning; Civ 6 spends them on lenses that do not exist here.
-        for (action, key) in [("NextAction", "1"), ("SettlerLens", "2"), ("PlaceTack", "3")] {
-            assert!(
-                EMBEDDED_INDEX.contains(&format!("{{id: \"{action}\", key: \"{key}\"")),
-                "the {key} override must stay {action}"
-            );
-        }
-        // Everything CIVVIS adds sits on a chord or a key Civ 6 leaves free,
-        // so arriving from Civ 6 cannot find a shadowed binding.
-        for chord in [
-            "{id: \"AutoPlay\", key: \"a\", ctrl: true",
-            "{id: \"HidePanel\", key: \"u\", ctrl: true",
-            "{id: \"QuickDeals\", key: \"d\", ctrl: true",
-        ] {
-            assert!(EMBEDDED_INDEX.contains(chord), "missing CIVVIS chord: {chord}");
-        }
-        assert!(EMBEDDED_INDEX.contains("{id: \"Diplomacy\", key: \"F8\""));
+        let shortcuts = EMBEDDED_INDEX
+            .split_once("const CIVVIS_SHORTCUTS = [")
+            .and_then(|(_, tail)| {
+                tail.split_once("];\n// One lookup per key.")
+                    .map(|(rows, _)| rows)
+            })
+            .expect("the closed shortcut table");
+        assert_eq!(shortcuts.matches("{id: \"").count(), 7);
+        assert!(!EMBEDDED_INDEX.contains("const CIV6_BINDINGS = ["));
+        assert!(!EMBEDDED_INDEX.contains("let altTap"));
+        let legend = EMBEDDED_INDEX
+            .split_once("<summary>Keyboard shortcuts</summary>")
+            .and_then(|(_, tail)| tail.split_once("</details>").map(|(panel, _)| panel))
+            .expect("the keyboard shortcut legend");
+        assert_eq!(legend.matches("<kbd>").count(), 7);
+        assert_eq!(EMBEDDED_INDEX.matches("<kbd>").count(), 7);
+        assert!(legend.contains("<span><kbd>3</kbd>Add a map tack</span>"));
         assert!(EMBEDDED_INDEX.contains(
-            "let altTap = false; // tapping Alt/Option (no drag) faces north and levels the map"
+            "return myCities().slice().sort((left, right) => Number(left.id) - Number(right.id));"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "if (altTap) {\n    resetMapFacing(-cam.tilt);"
+            "? cities.find(city => city.is_capital) || cities[0]"
         ));
-        assert!(!EMBEDDED_INDEX.contains("{id: \"ResetFacing\", key: \"r\", ctrl: true"));
+        assert!(EMBEDDED_INDEX.contains(": cities[cities.length - 1];"));
 
         // Movement: a left click only selects, a left drag pans, a secondary
         // press/release moves units, and the middle button centres. This is the
@@ -9300,7 +9309,7 @@ mod tests {
             .split_once("cv.addEventListener(\"click\", ev => {")
             .expect("the map must have an ordinary click handler")
             .1
-            .split_once("\n});\n\n// Civ 6's ordinary unit order gesture")
+            .split_once("\nfunction issueSelectedUnitOrder(pos)")
             .expect("the selection handler must end before the movement handler")
             .0;
         assert!(!ordinary_click.contains("move_to"));
@@ -9315,7 +9324,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"
         ));
-        assert!(EMBEDDED_INDEX.contains("if (ev.metaKey) return undefined;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (ev.metaKey || ev.ctrlKey || ev.altKey || ev.shiftKey) return undefined;"
+        ));
     }
 
     #[test]
@@ -11960,12 +11971,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "function nextAction() {\n  if (!state || SPEC) return;\n  advanceToNextActionUnit(true);"
         ));
-        // Period/comma and Tab remain a reversible roster cycle rather than
-        // acquiring an unmatched proximity-based "previous" behavior.
+        // The requested fixed action map invokes the new selector from key 1;
+        // unit roster cycling is no longer a global keyboard shortcut.
         assert!(EMBEDDED_INDEX.contains("if (step > 0) { advanceToNextUnit(true); return; }"));
         assert!(EMBEDDED_INDEX.contains(
-            "{id: \"NextUnitTab\", key: \"Tab\", run: () => advanceToNextUnit(true)}"
+            "{id: \"NextAction\", key: \"1\", run: () => nextAction()},"
         ));
+        assert!(!EMBEDDED_INDEX.contains("id: \"NextUnitTab\""));
     }
 
     /// Resting over a tile reports it, the way Civ 6's plot tooltip does — and
