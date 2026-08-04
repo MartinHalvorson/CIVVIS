@@ -940,7 +940,7 @@
      The gutter gives back the 3px flex gap that the cell puts after every one
      of its items, so it costs the civilization's name 10px rather than 13 —
      that name is the first thing the standings give up when the masthead is
-     narrow, and the `#` beside it carries its own left bearing anyway. */
+     narrow. */
   .agenda-mark {
     flex: 0 0 auto; display: inline-block; width: 10px; margin-right: -3px;
     font-size: var(--type-label); line-height: 1; text-align: center; vertical-align: 1px;
@@ -2281,31 +2281,34 @@
        figures and the arrow between them, so it stands on a wider floor of its
        own: 76px keeps the longer START label and both numeric tracks whole at
        the fitter's 9px floor. Each breakpoint below moves the label floor only,
-       and keeps 5 labels + 2 figure cells adding up to what the identity block
-       claims at that width. */
+       and keeps the five labels, two figure cells, and fixed rank track adding
+       up to what the identity block claims at that width. */
     --hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;
+    --hud-rank-min: 30px;
     /* How much of the flexible width the identity block asks for relative to
        the values, over and above the sum of its own columns. A wide panel can
        afford whole names; a narrow one gives the identity up first, because a
        clipped name still reads and a clipped number lies. */
     --hud-identity-bias: 1;
     --hud-identity-column: minmax(
-      calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)
-           + var(--hud-ident-odds-min)), 11.387fr);
+      calc(var(--hud-rank-min) + var(--hud-ident-min) * 5
+           + var(--hud-ident-num-min) + var(--hud-ident-odds-min)), 12.087fr);
     /* Twelve cells and the eleven gutters between them. */
     --hud-stats-column: minmax(
       calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);
     --hud-column-gap: 6px;
-    /* Civilization, leader, player, age and the plan are labels, and their
-       cells ellipsize. Elo and the odds pair are figures on the taller floors:
-       with no minimum at all they collapsed on a 1440px screen and rendered
-       "1792" as "179" and "11%" as "1" — a truncated number that reads as a
-       different, smaller number. Watch-as keeps its fixed track between Leader
-       and Player, which is why the bar for that seam is drawn on Leader's edge.
-       Its extra four-pixel tail is the visual gutter before Player. */
+    /* Rank has its own dedicated column. Civilization, leader, player, age and the
+       plan are labels, and their cells ellipsize. Elo and the odds pair are
+       figures on the taller floors: with no minimum at all they collapsed on a
+       1440px screen and rendered "1792" as "179" and "11%" as "1" — a
+       truncated number that reads as a different, smaller number. Watch-as
+       keeps its fixed track between Leader and Player, which is why the bar
+       for that seam is drawn on Leader's edge. Its extra four-pixel tail is the
+       visual gutter before Player. */
     --hud-identity-tracks:
-      minmax(var(--hud-ident-min), 2.035fr) minmax(var(--hud-ident-min), 1.85fr)
-      var(--hud-watch-column) minmax(var(--hud-ident-min), 1.85fr)
+      minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)
+      minmax(var(--hud-ident-min), 1.85fr) var(--hud-watch-column)
+      minmax(var(--hud-ident-min), 1.85fr)
       minmax(var(--hud-ident-num-min), 1.017fr)
       minmax(var(--hud-ident-odds-min), 1.3fr)
       minmax(var(--hud-ident-min), 1.3fr)
@@ -2333,7 +2336,11 @@
   #playerhud > .player-standings {
     grid-column: 2; grid-row: 1; min-width: 0; min-height: 0;
     display: flex; flex-direction: column; gap: 3px;
+    overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
+    scrollbar-color: #476057 transparent; scrollbar-width: thin;
   }
+  #playerhud > .player-standings::-webkit-scrollbar { height: 4px; }
+  #playerhud > .player-standings::-webkit-scrollbar-thumb { border-radius: 4px; background: #476057; }
   .ribbon-heading {
     position: relative; min-height: 20px; display: flex; align-items: center;
     justify-content: center; padding: 0 4px; overflow: hidden; color: #c7d3ce;
@@ -2497,8 +2504,9 @@
   #playerhud .diplomacy-ribbon::-webkit-scrollbar { width: 3px; }
   #playerhud .diplomacy-ribbon::-webkit-scrollbar-thumb { background: #476057; border-radius: 4px; }
   /* One line, four regions: the lock, identity with its adjacent Watch-as
-     action, then the twelve values. Civilization itself now carries the former
-     Empire/capital action. */
+     action, then the twelve values. Rank and Civilization are independent
+     identity facts; Civilization itself carries the former Empire/capital
+     action. */
   #playerhud .diplomacy-card {
     width: auto; height: auto; min-height: 0; display: grid;
     grid-template-columns: var(--hud-lock-column, 0px)
@@ -2514,10 +2522,11 @@
   /* Watch-as sits in the same fixed track as the All button heading it, and it
      is inset by the same single pixel, so the two read as one column rather
      than as a head that is four pixels wider than everything under it. */
-  #playerhud .watch-as-link { grid-column: 3; grid-row: 1; align-self: center; justify-self: stretch; }
-  #playerhud .diplomacy-civ-link { grid-column: 1; grid-row: 1; }
-  #playerhud .diplomacy-leader-link { grid-column: 2; grid-row: 1; }
-  #playerhud .diplomacy-identity-secondary { grid-column: 4 / 9; grid-row: 1; }
+  #playerhud .watch-as-link { grid-column: 4; grid-row: 1; align-self: center; justify-self: stretch; }
+  #playerhud .diplomacy-rank { grid-column: 1; grid-row: 1; }
+  #playerhud .diplomacy-civ-link { grid-column: 2; grid-row: 1; }
+  #playerhud .diplomacy-leader-link { grid-column: 3; grid-row: 1; }
+  #playerhud .diplomacy-identity-secondary { grid-column: 5 / 10; grid-row: 1; }
   #playerhud .diplomacy-stats { grid-column: 4; grid-row: 1; }
 
   /* Locking a seat keeps its row in view while the rest of the table scrolls
@@ -2546,7 +2555,7 @@
   #playerhud .watch-as-link {
     width: calc(100% - 2px); height: 22px; margin: 0 1px; font-size: var(--type-micro);
   }
-  /* Every identity fact uses the same seven tracks as the heading above it.
+  /* Every identity fact uses the same tracks as the heading above it.
      Variable-length names can ellipsize inside their own cell without moving
      ELO, win odds or strategy to a different horizontal position on each row. */
   #playerhud .diplomacy-identity {
@@ -2582,7 +2591,11 @@
   #playerhud .diplomacy-civ-link .diplomacy-identity-field {
     border-left-color: transparent;
   }
-  #playerhud .diplomacy-rank { flex: 0 0 auto; margin-right: 0; font-size: var(--type-label); }
+  #playerhud .diplomacy-rank {
+    min-width: 0; display: flex; align-items: center; justify-content: flex-end;
+    margin: 0; padding-inline: 3px; overflow: hidden;
+    font-size: var(--type-label); text-align: right; white-space: nowrap;
+  }
   #playerhud .diplomacy-civ { flex: 1 1 auto; }
   #playerhud .diplomacy-leader-name { color: var(--muted); font-weight: 650; }
   #playerhud .diplomacy-player { color: #d9e1dc; font-weight: 750; }
@@ -2955,24 +2968,17 @@
     --hud-ident-min: 25px; --hud-column-gap: 4px;
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
-  #playerhud[data-type-size="compact"] > .player-standings {
-    overflow-x: auto; overflow-y: hidden; overscroll-behavior-x: contain;
-    scrollbar-color: #476057 transparent; scrollbar-width: thin;
-  }
-  #playerhud[data-type-size="compact"] > .player-standings::-webkit-scrollbar { height: 4px; }
-  #playerhud[data-type-size="compact"] > .player-standings::-webkit-scrollbar-thumb {
-    border-radius: 4px; background: #476057;
-  }
   #playerhud[data-type-size="compact"] > .player-standings:focus-visible {
     outline: 1px solid #d7b66a70; outline-offset: -1px; border-radius: 6px;
   }
   /* Twelve complete numeric columns have a real minimum width. When a custom or
      phone-sized box cannot supply it, keep a readable type floor and scroll the
      table inside its own panel instead of crushing or spilling its cells.
-     773px keeps 201px of identity, twelve 32px values with 2px gutters, and the
-     lock, widened watch action and padding comfortably separated. */
+     803px makes room for the dedicated Rank column as well as the identity tracks,
+     twelve 32px values with 2px gutters, the lock, widened watch action, and
+     padding. */
   #playerhud[data-type-size="compact"] .ribbon-stat-heading,
-  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 773px; }
+  #playerhud[data-type-size="compact"] .diplomacy-ribbon { min-width: 803px; }
   #playerhud[data-type-size="roomy"] {
     grid-template-columns: 168px minmax(0, 1fr);
     --hud-ident-min: 61px; --hud-column-gap: 7px;
@@ -5671,28 +5677,29 @@ const HUD_ELO_MAX_TYPE_SIZE = 13;
 // predicted from the track list. The heading cells are the columns; anything
 // derived from the stylesheet instead can drift from what is on the screen.
 const PLAYER_HUD_COLUMNS = [
-  {key:"civ", label:"Civilization", block:"identity", head:0, min:"--hud-ident-min", width:2.035},
+  {key:"rank", label:"Score rank", block:"identity", head:0, min:"--hud-rank-min", width:.7},
+  {key:"civ", label:"Civilization", block:"identity", head:1, min:"--hud-ident-min", width:2.035},
   // Watch-as keeps a fixed track between Leader and Player, so that seam is
   // drawn on Leader's edge and slides the button along with it.
-  {key:"leader", label:"Leader", block:"identity", head:1, min:"--hud-ident-min", width:1.85},
-  {key:"player", label:"Player", block:"identity", head:3, min:"--hud-ident-min", width:1.85},
-  {key:"elo", label:"Elo rating", block:"identity", head:4, min:"--hud-ident-num-min", width:1.017},
+  {key:"leader", label:"Leader", block:"identity", head:2, min:"--hud-ident-min", width:1.85},
+  {key:"player", label:"Player", block:"identity", head:4, min:"--hud-ident-min", width:1.85},
+  {key:"elo", label:"Elo rating", block:"identity", head:5, min:"--hud-ident-num-min", width:1.017},
   // One column, two figures: the odds this seat started with and the odds it
   // holds now. They are dragged, saved and measured as a single column because
   // they are read as a single movement.
-  {key:"win", label:"Win odds", block:"identity", head:5, min:"--hud-ident-odds-min", width:1.3},
-  {key:"age", label:"Age", block:"identity", head:6, min:"--hud-ident-min", width:1.3},
-  {key:"plan", label:"Plan", block:"identity", head:7, min:"--hud-ident-min", width:2.035},
+  {key:"win", label:"Win odds", block:"identity", head:6, min:"--hud-ident-odds-min", width:1.3},
+  {key:"age", label:"Age", block:"identity", head:7, min:"--hud-ident-min", width:1.3},
+  {key:"plan", label:"Plan", block:"identity", head:8, min:"--hud-ident-min", width:2.035},
   ...[["cities", "Cities"], ["population", "Population"], ["food", "Food"], ["production", "Production"],
       ["science", "Science"], ["culture", "Culture"], ["faith", "Faith"],
       ["gold", "Gold"], ["military", "Military"], ["wonders", "Wonders"],
       ["suzerain", "Suzerainty"], ["score", "Score"]]
     .map(([key, label], head) => ({key, label, block:"stats", head, min:"--hud-stat-min", width:1})),
 ];
-// A data column is sortable by definition. Start, change and current chance
-// are individually labelled tracks inside Win odds, so they each get a key as
-// well. Watch-as and the row lock are actions rather than facts, so neither is
-// part of this model or this set.
+// Every named standings fact is sortable. Rank is the first standings track,
+// while start, change and current chance are individually labelled tracks
+// inside Win odds. Watch-as and the row lock are actions rather than facts, so
+// neither is part of this model or this set.
 const PLAYER_HUD_SORTABLE_COLUMNS = new Set([
   ...PLAYER_HUD_COLUMNS.map(column => column.key), "win_start", "win_delta",
 ]);
@@ -5736,7 +5743,7 @@ function savePlayerHudColumns() {
 }
 
 function playerHudSortDefaultDirection(key) {
-  return PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? "asc" : "desc";
+  return key === "rank" || PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? "asc" : "desc";
 }
 
 function savePlayerHudSort() {
@@ -5744,7 +5751,8 @@ function savePlayerHudSort() {
   catch (_) {}
 }
 
-function playerHudSortValue(player, key, stats) {
+function playerHudSortValue(player, key, stats, rankById) {
+  if (key === "rank") return rankById.get(player.id) ?? null;
   if (key === "civ") return player.civ || null;
   if (key === "leader") return player.leader || null;
   if (key === "player") return player.player_username || player.ai_username || player.ai_name || "AI player";
@@ -5777,12 +5785,12 @@ function comparePlayerHudSortValues(left, right) {
   return left - right;
 }
 
-function sortedPlayerHudPlayers(players, statsByPlayer) {
+function sortedPlayerHudPlayers(players, statsByPlayer, rankById) {
   const {key, direction} = playerHudSort;
   const multiplier = direction === "asc" ? 1 : -1;
   return [...players].sort((left, right) => {
-    const leftValue = playerHudSortValue(left, key, statsByPlayer.get(left.id));
-    const rightValue = playerHudSortValue(right, key, statsByPlayer.get(right.id));
+    const leftValue = playerHudSortValue(left, key, statsByPlayer.get(left.id), rankById);
+    const rightValue = playerHudSortValue(right, key, statsByPlayer.get(right.id), rankById);
     // Do this before applying direction so unavailable data consistently stays
     // below observed values in both ascending and descending order.
     if (leftValue === null || rightValue === null) {
@@ -5835,7 +5843,7 @@ function playerHudColumnFlex(column, bias) {
     (column.block === "identity" ? bias : 1);
 }
 
-// Write the model out as the five track lists the stylesheet reads. The
+// Write the model out as the track values the stylesheet reads. The
 // emitted text is cached because this runs from a ResizeObserver: re-setting
 // an inline custom property that has not changed would invalidate style on
 // every observed frame for no reason.
@@ -5851,11 +5859,12 @@ function syncPlayerHudColumns(placeGrips = true) {
   const tracks = [
     // The Watch-as button holds its fixed track in the middle of the identity
     // block, exactly where the markup places it.
-    `${track(identity[0])} ${track(identity[1])} var(--hud-watch-column) ` +
-      identity.slice(2).map(track).join(" "),
+    `${track(identity[0])} ${track(identity[1])} ${track(identity[2])} ` +
+      `var(--hud-watch-column) ${identity.slice(3).map(track).join(" ")}`,
     stats.map(track).join(" "),
-    `minmax(calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min) ` +
-      `+ var(--hud-ident-odds-min)), ${total(identity).toFixed(4)}fr)`,
+    `minmax(calc(var(--hud-rank-min) + var(--hud-ident-min) * 5 ` +
+      `+ var(--hud-ident-num-min) + var(--hud-ident-odds-min)), ` +
+      `${total(identity).toFixed(4)}fr)`,
     `minmax(calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), ` +
       `${total(stats).toFixed(4)}fr)`,
   ];
@@ -21588,7 +21597,7 @@ function drawPlayerHud() {
   const rankById = new Map(scoreRankedMajors.map((p, index) => [p.id, index + 1]));
   const statsByPlayer = new Map(scoreRankedMajors.map(p =>
     [p.id, playerHudStats(p, rankById.get(p.id))]));
-  const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer);
+  const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);
   const rows = Math.max(1, majors.length);
   const seats = seatKeysById(majors);
   const repeatedCivs = repeatedCivNames(majors);
@@ -21629,6 +21638,7 @@ function drawPlayerHud() {
     // cell remains one draggable Win odds column, so adding the labels does not
     // add two more masthead seams. AGE and PLAN stay short because these heads
     // clip rather than ellipsize; their full wording is in their tooltips.
+    playerHudSortHead("rank", "RANK", "Score rank") +
     playerHudSortHead("civ", "CIV", "Civilization") +
     playerHudSortHead("leader", "LEADER", "Leader") +
     `<button type="button" class="spectator-view-link" data-hud-action="spectator" ` +
@@ -21694,9 +21704,8 @@ function drawPlayerHud() {
       // Nobody reports how they feel about themselves, so the seat you are
       // playing wears no mark of its own.
       const shownStance = p.id === acting && !SPEC ? "" : stance;
-      // The glyph rides in the CIV cell ahead of the rank, and the empty span
-      // holds that gutter open on the rows that have nothing to say — without
-      // it every marked row would push its own `#3` a glyph's width right.
+      // The glyph rides in the CIV cell before its name, and the empty span
+      // holds that gutter open on the rows that have nothing to say.
       const agendaGlyph =
         shownStance === "approves" ? `<span class="agenda-mark up" title="Approves of you">▲</span>`
         : shownStance === "disapproves" ? `<span class="agenda-mark down" title="Disapproves of you">▼</span>`
@@ -21774,13 +21783,14 @@ function drawPlayerHud() {
         `<button class="lock-toggle" data-hud-action="lock" data-hud-civ="${p.id}" aria-pressed="${locked}" ` +
         `title="${lockTitle}" aria-label="${lockTitle}">${locked ? "◉" : "○"}</button>` +
         `<span class="diplomacy-identity-grid">` +
+        `<span class="diplomacy-rank" title="Score rank ${rank}">#${rank}</span>` +
         // A civilization with no capital leaves this button disabled, and a
         // disabled control answers no hover — so the cell that now carries the
         // agenda mark says the stance in words too, rather than resting on a
         // tooltip that half the rows cannot show.
         `<button class="diplomacy-identity diplomacy-civ-link" data-hud-action="capital" data-hud-civ="${p.id}" ` +
         `title="${escapeAttr(civTitle)}" aria-label="${escapeAttr(civTitle)}"${capital ? "" : " disabled"}>` +
-        `<span class="diplomacy-identity-field">${agendaGlyph}<span class="diplomacy-rank">#${rank}</span>` +
+        `<span class="diplomacy-identity-field">${agendaGlyph}` +
         `<span class="diplomacy-civ">${p.id === acting && highlightActing ? "◉ " : ""}${p.civ}</span></span></button>` +
         `<button class="diplomacy-identity diplomacy-leader-link" data-hud-action="dossier" data-hud-civ="${p.id}" aria-expanded="${expanded}" ` +
         `title="${expanded ? "Close" : "Open"} the ${p.civ} dossier · ${relationSummary}${agendaText}" ` +
