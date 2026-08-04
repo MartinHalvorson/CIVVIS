@@ -2984,10 +2984,27 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	                  --   Library  59 -- civvis 5, **develop 54**
 	                  --   University 119 -- civvis 1, **develop 118**
 	                  --
-	                  -- So the science BUILDINGS are almost entirely this rung's while
-	                  -- the housing districts are entirely CIVVIS's, and CIVVIS decides
-	                  -- 20.8% of builds against this ladder's 79.2%. #1087 repairs the
-	                  -- fifth; this is the rest.
+	                  -- So the science BUILDINGS were almost entirely this rung's while
+	                  -- the housing districts were entirely CIVVIS's, at a 20.8/79.2
+	                  -- split. #1087 repairs CIVVIS's side; this repairs this one.
+	                  --
+	                  -- ⚠⚠ BUT DATE THAT SPLIT BEFORE COSTING ANYTHING FROM IT. Every
+	                  -- figure above comes from runs BEFORE `civvis-20260802T140355Z`.
+	                  -- `kind:build` is emitted only from this file's own production
+	                  -- sweep, and that sweep is skipped when a city already has current
+	                  -- production — so once CIVVIS began applying `produce` through the
+	                  -- orders channel the event went silent. It is **zero in all 60+
+	                  -- runs since**, including all 19 that carry the housing export,
+	                  -- while those runs log 3,658 order-turns at `source: civvis` and
+	                  -- 2,754 applied `produce` orders.
+	                  --
+	                  -- So the CURRENT split is UNMEASURED, and this rung is most likely
+	                  -- a FALLBACK now rather than the majority decider. That does not
+	                  -- make the omission harmless — the fallback still fires whenever
+	                  -- CIVVIS's own choice is unplayable, which those same 19 runs
+	                  -- record **482** times — but this is defence in depth, not the
+	                  -- main lane, and nobody should price it as the main lane until
+	                  -- `kind:build` (or an equivalent) reports again.
 	                  --
 	                  -- ⚠ PLACED AFTER THE CAMPUS, DELIBERATELY. The Campus is the
 	                  -- larger funnel gap — 49 of 100 live end-of-game cities were
