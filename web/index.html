@@ -1254,7 +1254,7 @@
   #notify {
     position: absolute; z-index: 8; top: 196px; bottom: 200px;
     /* Reserve the upper-right victory rail so notification chips cannot
-       obscure its values. Hiding it in Interface Settings returns this edge. */
+       obscure its values. Hiding it in Display Settings returns this edge. */
     right: calc(var(--victory-hud-width) + 20px);
     display: none; flex-direction: column; align-items: flex-end; gap: 6px;
     overflow: hidden auto; scrollbar-width: none; pointer-events: none;
@@ -1938,6 +1938,48 @@
   .render-resolution-row { grid-template-columns: minmax(0, 1fr) minmax(104px, 1fr); }
   .render-resolution-row > span, .render-resolution-row > select { min-width: 0; }
   .render-resolution-row > span { overflow-wrap: anywhere; }
+  /* This is host-wide pressure, not a promise that the viewer owns a fixed
+     share. The cap is therefore a decision point for the controls below, not
+     a throttling control that could silently weaken a running game. */
+  .machine-loads {
+    display: grid; gap: 7px; margin-bottom: 12px; padding: 9px 10px 10px;
+    border: 1px solid #385149; border-radius: 9px; background: #09131080;
+  }
+  .machine-load-row {
+    display: grid; grid-template-columns: 48px minmax(34px, 1fr) 38px auto;
+    align-items: center; gap: 7px; min-width: 0;
+  }
+  .machine-load-name, .machine-load-cap > span {
+    color: var(--muted); font-size: var(--type-small); font-weight: 800;
+    letter-spacing: .08em; text-transform: uppercase;
+  }
+  .machine-load-meter {
+    min-width: 0; height: 7px; overflow: hidden; border: 1px solid #385149;
+    border-radius: 999px; background: #06100d;
+  }
+  .machine-load-meter > span {
+    display: block; width: 0; height: 100%; border-radius: inherit;
+    background: linear-gradient(90deg, #4b9982, #b2d891); transition: width .24s ease, background .18s ease;
+  }
+  .machine-load-value {
+    color: #c7d3cc; font: 800 var(--type-small)/1 var(--font-ui);
+    font-variant-numeric: tabular-nums; letter-spacing: .02em; text-align: right;
+  }
+  .machine-load-cap { display: flex; align-items: center; gap: 4px; min-width: 0; }
+  .machine-load-cap select { min-width: 56px; padding: 4px 5px; font-size: var(--type-small); }
+  .machine-load-row.is-near-cap .machine-load-value { color: #e3c978; }
+  .machine-load-row.is-near-cap .machine-load-meter > span { background: linear-gradient(90deg, #c99948, #edd179); }
+  .machine-load-row.is-over-cap .machine-load-value { color: #eea09a; }
+  .machine-load-row.is-over-cap .machine-load-meter > span { background: linear-gradient(90deg, #b96059, #ef9b85); }
+  .machine-loads.is-unavailable .machine-load-value { color: var(--faint); }
+  .display-load-advice {
+    padding-top: 7px; border-top: 1px solid #ffffff12; color: var(--faint);
+    font-size: var(--type-label); line-height: 1.38;
+  }
+  .display-load-guidance {
+    box-shadow: inset 2px 0 #c99e4e; border-radius: 4px;
+    background: linear-gradient(90deg, #c99e4e12, transparent 70%);
+  }
   .resource-display-setting { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .resource-display-setting > span, .resource-display-setting > select { min-width: 0; }
   .resource-display-setting > span { overflow-wrap: anywhere; }
@@ -2722,7 +2764,7 @@
   body.hud-layout-active.layout-resizing * { cursor: var(--layout-resize-cursor, nwse-resize) !important; }
 
   /* Collapsing the command deck collapses the deck and nothing else. Every map
-     overlay is switched from the deck's own Interface Settings instead, so the
+     overlay is switched from the deck's own Display Settings instead, so the
      two controls stay independent: hand the map back the deck's width without
      losing the instruments, or clear the instruments and keep the deck. Only
      the pause button follows the deck, because collapsing it takes the deck's
@@ -3305,7 +3347,7 @@
     <!-- Left to right: collapse the deck, set the map area, face north, zoom
          in, zoom out, navigate the solar system, and dismiss. The full sky
          route begins immediately after minus and ends immediately before
-         dismiss; Interface Settings is the way back and that is inside the
+         dismiss; Display Settings is the way back and that is inside the
          deck. -->
     <div id="zoomctl">
       <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
@@ -3324,7 +3366,7 @@
           <span id="skyspan" title="How wide the stage is">—</span>
         </div>
       </div>
-      <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Interface Settings" title="Hide map controls · restore in Interface Settings">✕</button>
+      <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Display Settings" title="Hide map controls · restore in Display Settings">✕</button>
     </div>
   </div>
   <div id="map-area-editor" hidden aria-label="Set map area">
@@ -3371,7 +3413,7 @@
   <div id="winner" role="status" aria-live="assertive"></div>
   <div class="minimap-frame" data-layout-widget="minimap">
     <div class="minimap-label widget-drag-handle" data-widget-drag tabindex="0" role="button" aria-label="Move world minimap; use arrow keys or drag" title="Drag to move · arrow keys also move"><span>World minimap</span></div>
-    <button class="overlay-close" type="button" data-overlay-close="minimap" aria-label="Hide world minimap; restore it in Interface Settings" title="Hide world minimap · restore in Interface Settings">✕</button>
+    <button class="overlay-close" type="button" data-overlay-close="minimap" aria-label="Hide world minimap; restore it in Display Settings" title="Hide world minimap · restore in Display Settings">✕</button>
     <canvas id="mini" width="200" height="140"></canvas>
     <span class="minimap-hint">Click to travel</span>
   </div>
@@ -3534,11 +3576,26 @@
     </div>
     <details class="sidebar-section" data-section="display-settings">
       <summary class="section-label" id="display-settings-header">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◈</span><span>Interface Settings</span></span>
+        <span class="section-title"><span class="section-icon" aria-hidden="true">◈</span><span>Display Settings</span></span>
         <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
       </summary>
       <div class="sec settings-sec" id="display-settings">
       <div class="utility-group">
+        <div class="machine-loads" id="machine-loads" aria-label="Machine resource usage">
+          <div class="machine-load-row" id="cpu-load-row">
+            <span class="machine-load-name" id="cpu-load-name" title="Host-wide CPU usage on the machine serving this viewer">CPU</span>
+            <div class="machine-load-meter" id="cpu-load-meter" role="progressbar" aria-labelledby="cpu-load-name" aria-valuemin="0" aria-valuemax="100"><span id="cpu-load-fill"></span></div>
+            <output class="machine-load-value" id="cpu-load-value">Sampling…</output>
+            <label class="machine-load-cap"><span>Cap</span><select id="cpu-load-cap" aria-label="CPU usage cap"><option value="10">10%</option><option value="20">20%</option><option value="30">30%</option><option value="40">40%</option><option value="50">50%</option><option value="60">60%</option><option value="70" selected>70%</option><option value="80">80%</option><option value="90">90%</option></select></label>
+          </div>
+          <div class="machine-load-row" id="memory-load-row">
+            <span class="machine-load-name" id="memory-load-name" title="Host-wide memory usage on the machine serving this viewer">Memory</span>
+            <div class="machine-load-meter" id="memory-load-meter" role="progressbar" aria-labelledby="memory-load-name" aria-valuemin="0" aria-valuemax="100"><span id="memory-load-fill"></span></div>
+            <output class="machine-load-value" id="memory-load-value">Sampling…</output>
+            <label class="machine-load-cap"><span>Cap</span><select id="memory-load-cap" aria-label="Memory usage cap"><option value="10">10%</option><option value="20">20%</option><option value="30">30%</option><option value="40">40%</option><option value="50">50%</option><option value="60">60%</option><option value="70" selected>70%</option><option value="80">80%</option><option value="90">90%</option></select></label>
+          </div>
+          <div class="display-load-advice" id="display-load-advice" role="status" aria-live="polite">Sampling the machine serving this viewer…</div>
+        </div>
         <div class="observer-settings" id="observer-settings">
           <div class="view-row"><span>Watch as</span>
             <select id="viewplayer" aria-label="Observation perspective">
@@ -3889,7 +3946,7 @@
               <span class="map-lens-icon" aria-hidden="true">⊘</span>
               <span class="map-lens-label">Clear</span>
             </button>
-            <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Interface Settings" title="Hide map lenses · restore in Interface Settings">✕</button>
+            <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Display Settings" title="Hide map lenses · restore in Display Settings">✕</button>
           </div>
           <div id="map-lens-strip" role="none">
             <button type="button" data-map-lens="continent" aria-pressed="false"
@@ -7547,6 +7604,153 @@ async function fetchJSON(url, opts = {}, timeoutMs = 15000) {
     clearTimeout(timer);
     callerSignal?.removeEventListener("abort", abortForCaller);
   }
+}
+// Host-wide load is an observation, not a browser capability. The native
+// server samples it; the published browser build deliberately returns no
+// values, because a tab cannot truthfully inspect the machine serving it.
+const DISPLAY_RESOURCE_CAPS_STORAGE_KEY = "civvis-display-resource-caps-v1";
+const DISPLAY_RESOURCE_CAP_VALUES = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+const DISPLAY_RESOURCE_CAP_DEFAULT = 70;
+const DISPLAY_CPU_GUIDANCE_CONTROLS = [
+  "renderresolution", "yieldchk", "reschk", "resourcedisplay", "rocketanimchk",
+];
+const DISPLAY_MEMORY_GUIDANCE_CONTROLS = [
+  "renderresolution", "resourcedisplay", "reset-overlay-layout",
+];
+let displayResourceCaps = {cpu: DISPLAY_RESOURCE_CAP_DEFAULT, memory: DISPLAY_RESOURCE_CAP_DEFAULT};
+let machineMetrics = {cpu: null, memory: null, status: "sampling", samples: 0};
+let machineMetricsRefreshTimer = null;
+
+function normalizedDisplayResourceCap(value) {
+  const parsed = Number(value);
+  return DISPLAY_RESOURCE_CAP_VALUES.includes(parsed) ? parsed : DISPLAY_RESOURCE_CAP_DEFAULT;
+}
+function restoreDisplayResourceCaps() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(DISPLAY_RESOURCE_CAPS_STORAGE_KEY) || "{}");
+    for (const kind of ["cpu", "memory"])
+      displayResourceCaps[kind] = normalizedDisplayResourceCap(saved[kind]);
+  } catch (_) {}
+}
+function saveDisplayResourceCaps() {
+  try { localStorage.setItem(DISPLAY_RESOURCE_CAPS_STORAGE_KEY, JSON.stringify(displayResourceCaps)); }
+  catch (_) {}
+}
+function normalizedMachinePercent(value) {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(100, value)) : null;
+}
+function machineMetricText(kind, percent) {
+  if (percent !== null) return `${Math.round(percent)}%`;
+  if (machineMetrics.status === "sampling" ||
+      (machineMetrics.status === "available" && machineMetrics.samples < 2)) return "Sampling…";
+  return "Unavailable";
+}
+function setMachineLoadRow(kind) {
+  const percent = machineMetrics[kind];
+  const cap = displayResourceCaps[kind];
+  const row = document.getElementById(`${kind}-load-row`);
+  const meter = document.getElementById(`${kind}-load-meter`);
+  const fill = document.getElementById(`${kind}-load-fill`);
+  const value = document.getElementById(`${kind}-load-value`);
+  if (!row || !meter || !fill || !value) return;
+  const overCap = percent !== null && percent >= cap;
+  const nearCap = percent !== null && !overCap && percent >= cap * .85;
+  row.classList.toggle("is-near-cap", nearCap);
+  row.classList.toggle("is-over-cap", overCap);
+  fill.style.width = `${percent ?? 0}%`;
+  value.textContent = machineMetricText(kind, percent);
+  if (percent === null) {
+    meter.removeAttribute("aria-valuenow");
+    meter.removeAttribute("aria-valuetext");
+  } else {
+    meter.setAttribute("aria-valuenow", String(Math.round(percent)));
+    meter.setAttribute("aria-valuetext", `${Math.round(percent)}% host-wide usage`);
+  }
+}
+function displayGuidanceContainer(id) {
+  return document.getElementById(id)?.closest(".speed-row, .setting-row, .overlay-options");
+}
+function updateDisplayLoadGuidance(cpuPressure, memoryPressure) {
+  const controls = [...new Set([
+    ...DISPLAY_CPU_GUIDANCE_CONTROLS, ...DISPLAY_MEMORY_GUIDANCE_CONTROLS,
+  ])];
+  for (const id of controls) displayGuidanceContainer(id)?.classList.remove("display-load-guidance");
+  if (cpuPressure) {
+    for (const id of DISPLAY_CPU_GUIDANCE_CONTROLS)
+      displayGuidanceContainer(id)?.classList.add("display-load-guidance");
+  }
+  if (memoryPressure) {
+    for (const id of DISPLAY_MEMORY_GUIDANCE_CONTROLS)
+      displayGuidanceContainer(id)?.classList.add("display-load-guidance");
+  }
+}
+function updateMachineMetricsDisplay() {
+  const panel = document.getElementById("machine-loads");
+  const advice = document.getElementById("display-load-advice");
+  if (!panel || !advice) return;
+  setMachineLoadRow("cpu");
+  setMachineLoadRow("memory");
+  const cpu = machineMetrics.cpu;
+  const memory = machineMetrics.memory;
+  const cpuOver = cpu !== null && cpu >= displayResourceCaps.cpu;
+  const memoryOver = memory !== null && memory >= displayResourceCaps.memory;
+  const cpuNear = cpu !== null && !cpuOver && cpu >= displayResourceCaps.cpu * .85;
+  const memoryNear = memory !== null && !memoryOver && memory >= displayResourceCaps.memory * .85;
+  panel.classList.toggle("is-unavailable", machineMetrics.status === "unavailable");
+  updateDisplayLoadGuidance(cpuOver || cpuNear, memoryOver || memoryNear);
+  if (machineMetrics.status === "sampling") {
+    advice.textContent = "Sampling the machine serving this viewer…";
+  } else if (machineMetrics.status === "unavailable") {
+    advice.textContent = "Machine telemetry is unavailable here. Use the display choices below manually.";
+  } else if (cpuOver && memoryOver) {
+    advice.textContent = "CPU and memory are over their caps. Prefer Performance resolution, then reduce tile layers, animations, or unneeded overlays below.";
+  } else if (cpuOver) {
+    advice.textContent = "CPU is over its cap. Prefer Performance resolution, then reduce yields, resource markers, or rocket and satellite animations below.";
+  } else if (memoryOver) {
+    advice.textContent = "Memory is over its cap. Prefer Balanced or Performance resolution and hide unneeded overlays below.";
+  } else if (cpuNear || memoryNear) {
+    advice.textContent = "Near a selected cap. Lower render resolution or optional map detail below before load rises further.";
+  } else {
+    advice.textContent = "Within the selected caps. Native resolution and optional map detail are available.";
+  }
+}
+function setDisplayResourceCap(kind, value) {
+  if (kind !== "cpu" && kind !== "memory") return;
+  const cap = normalizedDisplayResourceCap(value);
+  displayResourceCaps[kind] = cap;
+  const select = document.getElementById(`${kind}-load-cap`);
+  if (select) select.value = String(cap);
+  saveDisplayResourceCaps();
+  updateMachineMetricsDisplay();
+}
+function installMachineMetricsControls() {
+  restoreDisplayResourceCaps();
+  for (const kind of ["cpu", "memory"]) {
+    const select = document.getElementById(`${kind}-load-cap`);
+    if (!select) continue;
+    select.value = String(displayResourceCaps[kind]);
+    select.onchange = () => setDisplayResourceCap(kind, select.value);
+  }
+  updateMachineMetricsDisplay();
+  refreshMachineMetrics();
+}
+async function refreshMachineMetrics() {
+  try {
+    const metrics = await fetchJSON("/machine-metrics", {cache: "no-store"}, 3000);
+    machineMetrics.cpu = normalizedMachinePercent(metrics?.cpu_percent);
+    machineMetrics.memory = normalizedMachinePercent(metrics?.memory_percent);
+    machineMetrics.samples += 1;
+    machineMetrics.status = machineMetrics.cpu !== null || machineMetrics.memory !== null
+      ? "available" : "unavailable";
+  } catch (_) {
+    machineMetrics.cpu = null;
+    machineMetrics.memory = null;
+    machineMetrics.status = "unavailable";
+  }
+  updateMachineMetricsDisplay();
+  window.clearTimeout(machineMetricsRefreshTimer);
+  machineMetricsRefreshTimer = window.setTimeout(refreshMachineMetrics, 5000);
 }
 let firstLoad = true;
 let serverInstance = null;
@@ -21228,7 +21432,7 @@ function playerHudOverview() {
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
     `<span>Victory tracker</span></div>` +
-    `<button class="overlay-close" type="button" data-overlay-close="victory" aria-label="Hide victory tracker; restore it in Interface Settings" title="Hide victory tracker · restore in Interface Settings">✕</button>` +
+    `<button class="overlay-close" type="button" data-overlay-close="victory" aria-label="Hide victory tracker; restore it in Display Settings" title="Hide victory tracker · restore in Display Settings">✕</button>` +
     `<section class="hud-region victory-region" aria-labelledby="victory-tracker-title">` +
     `<div class="hud-rail" tabindex="0" aria-label="Victory paths; scroll vertically for every path">` +
     `<div class="victory-ribbon" style="--victory-rows:${victoryCount};` +
@@ -21461,7 +21665,7 @@ function drawPlayerHud() {
   }));
   const relationById = new Map();
   const html =
-    `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Interface Settings" title="Hide player standings · restore in Interface Settings">✕</button>` +
+    `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore it in Display Settings" title="Hide player standings · restore in Display Settings">✕</button>` +
     hudTurnPlate() +
     `<div class="player-standings" tabindex="0" aria-label="Player statistics; scroll horizontally for every column">` +
     `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
@@ -29396,6 +29600,7 @@ for (const checkbox of document.querySelectorAll("[data-overlay]")) {
   checkbox.checked = OVERLAY_VISIBILITY[name] !== false;
   checkbox.onchange = () => setOverlayVisibility(name, checkbox.checked);
 }
+installMachineMetricsControls();
 
 // The bearing is not set here: it belongs to a world, and no world is known
 // until the first observation arrives. adoptWorldFacing() applies it then.
