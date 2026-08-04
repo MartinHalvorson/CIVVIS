@@ -524,7 +524,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// number is right after the merge — only a fresh fingerprint is.
 /// `elo_anchor_speed_is_standard_so_the_pantheon_repin_is_free` checks the
 /// Standard-speed claim rather than asserting it.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xaa1d_13d5_e7d6_64ad;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0f73_d99f_2176_b3b0;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
