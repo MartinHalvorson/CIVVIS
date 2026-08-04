@@ -320,9 +320,12 @@ a tag is public.
 - **The league roster is in the bundle**, compiled in like every other file
   under `data/`, so seats carry the same ratings they do on the desktop build.
   It was read from disk until then, and there is no disk here, so every seat
-  showed the provisional 1500 that means "never heard of this player". What is
-  still missing is the other direction: nothing is recorded, so a game played
-  here moves no rating.
+  showed the provisional 1500 that means "never heard of this player". The
+  public static `/beta/` site remains read-only. The installed desktop `/wasm/`
+  channel has a trusted local host instead: it shares the native spectator's
+  live roster, records every seated AI strategy through the native Glicko
+  writer, deduplicates retries in `league.json`, and supplies the updated table
+  to the module before the next game.
 - **Every poll carries the whole world.** The socket build sends a tile *patch*
   — about 157 KB against 1.36 MB — because it keeps a per-viewer fingerprint of
   the map. Here the page is told the world whole every turn, which is the
