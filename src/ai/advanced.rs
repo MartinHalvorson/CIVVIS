@@ -118,6 +118,8 @@ const RUSH_STAGING_RANGE: i32 = 3;
 /// smallest force that can occupy most of a city ring while preserving a
 /// healthy melee finisher for the capture.
 const TIMED_WAR_BODIES: usize = 4;
+const SELECTIVE_TIMED_WAR_PREBUILT_BODIES: usize = 3;
+const SELECTIVE_TIMED_WAR_STRENGTH_FLOOR: f64 = 1.25;
 const TIMED_WAR_MIN_STRENGTH_GAIN: f64 = 8.0;
 const TIMED_WAR_MIN_EXPECTED_DAMAGE: f64 = 36.0;
 const TIMED_WAR_ENDGAME_RESERVE: u32 = 40;
@@ -1537,6 +1539,10 @@ pub struct AdvancedAi {
     /// military breakthrough. Eval-only until the frozen paired screen and
     /// disjoint holdout earn promotion.
     pub timed_war: bool,
+    /// Restrict the appointment to one campaign the ordinary strategy already
+    /// wants and launch only a fully staged, locally superior package. This is
+    /// a policy over the same `WarPlan`, never a second execution path.
+    pub selective_timed_war: bool,
     /// Restrict `early_rush` to rivals a starting land melee unit can actually
     /// reach. The reachable set is frozen once all living major capitals have
     /// been founded, before this treatment can change movement, research,
@@ -1844,6 +1850,15 @@ impl AdvancedAi {
         ai
     }
 
+    /// Evaluator treatment for the preregistered selective-v2 appointment.
+    /// Research, production, treasury, diplomacy, movement, and combat still
+    /// consume the same controller-owned plan as v1.
+    pub fn selective_timing_attack() -> AdvancedAi {
+        let mut ai = Self::timing_attack();
+        ai.selective_timed_war = true;
+        ai
+    }
+
     /// Exact pre-2026-08-01 Advanced configuration used only by evaluator
     /// controls. It intentionally retains the Legacy deck and leaves both
     /// envoy-production flags off; it is not the frozen `advanced_v1` anchor.
@@ -2062,6 +2077,7 @@ impl AdvancedAi {
             deny_leaders: true,
             early_rush: false,
             timed_war: false,
+            selective_timed_war: false,
             route_connected_rush: false,
             rush_route_targets: None,
             counter_in_lane: false,
@@ -3282,7 +3298,25 @@ impl AdvancedAi {
                 .count()
     }
 
+    fn selective_timed_war_target(&self) -> Option<usize> {
+        if !self.selective_timed_war || self.war_census.appointments > 0 {
+            return None;
+        }
+        self.plan
+            .as_ref()
+            .filter(|plan| plan.strategy == GrandStrategy::Conquest)
+            .and_then(|plan| plan.target_player)
+    }
+
     fn choose_war_plan(&self, g: &Game, pid: usize) -> Option<WarPlan> {
+        let selective_target = if self.selective_timed_war {
+            self.selective_timed_war_target()
+        } else {
+            None
+        };
+        if self.selective_timed_war && selective_target.is_none() {
+            return None;
+        }
         let science = Self::war_science_per_turn(g, pid);
         let production = Self::war_production_per_turn(g, pid);
         let catalog = Self::player_unit_catalog(g, pid);
@@ -3297,6 +3331,7 @@ impl AdvancedAi {
                 && player.alive
                 && !player.is_minor
                 && !player.is_barbarian
+                && selective_target.is_none_or(|selected| player.id == selected)
                 && self.campaign_target_legal(g, pid, player.id)
         }) {
             let mut objectives: Vec<_> = g
@@ -3353,6 +3388,11 @@ impl AdvancedAi {
                     let body_count = self
                         .war_existing_or_queued_count(g, pid, assault, predecessor)
                         .min(TIMED_WAR_BODIES);
+                    if self.selective_timed_war
+                        && body_count < SELECTIVE_TIMED_WAR_PREBUILT_BODIES
+                    {
+                        continue;
+                    }
                     let missing = TIMED_WAR_BODIES.saturating_sub(body_count);
                     let build_body = predecessor.unwrap_or(assault);
                     let mut production_cost =
@@ -3462,6 +3502,8 @@ impl AdvancedAi {
     fn may_form_war_plan(&self, g: &Game, pid: usize) -> bool {
         if !self.timed_war
             || self.war_plan.is_some()
+            || (self.selective_timed_war
+                && self.selective_timed_war_target().is_none())
             || g.turn < g.standard_duration(RUSH_WINDOW_CLOSES)
             || g.turn < self.peace_until
             || g.player_city_ids(pid).len() < 2
@@ -3488,6 +3530,40 @@ impl AdvancedAi {
                 && !player.is_barbarian
                 && g.is_at_war(pid, player.id)
         })
+    }
+
+    /// One staging predicate is shared by lifecycle phase selection and the
+    /// declaration site. That keeps the UI's `strike` phase from promising a
+    /// launch the diplomatic executor would refuse (or vice versa).
+    fn timed_war_staging_ready(&self, status: &WarPackageStatus) -> bool {
+        let bodies_staged = if self.selective_timed_war {
+            status.staged_bodies >= TIMED_WAR_BODIES
+        } else {
+            status.staged_bodies >= TIMED_WAR_BODIES - 1
+                && status.fourth_one_turn_away
+        };
+        let strength_floor = if self.selective_timed_war {
+            SELECTIVE_TIMED_WAR_STRENGTH_FLOOR
+        } else {
+            1.0
+        };
+        bodies_staged
+            && status.breach_staged
+            && status.local_strength_ratio + f64::EPSILON >= strength_floor
+    }
+
+    fn timed_war_launch_ready(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &WarPlan,
+        status: &WarPackageStatus,
+    ) -> bool {
+        g.players[pid].techs.contains(&plan.breakthrough_tech)
+            && status.ready_bodies >= TIMED_WAR_BODIES
+            && status.breach_ready
+            && self.timed_war_staging_ready(status)
+            && self.threatened_city(g, pid).is_none()
     }
 
     fn record_war_abort(&mut self, reason: &'static str) {
@@ -3654,10 +3730,7 @@ impl AdvancedAi {
                         let status = self.war_package_status(g, pid, &plan);
                         let package_ready = status.ready_bodies >= TIMED_WAR_BODIES
                             && status.breach_ready;
-                        let staged = status.staged_bodies >= TIMED_WAR_BODIES - 1
-                            && status.fourth_one_turn_away
-                            && status.breach_staged
-                            && status.local_strength_ratio + f64::EPSILON >= 1.0;
+                        let staged = self.timed_war_staging_ready(&status);
                         plan.phase = if !tech_owned {
                             WarPhase::Research
                         } else if !package_ready {
@@ -8783,14 +8856,7 @@ impl AdvancedAi {
         }
 
         let status = self.war_package_status(g, pid, &plan);
-        let complete = g.players[pid].techs.contains(&plan.breakthrough_tech)
-            && status.ready_bodies >= TIMED_WAR_BODIES
-            && status.breach_ready
-            && status.staged_bodies >= TIMED_WAR_BODIES - 1
-            && status.fourth_one_turn_away
-            && status.breach_staged
-            && status.local_strength_ratio + f64::EPSILON >= 1.0
-            && self.threatened_city(g, pid).is_none();
+        let complete = self.timed_war_launch_ready(g, pid, &plan, &status);
         if !complete {
             // Phase and package are recomputed at turn start, but a deal,
             // upgrade failure, or other earlier action can change the board.
@@ -19192,6 +19258,7 @@ impl Ai for AdvancedAi {
             let active = self.war_plan.as_ref();
             WarPlanReport {
                 enabled: true,
+                selective: self.selective_timed_war,
                 active: active.is_some(),
                 phase: active.map(|plan| plan.phase.as_str()),
                 target_player: active.map(|plan| plan.target_player),
@@ -19586,6 +19653,78 @@ mod tests {
             game.rules.units[plan.assault_unit].strength
                 < game.rules.units["giant_death_robot"].strength,
             "the chooser minimizes the qualifying research path instead of naming the end-tree maximum"
+        );
+    }
+
+    #[test]
+    fn selective_timed_war_requires_one_organic_target_and_three_prebuilt_bodies() {
+        let (mut game, _, objective) = timed_war_fixture(940_014);
+        clear_military(&mut game, 0);
+        let mut ai = AdvancedAi::selective_timing_attack();
+
+        assert!(
+            ai.choose_war_plan(&game, 0).is_none(),
+            "selective v2 cannot manufacture Conquest before ordinary assessment chooses it"
+        );
+        ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(objective),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        });
+        assert!(
+            ai.choose_war_plan(&game, 0).is_none(),
+            "an organic target without a real army cannot redirect the economy into v1 mobilization"
+        );
+
+        game.players[0]
+            .techs
+            .insert(crate::name!("bronze_working"));
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..SELECTIVE_TIMED_WAR_PREBUILT_BODIES {
+            game.spawn_test_unit("spearman", 0, home);
+        }
+        let plan = ai
+            .choose_war_plan(&game, 0)
+            .expect("three direct predecessors make the organic campaign eligible");
+        assert_eq!(plan.target_player, 1);
+        assert_eq!(plan.assault_unit, crate::name!("pikeman"));
+        assert_eq!(plan.predecessor, Some(crate::name!("spearman")));
+
+        ai.war_census.appointments = 1;
+        assert!(
+            ai.choose_war_plan(&game, 0).is_none(),
+            "selective v2 gets one appointment, even after that campaign ends"
+        );
+    }
+
+    #[test]
+    fn selective_timed_war_strengthens_the_same_staging_gate() {
+        let v1 = AdvancedAi::timing_attack();
+        let v2 = AdvancedAi::selective_timing_attack();
+        let mut status = WarPackageStatus {
+            staged_bodies: TIMED_WAR_BODIES - 1,
+            fourth_one_turn_away: true,
+            breach_staged: true,
+            local_strength_ratio: 1.0,
+            ..WarPackageStatus::default()
+        };
+        assert!(v1.timed_war_staging_ready(&status));
+        assert!(
+            !v2.timed_war_staging_ready(&status),
+            "v2 cannot call three staged bodies a strike package"
+        );
+
+        status.staged_bodies = TIMED_WAR_BODIES;
+        status.local_strength_ratio = SELECTIVE_TIMED_WAR_STRENGTH_FLOOR - 0.01;
+        assert!(!v2.timed_war_staging_ready(&status));
+        status.local_strength_ratio = SELECTIVE_TIMED_WAR_STRENGTH_FLOOR;
+        assert!(
+            v2.timed_war_staging_ready(&status),
+            "the exact preregistered four-body, 1.25-strength gate launches"
         );
     }
 

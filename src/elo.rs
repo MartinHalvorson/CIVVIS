@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 99] = [
+pub const EVAL_ONLY_AIS: [&str; 100] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -75,6 +75,7 @@ pub const EVAL_ONLY_AIS: [&str; 99] = [
     "advanced_rush",
     "advanced_rush_connected",
     "advanced_timing_attack",
+    "advanced_timing_attack_selective",
     "advanced_city_strategy",
     "advanced_city_strategy_emphasis",
     "advanced_city_strategy_roles",
@@ -267,6 +268,7 @@ define_arm_kinds! {
     AdvancedRush => "advanced_rush",
     AdvancedRushConnected => "advanced_rush_connected",
     AdvancedTimingAttack => "advanced_timing_attack",
+    AdvancedTimingAttackSelective => "advanced_timing_attack_selective",
     AdvancedSettlerCommit => "advanced_settler_commit",
     AdvancedSettlerFirst => "advanced_settler_first",
     AdvancedTargetDomination => "advanced_target_domination",
@@ -1689,6 +1691,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_timing_attack" => {
             Box::new(AdvancedAi::timing_attack())
         }
+        // Selective v2 preserves the same controller-owned executor but may
+        // appoint only an organically chosen Conquest target with a prebuilt
+        // army, once, and launches from a stronger fully staged position.
+        "advanced_timing_attack_selective" => {
+            Box::new(AdvancedAi::selective_timing_attack())
+        }
         // Treatment for the response-shape axis: identical to `advanced`
         // except that a Science or Expansion threat is answered by racing the
         // leader in that lane rather than by declaring on them. The alarm is
@@ -2857,6 +2865,7 @@ impl ArmKind {
             Self::AdvancedRush => &["early-rush"],
             Self::AdvancedRushConnected => &["early-rush", "connected-rush"],
             Self::AdvancedTimingAttack => &["timed-war-appointment"],
+            Self::AdvancedTimingAttackSelective => &["selective-timed-war-appointment"],
             Self::AdvancedCounterInLane => &["counter-in-lane"],
             Self::AdvancedCounterStandDown => &["counter-stand-down"],
             Self::AdvancedEarlyScoreAlarm => &["early-score-alarm"],
@@ -3430,6 +3439,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_rush" => (Vec::new(), "advanced_rush"),
         "advanced_rush_connected" => (Vec::new(), "advanced_rush_connected"),
         "advanced_timing_attack" => (Vec::new(), "advanced_timing_attack"),
+        "advanced_timing_attack_selective" => {
+            (Vec::new(), "advanced_timing_attack_selective")
+        }
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
         "advanced_target_domination" => (Vec::new(), "advanced_target_domination"),
@@ -4093,29 +4105,43 @@ mod tests {
     #[test]
     fn timed_war_arm_is_one_explicit_axis_and_stays_off_for_control_and_minors() {
         let treatment = builtin_arm("advanced_timing_attack").unwrap();
+        let selective = builtin_arm("advanced_timing_attack_selective").unwrap();
         let control = builtin_arm("advanced").unwrap();
         assert_eq!(
             treatment.spec.differing_axes(&control.spec),
             vec!["timed-war-appointment"]
         );
         assert_eq!(
+            selective.spec.differing_axes(&control.spec),
+            vec!["selective-timed-war-appointment"]
+        );
+        assert_eq!(
             builtin_provenance("advanced_timing_attack", ARTIFACT_DIR).effective,
             "advanced_timing_attack"
         );
+        assert_eq!(
+            builtin_provenance("advanced_timing_attack_selective", ARTIFACT_DIR).effective,
+            "advanced_timing_attack_selective"
+        );
 
-        for (name, enabled) in [
-            ("advanced", false),
-            ("advanced_timing_attack", true),
+        for (name, enabled, selective) in [
+            ("advanced", false, false),
+            ("advanced_timing_attack", true, false),
+            ("advanced_timing_attack_selective", true, true),
         ] {
             let mut game = Game::new(2, 20, 14, 940_012, 80, 0);
             let mut ai = builtin_ai_strict(name, 940_012).unwrap();
             ai.take_turn(&mut game, 0);
+            let war = ai.plan_report().and_then(|plan| plan.war);
             assert_eq!(
-                ai.plan_report()
-                    .and_then(|plan| plan.war)
-                    .is_some_and(|war| war.enabled),
+                war.as_ref().is_some_and(|war| war.enabled),
                 enabled,
                 "{name} must report its actual treatment state"
+            );
+            assert_eq!(
+                war.as_ref().is_some_and(|war| war.selective),
+                selective,
+                "{name} must report its actual appointment policy"
             );
         }
 
@@ -4492,7 +4518,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 66] = [
+            const SCRIPTED: [&str; 67] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4506,6 +4532,7 @@ mod tests {
                 "advanced_rush",
                 "advanced_rush_connected",
                 "advanced_timing_attack",
+                "advanced_timing_attack_selective",
                 "advanced_congress_counter",
                 "advanced_congress_votes",
                 "advanced_congress_counter_hard",

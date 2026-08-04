@@ -540,6 +540,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `advanced_v1` therefore retain the same research, spending, production,
 /// diplomacy, movement, and upgrade decisions. Focused construction tests
 /// additionally assert that `advanced` reports the treatment off.
+/// ⚠ Re-pinned for selective timing v2. Its additional chooser and launch
+/// gates require both `timed_war` and `selective_timed_war`; both initialize
+/// `false`, and only the evaluator-only `selective_timing_attack` constructor
+/// enables them. The typed-arm test checks production `advanced`, v1, and v2
+/// independently, while focused tests cover the selective-only branches.
 /// ⚠ And again for `settler_blocked_turns` surviving a retarget. That reset lives
 /// AFTER `advanced_settler_step`'s `if !self.settler_commit { return moved; }`
 /// early return, and `settler_commit` is `false` in every default constructor —
@@ -547,7 +552,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// entrants return before the changed line is ever reached and the anchor's
 /// behaviour is bit-for-bit what it was. A compatibility re-pin;
 /// `elo_anchor_never_reaches_the_settler_commit_path` checks the claim.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8ae2_0366_ad17_eda1;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0ec6_37a2_7671_d6d6;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

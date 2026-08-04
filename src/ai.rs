@@ -217,6 +217,9 @@ pub struct ForceReport {
 #[derive(Clone, Debug, PartialEq)]
 pub struct WarPlanReport {
     pub enabled: bool,
+    /// Whether appointment and launch use the preregistered selective-v2
+    /// policy. The mutable campaign still lives in the same `WarPlan`.
+    pub selective: bool,
     pub active: bool,
     pub phase: Option<&'static str>,
     pub target_player: Option<usize>,
