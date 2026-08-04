@@ -9640,15 +9640,7 @@ const WONDER_PAINTER = {
     }
   },
   reef(x, y, k, art) {
-    wonderWater(x, y, k, art.tint, 16 * k, 6.5 * k);
-    const colors = ["#dc765d", "#e7b45c", "#6dc2a6", "#9b6ab3"];
-    for (let i = 0; i < 8; i++) {
-      cx.fillStyle = colors[i % colors.length];
-      cx.beginPath();
-      cx.ellipse(x + (i - 3.5) * 4 * k, y + ((i % 3) - 1) * 2.6 * k,
-                 2.1 * k, 1.5 * k, 0, 0, 7);
-      cx.fill();
-    }
+    paintReefShelf(x, y, k, art.tint);
   },
   islets(x, y, k, art) {
     wonderWater(x, y, k, art.tint, 17 * k, 7 * k);
@@ -9759,6 +9751,88 @@ const WONDER_PAINTER = {
     }
   },
 };
+
+// A reef is a low, continuous shelf below the waterline, not a string of bright
+// bubbles. Keeping the shelf, channels, and subdued coral ridges together also
+// makes the ordinary Reef and the Great Barrier Reef read as the same feature.
+function paintReefShelf(x, y, k, water) {
+  const shelfPath = (lift = 0) => {
+    cx.beginPath();
+    cx.moveTo(x - 17 * k, y + (3.6 + lift) * k);
+    cx.bezierCurveTo(x - 14 * k, y - (2.2 - lift) * k,
+                     x - 8 * k, y - (6.1 - lift) * k,
+                     x - 2 * k, y - (4.9 - lift) * k);
+    cx.bezierCurveTo(x + 4 * k, y - (8.1 - lift) * k,
+                     x + 12 * k, y - (4.2 - lift) * k,
+                     x + 17 * k, y + (1.5 + lift) * k);
+    cx.bezierCurveTo(x + 13 * k, y + (6.6 + lift) * k,
+                     x + 6 * k, y + (8.2 + lift) * k,
+                     x - 1 * k, y + (7.1 + lift) * k);
+    cx.bezierCurveTo(x - 8 * k, y + (9.3 + lift) * k,
+                     x - 15 * k, y + (7.1 + lift) * k,
+                     x - 17 * k, y + (3.6 + lift) * k);
+    cx.closePath();
+  };
+  const ridge = (dx, dy, rx, ry, fill, edge) => {
+    const px = x + dx * k, py = y + dy * k;
+    cx.fillStyle = fill; cx.strokeStyle = edge;
+    cx.lineWidth = Math.max(.55, .78 * k);
+    cx.beginPath();
+    cx.moveTo(px - rx * k, py + ry * .38 * k);
+    cx.bezierCurveTo(px - rx * .9 * k, py - ry * .32 * k,
+                     px - rx * .42 * k, py - ry * k,
+                     px + rx * .1 * k, py - ry * .78 * k);
+    cx.bezierCurveTo(px + rx * .66 * k, py - ry * 1.04 * k,
+                     px + rx * 1.02 * k, py - ry * .22 * k,
+                     px + rx * .86 * k, py + ry * .46 * k);
+    cx.bezierCurveTo(px + rx * .34 * k, py + ry * .72 * k,
+                     px - rx * .43 * k, py + ry * .72 * k,
+                     px - rx * k, py + ry * .38 * k);
+    cx.closePath(); cx.fill(); cx.stroke();
+    cx.strokeStyle = shade(fill, 1.18); cx.globalAlpha = .52;
+    cx.lineWidth = Math.max(.45, .56 * k);
+    cx.beginPath();
+    cx.moveTo(px - rx * .48 * k, py + ry * .05 * k);
+    cx.quadraticCurveTo(px - rx * .04 * k, py - ry * .43 * k,
+                        px + rx * .48 * k, py - ry * .16 * k);
+    cx.stroke(); cx.globalAlpha = 1;
+  };
+
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  // A soft shadow gives the reef a shallow, underwater edge without making it
+  // look like a floating island.
+  cx.fillStyle = "rgba(7,47,61,.2)";
+  shelfPath(1.15); cx.fill();
+  cx.fillStyle = shade(water, .84); cx.strokeStyle = shade(water, .46);
+  cx.lineWidth = Math.max(.65, 1.15 * k);
+  shelfPath(); cx.fill(); cx.stroke();
+
+  // Dark lagoon channels break the shelf into a natural, branching structure.
+  cx.strokeStyle = shade(water, .5); cx.globalAlpha = .66;
+  cx.lineWidth = Math.max(.55, .92 * k);
+  cx.beginPath();
+  cx.moveTo(x - 13.6 * k, y + 3.1 * k);
+  cx.quadraticCurveTo(x - 7.4 * k, y - 1.5 * k, x - 1.8 * k, y + .1 * k);
+  cx.quadraticCurveTo(x + 5.2 * k, y + 2.3 * k, x + 13.1 * k, y - .8 * k);
+  cx.moveTo(x - 4.2 * k, y + 5.7 * k);
+  cx.quadraticCurveTo(x + .8 * k, y + 2.5 * k, x + 6.4 * k, y + 5.6 * k);
+  cx.stroke(); cx.globalAlpha = 1;
+
+  // Muted coral shelves feel geological at map scale; the restrained palette
+  // keeps the feature legible without the toy-like rainbow of circular blobs.
+  ridge(-9.1, 2.5, 5.1, 3.2, "#a87658", "#62463e");
+  ridge(-.2, -.9, 6.1, 4.4, "#c29a68", "#735a3d");
+  ridge(9.7, 3.1, 4.4, 3.1, "#639178", "#355d58");
+
+  cx.strokeStyle = "rgba(213,242,232,.5)"; cx.lineWidth = Math.max(.5, .7 * k);
+  cx.beginPath();
+  cx.quadraticCurveTo(x - 14.2 * k, y - .3 * k, x - 10.5 * k, y - 2.2 * k);
+  cx.moveTo(x + 9.2 * k, y + 6.3 * k);
+  cx.quadraticCurveTo(x + 12.3 * k, y + 5.4 * k, x + 14.2 * k, y + 2.8 * k);
+  cx.stroke();
+  cx.restore();
+}
 
 // Draw a wonder that has no photograph, at whatever size its footprint gives
 // it. Returns false only for a feature the roster does not name, which is the
@@ -10098,34 +10172,7 @@ function drawStrategicWoodlandIcon(t, x, y) {
 }
 
 function drawStrategicReefIcon(x, y) {
-  cx.save();
-  cx.lineCap = "round"; cx.lineJoin = "round";
-  // Interlocking shallow pools make the base asymmetrical rather than a boat
-  // hull. Rounded coral clusters then read as a living reef at survey scale.
-  cx.fillStyle = "#1d7f94"; cx.strokeStyle = "#0d4657"; cx.lineWidth = 1.3;
-  for (const [dx, dy, rx, ry] of [[-10, 4, 8, 4.2], [-1, 0, 9, 5.3], [10, 4, 7, 3.8]]) {
-    cx.beginPath(); cx.ellipse(x + dx, y + dy, rx, ry, -.12, 0, 7); cx.fill(); cx.stroke();
-  }
-  const coralCluster = (px, py, radius, fill, edge) => {
-    cx.fillStyle = fill; cx.strokeStyle = edge; cx.lineWidth = 1;
-    const lobes = [[0, -.55], [-.52, -.12], [.52, -.12], [-.35, .42], [.35, .42]];
-    for (const [lx, ly] of lobes) {
-      cx.beginPath();
-      cx.arc(px + lx * radius, py + ly * radius, radius * .48, 0, 7);
-      cx.fill(); cx.stroke();
-    }
-    cx.fillStyle = "rgba(255,245,205,.62)";
-    cx.beginPath(); cx.arc(px, py, radius * .17, 0, 7); cx.fill();
-  };
-  coralCluster(x - 9, y + 3, 6.2, "#e78568", "#6c4038");
-  coralCluster(x, y - 2, 7.4, "#edbb63", "#76522f");
-  coralCluster(x + 9, y + 4, 5.4, "#79bfa0", "#315f5b");
-  cx.strokeStyle = "rgba(213,255,245,.72)"; cx.lineWidth = 1.05;
-  cx.beginPath();
-  cx.arc(x - 13, y + 1, 4.5, .3, 2.35);
-  cx.arc(x + 12, y + 7, 3.7, 3.5, 5.7);
-  cx.stroke();
-  cx.restore();
+  paintReefShelf(x, y, 1, "#2b8391");
 }
 
 function drawStrategicOasisIcon(x, y) {
