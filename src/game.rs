@@ -36799,10 +36799,10 @@ impl Game {
                 || tile.wonder.is_some()
                 || tile.improvement.as_deref() == Some("national_park")
                 || (!self.rules.is_passable(tile) && spec.placement != "mountain")
-                || tile
-                    .feature
-                    .as_ref()
-                    .is_some_and(|feature| self.rules.features[feature].natural_wonder)
+                || tile.feature.as_ref().is_some_and(|feature| {
+                    let feature = &self.rules.features[feature];
+                    feature.natural_wonder || feature.impassable
+                })
                 || tile.resource.as_ref().is_some_and(|resource| {
                     // A buried Artifact reserves nothing — see `district_sites`.
                     !matches!(
@@ -60413,6 +60413,40 @@ mod combat_scenarios {
         assert!(builders
             .iter()
             .any(|builder| builder.charges > g.rules.units["builder"].charges));
+    }
+
+    #[test]
+    fn world_wonders_reject_forbidden_relief_and_unremovable_features() {
+        let (mut g, center, ring) = controlled_game(325);
+        let cid = g.found_city_for(0, center, None);
+        let site = ring[0];
+        g.map.tiles.get_mut(&site).unwrap().owner_city = Some(cid);
+
+        g.players[0].techs.insert(crate::name!("mathematics"));
+        {
+            let tile = g.map.tiles.get_mut(&site).unwrap();
+            tile.terrain = crate::name!("desert");
+            tile.hills = true;
+        }
+        assert!(
+            !g.wonder_sites(cid, "petra").contains(&site),
+            "BUILDING_PETRA only lists flat TERRAIN_DESERT"
+        );
+        g.map.tiles.get_mut(&site).unwrap().hills = false;
+        assert!(g.wonder_sites(cid, "petra").contains(&site));
+
+        g.players[0].techs.insert(crate::name!("engineering"));
+        {
+            let tile = g.map.tiles.get_mut(&site).unwrap();
+            tile.terrain = crate::name!("mountain");
+            tile.feature = Some(crate::name!("volcano"));
+        }
+        assert!(
+            !g.wonder_sites(cid, "machu_picchu").contains(&site),
+            "the mountain exception must not make an impassable Volcano removable"
+        );
+        g.map.tiles.get_mut(&site).unwrap().feature = None;
+        assert!(g.wonder_sites(cid, "machu_picchu").contains(&site));
     }
 
     #[test]
