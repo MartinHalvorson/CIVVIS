@@ -87,6 +87,9 @@ cp "$repo_root/beta/download.html" "$out/download/index.html"
 # The gate travels *inside* the deployed directory. See beta/_worker.js for
 # why this is not a `functions/` directory.
 cp "$repo_root/beta/_worker.js" "$out/_worker.js"
+# Its very existence switches Pages from single-page-app fallback (unknown
+# path -> the front page, 200) to honest 404s. See the comment inside it.
+cp "$repo_root/beta/404.html" "$out/404.html"
 
 # The viewer, copied and then made to work one directory down. Each
 # substitution is checked, because a silently unmatched one publishes a page

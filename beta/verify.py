@@ -99,6 +99,9 @@ def required(mount: str) -> list:
         f"{lane}build.json",
         (f"{lane}assets/feature-atlas.webp", f"{lane}assets/feature-atlas.png"),
         "_worker.js",
+        # Its existence is behaviour: without it, Pages answers unknown paths
+        # with the front page instead of a 404.
+        "404.html",
     ]
 
 
@@ -366,14 +369,18 @@ def check_gate(dist: pathlib.Path) -> list[str]:
         elif b"shim.js" not in head_lane:
             problems.append("/test/ is not serving the viewer")
 
-        # /beta — the lane's day-one name — is scrapped: no forward, no gate,
-        # just the 404 any nonexistent path gets.
-        try:
-            get("/beta/")
-            problems.append("/beta/ still answers; it is meant to be scrapped")
-        except urllib.error.HTTPError as gone:
-            if gone.code != 404:
-                problems.append(f"/beta/ answers HTTP {gone.code} rather than 404")
+        # /beta — the lane's day-one name — is scrapped, and dead paths in
+        # general answer 404. The second probe is what proves 404.html is
+        # doing its job: without it, Pages serves the front page for any
+        # unknown HTML path (its single-page-app fallback), which is how a
+        # "scrapped" URL came back from the dead once already.
+        for dead in ("/beta/", "/no-such-page"):
+            try:
+                get(dead)
+                problems.append(f"{dead} still answers; it is meant to 404")
+            except urllib.error.HTTPError as gone:
+                if gone.code != 404:
+                    problems.append(f"{dead} answers HTTP {gone.code} rather than 404")
 
         # Both engines reach their pages as modules, not as HTML apologies.
         for lane in ("/civvis.wasm", "/test/civvis.wasm"):

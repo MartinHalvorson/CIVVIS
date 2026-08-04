@@ -292,16 +292,16 @@ def main(argv: list[str] | None = None) -> int:
         # unfinished build to be the first search result for the project.
         check(problems, "the test lane is not indexed", lane["robots"] == "noindex", f"got {lane['robots']!r}")
 
-        # /beta — the lane's day-one name — is scrapped, not forwarded: the
-        # worker gives it no case at all, so it falls through to the asset
-        # layer (which has no files there in a real deploy, hence a plain
-        # 404). What this pins is the *absence* of routing: no redirect, no
-        # gate, no special headers keeping the old name alive.
-        scrapped = hit(path="/beta/")
-        check(problems, "/beta is scrapped, not forwarded",
-              scrapped["status"] == 200 and scrapped["body"].strip() == "asset:/beta/"
-              and not scrapped["location"],
-              f"got {scrapped['status']} {scrapped['location']!r} {scrapped['body'][:40]!r}")
+        # /beta — the lane's day-one name — is scrapped: an explicit 404 from
+        # the worker itself. It cannot merely fall through, because for an
+        # unknown HTML path the asset layer serves the front page (Pages'
+        # single-page-app fallback) — the CI routing gate caught the old name
+        # answering with a working copy of the site.
+        for scrapped_path in ("/beta", "/beta/", "/beta/civvis.wasm"):
+            scrapped = hit(path=scrapped_path)
+            check(problems, f"{scrapped_path} is scrapped",
+                  scrapped["status"] == 404 and not scrapped["location"],
+                  f"got {scrapped['status']} {scrapped['location']!r}")
 
         # The same engine-and-atlas header rules hold in both lanes; a rule
         # keyed on "/test/" alone would quietly leave the root lane's module
