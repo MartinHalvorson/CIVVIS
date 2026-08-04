@@ -132,22 +132,20 @@
   }
   button, select, input, textarea { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; }
-  /* Two instruments, two edges. The standings grow across the map's masthead
-     as players appear; the victory tracker and the world minimap share the
-     right-hand rail. These numbers are their seams and caps. Dragging a panel
-     writes its own measurement inline here, so a custom layout remains exact. */
+  /* The default spectator geometry is literal: the victory tracker owns ten
+     per cent of the screen width, the player HUD reaches exactly to its left
+     edge, and the world minimap's frame spans 17% of the screen diagonal.
+     JavaScript refreshes the latter two dimensions from the viewport while a
+     viewer has not saved a custom layout; a dragged panel still writes its
+     own measurements inline and keeps them exactly. */
   #maparea {
     flex: 1; min-width: 0; position: relative; overflow: hidden; background: #07110f;
-    --hud-rail-width: clamp(258px, 20vw, 320px);
-    /* The tracker is intentionally half the old 320px desktop rail. Keep the
-       authored default independent from the wider minimap below it. */
-    --victory-hud-width: min(160px, 50%);
-    /* Whatever the width steps ask for, the rail never takes more than this
-       share of the map it floats over. Between 620px and 980px the command
-       deck is still a column of its own, and without the cap the rail and the
-       deck together left the world a strip barely wider than a city. */
-    --hud-rail-share: 38%;
+    /* These are safe first-paint fallbacks. syncDefaultMinimapGeometry() then
+       preserves this frame's 320:172 proportion at 17% of the viewport's
+       actual diagonal. */
+    --world-minimap-width: 320px;
     --minimap-height: 172px;
+    --victory-hud-width: 10vw;
     /* A ceiling on the masthead, whatever the player count or a dragged layout
        asks for, so a table of twelve cannot swallow the world underneath it.
        Rows past it scroll inside the ribbon, which is what the row locks are
@@ -889,7 +887,7 @@
 
   #map-controls-dock {
     position: absolute; z-index: 14;
-    right: calc(min(var(--hud-rail-width), var(--hud-rail-share)) + 6px);
+    right: calc(var(--world-minimap-width) + 6px);
     bottom: 0; left: 0;
     display: flex; align-items: stretch; gap: 6px; min-width: 0;
     pointer-events: none;
@@ -1196,13 +1194,9 @@
      they are the ones that also gate the End Turn button. */
   #notify {
     position: absolute; z-index: 8; top: 196px; bottom: 200px;
-    /* Inside the rail, not on top of it. The victory tracker took the right
-       edge of the map, and these chips are drawn above it, so at the edge they
-       covered its whole values column — tourism, civilizations converted,
-       diplomatic points, score. This is the offset the player standings
-       already use to clear the same rail, and both fall back to the edge when
-       the viewer hides the tracker in Interface Settings. */
-    right: calc(min(var(--hud-rail-width), var(--hud-rail-share)) + 20px);
+    /* Reserve the upper-right victory rail so notification chips cannot
+       obscure its values. Hiding it in Interface Settings returns this edge. */
+    right: calc(var(--victory-hud-width) + 20px);
     display: none; flex-direction: column; align-items: flex-end; gap: 6px;
     overflow: hidden auto; scrollbar-width: none; pointer-events: none;
   }
@@ -1551,11 +1545,11 @@
   .tip-adj { color: #c6d6cf; }
   .tip-adj-count { display: inline-block; min-width: 20px; color: var(--muted); }
   .tip-adj-part { color: var(--muted); }
-  /* The foot of the rail. It stands in the lower-right corner, under the
-     victory tracker, and its height is the seam the tracker stops at. */
+  /* The world minimap is anchored in the lower-right corner. Its top is the
+     seam where the victory tracker ends. */
   .minimap-frame {
     position: absolute; z-index: 6; left: auto; right: 0; bottom: 0;
-    width: min(var(--hud-rail-width), var(--hud-rail-share)); height: var(--minimap-height);
+    width: var(--world-minimap-width); height: var(--minimap-height);
     display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 6px; border-radius: 12px;
     background: #091310e6; border: 1px solid #40584f; box-shadow: 0 14px 35px #0008;
   }
@@ -2134,22 +2128,13 @@
   }
 
   /* The standings are the map's masthead, with the turn plate as the left cell
-     and the table filling the rest. Both preferred dimensions come from the
-     visible player count: a one-row human game stays consolidated, then the
-     panel grows toward the victory rail as more civilizations appear. Every
+     and the table filling every pixel through the victory tracker's left edge.
+     The player count changes its height, not that horizontal contract. Every
      civilization keeps one fixed-height row; after eight rows the table
      scrolls instead of swallowing the map. */
   #playerhud {
     position: absolute; z-index: 7; pointer-events: auto;
-    top: 0; left: 0; right: auto;
-    /* The masthead stops at the victory tracker, which is the only instrument
-       beside it up here — not at --hud-rail-width, which is the wider
-       reservation the minimap needs down in the corner. Measuring the seam
-       against the rail left 192px of empty map between the two panels at
-       1600px and squeezed the twelve value columns to 27px each, narrower than a
-       four-digit figure. */
-    width: min(var(--player-hud-width, 100%),
-      calc(100% - var(--victory-hud-width) - 20px));
+    top: 0; left: 0; right: var(--victory-hud-width); width: auto;
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
     /* Wide enough for the whole of "Watch as" at the fitter's own type size.
        At 68px the button's own text overflowed its content box by a pixel and
@@ -2226,7 +2211,7 @@
   }
   /* Hiding the victory rail hands its column back to the masthead. */
   body.overlay-victory-hidden #playerhud {
-    right: auto; width: min(var(--player-hud-width, 100%), calc(100% - 24px));
+    right: 0; width: auto;
   }
   /* Across the masthead the plate stacks in its own left cell, which is the one
      place in the panel where height is cheaper than width. */
@@ -2518,17 +2503,13 @@
     color: var(--stat-color); font-size: .78em; line-height: 1;
     letter-spacing: 0; text-shadow: 0 1px 2px #000;
   }
-  /* Victory progress starts in the right corner and grows down with the rows
-     it actually shows, never past the world minimap. Six races read one under
-     the other, each keeping the rail's full width for civilization names. If
-     the required top-three-plus-viewer rows reach the minimap seam, the rail
-     scrolls instead of overlapping it. */
+  /* Victory progress starts in the upper-right corner and continues to the
+     world minimap's top edge. Its paths scroll inside that full-height rail,
+     rather than shortening the tracker to however many rows are present. */
   #victoryhud {
     position: absolute; z-index: 7; right: 0; left: auto;
-    top: 0; bottom: auto;
-    width: var(--victory-hud-width);
-    height: min(var(--victory-hud-height, 100%),
-      calc(100% - var(--minimap-height) - 32px));
+    top: 0; bottom: var(--minimap-height);
+    width: var(--victory-hud-width); height: auto;
     display: grid; grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 22px minmax(0, 1fr);
     align-items: stretch; gap: 5px; min-width: 0; padding: 5px;
@@ -2537,10 +2518,9 @@
     box-shadow: 0 14px 38px #000a, inset 0 1px #ffffff0a;
     backdrop-filter: blur(16px) saturate(130%); pointer-events: auto;
   }
-  /* Switching the minimap off raises the tracker's height ceiling to the
-     floor; a compact tracker still keeps only the height its rows need. */
+  /* With no world minimap, the tracker takes the full right edge. */
   body.overlay-minimap-hidden #victoryhud {
-    bottom: auto; height: min(var(--victory-hud-height, 100%), 100%);
+    bottom: 0; height: auto;
   }
   #victoryhud > .hud-section-heading {
     position: relative; grid-column: 1; grid-row: 1; min-height: 22px;
@@ -2695,7 +2675,6 @@
       grid-template-columns: 144px minmax(0, 1fr);
       --hud-ident-min: 41px; --hud-stat-min: 36px;
     }
-    #maparea { --hud-rail-width: clamp(240px, 20vw, 300px); }
   }
   /* Twelve value columns, a turn plate and a standing rail stop fitting side by
      side around here. */
@@ -2704,10 +2683,9 @@
       grid-template-columns: 144px minmax(0, 1fr);
       --hud-ident-min: 33.5px; --hud-column-gap: 4px; --hud-stat-min: 34px;
     }
-    #maparea { --hud-rail-width: 224px; }
   }
   @media (max-width: 1180px) {
-    #maparea { --hud-rail-width: 200px; --minimap-height: 158px; }
+    #maparea { --minimap-height: 158px; }
     /* This 140px is not the plate width anyone sees below 1180: the masthead is
        already in its compact band here, and that band's own clamp() outranks
        this rule. The floor that matters for a roster row is the one on
@@ -2729,7 +2707,7 @@
   }
   @media (max-width: 720px) {
     #side { inset-block-start: 132px; }
-    #maparea { --hud-rail-width: 182px; --minimap-height: 138px; }
+    #maparea { --minimap-height: 138px; }
     #playerhud {
       --hud-watch-column: 68px;
       --hud-stat-min: 30px; --hud-stat-gap: 2px;
@@ -5956,6 +5934,32 @@ try {
   if (saved && typeof saved === "object") HUD_LAYOUT = saved;
 } catch (_) { HUD_LAYOUT = {}; }
 
+// Keep the authored frame proportion while sizing the *frame diagonal* against
+// the screen rather than against a particular monitor. The fallback CSS values
+// cover first paint; this runs during every viewport resize and when a viewer
+// resets a previously dragged minimap. Narrow layouts retain their dedicated
+// compact geometry below 1100px.
+const WORLD_MINIMAP_DIAGONAL_SHARE = .17;
+const WORLD_MINIMAP_REFERENCE_WIDTH = 320;
+const WORLD_MINIMAP_REFERENCE_HEIGHT = 172;
+const WIDE_SPECTATOR_LAYOUT_QUERY = window.matchMedia("(min-width: 1101px)");
+function syncDefaultMinimapGeometry() {
+  if (HUD_LAYOUT.minimap || !WIDE_SPECTATOR_LAYOUT_QUERY.matches) {
+    // A CSS media rule owns the compact layout. Do not leave the former desktop
+    // calculation inline when a browser window crosses into that layout.
+    if (!HUD_LAYOUT.minimap) {
+      area.style.removeProperty("--world-minimap-width");
+      area.style.removeProperty("--minimap-height");
+    }
+    return;
+  }
+  const scale = WORLD_MINIMAP_DIAGONAL_SHARE *
+    Math.hypot(window.innerWidth, window.innerHeight) /
+    Math.hypot(WORLD_MINIMAP_REFERENCE_WIDTH, WORLD_MINIMAP_REFERENCE_HEIGHT);
+  area.style.setProperty("--world-minimap-width", `${Math.round(WORLD_MINIMAP_REFERENCE_WIDTH * scale)}px`);
+  area.style.setProperty("--minimap-height", `${Math.round(WORLD_MINIMAP_REFERENCE_HEIGHT * scale)}px`);
+}
+
 function hudWidgetMetrics(element) {
   const areaRect = area.getBoundingClientRect();
   const rect = element.getBoundingClientRect();
@@ -6083,7 +6087,7 @@ function resetHudWidget(name, persist = true) {
   config.element.classList.remove("layout-widget-custom", "layout-widget-active");
   // The tracker reads its neighbours' heights to know where to start and stop.
   // Hand those back to the stylesheet at the same moment the neighbour returns.
-  if (name === "minimap") area.style.removeProperty("--minimap-height");
+  if (name === "minimap") syncDefaultMinimapGeometry();
   if ((name === "players" || name === "victory") && state) drawPlayerHud();
   if (persist) saveHudLayout();
   if (name === "minimap") requestAnimationFrame(refreshMiniForLayout);
@@ -6808,6 +6812,7 @@ function syncMiniCanvas() {
 
 function resize() {
   DPR = window.devicePixelRatio || 1;   // native-resolution backing store (4K crisp)
+  syncDefaultMinimapGeometry();
   // The widgets are placed first and the map area is measured against where
   // they landed, so a fitted area is never one window size out of date. The
   // suspend keeps each widget from re-fitting the area on its way past.
@@ -18549,12 +18554,11 @@ function playerHudOverview() {
   // row of columns on a viewport too narrow to have a rail at all.
   // One contender needs only a compact band. Three leaders take a taller one,
   // and a watched player outside them adds exactly one more row. The outer
-  // tracker follows that content until the map/minimap seam caps it.
+  // tracker itself now fills the map/minimap seam; these remain the ribbon's
+  // internal content floors for its responsive rail and wide shapes.
   const victoryTrackHeight = Math.max(64, 50 + defaultVictoryRows * 20);
   const victoryMinHeight = victoryCount * victoryTrackHeight + Math.max(0, victoryCount - 1) * 2;
   const victoryMinWidth = victoryCount * 148 + Math.max(0, victoryCount - 1) * 2;
-  const victoryHudHeight = victoryMinHeight + 35;
-  document.getElementById("maparea").style.setProperty("--victory-hud-height", `${victoryHudHeight}px`);
   const overview =
     `<div class="hud-section-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
     `aria-label="Move victory tracker; use arrow keys or drag" title="Drag to move · arrow keys also move" id="victory-tracker-title">` +
@@ -18772,15 +18776,9 @@ function drawPlayerHud() {
   // ceiling scrolls, so this is what the panel would *like* rather than what
   // it is allowed to take.
   const requestedHeight = Math.max(154, 50 + rows * 28);
-  // A newly started human game usually knows only its own row; do not stretch
-  // that one-row scorecard across the whole map. Each additional known player
-  // buys the table another 100px until the available masthead width caps it.
-  // Twelve-player spectator mode consequently reaches the full masthead.
-  const requestedWidth = 854 + Math.max(0, rows - 1) * 100;
   const mapArea = document.getElementById("maparea");
   if (!HUD_LAYOUT.players) {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
-    mapArea.style.setProperty("--player-hud-width", `${requestedWidth}px`);
   }
   const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
   const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
