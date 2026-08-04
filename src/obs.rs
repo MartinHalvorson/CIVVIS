@@ -1620,6 +1620,11 @@ mod tests {
             .unwrap();
         assert_eq!(observed_city["religious_pressure"]["Test Faith"], 240.0);
         assert!(observed_city["atheist_pressure"].is_number());
+        assert!(observed_city["power_demand"].is_number());
+        assert!(observed_city["power_supply"].is_number());
+        assert!(observed_city["powered"].is_boolean());
+        assert!(observed_city["loyalty"].is_number());
+        assert!(observed_city["loyalty_per_turn"].is_number());
 
         const INDEX: &str = include_str!("../web/index.html");
         assert!(INDEX.contains("id=\"map-controls-dock\""));
@@ -1651,11 +1656,17 @@ mod tests {
                 "government",
                 "appeal",
                 "tourism",
+                "loyalty",
+                "power",
             ],
-            "every base-game lens belongs in the toolbar, in reading order"
+            "every manual Civilization VI lens belongs in the toolbar, in reading order"
         );
         for renderer in [
             "function drawReligiousPressureRing(",
+            "function drawLoyaltyLensFlat(",
+            "function drawLoyaltyLensPlanet(",
+            "function drawPowerLensFlat(",
+            "function drawPowerLensPlanet(",
             "function drawFlatLensGroupLabels(",
             "function drawPlanetLensGroupLabels(",
             "function drawThematicLensFlat(",
@@ -1668,6 +1679,12 @@ mod tests {
                 "the lens toolbar is missing renderer {renderer}"
             );
         }
+        assert!(INDEX.contains(
+            "{id: \"LoyaltyLens\", key: \"8\", spectator: true, run: () => setMapLens(\"loyalty\")},"
+        ));
+        assert!(INDEX.contains(
+            "{id: \"PowerLens\", key: \"0\", spectator: true, run: () => setMapLens(\"power\")},"
+        ));
         let start = INDEX
             .find("function tileTipLines(t, pos, tileKey)")
             .expect("the tile hover has one ordered builder");
