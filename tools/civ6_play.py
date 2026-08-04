@@ -112,24 +112,6 @@ def hold_macos_awake() -> bool:
     return True
 
 
-def load_settle_plan(path: str | None) -> list[dict] | None:
-    """CIVVIS's ranked sites, or None when the agent should use its own search."""
-    if not path:
-        return None
-    try:
-        doc = json.loads(Path(path).read_text())
-    except Exception as error:
-        print(f"cannot read settle plan {path}: {error}", file=sys.stderr)
-        return None
-    sites = [
-        {"x": int(site["x"]), "y": int(site["y"])}
-        for site in doc.get("sites", [])
-        if "x" in site and "y" in site
-    ]
-    print(f"settle plan: {len(sites)} CIVVIS-ranked sites from {path}")
-    return sites or None
-
-
 def state_export_enabled(args: argparse.Namespace) -> bool:
     """Whether this run must publish an authoritative board each turn."""
     # A CIVVIS decision worker cannot make an informed decision without a state
@@ -157,8 +139,10 @@ def build_config(args: argparse.Namespace) -> dict:
         "MapSize": args.map_size,
         "Difficulty": args.difficulty,
         "GameSpeed": args.speed,
-        "MapSeed": args.seed,
-        "GameSeed": args.seed,
+        # The seed rows are a diagnostic probe only. They are omitted from normal
+        # runs because this build demonstrably ignores them at world generation.
+        "MapSeed": args.seed if args.seed_probe else None,
+        "GameSeed": args.seed if args.seed_probe else None,
         "MaxTurns": args.max_turns,
         "HumanPlayers": 1,
         # Explicit, every run, so a mode can never be inherited from whatever
@@ -193,17 +177,6 @@ def build_config(args: argparse.Namespace) -> dict:
         # attackers means a siege that never resolves.
         "AssaultWidth": args.assault_width,
         "SettlersInFlight": args.settlers_in_flight,
-        # How many of CIVVIS's top-ranked settle sites the settler may choose the
-        # NEAREST of. 1 reproduces the old behaviour exactly — always the highest
-        # ranked unoccupied plot — which makes it the control arm.
-        #
-        # Measured over twelve runs at window 1: 484 `move_to_site` orders against
-        # 48 `found_city`, about ten turns of walking per city. One settler in
-        # flight at one city per ~15 turns caps the empire at 3-4 over the ~100
-        # turns a run actually survives, and the observed median IS 3. That
-        # arithmetic starves the army, which is why war is declared in only 19 of
-        # 47 runs and no capital has ever been taken.
-        "PlanNearWindow": args.plan_near_window,
         # How much a rival being STRONGER than us costs in the war-target score,
         # expressed in tiles of walking per unit of score ratio. `findWarTarget` used
         # to weigh only proximity, so it declared on the runaway leader: the deepest
@@ -290,12 +263,6 @@ def build_config(args: argparse.Namespace) -> dict:
         # and far too slow for a decision loop: newly explored ground is exactly
         # what changes where the army and the next city should go.
         "TileExportEvery": args.tile_export_every,
-        # CIVVIS's own settle ranking, produced by `civvis-advise --plan` from a
-        # previous run's exported map. Baked in because the mod has no runtime
-        # inbound channel: no `io`, and FireTuner answered none of seven framings
-        # against a live game. Valid only for the SEED it was planned on — the
-        # world is a function of the seed, so the same seed is the same map.
-        "SettlePlan": load_settle_plan(args.settle_plan),
         "AnnouncementSeconds": args.announcement_seconds,
         "EraAnnouncementSeconds": args.era_announcement_seconds,
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
@@ -2196,7 +2163,11 @@ def _play(args: argparse.Namespace) -> int:
         "difficulty": config["Difficulty"],
         "map_size": config["MapSize"],
         "speed": config["GameSpeed"],
-        "seed": config["MapSeed"],
+        # A normal real-Civ6 run has no seed value: the control setup has no
+        # working world-generation channel. Keep a probe request distinct from
+        # a game-world seed so downstream reports cannot mistake it for one.
+        "seed_probe": args.seed_probe,
+        "seed_request": config["MapSeed"],
         "max_turns": config["MaxTurns"],
         # A run stopped because the game had the wrong modes never played; it
         # is a refusal, not a result. Recording it as `stopped` would file it
@@ -2283,7 +2254,11 @@ def main(argv: list[str] | None = None) -> int:
     # unless they match what was asked, so this is checked rather than assumed.
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
     ap.add_argument("--speed", default="GAMESPEED_ONLINE")
-    ap.add_argument("--seed", type=int, default=424242)
+    ap.add_argument("--seed", type=int, default=424242,
+                    help="candidate map/game seed, written only with --seed-probe")
+    ap.add_argument("--seed-probe", action="store_true", default=False,
+                    help="write requested map/game seeds for civ6_seed_check; does not "
+                         "make the real-Civ6 world reproducible")
     ap.add_argument("--max-turns", type=int, default=150)
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", help="exact Firaxis leader type to select and verify")
@@ -2302,13 +2277,15 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--make-war", dest="make_war", action="store_true", default=True)
     ap.add_argument("--no-war", dest="make_war", action="store_false")
     # The envoy lane. OFF by default because `chooseEnvoy` is blamed for three
-    # game-core SIGSEGVs (3-for-3 against 0-for-2 on the same seed) and the fix
-    # for the handle defect behind them is a hypothesis, not a verified result.
+    # game-core SIGSEGVs (3-for-3 against 0-for-2 across repeated requested-seed
+    # runs) and the fix for the handle defect behind them is a hypothesis, not a
+    # verified result.
     # Until an isolation batch clears it, the known-stable skip stands.
     #
     # It is exposed here because the Lua comment asks for exactly this
     # experiment -- "a CONFIG change, not a code change: place-only, then
-    # consider-only, same seed" -- and there was no way to run it without
+    # consider-only, across independent random-world samples" -- and there was
+    # no way to run it without
     # hand-editing the mod. `EnvoyPlace`/`EnvoyLevy`/`EnvoyConsider` switch the
     # three mutations independently, so one variable moves at a time.
     ap.add_argument("--envoys", dest="envoys", action="store_true", default=False)
@@ -2323,9 +2300,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-envoy-consider", dest="envoy_consider", action="store_false")
     ap.add_argument("--assault-width", type=int, default=2)
     ap.add_argument("--settlers-in-flight", type=int, default=1)
-    # 1 = the shipped behaviour (always CIVVIS's top-ranked unoccupied site),
-    # which is what makes it a usable control arm for the near-window A/B.
-    ap.add_argument("--plan-near-window", type=int, default=6)
     ap.add_argument("--strength-weight", type=int, default=20)
     ap.add_argument("--army-cap", type=int, default=18)
     ap.add_argument("--siege-units", type=int, default=4)
@@ -2402,9 +2376,6 @@ def main(argv: list[str] | None = None) -> int:
                     help="polls before giving up on CIVVIS and running the built-ins")
     ap.add_argument("--orders-max-stale", type=int, default=4,
                     help="how many turns behind a reusable CIVVIS answer may be")
-    ap.add_argument("--settle-plan", default=None,
-                    help="JSON from `civvis-advise --plan`: CIVVIS decides where "
-                         "cities go. Only valid for the seed it was planned on.")
     ap.add_argument("--window-vfrac", type=float, default=1.0,
                     help="share of screen height for the game window; 0.5 puts "
                          "it in a quadrant so CIVVIS can own the other half")
