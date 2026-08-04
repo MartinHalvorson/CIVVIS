@@ -1955,6 +1955,10 @@
   .render-resolution-row { grid-template-columns: minmax(0, 1fr) minmax(104px, 1fr); }
   .render-resolution-row > span, .render-resolution-row > select { min-width: 0; }
   .render-resolution-row > span { overflow-wrap: anywhere; }
+  .resource-display-setting { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .resource-display-setting > span, .resource-display-setting > select { min-width: 0; }
+  .resource-display-setting > span { overflow-wrap: anywhere; }
+  .resource-display-setting > select { width: 100%; }
   .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--muted); font-size: var(--type-secondary); cursor: pointer; }
   .setting-row span { display: flex; align-items: center; gap: 7px; }
   .setting-row kbd { margin: 0; }
@@ -1965,6 +1969,12 @@
   kbd { display: inline-grid; min-width: 19px; height: 18px; place-items: center; margin-right: 5px; padding: 0 4px; border-radius: 5px; color: #cbd5d0; background: #091310; border: 1px solid #354c44; box-shadow: inset 0 -1px #000; font: 700 var(--type-label)/1 var(--font-ui); }
   #newgame-options { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; align-items: end; }
   #newgame-options button { margin: 0; }
+  #newgame-options input[type="number"] {
+    box-sizing: border-box; max-width: 100%; width: 100%; padding: 8px 10px; border-radius: 8px;
+    color: var(--text); background: #0d1816; border: 1px solid #385149; outline: none;
+  }
+  #newgame-options input[type="number"]:focus { border-color: var(--gold); box-shadow: 0 0 0 3px #d7b66a1d; }
+  #newgame-options .setup-number-hint { display: block; margin-top: 3px; color: var(--faint); font-size: var(--type-label); line-height: 1.3; }
   #saves-group { grid-column: 1 / -1; }
   .victory-options { grid-column: 1 / -1; padding: 9px 10px 10px; border: 1px solid var(--line-soft); border-radius: 9px; background: #09131080; }
   .victory-options h2 { margin-bottom: 8px; }
@@ -2001,9 +2011,11 @@
   }
   .advanced-settings-body > .mod-options,
   .advanced-settings-body > .overlay-options,
-  .advanced-settings-body > .setting-row { grid-column: 1 / -1; }
+  .advanced-settings-body > .setting-row,
+  .advanced-settings-body > .resource-display-setting { grid-column: 1 / -1; }
   .advanced-settings-body > .overlay-options { margin-top: 0; }
-  .advanced-settings-body > .setting-row { margin-top: 2px; }
+  .advanced-settings-body > .setting-row,
+  .advanced-settings-body > .resource-display-setting { margin-top: 2px; }
   .mod-options {
     padding: 9px 10px 10px; border: 1px solid var(--line-soft);
     border-radius: 9px; background: #07100e99;
@@ -2341,6 +2353,31 @@
   .diplomacy-identity-head > span:first-child { border-left-color: transparent; }
   .diplomacy-identity-head .numeric { text-align: right; }
   .diplomacy-identity-head .diplomacy-odds-head { padding-inline: 2px; }
+  /* Every data heading is also its sort target. The invisible button keeps the
+     compact label's exact footprint; the active direction sits in the corner
+     instead of spending a character of a narrow heading such as SCORE. */
+  .hud-sort-cell { position: relative; }
+  #playerhud .hud-sort-head {
+    position: absolute; inset: 0; z-index: 1; display: block; min-width: 0; min-height: 0;
+    margin: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none;
+    color: inherit; background: transparent; cursor: pointer; transform: none;
+    transition: background .12s ease;
+  }
+  #playerhud .hud-sort-head:hover { background: #ffffff0a; transform: none; }
+  #playerhud .hud-sort-head:focus-visible {
+    outline: 1px solid var(--gold-bright); outline-offset: -1px;
+  }
+  #playerhud .hud-sort-cell[data-hud-sort-active="true"] { color: #ecd37e; }
+  #playerhud .hud-sort-head[data-hud-sort-active="true"]::after {
+    content: ""; position: absolute; right: 1px; width: 0; height: 0;
+    border-inline: 3px solid transparent;
+  }
+  #playerhud .hud-sort-head[data-hud-sort-active="true"][data-hud-sort-direction="asc"]::after {
+    top: 2px; border-bottom: 5px solid currentColor;
+  }
+  #playerhud .hud-sort-head[data-hud-sort-active="true"][data-hud-sort-direction="desc"]::after {
+    top: 5px; border-top: 5px solid currentColor;
+  }
   .diplomacy-odds-head > span {
     min-width: 0; overflow: hidden; text-overflow: clip; text-align: right;
   }
@@ -3558,7 +3595,14 @@
           </div>
         </div>
         <label class="setting-row display-advanced-setting" data-advanced-order="10"><span><input type="checkbox" id="gridchk"> Show the hex grid</span></label>
-        <label class="setting-row display-advanced-setting" data-advanced-order="20"><span><input type="checkbox" id="reschk"> Show resource icons</span></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="20"><span><input type="checkbox" id="reschk"> Show resource markers</span></label>
+        <div class="speed-row display-advanced-setting resource-display-setting" data-advanced-order="25">
+          <span>Resource mode</span>
+          <select id="resourcedisplay" aria-label="Resource display" title="Show each resource as a symbol and word, or as the existing symbol only">
+            <option value="symbol_word" selected>Symbol &amp; word</option>
+            <option value="symbol">Symbol</option>
+          </select>
+        </div>
         <label class="setting-row display-advanced-setting" data-advanced-order="30"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="45"><span><input type="checkbox" id="rocketanimchk" checked> Show rocket &amp; satellite animations</span></label>
@@ -3656,6 +3700,9 @@
           <option value="10">Large · 10 civs · 15 city-states · 96×60</option>
           <option value="12">Huge · 12 civs · 18 city-states · 106×66</option>
         </select></label>
+        <label class="small civ6-hidden">City-states<input id="citystates" type="number" min="0" max="182" step="1"
+          inputmode="numeric" placeholder="Map default" aria-describedby="citystates-hint"
+          title="Leave blank to use the map-size default; enter 0 for no city-states"><small class="setup-number-hint" id="citystates-hint">Leave blank to use the map-size default.</small></label>
         <label class="small civ6-hidden">Start era<select id="startera" style="margin-top:4px">
           <option value="stone_age" disabled>Stone Age · later</option>
           <option value="ancient" selected>Ancient</option>
@@ -3667,6 +3714,12 @@
           <option value="epic">Epic · 750 turns</option>
           <option value="marathon">Marathon · 1500 turns</option>
         </select></label>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="50">Turn limit<input id="turnlimit" type="number" min="1" max="4294967295" step="1"
+          inputmode="numeric" placeholder="Speed default" aria-describedby="turnlimit-hint"
+          title="Leave blank to use the selected game speed's normal turn limit"><small class="setup-number-hint" id="turnlimit-hint">Leave blank to use the selected game speed's normal turn limit.</small></label>
+        <label class="small game-advanced-setting civ6-hidden" data-advanced-order="60">Map seed<input id="mapseed" type="number" min="0" max="9007199254740991" step="1"
+          inputmode="numeric" placeholder="Random" aria-describedby="mapseed-hint"
+          title="Leave blank for a fresh random map; use a seed to replay one exactly"><small class="setup-number-hint" id="mapseed-hint">Leave blank for a fresh random map.</small></label>
         <div class="utility-group" id="saves-group" style="display:none">
           <div class="city-group-head" style="margin-bottom:6px">Saved games<span id="saves-count"></span></div>
           <div id="saves-list"></div>
@@ -3714,7 +3767,7 @@
           </div>
         </div>
         <details class="advanced-settings" id="game-advanced-settings" data-advanced-settings="game">
-          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Rules, roster, teams &amp; climate · 4 of 8 mods</small></span></summary>
+          <summary><span class="advanced-settings-summary">Advanced Settings<small id="game-advanced-summary">Rules, roster, teams, limits &amp; climate · 4 of 8 mods</small></span></summary>
           <div class="advanced-settings-body" id="game-advanced-settings-body"></div>
         </details>
       </div>
@@ -3976,7 +4029,7 @@ function initAdvancedSettings() {
   const game = document.getElementById("newgame-options");
   const gameAdvanced = document.getElementById("game-advanced-settings");
   moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
-  const basic = ["gamemode", "mapshape", "maptype", "leader", "difficulty", "np",
+  const basic = ["gamemode", "mapshape", "maptype", "leader", "difficulty", "np", "citystates",
     "startera", "gamespeed", "futureera"]
     .map(id => document.getElementById(id).closest("label"));
   basic.push(document.getElementById("victory-options"), document.getElementById("saves-group"));
@@ -4019,7 +4072,7 @@ function initAdvancedSettings() {
   const syncModSummary = () => {
     const selected = modBoxes.filter(box => box.checked).map(box => box.dataset.gameMod);
     document.getElementById("game-advanced-summary").textContent =
-      `Rules, roster, teams & climate · ${selected.length} of ${modBoxes.length} mods`;
+      `Rules, roster, teams, limits & climate · ${selected.length} of ${modBoxes.length} mods`;
     return selected;
   };
   syncModSummary();
@@ -4219,6 +4272,15 @@ const RESOURCE_PICTOGRAM = {
 const RES_BADGE_K = 1.72;
 const RES_BADGE_R = 8.2 * RES_BADGE_K;
 const RES_BADGE_DETAIL_SCALE = 0.58;
+// At an ordinary reading zoom, a resource can spare its lower edge for both a
+// small pictogram and its written name. Farther out, the existing categorical
+// symbol remains the useful, uncluttered survey mark.
+const RES_WORD_LABEL_SCALE = 0.72;
+const RES_WORD_ICON_SIZE = 10.5;
+const RES_WORD_FONT_SIZE = 9.8;
+const RES_WORD_MIN_FONT_SIZE = 6.5;
+const RES_WORD_TEXT_LEFT = -S * SQ3 / 2 + 18;
+const RES_WORD_TEXT_RIGHT = S * SQ3 / 2 - 3.5;
 // How far out along the bottom-corner ray the badge is seated, as a fraction
 // of S. Derived rather than tuned: a seat `d` out along a corner ray stands
 // (S - d) * SQ3/2 from either of the two edges that meet at that corner, and
@@ -4729,13 +4791,18 @@ let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations
 // precedence, and a viewer can opt out here without changing system settings.
 const WORLD_PAN_INERTIA_STORAGE_KEY = "civvis-world-pan-inertia";
 let WORLD_PAN_INERTIA = localStorage.getItem(WORLD_PAN_INERTIA_STORAGE_KEY) !== "0";
-// Civ 6 binds G to the hex grid and Q to the resource icons, so both have to
+// Civ 6 binds G to the hex grid and Q to resource markers, so both have to
 // be things a player can actually turn off here. The grid is off by default
 // because a clean strategic map is easier to scan; resources are on because
 // that is the state Civ 6 starts in.
 let SHOW_GRID = localStorage.getItem("civvis-show-grid") === "1";
 let SHOW_RESOURCES = localStorage.getItem("civvis-show-resources") !== "0";
-// Q controls resource icons on the regular map. Deposits are part of choosing
+// Word labels are the default resource treatment. The old symbols remain an
+// explicit, persisted display choice for readers who prefer the denser map.
+const RESOURCE_DISPLAY_STORAGE_KEY = "civvis-resource-display";
+let RESOURCE_DISPLAY = localStorage.getItem(RESOURCE_DISPLAY_STORAGE_KEY) === "symbol"
+  ? "symbol" : "symbol_word";
+// Q controls resource markers on the regular map. Deposits are part of choosing
 // a settlement site, so the Settler lens keeps them available regardless.
 function shouldDrawResourceBadges() {
   return SHOW_RESOURCES || mapLens === "settler" || !!districtLensDistrict();
@@ -5545,6 +5612,16 @@ const PLAYER_HUD_COLUMNS = [
       ["suzerain", "Suzerainty"], ["score", "Score"]]
     .map(([key, label], head) => ({key, label, block:"stats", head, min:"--hud-stat-min", width:1})),
 ];
+// A data column is sortable by definition. Start, change and current chance
+// are individually labelled tracks inside Win odds, so they each get a key as
+// well. Watch-as and the row lock are actions rather than facts, so neither is
+// part of this model or this set.
+const PLAYER_HUD_SORTABLE_COLUMNS = new Set([
+  ...PLAYER_HUD_COLUMNS.map(column => column.key), "win_start", "win_delta",
+]);
+const PLAYER_HUD_TEXT_SORT_COLUMNS = new Set(["civ", "leader", "player", "plan"]);
+const PLAYER_HUD_AGE_SORT_ORDER = {dark:0, normal:1, golden:2, heroic:3};
+const HUD_SORT_STORAGE_KEY = "civvis-player-hud-sort-v1";
 // One bar per seam between two adjacent data columns, including the seam where
 // the identity block hands over to the twelve values.
 const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1).map((left, index) =>
@@ -5553,6 +5630,7 @@ const playerHudColumnWidths = new Map(PLAYER_HUD_COLUMNS.map(c => [c.key, c.widt
 let playerHudColumnGesture = null;
 let playerHudColumnTap = {seam:-1, at:0};
 let playerHudColumnCss = "";
+let playerHudSort = {key:"score", direction:"desc"};
 try {
   const saved = JSON.parse(localStorage.getItem(HUD_COLUMN_STORAGE_KEY) || "{}");
   // Only a positive, finite share is a width. A key this build no longer has is
@@ -5565,12 +5643,104 @@ try {
         playerHudColumnWidths.set(column.key, Math.min(width, 40));
     }
 } catch (_) {}
+try {
+  const saved = JSON.parse(localStorage.getItem(HUD_SORT_STORAGE_KEY) || "{}");
+  if (PLAYER_HUD_SORTABLE_COLUMNS.has(saved?.key) &&
+      (saved.direction === "asc" || saved.direction === "desc")) {
+    playerHudSort = {key:saved.key, direction:saved.direction};
+  }
+} catch (_) {}
 
 function savePlayerHudColumns() {
   try {
     localStorage.setItem(HUD_COLUMN_STORAGE_KEY,
       JSON.stringify(Object.fromEntries(playerHudColumnWidths)));
   } catch (_) {}
+}
+
+function playerHudSortDefaultDirection(key) {
+  return PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? "asc" : "desc";
+}
+
+function savePlayerHudSort() {
+  try { localStorage.setItem(HUD_SORT_STORAGE_KEY, JSON.stringify(playerHudSort)); }
+  catch (_) {}
+}
+
+function playerHudSortValue(player, key, stats) {
+  if (key === "civ") return player.civ || null;
+  if (key === "leader") return player.leader || null;
+  if (key === "player") return player.player_username || player.ai_username || player.ai_name || "AI player";
+  if (key === "elo") {
+    const value = Number(player.player_username ? player.player_elo : player.ai_elo);
+    return Number.isFinite(value) ? value : null;
+  }
+  if (key === "win_start") return oddsValue(player.odds_start);
+  if (key === "win_delta") {
+    const start = oddsValue(player.odds_start), now = oddsValue(player.odds_now);
+    return start === null || now === null ? null : now - start;
+  }
+  if (key === "win") return oddsValue(player.odds_now);
+  if (key === "age") return PLAYER_HUD_AGE_SORT_ORDER[player.age] ?? null;
+  if (key === "plan") return player.ai_strategy?.replaceAll("_", " ") || null;
+  const statistic = stats?.find(([kind]) => kind === key);
+  const rawValue = statistic?.[2];
+  if (rawValue === null || rawValue === undefined || rawValue === "") return null;
+  const value = Number(rawValue);
+  return Number.isFinite(value) ? value : null;
+}
+
+function comparePlayerHudSortValues(left, right) {
+  // Missing observations stay at the bottom in either direction. A dash should
+  // never become the surprising leader merely because the order was reversed.
+  if (left === null) return right === null ? 0 : 1;
+  if (right === null) return -1;
+  if (typeof left === "string" || typeof right === "string")
+    return String(left).localeCompare(String(right), undefined, {sensitivity:"base"});
+  return left - right;
+}
+
+function sortedPlayerHudPlayers(players, statsByPlayer) {
+  const {key, direction} = playerHudSort;
+  const multiplier = direction === "asc" ? 1 : -1;
+  return [...players].sort((left, right) => {
+    const leftValue = playerHudSortValue(left, key, statsByPlayer.get(left.id));
+    const rightValue = playerHudSortValue(right, key, statsByPlayer.get(right.id));
+    // Do this before applying direction so unavailable data consistently stays
+    // below observed values in both ascending and descending order.
+    if (leftValue === null || rightValue === null) {
+      if (leftValue !== rightValue) return leftValue === null ? 1 : -1;
+    }
+    const comparison = comparePlayerHudSortValues(leftValue, rightValue);
+    if (comparison) return comparison * multiplier;
+    // A score tie and then seat id keep a sorted table stable across frames.
+    return Number(right.score || 0) - Number(left.score || 0) || left.id - right.id;
+  });
+}
+
+function togglePlayerHudSort(key) {
+  if (!PLAYER_HUD_SORTABLE_COLUMNS.has(key)) return;
+  playerHudSort = {
+    key,
+    direction: playerHudSort.key === key
+      ? (playerHudSort.direction === "asc" ? "desc" : "asc")
+      : playerHudSortDefaultDirection(key),
+  };
+  savePlayerHudSort();
+  if (state) drawPlayerHud();
+}
+
+function playerHudSortHead(key, label, title, classes = "") {
+  const active = playerHudSort.key === key;
+  const direction = active ? playerHudSort.direction : playerHudSortDefaultDirection(key);
+  const directionLabel = direction === "asc" ? "ascending" : "descending";
+  const instruction = active
+    ? `sorted ${directionLabel}; click for ${direction === "asc" ? "descending" : "ascending"}`
+    : `click to sort ${directionLabel}`;
+  return `<span class="hud-sort-cell${classes ? ` ${classes}` : ""}" data-hud-sort-active="${active}">` +
+    `${label}<button type="button" class="hud-sort-head" data-hud-sort="${key}" ` +
+    `data-hud-sort-active="${active}" data-hud-sort-direction="${direction}" aria-pressed="${active}" ` +
+    `title="Sort by ${title} · ${instruction}" aria-label="Sort players by ${title}; ${instruction}"></button></span>`;
 }
 
 // A wide masthead lets the identity block ask for more than the sum of its own
@@ -7887,6 +8057,7 @@ async function boot() {
       ).join("");
       // The sizes this build offers decide which team splits it can seat.
       syncTeams();
+      syncWorldSetupInputs();
     }
     if (Array.isArray(RULES.map_scripts)) {
       document.getElementById("maptype").innerHTML = RULES.map_scripts.map(script =>
@@ -7929,6 +8100,7 @@ async function boot() {
         `<option value="${speed.id}" title="${speed.description}">${speed.name} · ${speed.turn_limit} turns</option>`
       ).join("");
       document.getElementById("gamespeed").value = "online";
+      syncWorldSetupInputs();
     }
     // The ruleset carries the other game's vocabulary too, and the mode may
     // already be selected by the time it lands.
@@ -8941,12 +9113,18 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     // reloads over a running team game reads that game back rather than
     // offering to restart it as a free-for-all.
     syncTeams();
+    const cityStates = st.players.filter(player => player.is_minor && !player.is_barbarian).length;
+    setOptionalWorldNumber("citystates", cityStates, defaultCityStatesForPlayers(majors));
     document.getElementById("teams").value = teamRuleFromArray(st.teams);
     document.getElementById("maptype").value = st.map.script || "pangaea";
     document.getElementById("mapshape").value = st.map.shape || "planet";
     document.getElementById("mappoles").value = st.map.poles || "poles";
     syncEarthShape();
     document.getElementById("gamespeed").value = st.game_speed || "standard";
+    setOptionalWorldNumber("turnlimit", st.max_turns,
+      defaultTurnLimitForSpeed(st.game_speed));
+    setOptionalWorldNumber("mapseed", st.seed);
+    syncWorldSetupInputs();
     document.getElementById("leaderpool").value = st.leader_pool || "civ6";
     syncLeaderPool();
     // The seat a person is playing and the handicap they are playing it on are
@@ -11702,11 +11880,21 @@ function drawResourcePictogram(resource, x, y, size) {
   cx.restore();
 }
 
-function drawResourceBadge(t, x, y) {
-  const rc = RULES && RULES.resources && RULES.resources[t.resource]
+function resourceBadgeClass(t) {
+  return RULES && RULES.resources && RULES.resources[t.resource]
     ? RULES.resources[t.resource].class : "bonus";
-  const rim = rc === "strategic" ? "#ff9d5c"
+}
+
+function resourceBadgeRim(t) {
+  const rc = resourceBadgeClass(t);
+  return rc === "strategic" ? "#ff9d5c"
     : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
+}
+
+// The compact symbol is the established resource treatment and remains both
+// the survey-scale fallback and the reader-selectable Symbol display mode.
+function drawResourceSymbolBadge(t, x, y, rim = resourceBadgeRim(t)) {
+  const rc = resourceBadgeClass(t);
   const [rx, ry] = resourceBadgeSlot(x, y, S * RES_BADGE_SEAT);
   // Resource art is useful before the rest of the fine pass is. At this
   // larger size a material silhouette still distinguishes wheat, iron, and
@@ -11749,6 +11937,50 @@ function drawResourceBadge(t, x, y) {
       cx.beginPath(); cx.arc(rx, ry, dot * .4, 0, 7); cx.fill();
     }
   }
+}
+
+// A normal zoom has enough room along the lower edge of a tile to name its
+// deposit. The picture holds the left end; the outlined word runs across the
+// rest of that edge, so the tile still reads when its material silhouette is
+// unfamiliar. Keep the line horizontal: resource annotations are screen-first
+// labels, just like the bottom seat that they share on flat and planet maps.
+function drawResourceWordBadge(t, x, y, rim = resourceBadgeRim(t)) {
+  const [rx, ry] = resourceBadgeSlot(x, y, S * RES_BADGE_SEAT);
+  const iconX = rx - S * SQ3 / 2 + RES_WORD_ICON_SIZE * .75;
+  const textX = rx + RES_WORD_TEXT_LEFT;
+  const textWidth = RES_WORD_TEXT_RIGHT - RES_WORD_TEXT_LEFT;
+  const label = titleCase(t.resource);
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  // A small version of the familiar badge keeps its class rim and material
+  // colour, but leaves the long part of the lower edge available to the word.
+  cx.fillStyle = "#07110fe8";
+  cx.beginPath(); cx.arc(iconX, ry, RES_WORD_ICON_SIZE * .61, 0, 7); cx.fill();
+  cx.strokeStyle = rim + "e8"; cx.lineWidth = 1.05; cx.stroke();
+  drawResourcePictogram(t.resource, iconX, ry - .1, RES_WORD_ICON_SIZE);
+
+  cx.font = `800 ${RES_WORD_FONT_SIZE}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  const naturalWidth = Math.max(1, cx.measureText(label).width);
+  const fontSize = Math.max(RES_WORD_MIN_FONT_SIZE,
+    Math.min(RES_WORD_FONT_SIZE, RES_WORD_FONT_SIZE * textWidth / naturalWidth));
+  cx.font = `800 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  cx.textAlign = "left"; cx.textBaseline = "middle";
+  // A black keyline keeps white type readable across desert, snow, ocean and
+  // every territory wash without adding another large plate over the terrain.
+  cx.strokeStyle = "rgba(4,8,7,.96)"; cx.lineWidth = Math.max(1.3, fontSize * .21);
+  cx.strokeText(label, textX, ry + .25, textWidth);
+  cx.fillStyle = "#fffdf3";
+  cx.fillText(label, textX, ry + .25, textWidth);
+  cx.restore();
+}
+
+function drawResourceBadge(t, x, y) {
+  const rim = resourceBadgeRim(t);
+  if (RESOURCE_DISPLAY === "symbol_word" && cam.scale >= RES_WORD_LABEL_SCALE) {
+    drawResourceWordBadge(t, x, y, rim);
+    return;
+  }
+  drawResourceSymbolBadge(t, x, y, rim);
 }
 
 // Barbarian camps are hostile little fortifications, not tents. The sharpened
@@ -20712,9 +20944,15 @@ function drawPlayerHud() {
   // relationship-to-me meaning supplied by `at_war_with_me`.
   const activeWarPlayers = SPEC && !Number.isInteger(state.view_player)
     ? activeWarPlayerIds() : null;
-  const majors = state.players
+  // Rank remains the score standing even when the visible rows are sorted by
+  // another fact, so a #2 badge never starts meaning "second alphabetically".
+  const scoreRankedMajors = state.players
     .filter(p => !p.is_minor && !p.is_barbarian && metPlayer(p))
     .sort((a, b) => b.score - a.score || a.id - b.id);
+  const rankById = new Map(scoreRankedMajors.map((p, index) => [p.id, index + 1]));
+  const statsByPlayer = new Map(scoreRankedMajors.map(p =>
+    [p.id, playerHudStats(p, rankById.get(p.id))]));
+  const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer);
   const rows = Math.max(1, majors.length);
   const seats = seatKeysById(majors);
   const repeatedCivs = repeatedCivNames(majors);
@@ -20734,8 +20972,6 @@ function drawPlayerHud() {
     if (metrics.height > hudWidgetMaxHeight(HUD_WIDGETS.players))
       applyHudWidgetMetrics("players", metrics);
   }
-  const rankById = new Map(majors.map((p, index) => [p.id, index + 1]));
-  const statsByPlayer = new Map(majors.map(p => [p.id, playerHudStats(p, rankById.get(p.id))]));
   const capitals = capitalIndex();
   const highestByStat = new Map();
   statsByPlayer.forEach(stats => stats.forEach(([kind, , value]) => {
@@ -20757,19 +20993,20 @@ function drawPlayerHud() {
     // cell remains one draggable Win odds column, so adding the labels does not
     // add two more masthead seams. AGE and PLAN stay short because these heads
     // clip rather than ellipsize; their full wording is in their tooltips.
-    `<span title="Civilization">CIV</span><span>LEADER</span>` +
+    playerHudSortHead("civ", "CIV", "Civilization") +
+    playerHudSortHead("leader", "LEADER", "Leader") +
     `<button type="button" class="spectator-view-link" data-hud-action="spectator" ` +
     `aria-pressed="${state.view_player === null || state.view_player === undefined}" ` +
     `title="Spectator mode · see everyone with full map visibility" ` +
     `aria-label="Spectator mode: see everyone with full map visibility">All</button>` +
-    `<span>PLAYER</span>` +
-    `<span class="numeric" title="Elo rating">ELO</span>` +
-    `<span class="diplomacy-odds-head numeric" title="Win odds, per cent: at the start of the game and now">` +
-    `<span title="Win odds at the start of the game, per cent">START</span>` +
-    `<span class="odds-trend-head" title="Trend from start to now">Δ</span>` +
-    `<span title="Win odds now, per cent">NOW</span></span>` +
-    `<span title="Civilization age">AGE</span>` +
-    `<span title="AI active strategy">PLAN</span></span>` +
+    playerHudSortHead("player", "PLAYER", "Player") +
+    playerHudSortHead("elo", "ELO", "Elo rating", "numeric") +
+    `<span class="diplomacy-odds-head numeric">` +
+    playerHudSortHead("win_start", "START", "Win odds at the start of the game") +
+    playerHudSortHead("win_delta", "Δ", "Change in win odds", "odds-trend-head") +
+    playerHudSortHead("win", "NOW", "Current win odds") + `</span>` +
+    playerHudSortHead("age", "AGE", "Civilization age") +
+    playerHudSortHead("plan", "PLAN", "AI active strategy") + `</span>` +
     `<span class="diplomacy-stat-head">` +
     [["cities", "CITY", "Cities controlled"], ["population", "POP", "Total population"], ["food", "FOOD", "Food per turn"],
       ["production", "PROD", "Production per turn"], ["science", "SCI", "Science per turn"],
@@ -20777,7 +21014,7 @@ function drawPlayerHud() {
       ["gold", "GPT", "Net Gold per turn"], ["military", "MIL", "Military strength"],
       ["wonders", "WNDR", "World wonders controlled"], ["suzerain", "SUZ", "City-states under suzerainty"],
       ["score", "SCORE", "Score"]]
-      .map(([kind, label, title]) => `<span class="${kind}" title="${title}">${label}</span>`).join("") + `</span>` +
+      .map(([kind, label, title]) => playerHudSortHead(kind, label, title, kind)).join("") + `</span>` +
     // The bars stand on the seams of the heading they are laid over, and are
     // rebuilt with it so that a repaint can never orphan one.
     playerHudColumnGrips() + `</div>` +
@@ -20952,7 +21189,7 @@ function drawPlayerHud() {
             `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</span>`;
         }).join("") + `</button></div>`;
     }).join("") + `</div>` + hudResizeHandles("player standings");
-  drawDossierWindows(majors, rankById, relationById);
+  drawDossierWindows(scoreRankedMajors, rankById, relationById);
   // A repaint mid-gesture would take the bar out from under the pointer along
   // with its pointer capture, so a column drag holds the table exactly as a
   // widget drag does. finishPlayerHudColumnGesture() catches it up on release.
@@ -21082,11 +21319,21 @@ function runHudAction(target) {
 const hudRibbon = document.getElementById("playerhud");
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
+  const sort = ev.target.closest?.("[data-hud-sort]");
+  if (sort) {
+    togglePlayerHudSort(sort.dataset.hudSort);
+    return;
+  }
   const target = ev.target.closest?.("[data-hud-action]");
   if (target) runHudAction(target);
 });
 hudRibbon.addEventListener("click", ev => {
   if (ev.detail !== 0) return;
+  const sort = ev.target.closest?.("[data-hud-sort]");
+  if (sort) {
+    togglePlayerHudSort(sort.dataset.hudSort);
+    return;
+  }
   const target = ev.target.closest?.("[data-hud-action]");
   if (target) runHudAction(target);
 });
@@ -27253,6 +27500,13 @@ function setShowResources(on) {
   if (box) box.checked = SHOW_RESOURCES;
   if (state) draw();
 }
+function setResourceDisplay(mode) {
+  RESOURCE_DISPLAY = mode === "symbol" ? "symbol" : "symbol_word";
+  localStorage.setItem(RESOURCE_DISPLAY_STORAGE_KEY, RESOURCE_DISPLAY);
+  const select = document.getElementById("resourcedisplay");
+  if (select) select.value = RESOURCE_DISPLAY;
+  if (state) draw();
+}
 function setShowRocketAnimations(on) {
   SHOW_ROCKET_ANIMATIONS = !!on;
   localStorage.setItem("civvis-show-rocket-animations", SHOW_ROCKET_ANIMATIONS ? "1" : "0");
@@ -27782,7 +28036,11 @@ document.getElementById("leaderpool").addEventListener("change", syncLeaderPool)
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
 // Bound on the select itself, so it has re-fitted the splits to the new size
 // before the panel's own delegated listener stages what is now selected.
-document.getElementById("np").addEventListener("change", syncTeams);
+document.getElementById("np").addEventListener("change", () => {
+  syncTeams();
+  syncWorldSetupInputs();
+});
+document.getElementById("gamespeed").addEventListener("change", syncWorldSetupInputs);
 document.getElementById("savebtn").onclick = () => writeSave();
 syncSetupMode();
 syncEarthShape();
@@ -27843,6 +28101,79 @@ function readSetting(id) {
 function readVictorySetting(id) {
   const box = document.getElementById(id);
   return box ? box.checked : true;
+}
+// A blank numeric field means "use the normal setting for this map or speed".
+// Number inputs still accept pasted text, so keep the payload on whole safe
+// integers and make a bad value visible on the start control instead of
+// silently replacing it with a different world.
+function readOptionalWholeSetting(id) {
+  const input = document.getElementById(id);
+  if (!input || !input.value.trim()) return null;
+  const value = input.valueAsNumber;
+  return input.validity.valid && Number.isSafeInteger(value) ? value : null;
+}
+function worldSetupInputError() {
+  for (const [id, label] of [
+    ["citystates", "City-states"],
+    ["turnlimit", "Turn limit"],
+    ["mapseed", "Map seed"],
+  ]) {
+    const input = document.getElementById(id);
+    if (input && input.value.trim() && readOptionalWholeSetting(id) === null)
+      return `${label} must be a whole number in the range shown`;
+  }
+  return "";
+}
+function mapSizeForPlayers(players) {
+  return Array.isArray(RULES?.map_sizes)
+    ? RULES.map_sizes.find(size => Number(size.default_players) === Number(players))
+    : null;
+}
+function defaultCityStatesForPlayers(players = +readSetting("np")) {
+  return Number(mapSizeForPlayers(players)?.default_city_states);
+}
+function defaultTurnLimitForSpeed(speed = readSetting("gamespeed")) {
+  const entry = Array.isArray(RULES?.game_speeds)
+    ? RULES.game_speeds.find(candidate => candidate.id === speed)
+    : null;
+  return Number(entry?.turn_limit);
+}
+function setOptionalWorldNumber(id, value, defaultValue = Number.NaN) {
+  const input = document.getElementById(id);
+  const number = Number(value);
+  const min = Number(input?.min || 0);
+  const max = Number(input?.max || Number.MAX_SAFE_INTEGER);
+  const automatic = Number.isSafeInteger(defaultValue) && number === defaultValue;
+  if (input) input.value = Number.isSafeInteger(number) && number >= min && number <= max && !automatic
+    ? String(number) : "";
+}
+function syncWorldSetupInputs() {
+  const cityStates = document.getElementById("citystates");
+  const cityStatesHint = document.getElementById("citystates-hint");
+  const cityStateDefault = defaultCityStatesForPlayers();
+  const cityStateLimit = Number(RULES?.city_state_limit);
+  if (cityStates) {
+    if (Number.isSafeInteger(cityStateLimit) && cityStateLimit >= 0)
+      cityStates.max = String(cityStateLimit);
+    const detail = Number.isSafeInteger(cityStateDefault)
+      ? `${cityStateDefault} city-states for this world size`
+      : "the map-size default";
+    cityStates.placeholder = `Map default · ${detail}`;
+    cityStates.title = `Leave blank to use ${detail}; enter 0 for no city-states`;
+    if (cityStatesHint)
+      cityStatesHint.textContent = `Leave blank to use ${detail}; enter 0 for none.`;
+  }
+  const turnLimit = document.getElementById("turnlimit");
+  const turnLimitHint = document.getElementById("turnlimit-hint");
+  const turnDefault = defaultTurnLimitForSpeed();
+  if (turnLimit) {
+    const detail = Number.isSafeInteger(turnDefault)
+      ? `${turnDefault} turns at this speed`
+      : "the selected game speed's normal limit";
+    turnLimit.placeholder = `Speed default · ${detail}`;
+    turnLimit.title = `Leave blank to use ${detail}`;
+    if (turnLimitHint) turnLimitHint.textContent = `Leave blank to use ${detail}.`;
+  }
 }
 // What this computer can do about the other game, and what a run it can see is
 // doing. The verification-only mode is retained everywhere and refused where it
@@ -27917,6 +28248,9 @@ function selectedSimulationSettings() {
     [track.id, readVictorySetting(`victory-${track.id}`)]));
   const leader = readSetting("leader");
   const difficulty = readSetting("difficulty");
+  const cityStates = readOptionalWholeSetting("citystates");
+  const turnLimit = readOptionalWholeSetting("turnlimit");
+  const mapSeed = readOptionalWholeSetting("mapseed");
   // In the Civilization VI mode the map control holds one of that game's
   // scripts, so it travels as `civ6_map` and `map_script` keeps a world this
   // engine could still build — the payload has to stay a valid description of a
@@ -27936,6 +28270,9 @@ function selectedSimulationSettings() {
           // assignment that rule makes of this many civilizations.
           teams: teamAssignment(np, readSetting("teams")),
           victory_conditions: victoryConditions,
+          ...(cityStates === null ? {} : {num_city_states: cityStates}),
+          ...(turnLimit === null ? {} : {max_turns: turnLimit}),
+          ...(mapSeed === null ? {} : {seed: mapSeed}),
           spectate: gameMode === "ai_sim",
           ...(civ6 ? {mode: "civ6", civ6_map: civ6Map} : {}),
           // A spectated world has nobody to hand a leader or a handicap to.
@@ -28008,12 +28345,18 @@ function applyQueuedSimulationSettings(settings) {
   // The staged size decides which splits exist, so it is in place first and
   // the queued assignment is read back as the rule that would produce it.
   syncTeams();
+  setOptionalWorldNumber("citystates", settings.city_states,
+    defaultCityStatesForPlayers(settings.players));
   document.getElementById("teams").value = teamRuleFromArray(settings.teams);
   document.getElementById("maptype").value = settings.map;
   if (settings.shape) document.getElementById("mapshape").value = settings.shape;
   if (settings.poles) document.getElementById("mappoles").value = settings.poles;
   syncEarthShape();
   document.getElementById("gamespeed").value = settings.speed;
+  setOptionalWorldNumber("turnlimit", settings.turns,
+    defaultTurnLimitForSpeed(settings.speed));
+  setOptionalWorldNumber("mapseed", settings.seed);
+  syncWorldSetupInputs();
   document.getElementById("leaderpool").value = settings.leader_pool || "civ6";
   syncLeaderPool();
   document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
@@ -28026,6 +28369,7 @@ function applyQueuedSimulationSettings(settings) {
 function updateRestartSimulationButton() {
   const button = document.getElementById("restart-sim");
   const settings = selectedSimulationSettings();
+  const setupError = worldSetupInputError();
   // Picking single player turns the specbar's one start control into the way
   // into that game: it becomes Start new game, and always reads as a change
   // from the world on screen.
@@ -28041,13 +28385,13 @@ function updateRestartSimulationButton() {
   button.classList.toggle("human-start", human);
   // A refusal is shown rather than hidden: the button stays, says so, and the
   // reason sits above it.
-  button.disabled = blocked;
+  button.disabled = blocked || !!setupError;
   button.querySelector(".lbl").textContent = civ6
     ? "Play Firaxis Civ 6"
     : human
     ? "Start new game"
     : "Restart sim";
-  button.title = civ6
+  button.title = setupError || (civ6
     ? blocked
       ? `Cannot start: ${civ6Status.blocked}`
       : "Start a real Civilization VI game on this computer and play it"
@@ -28055,7 +28399,7 @@ function updateRestartSimulationButton() {
     ? "Start a single-player game with the selected settings"
     : changed
     ? "Restart with the selected settings"
-    : "Restart with the same settings";
+    : "Restart with the same settings");
   button.querySelector(".sub").textContent = civ6
     ? "on this computer"
     : human || changed
@@ -28063,8 +28407,9 @@ function updateRestartSimulationButton() {
     : "same settings";
 }
 function stageSelectedSimulationSettings() {
-  const payload = selectedSimulationSettings();
   updateRestartSimulationButton();
+  if (worldSetupInputError()) return;
+  const payload = selectedSimulationSettings();
   settingsStageChain = settingsStageChain.catch(() => {}).then(async () => {
     const queued = await fetchJSON("/next-game-settings", {method: "POST",
       headers: {"Content-Type": "application/json"},
@@ -28074,8 +28419,10 @@ function stageSelectedSimulationSettings() {
   settingsStageChain.catch(error => showNewSimulationError(error, "save settings"));
 }
 function newSimulationPayload() {
-  return {...selectedSimulationSettings(),
-          seed: Math.floor(Math.random() * 1e9), force: true};
+  const setupError = worldSetupInputError();
+  if (setupError) throw new Error(setupError);
+  const settings = selectedSimulationSettings();
+  return {...settings, seed: settings.seed ?? Math.floor(Math.random() * 1e9), force: true};
 }
 const simulationBusyControls = new Map();
 function setNewSimulationBusy(busy) {
@@ -28505,6 +28852,11 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   const res = document.getElementById("reschk");
   res.checked = SHOW_RESOURCES;
   res.onchange = () => setShowResources(res.checked);
+}
+{
+  const resourceDisplay = document.getElementById("resourcedisplay");
+  resourceDisplay.value = RESOURCE_DISPLAY;
+  resourceDisplay.onchange = () => setResourceDisplay(resourceDisplay.value);
 }
 {
   const rockets = document.getElementById("rocketanimchk");
