@@ -1962,6 +1962,10 @@
   .render-resolution-row { grid-template-columns: minmax(0, 1fr) minmax(104px, 1fr); }
   .render-resolution-row > span, .render-resolution-row > select { min-width: 0; }
   .render-resolution-row > span { overflow-wrap: anywhere; }
+  .resource-display-setting { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+  .resource-display-setting > span, .resource-display-setting > select { min-width: 0; }
+  .resource-display-setting > span { overflow-wrap: anywhere; }
+  .resource-display-setting > select { width: 100%; }
   .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--muted); font-size: var(--type-secondary); cursor: pointer; }
   .setting-row span { display: flex; align-items: center; gap: 7px; }
   .setting-row kbd { margin: 0; }
@@ -2016,9 +2020,11 @@
   }
   .advanced-settings-body > .mod-options,
   .advanced-settings-body > .overlay-options,
-  .advanced-settings-body > .setting-row { grid-column: 1 / -1; }
+  .advanced-settings-body > .setting-row,
+  .advanced-settings-body > .resource-display-setting { grid-column: 1 / -1; }
   .advanced-settings-body > .overlay-options { margin-top: 0; }
-  .advanced-settings-body > .setting-row { margin-top: 2px; }
+  .advanced-settings-body > .setting-row,
+  .advanced-settings-body > .resource-display-setting { margin-top: 2px; }
   .mod-options {
     padding: 9px 10px 10px; border: 1px solid var(--line-soft);
     border-radius: 9px; background: #07100e99;
@@ -3598,7 +3604,14 @@
           </div>
         </div>
         <label class="setting-row display-advanced-setting" data-advanced-order="10"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
-        <label class="setting-row display-advanced-setting" data-advanced-order="20"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="20"><span><input type="checkbox" id="reschk"> Show resource markers</span><kbd>Q</kbd></label>
+        <div class="speed-row display-advanced-setting resource-display-setting" data-advanced-order="25">
+          <span>Resource mode</span>
+          <select id="resourcedisplay" aria-label="Resource display" title="Show each resource as a symbol and word, or as the existing symbol only">
+            <option value="symbol_word" selected>Symbol &amp; word</option>
+            <option value="symbol">Symbol</option>
+          </select>
+        </div>
         <label class="setting-row display-advanced-setting" data-advanced-order="30"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="45"><span><input type="checkbox" id="rocketanimchk" checked> Show rocket &amp; satellite animations</span></label>
@@ -4000,7 +4013,7 @@
       <span class="shortcut-head">The map</span>
       <span><kbd>Arrows</kbd>Pan · <kbd>⇧</kbd> for faster</span><span><kbd>Num + / −</kbd>Zoom</span>
       <span><kbd>Y</kbd>Tile yields</span><span><kbd>G</kbd>Hex grid</span>
-      <span><kbd>Q</kbd>Resource icons</span>
+      <span><kbd>Q</kbd>Resource markers</span>
       <span><kbd>End</kbd>Full-screen map</span><span><kbd>Esc</kbd>Close · cancel</span>
       <span><kbd>Drag</kbd>Pan</span><span><kbd>Right / ^-click</kbd>Move the selected unit</span>
       <span><kbd>Middle-click</kbd>Centre on that tile</span><span><kbd>Scroll</kbd>Zoom · double-click to dive</span>
@@ -4298,6 +4311,15 @@ const RESOURCE_PICTOGRAM = {
 const RES_BADGE_K = 1.72;
 const RES_BADGE_R = 8.2 * RES_BADGE_K;
 const RES_BADGE_DETAIL_SCALE = 0.58;
+// At an ordinary reading zoom, a resource can spare its lower edge for both a
+// small pictogram and its written name. Farther out, the existing categorical
+// symbol remains the useful, uncluttered survey mark.
+const RES_WORD_LABEL_SCALE = 0.72;
+const RES_WORD_ICON_SIZE = 10.5;
+const RES_WORD_FONT_SIZE = 9.8;
+const RES_WORD_MIN_FONT_SIZE = 6.5;
+const RES_WORD_TEXT_LEFT = -S * SQ3 / 2 + 18;
+const RES_WORD_TEXT_RIGHT = S * SQ3 / 2 - 3.5;
 // How far out along the bottom-corner ray the badge is seated, as a fraction
 // of S. Derived rather than tuned: a seat `d` out along a corner ray stands
 // (S - d) * SQ3/2 from either of the two edges that meet at that corner, and
@@ -4809,13 +4831,18 @@ let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations
 // precedence, and a viewer can opt out here without changing system settings.
 const WORLD_PAN_INERTIA_STORAGE_KEY = "civvis-world-pan-inertia";
 let WORLD_PAN_INERTIA = localStorage.getItem(WORLD_PAN_INERTIA_STORAGE_KEY) !== "0";
-// Civ 6 binds G to the hex grid and Q to the resource icons, so both have to
+// Civ 6 binds G to the hex grid and Q to resource markers, so both have to
 // be things a player can actually turn off here. The grid is off by default
 // because a clean strategic map is easier to scan; resources are on because
 // that is the state Civ 6 starts in.
 let SHOW_GRID = localStorage.getItem("civvis-show-grid") === "1";
 let SHOW_RESOURCES = localStorage.getItem("civvis-show-resources") !== "0";
-// Q controls resource icons on the regular map. Deposits are part of choosing
+// Word labels are the default resource treatment. The old symbols remain an
+// explicit, persisted display choice for readers who prefer the denser map.
+const RESOURCE_DISPLAY_STORAGE_KEY = "civvis-resource-display";
+let RESOURCE_DISPLAY = localStorage.getItem(RESOURCE_DISPLAY_STORAGE_KEY) === "symbol"
+  ? "symbol" : "symbol_word";
+// Q controls resource markers on the regular map. Deposits are part of choosing
 // a settlement site, so the Settler lens keeps them available regardless.
 function shouldDrawResourceBadges() {
   return SHOW_RESOURCES || mapLens === "settler" || !!districtLensDistrict();
@@ -11893,11 +11920,21 @@ function drawResourcePictogram(resource, x, y, size) {
   cx.restore();
 }
 
-function drawResourceBadge(t, x, y) {
-  const rc = RULES && RULES.resources && RULES.resources[t.resource]
+function resourceBadgeClass(t) {
+  return RULES && RULES.resources && RULES.resources[t.resource]
     ? RULES.resources[t.resource].class : "bonus";
-  const rim = rc === "strategic" ? "#ff9d5c"
+}
+
+function resourceBadgeRim(t) {
+  const rc = resourceBadgeClass(t);
+  return rc === "strategic" ? "#ff9d5c"
     : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
+}
+
+// The compact symbol is the established resource treatment and remains both
+// the survey-scale fallback and the reader-selectable Symbol display mode.
+function drawResourceSymbolBadge(t, x, y, rim = resourceBadgeRim(t)) {
+  const rc = resourceBadgeClass(t);
   const [rx, ry] = resourceBadgeSlot(x, y, S * RES_BADGE_SEAT);
   // Resource art is useful before the rest of the fine pass is. At this
   // larger size a material silhouette still distinguishes wheat, iron, and
@@ -11940,6 +11977,50 @@ function drawResourceBadge(t, x, y) {
       cx.beginPath(); cx.arc(rx, ry, dot * .4, 0, 7); cx.fill();
     }
   }
+}
+
+// A normal zoom has enough room along the lower edge of a tile to name its
+// deposit. The picture holds the left end; the outlined word runs across the
+// rest of that edge, so the tile still reads when its material silhouette is
+// unfamiliar. Keep the line horizontal: resource annotations are screen-first
+// labels, just like the bottom seat that they share on flat and planet maps.
+function drawResourceWordBadge(t, x, y, rim = resourceBadgeRim(t)) {
+  const [rx, ry] = resourceBadgeSlot(x, y, S * RES_BADGE_SEAT);
+  const iconX = rx - S * SQ3 / 2 + RES_WORD_ICON_SIZE * .75;
+  const textX = rx + RES_WORD_TEXT_LEFT;
+  const textWidth = RES_WORD_TEXT_RIGHT - RES_WORD_TEXT_LEFT;
+  const label = titleCase(t.resource);
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  // A small version of the familiar badge keeps its class rim and material
+  // colour, but leaves the long part of the lower edge available to the word.
+  cx.fillStyle = "#07110fe8";
+  cx.beginPath(); cx.arc(iconX, ry, RES_WORD_ICON_SIZE * .61, 0, 7); cx.fill();
+  cx.strokeStyle = rim + "e8"; cx.lineWidth = 1.05; cx.stroke();
+  drawResourcePictogram(t.resource, iconX, ry - .1, RES_WORD_ICON_SIZE);
+
+  cx.font = `800 ${RES_WORD_FONT_SIZE}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  const naturalWidth = Math.max(1, cx.measureText(label).width);
+  const fontSize = Math.max(RES_WORD_MIN_FONT_SIZE,
+    Math.min(RES_WORD_FONT_SIZE, RES_WORD_FONT_SIZE * textWidth / naturalWidth));
+  cx.font = `800 ${fontSize}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
+  cx.textAlign = "left"; cx.textBaseline = "middle";
+  // A black keyline keeps white type readable across desert, snow, ocean and
+  // every territory wash without adding another large plate over the terrain.
+  cx.strokeStyle = "rgba(4,8,7,.96)"; cx.lineWidth = Math.max(1.3, fontSize * .21);
+  cx.strokeText(label, textX, ry + .25, textWidth);
+  cx.fillStyle = "#fffdf3";
+  cx.fillText(label, textX, ry + .25, textWidth);
+  cx.restore();
+}
+
+function drawResourceBadge(t, x, y) {
+  const rim = resourceBadgeRim(t);
+  if (RESOURCE_DISPLAY === "symbol_word" && cam.scale >= RES_WORD_LABEL_SCALE) {
+    drawResourceWordBadge(t, x, y, rim);
+    return;
+  }
+  drawResourceSymbolBadge(t, x, y, rim);
 }
 
 // Barbarian camps are hostile little fortifications, not tents. The sharpened
@@ -27518,6 +27599,13 @@ function setShowResources(on) {
   if (box) box.checked = SHOW_RESOURCES;
   if (state) draw();
 }
+function setResourceDisplay(mode) {
+  RESOURCE_DISPLAY = mode === "symbol" ? "symbol" : "symbol_word";
+  localStorage.setItem(RESOURCE_DISPLAY_STORAGE_KEY, RESOURCE_DISPLAY);
+  const select = document.getElementById("resourcedisplay");
+  if (select) select.value = RESOURCE_DISPLAY;
+  if (state) draw();
+}
 function setShowRocketAnimations(on) {
   SHOW_ROCKET_ANIMATIONS = !!on;
   localStorage.setItem("civvis-show-rocket-animations", SHOW_ROCKET_ANIMATIONS ? "1" : "0");
@@ -28961,6 +29049,11 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   const res = document.getElementById("reschk");
   res.checked = SHOW_RESOURCES;
   res.onchange = () => setShowResources(res.checked);
+}
+{
+  const resourceDisplay = document.getElementById("resourcedisplay");
+  resourceDisplay.value = RESOURCE_DISPLAY;
+  resourceDisplay.onchange = () => setResourceDisplay(resourceDisplay.value);
 }
 {
   const rockets = document.getElementById("rocketanimchk");
