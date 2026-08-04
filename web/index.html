@@ -1585,11 +1585,12 @@
   }
   #buildmark {
     /* The authored World minimap owns the lower-right corner at z-index 6.
-       Keep provenance one layer above it and let the live minimap geometry
-       put the badge immediately to its left. The declarations here are the
+       Keep provenance above map chrome so its commit link stays clickable.
+       Let the live minimap geometry put the badge immediately to its left.
+       The declarations here are the
        fallback when the minimap is hidden or has been moved too far left to
        leave the badge useful room. */
-    position: fixed; z-index: 7;
+    position: fixed; z-index: 16;
     right: max(7px, env(safe-area-inset-right)); bottom: max(5px, env(safe-area-inset-bottom));
     max-width: calc(100vw - 14px); padding: 3px 6px;
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;

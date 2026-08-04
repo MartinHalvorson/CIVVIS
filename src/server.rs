@@ -5578,7 +5578,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "#buildmark {\n    /* The authored World minimap owns the lower-right corner at z-index 6."
         ));
-        assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 7;\n    right:"));
+        assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
