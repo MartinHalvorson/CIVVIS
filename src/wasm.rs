@@ -286,6 +286,11 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             o
         }),
 
+        // A published browser build has no permission to inspect the machine
+        // that hosts it. Keep the response shape, but say that plainly rather
+        // than substituting the tab's own incomplete measurements.
+        ("GET", "/machine-metrics") => machine_metrics_json(),
+
         ("GET", "/status") => with_session(|session| {
             json!({
                 "turn": session.game.turn,
