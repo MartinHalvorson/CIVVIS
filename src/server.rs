@@ -1,5 +1,5 @@
 //! Zero-dependency local HTTP server for the human-vs-AI browser GUI.
-//! Endpoints: GET / (page), GET /state, GET /save, GET /rules, GET /pedia,
+//! Endpoints: GET / (page), GET /state, GET /machine-metrics, GET /save, GET /rules, GET /pedia,
 //! POST /action, POST /step, POST /autoplay, POST /view,
 //! POST /spectator-status, POST /next-game-settings, POST /new,
 //! POST /supervisor-new.
@@ -8,6 +8,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
+#[cfg(target_os = "macos")]
+use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 #[cfg(not(target_arch = "wasm32"))]
@@ -165,6 +167,215 @@ pub(crate) fn runtime_built_at() -> Option<String> {
     {
         LAUNCHED_BUILT_AT.get_or_init(launched_built_at).clone()
     }
+}
+
+/// The two host-wide measurements the viewer needs to make its rendering
+/// choices legible.  They deliberately expose percentages only: the display
+/// settings need pressure, not a machine inventory.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct MachineMetrics {
+    cpu_percent: Option<f64>,
+    memory_percent: Option<f64>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn bounded_percent(value: f64) -> Option<f64> {
+    value.is_finite().then(|| value.clamp(0.0, 100.0))
+}
+
+fn machine_metrics_value(metrics: MachineMetrics) -> Value {
+    // One decimal place is precise enough for a display choice while avoiding
+    // a falsely exact-looking value from a short host sample.
+    let rounded = |value: Option<f64>| value.map(|value| (value * 10.0).round() / 10.0);
+    json!({
+        "cpu_percent": rounded(metrics.cpu_percent),
+        "memory_percent": rounded(metrics.memory_percent),
+    })
+}
+
+fn machine_metrics_json() -> Value {
+    #[cfg(not(target_arch = "wasm32"))]
+    let metrics = sampled_machine_metrics();
+    #[cfg(target_arch = "wasm32")]
+    let metrics = MachineMetrics::default();
+    machine_metrics_value(metrics)
+}
+
+// A metrics request is cheap from the browser's point of view, but sampling a
+// host can require a platform utility.  Reuse a short-lived answer for every
+// open viewer so the load gauge cannot become the load it reports.
+#[cfg(not(target_arch = "wasm32"))]
+const MACHINE_METRICS_SAMPLE_INTERVAL: Duration = Duration::from_secs(2);
+
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Clone, Copy)]
+struct MachineMetricsSnapshot {
+    sampled_at: Instant,
+    metrics: MachineMetrics,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+static MACHINE_METRICS_CACHE: OnceLock<Mutex<Option<MachineMetricsSnapshot>>> = OnceLock::new();
+
+#[cfg(not(target_arch = "wasm32"))]
+fn sampled_machine_metrics() -> MachineMetrics {
+    let cache = MACHINE_METRICS_CACHE.get_or_init(|| Mutex::new(None));
+    let now = Instant::now();
+    let mut held = cache.lock().unwrap();
+    if let Some(snapshot) = *held {
+        if now.duration_since(snapshot.sampled_at) < MACHINE_METRICS_SAMPLE_INTERVAL {
+            return snapshot.metrics;
+        }
+    }
+    let metrics = MachineMetrics {
+        cpu_percent: host_cpu_percent(),
+        memory_percent: host_memory_percent(),
+    };
+    *held = Some(MachineMetricsSnapshot {
+        sampled_at: now,
+        metrics,
+    });
+    metrics
+}
+
+#[cfg(target_os = "linux")]
+fn linux_cpu_ticks(report: &str) -> Option<(u64, u64)> {
+    let values: Vec<u64> = report
+        .lines()
+        .find(|line| line.starts_with("cpu "))?
+        .split_whitespace()
+        .skip(1)
+        .map(str::parse)
+        .collect::<Result<_, _>>()
+        .ok()?;
+    let idle = *values.get(3)? + values.get(4).copied().unwrap_or(0);
+    Some((values.iter().sum(), idle))
+}
+
+#[cfg(target_os = "linux")]
+fn cpu_percent_from_ticks(previous: (u64, u64), current: (u64, u64)) -> Option<f64> {
+    let total = current.0.checked_sub(previous.0)?;
+    let idle = current.1.checked_sub(previous.1)?;
+    (total > 0 && idle <= total).then(|| 100.0 * (total - idle) as f64 / total as f64)
+}
+
+#[cfg(target_os = "linux")]
+fn host_cpu_percent() -> Option<f64> {
+    static PREVIOUS: OnceLock<Mutex<Option<(u64, u64)>>> = OnceLock::new();
+    let current = linux_cpu_ticks(&std::fs::read_to_string("/proc/stat").ok()?)?;
+    let mut held = PREVIOUS.get_or_init(|| Mutex::new(None)).lock().unwrap();
+    let measured = (*held).and_then(|previous| cpu_percent_from_ticks(previous, current));
+    *held = Some(current);
+    measured.and_then(bounded_percent)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_top_cpu_percent(report: &str) -> Option<f64> {
+    let idle = report.lines().rev().find_map(|line| {
+        let fragment = line.split(',').find(|part| part.contains("% idle"))?;
+        fragment.split('%').next()?.trim().parse::<f64>().ok()
+    })?;
+    bounded_percent(100.0 - idle)
+}
+
+#[cfg(target_os = "macos")]
+fn host_cpu_percent() -> Option<f64> {
+    let output = Command::new("top").args(["-l", "1", "-n", "0"]).output().ok()?;
+    macos_top_cpu_percent(&String::from_utf8_lossy(&output.stdout))
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(target_os = "linux", target_os = "macos"))
+))]
+fn host_cpu_percent() -> Option<f64> {
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn memory_percent_from_meminfo(report: &str) -> Option<f64> {
+    let mut total = None;
+    let mut available = None;
+    for line in report.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        let Some(amount) = value
+            .split_whitespace()
+            .next()
+            .and_then(|amount| amount.parse::<u64>().ok())
+        else {
+            continue;
+        };
+        match name {
+            "MemTotal" => total = Some(amount),
+            "MemAvailable" => available = Some(amount),
+            _ => {}
+        }
+    }
+    let total = total?;
+    let available = available?;
+    (total > 0 && available <= total)
+        .then(|| 100.0 * (total - available) as f64 / total as f64)
+}
+
+#[cfg(target_os = "linux")]
+fn host_memory_percent() -> Option<f64> {
+    memory_percent_from_meminfo(&std::fs::read_to_string("/proc/meminfo").ok()?)
+        .and_then(bounded_percent)
+}
+
+#[cfg(target_os = "macos")]
+fn macos_physical_memory_bytes() -> Option<u64> {
+    static TOTAL: OnceLock<Option<u64>> = OnceLock::new();
+    TOTAL
+        .get_or_init(|| {
+            let output = Command::new("sysctl").args(["-n", "hw.memsize"]).output().ok()?;
+            String::from_utf8_lossy(&output.stdout).trim().parse().ok()
+        })
+        .to_owned()
+}
+
+#[cfg(target_os = "macos")]
+fn macos_vm_stat_pages(report: &str, name: &str) -> Option<u64> {
+    report.lines().find_map(|line| {
+        let line = line.trim_start();
+        let value = line.strip_prefix(name)?.trim_start_matches(':').trim();
+        value.trim_end_matches('.').parse().ok()
+    })
+}
+
+#[cfg(target_os = "macos")]
+fn macos_memory_percent(report: &str, total: u64) -> Option<f64> {
+    let page_size = report.lines().find_map(|line| {
+        line.split("page size of ")
+            .nth(1)?
+            .split_whitespace()
+            .next()?
+            .parse::<u64>()
+            .ok()
+    })?;
+    let available_pages = ["Pages free", "Pages inactive", "Pages speculative"]
+        .iter()
+        .filter_map(|name| macos_vm_stat_pages(report, name))
+        .sum::<u64>();
+    let available = available_pages.saturating_mul(page_size).min(total);
+    (total > 0).then(|| 100.0 * (total - available) as f64 / total as f64)
+}
+
+#[cfg(target_os = "macos")]
+fn host_memory_percent() -> Option<f64> {
+    let total = macos_physical_memory_bytes()?;
+    let output = Command::new("vm_stat").output().ok()?;
+    macos_memory_percent(&String::from_utf8_lossy(&output.stdout), total).and_then(bounded_percent)
+}
+
+#[cfg(all(
+    not(target_arch = "wasm32"),
+    not(any(target_os = "linux", target_os = "macos"))
+))]
+fn host_memory_percent() -> Option<f64> {
+    None
 }
 
 const EMBEDDED_INDEX: &str = include_str!("../web/index.html");
@@ -3787,6 +3998,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 sh.note_frame_delivered(&viewer, frame);
             }
         }
+        // The panel polls this independently of the game state: sampling the
+        // host must never make a viewer serialize its whole map just to decide
+        // whether to prefer a lighter display treatment.
+        ("GET", "/machine-metrics") => {
+            respond_json(stream, &machine_metrics_json());
+        }
         // Everything a supervisor needs to know - is there a game, is it over -
         // without building the whole observation. /state runs close to a
         // megabyte of JSON on a standard map, and something polling it every
@@ -4451,6 +4668,87 @@ mod tests {
     use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
     use std::sync::{mpsc, Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
+
+    #[test]
+    fn machine_metric_values_are_bounded_and_only_expose_percentages() {
+        assert_eq!(super::bounded_percent(f64::NAN), None);
+        assert_eq!(super::bounded_percent(-5.0), Some(0.0));
+        assert_eq!(super::bounded_percent(140.0), Some(100.0));
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(
+                super::cpu_percent_from_ticks((100, 70), (200, 120)),
+                Some(50.0)
+            );
+            assert_eq!(super::cpu_percent_from_ticks((100, 70), (100, 70)), None);
+            assert_eq!(
+                super::memory_percent_from_meminfo(
+                    "MemTotal:       1000 kB\nMemAvailable:    250 kB\n",
+                ),
+                Some(75.0)
+            );
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let cpu = super::macos_top_cpu_percent(
+                "CPU usage: 12.00% user, 3.00% sys, 85.00% idle\n",
+            )
+            .expect("CPU usage line should parse");
+            assert!((cpu - 15.0).abs() < f64::EPSILON);
+            assert_eq!(
+                super::macos_memory_percent(
+                    "Mach Virtual Memory Statistics: (page size of 4096 bytes)\n\
+                     Pages free: 25.\nPages inactive: 25.\nPages speculative: 0.\n",
+                    409_600,
+                ),
+                Some(50.0)
+            );
+        }
+        assert_eq!(
+            super::machine_metrics_value(super::MachineMetrics {
+                cpu_percent: Some(12.31),
+                memory_percent: None,
+            }),
+            json!({"cpu_percent": 12.3, "memory_percent": Value::Null})
+        );
+        assert_eq!(
+            super::machine_metrics_value(super::MachineMetrics::default()),
+            json!({"cpu_percent": Value::Null, "memory_percent": Value::Null})
+        );
+    }
+
+    #[test]
+    fn browser_offers_host_load_caps_and_display_guidance() {
+        assert!(EMBEDDED_INDEX.contains("<span>Display Settings</span>"));
+        for kind in ["cpu", "memory"] {
+            assert!(EMBEDDED_INDEX.contains(&format!("id=\"{kind}-load-row\"")));
+            assert!(EMBEDDED_INDEX.contains(&format!("id=\"{kind}-load-cap\"")));
+        }
+        for kind in ["cpu", "memory"] {
+            let options = EMBEDDED_INDEX
+                .split_once(&format!("id=\"{kind}-load-cap\""))
+                .expect("load cap select")
+                .1
+                .split_once("</select>")
+                .expect("load cap select closes")
+                .0;
+            assert_eq!(options.matches("<option").count(), 9);
+            for percent in (10..=90).step_by(10) {
+                assert!(
+                    options.contains(&format!("<option value=\"{percent}\"")),
+                    "{kind} cap should offer {percent}%"
+                );
+            }
+        }
+        for contract in [
+            "DISPLAY_RESOURCE_CAPS_STORAGE_KEY",
+            "fetchJSON(\"/machine-metrics\", {cache: \"no-store\"}, 3000)",
+            "Prefer Performance resolution",
+            "Machine telemetry is unavailable here.",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(contract), "missing display load contract: {contract}");
+        }
+    }
 
     #[test]
     fn browser_gives_every_shipped_improvement_a_named_tile_marker() {
@@ -7998,7 +8296,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "basic.push(document.getElementById(\"victory-options\"), document.getElementById(\"saves-group\"));"
         ));
-        // Interface Settings keeps its map and spaceflight switches together
+        // Display Settings keeps its map and spaceflight switches together
         // at the head of its advanced drawer, before the overlay layout controls.
         let display_advanced = [
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"10\"><span><input type=\"checkbox\" id=\"gridchk\"",
@@ -8013,7 +8311,7 @@ mod tests {
             display_advanced.windows(2).all(|pair| {
                 EMBEDDED_INDEX.find(pair[0]).unwrap() < EMBEDDED_INDEX.find(pair[1]).unwrap()
             }),
-            "map and spaceflight switches should lead Interface Settings advanced controls"
+            "map and spaceflight switches should lead Display Settings advanced controls"
         );
         // Resource names are the default detailed-map treatment, but the
         // existing compact symbol stays an explicit, persisted choice and the
@@ -8164,7 +8462,7 @@ mod tests {
             .expect("simulation controls");
         let interface_settings = EMBEDDED_INDEX
             .find("<details class=\"sidebar-section\" data-section=\"display-settings\">")
-            .expect("interface settings panel");
+            .expect("display settings panel");
         let event_log = EMBEDDED_INDEX
             .find("<span>Game event log</span>")
             .expect("game event log");
@@ -8213,11 +8511,11 @@ mod tests {
                 && map_lenses < map_utility
                 && map_lenses < visible_tile_search
                 && visible_tile_search < keyboard_shortcuts,
-            "left panel should show controls, interface settings, game setup, strategy, \
+            "left panel should show controls, display settings, game setup, strategy, \
              the three logs, government, map lenses, visible-tile search and then keyboard shortcuts"
         );
-        assert!(EMBEDDED_INDEX.contains("<span>Interface Settings</span>"));
-        assert!(!EMBEDDED_INDEX.contains("<span>Display settings</span>"));
+        assert!(EMBEDDED_INDEX.contains("<span>Display Settings</span>"));
+        assert!(!EMBEDDED_INDEX.contains("<span>Interface Settings</span>"));
         assert!(EMBEDDED_INDEX.contains(
             "order: -1; width: 16vw; min-width: 16vw;"
         ));
@@ -8650,7 +8948,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
-        assert!(EMBEDDED_INDEX.contains("restore it in Interface Settings"));
+        assert!(EMBEDDED_INDEX.contains("restore it in Display Settings"));
         assert_eq!(
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
@@ -8675,7 +8973,7 @@ mod tests {
             "window.addEventListener(\"resize\", revealMapLensSection, {passive:true});"
         ));
         // Collapsing the command deck collapses the deck alone. Every map
-        // overlay is switched from the deck's Interface Settings instead, so the
+        // overlay is switched from the deck's Display Settings instead, so the
         // two controls stay independent and the deck's width can be handed to
         // the map without losing the instruments on it.
         for (overlay, element) in [
@@ -8686,7 +8984,7 @@ mod tests {
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("body.overlay-{overlay}-hidden {element}")),
-                "Interface Settings should hide the {element} map overlay"
+                "Display Settings should hide the {element} map overlay"
             );
         }
         for element in [
@@ -12160,7 +12458,7 @@ mod tests {
     /// them: collapse the command deck, set the map area, face north, zoom in,
     /// zoom out, choose a sky route when one is available, dismiss.
     /// Dismissal is last because it is the only one that removes the bar, and
-    /// it hides itself while the deck is collapsed — Interface Settings is the
+    /// it hides itself while the deck is collapsed — Display Settings is the
     /// only way back and it lives inside the deck.
     #[test]
     fn the_map_controls_run_from_collapse_to_dismiss() {
