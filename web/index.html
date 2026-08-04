@@ -13619,7 +13619,7 @@ async function ensurePlanetGeometry() {
   }
 }
 
-function planetCamera() {
+function planetCameraBase() {
   const span = Math.max(1, S * 1.5 * (state.map.height - 1));
   const north = Math.min(1, Math.max(0, cam.y / span));
   return {
@@ -13639,19 +13639,47 @@ function planetCamera() {
     chart:!knowsGlobe(),
   };
 }
+// A ground plane can be foreshortened by squeezing one screen axis.  A sphere
+// cannot: doing that to its completed orthographic drawing turns the limb into
+// an ellipse.  Once the world is known to be round, pitch the *view basis*
+// about its screen-right axis instead.  The surface then moves toward a horizon
+// while the ball, its atmosphere, and every hit cell retain one circular limb.
+// Before that discovery, this is still the old chart and its planar pitch stays
+// appropriate (and deliberately does not reveal a globe through its shape).
+function planetTiltBasis(basis, tilt = cam.tilt) {
+  const angle = knowsGlobe() ? clampCameraTilt(tilt) : 0;
+  return angle > 1e-9 ? planetSpin(basis, basis.right, angle) : basis;
+}
+function planetUntiltBasis(basis, tilt = cam.tilt) {
+  const angle = knowsGlobe() ? clampCameraTilt(tilt) : 0;
+  return angle > 1e-9 ? planetSpin(basis, basis.right, -angle) : basis;
+}
+function planetCamera() {
+  const camera = planetCameraBase();
+  if (camera.chart) return camera;
+  return {...camera,
+          ...planetBasisCamera(planetTiltBasis(planetViewBasis(camera)))};
+}
 // The camera is steered in the same world coordinates the flat maps use, so
 // centring on a tile means turning the globe until that tile faces the viewer.
 function planetCameraTargetFor(pos) {
   const cell = PLANET?.cells.get(key(pos));
   if (!cell) return null;
   const [x, y, z] = cell.center;
-  const longitude = Math.atan2(y, x);
-  const latitude = Math.asin(Math.max(-1, Math.min(1, z)));
+  // `cam` stores the level basis so its coordinates remain stable for flights
+  // and wrapping.  A target, however, is a point in the tilted on-screen view;
+  // undo that camera-only pitch before saving its longitude and latitude.
+  const target = {
+    longitude:Math.atan2(y, x),
+    latitude:Math.asin(Math.max(-1, Math.min(1, z))),
+    roll:planetCamera().roll,
+  };
+  const base = planetBasisCamera(planetUntiltBasis(planetViewBasis(target)));
   const span = Math.max(1, S * 1.5 * (state.map.height - 1));
-  let column = (longitude + Math.PI) / (2 * Math.PI) * WW();
+  let column = (base.longitude + Math.PI) / (2 * Math.PI) * WW();
   const width = WW();
   column += Math.round((cam.x - column) / width) * width;
-  return [column, (Math.PI / 2 - latitude) / Math.PI * span];
+  return [column, (Math.PI / 2 - base.latitude) / Math.PI * span];
 }
 function planetStageCenter() {
   // The globe and its wider sky are painted into the canvas, and that canvas
@@ -13787,7 +13815,10 @@ function planetTurn(basis, dx, dy) {
 // that reads a column — a flight target, the world map's own frame — jumps a
 // whole world when the view crosses the date line or comes over a pole.
 function applyPlanetBasis(basis) {
-  const view = planetBasisCamera(basis);
+  // Pointer and inertia turns arrive in the visible, tilted basis.  Persist
+  // the level camera beneath it, otherwise the same pitch would be added again
+  // the next time `planetCamera()` reconstructs the view.
+  const view = planetBasisCamera(planetUntiltBasis(basis));
   const span = Math.max(1, S * 1.5 * (state.map.height - 1));
   const width = Math.max(1, WW());
   let column = (view.longitude + Math.PI) / (2 * Math.PI) * width;
@@ -15092,27 +15123,31 @@ function planetEarthCenter(radius = planetEarthRadius()) {
   const [stageX, stageY] = planetStageCenter();
   return [stageX - SKY_PAN.x * radius, stageY - SKY_PAN.y * radius];
 }
-// Globe geometry is still calculated in its honest orthographic coordinates.
-// Pitch is applied afterwards as the camera's ground-plane transform, which
-// means a marker, its tile, and the globe limb all share exactly one plane.
+// The unknown-world chart is a ground plane, so it still receives the flat
+// camera's vertical projection.  A discovered globe is pitched in
+// `planetCamera()` before orthographic projection and must leave this factor at
+// one: scaling it here would squash the spherical limb into an ellipse.
+function planetGroundProjection() {
+  return knowsGlobe() ? 1 : cameraTiltProjection();
+}
 function planetGroundScreenY(y, centerY) {
-  return centerY + (y - centerY) * cameraTiltProjection();
+  return centerY + (y - centerY) * planetGroundProjection();
 }
 function planetGroundInputY(y, centerY) {
-  return centerY + (y - centerY) / cameraTiltProjection();
+  return centerY + (y - centerY) / planetGroundProjection();
 }
 function planetGroundPoint(point, centerY) {
   return {...point, y:planetGroundScreenY(point.y, centerY)};
 }
 function applyPlanetGroundTilt(centerY) {
-  const projection = cameraTiltProjection();
+  const projection = planetGroundProjection();
   if (projection >= .999999) return;
   cx.translate(0, centerY);
   cx.scale(1, projection);
   cx.translate(0, -centerY);
 }
 function planetGroundDrag(dx, dy) {
-  return [dx, dy / cameraTiltProjection()];
+  return [dx, dy / planetGroundProjection()];
 }
 // The world the camera is actually looking at: the one big enough to fill the
 // stage and standing near the middle of it. Dragging means turn-this-world when
@@ -19094,10 +19129,12 @@ function drawPlanetMap() {
   // picture; the disc behind it is two fills either way and costs nothing.
   const earthInFrame = skyOnCanvas({x:centerX, y:centerY, r:radius});
 
-  // Everything that belongs to the Earth is painted in one tilted plane. This
-  // is deliberately outside the individual icon painters: a unit, building,
-  // badge, border, and its host cell cannot disagree about how far toward the
-  // horizon the camera has turned. The sky remains in screen space below.
+  // Everything that belongs to the Earth is painted through one camera. On a
+  // known globe that camera was tilted in 3D before projection, preserving the
+  // circular limb; only an undiscovered chart needs the planar transform below.
+  // Keeping it outside individual icon painters still makes a unit, building,
+  // badge, border, and host cell agree about their projection. The sky remains
+  // in screen space below.
   cx.save();
   applyPlanetGroundTilt(centerY);
 
