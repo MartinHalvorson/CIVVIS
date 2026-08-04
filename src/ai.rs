@@ -208,6 +208,45 @@ pub struct ForceReport {
     pub strength_ratio: f64,
 }
 
+/// Observer-only state for one unified, appointed military campaign.
+///
+/// The controller owns the mutable plan. This report exposes both the current
+/// package and cumulative lifecycle counters so evaluators can distinguish a
+/// plan that formed from one that researched, mobilized, declared, and took
+/// its objective quickly. Nothing in play reads this type.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WarPlanReport {
+    pub enabled: bool,
+    pub active: bool,
+    pub phase: Option<&'static str>,
+    pub target_player: Option<usize>,
+    pub objective_city: Option<u32>,
+    pub breakthrough_tech: Option<Name>,
+    pub assault_unit: Option<Name>,
+    pub predecessor: Option<Name>,
+    pub breach_unit: Option<Name>,
+    pub required_bodies: usize,
+    pub ready_bodies: usize,
+    pub staged_bodies: usize,
+    pub breach_ready: bool,
+    pub upgrade_gold_reserved: f64,
+    pub appointed_turn: Option<u32>,
+    pub appointments: u32,
+    pub breakthroughs: u32,
+    pub mobilizations: u32,
+    pub declarations: u32,
+    pub complete_package_declarations: u32,
+    pub objectives_captured: u32,
+    pub objectives_captured_within_ten: u32,
+    pub appointment_to_tech_turns: u32,
+    pub tech_to_declaration_turns: u32,
+    pub declaration_to_capture_turns: u32,
+    pub appointment_to_tech_samples: Vec<u32>,
+    pub tech_to_declaration_samples: Vec<u32>,
+    pub declaration_to_capture_samples: Vec<u32>,
+    pub aborts: BTreeMap<&'static str, u32>,
+}
+
 /// Everything an agent is willing to say about its own medium-term
 /// intentions. The spectator HUD reads this to explain *why* a civilization
 /// is doing what it does instead of only showing the outcome; nothing here
@@ -234,6 +273,9 @@ pub struct PlanReport {
     /// preference upgraded into one.
     pub peace_offers: Vec<usize>,
     pub forces: Vec<ForceReport>,
+    /// The one authority spanning target selection, research, production,
+    /// treasury, staging, declaration, and exploitation.
+    pub war: Option<WarPlanReport>,
 }
 
 pub trait Ai {

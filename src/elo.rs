@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 98] = [
+pub const EVAL_ONLY_AIS: [&str; 99] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -74,6 +74,7 @@ pub const EVAL_ONLY_AIS: [&str; 98] = [
     "advanced_blind_to_leaders",
     "advanced_rush",
     "advanced_rush_connected",
+    "advanced_timing_attack",
     "advanced_city_strategy",
     "advanced_city_strategy_emphasis",
     "advanced_city_strategy_roles",
@@ -265,6 +266,7 @@ define_arm_kinds! {
     AdvancedReliefScoped => "advanced_relief_scoped",
     AdvancedRush => "advanced_rush",
     AdvancedRushConnected => "advanced_rush_connected",
+    AdvancedTimingAttack => "advanced_timing_attack",
     AdvancedSettlerCommit => "advanced_settler_commit",
     AdvancedSettlerFirst => "advanced_settler_first",
     AdvancedTargetDomination => "advanced_target_domination",
@@ -1680,6 +1682,13 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.route_connected_rush = true;
             Box::new(ai)
         }
+        // Preregistered unified midgame appointment: target, breakthrough,
+        // bodies, upgrade bill, staging, declaration, and objective lifecycle
+        // are one controller-owned plan. The production arm remains off until
+        // the frozen paired screens establish that this capability wins.
+        "advanced_timing_attack" => {
+            Box::new(AdvancedAi::timing_attack())
+        }
         // Treatment for the response-shape axis: identical to `advanced`
         // except that a Science or Expansion threat is answered by racing the
         // leader in that lane rather than by declaring on them. The alarm is
@@ -2847,6 +2856,7 @@ impl ArmKind {
             Self::AdvancedBlindToLeaders | Self::AdvancedEvolvedBlind => &["leader-denial-off"],
             Self::AdvancedRush => &["early-rush"],
             Self::AdvancedRushConnected => &["early-rush", "connected-rush"],
+            Self::AdvancedTimingAttack => &["timed-war-appointment"],
             Self::AdvancedCounterInLane => &["counter-in-lane"],
             Self::AdvancedCounterStandDown => &["counter-stand-down"],
             Self::AdvancedEarlyScoreAlarm => &["early-score-alarm"],
@@ -3419,6 +3429,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
         "advanced_rush" => (Vec::new(), "advanced_rush"),
         "advanced_rush_connected" => (Vec::new(), "advanced_rush_connected"),
+        "advanced_timing_attack" => (Vec::new(), "advanced_timing_attack"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
         "advanced_target_domination" => (Vec::new(), "advanced_target_domination"),
@@ -4078,6 +4089,45 @@ mod tests {
     use std::collections::BTreeSet;
     use crate::game::{Action, Game};
     use crate::rng::Rng;
+
+    #[test]
+    fn timed_war_arm_is_one_explicit_axis_and_stays_off_for_control_and_minors() {
+        let treatment = builtin_arm("advanced_timing_attack").unwrap();
+        let control = builtin_arm("advanced").unwrap();
+        assert_eq!(
+            treatment.spec.differing_axes(&control.spec),
+            vec!["timed-war-appointment"]
+        );
+        assert_eq!(
+            builtin_provenance("advanced_timing_attack", ARTIFACT_DIR).effective,
+            "advanced_timing_attack"
+        );
+
+        for (name, enabled) in [
+            ("advanced", false),
+            ("advanced_timing_attack", true),
+        ] {
+            let mut game = Game::new(2, 20, 14, 940_012, 80, 0);
+            let mut ai = builtin_ai_strict(name, 940_012).unwrap();
+            ai.take_turn(&mut game, 0);
+            assert_eq!(
+                ai.plan_report()
+                    .and_then(|plan| plan.war)
+                    .is_some_and(|war| war.enabled),
+                enabled,
+                "{name} must report its actual treatment state"
+            );
+        }
+
+        let mut minor_game = Game::new(2, 20, 14, 940_013, 80, 0);
+        minor_game.players[0].is_minor = true;
+        let mut treatment = builtin_ai_strict("advanced_timing_attack", 940_013).unwrap();
+        treatment.take_turn(&mut minor_game, 0);
+        assert!(
+            treatment.plan_report().is_none(),
+            "city-states remain on the Basic controller and never form elective appointments"
+        );
+    }
     use std::collections::BTreeMap;
     use std::fs;
     use std::sync::{Arc, Barrier};
@@ -4442,7 +4492,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 65] = [
+            const SCRIPTED: [&str; 66] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4455,6 +4505,7 @@ mod tests {
                 "advanced_blind_to_leaders",
                 "advanced_rush",
                 "advanced_rush_connected",
+                "advanced_timing_attack",
                 "advanced_congress_counter",
                 "advanced_congress_votes",
                 "advanced_congress_counter_hard",

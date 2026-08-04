@@ -20275,13 +20275,35 @@ impl Game {
     /// prices are twice the Production difference on top of the base cost.
     pub fn unit_upgrade_price(&self, pid: usize, kind: &str) -> Option<(Name, f64, f64)> {
         let target = self.unit_upgrade_target(pid, Name::new(kind))?;
-        let from = self.rules.units.get(kind)?.cost;
-        let spec = self.rules.units.get(&target)?;
+        self.unit_upgrade_price_to(pid, Name::new(kind), target)
+            .map(|(gold, resources)| (target, gold, resources))
+    }
+
+    /// Quote a direct upgrade before its technology is owned.
+    ///
+    /// A timed campaign must reserve the bill while researching the successor,
+    /// earlier than [`Self::unit_upgrade_target`] can expose it as an action.
+    /// This keeps the game-speed and policy discounts in the engine and checks
+    /// the civilization-specific replacement edge used by the real upgrade.
+    pub fn unit_upgrade_price_to(
+        &self,
+        pid: usize,
+        kind: impl AsName,
+        target: impl AsName,
+    ) -> Option<(f64, f64)> {
+        let kind = kind.as_name();
+        let target = target.as_name();
+        let generic = self.rules.units.get_interned(kind)?.upgrade_to?;
+        if self.player_unit_replacement(pid, generic) != target {
+            return None;
+        }
+        let from = self.rules.units.get_interned(kind)?.cost;
+        let spec = self.rules.units.get_interned(target)?;
         let gold = self
             .game_speed
             .scale((10.0 + 2.0 * (spec.cost - from).max(0.0)).max(15.0));
         let (gold, resources) = self.upgrade_costs(pid, gold, spec.resource_cost);
-        Some((target, gold, resources))
+        Some((gold, resources))
     }
 
     /// Civ VI upgrades happen in friendly territory, before the unit has done
@@ -32355,6 +32377,41 @@ impl Game {
         Some(step)
     }
 
+    /// Exact number of hex steps in the deterministic long-range route used by
+    /// [`Self::route_step`], stopping within `stop_range` of `to`.
+    ///
+    /// Strategic planning needs the whole march length, not merely proof that
+    /// a first step exists. Reuse the router and its cached path so campaign
+    /// feasibility, staging movement, and launch estimates cannot disagree.
+    pub fn route_distance(&self, uid: u32, to: Pos, stop_range: i32) -> Option<usize> {
+        let unit = self.units.get(&uid)?;
+        let start = unit.pos;
+        let range = stop_range.max(0);
+        if self.wdist(start, to) <= range {
+            return Some(0);
+        }
+        self.route_step(uid, to, range)?;
+        let territory_access = self.unit_territory_access(unit);
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
+        self.routing
+            .borrow()
+            .paths
+            .iter()
+            .find(|route| {
+                route.unit == uid
+                    && route.target == to
+                    && route.range == range
+                    && route.access_key == access_key
+            })
+            .and_then(|route| {
+                route
+                    .path
+                    .iter()
+                    .position(|position| *position == start)
+                    .map(|index| route.path.len().saturating_sub(index + 1))
+            })
+    }
+
     /// Everything which can change whether this unit may cross a border
     /// without changing the map itself. Player access is already the complete
     /// shared predicate; city owners distinguish a same-turn city transfer
@@ -37385,7 +37442,7 @@ impl Game {
     /// Resolve a generic upgrade target to this civilization's unique
     /// replacement. For example, Nubian Slingers advance to Pitati Archers
     /// instead of creating Archers that Nubia is not allowed to train.
-    fn player_unit_replacement(&self, pid: usize, unit: impl AsName) -> Name {
+    pub fn player_unit_replacement(&self, pid: usize, unit: impl AsName) -> Name {
         let unit = unit.as_name();
         self.rules
             .units

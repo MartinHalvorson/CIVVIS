@@ -1,5 +1,5 @@
 //! Paired, seat-balanced head-to-head evaluator for built-in AIs.
-use civvis::ai::{Ai, ExpansionCensus};
+use civvis::ai::{Ai, ExpansionCensus, WarPlanReport};
 use civvis::elo::{
     builtin_ai_degraded, builtin_ai_strict, builtin_arm, builtin_provenances, collapsed_entrants,
     AgentProvenance, BuiltinAiBuildError, ARTIFACT_DIR, BUILTIN_AIS, EVAL_ONLY_AIS,
@@ -323,6 +323,8 @@ struct PlanTrace {
     switches: usize,
     rush_observations: usize,
     ever_rushed: bool,
+    war_enabled: bool,
+    war_active_observations: usize,
     targets: BTreeMap<String, usize>,
     last_target: Option<String>,
     strategy_switches: usize,
@@ -352,6 +354,8 @@ struct PlanObservation {
     target: &'static str,
     strategy: &'static str,
     rush: bool,
+    war_enabled: bool,
+    war_active: bool,
     context: StrategyContext,
     midgame: bool,
 }
@@ -362,6 +366,8 @@ impl PlanTrace {
             target,
             strategy,
             rush,
+            war_enabled,
+            war_active,
             context,
             midgame,
         } = observation;
@@ -375,6 +381,8 @@ impl PlanTrace {
         self.observations += 1;
         self.rush_observations += rush as usize;
         self.ever_rushed |= rush;
+        self.war_enabled |= war_enabled;
+        self.war_active_observations += war_active as usize;
         *self.targets.entry(target.to_string()).or_default() += 1;
         self.last_target = Some(target.to_string());
 
@@ -449,6 +457,8 @@ fn plan_observation(g: &Game, pid: usize, ai: &dyn Ai) -> PlanObservation {
             target: "unreported",
             strategy: "unreported",
             rush: false,
+            war_enabled: false,
+            war_active: false,
             context: StrategyContext {
                 at_major_war,
                 threatened: false,
@@ -456,16 +466,22 @@ fn plan_observation(g: &Game, pid: usize, ai: &dyn Ai) -> PlanObservation {
             },
             midgame,
         },
-        |plan| PlanObservation {
-            target: plan.victory_target.unwrap_or("adaptive"),
-            strategy: plan.strategy,
-            rush: plan.rush,
-            context: StrategyContext {
-                at_major_war,
-                threatened: plan.threatened_city.is_some(),
-                city_deficit: g.player_city_ids(pid).len() < plan.desired_cities,
-            },
-            midgame,
+        |plan| {
+            let war_enabled = plan.war.as_ref().is_some_and(|war| war.enabled);
+            let war_active = plan.war.as_ref().is_some_and(|war| war.active);
+            PlanObservation {
+                target: plan.victory_target.unwrap_or("adaptive"),
+                strategy: plan.strategy,
+                rush: plan.rush,
+                war_enabled,
+                war_active,
+                context: StrategyContext {
+                    at_major_war,
+                    threatened: plan.threatened_city.is_some(),
+                    city_deficit: g.player_city_ids(pid).len() < plan.desired_cities,
+                },
+                midgame,
+            }
         },
     )
 }
@@ -570,9 +586,51 @@ struct Metrics {
     dispatch_late_settler_seats: usize,
     advanced_late_settler_seats: usize,
     expansion_deadlines: Option<(u32, u32)>,
+    war_reporting_seats: usize,
+    war_plan_seats: usize,
+    war_active_turns: usize,
+    war_appointments: u32,
+    war_breakthroughs: u32,
+    war_mobilizations: u32,
+    war_declarations: u32,
+    war_complete_declarations: u32,
+    war_objectives_captured: u32,
+    war_objectives_captured_within_ten: u32,
+    war_appointment_to_tech: Vec<u32>,
+    war_tech_to_declaration: Vec<u32>,
+    war_declaration_to_capture: Vec<u32>,
+    war_aborts: BTreeMap<&'static str, u32>,
 }
 
 impl Metrics {
+    fn record_war(&mut self, trace: &PlanTrace, report: Option<&WarPlanReport>) {
+        if !trace.war_enabled {
+            return;
+        }
+        self.war_reporting_seats += 1;
+        self.war_active_turns += trace.war_active_observations;
+        let Some(report) = report else {
+            return;
+        };
+        self.war_plan_seats += usize::from(report.appointments > 0);
+        self.war_appointments += report.appointments;
+        self.war_breakthroughs += report.breakthroughs;
+        self.war_mobilizations += report.mobilizations;
+        self.war_declarations += report.declarations;
+        self.war_complete_declarations += report.complete_package_declarations;
+        self.war_objectives_captured += report.objectives_captured;
+        self.war_objectives_captured_within_ten += report.objectives_captured_within_ten;
+        self.war_appointment_to_tech
+            .extend(report.appointment_to_tech_samples.iter().copied());
+        self.war_tech_to_declaration
+            .extend(report.tech_to_declaration_samples.iter().copied());
+        self.war_declaration_to_capture
+            .extend(report.declaration_to_capture_samples.iter().copied());
+        for (reason, count) in &report.aborts {
+            *self.war_aborts.entry(*reason).or_default() += count;
+        }
+    }
+
     fn record(&mut self, g: &Game, pid: usize, won: bool, final_target: &str, trace: &PlanTrace) {
         let cities = g.player_city_ids(pid);
         self.games += 1;
@@ -741,6 +799,19 @@ fn turn_list(turns: &[u32]) -> String {
             .map(|turn| turn.to_string())
             .collect::<Vec<_>>()
             .join(",")
+    }
+}
+
+fn median_turns(turns: &[u32]) -> String {
+    let mut sorted = turns.to_vec();
+    sorted.sort_unstable();
+    match sorted.len() {
+        0 => "unresolved".to_string(),
+        len if len % 2 == 1 => format!("{:.1}", sorted[len / 2] as f64),
+        len => format!(
+            "{:.1}",
+            (sorted[len / 2 - 1] as f64 + sorted[len / 2] as f64) / 2.0
+        ),
     }
 }
 
@@ -1376,6 +1447,7 @@ fn main() {
         targets: Vec<&'static str>,
         censuses: Vec<Option<ReviewCensus>>,
         expansion_censuses: Vec<Option<ExpansionCensus>>,
+        war_reports: Vec<Option<WarPlanReport>>,
     }
 
     // Games share nothing but the immutable ruleset, and every one is fully
@@ -1441,6 +1513,9 @@ fn main() {
             let expansion_censuses = (0..players)
                 .map(|pid| ais[pid].expansion_census())
                 .collect();
+            let war_reports = (0..players)
+                .map(|pid| ais[pid].plan_report().and_then(|plan| plan.war))
+                .collect();
             PlayedGame {
                 game,
                 seats,
@@ -1448,6 +1523,7 @@ fn main() {
                 targets,
                 censuses,
                 expansion_censuses,
+                war_reports,
             }
         });
         for (index, result) in played.into_iter().enumerate() {
@@ -1458,6 +1534,7 @@ fn main() {
                 targets,
                 censuses,
                 expansion_censuses,
+                war_reports,
             } = result;
             total_turns += game.reported_turn() as u64;
             let score = game_score(game.winner, &seats, a);
@@ -1474,6 +1551,10 @@ fn main() {
             // Legacy per-seat win metrics count a game nobody won as zero
             // wins. The paired promotion score above records it as a draw.
             for (pid, name) in seats.iter().enumerate() {
+                totals
+                    .get_mut(*name)
+                    .unwrap()
+                    .record_war(&traces[pid], war_reports[pid].as_ref());
                 if let Some(census) = censuses[pid] {
                     let metrics = totals.get_mut(*name).unwrap();
                     metrics.census.merge(census);
@@ -1812,6 +1893,57 @@ fn main() {
             metrics.plan_observations,
             100.0 * metrics.rush_turns as f64 / metrics.plan_observations.max(1) as f64,
         );
+    }
+    if [a, b]
+        .iter()
+        .any(|name| totals[*name].war_reporting_seats > 0)
+    {
+        println!("\nUnified timed-war appointment exposure:");
+        for name in [a, b] {
+            let metrics = &totals[name];
+            if metrics.war_reporting_seats == 0 {
+                println!("  {name:<11} treatment disabled");
+                continue;
+            }
+            println!(
+                "  {name:<11} plans on {}/{} seat-games ({:.1}%); active {}/{} player-turns ({:.1}%)",
+                metrics.war_plan_seats,
+                metrics.war_reporting_seats,
+                100.0 * metrics.war_plan_seats as f64 / metrics.war_reporting_seats.max(1) as f64,
+                metrics.war_active_turns,
+                metrics.plan_observations,
+                100.0 * metrics.war_active_turns as f64 / metrics.plan_observations.max(1) as f64,
+            );
+            println!(
+                "  {name:<11} appointed {}, breakthrough {}, mobilized {}, declared {} (complete {}/{} = {:.1}%), captured {} (within 10t {}/{} = {:.1}%)",
+                metrics.war_appointments,
+                metrics.war_breakthroughs,
+                metrics.war_mobilizations,
+                metrics.war_declarations,
+                metrics.war_complete_declarations,
+                metrics.war_declarations,
+                100.0 * metrics.war_complete_declarations as f64
+                    / metrics.war_declarations.max(1) as f64,
+                metrics.war_objectives_captured,
+                metrics.war_objectives_captured_within_ten,
+                metrics.war_declarations,
+                100.0 * metrics.war_objectives_captured_within_ten as f64
+                    / metrics.war_declarations.max(1) as f64,
+            );
+            println!(
+                "  {name:<11} median turns appointment->tech {}, tech->declaration {}, declaration->capture {}; aborts {}",
+                median_turns(&metrics.war_appointment_to_tech),
+                median_turns(&metrics.war_tech_to_declaration),
+                median_turns(&metrics.war_declaration_to_capture),
+                transition_counts(
+                    &metrics
+                        .war_aborts
+                        .iter()
+                        .map(|(reason, count)| ((*reason).to_string(), *count as usize))
+                        .collect()
+                ),
+            );
+        }
     }
     if [a, b]
         .iter()
@@ -2536,6 +2668,8 @@ mod tests {
                 target,
                 strategy,
                 rush,
+                war_enabled: false,
+                war_active: false,
                 context: StrategyContext {
                     at_major_war: false,
                     threatened: false,
@@ -2568,6 +2702,8 @@ mod tests {
                 target: "adaptive",
                 strategy,
                 rush: false,
+                war_enabled: false,
+                war_active: false,
                 context: StrategyContext {
                     at_major_war,
                     threatened,
