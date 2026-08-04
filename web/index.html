@@ -10601,8 +10601,562 @@ function drawDistrict(t, x, y, buildings = []) {
   }
 }
 
-function drawWonder(x, y) {
+// --- World Wonder icons --------------------------------------------------------
+//
+// The former multi-view renderer already gave every shipped World Wonder a
+// recognizable canvas silhouette. When its retired view modes were removed,
+// this strategic renderer accidentally fell back to one gold obelisk for all
+// fifty-three. Restore the efficient, code-native silhouettes: at twenty
+// pixels a pyramid and lighthouse separate by outline, so each entry names a
+// shape, its proportions, and its material while the painter does the rest.
+const WORLD_WONDER_ART = {
+  great_bath:        {form:"ziggurat", tint:"#c9b28f", sunken:true},
+  etemenanki:        {form:"ziggurat", tint:"#b98a54"},
+  hanging_gardens:   {form:"terraces", tint:"#8a7c5c", green:true},
+  pyramids:          {form:"pyramid",  tint:"#d8c088", count:3},
+  stonehenge:        {form:"trilithon", tint:"#9a9184"},
+  temple_artemis:    {form:"colonnade", tint:"#e6ddc6"},
+  apadana:           {form:"colonnade", tint:"#c8a86d", tall:true},
+  colosseum:         {form:"arena",    tint:"#cdb896"},
+  colossus:          {form:"statue",   tint:"#c08a43", pose:"stand"},
+  great_library:     {form:"colonnade", tint:"#d9cba7", wide:true},
+  great_lighthouse:  {form:"tower",    tint:"#e2d6b8", flame:true},
+  jebel_barkal:      {form:"pyramid",  tint:"#c58e5a", count:4, small:true},
+  machu_picchu:      {form:"terraces", tint:"#8e9a76", peak:true},
+  mahabodhi_temple:  {form:"tower",    tint:"#c9a06a", spire:true},
+  mausoleum_at_halicarnassus: {form:"pyramid", tint:"#dbd2b8", stepped:true},
+  oracle:            {form:"dome",     tint:"#e3dcc4", tholos:true},
+  petra:             {form:"rockface", tint:"#c4744a"},
+  statue_of_zeus:    {form:"statue",   tint:"#d9c98f", pose:"seat"},
+  terracotta_army:   {form:"ranks",    tint:"#a9713f"},
+  alhambra:          {form:"fortress", tint:"#cfa87a"},
+  angkor_wat:        {form:"towers5",  tint:"#9c9276"},
+  chichen_itza:      {form:"pyramid",  tint:"#b5a887", stepped:true},
+  hagia_sophia:      {form:"dome",     tint:"#d5b98a"},
+  huey_teocalli:     {form:"pyramid",  tint:"#b98e5e", stepped:true, twin:true},
+  kilwa_kisiwani:    {form:"dome",     tint:"#cbbfa2", low:true},
+  kotoku_in:         {form:"statue",   tint:"#7d8f80", pose:"seat"},
+  meenakshi_temple:  {form:"tower",    tint:"#c86a6a", gopuram:true},
+  mont_st_michel:    {form:"fortress", tint:"#a8a49a", island:true},
+  university_of_sankore: {form:"tower", tint:"#c69a5f", mud:true},
+  casa_de_contratacion: {form:"colonnade", tint:"#d8c9a5", wide:true},
+  forbidden_city:    {form:"palace",   tint:"#b5442f", roof:"#e0b13c"},
+  great_zimbabwe:    {form:"rockface", tint:"#9e8d70", wall:true},
+  orszaghaz:         {form:"palace",   tint:"#c3ba9f", gothic:true},
+  oxford_university: {form:"colonnade", tint:"#c7bfa2"},
+  potala_palace:     {form:"fortress", tint:"#e2dccb", tiered:true},
+  st_basils_cathedral: {form:"dome",   tint:"#c4553f", onion:true},
+  taj_mahal:         {form:"dome",     tint:"#f0ece0", minarets:true},
+  torre_de_belem:    {form:"tower",    tint:"#ddd3b6", water:true},
+  venetian_arsenal:  {form:"shipyard", tint:"#a8987a"},
+  big_ben:           {form:"tower",    tint:"#c9b184", clock:true},
+  bolshoi_theatre:   {form:"colonnade", tint:"#dcd0ae", pediment:true},
+  hermitage:         {form:"palace",   tint:"#7fa8b8", long:true},
+  ruhr_valley:       {form:"chimneys", tint:"#8c8478"},
+  statue_of_liberty: {form:"statue",   tint:"#7fb8a4", pose:"torch"},
+  biosphere:         {form:"geodesic", tint:"#9fc6d4"},
+  broadway:          {form:"marquee",  tint:"#d9a03c"},
+  cristo_redentor:   {form:"statue",   tint:"#cfcac0", pose:"arms"},
+  eiffel_tower:      {form:"tower",    tint:"#9a8b6f", lattice:true},
+  estadio_do_maracana: {form:"arena",  tint:"#b9c2c6", modern:true},
+  golden_gate_bridge: {form:"bridge",  tint:"#c1502f"},
+  amundsen_scott_research_station: {form:"station", tint:"#c3d3da"},
+  sydney_opera_house: {form:"shells",  tint:"#eae7dd"},
+  panama_canal:      {form:"bridge",   tint:"#7f95a0", locks:true},
+};
+// A block with a lit face and a shadow face, which is most of what a building
+// is at this size. `w` is half the width.
+function wonderBlock(x, y, w, h, color) {
+  cx.fillStyle = shade(color, 1.26);
+  cx.fillRect(x - w, y - h, w, h);
+  cx.fillStyle = shade(color, 0.7);
+  cx.fillRect(x, y - h, w, h);
+  cx.strokeStyle = "rgba(28,22,10,.55)"; cx.lineWidth = 0.9;
+  cx.strokeRect(x - w, y - h, w * 2, h);
+}
+const BUILT_WONDER_PAINTER = {
+  pyramid(x, y, k, art) {
+    const count = art.count || 1;
+    for (let i = 0; i < count; i++) {
+      const dx = count === 1 ? 0 : (i / (count - 1) - 0.5) * 17 * k;
+      const w = (art.small ? 5 : count > 1 ? 7 : 11) * k * (i === 1 ? 1.2 : 1);
+      const h = (art.small ? 8 : count > 1 ? 12 : 18) * k * (i === 1 ? 1.2 : 1);
+      if (art.stepped) {
+        for (let step = 0; step < 4; step++) {
+          const sw = w * (1 - step * 0.2), sh = h / 4;
+          cx.fillStyle = shade(art.tint, step % 2 ? 1.2 : 0.86);
+          cx.fillRect(x + dx - sw, y - sh * (step + 1), sw * 2, sh);
+        }
+        if (art.twin) {
+          cx.fillStyle = shade(art.tint, 1.3);
+          cx.fillRect(x + dx - w * 0.5, y - h - 5 * k, w * 0.42, 5 * k);
+          cx.fillStyle = shade(art.tint, 0.72);
+          cx.fillRect(x + dx + w * 0.1, y - h - 5 * k, w * 0.42, 5 * k);
+        }
+      } else {
+        cx.fillStyle = shade(art.tint, 1.3);
+        tri(x + dx - w * LITF, y, x + dx, y - h, x + dx, y);
+        cx.fillStyle = shade(art.tint, 0.68);
+        tri(x + dx, y - h, x + dx + w * LITF, y, x + dx, y);
+      }
+    }
+  },
+  ziggurat(x, y, k, art) {
+    if (art.sunken) {
+      // The Great Bath is a tank, not a tower: steps descending on both sides
+      // into water. Drawn as a ziggurat it came out as a "T".
+      for (let step = 0; step < 3; step++) {
+        const w = (13 - step * 2.2) * k;
+        cx.fillStyle = shade(art.tint, step % 2 ? 1.24 : 0.9);
+        cx.fillRect(x - w, y - (3 - step) * 3.2 * k, w * 2, 3.2 * k);
+      }
+      cx.fillStyle = "#3f95ad";
+      cx.beginPath();
+      cx.ellipse(x, y - 1.4 * k, 7 * k, 2.6 * k, 0, 0, 7); cx.fill();
+      cx.strokeStyle = "rgba(220,246,250,.66)"; cx.lineWidth = 0.9;
+      cx.beginPath();
+      cx.ellipse(x, y - 2.2 * k, 4.4 * k, 1.5 * k, 0, 0, 7); cx.stroke();
+      return;
+    }
+    for (let step = 0; step < 4; step++) {
+      const w = (12 - step * 2.4) * k, h = 4 * k;
+      cx.fillStyle = shade(art.tint, step % 2 ? 1.22 : 0.88);
+      cx.fillRect(x - w, y - (step + 1) * h, w * 2, h);
+    }
+  },
+  colonnade(x, y, k, art) {
+    const w = (art.wide ? 15 : 12) * k, h = (art.tall ? 18 : 13) * k;
+    cx.fillStyle = shade(art.tint, 0.9);
+    cx.fillRect(x - w, y - 2 * k, w * 2, 2 * k);
+    for (let i = 0; i < 6; i++) {
+      const cxp = x - w + 2 * k + i * (w * 2 - 4 * k) / 5;
+      cx.fillStyle = shade(art.tint, 1.3);
+      cx.fillRect(cxp - 1.4 * k, y - h, 1.4 * k, h - 2 * k);
+      cx.fillStyle = shade(art.tint, 0.72);
+      cx.fillRect(cxp, y - h, 1.4 * k, h - 2 * k);
+    }
+    cx.fillStyle = shade(art.tint, 1.1);
+    cx.fillRect(x - w, y - h - 3 * k, w * 2, 3 * k);
+    if (art.pediment) {
+      cx.fillStyle = shade(art.tint, 1.22);
+      tri(x - w, y - h - 3 * k, x, y - h - 9 * k, x + w, y - h - 3 * k);
+    }
+  },
+  dome(x, y, k, art) {
+    const r = (art.low ? 8 : art.tholos ? 7 : 10) * k;
+    if (art.tholos) {
+      // A tholos is a ring of columns under a shallow roof; the dome alone
+      // was an unreadable pebble.
+      for (let i = 0; i < 5; i++) {
+        const cxp = x + (i - 2) * 3.2 * k;
+        cx.fillStyle = shade(art.tint, i < 2 ? 1.28 : 0.76);
+        cx.fillRect(cxp - 1.1 * k, y - r * 1.5, 2.2 * k, r * 1.5);
+      }
+      cx.fillStyle = shade(art.tint, 1.1);
+      cx.fillRect(x - r * 1.2, y - r * 1.5 - 2 * k, r * 2.4, 2 * k);
+    } else {
+      wonderBlock(x, y, r * 1.15, r * 0.9, art.tint);
+    }
+    if (art.onion) {
+      for (const [dx, s, col] of [[-8, 0.7, "#3f7fa8"], [0, 1, "#d9c04a"],
+        [8, 0.7, "#4f9a5e"]]) {
+        cx.fillStyle = col;
+        cx.beginPath();
+        cx.moveTo(x + dx * k - r * 0.42 * s, y - r * 0.9);
+        cx.quadraticCurveTo(x + dx * k - r * 0.7 * s, y - r * 2.1 * s,
+                            x + dx * k, y - r * 2.5 * s);
+        cx.quadraticCurveTo(x + dx * k + r * 0.7 * s, y - r * 2.1 * s,
+                            x + dx * k + r * 0.42 * s, y - r * 0.9);
+        cx.closePath(); cx.fill();
+      }
+      return;
+    }
+    const springs = art.tholos ? y - r * 1.5 - 2 * k : y - r * 0.9;
+    cx.fillStyle = shade(art.tint, 1.16);
+    cx.beginPath();
+    cx.ellipse(x, springs, r, r * 0.92, 0, Math.PI, 0); cx.fill();
+    cx.fillStyle = shade(art.tint, 0.74);
+    cx.beginPath();
+    cx.ellipse(x + r * 0.28 * LITF, springs, r * 0.72, r * 0.88, 0, Math.PI, 0);
+    cx.fill();
+    if (art.minarets) {
+      for (const dx of [-r * 1.5, r * 1.5]) {
+        cx.fillStyle = shade(art.tint, 1.1);
+        cx.fillRect(x + dx - 1.2 * k, y - r * 2.1, 2.4 * k, r * 2.1);
+      }
+    }
+  },
+  tower(x, y, k, art) {
+    const h = (art.lattice ? 30 : art.spire ? 26 : 24) * k;
+    const w = (art.mud ? 5 : 4) * k;
+    if (art.water) {
+      cx.fillStyle = "rgba(60,130,160,.7)";
+      cx.beginPath(); cx.ellipse(x, y + 2 * k, 15 * k, 4 * k, 0, 0, 7); cx.fill();
+    }
+    if (art.lattice) {
+      // Filled, not wireframe. Two hairlines on grass read as a stepladder;
+      // what makes the Eiffel Tower recognisable is the flared skirt and the
+      // arch between the legs, both of which need a silhouette to cut into.
+      const leg = t => 8 * Math.pow(1 - t, 2.1) + 0.9;
+      cx.fillStyle = shade(art.tint, 1.16);
+      cx.beginPath();
+      for (let s = 0; s <= 10; s++) cx.lineTo(x - leg(s / 10) * k, y - h * s / 10);
+      for (let s = 10; s >= 0; s--) cx.lineTo(x + leg(s / 10) * k, y - h * s / 10);
+      cx.closePath(); cx.fill();
+      cx.globalCompositeOperation = "destination-out";
+      cx.beginPath();
+      cx.moveTo(x - 6.6 * k, y);
+      cx.quadraticCurveTo(x, y - h * 0.34, x + 6.6 * k, y);
+      cx.closePath(); cx.fill();
+      cx.globalCompositeOperation = "source-over";
+      cx.strokeStyle = shade(art.tint, 0.5); cx.lineWidth = 0.9;
+      for (const t of [0.34, 0.62]) {
+        cx.beginPath();
+        cx.moveTo(x - leg(t) * k, y - h * t); cx.lineTo(x + leg(t) * k, y - h * t);
+        cx.stroke();
+      }
+      return;
+    }
+    if (art.gopuram) {
+      for (let step = 0; step < 5; step++) {
+        const sw = (9 - step * 1.4) * k;
+        cx.fillStyle = shade(art.tint, step % 2 ? 1.2 : 0.84);
+        cx.fillRect(x - sw, y - (step + 1) * h / 5, sw * 2, h / 5);
+      }
+      return;
+    }
+    wonderBlock(x, y, w, h, art.tint);
+    if (art.spire) {
+      cx.fillStyle = shade(art.tint, 1.15);
+      tri(x - w, y - h, x, y - h - 8 * k, x + w, y - h);
+    }
+    if (art.clock) {
+      cx.fillStyle = "#f2e6bd";
+      cx.beginPath(); cx.arc(x, y - h * 0.82, 2.6 * k, 0, 7); cx.fill();
+      cx.fillStyle = shade(art.tint, 1.2);
+      tri(x - w, y - h, x, y - h - 6 * k, x + w, y - h);
+    }
+    if (art.flame) {
+      cx.fillStyle = "#ffb545";
+      cx.beginPath(); cx.ellipse(x, y - h - 2 * k, 2.4 * k, 3.4 * k, 0, 0, 7);
+      cx.fill();
+    }
+  },
+  statue(x, y, k, art) {
+    const h = art.pose === "seat" ? 15 * k : 22 * k;
+    cx.fillStyle = shade(art.tint, 0.86);
+    cx.fillRect(x - 6 * k, y - 4 * k, 12 * k, 4 * k);          // plinth
+    cx.fillStyle = shade(art.tint, 1.2);
+    if (art.pose === "seat") {
+      // Seated: knees forward, folded arms, head clear of the shoulders. A
+      // plain box on a plinth read as a crate.
+      cx.fillRect(x - 4.6 * k, y - 4 * k - h * 0.52, 9.2 * k, h * 0.52);
+      cx.fillStyle = shade(art.tint, 0.74);
+      cx.fillRect(x - 6.4 * k, y - 4 * k - h * 0.3, 12.8 * k, h * 0.3);
+      cx.fillStyle = shade(art.tint, 1.3);
+      cx.beginPath();
+      cx.arc(x, y - 4 * k - h * 0.52 - 3 * k, 3.2 * k, 0, 7); cx.fill();
+      cx.fillStyle = shade(art.tint, 0.6);
+      cx.fillRect(x - 4.6 * k, y - 4 * k - h * 0.34, 9.2 * k, 1.2 * k);
+    } else {
+      cx.fillRect(x - 2.4 * k, y - 4 * k - h, 4.8 * k, h);
+      cx.beginPath(); cx.arc(x, y - 4 * k - h - 2.4 * k, 2.6 * k, 0, 7); cx.fill();
+      cx.lineWidth = 2.2 * k; cx.strokeStyle = shade(art.tint, 1.2);
+      cx.beginPath();
+      if (art.pose === "arms") {
+        cx.moveTo(x - 9 * k, y - 4 * k - h * 0.82);
+        cx.lineTo(x + 9 * k, y - 4 * k - h * 0.82);
+      } else if (art.pose === "torch") {
+        cx.moveTo(x + 1 * k, y - 4 * k - h * 0.7);
+        cx.lineTo(x + 5 * k, y - 4 * k - h - 4 * k);
+      } else {
+        cx.moveTo(x - 4 * k, y - 4 * k - h * 0.5);
+        cx.lineTo(x + 4 * k, y - 4 * k - h * 0.5);
+      }
+      cx.stroke();
+      if (art.pose === "torch") {
+        cx.fillStyle = "#ffc247";
+        cx.beginPath(); cx.arc(x + 5.6 * k, y - 4 * k - h - 5 * k, 2 * k, 0, 7);
+        cx.fill();
+      }
+    }
+  },
+  arena(x, y, k, art) {
+    const rx = 13 * k, ry = 6 * k, h = art.modern ? 9 * k : 11 * k;
+    cx.fillStyle = shade(art.tint, 0.72);
+    cx.beginPath(); cx.ellipse(x, y - ry, rx, ry, 0, 0, 7); cx.fill();
+    cx.fillStyle = shade(art.tint, 1.24);
+    cx.beginPath();
+    cx.ellipse(x, y - ry - h, rx, ry, 0, Math.PI, 0);
+    cx.lineTo(x + rx, y - ry); cx.ellipse(x, y - ry, rx, ry, 0, 0, Math.PI);
+    cx.closePath(); cx.fill();
+    // The pitch inside. Without it a modern bowl is a white pebble.
+    cx.fillStyle = art.modern ? "#5f8f4e" : shade(art.tint, 0.5);
+    cx.beginPath();
+    cx.ellipse(x, y - ry - h, rx * 0.66, ry * 0.6, 0, 0, 7); cx.fill();
+    if (!art.modern) {
+      cx.strokeStyle = shade(art.tint, 0.6); cx.lineWidth = 0.8;
+      for (let i = -2; i <= 2; i++) {
+        cx.beginPath();
+        cx.moveTo(x + i * rx * 0.38, y - ry - h);
+        cx.lineTo(x + i * rx * 0.38, y - ry);
+        cx.stroke();
+      }
+    }
+  },
+  terraces(x, y, k, art) {
+    if (art.peak) {
+      cx.fillStyle = shade(art.tint, 0.62);
+      tri(x - 14 * k, y, x + 2 * k, y - 22 * k, x + 15 * k, y);
+    }
+    for (let step = 0; step < 4; step++) {
+      const w = (13 - step * 2.2) * k;
+      cx.fillStyle = art.green
+        ? shade("#5f8b4a", step % 2 ? 1.2 : 0.86)
+        : shade(art.tint, step % 2 ? 1.2 : 0.86);
+      cx.fillRect(x - w, y - (step + 1) * 3.6 * k, w * 2, 3.6 * k);
+    }
+  },
+  rockface(x, y, k, art) {
+    if (art.wall) {
+      // The Great Enclosure: a tall curved dry-stone wall seen from outside,
+      // with its courses showing. A single thin arc read as a scratch.
+      cx.lineWidth = 7 * k; cx.strokeStyle = shade(art.tint, 0.72);
+      cx.beginPath();
+      cx.ellipse(x, y - 5 * k, 13 * k, 8 * k, 0, Math.PI * 0.98, Math.PI * 2.02);
+      cx.stroke();
+      cx.lineWidth = 3.4 * k; cx.strokeStyle = shade(art.tint, 1.26);
+      cx.beginPath();
+      cx.ellipse(x, y - 6.6 * k, 13 * k, 8 * k, 0, Math.PI * 0.98, Math.PI * 2.02);
+      cx.stroke();
+      cx.strokeStyle = shade(art.tint, 0.55); cx.lineWidth = 0.7;
+      for (let i = -3; i <= 3; i++) {
+        cx.beginPath();
+        cx.moveTo(x + i * 4 * k, y - 9 * k - Math.abs(i) * -0.6 * k);
+        cx.lineTo(x + i * 4 * k, y - 3 * k);
+        cx.stroke();
+      }
+      // The conical tower that stands inside it.
+      wonderBlock(x + 6 * k, y - 2 * k, 2.4 * k, 13 * k, art.tint);
+      return;
+    }
+    cx.fillStyle = shade(art.tint, 0.72);
+    cx.fillRect(x - 13 * k, y - 22 * k, 26 * k, 22 * k);
+    cx.fillStyle = shade(art.tint, 1.24);
+    cx.fillRect(x - 13 * k, y - 22 * k, 5 * k, 22 * k);
+    cx.fillStyle = "rgba(40,26,16,.8)";
+    cx.fillRect(x - 3 * k, y - 11 * k, 6 * k, 11 * k);
+    for (const dx of [-9, -5, 5, 9]) {
+      cx.fillStyle = shade(art.tint, 1.05);
+      cx.fillRect(x + dx * k - 1.2 * k, y - 20 * k, 2.4 * k, 9 * k);
+    }
+  },
+  ranks(x, y, k, art) {
+    for (let row = 0; row < 3; row++) {
+      for (let i = 0; i < 5; i++) {
+        const fx = x + (i - 2) * 5 * k + row * 1.6 * k;
+        const fy = y - row * 3.4 * k;
+        cx.fillStyle = shade(art.tint, 1.24 - row * 0.16);
+        cx.fillRect(fx - 1.3 * k, fy - 9 * k, 2.6 * k, 9 * k);
+        cx.beginPath(); cx.arc(fx, fy - 10.4 * k, 1.5 * k, 0, 7); cx.fill();
+      }
+    }
+  },
+  fortress(x, y, k, art) {
+    if (art.island) {
+      cx.fillStyle = "rgba(60,130,160,.66)";
+      cx.beginPath(); cx.ellipse(x, y + 2 * k, 17 * k, 5 * k, 0, 0, 7); cx.fill();
+      cx.fillStyle = shade(art.tint, 0.66);
+      tri(x - 13 * k, y + 1 * k, x, y - 10 * k, x + 13 * k, y + 1 * k);
+    }
+    const tiers = art.tiered ? 3 : 1;
+    for (let tier = 0; tier < tiers; tier++) {
+      const w = (13 - tier * 3.4) * k, h = 8 * k;
+      wonderBlock(x, y - tier * h * 0.86, w, h, art.tint);
+    }
+    if (!art.tiered) {
+      for (const dx of [-11, 0, 11]) {
+        wonderBlock(x + dx * k, y - 8 * k, 2.2 * k, art.island ? 12 * k : 8 * k,
+                    art.tint);
+      }
+    }
+  },
+  towers5(x, y, k, art) {
+    for (const [dx, h] of [[-11, 12], [11, 12], [-5, 16], [5, 16], [0, 24]]) {
+      cx.fillStyle = shade(art.tint, dx < 0 ? 1.24 : 0.8);
+      cx.beginPath();
+      cx.moveTo(x + dx * k - 3.2 * k, y);
+      cx.quadraticCurveTo(x + dx * k, y - h * k * 1.28, x + dx * k + 3.2 * k, y);
+      cx.closePath(); cx.fill();
+    }
+  },
+  palace(x, y, k, art) {
+    const w = (art.long ? 17 : 13) * k, h = (art.gothic ? 12 : 10) * k;
+    wonderBlock(x, y, w, h, art.tint);
+    if (art.roof) {
+      cx.fillStyle = art.roof;
+      cx.beginPath();
+      cx.moveTo(x - w - 2 * k, y - h);
+      cx.lineTo(x - w * 0.6, y - h - 5 * k);
+      cx.lineTo(x + w * 0.6, y - h - 5 * k);
+      cx.lineTo(x + w + 2 * k, y - h);
+      cx.closePath(); cx.fill();
+    }
+    if (art.gothic) {
+      for (const dx of [-9, 0, 9]) {
+        cx.fillStyle = shade(art.tint, 1.24);
+        tri(x + dx * k - 3 * k, y - h, x + dx * k, y - h - (dx ? 8 : 14) * k,
+            x + dx * k + 3 * k, y - h);
+      }
+    }
+    if (art.long) {
+      cx.strokeStyle = shade(art.tint, 0.55); cx.lineWidth = 0.8;
+      for (let i = -4; i <= 4; i++) {
+        cx.beginPath();
+        cx.moveTo(x + i * w * 0.2, y - h + 1.5 * k);
+        cx.lineTo(x + i * w * 0.2, y - 1.5 * k);
+        cx.stroke();
+      }
+    }
+  },
+  chimneys(x, y, k, art) {
+    wonderBlock(x, y, 13 * k, 8 * k, art.tint);
+    for (const [dx, h] of [[-8, 20], [-1, 26], [7, 22]]) {
+      cx.fillStyle = shade(art.tint, 1.1);
+      cx.fillRect(x + dx * k - 1.6 * k, y - h * k, 3.2 * k, h * k - 8 * k);
+      cx.fillStyle = "rgba(150,150,148,.4)";
+      cx.beginPath();
+      cx.ellipse(x + dx * k + 2 * k, y - h * k - 3 * k, 4 * k, 2.6 * k, 0, 0, 7);
+      cx.fill();
+    }
+  },
+  geodesic(x, y, k, art) {
+    const r = 12 * k;
+    cx.fillStyle = shade(art.tint, 1.1);
+    cx.beginPath(); cx.arc(x, y - r * 0.7, r, Math.PI, 0); cx.fill();
+    cx.strokeStyle = shade(art.tint, 0.5); cx.lineWidth = 0.85;
+    for (let i = 1; i < 4; i++) {
+      cx.beginPath();
+      cx.ellipse(x, y - r * 0.7, r * i / 4, r, 0, Math.PI, 0); cx.stroke();
+    }
+    cx.beginPath();
+    cx.ellipse(x, y - r * 0.7, r, r * 0.5, 0, Math.PI, 0); cx.stroke();
+  },
+  marquee(x, y, k, art) {
+    wonderBlock(x, y, 12 * k, 16 * k, "#6d5a44");
+    cx.fillStyle = art.tint;
+    cx.fillRect(x - 13 * k, y - 9 * k, 26 * k, 5 * k);
+    cx.fillStyle = "#fff3c4";
+    for (let i = 0; i < 7; i++) {
+      cx.beginPath();
+      cx.arc(x - 11 * k + i * 3.7 * k, y - 10.5 * k, 1 * k, 0, 7); cx.fill();
+    }
+  },
+  bridge(x, y, k, art) {
+    cx.fillStyle = "rgba(60,130,160,.66)";
+    cx.beginPath(); cx.ellipse(x, y + 2 * k, 18 * k, 5 * k, 0, 0, 7); cx.fill();
+    if (art.locks) {
+      for (const dx of [-9, 0, 9]) {
+        wonderBlock(x + dx * k, y - 1 * k, 2.4 * k, 9 * k, art.tint);
+      }
+      cx.strokeStyle = shade(art.tint, 1.2); cx.lineWidth = 2 * k;
+      cx.beginPath();
+      cx.moveTo(x - 16 * k, y - 3 * k); cx.lineTo(x + 16 * k, y - 3 * k);
+      cx.stroke();
+      return;
+    }
+    for (const dx of [-9, 9]) {
+      cx.fillStyle = shade(art.tint, 1.2);
+      cx.fillRect(x + dx * k - 1.5 * k, y - 22 * k, 3 * k, 22 * k);
+    }
+    cx.strokeStyle = shade(art.tint, 1.1); cx.lineWidth = 1.5 * k;
+    cx.beginPath();
+    cx.moveTo(x - 17 * k, y - 6 * k);
+    cx.quadraticCurveTo(x, y - 26 * k, x + 17 * k, y - 6 * k);
+    cx.moveTo(x - 17 * k, y - 5 * k); cx.lineTo(x + 17 * k, y - 5 * k);
+    cx.stroke();
+  },
+  station(x, y, k, art) {
+    cx.fillStyle = "#e8eef1";
+    cx.beginPath(); cx.ellipse(x, y + 1 * k, 17 * k, 4.5 * k, 0, 0, 7); cx.fill();
+    for (const dx of [-8, -3, 3, 8]) {
+      cx.fillStyle = shade(art.tint, 0.7);
+      cx.fillRect(x + dx * k - 0.8 * k, y - 7 * k, 1.6 * k, 7 * k);
+    }
+    wonderBlock(x, y - 7 * k, 12 * k, 8 * k, art.tint);
+    cx.fillStyle = "#5d7f92";
+    cx.fillRect(x - 9 * k, y - 12 * k, 18 * k, 2 * k);
+  },
+  shells(x, y, k, art) {
+    cx.fillStyle = "rgba(60,130,160,.6)";
+    cx.beginPath(); cx.ellipse(x, y + 2 * k, 17 * k, 4.5 * k, 0, 0, 7); cx.fill();
+    for (const [dx, s] of [[-8, 0.7], [-1, 1], [7, 0.85], [13, 0.55]]) {
+      cx.fillStyle = shade(art.tint, dx < 0 ? 1.18 : 0.84);
+      cx.beginPath();
+      cx.moveTo(x + dx * k - 6 * k * s, y);
+      cx.quadraticCurveTo(x + dx * k - 5 * k * s, y - 18 * k * s,
+                          x + dx * k + 5 * k * s, y);
+      cx.closePath(); cx.fill();
+    }
+  },
+  shipyard(x, y, k, art) {
+    cx.fillStyle = "rgba(60,130,160,.66)";
+    cx.beginPath(); cx.ellipse(x, y + 2 * k, 16 * k, 4.5 * k, 0, 0, 7); cx.fill();
+    for (const dx of [-12, 12]) {
+      wonderBlock(x + dx * k, y, 3 * k, 13 * k, art.tint);
+    }
+    cx.fillStyle = shade(art.tint, 1.15);
+    cx.fillRect(x - 13 * k, y - 16 * k, 26 * k, 3 * k);
+    cx.fillStyle = "#6d5636";
+    cx.beginPath();
+    cx.moveTo(x - 7 * k, y - 1 * k); cx.lineTo(x + 7 * k, y - 1 * k);
+    cx.lineTo(x + 4 * k, y + 3 * k); cx.lineTo(x - 4 * k, y + 3 * k);
+    cx.closePath(); cx.fill();
+    cx.fillStyle = "#efe6cf";
+    tri(x, y - 12 * k, x + 5 * k, y - 2 * k, x - 5 * k, y - 2 * k);
+  },
+  trilithon(x, y, k, art) {
+    for (const dx of [-10, -2, 6]) {
+      cx.fillStyle = shade(art.tint, 1.22);
+      cx.fillRect(x + dx * k, y - 15 * k, 2.6 * k, 15 * k);
+      cx.fillStyle = shade(art.tint, 0.72);
+      cx.fillRect(x + dx * k + 2.6 * k, y - 15 * k, 2.6 * k, 15 * k);
+    }
+    cx.fillStyle = shade(art.tint, 1.05);
+    cx.fillRect(x - 11 * k, y - 18.5 * k, 23 * k, 3.5 * k);
+  },
+};
+
+// Draw one World Wonder at map or badge scale. Returns false only for an
+// unknown (for example, modded) id, so callers retain the generic fallback.
+function drawWorldWonder(wonder, x, y, scale = 1) {
+  const art = WORLD_WONDER_ART[wonder];
+  const painter = art && BUILT_WONDER_PAINTER[art.form];
+  if (!painter) return false;
+  const k = (S / 31) * 0.72 * scale;
   cx.save();
+  cx.lineJoin = "round";
+  // The glow is the "a wonder is here" cue the compact monument carried, and
+  // it has to survive the silhouette changing per wonder.
+  const glow = cx.createRadialGradient(x, y - 3 * scale, Math.max(.5, scale), x, y - 3 * scale, 23 * scale);
+  glow.addColorStop(0, "rgba(255,222,120,.4)");
+  glow.addColorStop(1, "rgba(255,222,120,0)");
+  cx.fillStyle = glow;
+  cx.beginPath(); cx.arc(x, y - 3 * scale, 23 * scale, 0, 7); cx.fill();
+  cx.fillStyle = "rgba(0,0,0,.3)";
+  cx.beginPath(); cx.ellipse(x, y + 7 * k, 12 * k, 4 * k, 0, 0, 7); cx.fill();
+  painter(x, y + 6 * k, k, art);
+  cx.restore();
+  return true;
+}
+
+
+// An unknown modded wonder still needs to be conspicuous. Keep the old monument
+// as a scale-aware fallback, but never use it for a shipped World Wonder.
+function drawWonder(x, y, scale = 1) {
+  cx.save();
+  cx.translate(x, y); cx.scale(scale, scale);
+  x = 0; y = 0;
   cx.lineJoin = "round";
   const glow = cx.createRadialGradient(x, y - 3, 1, x, y - 3, 23);
   glow.addColorStop(0, "rgba(255,222,120,.46)");
@@ -10632,6 +11186,10 @@ function drawWonder(x, y) {
   cx.moveTo(x, y - 19); cx.lineTo(x + 4.4, y - 11); cx.lineTo(x - 4.4, y - 11);
   cx.closePath(); cx.fill(); cx.stroke();
   cx.restore();
+}
+
+function drawWorldWonderIcon(wonder, x, y, scale = 1) {
+  if (!drawWorldWonder(wonder, x, y, scale)) drawWonder(x, y, scale);
 }
 
 // Below this zoom the fine pass inside a motif — furrows, patchwork, doorways —
@@ -17015,7 +17573,7 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
         else drawResourceBadge(t, 0, 0);
       }
       if (t.district) drawDistrict(t, 0, 0, districtBuildings.get(tileKey));
-      if (t.wonder) drawWonder(0, 0);
+      if (t.wonder) drawWorldWonderIcon(t.wonder, 0, 0);
       if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, 0, 0, worked.has(tileKey));
     });
   }
@@ -17419,10 +17977,7 @@ function drawEmpireDistrictBadge(x, y, tile, scale = 1) {
   const district = tile.district || tile.planned_district?.district;
   if (!district && !tile.wonder) return;
   cx.save(); cx.textAlign = "center"; cx.textBaseline = "middle";
-  if (tile.wonder) {
-    cx.fillStyle = "#f2d47e"; cx.strokeStyle = "#2a210d"; cx.lineWidth = 2 * scale;
-    cx.font = `900 ${13 * scale}px serif`; cx.strokeText("★", x, y); cx.fillText("★", x, y);
-  }
+  if (tile.wonder) drawWorldWonderIcon(tile.wonder, x, y + 3.5 * scale, .45 * scale);
   if (district) {
     const radius = 7.5 * scale;
     cx.fillStyle = districtColor(district); cx.strokeStyle = "#101716"; cx.lineWidth = 2 * scale;
@@ -18398,7 +18953,7 @@ function draw() {
       else drawResourceBadge(t, x, y);
     }
     if (t.district) drawDistrict(t, x, y, districtBuildings.get(k));
-    if (t.wonder) drawWonder(x, y);
+    if (t.wonder) drawWorldWonderIcon(t.wonder, x, y);
     if (SHOW_YIELDS && !t.district && !t.wonder) drawTileYields(t, x, y, workedSet.has(k));
   }
   // Lens passes replace or grade the finished ground while leaving the map's
@@ -18723,6 +19278,8 @@ function draw() {
         // of their own stop coming off the queue as the same plain cream glyph
         if (it.unit) {
           drawUnitPictogram(it.unit, mx, my, mr * 1.42, "#f0ead8");
+        } else if (it.wonder) {
+          drawWorldWonderIcon(it.wonder, mx, my + mr * .18, mr / 29);
         } else {
           cx.fillStyle = it.district ? districtColor(it.district) : "#f0ead8";
           cx.font = `${minorPlate ? 10 : 12}px 'Segoe UI Symbol', 'Segoe UI Emoji', sans-serif`;
@@ -21884,7 +22441,8 @@ function itemName(it) {
   return (it.unit || it.building || it.project || (it.wonder ? it.wonder + " @" + it.pos : it.district + " @" + it.pos)).replaceAll("_", " ");
 }
 function prodGlyph(it) {
-  if (it.building) return BLDG_ICON[it.building] || "🏛"; // wonders fall through
+  if (it.building) return BLDG_ICON[it.building] || "🏛";
+  if (it.wonder) return "★";
   if (it.project) return "🛠";
   return "⬡"; // district
 }
