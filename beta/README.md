@@ -106,14 +106,21 @@ you are guessing about.
 
 ## Publishing
 
-Nobody cuts beta builds. `publish-site` runs **every six hours** (and on the
-Actions button), rebuilds both lanes — `/test` from the head of `main`, `/`
-from the `site-stable` tag — checks that each plays, and deploys them as one
-site. The cadence is set by arithmetic, not taste: Cloudflare Pages allows 500
-deployments a month and this repository has merged several hundred commits a
-day, so deploying per push would exhaust the month inside two days. Four a day
-is ~125 a month; tighten to every two hours (372) if beta staleness ever
-matters more than the margin.
+Nobody cuts test builds. `publish-site` fires **every half hour** (and on the
+Actions button), and a gate decides in seconds whether a deploy is worth
+twenty minutes of building: if `/test` already serves the current head it
+skips, and scheduled runs pace themselves against **440 of Cloudflare's 500
+deployments a month** — pro rata by day — so the other 60 always remain for
+promotions and manual runs, which are never gated. When it does run, it
+rebuilds both lanes — `/test` from the head of `main`, `/` from the
+`site-stable` tag — checks that each plays, and deploys them as one site.
+
+The effect: on a quiet day `/test` is fresh within about half an hour of a
+commit; in a week of round-the-clock merging the governor stretches spacing
+toward ~100 minutes instead of exhausting the month. The arithmetic that
+forces a governor at all: this repository has merged several hundred commits a
+day, and an ungoverned half-hour cadence is ~1,440 deployments a month against
+a cap of 500.
 
 **Promoting** is the human act. When `main` is in a state worth being the
 front page: **Actions → promote-site → Run workflow**, ref = the sha you have
