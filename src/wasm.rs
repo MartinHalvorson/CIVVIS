@@ -73,7 +73,8 @@ thread_local! {
 /// the one that needs no decisions from a visitor who has just arrived.
 fn opening_params() -> Params {
     let size = MapSize::for_players(6);
-    let (width, height) = size.dimensions(MapTopology::Flat);
+    let map_topology = MapTopology::Planet;
+    let (width, height) = size.dimensions(map_topology);
     Params {
         num_players: 6,
         width,
@@ -85,7 +86,7 @@ fn opening_params() -> Params {
         // it: the lobby is where a different Future Era is asked for.
         future_era: FutureEra::Classic,
         map_script: MapScript::Continents,
-        map_topology: MapTopology::Flat,
+        map_topology,
         map_poles: MapPoles::Poles,
         game_speed: GameSpeed::Online,
         max_turns: GameSpeed::Online.turn_limit(),
@@ -722,4 +723,22 @@ pub unsafe extern "C" fn civvis_request(ptr: *mut u8, len: usize) -> *mut u8 {
     let answer = serde_json::to_string(&route(&method, &target, &body))
         .unwrap_or_else(|error| format!("{{\"error\":\"cannot serialise the answer: {error}\"}}"));
     sized(answer.into_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::opening_params;
+    use crate::setup::{MapSize, MapTopology};
+
+    #[test]
+    fn opening_exhibition_defaults_to_planet() {
+        let params = opening_params();
+        let size = MapSize::for_players(params.num_players);
+
+        assert_eq!(params.map_topology, MapTopology::Planet);
+        assert_eq!(
+            (params.width, params.height),
+            size.dimensions(MapTopology::Planet)
+        );
+    }
 }

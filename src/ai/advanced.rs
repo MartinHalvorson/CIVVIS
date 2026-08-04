@@ -1263,6 +1263,30 @@ pub struct AdvancedAi {
     /// Kept as the `advanced_parallel_settlers` entrant with the null
     /// recorded, on the `advanced_lane_reachable` precedent, so the axis can
     /// be re-measured rather than re-derived if the settler economy changes.
+    /// Slot `limitanei` (+2 Loyalty in cities with a garrison) when expanding or
+    /// conquering.
+    ///
+    /// **Measured before building.** Across 73 completed live runs of >=200 turns,
+    /// 59% lose at least one city, and runs that hold everything finish on a median
+    /// score of 452 against 236 for runs that lose one — while peaking at a similar
+    /// size (5 vs 4), so it is holding rather than expanding that separates them.
+    /// Splitting 192 city losses by the loyalty reading in the last snapshot before
+    /// each city vanished: 51% at loyalty >=95 (conquest), **42% below 70 (revolt)**.
+    ///
+    /// `limitanei` is the direct answer to that 42%: `data/policies.json` gives it
+    /// `civic: early_empire` — an ancient civic every run researches — a MILITARY
+    /// slot, and `garrison_loyalty: 2`, which the engine already applies at
+    /// `Game::loyalty_delta`. It is slotted **0 times in 83 runs**, because
+    /// `strategic_policies` chooses from the hardcoded lists below and the card
+    /// appears nowhere in this file. Not mispriced — not on the menu.
+    ///
+    /// ⚠⚠ **OFF BY DEFAULT AND THIS IS THE POINT.** Everything above is a
+    /// mechanism, and a mechanism is not an effect size. Stranded settlers occur in
+    /// 38% of runs, have a per-run detector and an offline reproduction, and make
+    /// NO difference to final cities — 3.0 median whether or not a run strands one.
+    /// So this ships as an arm to be priced by `ai_eval`, not as a default. If it
+    /// does not separate, say so and leave it off.
+    pub garrison_loyalty_policy: bool,
     pub parallel_settlers: bool,
     /// Give every city a strategy: stamp a [`CityDirective`] on each of this
     /// empire's cities every turn, so the citizen governor can see the plan.
@@ -2141,6 +2165,7 @@ impl AdvancedAi {
             settler_avoid: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
+            garrison_loyalty_policy: false,
             parallel_settlers: false,
             expansion_pays_back: false,
             late_expansion: false,
@@ -6909,6 +6934,18 @@ impl AdvancedAi {
                 "public_works",
             ],
         };
+
+        // ⚠ FRONT of the list, not appended: these portfolios are preference
+        // ordered and the military slot is contested from the ancient era, which is
+        // exactly when loyalty pressure starts. Appending would put `limitanei`
+        // behind sixteen late-game cards and it would never be reached — which is
+        // indistinguishable from today's behaviour and would make the arm measure
+        // nothing.
+        if self.garrison_loyalty_policy
+            && matches!(objective, GrandStrategy::Conquest | GrandStrategy::Expansion)
+        {
+            desired.insert(0, "limitanei");
+        }
         if g.has_ability(pid, "taxis") && objective == GrandStrategy::Conquest {
             desired.splice(0..0, ["chivalry", "maneuver", "raid", "conscription"]);
         }
@@ -28306,6 +28343,100 @@ mod tests {
             "an adaptive Science plan should convert surplus Gold into its Campus immediately"
         );
         assert!(game.players[0].gold >= 300.0);
+    }
+
+    /// ⚠ THE POINT OF THIS TEST IS THAT THE ARM IS NOT A NO-OP.
+    ///
+    /// `limitanei` was slotted 0 times in 83 recorded live runs, and the reason
+    /// is that `strategic_policies` chooses from hardcoded per-strategy lists
+    /// that do not name it. An arm that adds it to those lists is worth
+    /// measuring only if the card actually reaches a slot — otherwise the A/B
+    /// compares control against control and reports a null for the wrong
+    /// reason.
+    ///
+    /// So this asserts both directions: on with the flag, absent without it.
+    /// DIAGNOSTIC, not a guard: how often is a city actually GARRISONED, and
+    /// how often is its loyalty low enough for +2 to matter? `garrison_loyalty`
+    /// pays only inside a city holding a military unit, so a slotted card in an
+    /// ungarrisoned empire is worth exactly zero — a second way for the arm to
+    /// be a no-op that the slotting test does not cover.
+    #[test]
+    #[ignore]
+    fn diagnostic_how_often_is_a_city_garrisoned_and_under_loyalty_pressure() {
+        let mut garrisoned = 0usize;
+        let mut total = 0usize;
+        let mut under_pressure = 0usize;
+        let mut garrisoned_and_pressured = 0usize;
+        for seed in 0..8u64 {
+            let mut g = Game::new(4, 24, 16, 4000 + seed, 250, 0);
+            let mut ais = AdvancedAi::fleet(&g);
+            let mut last = g.turn;
+            while g.turn < 200 && g.winner.is_none() {
+                let pid = g.current;
+                ais[pid].take_turn(&mut g, pid);
+                if g.winner.is_none() && g.current == pid {
+                    let _ = g.apply(pid, &crate::game::Action::EndTurn);
+                }
+                if g.turn == last {
+                    continue;
+                }
+                last = g.turn;
+                for cid in g.cities.keys().copied().collect::<Vec<_>>() {
+                    let city = &g.cities[&cid];
+                    let owner = city.owner;
+                    if g.players[owner].is_minor || g.players[owner].is_free_city {
+                        continue;
+                    }
+                    let pos = city.pos;
+                    let held = g.units_at(pos).into_iter().any(|uid| {
+                        g.units[&uid].owner == owner
+                            && g.rules.units[g.units[&uid].kind].class == "military"
+                    });
+                    let low = g.cities[&cid].loyalty < 80.0;
+                    total += 1;
+                    if held {
+                        garrisoned += 1;
+                    }
+                    if low {
+                        under_pressure += 1;
+                    }
+                    if held && low {
+                        garrisoned_and_pressured += 1;
+                    }
+                }
+            }
+        }
+        let pct = |n: usize| 100.0 * n as f64 / total.max(1) as f64;
+        println!(
+            "city-turns {total}  garrisoned {garrisoned} ({:.1}%)  loyalty<80 {under_pressure} ({:.1}%)  BOTH {garrisoned_and_pressured} ({:.1}%)",
+            pct(garrisoned),
+            pct(under_pressure),
+            pct(garrisoned_and_pressured)
+        );
+    }
+
+    #[test]
+    fn the_garrison_loyalty_arm_actually_slots_limitanei() {
+        let build = |flag: bool| {
+            let mut g = Game::new(2, 24, 16, 91, 200, 0);
+            g.players[0].government = Some("chiefdom".to_string());
+            g.players[0].civics.insert(crate::name!("early_empire"));
+            let mut ai = AdvancedAi::new();
+            ai.garrison_loyalty_policy = flag;
+            ai.strategic_policies(&mut g, 0, GrandStrategy::Expansion);
+            g.players[0].policies.contains(&crate::name!("limitanei"))
+        };
+
+        assert!(
+            build(true),
+            "the arm exists to price `limitanei`; if the flag does not put the card \
+             in a slot the A/B measures control against control"
+        );
+        assert!(
+            !build(false),
+            "control must keep today's behaviour — `limitanei` is slotted 0 times \
+             in 83 live runs and the arm must be the only thing that changes that"
+        );
     }
 
     #[test]
