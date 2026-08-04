@@ -1,4 +1,4 @@
-//! Matched evaluation of adaptive Science Spaceport parallelism.
+//! Archived matched evaluation of adaptive Science Spaceport parallelism.
 //!
 //! The treatment changes neither Production nor strategy. On a focal adaptive
 //! Science turn after the Moon or Mars milestone, it orders at most one legal
