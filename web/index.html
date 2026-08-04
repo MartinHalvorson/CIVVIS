@@ -141,10 +141,10 @@
   #maparea {
     flex: 1; min-width: 0; position: relative; overflow: hidden; background: #07110f;
     /* These are safe first-paint fallbacks. syncDefaultMinimapGeometry() then
-       preserves this frame's 320:172 proportion at 17% of the viewport's
-       actual diagonal. */
-    --world-minimap-width: 320px;
-    --minimap-height: 172px;
+       chooses the compact, almost-square globe frame or the wider flat-chart
+       frame and scales that frame's diagonal against the viewport. */
+    --world-minimap-width: 336px;
+    --minimap-height: 168px;
     --victory-hud-width: 10vw;
     /* The command deck is a flex sibling on desktop and an overlay on compact
        screens. JavaScript publishes only the part that actually overlaps this
@@ -467,6 +467,106 @@
     background: linear-gradient(145deg, #172723fa, #0b1714fc);
     box-shadow: 0 -12px 32px #0008;
   }
+  /* These are the map tools a viewer reaches for while reading the command
+     deck. They stay at its lower edge, immediately before the keyboard
+     drawer: lenses first, then the visible-tile search that can refine an
+     active lens without replacing it. */
+  #map-utility-panel {
+    position: relative; z-index: 3; flex: 0 0 auto; padding: 8px 10px 10px;
+    border-top: 1px solid #355047; background: linear-gradient(180deg, #101d1a, #091310);
+    box-shadow: 0 -10px 28px #0005;
+  }
+  #map-lenses {
+    min-width: 0; padding: 7px; border: 1px solid #3c554c; border-radius: 11px;
+    background: #0a1512df; box-shadow: inset 0 1px #ffffff08, 0 7px 18px #0004;
+  }
+  .map-lens-head {
+    display: flex; align-items: center; gap: 5px; min-height: 22px; margin-bottom: 6px;
+  }
+  .map-lens-title {
+    min-width: 0; flex: 1; color: #b9c8c2; font-size: var(--type-caption); font-weight: 900;
+    letter-spacing: .10em; text-transform: uppercase;
+  }
+  #map-lenses button {
+    position: relative; min-width: 0; height: 31px;
+    display: grid; grid-template-columns: 17px minmax(0, 1fr) auto; align-items: center; gap: 4px;
+    margin: 0; padding: 0 5px; border: 1px solid transparent; border-radius: 7px;
+    background: transparent; color: #b8c7c0; font-size: var(--type-caption); font-weight: 800;
+    text-align: left;
+  }
+  #map-lenses button:hover { transform: none; border-color: #4d6b60; background: #183027; }
+  #map-lenses button.active {
+    border-color: #d7b66a9c; color: #fff6dc;
+    background: linear-gradient(135deg, #4b4226cc, #173128e8);
+    box-shadow: inset 0 1px #ffffff16, 0 0 13px #d7b66a1c;
+  }
+  #map-lens-strip {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px;
+  }
+  #map-lens-exit {
+    flex: 0 0 auto; width: auto; height: 24px !important; padding: 0 6px !important;
+    color: #d7b6ad; font-size: var(--type-caption) !important;
+  }
+  #map-lens-exit[hidden] { display: none; }
+  #map-lens-exit .map-lens-icon { color: #e4a49d; }
+  #map-lenses .overlay-close {
+    flex: 0 0 25px; width: 25px; height: 25px; padding: 0; border: 0;
+    color: #c9d5d0; background: transparent; box-shadow: none; text-align: center;
+  }
+  #map-lenses .overlay-close:hover { color: #fff; background: #35201e; }
+  .map-lens-icon { color: #e6c978; font-size: 15px; line-height: 1; text-align: center; }
+  #map-lenses button[data-map-lens="religion"] .map-lens-icon { color: #eadfbd; }
+  #map-lenses button[data-map-lens="continent"] .map-lens-icon { color: #8bc5c1; }
+  #map-lenses button[data-map-lens="appeal"] .map-lens-icon { color: #87c878; }
+  #map-lenses button[data-map-lens="government"] .map-lens-icon { color: #bca0df; }
+  #map-lenses button[data-map-lens="political"] .map-lens-icon { color: #df9a86; }
+  #map-lenses button[data-map-lens="tourism"] .map-lens-icon { color: #e9b5dd; }
+  #map-lenses button[data-map-lens="empire"] .map-lens-icon { color: #9ed8ca; }
+  #map-lenses button[data-map-lens="loyalty"] .map-lens-icon { color: #f1a59a; }
+  #map-lenses button[data-map-lens="power"] .map-lens-icon { color: #8ed7e6; }
+  #map-lenses kbd {
+    min-width: 14px; height: 14px; margin: 0; padding: 0;
+    border-color: #ffffff16; color: #899b94; font-size: var(--type-micro);
+  }
+  #map-lenses button.active kbd { color: #fff0c5; border-color: #d7b66a55; }
+  #map-lenses .map-lens-label {
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  #map-search {
+    min-width: 0; margin-top: 7px; padding: 6px 7px; border: 1px solid #3c554c; border-radius: 11px;
+    background: #0a1512df; box-shadow: inset 0 1px #ffffff08, 0 7px 18px #0004;
+  }
+  #map-search:focus-within {
+    border-color: #d7b66aa8; box-shadow: inset 0 1px #ffffff08, 0 0 0 2px #d7b66a24;
+  }
+  #map-search.no-match { border-color: #a6545080; }
+  .map-search-entry {
+    display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center; gap: 5px;
+  }
+  #map-search-icon { color: #e6c978; font-size: 16px; text-align: center; }
+  #map-search-input {
+    min-width: 0; width: 100%; height: 28px; padding: 0 2px; border: 0; outline: 0;
+    background: transparent; color: #eef4f1; font: 750 var(--type-control)/1.2 system-ui, sans-serif;
+  }
+  #map-search-input::placeholder { color: #8fa39b; font-weight: 650; opacity: 1; }
+  #map-search-status {
+    min-width: 22px; padding: 2px 6px; border: 1px solid #d7b66a45; border-radius: 999px;
+    background: #d7b66a18; color: #ffe7a6; font-size: var(--type-caption);
+    font-weight: 900; font-variant-numeric: tabular-nums; text-align: center;
+  }
+  #map-search-status[hidden] { display: none; }
+  .map-search-civ-filter {
+    display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 7px;
+    margin-top: 5px; padding-top: 5px; border-top: 1px solid #ffffff0d;
+    color: #8fa39b; font-size: var(--type-caption); font-weight: 850; letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+  #map-search-civ {
+    min-width: 0; width: 100%; height: 26px; padding: 1px 22px 1px 6px;
+    color: #dce8e2; background: #07110f; border-color: #3b554c;
+    font-size: var(--type-caption); font-weight: 750; letter-spacing: 0; text-transform: none;
+  }
+  #map-search-civ:disabled { color: #718078; opacity: .8; }
   .utility-body { padding: 12px 13px 13px; }
   .utility-group + .utility-group { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--line-soft); }
   .event-scope { overflow: hidden; color: var(--gold); font-size: var(--type-label); letter-spacing: .04em; text-overflow: ellipsis; white-space: nowrap; text-transform: none; }
@@ -935,35 +1035,26 @@
   }
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
-  /* Search belongs to the map, not the command deck: keep it immediately
-     above the lower-left instruments where it remains available whether the
-     deck is open or collapsed. The exact result count is part of the control
-     so a search with matches beyond the current camera still answers clearly. */
-  #map-search {
-    position: absolute; z-index: 2; left: 0; bottom: calc(100% + 6px);
-    width: min(310px, calc(100vw - 18px)); min-height: 38px;
-    display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center;
-    gap: 5px; padding: 4px 7px; border: 1px solid #3c554c; border-radius: 13px;
-    background: #0a1512df; box-shadow: 0 12px 26px #0006;
-    backdrop-filter: blur(12px); pointer-events: auto;
+  /* The sky's destinations are camera controls. They join the compass and
+     zoom keys in the same physical strip, with their names retained in the
+     native labels/tooltips while the compact glyphs leave room for the map. */
+  #skyworlds {
+    display: flex; align-items: center; align-self: stretch; gap: 0; min-width: 0;
+    padding: 0 3px; border-left: 1px solid #ffffff0c; border-right: 1px solid #ffffff0c;
   }
-  #map-search:focus-within {
-    border-color: #d7b66aa8; box-shadow: 0 12px 26px #0007, 0 0 0 2px #d7b66a24;
+  #skyworlds[hidden] { display: none; }
+  #skyworlds button {
+    width: 34px; min-width: 34px; height: 34px; display: grid; place-items: center;
+    margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent;
+    color: #b8c7c0; font-size: 16px;
   }
-  #map-search.no-match { border-color: #a6545080; }
-  #map-search-icon { color: #e6c978; font-size: 16px; text-align: center; }
-  #map-search-input {
-    min-width: 0; width: 100%; height: 28px; padding: 0 2px; border: 0; outline: 0;
-    background: transparent; color: #eef4f1; font: 750 var(--type-control)/1.2 system-ui, sans-serif;
-  }
-  #map-search-input::placeholder { color: #8fa39b; font-weight: 650; opacity: 1; }
-  #map-search-status {
-    min-width: 22px; padding: 2px 6px; border: 1px solid #d7b66a45; border-radius: 999px;
-    background: #d7b66a18; color: #ffe7a6; font-size: var(--type-caption);
-    font-weight: 900; font-variant-numeric: tabular-nums; text-align: center;
-  }
-  #map-search-status[hidden] { display: none; }
-  /* The sky bar rides above the lower-left search and zoom instruments and is
+  #skyworlds button + button { border-left: 1px solid #ffffff0c; }
+  #skyworlds button:hover { transform: none; color: #fff6dc; background: #183027; }
+  #skyworlds button.active { color: #fff0c5; background: #4b422699; }
+  #skyworlds .skynav-mark { font-size: 17px; }
+  #skyworlds .skynav-label { display: none; }
+  #skyworlds + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
+  /* The sky bar rides above the lower-left zoom instruments and is
      taken out of the dock's flow to get there: the dock is the map's bottom
      strip and its height is a reservation the framing already pays for, so a
      second row in the flow would have moved the world every time the camera
@@ -1028,73 +1119,6 @@
     border: 1px solid #7a6533; background: linear-gradient(#f6e8b8, #d7b66a);
   }
   #skyladder:focus-visible { outline: 2px solid #d7b66a; outline-offset: 3px; }
-  /* The lens bar is a fixed frame around a strip that scrolls inside it. The
-     dismiss control is a sibling of that strip rather than its last item, so
-     it keeps its place at the right edge without ever coming to rest on top of
-     a lens the strip has scrolled under it. */
-  #map-lenses {
-    position: relative; z-index: 1; display: flex; min-width: 0; max-width: 707px;
-    align-items: stretch; overflow: hidden;
-    border: 1px solid #3c554c; border-radius: 13px;
-    background: #0a1512df; box-shadow: 0 12px 26px #0006;
-    backdrop-filter: blur(12px);
-    pointer-events: auto;
-  }
-  #map-lens-strip {
-    display: flex; flex: 1 1 auto; min-width: 0;
-    align-items: stretch; gap: 3px; padding: 4px;
-    overflow-x: auto; overflow-y: hidden; scrollbar-width: none;
-  }
-  #map-lens-strip::-webkit-scrollbar { display: none; }
-  .map-lens-title {
-    display: flex; align-items: center; padding: 0 8px 0 6px;
-    color: #81958d; font-size: var(--type-caption); font-weight: 900; letter-spacing: .10em;
-    text-transform: uppercase;
-  }
-  #map-lenses button {
-    position: relative; width: auto; min-width: 68px; height: 34px;
-    display: grid; grid-template-columns: 18px minmax(34px, 1fr) auto; align-items: center; gap: 5px;
-    margin: 0; padding: 0 7px; border: 1px solid transparent; border-radius: 8px;
-    background: transparent; color: #b8c7c0; font-size: var(--type-caption); font-weight: 800;
-    text-align: left;
-  }
-  #map-lenses button:hover { transform: none; border-color: #4d6b60; background: #183027; }
-  #map-lenses button.active {
-    border-color: #d7b66a9c; color: #fff6dc;
-    background: linear-gradient(135deg, #4b4226cc, #173128e8);
-    box-shadow: inset 0 1px #ffffff16, 0 0 13px #d7b66a1c;
-  }
-  #map-lens-exit { min-width: 58px; color: #d7b6ad; }
-  #map-lens-exit[hidden] { display: none; }
-  #map-lens-exit .map-lens-icon { color: #e4a49d; }
-  /* The glyph and the divider match the map controls' close alongside it, so
-     both halves of the dock are dismissed the same way. */
-  #map-lenses > button.overlay-close {
-    position: static; order: 20; flex: 0 0 27px;
-    width: 27px; min-width: 27px; height: auto; align-self: stretch;
-    display: grid; grid-template-columns: none; place-items: center;
-    padding: 0; border: 0; border-left: 1px solid #ffffff0c; border-radius: 0;
-    background: transparent; box-shadow: none;
-    color: #c9d5d0; font-size: var(--type-control); text-align: center;
-  }
-  #map-lenses > button.overlay-close:hover {
-    color: #fff; background: #35201e; border-left-color: #9b6c66;
-  }
-  .map-lens-icon { color: #e6c978; font-size: 15px; line-height: 1; text-align: center; }
-  #map-lenses button[data-map-lens="religion"] .map-lens-icon { color: #eadfbd; }
-  #map-lenses button[data-map-lens="continent"] .map-lens-icon { color: #8bc5c1; }
-  #map-lenses button[data-map-lens="appeal"] .map-lens-icon { color: #87c878; }
-  #map-lenses button[data-map-lens="government"] .map-lens-icon { color: #bca0df; }
-  #map-lenses button[data-map-lens="political"] .map-lens-icon { color: #df9a86; }
-  #map-lenses button[data-map-lens="tourism"] .map-lens-icon { color: #e9b5dd; }
-  #map-lenses button[data-map-lens="empire"] .map-lens-icon { color: #9ed8ca; }
-  #map-lenses button[data-map-lens="loyalty"] .map-lens-icon { color: #f1a59a; }
-  #map-lenses button[data-map-lens="power"] .map-lens-icon { color: #8ed7e6; }
-  #map-lenses kbd {
-    min-width: 15px; height: 15px; margin: 0; padding: 0;
-    border-color: #ffffff16; color: #899b94; font-size: var(--type-caption);
-  }
-  #map-lenses button.active kbd { color: #fff0c5; border-color: #d7b66a55; }
   /* The compass reads the map's bearing, so it is an instrument rather than a
      label: the needle turns with the world and the dial stays put. A
      civilization that cannot yet find north has the dial and no needle. */
@@ -1599,7 +1623,7 @@
   }
   .minimap-label.widget-drag-handle::before { position: absolute; left: 3px; }
   .minimap-hint {
-    position: absolute; z-index: 1; right: 10px; bottom: 9px; padding: 2px 4px;
+    position: absolute; z-index: 1; left: 10px; bottom: 9px; padding: 2px 4px;
     color: #9aac9f; background: #07110fb8; border-radius: 4px; pointer-events: none;
     font-size: var(--type-caption); font-weight: 850; letter-spacing: .05em; text-transform: uppercase;
   }
@@ -2140,10 +2164,6 @@
     #side { width: 340px; min-width: 340px; flex-basis: 340px; }
     #ubar { max-width: calc(100% - 70px); }
   }
-  @media (max-width: 1600px) {
-    .map-lens-title { display: none; }
-    #map-lenses button { min-width: 66px; }
-  }
   @media (max-width: 720px) {
     body { display: block; }
     #maparea { height: 100%; }
@@ -2151,9 +2171,6 @@
     #side.sidebar-width-custom { width: min(var(--sidebar-width), calc(100% - 16px)); min-width: 0; flex-basis: auto; }
     body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
     #map-controls-dock { right: 0; }
-    #map-lenses { flex: 1 1 auto; }
-    .map-lens-title, .map-lens-label { display: none; }
-    #map-lenses button { min-width: 44px; grid-template-columns: 20px 15px; padding: 0 5px; }
     #ubar { min-width: 0; width: calc(100% - 28px); bottom: 18px; }
     #trade { inset: 2% 8px; }
     .trade-balance { display: none; }
@@ -2681,7 +2698,6 @@
   body.overlay-victory-hidden #victoryhud,
   body.overlay-minimap-hidden .minimap-frame,
   body.overlay-controls-hidden #zoomctl,
-  body.overlay-controls-hidden #map-search,
   body.overlay-controls-hidden #skynav,
   body.overlay-lenses-hidden #map-lenses { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
@@ -2764,7 +2780,6 @@
        this point. The instruments stack as bands across the top, with the
        tracker's paths in columns because there is no height left to stack them. */
     #map-controls-dock { right: 0; }
-    #map-lenses { flex: 1 1 auto; }
     #playerhud, body.overlay-victory-hidden #playerhud {
       top: 8px; left: max(8px, var(--player-hud-left, 0px)); right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
@@ -2776,7 +2791,8 @@
       left: 8px; right: 8px; bottom: auto; width: auto; height: 132px;
       grid-template-columns: minmax(0, 1fr); padding: 4px;
     }
-    .minimap-frame { left: 0; right: auto; bottom: 50px; width: 174px; }
+    .minimap-frame { left: 0; right: auto; bottom: 50px; width: 196px; height: 112px; }
+    .minimap-frame.minimap-world-planet { width: 164px; height: 150px; }
     #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
     #victoryhud .victory-ribbon {
       min-height: 0; width: max(100%, var(--victory-min-width, 514px));
@@ -2799,7 +2815,6 @@
      naturally narrow screen uses, and its left edge stays clear of any deck
      that overlays the map. */
   #maparea.player-hud-compact #map-controls-dock { right: 0; }
-  #maparea.player-hud-compact #map-lenses { flex: 1 1 auto; }
   #maparea.player-hud-compact #playerhud {
     top: 8px; left: max(8px, var(--player-hud-left, 0px)); right: 8px; width: auto; padding: 4px;
     grid-template-columns: 140px minmax(0, 1fr);
@@ -2811,7 +2826,8 @@
     left: 8px; right: 8px; bottom: auto; width: auto; height: 132px;
     grid-template-columns: minmax(0, 1fr); padding: 4px;
   }
-  #maparea.player-hud-compact .minimap-frame { left: 0; right: auto; bottom: 50px; width: 174px; }
+  #maparea.player-hud-compact .minimap-frame { left: 0; right: auto; bottom: 50px; width: 196px; height: 112px; }
+  #maparea.player-hud-compact .minimap-frame.minimap-world-planet { width: 164px; height: 150px; }
   #maparea.player-hud-compact #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
   #maparea.player-hud-compact #victoryhud .victory-ribbon {
     min-height: 0; width: max(100%, var(--victory-min-width, 514px));
@@ -3113,7 +3129,7 @@
   }
   .victory-turn { background: linear-gradient(155deg, #caa45618, #caa45606); }
 
-  .minimap-frame, #zoomctl, #map-search, #map-lenses, #ubar {
+  .minimap-frame, #zoomctl, #map-utility-panel, #map-search, #map-lenses, #ubar {
     background: #090b0de8; border-color: #41484c;
   }
   #mini { background: var(--ink); }
@@ -3254,13 +3270,10 @@
   <aside id="playerhud" data-layout-widget="players" aria-label="Player stats"></aside>
   <div id="dossier-windows" aria-label="Open player dossiers"></div>
   <div id="map-controls-dock">
-    <!-- The sky's own way about, standing over the lower-left map instruments:
-         the four places anyone out there is going, the shots that hold a whole
-         scale, and the zoom itself laid out end to end with the camera's place
-         on it. It is only there while there is a sky to cross — see `getting
-         about the sky`. -->
+    <!-- The sky's scale shots and zoom ladder stand over the lower-left map
+         controls. Its Earth, Moon, Mars, and Exoplanet arrivals live inline
+         with those controls between north and zoom-in. -->
     <div id="skynav" hidden role="group" aria-label="Sky navigation">
-      <div class="skynav-group" id="skynav-worlds" role="group" aria-label="Fly to a world"></div>
       <div class="skynav-group" id="skynav-scales" role="group" aria-label="Frame a scale"></div>
       <div class="skynav-group skynav-rungs">
         <input id="skyladder" type="range" min="0" max="1000" step="1" value="1000"
@@ -3269,87 +3282,20 @@
         <span id="skyspan" title="How wide the stage is">—</span>
       </div>
     </div>
-    <div id="map-search" role="search" aria-label="Search visible map tiles">
-      <span id="map-search-icon" aria-hidden="true">⌕</span>
-      <input id="map-search-input" type="search" autocomplete="off" spellcheck="false"
-        placeholder="Search visible tiles" aria-label="Search visible map tiles"
-        aria-describedby="map-search-status">
-      <output id="map-search-status" aria-live="polite" hidden></output>
-    </div>
     <!-- Left to right: collapse the deck, set the map area, face north, zoom
-         in, zoom out, and dismiss. Dismissal is last because it is the only
-         one that removes the bar, and it hides itself while the deck is
-         collapsed — Interface Settings is the way back and that is inside the
-         deck. -->
+         to a world, zoom in, zoom out, and dismiss. Dismissal is last because
+         it is the only one that removes the bar, and it hides itself while the
+         deck is collapsed — Interface Settings is the way back and that is
+         inside the deck. -->
     <div id="zoomctl">
       <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
       <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
       <button id="mapareaset" type="button" aria-pressed="false" title="Set map area — drag the four edges" aria-label="Set map area">⛶</button>
       <button id="compass" type="button" title="Face north · R" aria-label="Face north"><span id="compass-needle"></span></button>
+      <div id="skyworlds" hidden role="group" aria-label="Fly to a world"></div>
       <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
       <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
       <button class="overlay-close" type="button" data-overlay-close="controls" aria-label="Hide map controls; restore them in Interface Settings" title="Hide map controls · restore in Interface Settings">✕</button>
-    </div>
-    <div id="map-lenses" role="toolbar" aria-label="Map lenses">
-      <div id="map-lens-strip" role="none">
-        <span class="map-lens-title" aria-hidden="true">Lenses</span>
-        <button type="button" data-map-lens="continent" aria-pressed="false"
-          title="Continent lens — geographic continent regions">
-          <span class="map-lens-icon" aria-hidden="true">◒</span>
-          <span class="map-lens-label">Continent</span>
-        </button>
-        <button type="button" data-map-lens="settler" aria-pressed="false"
-          title="Settler lens — legal sites, quality, and water access (2)">
-          <span class="map-lens-icon" aria-hidden="true">⌂</span>
-          <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
-        </button>
-        <button type="button" data-map-lens="political" aria-pressed="false"
-          title="Political lens — territory grouped by civilization">
-          <span class="map-lens-icon" aria-hidden="true">◩</span>
-          <span class="map-lens-label">Political</span>
-        </button>
-        <button type="button" data-map-lens="empire" aria-pressed="false"
-          title="Empire lens — city borders, districts, adjacency, and wonders (4)">
-          <span class="map-lens-icon" aria-hidden="true">◈</span>
-          <span class="map-lens-label">Empire</span><kbd aria-hidden="true">4</kbd>
-        </button>
-        <button type="button" data-map-lens="religion" aria-pressed="false"
-          title="Religion lens — majority faith and religious pressure">
-          <span class="map-lens-icon" aria-hidden="true">✦</span>
-          <span class="map-lens-label">Religion</span>
-        </button>
-        <button type="button" data-map-lens="government" aria-pressed="false"
-          title="Government lens — territory grouped by form of government">
-          <span class="map-lens-icon" aria-hidden="true">♜</span>
-          <span class="map-lens-label">Government</span>
-        </button>
-        <button type="button" data-map-lens="appeal" aria-pressed="false"
-          title="Appeal lens — Breathtaking through Disgusting tiles">
-          <span class="map-lens-icon" aria-hidden="true">❀</span>
-          <span class="map-lens-label">Appeal</span>
-        </button>
-        <button type="button" data-map-lens="tourism" aria-pressed="false"
-          title="Tourism lens — exact Tourism generated by each tile">
-          <span class="map-lens-icon" aria-hidden="true">♪</span>
-          <span class="map-lens-label">Tourism</span>
-        </button>
-        <button type="button" data-map-lens="loyalty" aria-pressed="false"
-          title="Loyalty lens — population pressure and city loyalty (8)">
-          <span class="map-lens-icon" aria-hidden="true">⚑</span>
-          <span class="map-lens-label">Loyalty</span><kbd aria-hidden="true">8</kbd>
-        </button>
-        <button type="button" data-map-lens="power" aria-pressed="false"
-          title="Power lens — city generation, demand, and status (0)">
-          <span class="map-lens-icon" aria-hidden="true">⚡</span>
-          <span class="map-lens-label">Power</span><kbd aria-hidden="true">0</kbd>
-        </button>
-        <button id="map-lens-exit" type="button" hidden
-          title="Exit the active map lens" aria-label="Exit the active map lens">
-          <span class="map-lens-icon" aria-hidden="true">⊘</span>
-          <span class="map-lens-label">Exit</span>
-        </button>
-      </div>
-      <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Interface Settings" title="Hide map lenses · restore in Interface Settings">✕</button>
     </div>
   </div>
   <div id="map-area-editor" hidden aria-label="Set map area">
@@ -3879,6 +3825,85 @@
       <div class="sec"><div id="gov"></div></div>
     </details>
 
+  </div>
+  <div id="map-utility-panel" aria-label="Map tools">
+    <div id="map-lenses" role="toolbar" aria-label="Map lenses">
+      <div class="map-lens-head">
+        <span class="map-lens-title">Map lenses</span>
+        <button id="map-lens-exit" type="button" hidden
+          title="Exit the active map lens" aria-label="Exit the active map lens">
+          <span class="map-lens-icon" aria-hidden="true">⊘</span>
+          <span class="map-lens-label">Clear</span>
+        </button>
+        <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Interface Settings" title="Hide map lenses · restore in Interface Settings">✕</button>
+      </div>
+      <div id="map-lens-strip" role="none">
+        <button type="button" data-map-lens="continent" aria-pressed="false"
+          title="Continent lens — geographic continent regions">
+          <span class="map-lens-icon" aria-hidden="true">◒</span>
+          <span class="map-lens-label">Continent</span>
+        </button>
+        <button type="button" data-map-lens="political" aria-pressed="false"
+          title="Political lens — territory grouped by civilization">
+          <span class="map-lens-icon" aria-hidden="true">◩</span>
+          <span class="map-lens-label">Political</span>
+        </button>
+        <button type="button" data-map-lens="settler" aria-pressed="false"
+          title="Settler lens — legal sites, quality, and water access (2)">
+          <span class="map-lens-icon" aria-hidden="true">⌂</span>
+          <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
+        </button>
+        <button type="button" data-map-lens="empire" aria-pressed="false"
+          title="Empire lens — city borders, districts, adjacency, and wonders (4)">
+          <span class="map-lens-icon" aria-hidden="true">◈</span>
+          <span class="map-lens-label">Empire</span><kbd aria-hidden="true">4</kbd>
+        </button>
+        <button type="button" data-map-lens="religion" aria-pressed="false"
+          title="Religion lens — majority faith and religious pressure">
+          <span class="map-lens-icon" aria-hidden="true">✦</span>
+          <span class="map-lens-label">Religion</span>
+        </button>
+        <button type="button" data-map-lens="government" aria-pressed="false"
+          title="Government lens — territory grouped by form of government">
+          <span class="map-lens-icon" aria-hidden="true">♜</span>
+          <span class="map-lens-label">Government</span>
+        </button>
+        <button type="button" data-map-lens="appeal" aria-pressed="false"
+          title="Appeal lens — Breathtaking through Disgusting tiles">
+          <span class="map-lens-icon" aria-hidden="true">❀</span>
+          <span class="map-lens-label">Appeal</span>
+        </button>
+        <button type="button" data-map-lens="tourism" aria-pressed="false"
+          title="Tourism lens — exact Tourism generated by each tile">
+          <span class="map-lens-icon" aria-hidden="true">♪</span>
+          <span class="map-lens-label">Tourism</span>
+        </button>
+        <button type="button" data-map-lens="loyalty" aria-pressed="false"
+          title="Loyalty lens — population pressure and city loyalty (8)">
+          <span class="map-lens-icon" aria-hidden="true">⚑</span>
+          <span class="map-lens-label">Loyalty</span><kbd aria-hidden="true">8</kbd>
+        </button>
+        <button type="button" data-map-lens="power" aria-pressed="false"
+          title="Power lens — city generation, demand, and status (0)">
+          <span class="map-lens-icon" aria-hidden="true">⚡</span>
+          <span class="map-lens-label">Power</span><kbd aria-hidden="true">0</kbd>
+        </button>
+      </div>
+    </div>
+    <div id="map-search" role="search" aria-label="Search visible map tiles">
+      <div class="map-search-entry">
+        <span id="map-search-icon" aria-hidden="true">⌕</span>
+        <input id="map-search-input" type="search" autocomplete="off" spellcheck="false"
+          placeholder="Search visible tiles" aria-label="Search visible map tiles"
+          aria-describedby="map-search-status">
+        <output id="map-search-status" aria-live="polite" hidden></output>
+      </div>
+      <label class="map-search-civ-filter"><span>Civilization</span>
+        <select id="map-search-civ" aria-label="Filter visible tile search by civilization">
+          <option value="">All visible civilizations</option>
+        </select>
+      </label>
+    </div>
   </div>
   <details class="shortcut-panel">
     <summary>Keyboard shortcuts</summary>
@@ -4512,8 +4537,8 @@ const VICTORY_TRACKS = [
 // ---------------------------------------------------------------- state
 let state = null, sel = null, selCity = null, RULES = null;
 let mapLens = null, tackMode = false, tacks = [], lastSeed = null, cycleIdx = -1;
-let mapSearchQuery = "";
-let mapSearchCache = {state:null, rules:null, query:"", matches:new Set()};
+let mapSearchQuery = "", mapSearchCivId = "";
+let mapSearchCache = {state:null, rules:null, query:"", civ:"", matches:new Set()};
 // Civ 6's M, A and R arm the next click rather than acting on the spot. The
 // flag lives up here with the other map modes because `modeline()` reads it
 // and runs long before the key bindings further down are defined.
@@ -4765,12 +4790,14 @@ function runOverlayDismiss(event) {
 // The two live HUDs can redraw between press and release. Dismiss on the
 // pointer press so their close controls cannot be replaced before a click is
 // born; retain zero-detail click for keyboard and scripted activation.
-document.getElementById("maparea").addEventListener("pointerdown", event => {
-  if (event.button === 0 || event.pointerType === "touch") runOverlayDismiss(event);
-});
-document.getElementById("maparea").addEventListener("click", event => {
-  if (event.detail === 0) runOverlayDismiss(event);
-});
+for (const root of [document.getElementById("maparea"), document.getElementById("side")]) {
+  root?.addEventListener("pointerdown", event => {
+    if (event.button === 0 || event.pointerType === "touch") runOverlayDismiss(event);
+  });
+  root?.addEventListener("click", event => {
+    if (event.detail === 0) runOverlayDismiss(event);
+  });
+}
 applyOverlayVisibility();
 // ---------------------------------------------------- unit animation layer
 // moves: id -> tween; floats: damage numbers; sparks: hit flashes;
@@ -6050,16 +6077,22 @@ try {
   if (saved && typeof saved === "object") HUD_LAYOUT = saved;
 } catch (_) { HUD_LAYOUT = {}; }
 
-// Keep the authored frame proportion while sizing the *frame diagonal* against
-// the screen rather than against a particular monitor. The fallback CSS values
-// cover first paint; this runs during every viewport resize and when a viewer
-// resets a previously dragged minimap. Narrow layouts retain their dedicated
-// compact geometry below 1100px.
+// Keep each authored frame's diagonal against the screen rather than sizing to
+// a particular monitor. A flat chart is deliberately wider, while a globe gets
+// a near-square frame that gives its disc enough air around the limb. The
+// fallback CSS values cover first paint; this runs during every viewport resize,
+// world-shape change, and minimap reset. Narrow layouts retain matching compact
+// proportions below 1100px.
 const WORLD_MINIMAP_DIAGONAL_SHARE = .17;
-const WORLD_MINIMAP_REFERENCE_WIDTH = 320;
-const WORLD_MINIMAP_REFERENCE_HEIGHT = 172;
+const WORLD_MINIMAP_REFERENCE = {
+  flat: {width:336, height:168},
+  planet: {width:240, height:216},
+};
 const WIDE_SPECTATOR_LAYOUT_QUERY = window.matchMedia("(min-width: 1101px)");
 function syncDefaultMinimapGeometry() {
+  const shape = planetMap() ? "planet" : "flat";
+  const reference = WORLD_MINIMAP_REFERENCE[shape];
+  HUD_WIDGETS.minimap.element?.classList.toggle("minimap-world-planet", shape === "planet");
   if (HUD_LAYOUT.minimap || !WIDE_SPECTATOR_LAYOUT_QUERY.matches) {
     // A CSS media rule owns the compact layout. Do not leave the former desktop
     // calculation inline when a browser window crosses into that layout.
@@ -6071,9 +6104,9 @@ function syncDefaultMinimapGeometry() {
   }
   const scale = WORLD_MINIMAP_DIAGONAL_SHARE *
     Math.hypot(window.innerWidth, window.innerHeight) /
-    Math.hypot(WORLD_MINIMAP_REFERENCE_WIDTH, WORLD_MINIMAP_REFERENCE_HEIGHT);
-  area.style.setProperty("--world-minimap-width", `${Math.round(WORLD_MINIMAP_REFERENCE_WIDTH * scale)}px`);
-  area.style.setProperty("--minimap-height", `${Math.round(WORLD_MINIMAP_REFERENCE_HEIGHT * scale)}px`);
+    Math.hypot(reference.width, reference.height);
+  area.style.setProperty("--world-minimap-width", `${Math.round(reference.width * scale)}px`);
+  area.style.setProperty("--minimap-height", `${Math.round(reference.height * scale)}px`);
 }
 
 function hudWidgetMetrics(element) {
@@ -8791,6 +8824,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
     cameraFlight = null; cameraZoom = null; clearCameraInertia();
   }
   state = st;
+  syncDefaultMinimapGeometry();
   updateBuildMarker(st);
   SPEC = !!st.spectate;
   syncFlatMapWrapControls();
@@ -8865,6 +8899,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   if (SPEC) sel = null;
   if (sel) sel = st.units.find(u => u.id === sel.id && u.owner === 0) || null;
   TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));
+  syncMapSearchCivilizations(st);
   syncMapSearchStatus();
   if (newWorld || viewChanged) {
     setObservedPlayersView(false);
@@ -14229,7 +14264,7 @@ function skySpanLabel(radii) {
 // frame would be reading a number the bar itself moved. The two thresholds are
 // a hysteresis, so a zoom that comes to rest on the line does not blink.
 const skyNavBar = document.getElementById("skynav");
-const skyNavWorldRow = document.getElementById("skynav-worlds");
+const skyNavWorldRow = document.getElementById("skyworlds");
 const skyNavScaleRow = document.getElementById("skynav-scales");
 const skyNavLadder = document.getElementById("skyladder");
 const skyNavSpan = document.getElementById("skyspan");
@@ -14256,11 +14291,17 @@ function skyNavShowing() {
 // Its box, in canvas coordinates, so a caption out there dodges the bar the
 // same way it dodges the standings and the world map.
 function skyNavBox(viewRect) {
-  if (!skyNavBar || skyNavBar.hidden) return null;
-  const box = skyNavBar.getBoundingClientRect();
-  if (!box.width || !box.height) return null;
-  return {left:box.left - viewRect.left, right:box.right - viewRect.left,
-          top:box.top - viewRect.top, bottom:box.bottom - viewRect.top};
+  const boxes = [skyNavBar, skyNavWorldRow]
+    .filter(element => element && !element.hidden)
+    .map(element => element.getBoundingClientRect())
+    .filter(box => box.width && box.height);
+  if (!boxes.length) return null;
+  return {
+    left:Math.min(...boxes.map(box => box.left)) - viewRect.left,
+    right:Math.max(...boxes.map(box => box.right)) - viewRect.left,
+    top:Math.min(...boxes.map(box => box.top)) - viewRect.top,
+    bottom:Math.max(...boxes.map(box => box.bottom)) - viewRect.top,
+  };
 }
 // Which button the camera is standing on, if any. A world wins on the same
 // arrival the gearing hands itself back over, so the bar lights up exactly when
@@ -14288,11 +14329,13 @@ function skyNavButton(kind, stop) {
   button.dataset.skyStop = `${kind}:${stop.id}`;
   button.title = stop.title;
   button.setAttribute("aria-pressed", "false");
+  button.setAttribute("aria-label", kind === "world" ? `Fly to ${stop.label}` : `Frame ${stop.label}`);
   const mark = document.createElement("span");
   mark.className = "skynav-mark";
   mark.setAttribute("aria-hidden", "true");
   mark.textContent = stop.mark;
   const label = document.createElement("span");
+  label.className = "skynav-label";
   label.textContent = stop.label;
   button.append(mark, label);
   button.onclick = () =>
@@ -14303,9 +14346,13 @@ function skyNavButton(kind, stop) {
 // expedition settling on where it is going. Everything else is a class and an
 // attribute, because this runs inside `draw`.
 function syncSkyNav() {
-  if (!skyNavBar) return;
+  if (!skyNavBar || !skyNavWorldRow) return;
   const showing = skyNavShowing();
-  if (showing !== SKY_NAV_UP) { SKY_NAV_UP = showing; skyNavBar.hidden = !showing; }
+  if (showing !== SKY_NAV_UP) {
+    SKY_NAV_UP = showing;
+    skyNavBar.hidden = !showing;
+    skyNavWorldRow.hidden = !showing;
+  }
   if (!showing) return;
   const worlds = skyWorldStops(), scales = skyScaleStops();
   // The title is in the key and it has to be, now that the labels are fixed
@@ -14319,25 +14366,18 @@ function syncSkyNav() {
     .map(stop => `${stop.id}/${stop.label}/${stop.title}`).join(",");
   if (key !== SKY_NAV_KEY) {
     SKY_NAV_KEY = key; SKY_NAV_MARK = "";
-    // The bar reads outward, one order, nearest first: Earth, Moon, Mars, then
-    // the solar system, the voyage and the world at the end of it. The divider
-    // is not the difference between a world and a shot any more — it falls where
-    // the sky stops being somewhere anyone has stood and becomes something
-    // looked at from here, which is the same place the space programme's own
-    // reach runs out. So the destination sits with the far pictures rather than
-    // with the Moon, which is where it belongs on any reading except the
-    // implementation's.
-    const near = worlds.filter(stop => stop.id !== "exo");
-    const far = [...scales.map(stop => ["scale", stop]),
-                 ...worlds.filter(stop => stop.id === "exo").map(stop => ["world", stop])];
-    skyNavWorldRow.replaceChildren(...near.map(stop => skyNavButton("world", stop)));
-    skyNavScaleRow.replaceChildren(...far.map(([kind, stop]) => skyNavButton(kind, stop)));
-    skyNavScaleRow.hidden = !far.length;
+    // Earth through Exoplanet are destinations, so they sit in the map control
+    // strip between north and zoom. The wider scale shots stay in the sky bar
+    // above it, where their labels and the zoom ladder have room to breathe.
+    skyNavWorldRow.replaceChildren(...worlds.map(stop => skyNavButton("world", stop)));
+    skyNavWorldRow.hidden = !worlds.length;
+    skyNavScaleRow.replaceChildren(...scales.map(stop => skyNavButton("scale", stop)));
+    skyNavScaleRow.hidden = !scales.length;
   }
   const here = skyNavHere();
   if (here !== SKY_NAV_MARK) {
     SKY_NAV_MARK = here;
-    for (const button of skyNavBar.querySelectorAll("[data-sky-stop]")) {
+    for (const button of document.querySelectorAll("#skynav [data-sky-stop], #skyworlds [data-sky-stop]")) {
       const on = button.dataset.skyStop === here;
       button.classList.toggle("active", on);
       button.setAttribute("aria-pressed", on ? "true" : "false");
@@ -23090,17 +23130,56 @@ function mapSearchTextMatches(values, query) {
   const compactNeedle = needle.replaceAll(" ", "");
   return compactNeedle.length > 2 && haystack.replaceAll(" ", "").includes(compactNeedle);
 }
-function computeMapSearchMatches(st, query) {
+function mapSearchVisibleCivilizations(st) {
+  if (!st?.map?.tiles) return [];
+  // A civilization is available to the filter only when the current view
+  // actually contains one of its tiles, cities, or units. The player roster
+  // alone can include names the viewer has not met, so it is never enough.
+  const visible = new Set((st.visible || []).map(key));
+  const owners = new Set();
+  const noteOwner = (pos, owner) => {
+    if (Array.isArray(pos) && visible.has(key(pos)) && owner !== null && owner !== undefined)
+      owners.add(String(owner));
+  };
+  for (const tile of st.map.tiles) noteOwner(tile.pos, tile.owner);
+  for (const city of st.cities || []) noteOwner(city.pos, city.owner);
+  for (const unit of st.units || []) noteOwner(unit.pos, unit.owner);
+  return (st.players || []).filter(player =>
+    player && !player.is_barbarian && player.civ && owners.has(String(player.id))
+  );
+}
+function syncMapSearchCivilizations(st = state) {
+  const select = document.getElementById("map-search-civ");
+  if (!select) return;
+  const wanted = mapSearchCivId || select.value;
+  const civilizations = mapSearchVisibleCivilizations(st);
+  const all = document.createElement("option");
+  all.value = ""; all.textContent = "All visible civilizations";
+  const options = [all];
+  for (const player of civilizations) {
+    const option = document.createElement("option");
+    option.value = String(player.id); option.textContent = player.civ;
+    options.push(option);
+  }
+  select.replaceChildren(...options);
+  mapSearchCivId = civilizations.some(player => String(player.id) === wanted) ? wanted : "";
+  select.value = mapSearchCivId;
+  select.disabled = civilizations.length === 0;
+  mapSearchCache.state = null;
+}
+function computeMapSearchMatches(st, query, civFilter = mapSearchCivId) {
   const matches = new Set();
   const needle = normalizeMapSearch(query);
-  if (!st?.map?.tiles || !needle) return matches;
+  const selectedCiv = String(civFilter || "");
+  if (!st?.map?.tiles || (!needle && !selectedCiv)) return matches;
 
   // Exact sight, rather than explored memory, is the privacy boundary. A
   // search must never disclose a district or army hidden by the viewer's fog.
   const visible = new Set((st.visible || []).map(key));
   const terms = new Map();
-  const add = (pos, ...values) => {
+  const add = (pos, owner, ...values) => {
     if (!Array.isArray(pos) || !visible.has(key(pos))) return;
+    if (selectedCiv && String(owner) !== selectedCiv) return;
     const at = key(pos), held = terms.get(at);
     if (held) held.push(...values); else terms.set(at, values);
   };
@@ -23114,7 +23193,7 @@ function computeMapSearchMatches(st, query) {
   for (const tile of st.map.tiles) {
     const planned = tile.planned_district?.district;
     const owner = players.get(tile.owner);
-    add(tile.pos,
+    add(tile.pos, tile.owner,
       tile.terrain, tile.terrain && `${tile.terrain} terrain`,
       tile.feature, tile.feature && `${tile.feature} feature`,
       tile.resource, tile.resource && `${tile.resource} resource`,
@@ -23127,25 +23206,26 @@ function computeMapSearchMatches(st, query) {
   }
   for (const city of st.cities || []) {
     const owner = players.get(city.owner);
-    add(city.pos, city.name, "city", city.is_capital && "capital",
+    add(city.pos, city.owner, city.name, "city", city.is_capital && "capital",
         city.religion, owner?.civ, owner?.leader);
   }
   for (const unit of st.units || []) {
     const owner = players.get(unit.owner);
-    add(unit.pos, unit.type, unit.type && `${unit.type} unit`, owner?.civ, owner?.leader);
+    add(unit.pos, unit.owner, unit.type, unit.type && `${unit.type} unit`, owner?.civ, owner?.leader);
   }
-  for (const camp of st.camps || []) add(camp, "barbarian camp", "camp");
+  for (const camp of st.camps || []) add(camp, null, "barbarian camp", "camp");
 
   for (const [at, values] of terms)
-    if (mapSearchTextMatches(values, needle)) matches.add(at);
+    if (!needle || mapSearchTextMatches(values, needle)) matches.add(at);
   return matches;
 }
 function mapSearchMatches() {
   const query = normalizeMapSearch(mapSearchQuery);
+  const civ = mapSearchCivId || "";
   if (mapSearchCache.state !== state || mapSearchCache.rules !== RULES ||
-      mapSearchCache.query !== query) {
+      mapSearchCache.query !== query || mapSearchCache.civ !== civ) {
     mapSearchCache = {
-      state, rules:RULES, query, matches:computeMapSearchMatches(state, query),
+      state, rules:RULES, query, civ, matches:computeMapSearchMatches(state, query, civ),
     };
   }
   return mapSearchCache.matches;
@@ -23153,11 +23233,13 @@ function mapSearchMatches() {
 function syncMapSearchStatus(matches = mapSearchMatches()) {
   const search = document.getElementById("map-search");
   const status = document.getElementById("map-search-status");
-  const active = !!normalizeMapSearch(mapSearchQuery);
+  const select = document.getElementById("map-search-civ");
+  const selected = mapSearchCivId && select?.selectedOptions?.[0]?.textContent;
+  const active = !!normalizeMapSearch(mapSearchQuery) || !!mapSearchCivId;
   const count = matches.size;
   status.hidden = !active;
   status.textContent = active ? String(count) : "";
-  const message = `${count} visible ${count === 1 ? "tile" : "tiles"}`;
+  const message = `${count} visible${selected ? ` ${selected}` : ""} ${count === 1 ? "tile" : "tiles"}`;
   status.setAttribute("aria-label", message);
   status.title = message;
   search.classList.toggle("no-match", active && count === 0);
@@ -23169,14 +23251,26 @@ function refreshMapSearch() {
   if (state) draw();
 }
 const mapSearchInput = document.getElementById("map-search-input");
+const mapSearchCiv = document.getElementById("map-search-civ");
 mapSearchInput.addEventListener("input", refreshMapSearch);
+mapSearchCiv.addEventListener("change", () => {
+  mapSearchCivId = mapSearchCiv.value;
+  mapSearchCache.state = null;
+  syncMapSearchStatus();
+  if (state) draw();
+});
 mapSearchInput.addEventListener("keydown", event => {
   if (event.key !== "Escape") return;
   event.preventDefault(); event.stopPropagation();
   if (mapSearchInput.value) {
     mapSearchInput.value = ""; refreshMapSearch();
+  } else if (mapSearchCivId) {
+    mapSearchCivId = ""; mapSearchCiv.value = "";
+    mapSearchCache.state = null; syncMapSearchStatus();
+    if (state) draw();
   } else mapSearchInput.blur();
 });
+syncMapSearchCivilizations();
 syncMapSearchStatus();
 function syncMapLensControls() {
   for (const button of document.querySelectorAll("[data-map-lens]")) {

@@ -6,23 +6,35 @@ name: publish-site
 #            only when somebody runs the promote-site workflow, because
 #            whether a build is worth being the front page is a judgement,
 #            and no gate can make it.
-#   /beta    the HEAD lane: origin/main as of this run, republished on a
+#   /test    the HEAD lane: origin/main as of this run, republished on a
 #            schedule. It exists so the newest engine is always playable
 #            without anyone deciding anything.
 #
 # Every deployment carries both lanes. That is not an implementation shortcut,
 # it is what Cloudflare Pages deployments are: immutable snapshots of a whole
 # directory. There is no such thing as updating half a site, so each deploy
-# rebuilds the stable lane from its pinned tag and the beta lane from head,
+# rebuilds the stable lane from its pinned tag and the test lane from head,
 # assembles one directory, and ships it. Both lanes therefore always exist,
 # and a promotion is nothing but moving the tag and deploying again.
 #
-# **Why a six-hour schedule and not on-push:** Cloudflare Pages allows 500
-# deployments a month. This repository has recently merged several hundred
-# commits a day; deploying each one would exhaust the month inside two days.
-# Four scheduled deploys a day is ~125 a month, which leaves the rest of the
-# quota for promotions and manual runs. If beta staleness ever matters more
-# than the margin, "0 */2 * * *" is 372 a month and still fits.
+# **The cadence: every commit, half an hour of cooldown, one governor.**
+# The schedule fires every 30 minutes, and the `gate` job decides whether a
+# deploy is worth it:
+#
+#   - Nothing new? If /test already serves the commit this run would publish,
+#     skip in seconds, before any toolchain is installed.
+#   - Budget. Cloudflare Pages allows 500 deployments a month, and this
+#     repository has merged several hundred commits a day — an ungoverned
+#     half-hour cadence is ~1,440 a month, three times the cap, and blowing
+#     the cap would block promotions too, which are deployments like any
+#     other. So scheduled runs pace themselves against 440 a month
+#     (~14 a day), pro rata by the day of the month, and the other 60 stay
+#     reserved for promote-site and manual runs, which never wait.
+#
+# The effect: on a quiet day the test lane is fresh within about half an hour
+# of a commit (GitHub's cron drifts some minutes under load); in a week of
+# round-the-clock merging, the governor stretches the spacing toward ~100
+# minutes rather than dying mid-month.
 #
 # Without the Cloudflare secrets this still builds and checks both lanes and
 # keeps the assembled site as an artifact — a scheduled run degrades to a dry
@@ -31,9 +43,9 @@ name: publish-site
 
 on:
   schedule:
-    # Minute 17, not 0: GitHub delays and drops on-the-hour cron jobs under
-    # load, and an odd minute dodges the rush.
-    - cron: "17 */6 * * *"
+    # Minutes 7 and 37, not 0 and 30: GitHub delays and drops on-the-hour
+    # cron jobs under load, and odd minutes dodge the rush.
+    - cron: "7,37 * * * *"
   workflow_dispatch:
     inputs:
       deploy:
@@ -57,7 +69,66 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # The half-hourly schedule earns its keep here: seconds of API calls decide
+  # whether twenty minutes of building is worth starting. Only scheduled runs
+  # are ever gated — a person clicking Run workflow and a promotion calling in
+  # have both already decided.
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      go: ${{ steps.decide.outputs.go }}
+    steps:
+      - name: Is a scheduled deploy worth it?
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "go=true" >> "$GITHUB_OUTPUT"
+            echo "not a scheduled run; no gate"
+            exit 0
+          fi
+
+          # Nothing new: the test lane already serves this commit. pages.dev
+          # rather than the custom domain, so a domain hiccup cannot make
+          # every run look novel. An unreachable site reads as "new" — the
+          # deploy is then the corrective act, not a waste.
+          live="$(curl -fsS --max-time 10 https://civvis.pages.dev/test/build.json \
+                  | python3 -c 'import json,sys; print(json.load(sys.stdin)["commit"])' \
+                  2>/dev/null || echo unknown)"
+          if [ "$live" = "$GITHUB_SHA" ]; then
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "/test already serves $GITHUB_SHA; nothing to do"
+            exit 0
+          fi
+
+          # Budget: pace scheduled deploys against 440 of Cloudflare's 500
+          # per month, pro rata by day, so promotions always have room.
+          # Successful runs of this workflow and promote-site approximate
+          # deployments; dry runs inflate the count, which errs safe.
+          month_start="$(date -u +%Y-%m-01)"
+          day="$(date -u +%-d)"
+          days_in_month="$(python3 -c 'import calendar,datetime; now=datetime.datetime.utcnow(); print(calendar.monthrange(now.year, now.month)[1])')"
+          used=0
+          for wf in publish-site.yml promote-site.yml; do
+            n="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${wf}/runs?status=success&created=>=${month_start}&per_page=1" --jq '.total_count' || echo 0)"
+            used=$((used + n))
+          done
+          allowed=$((440 * day / days_in_month))
+          echo "deploys used this month: $used; pace allows: $allowed (day $day/$days_in_month)"
+          if [ "$used" -ge "$allowed" ]; then
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            echo "ahead of the monthly budget; the next half-hour tick will ask again"
+            exit 0
+          fi
+
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: gate
+    if: ${{ needs.gate.outputs.go == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:
@@ -108,37 +179,37 @@ jobs:
           echo "head=$head" >> "$GITHUB_OUTPUT"
           echo "stable=$stable" >> "$GITHUB_OUTPUT"
           echo "stable lane: $stable"
-          echo "beta lane:   $head"
+          echo "test lane:   $head"
 
       - name: Build the stable lane
         run: ./beta/publish.sh --commit "${{ steps.lanes.outputs.stable }}" --out "$PWD/lane-stable"
 
-      - name: Build the beta lane
+      - name: Build the test lane
         run: |
           if [ "${{ steps.lanes.outputs.stable }}" = "${{ steps.lanes.outputs.head }}" ]; then
             # Same commit, same bundle; a second three-minute wasm build would
             # prove nothing. cp keeps the two-lane assembly identical either way.
-            cp -R lane-stable lane-beta
+            cp -R lane-stable lane-test
           else
-            ./beta/publish.sh --commit "${{ steps.lanes.outputs.head }}" --out "$PWD/lane-beta"
+            ./beta/publish.sh --commit "${{ steps.lanes.outputs.head }}" --out "$PWD/lane-test"
           fi
 
       # One site from the two lanes. publish.sh emits a single-lane shape —
-      # landing at index.html, viewer under beta/ — and the viewer is
+      # landing at index.html, viewer under test/ — and the viewer is
       # relative-pathed, so it works at any mount point. The head build
       # provides the shell (landing, download page, _worker.js, its viewer as
-      # /beta); the stable build's viewer is then mounted at the root; the
+      # /test); the stable build's viewer is then mounted at the root; the
       # landing page becomes a real file at /home.
       - name: Assemble the site
         run: |
           set -euo pipefail
           rm -rf site
-          cp -R lane-beta site
+          cp -R lane-test site
           mkdir -p site/home
           mv site/index.html site/home/index.html
-          cp -R lane-stable/beta/. site/
+          cp -R lane-stable/test/. site/
           echo "root  $(python3 -c "import json;print(json.load(open('site/build.json'))['short'])")"
-          echo "beta  $(python3 -c "import json;print(json.load(open('site/beta/build.json'))['short'])")"
+          echo "test  $(python3 -c "import json;print(json.load(open('site/test/build.json'))['short'])")"
 
       - name: Check the routing
         run: ./beta/worker_test.py
@@ -146,8 +217,8 @@ jobs:
       - name: Check the stable lane plays
         run: ./beta/verify.py --dist site --mount root --seconds 40
 
-      - name: Check the beta lane plays
-        run: ./beta/verify.py --dist site --mount beta --seconds 40 --no-gate
+      - name: Check the test lane plays
+        run: ./beta/verify.py --dist site --mount test --seconds 40 --no-gate
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -156,7 +227,7 @@ jobs:
           path: |
             site
             beta/verify-root.png
-            beta/verify-beta.png
+            beta/verify-test.png
           if-no-files-found: warn
           retention-days: 14
 
@@ -201,10 +272,10 @@ jobs:
             echo "| lane | commit |"
             echo "| --- | --- |"
             echo "| civvis.ai (stable) | \`$(python3 -c "import json;print(json.load(open('site/build.json'))['short'])")\` |"
-            echo "| civvis.ai/beta (head) | \`$(python3 -c "import json;print(json.load(open('site/beta/build.json'))['short'])")\` |"
+            echo "| civvis.ai/test (head) | \`$(python3 -c "import json;print(json.load(open('site/test/build.json'))['short'])")\` |"
             echo
             echo "- https://civvis.ai — the promoted build"
-            echo "- https://civvis.ai/beta/ — the latest main"
+            echo "- https://civvis.ai/test/ — the latest main"
             echo "- https://civvis.ai/home — the landing page"
             echo "- https://civvis.ai/download/ — the native binaries"
           } >> "$GITHUB_STEP_SUMMARY"

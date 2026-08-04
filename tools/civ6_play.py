@@ -250,6 +250,20 @@ def build_config(args: argparse.Namespace) -> dict:
         # each sink from outside: the channel is whichever field reports the nonce
         # back. Diagnostic only, and off by default.
         "ProbeChannels": args.probe_channels,
+        # ⚠⚠ WITHOUT THIS LINE THE PROBE COULD NEVER BE TURNED ON. #1098 added
+        # `probeCitizenSlots` to the mod behind `cfg.ProbeCitizens`, and nothing
+        # ever put that key in the config -- so `cfg.ProbeCitizens` was nil in
+        # every game and the whole function was unreachable. That is the same
+        # class as a ladder entry the engine has no type for: shipped, invisible,
+        # and silently never running.
+        #
+        # It answers the one question blocking the last untouched science lane.
+        # Only 8 of 50 live campus cities carry a specialist on the Campus, and
+        # 45% of all specialists sit on Commercial Hubs, because CIVVIS has never
+        # issued a citizen order. The probe asks `CityManager.CanStartCommand`
+        # with four candidate `PARAM_MANAGE_CITIZEN` values and emits the verdict
+        # WITHOUT acting, so one game settles whether the lane is actuable.
+        "ProbeCitizens": args.probe_citizens,
         # A SQLite file THIS process owns, offered to the mod's `DB.Query` via
         # ATTACH. If that works it is the live inbound channel the architecture
         # needs, and it is safer than the game's own `DebugGameplay.sqlite`, which
@@ -2336,6 +2350,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--export-state", action="store_true", default=False)
     ap.add_argument("--probe-channels", action="store_true", default=False,
                     help="ask every candidate inbound API what it holds, once a turn")
+    ap.add_argument("--probe-citizens", action="store_true", default=False,
+                    help="ask whether this UI context may assign a citizen to a district "
+                         "(read-only; emits civvis_citizen_probe and issues no command)")
     ap.add_argument("--orders-db", default=None,
                     help="SQLite file offered to the mod via ATTACH as the inbound channel; "
                          "defaults to <run-dir>/orders.sqlite")

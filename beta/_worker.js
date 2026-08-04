@@ -3,7 +3,7 @@
 // The site is two builds of the same program plus the pages around them:
 //
 //   /        the STABLE lane — the promoted build, deliberately chosen
-//   /beta    the HEAD lane — republished automatically from the latest main
+//   /test    the HEAD lane — republished automatically from the latest main
 //   /home    the landing page (a real file at home/index.html)
 //   /download, /rust, /wasm — the native binaries and the moving pointers
 //
@@ -16,19 +16,19 @@
 // write this — but `functions/` is resolved relative to the *working
 // directory* wrangler is invoked from, not the directory being deployed. Run
 // the deploy from anywhere but the project root and the gate is silently left
-// behind: the upload succeeds, the site works, and the beta is wide open with
+// behind: the upload succeeds, the site works, and the test lane is wide open with
 // nothing to show that anything went wrong. It happened once here already,
 // which is why `verify.py` now proves the routing answers rather than assuming
 // it is there. A `_worker.js` sits *inside* the deployed directory and cannot
 // be separated from it.
 
-const COOKIE = "civvis_beta";
+const COOKIE = "civvis_test";
 const WEEK = 60 * 60 * 24 * 7;
 
 /// Give a build channel a stable address without teaching browsers that its
 /// current destination can never change. Both destinations are themselves
 /// moving pointers: `/download/` links GitHub's latest native Rust release,
-/// while `/beta/` is replaced whenever the WASM site is published.
+/// while `/test/` is replaced whenever the WASM site is published.
 function buildChannel(url, path) {
   return new Response(null, {
     status: 302,
@@ -43,7 +43,7 @@ function buildChannel(url, path) {
 async function token(password) {
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(`civvis.ai/beta:${password}`),
+    new TextEncoder().encode(`civvis.ai/test:${password}`),
   );
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -70,7 +70,7 @@ function askForIt(wrong) {
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>CIVVIS — beta</title>
+<title>CIVVIS — test build</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -99,7 +99,7 @@ function askForIt(wrong) {
 <body>
   <form method="POST">
     <h1>CIVVIS</h1>
-    <p>Beta build</p>
+    <p>Test build</p>
     <input name="password" type="password" autofocus autocomplete="current-password"
            aria-label="Password" placeholder="password">
     <button type="submit">Enter</button>
@@ -171,17 +171,30 @@ export default {
       return buildChannel(url, "/download/");
     }
     if (url.pathname === "/wasm" || url.pathname === "/wasm/") {
-      return buildChannel(url, "/beta/");
+      return buildChannel(url, "/test/");
     }
 
-    if (!url.pathname.startsWith("/beta")) return asset(request, env, false);
+    // /beta — the lane's name for its first day — is scrapped. Answered with
+    // an explicit 404 rather than left to fall through, because falling
+    // through does not do what it looks like it does: for an unknown HTML
+    // path Pages serves the root index.html (its single-page-app fallback),
+    // which would quietly resurrect the old name as a second copy of the
+    // front page. The CI routing gate caught exactly that.
+    if (url.pathname === "/beta" || url.pathname.startsWith("/beta/")) {
+      return new Response("Not found", {
+        status: 404,
+        headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" },
+      });
+    }
 
-    // The beta is open.
+    if (!url.pathname.startsWith("/test")) return asset(request, env, false);
+
+    // The test lane is open.
     //
     // It was behind a shared password while it was a thing not meant to be
-    // found. It is now the thing the channel points people at, so the door is
-    // only there if somebody puts it there: set `BETA_PASSWORD` in the Pages
-    // environment and it closes again, with no deploy.
+    // found. It is now where anyone watches the next build being judged, so
+    // the door is only there if somebody puts it there: set `TEST_PASSWORD`
+    // in the Pages environment and it closes again, with no deploy.
     //
     // There is deliberately **no fallback password**. The old one was a
     // literal in this file, in a public repository, which is not a password —
@@ -189,9 +202,9 @@ export default {
     // names a secret or there is no gate, and both of those are honest.
     //
     // What stays either way is `X-Robots-Tag: noindex` on everything under
-    // /beta: open to anyone following a link is not the same as wanting an
+    // /test: open to anyone following a link is not the same as wanting an
     // unfinished build to be the first search result for the project's name.
-    const password = env.BETA_PASSWORD;
+    const password = env.TEST_PASSWORD;
     if (!password) return asset(request, env, true);
 
     const expected = await token(password);
@@ -208,7 +221,7 @@ export default {
           headers: {
             Location: url.pathname,
             "Set-Cookie":
-              `${COOKIE}=${expected}; Path=/beta; Max-Age=${WEEK}; ` +
+              `${COOKIE}=${expected}; Path=/test; Max-Age=${WEEK}; ` +
               "HttpOnly; Secure; SameSite=Lax",
             "Cache-Control": "no-store",
           },
