@@ -7023,6 +7023,7 @@ mod tests {
             "baseruleset",
             "gamemode",
             "startera",
+            "futureera",
             "leaderpool",
             "leader",
             "difficulty",
@@ -7206,7 +7207,7 @@ mod tests {
     }
 
     #[test]
-    fn browser_orders_setup_controls_logs_and_display() {
+    fn browser_orders_controls_interface_setup_and_logs() {
         // Readability is a shared interface contract, not a collection of
         // one-off enlargements. Panels inherit one system stack and a named
         // scale with a 9px floor; map labels use the same platform-native
@@ -7407,7 +7408,7 @@ mod tests {
         // star's ceiling and the zoom ends while the planet is still a bead.
         // Keyed to the planet alone the arrival never got past 0.46.
         assert!(EMBEDDED_INDEX.contains("const star = skyTarget(st)?.star;"));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
+        assert!(EMBEDDED_INDEX.contains("<option value=\"planet\" selected>Planet</option>"));
         assert!(EMBEDDED_INDEX
             .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
         // The world's shape and its poles are settings of their own, and the
@@ -7419,6 +7420,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("<option value=\"land_only\">Land Only</option>"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"water_world\">Water World</option>"));
         assert!(EMBEDDED_INDEX.contains("RULES.map_topologies"));
+        assert!(EMBEDDED_INDEX.contains("const chosen = select.value;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const defaultValue = id === \"mapshape\" && list.some(entry => entry.id === \"planet\")"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if ([...select.options].some(option => option.value === chosen)) select.value = chosen;"
+        ));
         assert!(EMBEDDED_INDEX.contains("shape.disabled = false"));
         assert!(!EMBEDDED_INDEX.contains("if (earth) shape.value = \"planet\""));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
@@ -7556,6 +7564,7 @@ mod tests {
             "np",
             "startera",
             "gamespeed",
+            "futureera",
         ]
         .map(|setting| {
             EMBEDDED_INDEX
@@ -7564,9 +7573,50 @@ mod tests {
         });
         assert!(
             order.windows(2).all(|pair| pair[0] < pair[1]),
-            "lobby order must read ruleset/pool, mode/teams, seat, shape/map, thermal/size, era/speed"
+            "lobby order must read ruleset/pool, mode/teams, seat, shape/map, thermal/size, eras/speed"
         );
         let thermal_setting = order[8];
+        // The advanced drawer starts with the global rules, roster, teams and
+        // climate. Shape and both eras are ordinary setup choices, while the
+        // victory switches stay above the drawer with the rest of the game.
+        for advanced in [
+            "class=\"small game-advanced-setting\" data-advanced-order=\"10\">Base game ruleset",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\">Leader Pool",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\">Teams",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\">Thermal distribution",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(advanced), "missing advanced setting: {advanced}");
+        }
+        for normal in [
+            "class=\"small civ6-hidden\">World shape",
+            "class=\"small civ6-hidden\">Start era",
+            "class=\"small civ6-hidden\">Future Era",
+            "class=\"victory-options civ6-hidden\" id=\"victory-options\"",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(normal), "missing normal setting: {normal}");
+        }
+        assert!(EMBEDDED_INDEX.contains(
+            "const basic = [\"gamemode\", \"mapshape\", \"maptype\", \"leader\", \"difficulty\", \"np\","
+        ));
+        assert!(EMBEDDED_INDEX.contains("\"startera\", \"gamespeed\", \"futureera\"]"));
+        assert!(EMBEDDED_INDEX.contains(
+            "basic.push(document.getElementById(\"victory-options\"), document.getElementById(\"saves-group\"));"
+        ));
+        // Interface Settings keeps the tile switches together at the head of
+        // its advanced drawer, before the overlay layout controls.
+        let display_advanced = [
+            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"10\"><span><input type=\"checkbox\" id=\"gridchk\"",
+            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"20\"><span><input type=\"checkbox\" id=\"reschk\"",
+            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"30\"><span><input type=\"checkbox\" id=\"yieldchk\"",
+            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"40\"><span><input type=\"checkbox\" id=\"artifactchk\"",
+            "class=\"overlay-options display-advanced-setting\" data-advanced-order=\"50\"",
+        ];
+        assert!(
+            display_advanced.windows(2).all(|pair| {
+                EMBEDDED_INDEX.find(pair[0]).unwrap() < EMBEDDED_INDEX.find(pair[1]).unwrap()
+            }),
+            "tile switches should lead Interface Settings advanced controls"
+        );
         // Teams are a division of the table, so they sit beside the setting
         // that says who is at it. A world opens free-for-all, and the splits a
         // size can seat are named in the option rather than left to be found
@@ -7625,9 +7675,9 @@ mod tests {
         let simulation_controls = EMBEDDED_INDEX
             .find("<div class=\"side-actions\" aria-label=\"Simulation controls\">")
             .expect("simulation controls");
-        let display_settings = EMBEDDED_INDEX
+        let interface_settings = EMBEDDED_INDEX
             .find("<details class=\"sidebar-section\" data-section=\"display-settings\">")
-            .expect("display settings panel");
+            .expect("interface settings panel");
         let event_log = EMBEDDED_INDEX
             .find("<span>Game event log</span>")
             .expect("game event log");
@@ -7646,10 +7696,11 @@ mod tests {
         let keyboard_shortcuts = EMBEDDED_INDEX
             .find("<summary>Keyboard shortcuts</summary>")
             .expect("keyboard shortcuts");
-        // Game setup is the first thing below the title. The controls that act
-        // on those choices follow it directly, before the observation panels.
-        assert!(title < sidebar && sidebar < game_settings);
-        assert!(game_settings < simulation_controls && simulation_controls < strategy);
+        // The controls must be ready before the settings they act on: first
+        // the buttons, then the interface controls, then the game setup.
+        assert!(title < sidebar && sidebar < simulation_controls);
+        assert!(simulation_controls < interface_settings && interface_settings < game_settings);
+        assert!(game_settings < strategy);
         // The column runs deepest-cause first — what a civilization is trying
         // to do now, why it acted, the wars that reasoning started, then the
         // world's record of what happened — so reading the column downward
@@ -7662,12 +7713,15 @@ mod tests {
                 && reasoning_log < war_log
                 && war_log < event_log
                 && event_log < government
-                && government < display_settings
-                && display_settings < keyboard_shortcuts,
-            "left panel should show game setup, controls, strategy, the three logs, \
-             government, display settings and then keyboard shortcuts"
+                && government < keyboard_shortcuts,
+            "left panel should show controls, interface settings, game setup, strategy, \
+             the three logs, government and then keyboard shortcuts"
         );
-        assert!(EMBEDDED_INDEX.contains("<span>Display settings</span>"));
+        assert!(EMBEDDED_INDEX.contains("<span>Interface Settings</span>"));
+        assert!(!EMBEDDED_INDEX.contains("<span>Display settings</span>"));
+        assert!(EMBEDDED_INDEX.contains(
+            "order: -1; width: 16vw; min-width: 16vw;"
+        ));
         for overlay in ["players", "victory", "minimap", "controls", "lenses"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("data-overlay-close=\"{overlay}\"")),
@@ -8020,7 +8074,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function dismissOverlay(name, source)"));
         assert!(EMBEDDED_INDEX.contains("addEventListener(\"pointerdown\", event =>"));
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
-        assert!(EMBEDDED_INDEX.contains("restore in Display settings"));
+        assert!(EMBEDDED_INDEX.contains("restore it in Interface Settings"));
         assert_eq!(
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
@@ -8031,7 +8085,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
         assert!(EMBEDDED_INDEX.contains("civvis-sidebar-sections-v1"));
         // Collapsing the command deck collapses the deck alone. Every map
-        // overlay is switched from the deck's display settings instead, so the
+        // overlay is switched from the deck's Interface Settings instead, so the
         // two controls stay independent and the deck's width can be handed to
         // the map without losing the instruments on it.
         for (overlay, element) in [
@@ -8042,7 +8096,7 @@ mod tests {
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("body.overlay-{overlay}-hidden {element}")),
-                "display settings should hide the {element} map overlay"
+                "Interface Settings should hide the {element} map overlay"
             );
         }
         for element in [
@@ -10135,11 +10189,11 @@ mod tests {
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\"", // leader pool
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // teams
             "class=\"small human-setting civ6-hidden\">Leader",
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // world shape
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\"", // thermal
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\"", // start era
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"70\"", // future era
-            "class=\"victory-options game-advanced-setting civ6-hidden\"",
+            "class=\"small civ6-hidden\">World shape",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // thermal
+            "class=\"small civ6-hidden\">Start era",
+            "class=\"small civ6-hidden\">Future Era",
+            "class=\"victory-options civ6-hidden\"",
             "class=\"mod-options game-advanced-setting civ6-hidden\"",
         ] {
             assert!(EMBEDDED_INDEX.contains(row), "{row} is not hidden in the Civ 6 mode");
@@ -11282,7 +11336,7 @@ mod tests {
     /// them: collapse the command deck, set the map area, face north, zoom in,
     /// zoom out, dismiss. Dismissal is last because it is the only one that
     /// removes the bar, and it hides itself while the deck is collapsed —
-    /// Display settings is the only way back and it lives inside the deck.
+    /// Interface Settings is the only way back and it lives inside the deck.
     #[test]
     fn the_map_controls_run_from_collapse_to_dismiss() {
         let dock = EMBEDDED_INDEX
