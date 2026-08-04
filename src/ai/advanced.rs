@@ -827,6 +827,77 @@ pub struct AdvancedAi {
     /// live-regime one. See [`AdvancedAi::remembered_objective_strength`] for
     /// the mechanism and the 294-of-426 measurement behind it.
     pub blind_objective_strength: bool,
+    /// Aim a relief force at what is actually hitting the city, not at whichever
+    /// besieger happens to stand nearest the force.
+    ///
+    /// ★★★★★ THE RELIEF COLUMN MARCHED TO THE WRONG ENEMY. `domain_objective`'s
+    /// `threatened_city` arm collects every hostile within 8 of the besieged city
+    /// and then takes `min_by_key(wdist(ANCHOR, unit))` — the one nearest the
+    /// relieving force's own anchor. A force east of a burning city therefore
+    /// picks the *easternmost* besieger, on the far side of the ring, and two
+    /// force groups anchored in different places pick different enemies. The army
+    /// splits instead of converging, and nothing aims at the units doing the
+    /// killing.
+    ///
+    /// ⚠⚠⚠ Measured live on run `civvis-20260803T220954Z`, t180–187, with
+    /// `come_ashore`, `host_observed` and `closed_borders` all running — so this
+    /// is what those repairs uncovered rather than something they caused.
+    /// Mediolanum went 0 → 29 → 98 → 167 → 180 damage out of 200 in four turns
+    /// with 8 hostiles inside 5 hexes, the nearest at distance 1. Our nine combat
+    /// units stood at distance 1 (on 33 health), 2, 4, 6, and **8, 9, 9, 10, 11** —
+    /// five of nine, including the siege, eight or more hexes away. The objectives
+    /// journalled over those turns were civ6 (13,16), (14,15), (13,13): all
+    /// legitimately inside Mediolanum's 8-ring, all on the eastern side where the
+    /// big force already was. The city fell, and the run ended in defeat at t241
+    /// holding one city.
+    ///
+    /// The repair is the ordering key alone. A relief column exists to kill what
+    /// is hitting the city; proximity to the force is a convenience that scatters
+    /// the army across the whole ring. Distance to the force stays as the
+    /// tie-break, so among equally-close besiegers each group still takes the one
+    /// it can reach first.
+    ///
+    /// **Off by default, live-bridge only.** With the flag off the leading key
+    /// component is a constant, so the ordering is identical to before.
+    pub relief_targets_the_siege: bool,
+    /// Price the enemy UNITS we remember near an objective we cannot currently
+    /// see, the way [`AdvancedAi::blind_objective_strength`] already prices the
+    /// city standing on it.
+    ///
+    /// ★★★★★ #957 REPAIRED A THIRD OF THIS. `local_strength_ratio` returns its
+    /// `hostile <= 0.0` sentinel of `3.0` — the maximum, "we dominate here" —
+    /// and that sentinel has two causes it cannot tell apart: ground we can see
+    /// and is genuinely empty, and ground we simply cannot see. The existing
+    /// repair reaches only the first term of the sum, `g.city_at(objective)`.
+    /// An objective that is not a city has nothing but the *visible* enemy
+    /// units within six tiles, so a force marching at anything else in the fog
+    /// reads maximum local superiority by construction.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T200117Z` (finished, t251),
+    /// splitting every force-group decision by whether a known enemy city stood
+    /// on the objective:
+    ///
+    /// | | decisions |
+    /// |---|---|
+    /// | total force-group decisions | 982 |
+    /// | reading the `3.00` sentinel | **523 (53.3%)** |
+    /// | …of those, objective IS a known city — `blind_objective_strength` territory | 168 |
+    /// | …of those, objective is **NOT** a city — no repair existed | **355 (68%)** |
+    ///
+    /// So the sentinel fires on more than half of all force decisions, and two
+    /// thirds of those firings were out of reach of the fix that was supposed
+    /// to have closed it.
+    ///
+    /// The repair invents nothing. `BeliefState::remembered_hidden_military_threat_in_view`
+    /// is this controller's own decayed record of enemy units it has actually
+    /// seen; it already excludes anything currently visible, so the term cannot
+    /// double-count the live sum beside it, and the defensive half of the same
+    /// question has trusted it since `remembered_city_pressure`. This only lets
+    /// the offensive half read the same memory.
+    ///
+    /// **Off by default, live-bridge only**, on the same footing and for the
+    /// same reason as `blind_objective_strength` above.
+    pub blind_objective_units: bool,
     /// Exclude victory lanes the empire cannot finish before the game ends.
     ///
     /// **Off by default, on the pre-registered rule.** Routing toward a lane
@@ -1838,6 +1909,8 @@ impl AdvancedAi {
             army_target_weighs_the_enemy: false,
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
+            relief_targets_the_siege: false,
+            blind_objective_units: false,
             refuse_unreachable_lanes: false,
             prophet_before_opportunism: false,
             settler_price: 1.0,
@@ -2009,6 +2082,21 @@ impl AdvancedAi {
         self.blind_objective_strength = true;
     }
 
+    /// Send a relief force at the units actually besieging the city rather than
+    /// the nearest one to itself. Native tournament games leave this disabled so
+    /// their recorded ladders stay comparable.
+    pub fn enable_relief_targets_the_siege(&mut self) {
+        self.relief_targets_the_siege = true;
+    }
+
+    /// Let the army price the enemy units it REMEMBERS around an objective it
+    /// cannot currently see, instead of reading an unseen approach as empty.
+    /// Native tournament games leave this disabled so their recorded ladders
+    /// stay comparable.
+    pub fn enable_blind_objective_units(&mut self) {
+        self.blind_objective_units = true;
+    }
+
     /// ★★★★★ EVERY LIVE-BRIDGE REPAIR, IN ONE PLACE THAT THE MEASUREMENT CAN PLAY.
     ///
     /// These eight flags are the difference between the frozen tournament
@@ -2135,6 +2223,8 @@ impl AdvancedAi {
         // into range and cannot fire.
         self.enable_ranged_needs_line_of_sight();
         self.enable_blind_objective_strength();
+        self.enable_relief_targets_the_siege();
+        self.enable_blind_objective_units();
         // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
         // `military_faith_spending` never asks about gold — it gates on the faith
         // bank alone. Measured on run `civvis-20260803T014330Z`: faith military
@@ -2226,6 +2316,14 @@ impl AdvancedAi {
 
     pub fn disable_blind_objective_strength(&mut self) {
         self.blind_objective_strength = false;
+    }
+
+    pub fn disable_relief_targets_the_siege(&mut self) {
+        self.relief_targets_the_siege = false;
+    }
+
+    pub fn disable_blind_objective_units(&mut self) {
+        self.blind_objective_units = false;
     }
 
     pub fn disable_loyalty_rate_alarm(&mut self) {
@@ -13880,7 +13978,17 @@ impl AdvancedAi {
                         }
                         && g.wdist(city.pos, unit.pos) <= 8
                 })
-                .min_by_key(|unit| (g.wdist(anchor, unit.pos), unit.id))
+                // Nearest THE CITY first — see `relief_targets_the_siege`. With
+                // the flag off this term is a constant and the ordering is the
+                // historical one, nearest the force.
+                .min_by_key(|unit| {
+                    let besieging = if self.relief_targets_the_siege {
+                        g.wdist(city.pos, unit.pos)
+                    } else {
+                        0
+                    };
+                    (besieging, g.wdist(anchor, unit.pos), unit.id)
+                })
                 .map(|unit| unit.pos)
         });
         if let Some(pos) = threatened_enemy {
@@ -14201,7 +14309,26 @@ impl AdvancedAi {
                         self.remembered_objective_strength(city)
                     }
                 })
-                .unwrap_or(0.0);
+                .unwrap_or(0.0)
+            // The enemy we have SEEN near this objective and cannot see now.
+            // See [`AdvancedAi::blind_objective_units`]: without this the sum
+            // above is live contacts only, so any objective that is not a city
+            // reads empty under fog and the ratio returns its "we dominate"
+            // sentinel — 355 of the 523 sentinel firings on the run that
+            // measured it. The term excludes anything currently visible, so it
+            // cannot double-count the live sum it is added to.
+            + if self.blind_objective_units {
+                self.belief.remembered_hidden_military_threat_in_view(
+                    g,
+                    pid,
+                    &visible,
+                    objective,
+                    THREAT_RELIEF_RADIUS,
+                    BELIEF_PRESSURE_HORIZON,
+                )
+            } else {
+                0.0
+            };
         if hostile <= 0.0 {
             3.0
         } else {
@@ -28652,6 +28779,180 @@ mod tests {
         assert_eq!(
             before, after,
             "a hidden heal, breach, or garrison cannot rewrite the remembered campaign score"
+        );
+    }
+
+    /// ★★★★★ A RELIEF COLUMN MUST AIM AT THE SIEGE, NOT AT ITS OWN DOORSTEP.
+    ///
+    /// `domain_objective`'s `threatened_city` arm gathers every hostile within 8
+    /// of the besieged city and then takes the one nearest the RELIEVING FORCE.
+    /// A force standing east of a burning city therefore aims at the easternmost
+    /// besieger — on the far side of the ring — and two force groups anchored in
+    /// different places aim at different enemies, so the army never converges.
+    ///
+    /// ⚠⚠⚠ Measured live on run `civvis-20260803T220954Z`, t180–187, with the
+    /// embarkation, visibility and border repairs all running. Mediolanum went
+    /// 0 → 29 → 98 → 167 → 180 damage out of 200 in four turns with eight
+    /// hostiles inside five hexes; **five of our nine combat units stood 8 to 11
+    /// hexes away**, and the journalled objectives were all on the far side of
+    /// the ring. The city fell and the run ended in defeat holding one city.
+    #[test]
+    fn a_relief_column_aims_at_the_siege_not_at_its_own_doorstep() {
+        let mut game = Game::new_full(2, 30, 18, 411_011, 120, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.players[0].met.insert(1);
+        game.players[1].met.insert(0);
+        game.apply(0, &Action::DeclareWar { player: 1 })
+            .expect("the seats can go to war");
+
+        // Our city, and a straight run of land east of it so the geometry is
+        // unambiguous: the besieger is adjacent to the city, the loiterer is far
+        // from the city but close to where our force is standing.
+        let mut land: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !game.rules.is_water(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        land.sort();
+        let city_pos = land[0];
+        let settler = game.spawn_test_unit("settler", 0, city_pos);
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("the city can be founded");
+        let cid = game.player_city_ids(0)[0];
+
+        let pick = |d: i32, from: Pos| -> Pos {
+            *land
+                .iter()
+                .find(|pos| game.wdist(**pos, from) == d && **pos != city_pos)
+                .unwrap_or_else(|| panic!("a land tile {d} from {from:?}"))
+        };
+        let besieger_pos = pick(1, city_pos);
+        let anchor = pick(7, city_pos);
+        let loiterer_pos = pick(1, anchor);
+
+        game.spawn_test_unit("warrior", 1, besieger_pos);
+        game.spawn_test_unit("warrior", 1, loiterer_pos);
+        let ours = game.spawn_test_unit("warrior", 0, anchor);
+
+        // Both hostiles are inside the city's 8-ring, so both are candidates;
+        // the only question is which one the column is sent to.
+        assert!(game.wdist(city_pos, loiterer_pos) <= 8, "both are candidates");
+
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: Some(cid),
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let enemies = [1usize];
+
+        let mut ai = AdvancedAi::new();
+        // The candidate filter honours fog when battlefront observation is on,
+        // and this test is about the ORDERING, not about what can be seen.
+        ai.battlefront_observation = false;
+        let _ = ours;
+
+        ai.disable_relief_targets_the_siege();
+        let nearest_to_us =
+            ai.domain_objective(&game, 0, &plan, ForceDomain::Land, anchor, &enemies);
+        ai.enable_relief_targets_the_siege();
+        let nearest_to_city =
+            ai.domain_objective(&game, 0, &plan, ForceDomain::Land, anchor, &enemies);
+
+        assert_eq!(
+            nearest_to_us, loiterer_pos,
+            "the historical rule aims at whatever stands nearest the force — this is \
+             the defect, and it left five of nine units 8 to 11 hexes from a city at \
+             180 damage out of 200"
+        );
+        assert_eq!(
+            nearest_to_city, besieger_pos,
+            "the relief column must aim at what is actually hitting the city"
+        );
+    }
+
+    /// ★★★★★ A FOGGED OBJECTIVE IS NOT A DOMINATED ONE.
+    ///
+    /// `local_strength_ratio` returns `3.0` — its maximum, "we dominate here" —
+    /// whenever `hostile <= 0.0`, and that condition cannot tell ground we can
+    /// see and is empty apart from ground we simply cannot see.
+    /// `blind_objective_strength` repaired the `g.city_at(objective)` term, but
+    /// an objective that is not a city has nothing left but the *visible*
+    /// enemy units within six tiles.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T200117Z` (finished, t251), by
+    /// splitting every force-group decision on whether a known enemy city stood
+    /// on its objective: of **982** decisions, **523 (53.3%)** read the `3.00`
+    /// sentinel, and **355 of those — 68% — had no city on the objective**, so
+    /// no repair could reach them. The army read maximum local superiority on
+    /// more than a third of every decision it made, in a game it lost 343 to
+    /// 1214 while never once declaring war.
+    #[test]
+    fn a_fogged_objective_is_not_a_dominated_one() {
+        let mut game = Game::new_full(2, 30, 18, 411_009, 120, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.players[0].met.insert(1);
+        game.players[1].met.insert(0);
+        game.apply(0, &Action::DeclareWar { player: 1 })
+            .expect("the seats can go to war");
+
+        // Any two land tiles far enough apart that our own force cannot see the
+        // objective. The objective is deliberately NOT a city: that is the
+        // population the existing repair cannot reach.
+        let mut land: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !game.rules.is_water(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        land.sort();
+        let objective = land[0];
+        let staging = *land
+            .iter()
+            .find(|pos| game.wdist(**pos, objective) == 5)
+            .expect("a land tile five hexes from the objective");
+
+        let ours = game.spawn_test_unit("warrior", 0, staging);
+        game.spawn_test_unit("warrior", 1, objective);
+
+        // See it once, then lose sight of it. The enemy never moves and never
+        // changes: the only thing that changes is whether we are looking.
+        let observer = game.spawn_test_unit("scout", 0, objective);
+        let mut ai = AdvancedAi::new();
+        ai.belief.observe(&game, 0);
+        game.remove_unit(observer);
+        assert!(
+            !game.player_visibility(0).contains(&objective),
+            "the objective must be back in fog, or this measures nothing"
+        );
+
+        let units = [ours];
+        let enemies = [1usize];
+
+        ai.disable_blind_objective_units();
+        let blind = ai.local_strength_ratio(&game, 0, &units, &enemies, objective);
+        ai.enable_blind_objective_units();
+        let believing = ai.local_strength_ratio(&game, 0, &units, &enemies, objective);
+
+        assert_eq!(
+            blind, 3.0,
+            "without the repair a fogged objective reads as the maximum — this is \
+             the defect, and it fired on 53.3% of force decisions in a live game"
+        );
+        assert!(
+            believing < 3.0,
+            "an enemy this controller has SEEN standing on the objective must still \
+             count against it once it goes back into fog; got {believing}"
         );
     }
 
