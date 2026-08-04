@@ -574,7 +574,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// ⚠ Re-pinned for test-only seeded-map fixture hardening after Natural
 /// Wonder silhouettes changed. Both edits are inside `#[cfg(test)]` modules;
 /// no controller path is compiled into an Elo game.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x74e1_449b_5bb7_e189;
+/// ⚠ #1162 routes the charged Toa, Legion, and Nau through shared improvement
+/// planning. `AdvancedAi::legacy()` and `BasicAi` can now select real new
+/// improvement actions, so this is deliberately a protocol-v6 change rather
+/// than a compatibility re-pin; the fresh source fingerprint documents that
+/// the new ledger starts from this exact shared controller.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4bf1_b191_2d54_ae87;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

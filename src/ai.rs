@@ -7236,6 +7236,83 @@ impl BasicAi {
         }
     }
 
+    /// Improvements this particular unit can actually spend one of its own
+    /// charges to create on `pos`. Builders use `builder_buildable`; the few
+    /// military uniques that carry build charges instead name their actions in
+    /// their unit rule. Keeping the intersection here makes every caller obey
+    /// the same placement, ownership, Open Borders, and civilization checks.
+    pub(crate) fn special_unit_improvements(
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        pos: Pos,
+    ) -> Vec<Name> {
+        let Some(unit) = g.units.get(&uid) else {
+            return Vec::new();
+        };
+        if unit.owner != pid || unit.charges <= 0 {
+            return Vec::new();
+        }
+        let builds = &g.rules.units[unit.kind].builds;
+        if builds.is_empty() {
+            return Vec::new();
+        }
+        g.valid_improvements(pid, pos)
+            .into_iter()
+            .filter(|improvement| builds.contains(improvement))
+            .collect()
+    }
+
+    /// Spend a unique military unit's improvement charge when that is a real
+    /// legal job, or walk it toward the nearest reachable job. `None` means
+    /// this unit has no such job and lets ordinary military behavior continue.
+    ///
+    /// This intentionally searches the whole map rather than only owned city
+    /// tiles: a Nau's Feitoria is useful precisely because it must be placed in
+    /// foreign territory with Open Borders.
+    pub(crate) fn special_improver_step(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+    ) -> Option<bool> {
+        let current = g.units.get(&uid)?.pos;
+        let here = Self::special_unit_improvements(g, pid, uid, current);
+        if let Some(improvement) = Self::best_improvement(g, current, &here) {
+            return g
+                .apply(
+                    pid,
+                    &Action::Improve {
+                        unit: uid,
+                        improvement,
+                    },
+                )
+                .ok()
+                .map(|_| true);
+        }
+
+        let targets = {
+            // `valid_improvements` asks several empire-wide questions. The
+            // special units are rare, but a memo scope still keeps this map
+            // scan proportional to tiles rather than repeated rule queries.
+            let _memo = g.query_memo();
+            g.map
+                .tiles
+                .keys()
+                .copied()
+                .filter(|position| {
+                    *position != current
+                        && !Self::special_unit_improvements(g, pid, uid, *position).is_empty()
+                })
+                .collect::<HashSet<_>>()
+        };
+        g.route_step_to_any(uid, &targets).and_then(|to| {
+            g.apply(pid, &Action::Move { unit: uid, to })
+                .ok()
+                .map(|_| true)
+        })
+    }
+
     /// Whether this tile holds a strategic deposit that is not yet connected
     /// by the improvement which harvests it.
     pub(crate) fn unopened_strategic_source(g: &Game, pos: Pos) -> bool {
@@ -8533,6 +8610,9 @@ impl BasicAi {
             }) {
                 return self.fortify_or_stop(g, pid, uid);
             }
+        }
+        if let Some(acted) = self.special_improver_step(g, pid, uid) {
+            return acted;
         }
         // Coming ashore outranks exploring. A Recon unit explores for as long
         // as any unseen tile remains, which on an ocean map is forever, so
