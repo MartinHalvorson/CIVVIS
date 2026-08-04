@@ -524,7 +524,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// number is right after the merge — only a fresh fingerprint is.
 /// `elo_anchor_speed_is_standard_so_the_pantheon_repin_is_free` checks the
 /// Standard-speed claim rather than asserting it.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xaa1d_13d5_e7d6_64ad;
+/// ⚠ And again for `settler_blocked_turns` surviving a retarget. That reset lives
+/// AFTER `advanced_settler_step`'s `if !self.settler_commit { return moved; }`
+/// early return, and `settler_commit` is `false` in every default constructor —
+/// only `civvis_orders` turns it on for the live bridge. So the legacy and Elo
+/// entrants return before the changed line is ever reached and the anchor's
+/// behaviour is bit-for-bit what it was. A compatibility re-pin;
+/// `elo_anchor_never_reaches_the_settler_commit_path` checks the claim.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xdaa4_72cd_3a32_b238;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -2162,6 +2169,28 @@ mod tests {
             "the scaled price must equal the literal it replaced, or the anchor's \
              behaviour changed and this is not a compatibility re-pin"
         );
+    }
+
+    /// The re-pin above claims the `settler_blocked_turns` change is free for the
+    /// Elo anchor because the edited line sits behind `settler_commit`, which every
+    /// default constructor leaves off. ⚠ That is load-bearing for a ratings ledger,
+    /// and prose does not hold — check it.
+    #[test]
+    fn elo_anchor_never_reaches_the_settler_commit_path() {
+        // ⚠ THE ANCHOR IS `legacy()`, NOT `new()` — `league.rs` maps
+        // "advanced_v1" => AdvancedAi::legacy(). I first asserted this on `new()`,
+        // which sets `settler_commit = true`, and this test failed and corrected me.
+        // That is the whole reason the claim is checked rather than written down.
+        assert!(
+            !civvis::ai::AdvancedAi::legacy().settler_commit,
+            "advanced_v1 is legacy(); if it ever reaches the settler_commit path the \
+             re-pin above stops being free and ELO_PROTOCOL_VERSION must be bumped"
+        );
+        // ⚠ And record the other half honestly: `advanced` DOES set it, so that
+        // entrant's settler pipeline genuinely changes. The anchor pins the scale
+        // and is untouched, which is what this guard asks about — but v5 rows for
+        // `advanced` straddle this change.
+        assert!(civvis::ai::AdvancedAi::new().settler_commit);
     }
 
     #[test]

@@ -42,6 +42,8 @@ thread_local! {
     /// What the socket build keeps in atomics on `Shared`. Nothing in this
     /// build reads them but the page that set them.
     static PACE: Cell<u64> = const { Cell::new(1_000) };
+    static BETWEEN_GAME_COUNTDOWN_MS: Cell<u64> =
+        const { Cell::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS) };
     static PAUSED: Cell<bool> = const { Cell::new(false) };
     /// Monotonic identity of the frame most recently completed for this page.
     /// Multiple player turns share one game turn at Blitz and slower, so
@@ -163,6 +165,7 @@ fn advance_one_frame(session: &mut Session, held: SpectatorFrame) {
 /// The fields [`decorate`](super::decorate) adds from `Shared`'s atomics.
 fn decorate_browser(o: &mut Value) {
     o["pace"] = json!(PACE.with(Cell::get));
+    o["between_game_countdown_ms"] = json!(BETWEEN_GAME_COUNTDOWN_MS.with(Cell::get));
     o["paused"] = json!(PAUSED.with(Cell::get));
     o["frame_sequence"] = json!(FRAME_SEQUENCE.with(Cell::get));
     // The setup panel reads its own staged choices back out of `/state`, and
@@ -288,11 +291,31 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             if let Some(ms) = parsed["ms"].as_u64() {
                 PACE.with(|pace| pace.set(ms));
             }
+            let countdown_error = parsed["between_game_countdown_ms"]
+                .as_u64()
+                .and_then(|value| match valid_between_game_countdown_ms(value) {
+                    Some(value) => {
+                        BETWEEN_GAME_COUNTDOWN_MS.with(|countdown| countdown.set(value));
+                        None
+                    }
+                    None => Some(
+                        "between-game countdown must be one of 0, 3000, 5000, or 10000 milliseconds",
+                    ),
+                });
             if let Some(paused) = parsed["paused"].as_bool() {
                 PAUSED.with(|held| held.set(paused));
-                with_session(|session| session.spectator_paused = paused);
             }
-            json!({"pace": PACE.with(Cell::get), "paused": PAUSED.with(Cell::get)})
+            with_session(|session| {
+                if let Some(paused) = parsed["paused"].as_bool() {
+                    session.spectator_paused = paused;
+                }
+                let mut out = session.state();
+                decorate_browser(&mut out);
+                if let Some(error) = countdown_error {
+                    out["error"] = json!(error);
+                }
+                out
+            })
         }
 
         ("POST", "/action") => with_session(|session| {
