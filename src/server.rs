@@ -7172,6 +7172,30 @@ mod tests {
             "player && !player.is_barbarian && player.civ && owners.has(String(player.id))"
         ));
         assert!(EMBEDDED_INDEX.contains("if (Array.isArray(pos) && visible.has(key(pos))"));
+        let civilization_sync = EMBEDDED_INDEX
+            .split_once("function syncMapSearchCivilizations(st = state) {")
+            .expect("civilization-filter synchronizer")
+            .1
+            .split_once("\nfunction computeMapSearchMatches(")
+            .expect("end of civilization-filter synchronizer")
+            .0;
+        assert!(civilization_sync.contains(
+            "const optionsChanged = !mapSearchCivilizationOptions(select, entries);"
+        ));
+        assert!(civilization_sync.contains(
+            "if (optionsChanged && document.activeElement === select) return false;"
+        ));
+        assert!(civilization_sync.contains(
+            "if (optionsChanged) {\n    select.replaceChildren(...entries.map"
+        ));
+        assert_eq!(
+            civilization_sync.matches("select.replaceChildren").count(),
+            1,
+            "the native civilization picker must stay intact when the visible roster is unchanged"
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "mapSearchCiv.addEventListener(\"blur\", () => {\n  // Apply a roster change held back while the native picker was expanded.\n  if (!syncMapSearchCivilizations()) return;"
+        ));
         assert!(EMBEDDED_INDEX.contains("syncMapSearchCivilizations(st);"));
         assert!(EMBEDDED_INDEX.contains("drawFlatMapSearchHighlights(tiles);"));
         assert!(EMBEDDED_INDEX.contains("drawPlanetMapSearchHighlights(cells);"));

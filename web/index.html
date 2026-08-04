@@ -24203,24 +24203,41 @@ function mapSearchVisibleCivilizations(st) {
     player && !player.is_barbarian && player.civ && owners.has(String(player.id))
   );
 }
+function mapSearchCivilizationOptions(select, entries) {
+  if (select.options.length !== entries.length) return false;
+  return entries.every(([value, label], index) => {
+    const option = select.options[index];
+    return option.value === value && option.textContent === label;
+  });
+}
 function syncMapSearchCivilizations(st = state) {
   const select = document.getElementById("map-search-civ");
-  if (!select) return;
+  if (!select) return false;
   const wanted = mapSearchCivId || select.value;
   const civilizations = mapSearchVisibleCivilizations(st);
-  const all = document.createElement("option");
-  all.value = ""; all.textContent = "All visible civilizations";
-  const options = [all];
-  for (const player of civilizations) {
-    const option = document.createElement("option");
-    option.value = String(player.id); option.textContent = player.civ;
-    options.push(option);
+  const entries = [["", "All visible civilizations"],
+    ...civilizations.map(player => [String(player.id), player.civ])];
+  const optionsChanged = !mapSearchCivilizationOptions(select, entries);
+  // A native select is allowed to own its expanded picker until the viewer
+  // dismisses it. Replacing its children for every painted turn interrupted
+  // that picker and could leave it looking as if it would not collapse.
+  if (optionsChanged && document.activeElement === select) return false;
+  if (optionsChanged) {
+    select.replaceChildren(...entries.map(([value, label]) => {
+      const option = document.createElement("option");
+      option.value = value; option.textContent = label;
+      return option;
+    }));
   }
-  select.replaceChildren(...options);
-  mapSearchCivId = civilizations.some(player => String(player.id) === wanted) ? wanted : "";
-  select.value = mapSearchCivId;
-  select.disabled = civilizations.length === 0;
-  mapSearchCache.state = null;
+  const nextCivId = civilizations.some(player => String(player.id) === wanted) ? wanted : "";
+  const selectionChanged = mapSearchCivId !== nextCivId || select.value !== nextCivId;
+  const disabled = civilizations.length === 0;
+  const disabledChanged = select.disabled !== disabled;
+  mapSearchCivId = nextCivId;
+  select.value = nextCivId;
+  select.disabled = disabled;
+  if (optionsChanged || selectionChanged) mapSearchCache.state = null;
+  return optionsChanged || selectionChanged || disabledChanged;
 }
 function computeMapSearchMatches(st, query, civFilter = mapSearchCivId) {
   const matches = new Set();
@@ -24311,6 +24328,12 @@ mapSearchInput.addEventListener("input", refreshMapSearch);
 mapSearchCiv.addEventListener("change", () => {
   mapSearchCivId = mapSearchCiv.value;
   mapSearchCache.state = null;
+  syncMapSearchStatus();
+  if (state) draw();
+});
+mapSearchCiv.addEventListener("blur", () => {
+  // Apply a roster change held back while the native picker was expanded.
+  if (!syncMapSearchCivilizations()) return;
   syncMapSearchStatus();
   if (state) draw();
 });
