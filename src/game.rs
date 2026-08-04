@@ -21714,6 +21714,27 @@ impl Game {
         let mut yields = self.route_yields(dest, domestic);
         if !domestic {
             yields.gold += city.great_person_foreign_route_gold;
+            // A Feitoria belongs to the foreign destination rather than the
+            // route's origin. Every Portuguese international route arriving
+            // at that city receives its production-and-gold contract bonus.
+            if self.players[owner].civ == "Portugal" {
+                let feitorias = city
+                    .owned_tiles
+                    .iter()
+                    .filter(|position| {
+                        let tile = &self.map.tiles[position];
+                        tile.improvement.as_deref() == Some("feitoria") && !tile.pillaged
+                    })
+                    .count() as f64;
+                let effects = &self.rules.improvements["feitoria"].effects;
+                yields.gold +=
+                    feitorias * effects.get("foreign_route_gold").copied().unwrap_or(0.0);
+                yields.production += feitorias
+                    * effects
+                        .get("foreign_route_production")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
         }
         yields.gold += self.players[owner]
             .counters
@@ -25740,6 +25761,17 @@ impl Game {
                     &self.rules.improvements["ski_resort"].tech,
                     &self.rules.improvements["ski_resort"].civic,
                 ))
+                // Qhapaq Nan is built by a Builder *on* a mountain. The
+                // ordinary mountain passage comes from the finished route,
+                // but an Incan Builder must be able to reach the first site
+                // when Foreign Trade unlocks it.
+                || (unit.kind == "builder"
+                    && self.players[unit.owner].civ == "Inca"
+                    && self.unlocked(
+                        unit.owner,
+                        &self.rules.improvements["qhapaq_nan"].tech,
+                        &self.rules.improvements["qhapaq_nan"].civic,
+                    ))
                 || (unit.kind == "military_engineer"
                     && self.unlocked(
                         unit.owner,
@@ -26154,6 +26186,17 @@ impl Game {
                     h += spec
                         .effects
                         .get("housing_after_civil_service")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                if improvement == "kampung"
+                    && self.players[city.owner]
+                        .civics
+                        .contains(&crate::name!("civil_engineering"))
+                {
+                    h += spec
+                        .effects
+                        .get("housing_after_civil_engineering")
                         .copied()
                         .unwrap_or(0.0);
                 }
@@ -34555,7 +34598,16 @@ impl Game {
         let drought_food_protected = tile
             .owner_city
             .and_then(|city| self.cities.get(&city))
-            .is_some_and(|city| self.city_disaster_protected(city, "drought_protection"));
+            .is_some_and(|city| self.city_disaster_protected(city, "drought_protection"))
+            || (!tile.pillaged
+                && tile.improvement.as_deref().is_some_and(|improvement| {
+                    self.rules.improvements[improvement]
+                        .effects
+                        .get("drought_food_protection")
+                        .copied()
+                        .unwrap_or(0.0)
+                        > 0.0
+                }));
         if tile.drought && !drought_food_protected {
             yields.food = (yields.food - 1.0).max(0.0);
         }
@@ -34569,6 +34621,31 @@ impl Game {
             Some("plantation") => {
                 yields.food += self.tree_effect(pid, "plantation_food");
                 yields.gold += self.tree_effect(pid, "plantation_gold");
+                let hacienda = &self.rules.improvements["hacienda"].effects;
+                let adjacent_haciendas = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("hacienda")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.production += if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("rapid_deployment"))
+                {
+                    adjacent_haciendas
+                        * hacienda
+                            .get("adjacent_hacienda_production_after_rapid_deployment")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_haciendas / 2.0).floor()
+                        * hacienda
+                            .get("adjacent_hacienda_pair_production")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
             }
             Some("camp") => {
                 yields.food += self.tree_effect(pid, "camp_food");
@@ -34913,13 +34990,573 @@ impl Game {
                         .copied()
                         .unwrap_or(0.0);
             }
+            Some("chateau") => {
+                let effects = &self.rules.improvements["chateau"].effects;
+                let wonders = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| self.map.tiles[neighbor].wonder.is_some())
+                    .count() as f64;
+                let wonder_key = if self.players[pid].techs.contains(&crate::name!("flight")) {
+                    "adjacent_wonder_culture_after_flight"
+                } else {
+                    "adjacent_wonder_culture"
+                };
+                yields.culture += wonders * effects.get(wonder_key).copied().unwrap_or(0.0);
+                if tile.has_river() {
+                    yields.gold += effects.get("river_gold").copied().unwrap_or(0.0);
+                }
+            }
+            Some("golf_course") => {
+                let effects = &self.rules.improvements["golf_course"].effects;
+                for neighbor in self.nbrs(pos) {
+                    let adjacent = &self.map.tiles[&neighbor];
+                    if self.city_at(neighbor).is_some() {
+                        yields.culture += effects
+                            .get("adjacent_city_center_culture")
+                            .copied()
+                            .unwrap_or(0.0);
+                    }
+                    if adjacent.district.is_some_and(|district| {
+                        self.district_is_family(
+                            district,
+                            crate::name!("entertainment_complex"),
+                        )
+                    }) {
+                        yields.culture += effects
+                            .get("adjacent_entertainment_complex_culture")
+                            .copied()
+                            .unwrap_or(0.0);
+                    }
+                }
+            }
+            Some("hacienda") => {
+                let effects = &self.rules.improvements["hacienda"].effects;
+                let adjacent_plantations = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("plantation")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.food += if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("replaceable_parts"))
+                {
+                    adjacent_plantations
+                        * effects
+                            .get("adjacent_plantation_food_after_replaceable_parts")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_plantations / 2.0).floor()
+                        * effects
+                            .get("adjacent_plantation_pair_food")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+                let adjacent_haciendas = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("hacienda")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.production += if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("rapid_deployment"))
+                {
+                    adjacent_haciendas
+                        * effects
+                            .get("adjacent_hacienda_production_after_rapid_deployment")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_haciendas / 2.0).floor()
+                        * effects
+                            .get("adjacent_hacienda_pair_production")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+            }
+            Some("ice_hockey_rink") => {
+                let effects = &self.rules.improvements["ice_hockey_rink"].effects;
+                let adjacent_tundra_snow = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        matches!(
+                            self.map.tiles[neighbor].terrain.as_str(),
+                            "tundra" | "snow"
+                        )
+                    })
+                    .count() as f64;
+                yields.culture += adjacent_tundra_snow
+                    * effects
+                        .get("adjacent_tundra_snow_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+                let stadiums = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        let adjacent = &self.map.tiles[neighbor];
+                        adjacent.district.is_some_and(|district| {
+                            self.district_is_family(
+                                district,
+                                crate::name!("entertainment_complex"),
+                            )
+                        }) && adjacent.owner_city.and_then(|city_id| self.cities.get(&city_id))
+                            .is_some_and(|city| {
+                                self.city_has_active_building_family(
+                                    city,
+                                    crate::name!("stadium"),
+                                )
+                            })
+                    })
+                    .count() as f64;
+                yields.culture += stadiums
+                    * effects
+                        .get("adjacent_stadium_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("professional_sports"))
+                {
+                    yields.food += effects
+                        .get("food_after_professional_sports")
+                        .copied()
+                        .unwrap_or(0.0);
+                    yields.production += effects
+                        .get("production_after_professional_sports")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
+            Some("kampung") => {
+                let effects = &self.rules.improvements["kampung"].effects;
+                let boats = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("fishing_boats")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.food += boats
+                    * effects
+                        .get("adjacent_fishing_boats_food")
+                        .copied()
+                        .unwrap_or(0.0);
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("civil_engineering"))
+                {
+                    yields.production += effects
+                        .get("production_after_civil_engineering")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
+            Some("mission") => {
+                let effects = &self.rules.improvements["mission"].effects;
+                if self.on_foreign_continent(pid, pos) {
+                    yields.faith += effects
+                        .get("foreign_continent_faith")
+                        .copied()
+                        .unwrap_or(0.0);
+                    yields.food += effects
+                        .get("foreign_continent_food")
+                        .copied()
+                        .unwrap_or(0.0);
+                    yields.production += effects
+                        .get("foreign_continent_production")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                let adjacent_religious_science = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("campus"))
+                                || self.district_is_family(district, crate::name!("holy_site"))
+                        })
+                    })
+                    .count() as f64;
+                yields.science += adjacent_religious_science
+                    * effects
+                        .get("adjacent_campus_holy_site_science")
+                        .copied()
+                        .unwrap_or(0.0);
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("cultural_heritage"))
+                {
+                    yields.science += effects
+                        .get("science_after_cultural_heritage")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
+            Some("open_air_museum") => {
+                let effects = &self.rules.improvements["open_air_museum"].effects;
+                let terrain_count = tile
+                    .owner_city
+                    .and_then(|city_id| self.cities.get(&city_id))
+                    .map(|city| {
+                        city.owned_tiles
+                            .iter()
+                            .map(|position| self.map.tiles[position].terrain)
+                            .collect::<BTreeSet<_>>()
+                            .len() as f64
+                    })
+                    .unwrap_or(0.0);
+                yields.culture += terrain_count
+                    * effects
+                        .get("city_distinct_terrain_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
+            Some("outback_station") => {
+                let effects = &self.rules.improvements["outback_station"].effects;
+                let adjacent_pastures = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("pasture")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.food += adjacent_pastures
+                    * effects
+                        .get("adjacent_pasture_food")
+                        .copied()
+                        .unwrap_or(0.0);
+                let adjacent_outbacks = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref()
+                            == Some("outback_station")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("steam_power"))
+                {
+                    yields.production += (adjacent_outbacks / 2.0).floor()
+                        * effects
+                            .get("adjacent_outback_pair_production_after_steam_power")
+                            .copied()
+                            .unwrap_or(0.0);
+                }
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("rapid_deployment"))
+                {
+                    yields.food += (adjacent_outbacks / 2.0).floor()
+                        * effects
+                            .get("adjacent_outback_pair_food_after_rapid_deployment")
+                            .copied()
+                            .unwrap_or(0.0);
+                }
+            }
+            Some("polder") => {
+                let effects = &self.rules.improvements["polder"].effects;
+                let adjacent_polders = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("polder")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("replaceable_parts"))
+                {
+                    yields.food += adjacent_polders
+                        * effects
+                            .get("adjacent_polder_food_after_replaceable_parts")
+                            .copied()
+                            .unwrap_or(0.0);
+                    yields.production += adjacent_polders
+                        * effects
+                            .get("adjacent_polder_production_after_replaceable_parts")
+                            .copied()
+                            .unwrap_or(0.0);
+                } else {
+                    yields.food += adjacent_polders
+                        * effects.get("adjacent_polder_food").copied().unwrap_or(0.0);
+                }
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("civil_engineering"))
+                {
+                    yields.gold += effects
+                        .get("gold_after_civil_engineering")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
+            Some("stepwell") => {
+                let effects = &self.rules.improvements["stepwell"].effects;
+                for neighbor in self.nbrs(pos) {
+                    let adjacent = &self.map.tiles[&neighbor];
+                    if adjacent.district.is_some_and(|district| {
+                        self.district_is_family(district, crate::name!("holy_site"))
+                    }) {
+                        yields.faith += effects
+                            .get("adjacent_holy_site_faith")
+                            .copied()
+                            .unwrap_or(0.0);
+                    }
+                    if adjacent.improvement.as_deref() == Some("farm") && !adjacent.pillaged {
+                        yields.food += effects.get("adjacent_farm_food").copied().unwrap_or(0.0);
+                    }
+                }
+                if self.players[pid].civics.contains(&crate::name!("feudalism")) {
+                    yields.faith += effects.get("faith_after_feudalism").copied().unwrap_or(0.0);
+                }
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("professional_sports"))
+                {
+                    yields.food += effects
+                        .get("food_after_professional_sports")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
+            Some("terrace_farm") => {
+                let effects = &self.rules.improvements["terrace_farm"].effects;
+                let adjacent_mountains = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| self.map.tiles[neighbor].terrain == "mountain")
+                    .count() as f64;
+                yields.food += adjacent_mountains
+                    * effects
+                        .get("adjacent_mountain_food")
+                        .copied()
+                        .unwrap_or(0.0);
+                if self.nbrs(pos).iter().any(|neighbor| {
+                    self.map.tiles[neighbor].district.is_some_and(|district| {
+                        self.district_is_family(district, crate::name!("aqueduct"))
+                    })
+                }) {
+                    yields.production += effects
+                        .get("adjacent_aqueduct_production")
+                        .copied()
+                        .unwrap_or(0.0);
+                } else if tile.has_river()
+                    || self.nbrs(pos).iter().any(|neighbor| {
+                        matches!(self.map.tiles[neighbor].terrain.as_str(), "lake")
+                            || self.map.tiles[neighbor].feature.as_deref() == Some("oasis")
+                    })
+                {
+                    yields.production += effects
+                        .get("fresh_water_production")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                let adjacent_farms = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("farm")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.food += if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("replaceable_parts"))
+                {
+                    adjacent_farms
+                        * effects
+                            .get("adjacent_farm_food_after_replaceable_parts")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_farms / 2.0).floor()
+                        * effects
+                            .get("adjacent_farm_pair_food")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+            }
+            Some("colossal_head") => {
+                let effects = &self.rules.improvements["colossal_head"].effects;
+                let adjacent_woods_rainforest = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        matches!(
+                            self.map.tiles[neighbor].feature.as_deref(),
+                            Some("forest" | "jungle")
+                        )
+                    })
+                    .count() as f64;
+                yields.faith += if self.players[pid].civics.contains(&crate::name!("humanism")) {
+                    adjacent_woods_rainforest
+                        * effects
+                            .get("adjacent_woods_rainforest_faith_after_humanism")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_woods_rainforest / 2.0).floor()
+                        * effects
+                            .get("adjacent_woods_rainforest_pair_faith")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+            }
+            Some("mahavihara") => {
+                let effects = &self.rules.improvements["mahavihara"].effects;
+                let campus_count = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("campus"))
+                        })
+                    })
+                    .count() as f64;
+                let holy_site_count = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("holy_site"))
+                        })
+                    })
+                    .count() as f64;
+                let campus_key = if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("scientific_theory"))
+                {
+                    "adjacent_campus_science_after_scientific_theory"
+                } else {
+                    "adjacent_campus_science"
+                };
+                yields.science += campus_count * effects.get(campus_key).copied().unwrap_or(0.0);
+                yields.faith += holy_site_count
+                    * effects
+                        .get("adjacent_holy_site_faith")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
+            Some("moai") => {
+                let effects = &self.rules.improvements["moai"].effects;
+                let adjacent_moai = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("moai")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.culture += if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("medieval_faires"))
+                {
+                    adjacent_moai
+                        * effects
+                            .get("adjacent_moai_culture_after_medieval_faires")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_moai / 2.0).floor()
+                        * effects
+                            .get("adjacent_moai_pair_culture")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+                if tile.feature.as_deref() == Some("volcanic_soil")
+                    || self.nbrs(pos).iter().any(|neighbor| {
+                        self.map.tiles[neighbor].feature.as_deref() == Some("volcanic_soil")
+                    })
+                {
+                    yields.culture += effects
+                        .get("volcanic_adjacent_or_on_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                if self.nbrs(pos).iter().any(|neighbor| {
+                    matches!(self.map.tiles[neighbor].terrain.as_str(), "coast" | "lake")
+                }) {
+                    yields.culture += effects
+                        .get("adjacent_coast_lake_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
             _ => {}
+        }
+        // Nazca Lines deliberately have no workable yield of their own. Their
+        // value is the pattern they create around them, so apply every active
+        // neighbouring line to this tile rather than teaching the governor to
+        // work an unworkable geoglyph.
+        if !tile.pillaged {
+            for neighbor in self.nbrs(pos) {
+                let adjacent = &self.map.tiles[&neighbor];
+                if adjacent.improvement.as_deref() != Some("nazca_line")
+                    || adjacent.pillaged
+                    || !adjacent
+                        .owner_city
+                        .and_then(|city_id| self.cities.get(&city_id))
+                        .is_some_and(|city| city.owner == pid)
+                {
+                    continue;
+                }
+                let effects = &self.rules.improvements["nazca_line"].effects;
+                yields.faith += effects.get("adjacent_tile_faith").copied().unwrap_or(0.0);
+                if tile.resource.is_some() {
+                    yields.faith += effects
+                        .get("adjacent_resource_faith")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                if tile.terrain == "desert"
+                    && self.players[pid]
+                        .civics
+                        .contains(&crate::name!("civil_service"))
+                {
+                    yields.food += effects
+                        .get("adjacent_desert_food_after_civil_service")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                if !self.rules.is_water(tile)
+                    && !tile.hills
+                    && self.players[pid]
+                        .techs
+                        .contains(&crate::name!("mass_production"))
+                {
+                    yields.production += effects
+                        .get("adjacent_flat_production_after_mass_production")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
         }
         if !tile.pillaged {
             if let Some(improvement) = tile.improvement.as_deref() {
                 yields.science += self.rules.improvements[improvement]
                     .effects
                     .get("appeal_science_percent")
+                    .copied()
+                    .unwrap_or(0.0)
+                    / 100.0
+                    * self.tile_appeal(pos).max(0) as f64;
+                yields.culture += self.rules.improvements[improvement]
+                    .effects
+                    .get("appeal_culture_percent")
                     .copied()
                     .unwrap_or(0.0)
                     / 100.0
@@ -36307,9 +36944,6 @@ impl Game {
             None => return vec![],
         };
         let territory_owner = self.cities[&oc].owner;
-        if !self.builder_may_improve_territory(pid, territory_owner) {
-            return vec![];
-        }
         let visible_resource = t
             .resource
             .as_deref()
@@ -36375,6 +37009,47 @@ impl Game {
                                 .any(|class| class == &resource.class)
                         })
                 });
+            let adjacent_passable_land_invalid = spec.requires_adjacent_passable_land > 0
+                && self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.get(**neighbor).is_some_and(|tile| {
+                            !self.rules.is_water(tile) && self.rules.is_passable(tile)
+                        })
+                    })
+                    .count()
+                    < spec.requires_adjacent_passable_land;
+            let adjacent_water_resource_invalid = spec.requires_adjacent_water_resource
+                && !self.nbrs(pos).iter().any(|neighbor| {
+                    self.map.get(*neighbor).is_some_and(|tile| {
+                        self.rules.is_water(tile)
+                            && tile.resource.as_deref().is_some_and(|resource| {
+                                self.resource_visible_to(pid, resource)
+                            })
+                    })
+                });
+            let forbidden_adjacent_feature = !spec.forbids_adjacent_features.is_empty()
+                && self.nbrs(pos).iter().any(|neighbor| {
+                    self.map
+                        .get(*neighbor)
+                        .and_then(|tile| tile.feature)
+                        .is_some_and(|feature| spec.forbids_adjacent_features.contains(&feature))
+                });
+            let insufficient_appeal = spec
+                .min_appeal
+                .is_some_and(|minimum| self.tile_appeal(pos) < minimum);
+            let city_limit_reached = spec.one_per_city
+                && self.cities[&oc].owned_tiles.iter().any(|position| {
+                    self.map.tiles[position].improvement.as_deref() == Some(name.as_str())
+                });
+            let territory_invalid = if spec.requires_foreign_territory {
+                territory_owner == pid
+                    || self.is_at_war(pid, territory_owner)
+                    || (spec.requires_open_borders && !self.has_open_borders(pid, territory_owner))
+            } else {
+                !self.builder_may_improve_territory(pid, territory_owner)
+            };
             // Civ 6 sites an improvement through any one of three routes —
             // a valid terrain, a valid feature, or a valid resource. Farms
             // stand on grassland OR on desert floodplains OR on wheat;
@@ -36429,6 +37104,12 @@ impl Game {
                 || seaside_invalid
                 || same_adjacent_invalid
                 || adjacent_resource_class_invalid
+                || adjacent_passable_land_invalid
+                || adjacent_water_resource_invalid
+                || forbidden_adjacent_feature
+                || insufficient_appeal
+                || city_limit_reached
+                || territory_invalid
             {
                 continue;
             }
@@ -41882,6 +42563,15 @@ impl Game {
         if imp == "national_park" && national_park.is_none() {
             return Err("no valid four-tile National Park here".into());
         }
+        let first_mahavihara = imp == "mahavihara"
+            && !self
+                .cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .flat_map(|city| city.owned_tiles.iter())
+                .any(|position| {
+                    self.map.tiles[position].improvement.as_deref() == Some("mahavihara")
+                });
         let removes = self.rules.improvements[imp].removes_feature;
         let excavates_artifact = matches!(imp, "archaeological_dig" | "shipwreck_excavation");
         let improvement_position = u.pos;
@@ -41921,6 +42611,22 @@ impl Game {
         mu.moves_left = 0.0;
         mu.acted = true;
         bump(&mut self.players[pid], "improvements");
+        if first_mahavihara {
+            let technologies = self.rules.improvements[imp]
+                .effects
+                .get("first_build_random_tech")
+                .copied()
+                .unwrap_or(0.0) as usize;
+            if technologies > 0 {
+                self.complete_random_nodes(pid, technologies, true);
+                self.note(
+                    pid,
+                    "Science",
+                    "Nalanda's first Mahavihara granted a random technology",
+                    Some(improvement_position),
+                );
+            }
+        }
         if excavates_artifact {
             // A dig raises something from a past era, left by one of the
             // world's peoples - the shipped sites record whose history
@@ -48809,9 +49515,44 @@ impl Game {
                     } else {
                         0.0
                     }
-            })
+                })
             .sum::<f64>();
         delta += self.city_building_effect(city, "loyalty_per_turn");
+        // Improvement loyalty is city-scoped even when the tile is not being
+        // worked: Sweden's Open-Air Museum stabilizes its host city, and a
+        // Spanish Mission beside an overseas City Center anchors that colony.
+        delta += city
+            .owned_tiles
+            .iter()
+            .filter(|position| !self.map.tiles[position].pillaged)
+            .filter_map(|position| self.map.tiles[position].improvement)
+            .map(|improvement| {
+                self.rules.improvements[improvement]
+                    .effects
+                    .get("city_loyalty")
+                    .copied()
+                    .unwrap_or(0.0)
+            })
+            .sum::<f64>();
+        if self.on_foreign_continent(pid, cpos) {
+            delta += self
+                .nbrs(cpos)
+                .iter()
+                .filter(|position| {
+                    let tile = &self.map.tiles[position];
+                    tile.owner_city == Some(cid)
+                        && !tile.pillaged
+                        && tile.improvement.as_deref() == Some("mission")
+                })
+                .map(|_| {
+                    self.rules.improvements["mission"]
+                        .effects
+                        .get("foreign_continent_city_loyalty")
+                        .copied()
+                        .unwrap_or(0.0)
+                })
+                .sum::<f64>();
+        }
         if self.on_foreign_continent(pid, cpos) {
             delta += self.policy_effect(pid, "foreign_continent_city_loyalty");
         }
@@ -51341,6 +52082,8 @@ impl Game {
                 let mut improvement_tourism = effects.get("tourism").copied().unwrap_or(0.0)
                     + effects.get("appeal_tourism").copied().unwrap_or(0.0) * tourism_appeal as f64;
                 if self.players[pid].techs.contains(&crate::name!("flight")) {
+                    improvement_tourism +=
+                        effects.get("tourism_after_flight").copied().unwrap_or(0.0);
                     let faith_factor = effects
                         .get("faith_tourism_after_flight")
                         .copied()
