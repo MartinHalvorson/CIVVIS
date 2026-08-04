@@ -6981,6 +6981,26 @@ mod tests {
         assert_eq!(simulation_settings(&staged), settings);
     }
 
+    #[test]
+    fn earth_today_settings_build_a_planetary_future_era_world() {
+        let params = new_game_params(
+            &current(),
+            &json!({
+                "map_topology": "planet",
+                "map_script": "true_start_earth",
+                "start_era": "future",
+            }),
+        );
+        assert_eq!(params.map_topology, MapTopology::Planet);
+        assert_eq!(params.map_script, MapScript::TrueStartEarth);
+        assert_eq!(params.start_era, start_era_from_id("future").unwrap());
+
+        let session = Session::new(params);
+        assert_eq!(session.game.map_script, MapScript::TrueStartEarth);
+        assert_eq!(session.game.start_era, start_era_from_id("future").unwrap());
+        assert_eq!(session.game.world_era, start_era_from_id("future").unwrap());
+    }
+
     /// The first question the lobby asks. One ruleset is modeled, so the
     /// setting has exactly one legal answer, and an id from some other game
     /// leaves it on Civilization VI rather than being taken at face value.
@@ -7015,10 +7035,13 @@ mod tests {
         assert_eq!(medieval.start_era, start_era_from_id("medieval").unwrap());
         assert_eq!(simulation_settings(&medieval)["start_era"], "medieval");
 
-        // The Stone Age is on the ladder but has no tree behind it; "future"
-        // is an era of the ruleset that is not offered as a start; the rest
+        let future = new_game_params(&medieval, &json!({"start_era": "future"}));
+        assert_eq!(future.start_era, start_era_from_id("future").unwrap());
+        assert_eq!(simulation_settings(&future)["start_era"], "future");
+
+        // The Stone Age is on the ladder but has no tree behind it; the rest
         // are not rungs at all. Every one of them leaves the setting alone.
-        for refused in ["stone_age", "future", "dinosaur", "holocene", ""] {
+        for refused in ["stone_age", "dinosaur", "holocene", ""] {
             let asked = new_game_params(&medieval, &json!({"start_era": refused}));
             assert_eq!(
                 asked.start_era, medieval.start_era,
@@ -7086,6 +7109,36 @@ mod tests {
         let restored = Session::from_game(params, session.game.clone());
         assert_eq!(restored.params.start_era, era);
         assert_eq!(restored.params.base_ruleset, BaseRuleset::Civ6);
+    }
+
+    /// Selecting a scenario must remain an ordinary, editable setup path: the
+    /// page applies the exact Earth Today settings through the same payload it
+    /// stages for native and browser games, and a later change simply returns
+    /// the picker to Custom Game.
+    #[test]
+    fn browser_offers_the_earth_today_setup_scenario() {
+        for piece in [
+            "id=\"scenario\"",
+            "<option value=\"custom\" selected>Custom Game</option>",
+            "<option value=\"earth_today\">Earth Today</option>",
+            "const GAME_SCENARIOS = Object.freeze({",
+            "mapshape: \"planet\"",
+            "maptype: \"true_start_earth\"",
+            "startera: \"future\"",
+            "function applySelectedScenario()",
+            "function syncScenarioFromSettings()",
+            "const scenarioChanged = applySelectedScenario();",
+            "if (scenarioChanged) stageSelectedSimulationSettings();",
+            "event.target.id !== \"scenario\"",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(piece), "Earth Today scenario is missing {piece}");
+        }
+        let scenario = EMBEDDED_INDEX.find("id=\"scenario\"").unwrap();
+        let mode = EMBEDDED_INDEX.find("id=\"gamemode\"").unwrap();
+        assert!(scenario < mode, "the scenario must be asked before game mode");
+        assert!(EMBEDDED_INDEX.contains(
+            "const basic = [\"scenario\", \"gamemode\", \"mapshape\", \"maptype\","
+        ));
     }
 
     #[test]
@@ -7328,6 +7381,7 @@ mod tests {
     fn every_game_setting_is_answered_before_a_game_starts() {
         for setting in [
             "baseruleset",
+            "scenario",
             "gamemode",
             "startera",
             "futureera",
@@ -7899,8 +7953,8 @@ mod tests {
         // The lobby's reading order. `#newgame-options` is a two-column grid
         // filled row by row, so document order *is* left-then-right,
         // top-to-bottom on screen, and each row is a pair that belongs
-        // together: the rules and who plays under them, then who is at the
-        // table and how they are divided, then the world from the outside in —
+        // together: the rules, scenario and mode, then who is at the table
+        // and how they are divided, then the world from the outside in —
         // what shape it is, what is drawn on that shape, how heat is laid out
         // across it and how big it is — and last the clock, where history
         // starts and how fast it runs.
@@ -7911,6 +7965,7 @@ mod tests {
         let order = [
             "baseruleset",
             "leaderpool",
+            "scenario",
             "gamemode",
             "teams",
             "leader",
@@ -7919,6 +7974,7 @@ mod tests {
             "maptype",
             "mappoles",
             "np",
+            "citystates",
             "startera",
             "gamespeed",
             "futureera",
@@ -7930,9 +7986,9 @@ mod tests {
         });
         assert!(
             order.windows(2).all(|pair| pair[0] < pair[1]),
-            "lobby order must read ruleset/pool, mode/teams, seat, shape/map, thermal/size, eras/speed"
+            "lobby order must read ruleset/pool, scenario/mode, teams, seat, shape/map, thermal/size/city-states, eras/speed"
         );
-        let thermal_setting = order[8];
+        let thermal_setting = order[9];
         // The advanced drawer starts with the global rules, roster, teams and
         // climate. Shape and both eras are ordinary setup choices, while the
         // victory switches stay above the drawer with the rest of the game.
@@ -7945,6 +8001,7 @@ mod tests {
             assert!(EMBEDDED_INDEX.contains(advanced), "missing advanced setting: {advanced}");
         }
         for normal in [
+            "class=\"small civ6-hidden\">Scenario",
             "class=\"small civ6-hidden\">World shape",
             "class=\"small civ6-hidden\">Start era",
             "class=\"small civ6-hidden\">Future Era",
@@ -7953,7 +8010,7 @@ mod tests {
             assert!(EMBEDDED_INDEX.contains(normal), "missing normal setting: {normal}");
         }
         assert!(EMBEDDED_INDEX.contains(
-            "const basic = [\"gamemode\", \"mapshape\", \"maptype\", \"leader\", \"difficulty\", \"np\","
+            "const basic = [\"scenario\", \"gamemode\", \"mapshape\", \"maptype\", \"leader\", \"difficulty\", \"np\", \"citystates\","
         ));
         assert!(EMBEDDED_INDEX.contains("\"startera\", \"gamespeed\", \"futureera\"]"));
         assert!(EMBEDDED_INDEX.contains(
