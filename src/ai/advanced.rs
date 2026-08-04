@@ -1773,6 +1773,14 @@ pub struct AdvancedAi {
     /// Off in [`AdvancedAi::legacy`] and [`AdvancedAi::pre_policy_envoy`] so an
     /// evaluator control can measure it; on in the promoted production agent.
     pub research_economy: bool,
+    /// Keep asking for a Campus in every city that can still repay one.
+    ///
+    /// Two terms in the district valuation stop the empire at half coverage:
+    /// `balanced_core`'s `district_count * 2 < city_count` cliff, and
+    /// `RESEARCH_CAMPUS_COVERAGE`'s game-fraction horizon. Live end-of-game
+    /// Campus coverage over 19 runs is **exactly 50 of 100 cities**. Off for
+    /// the frozen native controllers.
+    pub campus_every_city: bool,
 
     /// This turn's floor on the science weight, refreshed by
     /// [`AdvancedAi::refresh_research_weight`] once per decision.
@@ -1807,6 +1815,28 @@ const RESEARCH_CITIZEN_TILT: f64 = 0.28;
 
 /// A city with no Campus, in any lane, once one is legal here.
 const RESEARCH_CAMPUS_COVERAGE: f64 = 300.0;
+
+/// How long a Campus takes to repay itself, as a fraction of the turn budget.
+///
+/// ⚠⚠ THE HORIZON WAS THE WRONG SHAPE, AND IT IS WHY THE LATE CITIES HAVE NO
+/// CAMPUS. `research_horizon` is `(max_turns - turn) / max_turns` — a fraction
+/// of the WHOLE GAME — so a Campus is priced at 0.40 at turn 150 and 0.24 at
+/// turn 190 even though 100 and 60 turns of compounding remain. Meanwhile every
+/// term it competes against is a FLAT constant that never decays:
+/// `(Culture, theater_square)` **850**, `government_plaza` `first_copy` **420**,
+/// `(Diplomacy, diplomatic_quarter)` **360**, `(Religion, holy_site)` 210,
+/// `(Recovery, industrial_zone)` 190. So the Campus term shrinks all game while
+/// its rivals hold, and the cities that never get one are exactly the
+/// late-founded ones — median first produce order turn **67 against 40**, median
+/// lifetime **94 city-turns against 181**.
+///
+/// A Campus is 54 production and pays a yield every turn afterwards, so what
+/// matters is whether it can REPAY, not what fraction of the game is left.
+/// 0.16 of the budget is 40 turns at the deployment's 250, which is comfortably
+/// past payback. Beyond that window the value is full; inside it, it ramps to
+/// zero so a Campus begun at turn 245 still does not outbid a defender — which
+/// is the reason the original horizon was there.
+const RESEARCH_CAMPUS_PAYBACK: f64 = 0.16;
 
 /// A Campus standing without the building that pays for it. The debt is per
 /// missing copy and independent of the lane, unlike `wartime_infrastructure_debt`
@@ -2078,6 +2108,7 @@ impl AdvancedAi {
             tactics_plans: 0,
             tactics_decisions: 0,
             research_economy: false,
+            campus_every_city: false,
             research_weight: 0.0,
         }
     }
@@ -2397,6 +2428,17 @@ impl AdvancedAi {
         // as #999 and #1003: a repair the governor making most of the builds
         // could not reach.
         self.enable_housing_districts();
+        // ⚠⚠ AND THE EMPIRE STOPS BUILDING CAMPUSES AT HALF ITS CITIES.
+        // `balanced_core` pays a Campus +130 only while `district_count * 2 <
+        // city_count`, so the term switches off at half coverage — and measured
+        // over 19 live runs, end-of-game Campus coverage is **exactly 50 of 100
+        // cities**. The counterweight #958 added is per-city and lane-
+        // independent, but it is scaled by a GAME-FRACTION horizon while every
+        // term it competes against is a flat constant, so it decays to 120 by
+        // turn 150 against a Theatre Square's 850. The cities that never get a
+        // Campus are the late-founded ones, and the science funnel cascades
+        // from it: 50% Campus, 39% Library, 20% University, 3% Research Lab.
+        self.enable_campus_every_city();
     }
 
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
@@ -2440,6 +2482,18 @@ impl AdvancedAi {
 
     pub fn disable_housing_districts(&mut self) {
         self.base.housing_districts = false;
+    }
+
+    /// Keep asking for a Campus in every city that can still repay one. See
+    /// `AdvancedAi::campus_every_city`: live end-of-game Campus coverage is
+    /// exactly 50 of 100 cities, which is what `balanced_core`'s half-empire
+    /// cliff asks for.
+    pub fn enable_campus_every_city(&mut self) {
+        self.campus_every_city = true;
+    }
+
+    pub fn disable_campus_every_city(&mut self) {
+        self.campus_every_city = false;
     }
 
     /// Require a faith-bought soldier's gold upkeep to be payable. Native
@@ -5604,6 +5658,16 @@ impl AdvancedAi {
     fn research_horizon(g: &Game) -> f64 {
         let budget = g.max_turns.max(1) as f64;
         ((budget - g.turn as f64) / budget).clamp(0.0, 1.0)
+    }
+
+    /// Can a Campus begun now still repay itself? Full value while more than
+    /// `RESEARCH_CAMPUS_PAYBACK` of the budget remains, ramping to zero inside
+    /// that window. See the constant for why a game-fraction horizon was the
+    /// wrong shape for a district that repays in a few dozen turns.
+    fn campus_payback_horizon(g: &Game) -> f64 {
+        let budget = g.max_turns.max(1) as f64;
+        let window = (budget * RESEARCH_CAMPUS_PAYBACK).max(1.0);
+        ((budget - g.turn as f64) / window).clamp(0.0, 1.0)
     }
 
     /// Set this turn's science floor. Called once per decision, before any
@@ -13057,7 +13121,26 @@ impl AdvancedAi {
                                 .any(|built| g.district_family(*built) == family)
                     })
                     .count();
-                let balanced_core = if district_count * 2 < city_count {
+                // ⚠⚠ THIS IS A CLIFF AT HALF THE EMPIRE, AND THE EMPIRE STOPS
+                // THERE. `district_count` is how many of MY cities hold this
+                // family, so the bonus vanishes the moment half of them do.
+                // Measured over 19 live runs, end-of-game Campus coverage is
+                // **exactly 50 of 100 cities** — the empire builds Campuses
+                // until it is told half is enough, and then stops.
+                //
+                // Defensible for a Harbor or an Industrial Zone, whose effects
+                // are empire-wide. Not for the district the whole science chain
+                // hangs off: every Campus carries its OWN Library and
+                // University slots, and the funnel cascades from it — 50%
+                // Campus, 39% Library, 20% University, **3% Research Lab**.
+                // Per-city science correlates 0.709 with a Library and 0.629
+                // with a Campus over 13,004 city-turns.
+                //
+                // So the Campus is exempted from the cliff and keeps asking in
+                // every city. The other four families are untouched.
+                let core_capped = district_count * 2 >= city_count;
+                let campus_keeps_asking = self.campus_every_city && family == "campus";
+                let balanced_core = if !core_capped || campus_keeps_asking {
                     match family.as_str() {
                         "campus" | "theater_square" | "commercial_hub" => 130.0,
                         "harbor" | "industrial_zone" => 90.0,
@@ -13258,7 +13341,16 @@ impl AdvancedAi {
                         .keys()
                         .any(|built| g.district_family(*built) == family)
                 {
-                    RESEARCH_CAMPUS_COVERAGE * Self::research_horizon(g)
+                    // ⚠ A PAYBACK horizon, not a game-fraction one. See
+                    // `RESEARCH_CAMPUS_PAYBACK`: the old scaling priced this at
+                    // 0.40 with a hundred turns of compounding left, while every
+                    // rival term is a flat constant that never decays.
+                    RESEARCH_CAMPUS_COVERAGE
+                        * if self.campus_every_city {
+                            Self::campus_payback_horizon(g)
+                        } else {
+                            Self::research_horizon(g)
+                        }
                 } else {
                     0.0
                 };
@@ -33612,5 +33704,82 @@ mod research_probe {
         assert!(live.base.housing_districts, "the deployment turns it on");
         live.disable_housing_districts();
         assert!(!live.base.housing_districts, "and the control arm holds it off");
+    }
+    /// Off by default, set only by the live bridge, and holdable off on its own
+    /// so the arm is a controlled comparison.
+    #[test]
+    fn only_the_live_bridge_keeps_asking_for_a_campus() {
+        assert!(!AdvancedAi::new().campus_every_city);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.campus_every_city);
+        live.disable_campus_every_city();
+        assert!(!live.campus_every_city);
+    }
+
+    /// ⚠ The whole point: a Campus with a hundred turns left must not be priced
+    /// as if the game were nearly over. The old game-fraction horizon said 0.40
+    /// at turn 150 of 250; the payback horizon says full value, and only ramps
+    /// down inside the window where a Campus genuinely cannot repay.
+    #[test]
+    fn the_campus_horizon_measures_payback_not_the_fraction_of_the_game_left() {
+        let mut g = crate::game::Game::new(2, 16, 12, 5, 250, 0);
+
+        for (turn, want_full) in [(1u32, true), (150, true), (209, true)] {
+            g.turn = turn;
+            let payback = AdvancedAi::campus_payback_horizon(&g);
+            assert_eq!(
+                payback, 1.0,
+                "at turn {turn} of 250 a Campus still repays; got {payback}"
+            );
+            assert!(want_full);
+        }
+
+        // At turn 150 the OLD shape had already discounted it to 0.40, against
+        // rivals that never decay at all — a Theatre Square is a flat 850.
+        g.turn = 150;
+        let old = AdvancedAi::research_horizon(&g);
+        assert!(
+            old < 0.45,
+            "the game-fraction horizon is what starved the late cities: {old}"
+        );
+
+        // Inside the payback window it still ramps to nothing, which is why the
+        // horizon existed: a Campus begun at turn 245 must not outbid a defender.
+        g.turn = 230;
+        let late = AdvancedAi::campus_payback_horizon(&g);
+        assert!((0.0..=0.6).contains(&late), "turn 230 of 250 ramps down: {late}");
+        g.turn = 250;
+        assert_eq!(AdvancedAi::campus_payback_horizon(&g), 0.0);
+        g.turn = 260;
+        assert_eq!(
+            AdvancedAi::campus_payback_horizon(&g),
+            0.0,
+            "and it never goes negative past the budget"
+        );
+    }
+
+    /// The `balanced_core` cliff is exempted for the Campus ONLY. The other
+    /// four families keep the half-empire cap they were written with.
+    #[test]
+    fn only_the_campus_is_exempt_from_the_half_empire_cliff() {
+        let src = include_str!("advanced.rs");
+        let block = src
+            .split("let core_capped = district_count * 2 >= city_count;")
+            .nth(1)
+            .expect("the cliff is computed once")
+            .split("};")
+            .next()
+            .expect("the balanced_core block ends");
+        assert!(
+            block.contains("self.campus_every_city && family == \"campus\""),
+            "the exemption must name the Campus and nothing else"
+        );
+        for family in ["theater_square", "commercial_hub", "harbor", "industrial_zone"] {
+            assert!(
+                !block.contains(&format!("family == \"{family}\"")),
+                "{family} must keep the half-empire cap"
+            );
+        }
     }
 }
