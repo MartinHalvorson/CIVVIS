@@ -1871,6 +1871,12 @@
   .spec-controls #restart-sim.primary .sub { color: #51401f; }
   .speed-row, .view-row { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 10px; margin-top: 9px; }
   .speed-row span, .view-row span { color: var(--muted); font-size: var(--type-small); font-weight: 800; letter-spacing: .08em; text-transform: uppercase; }
+  /* The narrow desktop deck makes the long label wrap before it sacrifices the
+     chosen quality's readable name. Other observation rows retain their
+     established proportions. */
+  .render-resolution-row { grid-template-columns: minmax(0, 1fr) minmax(104px, 1fr); }
+  .render-resolution-row > span, .render-resolution-row > select { min-width: 0; }
+  .render-resolution-row > span { overflow-wrap: anywhere; }
   .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--muted); font-size: var(--type-secondary); cursor: pointer; }
   .setting-row span { display: flex; align-items: center; gap: 7px; }
   .setting-row kbd { margin: 0; }
@@ -3485,6 +3491,14 @@
               <option value="2000">Fast</option>
               <option value="4000">Standard</option>
               <option value="10000">Slow</option>
+            </select>
+          </div>
+          <div class="speed-row render-resolution-row"><span>Render resolution</span>
+            <select id="renderresolution" aria-label="Map render resolution"
+                    title="Changes map and minimap sharpness; does not change simulation speed">
+              <option value="native" selected>Native</option>
+              <option value="balanced">Balanced</option>
+              <option value="performance">Performance</option>
             </select>
           </div>
         </div>
@@ -6273,7 +6287,25 @@ function unregisterDossierWidget(id) {
 
 for (const [name, config] of Object.entries(HUD_WIDGETS)) bindHudWidget(name, config);
 document.getElementById("reset-overlay-layout").addEventListener("click", resetAllHudWidgets);
-let DPR = window.devicePixelRatio || 1;
+// The canvas fills physical pixels, not CSS pixels. A retained cap lets a
+// Retina/4K viewer trade only map/minimap sharpness for paint headroom while
+// ordinary 1× displays retain their native backing store at every setting.
+const RENDER_RESOLUTION_KEY = "civvis-render-resolution";
+const RENDER_RESOLUTION_CAP = {
+  native: Infinity,
+  balanced: 1.5,
+  performance: 1,
+};
+let renderResolution = "native";
+function renderResolutionOffered(value) {
+  return Object.prototype.hasOwnProperty.call(RENDER_RESOLUTION_CAP, value);
+}
+function renderedDpr() {
+  const reported = Number(window.devicePixelRatio);
+  const displayDpr = Number.isFinite(reported) && reported > 0 ? reported : 1;
+  return Math.min(displayDpr, RENDER_RESOLUTION_CAP[renderResolution]);
+}
+let DPR = renderedDpr();
 applySavedHudLayouts();
 syncPlayerHudColumns();
 
@@ -6811,7 +6843,7 @@ function syncMiniCanvas() {
 }
 
 function resize() {
-  DPR = window.devicePixelRatio || 1;   // native-resolution backing store (4K crisp)
+  DPR = renderedDpr();
   syncDefaultMinimapGeometry();
   // The widgets are placed first and the map area is measured against where
   // they landed, so a fitted area is never one window size out of date. The
@@ -7905,6 +7937,25 @@ function restorePace() {
 function specPace() {
   const select = document.getElementById("specspeed");
   return select ? +select.value : 1000;
+}
+function rememberRenderResolution(value) {
+  renderResolution = renderResolutionOffered(value) ? value : "native";
+  try { localStorage.setItem(RENDER_RESOLUTION_KEY, renderResolution); } catch (e) {}
+}
+function restoreRenderResolution() {
+  const select = document.getElementById("renderresolution");
+  if (!select) return;
+  let stored = null;
+  try { stored = localStorage.getItem(RENDER_RESOLUTION_KEY); } catch (e) {}
+  if (!renderResolutionOffered(stored)) return;
+  renderResolution = stored;
+  select.value = stored;
+}
+function refreshRenderResolution() {
+  DPR = renderedDpr();
+  syncMapViewport();
+  syncMiniCanvas();
+  if (state) { draw(); drawMini(); }
 }
 // At rapid exhibition speeds the acting seat changes too quickly to read; its
 // marker becomes a flickering distraction rather than useful turn context.
@@ -25379,6 +25430,11 @@ document.getElementById("specspeed").onchange = () => {
   if (state) drawPlayerHud();
 };
 restorePace();
+document.getElementById("renderresolution").onchange = () => {
+  rememberRenderResolution(document.getElementById("renderresolution").value);
+  refreshRenderResolution();
+};
+restoreRenderResolution();
 async function spectatePlayer(player) {
   if (!state || viewChanging) return;
   viewChanging = true;
