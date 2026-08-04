@@ -26,10 +26,13 @@ stage all four bodies at 1.25 local strength before declaring.
 
 Selective v2 improved the frozen paired score to 47.1% and cut exposure to
 53.8%, with all 82 declarations carrying complete packages, but it still
-missed the quick-capture and outcome gates and remains default-off. The next
-preregistered `advanced_timing_attack_rapid` arm narrows the same system to a
+missed the quick-capture and outcome gates. Ready-force v3 then required a
 fully prebuilt force, an already-present breach element, and a launch estimate
-inside 15 Online turns. No timing-attack treatment is enabled in production.
+inside 15 Online turns. It won 57 games to `advanced`'s 54 and executed all 52
+declarations with complete packages, but its 51.2% paired score, 25.0%
+ten-turn capture rate, and 49.1% terminal score missed three preregistered
+gates. The disjoint holdout was therefore not run, and no timing-attack
+treatment is enabled in production.
 
 See [docs/WAR_TIMING.md](docs/WAR_TIMING.md) for the frozen mechanism and
 promotion gates. A small smoke comparison can be run with:

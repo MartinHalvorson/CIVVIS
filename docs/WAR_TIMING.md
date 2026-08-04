@@ -1,8 +1,8 @@
 # The midgame power-spike appointment
 
-Status: **v1 and selective v2 are implemented as default-off evaluator arms
-and were rejected by their frozen 8-player outcome screens. A ready-force v3
-is preregistered below; production `advanced` remains unchanged**.
+Status: **v1, selective v2, and ready-force v3 are implemented as default-off
+evaluator arms and were rejected by their frozen 8-player outcome screens;
+production `advanced` remains unchanged**.
 
 The implementation is one controller-owned `WarPlan`, not a collection of
 bonuses. Its lifecycle is validated before decisions and consumed by research,
@@ -425,7 +425,32 @@ declarations, paired score at least 52%, more favorable than adverse maps,
 terminal-score share at least 50%, and no `RETAIN advanced` decision. Failure
 is reported and remains default-off.
 
-## Disjoint v3 holdout and strongest-controller transfer
+### Frozen v3 result: closer on wins, still reject
+
+The completed screen ran all 60 pairs (120 games, average 224.3 turns). V3 won
+57 games (47.5%) against 54 (45.0%), produced a 51.2% paired score (95% Wilson
+interval 38.9%..63.4%, Elo-equivalent +9 with interval -78..+96), and had 11
+favorable, 40 neutral, and 9 adverse map directions. The unchanged promotion
+gate was `INCONCLUSIVE`. Terminal-score share was 49.1%, with 16 favorable, 5
+neutral, and 39 adverse directions.
+
+The ready-force filter produced meaningful but selective exposure: 153 of 480
+treatment seat-games formed a plan (31.9%), and appointments were active for
+7.6% of observed treatment player-turns. There were 153 appointments, 134
+breakthroughs, 175 mobilizations, and 52 declarations; every declaration
+carried the complete package. Seventeen objectives fell, including 13 within
+ten turns of declaration (25.0%), with median appointment-to-tech,
+tech-to-declaration, and declaration-to-capture times of 9.5, 25, and 6 turns.
+
+V3 passed the exposure, declaration-count, complete-package, and favorable-map
+direction terms. It failed the preregistered 52% paired-score floor, 35%
+ten-turn capture floor, and 50% terminal-score floor. Treatment also finished
+behind `advanced` in mean cities (8.70 vs 8.79), population (92.0 vs 94.8),
+military strength (1,161.9 vs 1,260.1), and terminal score (669.8 vs 695.0).
+The disjoint holdout and strongest-controller transfer were therefore not run.
+V3 remains reproducible and default-off.
+
+## Disjoint v3 holdout and strongest-controller transfer (not run)
 
 Passing every v3 screen term earns one unchanged 240-map holdout at seed
 10,170,000
