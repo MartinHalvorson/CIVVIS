@@ -4058,10 +4058,40 @@ local envoyTally = { placed = 0, suzerainties = 0, levies = 0, met_minors = 0 };
 -- ⚠ Returns the FULL order, not one target. The caller spends `need` on each in
 -- turn against a live token count -- the plan says what to buy, the engine says
 -- what is still affordable.
+-- ⚠⚠⚠ CONCEDE A BIDDING WAR YOU ARE LOSING. `need` is recomputed every turn as
+-- `most + 1 - mine`, so a city-state a rival keeps outbidding us on shows a need
+-- of 1 or 2 FOREVER and therefore looks like the cheapest flip on the board
+-- every single turn. It is a money pit that reads as a bargain.
+--
+-- Measured on the first full run with the lane working
+-- (`envoy-on-20260804T015105Z`, 250 turns): **113 envoys placed and ONE
+-- suzerainty held at the end.** Jakarta took **28** of them and was never ours
+-- (`ours=28, most=30`); Cardiff took 10 against 12; Vatican City 8 against 13.
+-- Three lost auctions consumed 46 envoys — four flips' worth — while La Venta,
+-- the one nobody contested, cost 10 and was held.
+--
+-- So: once we have paid a flip's worth into a claim and are STILL behind, the
+-- rival wants it more than the price says, and the next envoy is better spent
+-- anywhere else. Conceding is the whole point — matching is what lost 46.
+local ENVOY_CONTEST_STAKE = 6;
+local ENVOY_CONTEST_DEFICIT = 3;
+
+local function envoyIsALostAuction(minor)
+	-- Only ever true for ground somebody else is actively holding above us.
+	return (minor.mine or 0) >= ENVOY_CONTEST_STAKE
+		and (minor.need or 0) >= ENVOY_CONTEST_DEFICIT;
+end
+
+-- Exposed for the offline test only. ⚠ A BARE GLOBAL, never `_G.` — the UI Lua
+-- sandbox does not expose `_G` and indexing it raises at chunk load.
+CivvisEnvoyIsALostAuction = envoyIsALostAuction;
+
 local function envoySpendOrder(seen)
 	local order = {};
 	for _, minor in ipairs(seen) do
-		if minor.takes and not minor.ours then order[#order + 1] = minor; end
+		if minor.takes and not minor.ours and not envoyIsALostAuction(minor) then
+			order[#order + 1] = minor;
+		end
 	end
 	table.sort(order, function(a, b)
 		if a.need ~= b.need then return a.need < b.need; end
@@ -4071,10 +4101,21 @@ local function envoySpendOrder(seen)
 	-- Nothing flippable: top up somewhere legal anyway rather than forfeit the
 	-- token. A held envoy expires with the game, so a partial claim beats a
 	-- full purse.
+	--
+	-- ⚠ This is where a conceded auction may legitimately come back: if EVERY
+	-- reachable city-state is one, the choice is between a bad envoy and a dead
+	-- one. Sorted the same way rather than taken in survey order, so the token
+	-- goes to whichever is actually closest to flipping instead of whichever the
+	-- engine happened to list first.
 	if #order == 0 then
 		for _, minor in ipairs(seen) do
 			if minor.takes then order[#order + 1] = minor; end
 		end
+		table.sort(order, function(a, b)
+			if a.need ~= b.need then return a.need < b.need; end
+			if a.mine ~= b.mine then return a.mine > b.mine; end
+			return a.id < b.id;
+		end);
 	end
 	return order;
 end
