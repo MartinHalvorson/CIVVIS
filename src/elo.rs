@@ -312,7 +312,20 @@ pub const ELO_SCHEMA_VERSION: u32 = 3;
 /// Version of the game/rating contract, independent of the JSON shape. Bump
 /// this when rules, default setup, or scoring semantics change enough that an
 /// Elo point no longer measures the same experiment.
-pub const ELO_PROTOCOL_VERSION: u32 = 4;
+///
+/// **v5 (2026-08-03) — the pantheon price follows game speed.** The faith cost had
+/// three spellings; the legality gate, the spend in `do_choose_pantheon` and the
+/// AI's own gate in `ai.rs` now all read `Game::pantheon_faith_cost()`.
+///
+/// ⚠ At `GameSpeed::default()` — Standard — the scaled price is exactly the `25.0`
+/// literal it replaced, so the anchor's behaviour is bit-for-bit unchanged and a
+/// compatibility re-pin of `ADVANCED_V1_SOURCE_CONTRACT_FNV` would have sufficed.
+/// Bumped anyway, on the operator's call: the ledger is cheap to restart and the
+/// alternative is a ledger that silently mixes two rule sets if the Standard-speed
+/// argument is ever wrong. Rows before and after v5 are not comparable at Online,
+/// Quick, Epic or Marathon, where the price genuinely moved (12.5 / 16.75 / 37.5 /
+/// 75 against a flat 25).
+pub const ELO_PROTOCOL_VERSION: u32 = 5;
 pub const ELO_BASE_RATING: f64 = 1500.0;
 pub const DEFAULT_RATINGS_PATH: &str = "data/elo_ratings.json";
 /// Immutable protocol-v1 baseline retained for historical comparison after
@@ -5432,6 +5445,12 @@ mod tests {
         // improvement rows. Keep their measured rules binding honest instead of
         // relabeling old evidence with the current rules fingerprint.
         historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
+        // ⚠ Same reasoning, same rule, for the protocol. These 40 games were PLAYED
+        // under protocol 4; the pantheon price bump made 5 current. Letting
+        // `from_cfg` stamp them 5 would relabel old evidence as having been
+        // measured under rules it never saw — which is the precise thing the line
+        // above exists to prevent. The ledger is a record, not a live rating.
+        historical_profile.protocol_version = 4;
         assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
