@@ -40,8 +40,6 @@ import urllib.request
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from verify import Devtools, find_chrome, free_port  # noqa: E402
 
-CHANNEL = "https://www.youtube.com/@civvis"
-
 # The page that loads the worker and hands it fabricated requests.
 #
 # `env.ASSETS` answers every request with the path it was asked for, so a test
@@ -220,30 +218,36 @@ def main(argv: list[str] | None = None) -> int:
         def hit(**kwargs):
             return dev.evaluate(f"hit({json.dumps(kwargs)})")
 
-        print("==> the apex forwards to the channel")
+        print("==> the apex is the stable simulator")
         root = hit(path="/")
-        check(problems, "/ redirects", root["status"] in (301, 302, 303, 307, 308), f"got {root['status']}")
-        check(problems, "/ points at the channel", root["location"] == CHANNEL, f"got {root['location']!r}")
-        # A 301 is cached by browsers effectively for ever; the day this becomes
-        # a real front page, every past visitor would still land on YouTube.
-        check(problems, "/ forwards temporarily, not permanently", root["status"] != 301)
-
-        override = hit(path="/", env={"ROOT_REDIRECT": "off"})
         check(
             problems,
-            "ROOT_REDIRECT=off serves the landing page instead",
-            override["status"] == 200 and "asset:/" in override["body"],
-            f"got {override['status']} {override['body'][:60]!r}",
+            "/ serves the stable lane",
+            root["status"] == 200 and root["body"].strip() == "asset:/",
+            f"got {root['status']} {root['body'][:60]!r}",
         )
+        check(problems, "/ is indexable", root["robots"] is None, f"got {root['robots']!r}")
+
+        # The root once forwarded to the channel by default; now it only
+        # forwards if somebody sets the pointer. A stray ROOT_REDIRECT in the
+        # Pages environment is therefore the failure mode to keep visible.
         elsewhere = hit(path="/", env={"ROOT_REDIRECT": "https://example.com/"})
-        check(problems, "ROOT_REDIRECT retargets the forward", elsewhere["location"] == "https://example.com/")
+        check(problems, "ROOT_REDIRECT turns the root into a forward",
+              elsewhere["status"] == 302 and elsewhere["location"] == "https://example.com/",
+              f"got {elsewhere['status']} {elsewhere['location']!r}")
+        check(problems, "that forward is temporary, not permanent", elsewhere["status"] != 301)
+        off = hit(path="/", env={"ROOT_REDIRECT": "off"})
+        check(problems, "ROOT_REDIRECT=off still serves the site",
+              off["status"] == 200 and off["body"].strip() == "asset:/")
 
         print("==> the pages that are meant to be public are public")
+        # /home is a real directory now; the worker just passes it through and
+        # Pages resolves home/index.html on its own.
         home = hit(path="/home")
         check(
             problems,
-            "/home serves the landing page",
-            home["status"] == 200 and home["body"].strip() == "asset:/",
+            "/home passes through to the landing page",
+            home["status"] == 200 and home["body"].strip() == "asset:/home",
             f"got {home['status']} {home['body'][:60]!r}",
         )
         download = hit(path="/download/")
@@ -288,15 +292,19 @@ def main(argv: list[str] | None = None) -> int:
         # unfinished build to be the first search result for the project.
         check(problems, "the beta is not indexed", beta["robots"] == "noindex", f"got {beta['robots']!r}")
 
-        module = hit(path="/beta/civvis.wasm")
-        # instantiateStreaming refuses anything else.
-        check(problems, "the module is served as application/wasm",
-              module["contentType"] == "application/wasm", f"got {module['contentType']!r}")
-        check(problems, "the module is revalidated rather than trusted",
-              "must-revalidate" in (module["cacheControl"] or ""), f"got {module['cacheControl']!r}")
-        atlas = hit(path="/beta/assets/feature-atlas.webp")
-        check(problems, "atlases are cached", "max-age=86400" in (atlas["cacheControl"] or ""),
-              f"got {atlas['cacheControl']!r}")
+        # The same engine-and-atlas header rules hold in both lanes; a rule
+        # keyed on "/beta/" alone would quietly leave the root lane's module
+        # untyped, and instantiateStreaming refuses anything but
+        # application/wasm.
+        for prefix, lane in (("", "the stable lane's"), ("/beta", "the beta lane's")):
+            module = hit(path=f"{prefix}/civvis.wasm")
+            check(problems, f"{lane} module is served as application/wasm",
+                  module["contentType"] == "application/wasm", f"got {module['contentType']!r}")
+            check(problems, f"{lane} module is revalidated rather than trusted",
+                  "must-revalidate" in (module["cacheControl"] or ""), f"got {module['cacheControl']!r}")
+            atlas = hit(path=f"{prefix}/assets/feature-atlas.webp")
+            check(problems, f"{lane} atlases are cached", "max-age=86400" in (atlas["cacheControl"] or ""),
+                  f"got {atlas['cacheControl']!r}")
 
         # The door still exists; it is just not shut unless somebody shuts it.
         # This is checked because an unused capability is one that has quietly
