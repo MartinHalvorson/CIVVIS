@@ -2779,11 +2779,11 @@ mod tests {
     fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
         // The fingerprint is the Elo ledger's binding. Firaxis-exact unique units,
         // including the Shield Bearer, Oromo Cavalry, Pairidaeza, and Armagh's
-        // Monastery found by live replay, are real simulation changes; older ledgers
-        // retain their original fingerprint.
+        // Monastery found by live replay, and exact Natural Wonder placement rows
+        // are real simulation changes; older ledgers retain their original fingerprint.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:d9602d2bcdabd481"
+            "fnv1a64:c1bfe7506b078297"
         );
     }
 
