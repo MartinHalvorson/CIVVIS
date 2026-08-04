@@ -674,3 +674,68 @@ class FinalScreenHoldTests(unittest.TestCase):
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text(
             encoding="utf-8")
         self.assertIn('if state["outcome"] and args.end_game_seconds > 0:', source)
+
+
+class IdleSettlerTests(unittest.TestCase):
+    """A settler nobody ordered is invisible on every other column in the row.
+
+    ⚠⚠⚠ Measured across the archive 2026-08-03: 54 of 142 runs of >=50 turns (38%)
+    park a settler for >=15 consecutive turns at FULL movement — median streak 37,
+    worst 143. The applied-order rate never dips, because no order is issued to
+    fail, and `why.log` actively reports it as "marching".
+    """
+
+    def _run(self, states, tmp):
+        run = Path(tmp) / "r"
+        run.mkdir()
+        (run / "events.jsonl").write_text(
+            "\n".join(json.dumps(s) for s in states) + "\n")
+        return climb.longest_idle_settler(run / "events.jsonl")
+
+    @staticmethod
+    def _state(turn, x, y, moves, uid=7):
+        return {"kind": "state", "turn": turn,
+                "units": [{"kind": "UNIT_SETTLER", "id": uid,
+                           "x": x, "y": y, "moves": moves}]}
+
+    def test_a_settler_that_sits_at_full_movement_is_counted(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            states = [self._state(t, 5, 5, 2) for t in range(1, 12)]
+            self.assertEqual(self._run(states, tmp), 10)
+
+    def test_a_settler_that_moves_is_not_idle(self):
+        """⚠ The healthy case must read zero, or the column says nothing."""
+        with tempfile.TemporaryDirectory() as tmp:
+            states = [self._state(t, 5, 5 + t, 1) for t in range(1, 12)]
+            self.assertEqual(self._run(states, tmp), 0)
+
+    def test_a_settler_out_of_movement_is_NOT_idle(self):
+        """⚠⚠ THE WHOLE POINT OF THE TEST. A unit that SPENT its movement was
+        asked to act and failed — that is blocked, which is a different defect and
+        a legitimate outcome. Only a unit still holding movement was never asked."""
+        with tempfile.TemporaryDirectory() as tmp:
+            states = [self._state(t, 5, 5, 0) for t in range(1, 12)]
+            self.assertEqual(self._run(states, tmp), 0)
+
+    def test_the_streak_resets_when_the_settler_finally_moves(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            states = ([self._state(t, 5, 5, 2) for t in range(1, 6)]
+                      + [self._state(6, 6, 5, 2)]
+                      + [self._state(t, 6, 5, 2) for t in range(7, 10)])
+            self.assertEqual(self._run(states, tmp), 4, "longest streak, not the last")
+
+    def test_two_settlers_are_tracked_apart(self):
+        """⚠ A shared counter would let a moving settler clear a parked one's streak."""
+        with tempfile.TemporaryDirectory() as tmp:
+            states = []
+            for t in range(1, 10):
+                states.append({"kind": "state", "turn": t, "units": [
+                    {"kind": "UNIT_SETTLER", "id": 1, "x": 5, "y": 5, "moves": 2},
+                    {"kind": "UNIT_SETTLER", "id": 2, "x": 9, "y": t, "moves": 2},
+                ]})
+            self.assertEqual(self._run(states, tmp), 8)
+
+    def test_no_settlers_reads_zero(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            states = [{"kind": "state", "turn": t, "units": []} for t in range(1, 5)]
+            self.assertEqual(self._run(states, tmp), 0)
