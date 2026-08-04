@@ -5440,7 +5440,7 @@ impl BasicAi {
             })
     }
 
-    fn pick_item(
+    pub fn pick_item(
         &self,
         g: &Game,
         pid: usize,
@@ -6489,7 +6489,7 @@ impl BasicAi {
         total
     }
 
-    fn valid_settle_site(&self, g: &Game, pid: usize, pos: Pos) -> bool {
+    pub fn valid_settle_site(&self, g: &Game, pid: usize, pos: Pos) -> bool {
         let Some(tile) = g.map.get(pos) else {
             return false;
         };
@@ -6505,7 +6505,7 @@ impl BasicAi {
                 .is_none_or(|cid| g.cities[&cid].owner == pid)
     }
 
-    fn has_practical_settle_site(&self, g: &Game, pid: usize) -> bool {
+    pub fn has_practical_settle_site(&self, g: &Game, pid: usize) -> bool {
         let shipbuilding = g.players[pid].techs.contains(&crate::name!("shipbuilding"));
         let cartography = g.players[pid].techs.contains(&crate::name!("cartography"));
         // Before embarkation, a city only commits to a site close enough to
