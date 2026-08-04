@@ -680,6 +680,7 @@ def rollback_install(swap: InstalledSwap, relaunch: bool = False) -> None:
 REFRESH_AGENT_LABEL = "ai.civvis.desktop-refresh"
 REFRESH_INTERVAL_SECONDS = 60
 REFRESH_REBUILD_AGE_MINUTES = 10
+MAX_BUILD_AGE_MINUTES = 20
 
 
 def refresh_agent_path() -> pathlib.Path:
@@ -704,6 +705,8 @@ def refresh_agent_payload(
             "--state-dir",
             str(state_dir),
             "--max-build-age-minutes",
+            str(MAX_BUILD_AGE_MINUTES),
+            "--rebuild-age-minutes",
             str(REFRESH_REBUILD_AGE_MINUTES),
             "--no-launch",
         ],
@@ -776,6 +779,7 @@ def verify_refresh_agent(
         "loaded": True,
         "interval_seconds": installed["StartInterval"],
         "rebuild_age_minutes": REFRESH_REBUILD_AGE_MINUTES,
+        "max_build_age_minutes": MAX_BUILD_AGE_MINUTES,
         "path": str(path),
     }
 
@@ -1035,7 +1039,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--no-fetch", action="store_true")
     parser.add_argument("--no-launch", action="store_true")
-    parser.add_argument("--max-build-age-minutes", type=int, default=20)
+    parser.add_argument(
+        "--max-build-age-minutes", type=int, default=MAX_BUILD_AGE_MINUTES
+    )
+    parser.add_argument(
+        "--rebuild-age-minutes", type=int, default=REFRESH_REBUILD_AGE_MINUTES
+    )
     return parser.parse_args(argv)
 
 
@@ -1065,7 +1074,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         with install_lock(state_dir):
             revision = resolve_revision(repo, args.ref, not args.no_fetch)
             if args.action == "refresh" and not installed_pair_needs_refresh(
-                desktop, revision, args.max_build_age_minutes
+                desktop, revision, args.rebuild_age_minutes
             ):
                 print("desktop apps already match {} and are fresh".format(revision.short))
                 return 0

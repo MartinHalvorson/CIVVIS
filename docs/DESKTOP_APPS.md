@@ -35,7 +35,9 @@ Installation also registers `ai.civvis.desktop-refresh` as a per-user launchd
 agent. It checks GitHub every minute and rebuilds the pinned pair when
 `main` advances or either artifact reaches ten minutes old. That headroom keeps
 a successful build inside the 20-minute freshness contract even while Cargo is
-working. The job installs both bundles transactionally without interrupting a
+working. The ten-minute rebuild trigger and 20-minute finished-artifact limit
+are independent, so a valid low-priority build is not rejected merely because
+it took more than ten minutes. The job installs both bundles transactionally without interrupting a
 live game. It swaps only the private bundle targets, avoiding background writes
 to macOS's protected Desktop folder; the stable Desktop links do not change.
 Opening either icon performs the same locked freshness check in the background,
