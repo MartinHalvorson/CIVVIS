@@ -3512,11 +3512,11 @@
             </select>
           </div>
         </div>
-        <label class="setting-row"><span><input type="checkbox" id="rocketanimchk" checked> Show rocket animations</span></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="10"><span><input type="checkbox" id="gridchk"> Show the hex grid</span><kbd>G</kbd></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="20"><span><input type="checkbox" id="reschk"> Show resource icons</span><kbd>Q</kbd></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="30"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="45"><span><input type="checkbox" id="rocketanimchk" checked> Show rocket &amp; satellite animations</span></label>
         <div class="overlay-options display-advanced-setting" data-advanced-order="50" role="group" aria-labelledby="overlay-options-title">
           <h2 id="overlay-options-title">Map overlays</h2>
           <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
@@ -3539,7 +3539,7 @@
           </div>
         </div>
         <details class="advanced-settings" id="display-advanced-settings" data-advanced-settings="display">
-          <summary><span class="advanced-settings-summary">Advanced Settings<small>Tile layers, overlay layout, map edges &amp; archaeology</small></span></summary>
+          <summary><span class="advanced-settings-summary">Advanced Settings<small>Tile layers, spaceflight, overlay layout, map edges &amp; archaeology</small></span></summary>
           <div class="advanced-settings-body" id="display-advanced-settings-body"></div>
         </details>
       </div>
@@ -4563,8 +4563,8 @@ const MAP_PROJECTION = 0.92;
 const REDUCED_MOTION_QUERY = window.matchMedia("(prefers-reduced-motion: reduce)");
 let SHOW_YIELDS = localStorage.getItem("civvis-show-yields") === "1";
 let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") === "1";
-// Space-race launches are on unless a viewer explicitly turns their transient
-// flight effects off. The completed mission remains visible either way.
+// Space-race flights and satellites are on unless a viewer explicitly turns
+// their animated visual effects off. The completed mission remains in state.
 let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations") !== "0";
 // Civ 6 binds G to the hex grid and Q to the resource icons, so both have to
 // be things a player can actually turn off here. The grid is off by default
@@ -14693,6 +14693,7 @@ function skyOrbit(player) {
 // world goes behind it. The depth that decides is the same one the projection
 // throws away.
 function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
+  if (!SHOW_ROCKET_ANIMATIONS) return;
   // Low orbit is a hand's breadth off a world; from far enough out to see
   // Mars, nothing that close to Earth resolves at all.
   const shown = alpha * Math.max(0, Math.min(1, (radius - 10) / 16));
@@ -15000,6 +15001,7 @@ function drawMissionRocket(rocket, player, size, now, pixel = 1, alpha = 1) {
 }
 
 function drawSkyLaunches(crews, placements, radius, centerX, centerY, now) {
+  if (!SHOW_ROCKET_ANIMATIONS) return;
   const launches = activeSkyLaunches(now);
   if (!launches.length) return;
   for (const launch of launches) {
@@ -15311,10 +15313,10 @@ function planetSkyAnimating() {
   // A launch begins at Earth's limb and must move even while the camera is
   // still close to home. The permanent orbit/voyage loops remain limited to
   // the open-sky view as before.
-  if (activeSkyLaunches().length > 0) return true;
+  if (SHOW_ROCKET_ANIMATIONS && activeSkyLaunches().length > 0) return true;
   if (planetEarthRadius() > SKY_SURFACE) return false;
   const crews = skyCrews();
-  return crews.satellite.length > 0 || crews.expedition.length > 0;
+  return (SHOW_ROCKET_ANIMATIONS && crews.satellite.length > 0) || crews.expedition.length > 0;
 }
 
 // --------------------------------------------------- the flat board's sky
@@ -15360,8 +15362,8 @@ function flatSkyShown() {
 // enough back to see it.
 function flatSkyAnimating() {
   if (!state || planetMap()) return false;
-  return activeSkyLaunches().length > 0 ||
-    (flatSkyShown() > .02 && skyCrews().satellite.length > 0);
+  return SHOW_ROCKET_ANIMATIONS && (activeSkyLaunches().length > 0 ||
+    (flatSkyShown() > .02 && skyCrews().satellite.length > 0));
 }
 
 // Where the craft is over the world, `theta` round its orbit from the
@@ -15422,6 +15424,7 @@ function flatLaunchRoute(launch, player) {
 }
 
 function drawFlatLaunches(now) {
+  if (!SHOW_ROCKET_ANIMATIONS) return;
   const launches = activeSkyLaunches(now);
   if (!launches.length) return;
   for (const launch of launches) {
@@ -15483,6 +15486,7 @@ function drawFlatLaunches(now) {
 }
 
 function drawFlatSatellites(now) {
+  if (!SHOW_ROCKET_ANIMATIONS) return;
   const shown = flatSkyShown();
   if (shown <= .02) return;
   const crew = skyCrews().satellite;
@@ -24881,8 +24885,8 @@ function setShowRocketAnimations(on) {
   localStorage.setItem("civvis-show-rocket-animations", SHOW_ROCKET_ANIMATIONS ? "1" : "0");
   const box = document.getElementById("rocketanimchk");
   if (box) box.checked = SHOW_ROCKET_ANIMATIONS;
-  // A disabled transient effect must not continue to hide the completed
-  // mission's permanent marker or keep the animation ticker awake.
+  // Clear a live flight immediately; satellites share this switch, while each
+  // completed mission remains available to the victory and science UI.
   if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;
   if (state) draw();
 }

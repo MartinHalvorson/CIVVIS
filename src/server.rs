@@ -7697,21 +7697,36 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "basic.push(document.getElementById(\"victory-options\"), document.getElementById(\"saves-group\"));"
         ));
-        // Interface Settings keeps the tile switches together at the head of
-        // its advanced drawer, before the overlay layout controls.
+        // Interface Settings keeps its map and spaceflight switches together
+        // at the head of its advanced drawer, before the overlay layout controls.
         let display_advanced = [
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"10\"><span><input type=\"checkbox\" id=\"gridchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"20\"><span><input type=\"checkbox\" id=\"reschk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"30\"><span><input type=\"checkbox\" id=\"yieldchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"40\"><span><input type=\"checkbox\" id=\"artifactchk\"",
+            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"45\"><span><input type=\"checkbox\" id=\"rocketanimchk\" checked> Show rocket &amp; satellite animations",
             "class=\"overlay-options display-advanced-setting\" data-advanced-order=\"50\"",
         ];
         assert!(
             display_advanced.windows(2).all(|pair| {
                 EMBEDDED_INDEX.find(pair[0]).unwrap() < EMBEDDED_INDEX.find(pair[1]).unwrap()
             }),
-            "tile switches should lead Interface Settings advanced controls"
+            "map and spaceflight switches should lead Interface Settings advanced controls"
         );
+        assert!(EMBEDDED_INDEX.contains(
+            "let SHOW_ROCKET_ANIMATIONS = localStorage.getItem(\"civvis-show-rocket-animations\") !== \"0\";"
+        ));
+        for satellite_animation in [
+            "function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;",
+            "function drawFlatSatellites(now) {\n  if (!SHOW_ROCKET_ANIMATIONS) return;",
+            "return (SHOW_ROCKET_ANIMATIONS && crews.satellite.length > 0) || crews.expedition.length > 0;",
+            "return SHOW_ROCKET_ANIMATIONS && (activeSkyLaunches().length > 0 ||",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(satellite_animation),
+                "rocket animation setting must also govern satellites: {satellite_animation}"
+            );
+        }
         // Teams are a division of the table, so they sit beside the setting
         // that says who is at it. A world opens free-for-all, and the splits a
         // size can seat are named in the option rather than left to be found
