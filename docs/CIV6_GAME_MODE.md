@@ -1,17 +1,18 @@
 # Play Firaxis Civ 6 with computer control
 
-The lobby's Game mode select offers two worlds, and both of them are ours: an
-AI-only simulation and a single-player game, played in the engine in
-`src/game.rs`. This is the third entry, and the world it starts is not ours at
-all — it is a real game of Sid Meier's Civilization VI, running on this
-computer, with CIVVIS occupying a seat and playing it.
+The lobby's Game mode select offers two public worlds, and both of them are
+ours: an AI-only simulation and a single-player game, played in the engine in
+`src/game.rs`. For browser verification it retains a hidden third `civ6`
+option. The world that option starts is not ours at all — it is a real game of
+Sid Meier's Civilization VI, running on this computer, with CIVVIS occupying a
+seat and playing it.
 
 `tools/civ6_play.py` has been able to do that since #541. What it has never had
 is a relationship with the screen a game is set up on: it is a terminal command
-with its own vocabulary, and a person who has just chosen a difficulty and a map
-in the lobby has to translate both by hand into `--difficulty
-DIFFICULTY_EMPEROR --map Continents.lua` and run it somewhere else. The mode is
-that translation, made selectable.
+with its own vocabulary, and a browser verification needs to translate a
+difficulty and a map into `--difficulty DIFFICULTY_EMPEROR --map
+Continents.lua` and run it somewhere else. The hidden mode is that translation,
+kept selectable for verification.
 
 ## What kind of mode it is
 
@@ -63,8 +64,8 @@ The map roster is not read from the installation. It is the `Maps` rows of
 `DLC/Expansion1|2/Config/*_StandardMaps.xml`, transcribed with their
 `SortIndex` order into `src/civ6.rs`. Reading them live would make the lobby's
 contents depend on a game being installed on whatever machine serves the page,
-which is exactly backwards: the mode is offered everywhere, then refused with a
-reason where it cannot run.
+which is exactly backwards: the verification-only mode is retained everywhere,
+then refused with a reason where it cannot run.
 
 A transcription's failure mode is a typo, and a wrong script name is not
 refused at the door — the run configures, launches, and comes up on whatever
