@@ -1781,6 +1781,11 @@ pub struct AdvancedAi {
     /// Campus coverage over 19 runs is **exactly 50 of 100 cities**. Off for
     /// the frozen native controllers.
     pub campus_every_city: bool,
+    /// Put the two reachable housing cards in the deck. See
+    /// `HOUSING_DECK_INSERT`: `medina_quarter` is slotted in 0 of 107 live runs
+    /// and `insulae` in 1, while 71.7% of city-turns are housing-capped. Off for
+    /// the frozen native controllers.
+    pub housing_cards: bool,
 
     /// This turn's floor on the science weight, refreshed by
     /// [`AdvancedAi::refresh_research_weight`] once per decision.
@@ -1849,6 +1854,41 @@ const RESEARCH_BUILDING_DEBT: f64 = 240.0;
 /// must keep its opening, and the deck is longer than the slot count, so this
 /// only wins a slot that would otherwise have gone to the tail of the list.
 const RESEARCH_DECK_INSERT: usize = 4;
+
+/// Where the two reachable HOUSING cards enter a lane's preference list, on the
+/// same terms as `RESEARCH_DECK_INSERT`: behind the lane's leading cards, never
+/// in front of them.
+///
+/// ⚠⚠ NEITHER IS REACHABLE TODAY, AND HOUSING IS THE DOMINANT GROWTH CAP.
+/// Measured over 13,214 host-exported city-turns: **71.7% are housing-capped**
+/// (headroom < 2) against 62.3% amenity-capped, and the mean housing growth
+/// multiplier is **0.510** against the Amenity band's 0.872. Yet across **107
+/// live runs**:
+///
+/// | card | effect | runs slotted |
+/// |---|---|---|
+/// | `medina_quarter` | +2 Housing at 3+ specialty districts | **0 / 107** |
+/// | `insulae` | +1 Housing at 2+ specialty districts | **1 / 107** |
+/// | `new_deal` | +4 Housing, +2 Amenities at 3+ | 1 / 107 |
+///
+/// `medina_quarter` appears **nowhere in `src/`** — it exists in the ruleset and
+/// no code has ever named it. `insulae` is 8th in `BasicAi`'s `POLICY_PRIORITY`,
+/// behind three economic cards that fill the early economic slots first.
+/// `new_deal` IS in every strategic list but needs `suffrage`, which these games
+/// do not reach — so the two cards an empire can actually unlock are the two it
+/// never plays.
+///
+/// Eligibility is real, not theoretical: **60.3%** of city-turns have 2+
+/// specialty districts and **40.0%** have 3+. Applying each card only to the
+/// cities that qualify, the mean housing growth multiplier moves 0.510 →
+/// **0.609 with Insulae (+19%)**, → **0.638 with Medina Quarter (+25%)**, →
+/// **0.734 with both (+44%)**.
+const HOUSING_DECK_INSERT: usize = 4;
+
+/// The headroom below which a city is worth spending a policy slot on. This is
+/// `BasicAi::HOUSING_HEADROOM_TARGET` — the break-even of the engine's own
+/// growth band, where `housing_growth_mult` stops paying 1.0 and starts halving.
+const HOUSING_CARD_HEADROOM: f64 = 2.0;
 
 impl Default for AdvancedAi {
     fn default() -> Self {
@@ -2109,6 +2149,7 @@ impl AdvancedAi {
             tactics_decisions: 0,
             research_economy: false,
             campus_every_city: false,
+            housing_cards: false,
             research_weight: 0.0,
         }
     }
@@ -2439,6 +2480,14 @@ impl AdvancedAi {
         // Campus are the late-founded ones, and the science funnel cascades
         // from it: 50% Campus, 39% Library, 20% University, 3% Research Lab.
         self.enable_campus_every_city();
+        // ⚠⚠ AND THE TWO HOUSING CARDS THE EMPIRE CAN REACH ARE NEVER PLAYED.
+        // `medina_quarter` (+2 Housing at 3+ specialty districts) is slotted in
+        // **0 of 107 live runs** and appears nowhere in `src/`; `insulae` (+1 at
+        // 2+) in **1**. Housing is the dominant growth cap — 71.7% of 13,214
+        // host-exported city-turns sit under it at a mean multiplier of 0.510,
+        // against the Amenity band's 0.872 — and 60.3% / 40.0% of city-turns
+        // already carry the 2 / 3 specialty districts these cards need.
+        self.enable_housing_cards();
     }
 
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
@@ -2494,6 +2543,16 @@ impl AdvancedAi {
 
     pub fn disable_campus_every_city(&mut self) {
         self.campus_every_city = false;
+    }
+
+    /// Put `medina_quarter` and `insulae` in the deck when a city is short of
+    /// housing and already carries the districts they key off.
+    pub fn enable_housing_cards(&mut self) {
+        self.housing_cards = true;
+    }
+
+    pub fn disable_housing_cards(&mut self) {
+        self.housing_cards = false;
     }
 
     /// Require a faith-bought soldier's gold upkeep to be payable. Native
@@ -6731,6 +6790,28 @@ impl AdvancedAi {
                 desired.retain(|card| !RESEARCH_MULTIPLIERS.contains(card));
                 let at = desired.len().min(RESEARCH_DECK_INSERT);
                 desired.splice(at..at, RESEARCH_MULTIPLIERS);
+            }
+        }
+        // The same shape for the growth band the empire actually pays. A card
+        // that multiplies something we do not have is worth zero, so this is
+        // gated on a city that is BOTH short of housing and already carrying
+        // enough specialty districts for the card to fire — never on the mere
+        // existence of the card. See `HOUSING_DECK_INSERT` for the corpus.
+        //
+        // Medina Quarter before Insulae: +2 against +1, and a city with three
+        // specialty districts has two, so the stronger card is never blocked by
+        // the weaker one taking the slot first.
+        if self.housing_cards {
+            const HOUSING_CARDS: [&str; 2] = ["medina_quarter", "insulae"];
+            let pays = city_ids.iter().any(|cid| {
+                let city = &g.cities[cid];
+                g.city_housing_headroom(city) < HOUSING_CARD_HEADROOM
+                    && g.city_specialty_district_count(city) >= 2
+            });
+            if pays {
+                desired.retain(|card| !HOUSING_CARDS.contains(card));
+                let at = desired.len().min(HOUSING_DECK_INSERT);
+                desired.splice(at..at, HOUSING_CARDS);
             }
         }
         // ⚠⚠ A CARD THAT MULTIPLIES SOMETHING WE DO NOT HAVE IS WORTH ZERO, and
@@ -33781,5 +33862,51 @@ mod research_probe {
                 "{family} must keep the half-empire cap"
             );
         }
+    }
+    /// Off by default, set only by the live bridge, holdable off on its own.
+    #[test]
+    fn only_the_live_bridge_plays_the_housing_cards() {
+        assert!(!AdvancedAi::new().housing_cards);
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.housing_cards);
+        live.disable_housing_cards();
+        assert!(!live.housing_cards);
+    }
+
+    /// ⚠ The two cards must be the ones the empire can actually unlock, and
+    /// they must be REAL rows in the shipped ruleset — a card name the game does
+    /// not have is the defect class this project has hit six times.
+    #[test]
+    fn the_housing_cards_exist_and_are_the_reachable_pair() {
+        let rules = crate::rules::Rules::shipped();
+        for card in ["medina_quarter", "insulae"] {
+            let spec = rules
+                .policies
+                .get(&crate::name::Name::new(card))
+                .unwrap_or_else(|| panic!("{card} is a shipped policy"));
+            assert_eq!(
+                spec.slot, "economic",
+                "{card} competes for an economic slot, which is what the insert \
+                 point assumes"
+            );
+        }
+        // `new_deal` is the strongest housing card and is ALREADY in every
+        // strategic list — it is excluded here because it needs `suffrage`,
+        // which these games do not reach (slotted in 1 of 107 live runs).
+        assert!(rules
+            .policies
+            .contains_key(&crate::name::Name::new("new_deal")));
+    }
+
+    /// The insert sits behind the lane's leading cards, exactly like the
+    /// research pair — a lane keeps its opening and pays for this from the tail.
+    #[test]
+    fn the_housing_cards_go_behind_the_lanes_own_opening() {
+        assert_eq!(HOUSING_DECK_INSERT, RESEARCH_DECK_INSERT);
+        assert_eq!(
+            HOUSING_CARD_HEADROOM, 2.0,
+            "the break-even of the engine's own growth band, not a margin"
+        );
     }
 }
