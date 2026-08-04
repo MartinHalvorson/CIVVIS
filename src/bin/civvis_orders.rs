@@ -1944,7 +1944,27 @@ fn main() {
             &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
         );
         let g = &live.game;
-        let advanced = civvis::ai::AdvancedAi::new();
+        // ⚠⚠ THE PROBE MUST PLAY THE GENOME THE LIVE RUN PLAYED.
+        //
+        // The first version of this diagnostic used stock `AdvancedAi::new()`
+        // weights and reported `mil_per_city` 1.0, while the live journal for the
+        // same run printed **1.4**. A probe answering with a different genome than
+        // the deployment cannot be used to say the live decider is wrong — it is a
+        // different agent. `--strategy auto` resolves the league genome exactly as
+        // the live decider does, and the header line below names which one played
+        // so a stock fallback can never be mistaken for the deployment.
+        let mut advanced = civvis::ai::AdvancedAi::new();
+        let chosen = resolve_strategy(&args);
+        if let Some(chosen) = &chosen {
+            advanced.reweight(chosen.weights.clone());
+        }
+        println!(
+            "genome: {}",
+            chosen
+                .as_ref()
+                .map(|c| format!("{} (from {})", c.name, c.source))
+                .unwrap_or_else(|| "stock AdvancedAi::new — NOT the deployment".to_string())
+        );
         let w = advanced.weights().clone();
         let ai = civvis::ai::BasicAi::with_weights(w.clone());
         let pid = 0usize;
