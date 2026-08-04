@@ -4074,9 +4074,20 @@ function initAdvancedSettings() {
 initAdvancedSettings();
 // ---------------------------------------------------------------- constants
 const S = 36, SQ3 = Math.sqrt(3);
+// Mountain ground is deliberately much darker than workable land: its broad,
+// grey-brown mass reads as a near-impassable wall before the peak symbol does.
+// Volcanoes keep the same terrain language, but sink another step toward fresh
+// basalt so the lava can carry the only hot light in the tile.
+const MOUNTAIN_TILE_COLOR = "#49453e";
+const VOLCANO_TILE_COLOR = "#292421";
 const TERRAIN = { grassland:"#5e9440", plains:"#ab9e4e", desert:"#d8c184",
                   tundra:"#98a089", snow:"#e8eef2", coast:"#20647e",
-                  ocean:"#0e3752", mountain:"#877f6f", lake:"#2b7a86" };
+                  ocean:"#0e3752", mountain:MOUNTAIN_TILE_COLOR, lake:"#2b7a86" };
+function tileGroundColor(tile, fallback = "#333") {
+  return tile.feature === "volcano"
+    ? VOLCANO_TILE_COLOR
+    : (TERRAIN[tile.terrain] || fallback);
+}
 const isWater = tile => tile.terrain === "coast" || tile.terrain === "ocean" ||
   tile.terrain === "lake";
 // Cliffs live on a shared shore edge.  State from an old save may carry a
@@ -9835,7 +9846,7 @@ function drawStrategicMountainIcon(x, y, volcano) {
   cx.save();
   cx.translate(x, y);
   cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE);
-  cx.fillStyle = volcano ? "#4a4140" : "#6f747c";
+  cx.fillStyle = volcano ? "#37302d" : "#565149";
   if (volcano) {
     // A crater is a horizontal opening, so its rim must meet a truncated cone
     // at the ellipse's widest points. The old pointed mountain put the crater
@@ -9847,11 +9858,18 @@ function drawStrategicMountainIcon(x, y, volcano) {
     cx.lineTo(rimHalfWidth, rimY);
     cx.lineTo(baseHalfWidth, baseY);
     cx.closePath(); cx.fill();
-    cx.fillStyle = "#ef6b2e";
+    // Two hot cores over a soft bloom make this read as emitted lava light,
+    // not an orange badge pasted onto the now-near-black basalt.
+    cx.shadowColor = "#ff4b19";
+    cx.shadowBlur = 9;
+    cx.fillStyle = "#f04f1f";
     cx.beginPath(); cx.ellipse(0, rimY, rimHalfWidth, 1.35, 0, 0, 7); cx.fill();
+    cx.shadowBlur = 4;
+    cx.fillStyle = "#ffb23c";
+    cx.beginPath(); cx.ellipse(0, rimY, rimHalfWidth * .68, .72, 0, 0, 7); cx.fill();
   } else {
     tri(-14, 10, 0, -14, 14, 10);
-    cx.fillStyle = "#555a61";
+    cx.fillStyle = "#3c3934";
     tri(0, -14, 0, 10, 14, 10);
   }
   cx.restore();
@@ -17266,7 +17284,7 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
   for (const cell of cells) {
     const base = empire
       ? (isWater(cell.tile) ? "#173846" : "#687068")
-      : (TERRAIN[cell.tile.terrain] || "#4b5960");
+      : tileGroundColor(cell.tile, "#4b5960");
     const light = camera.chart ? 1 : .70 + .34 * Math.max(0, cell.center.z);
     planetPaintPath(cx, cell, .8);
     cx.fillStyle = known(cell)
@@ -18782,7 +18800,7 @@ function draw() {
     const [x, y0] = hexXY(t.pos[0], t.pos[1]);
     const e = elev(t);
     const y = y0 - e;
-    const base = TERRAIN[t.terrain] || "#333";
+    const base = tileGroundColor(t);
     hexPath(x, y, S + 0.6);
     cx.fillStyle = base;
     cx.fill();
@@ -19872,7 +19890,7 @@ function drawPlanetMini() {
   const cells = planetCells(camera, scale, centerX, centerY, reach);
   for (const cell of cells) {
     planetPath(mx2, cell.points);
-    const base = TERRAIN[cell.tile.terrain] || "#44545a";
+    const base = tileGroundColor(cell.tile, "#44545a");
     mx2.fillStyle = spectator || visible.has(key(cell.tile.pos)) ? base : shade(base, .35);
     mx2.fill();
     if (cell.tile.owner !== null && cell.tile.owner !== undefined) {
@@ -20047,7 +20065,7 @@ function drawMini() {
   const visible = new Set((state.turn_visible || state.visible).map(key));
   for (const t of tiles) {
     const [x, y] = miniHexCenter(t.pos, layout);
-    const terrainColor = TERRAIN[t.terrain] || "#333";
+    const terrainColor = tileGroundColor(t);
     mx2.fillStyle = visible.has(key(t.pos)) ? terrainColor : shade(terrainColor, 0.42);
     miniHexPath(x, y, layout.size + 0.12); mx2.fill();
   }
