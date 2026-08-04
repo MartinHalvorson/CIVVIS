@@ -146,6 +146,10 @@
     --world-minimap-width: 320px;
     --minimap-height: 172px;
     --victory-hud-width: 10vw;
+    /* The command deck is a flex sibling on desktop and an overlay on compact
+       screens. JavaScript publishes only the part that actually overlaps this
+       area, so the standings can start clear of it in either arrangement. */
+    --player-hud-left: 0px;
     /* A ceiling on the masthead, whatever the player count or a dragged layout
        asks for, so a table of twelve cannot swallow the world underneath it.
        Rows past it scroll inside the ribbon, which is what the row locks are
@@ -197,7 +201,10 @@
     /* On desktop, the deck follows the viewport rather than a fixed pixel
        rail: it takes 16% of the screen. Compact and mobile layouts retain
        their own usable overrides below. */
-    order: -1; width: 16vw; min-width: 16vw; height: 100%; max-height: 100vh; max-height: 100dvh;
+    /* This is the first flex track, so its left edge stays at the page edge.
+       The resizer changes its width/flex basis only; it never translates the
+       deck across the map. */
+    order: -1; width: 16vw; min-width: 16vw; flex: 0 0 16vw; height: 100%; max-height: 100vh; max-height: 100dvh;
     min-height: 0; position: relative; z-index: 12;
     display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
     scrollbar-color: #385148 transparent; scrollbar-width: thin;
@@ -206,7 +213,35 @@
       linear-gradient(180deg, #101d1b 0%, #08110f 100%);
     border-right: 1px solid #355047; box-shadow: 16px 0 55px #0008;
   }
-  body.sidebar-hidden #side { width: 0; min-width: 0; opacity: 0; pointer-events: none; }
+  /* A saved width becomes an explicit flex basis only after the viewer moves
+     the seam. Leaving the ordinary rule literal keeps a first visit responsive
+     to the desktop width, while a deliberate resize stays put across reloads. */
+  #side.sidebar-width-custom {
+    width: var(--sidebar-width); min-width: var(--sidebar-width); flex-basis: var(--sidebar-width);
+  }
+  body.sidebar-hidden #side { width: 0; min-width: 0; flex-basis: 0; opacity: 0; pointer-events: none; }
+  /* The hit target lives over the deck's own right border. It is deliberately
+     an edge, not a draggable title bar: the deck is anchored left and only its
+     right boundary may move. */
+  #side-resize-handle {
+    position: absolute; z-index: 24; inset: 0 0 0 auto; width: 10px; margin: 0; padding: 0;
+    border: 0; border-radius: 0; color: transparent; background: transparent; box-shadow: none;
+    cursor: ew-resize; touch-action: none; transform: none;
+  }
+  #side-resize-handle::before {
+    content: ""; position: absolute; inset: 0 4px 0 auto; width: 1px;
+    background: #92ad9d45; box-shadow: 0 0 0 transparent;
+    transition: width .12s ease, background .12s ease, box-shadow .12s ease;
+  }
+  #side-resize-handle:hover::before, #side-resize-handle:focus-visible::before,
+  body.sidebar-resizing #side-resize-handle::before {
+    width: 2px; background: var(--gold-bright); box-shadow: 0 0 7px #d7b66a80;
+  }
+  #side-resize-handle:hover, #side-resize-handle:focus-visible { background: transparent; transform: none; }
+  #side-resize-handle:focus-visible { outline: 2px solid var(--gold-bright); outline-offset: -2px; }
+  body.sidebar-resizing, body.sidebar-resizing * { cursor: ew-resize !important; }
+  body.sidebar-resizing #side { user-select: none; }
+  body.sidebar-hidden #side-resize-handle { display: none; }
   .side-head {
     position: relative; flex: 0 0 auto; min-height: 116px; padding: 19px 16px;
     border-bottom: 1px solid #415348;
@@ -2098,7 +2133,7 @@
     .dossier-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 980px) {
-    #side { width: 340px; min-width: 340px; }
+    #side { width: 340px; min-width: 340px; flex-basis: 340px; }
     #ubar { max-width: calc(100% - 70px); }
   }
   @media (max-width: 1600px) {
@@ -2108,7 +2143,8 @@
   @media (max-width: 720px) {
     body { display: block; }
     #maparea { height: 100%; }
-    #side { position: fixed; inset: 132px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; height: auto; max-height: calc(100dvh - 140px); border: 1px solid #40584f; border-radius: 16px; }
+    #side { position: fixed; inset: 132px auto 8px 8px; width: min(390px, calc(100% - 16px)); min-width: 0; flex-basis: auto; height: auto; max-height: calc(100dvh - 140px); border: 1px solid #40584f; border-radius: 16px; }
+    #side.sidebar-width-custom { width: min(var(--sidebar-width), calc(100% - 16px)); min-width: 0; flex-basis: auto; }
     body.sidebar-hidden #side { width: min(390px, calc(100% - 16px)); transform: translateX(calc(-100% - 16px)); opacity: 0; }
     #map-controls-dock { right: 0; }
     #map-lenses { flex: 1 1 auto; }
@@ -2140,7 +2176,7 @@
      scrolls instead of swallowing the map. */
   #playerhud {
     position: absolute; z-index: 7; pointer-events: auto;
-    top: 0; left: 0; right: var(--victory-hud-width); width: auto;
+    top: 0; left: var(--player-hud-left, 0px); right: var(--victory-hud-width); width: auto;
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
     /* Wide enough for the whole of "Watch as" at the fitter's own type size.
        At 68px the button's own text overflowed its content box by a pixel and
@@ -2726,7 +2762,7 @@
     #map-controls-dock { right: 0; }
     #map-lenses { flex: 1 1 auto; }
     #playerhud, body.overlay-victory-hidden #playerhud {
-      top: 8px; left: 8px; right: 8px; width: auto; padding: 4px;
+      top: 8px; left: max(8px, var(--player-hud-left, 0px)); right: 8px; width: auto; padding: 4px;
       --hud-lock-column: 11px;
       --hud-watch-column: 70px;
       --hud-ident-min: 31px;
@@ -2753,6 +2789,42 @@
     .ribbon-heading { padding-inline: 2px; }
     .diplomacy-stat-head { font-size: var(--type-micro); }
   }
+  /* A wide browser can still leave a narrow map after the viewer opens the
+     command deck's right seam. The HUD follows the map's actual width, not the
+     window's media-query width: it becomes the same full-width top band that a
+     naturally narrow screen uses, and its left edge stays clear of any deck
+     that overlays the map. */
+  #maparea.player-hud-compact #map-controls-dock { right: 0; }
+  #maparea.player-hud-compact #map-lenses { flex: 1 1 auto; }
+  #maparea.player-hud-compact #playerhud {
+    top: 8px; left: max(8px, var(--player-hud-left, 0px)); right: 8px; width: auto; padding: 4px;
+    grid-template-columns: 140px minmax(0, 1fr);
+    --hud-lock-column: 11px; --hud-watch-column: 70px; --hud-ident-min: 27.5px;
+    --hud-column-gap: 3px; --hud-stat-min: 32px; --hud-stat-gap: 2px;
+  }
+  #maparea.player-hud-compact #victoryhud {
+    top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
+    left: 8px; right: 8px; bottom: auto; width: auto; height: 132px;
+    grid-template-columns: minmax(0, 1fr); padding: 4px;
+  }
+  #maparea.player-hud-compact .minimap-frame { left: 0; right: auto; bottom: 50px; width: 174px; }
+  #maparea.player-hud-compact #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
+  #maparea.player-hud-compact #victoryhud .victory-ribbon {
+    min-height: 0; width: max(100%, var(--victory-min-width, 514px));
+    grid-template-rows: minmax(0, 1fr);
+    grid-template-columns: repeat(var(--victory-rows, 6), minmax(84px, 1fr));
+  }
+  #maparea.player-hud-compact .victory-track { border-top: 0; border-left: 1px solid #ffffff0b; }
+  #maparea.player-hud-compact .victory-track:first-child { border-left-color: transparent; }
+  #maparea.player-hud-compact #playerhud .diplomacy-card,
+  #maparea.player-hud-compact #playerhud .ribbon-stat-heading { padding-inline: 2px; }
+  #maparea.player-hud-compact .ribbon-heading { padding-inline: 2px; }
+  #maparea.player-hud-compact .diplomacy-stat-head { font-size: var(--type-micro); }
+  #maparea.player-hud-narrow #playerhud {
+    --hud-watch-column: 68px; --hud-ident-min: 21px; --hud-stat-min: 30px; --hud-stat-gap: 2px;
+  }
+  #maparea.player-hud-tiny #playerhud { --hud-ident-min: 18.5px; --hud-stat-min: 28px; }
+  #maparea.player-hud-tiny #playerhud .ribbon-stat b { font-size: var(--type-label); }
   @media (max-width: 720px) {
     #playerhud { --hud-ident-min: 21px; }
   }
@@ -3822,12 +3894,16 @@
       <span><kbd>^ R</kbd>Face north · reset the view</span><span><kbd>⇧ scroll</kbd>Rotate</span>
     </div>
   </details>
+  <button id="side-resize-handle" type="button" role="separator" aria-orientation="vertical"
+          aria-label="Resize the command deck from its right edge; use Left and Right Arrow keys or drag"
+          title="Drag the command deck's right edge to resize · double-click to reset"></button>
 </div>
 <div id="buildmark" hidden aria-label="CIVVIS build revision"></div>
 <script>
 "use strict";
 const SIDEBAR_SECTION_STATE_KEY = "civvis-sidebar-sections-v1";
 const SIDEBAR_COLLAPSED_STATE_KEY = "civvis-sidebar-collapsed-v1";
+const SIDEBAR_WIDTH_STORAGE_KEY = "civvis-sidebar-width-v1";
 const ADVANCED_SETTINGS_STATE_KEY = "civvis-advanced-settings-v1";
 const GAME_MOD_STATE_KEY = "civvis-game-mods-v1";
 function initSidebarSections() {
@@ -5272,7 +5348,7 @@ const HUD_WIDGETS = {
   // however they are sized — by the player count, by a dragged edge, or by a
   // layout saved earlier — so a large table never swallows the world.
   players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:154,
-            maxHeightRatio:.38},
+            maxHeightRatio:.38, avoidsSidebar:true},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
 };
@@ -5989,29 +6065,41 @@ function hudWidgetMaxHeight(config) {
   return Math.max(1, Math.min(area.clientHeight - 8, ceiling));
 }
 
+// A saved player-HUD position is local to #maparea. On a desktop the command
+// deck is outside that box, but on a compact layout it can overlap it. Preserve
+// a viewer's custom placement as far as possible while never letting the HUD
+// slide under that live deck edge.
+function hudWidgetMinX(config, margin = 4) {
+  if (!config.avoidsSidebar) return margin;
+  const inset = Number.parseFloat(area.style.getPropertyValue("--player-hud-left")) || 0;
+  return Math.max(margin, Math.min(Math.max(margin, area.clientWidth - margin), inset));
+}
+
 function clampHudWidget(config, metrics) {
   const margin = 4;
-  const maxWidth = Math.max(1, area.clientWidth - margin * 2);
+  const minX = hudWidgetMinX(config, margin);
+  const maxWidth = Math.max(1, area.clientWidth - margin - minX);
   const maxHeight = hudWidgetMaxHeight(config);
   const minWidth = Math.min(config.minWidth, maxWidth);
   const minHeight = Math.min(config.minHeight, maxHeight);
   const width = Math.max(minWidth, Math.min(maxWidth, Number(metrics.width) || minWidth));
   const height = Math.max(minHeight, Math.min(maxHeight, Number(metrics.height) || minHeight));
-  const maxX = Math.max(margin, area.clientWidth - margin - width);
+  const maxX = Math.max(minX, area.clientWidth - margin - width);
   const maxY = Math.max(margin, area.clientHeight - margin - height);
   return {
-    x:Math.max(margin, Math.min(maxX, Number(metrics.x) || 0)),
+    x:Math.max(minX, Math.min(maxX, Number(metrics.x) || 0)),
     y:Math.max(margin, Math.min(maxY, Number(metrics.y) || 0)),
     width, height,
   };
 }
 
-function serializeHudWidget(metrics) {
+function serializeHudWidget(config, metrics) {
   const margin = 4;
-  const travelX = Math.max(0, area.clientWidth - margin * 2 - metrics.width);
+  const minX = hudWidgetMinX(config, margin);
+  const travelX = Math.max(0, area.clientWidth - margin - metrics.width - minX);
   const travelY = Math.max(0, area.clientHeight - margin * 2 - metrics.height);
   return {
-    xRatio:travelX ? (metrics.x - margin) / travelX : 0,
+    xRatio:travelX ? (metrics.x - minX) / travelX : 0,
     yRatio:travelY ? (metrics.y - margin) / travelY : 0,
     width:Math.round(metrics.width), height:Math.round(metrics.height),
   };
@@ -6021,12 +6109,13 @@ function metricsFromSaved(config, saved) {
   const margin = 4;
   const width = Number(saved.width) || config.minWidth;
   const height = Number(saved.height) || config.minHeight;
-  const travelX = Math.max(0, area.clientWidth - margin * 2 - width);
+  const minX = hudWidgetMinX(config, margin);
+  const travelX = Math.max(0, area.clientWidth - margin - width - minX);
   const travelY = Math.max(0, area.clientHeight - margin * 2 - height);
   const xRatio = Math.max(0, Math.min(1, Number(saved.xRatio) || 0));
   const yRatio = Math.max(0, Math.min(1, Number(saved.yRatio) || 0));
   return clampHudWidget(config, {
-    x:margin + travelX * xRatio, y:margin + travelY * yRatio, width, height,
+    x:minX + travelX * xRatio, y:margin + travelY * yRatio, width, height,
   });
 }
 
@@ -6058,7 +6147,7 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   style.width = `${next.width}px`; style.height = `${next.height}px`;
   style.maxWidth = "none"; style.maxHeight = "none"; style.transform = "none";
   config.element.classList.add("layout-widget-custom");
-  HUD_LAYOUT[name] = serializeHudWidget(next);
+  HUD_LAYOUT[name] = serializeHudWidget(config, next);
   // The victory tracker runs down to whatever the world map leaves it, so
   // dragging the map's edge has to move the seam in the same gesture rather
   // than letting the tracker slide underneath it. The masthead's own height is
@@ -6118,12 +6207,13 @@ function resetAllHudWidgets() {
 
 function resizeHudWidget(config, start, edge, dx, dy) {
   const margin = 4;
-  const minWidth = Math.min(config.minWidth, Math.max(1, area.clientWidth - margin * 2));
+  const minX = hudWidgetMinX(config, margin);
+  const minWidth = Math.min(config.minWidth, Math.max(1, area.clientWidth - margin - minX));
   const maxHeight = hudWidgetMaxHeight(config);
   const minHeight = Math.min(config.minHeight, maxHeight);
   let left = start.x, right = start.x + start.width;
   let top = start.y, bottom = start.y + start.height;
-  if (edge.includes("w")) left = Math.max(margin, Math.min(right - minWidth, left + dx));
+  if (edge.includes("w")) left = Math.max(minX, Math.min(right - minWidth, left + dx));
   if (edge.includes("e")) right = Math.min(area.clientWidth - margin, Math.max(left + minWidth, right + dx));
   // Clamping the height alone would let a top-edge drag push the bottom edge
   // down instead of simply stopping, so the ceiling is applied to the moving
@@ -6858,6 +6948,180 @@ function resize() {
   draw(); if (state) drawMini();
 }
 window.addEventListener("resize", resize);
+
+// The command deck has one movable boundary: its right edge. The first flex
+// track (or the compact layout's fixed left inset) owns the left edge, so a
+// width change cannot drift the deck over the map. Keep the chosen width as a
+// small local preference, just as the overlay layout does.
+const SIDEBAR_MIN_WIDTH = 220;
+const SIDEBAR_COMPACT_WIDTH = 720;
+const PLAYER_HUD_COMPACT_WIDTH = 1100;
+let sidebarWidth = null;
+let sidebarResizeGesture = null;
+let sidebarGeometryFrame = 0;
+const sidebarDeck = document.getElementById("side");
+const sidebarResizeHandle = document.getElementById("side-resize-handle");
+
+function sidebarWidthBounds() {
+  const viewport = Math.max(1, document.documentElement.clientWidth || window.innerWidth || 1);
+  const min = Math.min(SIDEBAR_MIN_WIDTH, Math.max(160, viewport - 16));
+  if (viewport <= SIDEBAR_COMPACT_WIDTH) return {min, max:Math.max(min, viewport - 16)};
+  // Leave enough of the map for a real working area. The HUD itself changes to
+  // its compact full-width topology when this remaining area crosses 1100px.
+  const mapFloor = Math.min(640, Math.max(320, Math.round(viewport * .45)));
+  return {min, max:Math.max(min, viewport - mapFloor)};
+}
+
+function clampSidebarWidth(width) {
+  const {min, max} = sidebarWidthBounds();
+  const candidate = Number(width);
+  return Math.round(Math.max(min, Math.min(max, Number.isFinite(candidate) ? candidate : min)));
+}
+
+function updateSidebarResizeHandle() {
+  if (!sidebarResizeHandle) return;
+  const {min, max} = sidebarWidthBounds();
+  const measured = sidebarWidth ?? sidebarDeck?.getBoundingClientRect().width ?? min;
+  const value = Math.round(Math.max(min, Math.min(max, measured)));
+  sidebarResizeHandle.setAttribute("aria-valuemin", `${Math.round(min)}`);
+  sidebarResizeHandle.setAttribute("aria-valuemax", `${Math.round(max)}`);
+  sidebarResizeHandle.setAttribute("aria-valuenow", `${value}`);
+  sidebarResizeHandle.setAttribute("aria-valuetext", `Command deck ${value} pixels wide, anchored to the left`);
+}
+
+function setSidebarWidth(width, persist = false) {
+  if (!sidebarDeck) return;
+  sidebarWidth = clampSidebarWidth(width);
+  sidebarDeck.classList.add("sidebar-width-custom");
+  sidebarDeck.style.setProperty("--sidebar-width", `${sidebarWidth}px`);
+  if (persist) {
+    try { localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, `${sidebarWidth}`); }
+    catch (_) {}
+  }
+  updateSidebarResizeHandle();
+  scheduleSidebarGeometry();
+}
+
+function resetSidebarWidth() {
+  if (!sidebarDeck) return;
+  sidebarWidth = null;
+  sidebarDeck.classList.remove("sidebar-width-custom");
+  sidebarDeck.style.removeProperty("--sidebar-width");
+  try { localStorage.removeItem(SIDEBAR_WIDTH_STORAGE_KEY); }
+  catch (_) {}
+  updateSidebarResizeHandle();
+  scheduleSidebarGeometry();
+}
+
+// The desktop deck is a flex sibling and therefore does not overlap #maparea.
+// Compact screens float the same deck over it, so publish the exact covered
+// width plus an eight-pixel gutter for the player HUD's left anchor.
+function playerHudSidebarInset() {
+  if (!sidebarDeck || document.body.classList.contains("sidebar-hidden")) return 0;
+  const areaRect = area.getBoundingClientRect();
+  const sideRect = sidebarDeck.getBoundingClientRect();
+  const overlap = Math.max(0, Math.min(areaRect.right, sideRect.right) -
+                             Math.max(areaRect.left, sideRect.left));
+  if (!overlap) return 0;
+  const right = Math.max(0, sideRect.right - areaRect.left);
+  return Math.round(Math.min(Math.max(0, area.clientWidth - 8), right + 8));
+}
+
+function syncSidebarGeometry() {
+  const width = area.clientWidth;
+  const inset = playerHudSidebarInset();
+  area.style.setProperty("--player-hud-left", `${inset}px`);
+  area.classList.toggle("player-hud-compact", width <= PLAYER_HUD_COMPACT_WIDTH);
+  area.classList.toggle("player-hud-narrow", width <= SIDEBAR_COMPACT_WIDTH);
+  area.classList.toggle("player-hud-tiny", width <= 620);
+  updateSidebarResizeHandle();
+}
+
+function refreshSidebarGeometry() {
+  const priorFocus = state ? currentMapFocusWorld() : null;
+  syncSidebarGeometry();
+  resize();
+  if (priorFocus) reframeCurrentMapFocus(priorFocus);
+}
+
+function scheduleSidebarGeometry() {
+  if (sidebarGeometryFrame) return;
+  sidebarGeometryFrame = requestAnimationFrame(() => {
+    sidebarGeometryFrame = 0;
+    refreshSidebarGeometry();
+  });
+}
+
+function beginSidebarResize(event) {
+  if (!sidebarDeck || document.body.classList.contains("sidebar-hidden") ||
+      (event.button !== undefined && event.button !== 0)) return;
+  event.preventDefault();
+  sidebarResizeGesture = {
+    pointerId:event.pointerId, startX:event.clientX,
+    startWidth:sidebarDeck.getBoundingClientRect().width, moved:false,
+  };
+  try { sidebarResizeHandle?.setPointerCapture?.(event.pointerId); }
+  catch (_) {}
+  document.body.classList.add("sidebar-resizing");
+}
+
+function moveSidebarResize(event) {
+  const gesture = sidebarResizeGesture;
+  if (!gesture || event.pointerId !== gesture.pointerId) return;
+  event.preventDefault();
+  const dx = event.clientX - gesture.startX;
+  if (Math.abs(dx) > 1) gesture.moved = true;
+  setSidebarWidth(gesture.startWidth + dx);
+}
+
+function finishSidebarResize(event) {
+  const gesture = sidebarResizeGesture;
+  if (!gesture || (event && event.pointerId !== gesture.pointerId)) return;
+  sidebarResizeGesture = null;
+  try { sidebarResizeHandle?.releasePointerCapture?.(gesture.pointerId); }
+  catch (_) {}
+  document.body.classList.remove("sidebar-resizing");
+  if (gesture.moved && sidebarWidth !== null) {
+    try { localStorage.setItem(SIDEBAR_WIDTH_STORAGE_KEY, `${sidebarWidth}`); }
+    catch (_) {}
+  }
+}
+
+sidebarResizeHandle?.addEventListener("pointerdown", beginSidebarResize);
+sidebarResizeHandle?.addEventListener("dblclick", event => {
+  event.preventDefault();
+  resetSidebarWidth();
+});
+sidebarResizeHandle?.addEventListener("keydown", event => {
+  const {min, max} = sidebarWidthBounds();
+  const step = event.shiftKey ? 48 : 16;
+  const current = sidebarWidth ?? sidebarDeck?.getBoundingClientRect().width ?? min;
+  let next = null;
+  if (event.key === "ArrowLeft") next = current - step;
+  if (event.key === "ArrowRight") next = current + step;
+  if (event.key === "Home") next = min;
+  if (event.key === "End") next = max;
+  if (next === null) return;
+  event.preventDefault();
+  event.stopPropagation();
+  setSidebarWidth(next, true);
+});
+window.addEventListener("pointermove", moveSidebarResize, {passive:false});
+window.addEventListener("pointerup", finishSidebarResize);
+window.addEventListener("pointercancel", finishSidebarResize);
+
+try {
+  const saved = Number(localStorage.getItem(SIDEBAR_WIDTH_STORAGE_KEY));
+  if (Number.isFinite(saved) && saved > 0) setSidebarWidth(saved);
+} catch (_) {}
+const sidebarGeometryObserver = typeof ResizeObserver === "function"
+  ? new ResizeObserver(() => scheduleSidebarGeometry()) : null;
+sidebarGeometryObserver?.observe(sidebarDeck);
+window.addEventListener("resize", () => {
+  if (sidebarWidth !== null) setSidebarWidth(sidebarWidth);
+  else scheduleSidebarGeometry();
+});
+requestAnimationFrame(scheduleSidebarGeometry);
 
 function screenToWorld(sx, sy) {
   const vx = (sx - MAPW / 2) / cam.scale;
@@ -24763,6 +25027,7 @@ function togglePanel(force, persist = true) {
   // The deck changes the map's layout width. Resize its backing canvas in the
   // same frame so the browser never stretches an old bitmap and then snaps it
   // to a different size a quarter-second later.
+  syncSidebarGeometry();
   resize();
   reframeCurrentMapFocus(priorFocus);
 }

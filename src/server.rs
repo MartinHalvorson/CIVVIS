@@ -7851,14 +7851,15 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("playerRibbon.scrollTop = playerScroll;"));
         // The wide-screen default has three exact seams: the player HUD fills
-        // from the left edge through the victory tracker's left edge, the
-        // tracker owns ten percent of screen width and reaches the minimap's
-        // top, and the lower-right world minimap measures its frame diagonal
-        // against the screen diagonal. Custom drag layouts still override these
-        // values inline, but an uncustomized viewer always returns here.
+        // from its live clear-left edge through the victory tracker's left
+        // edge, the tracker owns ten percent of screen width and reaches the
+        // minimap's top, and the lower-right world minimap measures its frame
+        // diagonal against the screen diagonal. Custom drag layouts still
+        // override these values inline, but an uncustomized viewer always
+        // returns here.
         assert!(EMBEDDED_INDEX.contains("--victory-hud-width: 10vw;"));
         assert!(EMBEDDED_INDEX.contains(
-            "top: 0; left: 0; right: var(--victory-hud-width); width: auto;"
+            "top: 0; left: var(--player-hud-left, 0px); right: var(--victory-hud-width); width: auto;"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "width: var(--world-minimap-width); height: var(--minimap-height);"
@@ -8597,6 +8598,32 @@ mod tests {
         assert!(side_rule.contains("order: -1"));
         assert!(EMBEDDED_INDEX.contains("<strong>${reportedTurn()}</strong>"));
         assert!(!EMBEDDED_INDEX.contains("${state.turn}/${maxTurns}"));
+    }
+
+    #[test]
+    fn browser_keeps_the_resizable_command_deck_anchored_and_the_player_hud_clear() {
+        // The deck's normal desktop declaration remains the first flex track,
+        // while the added seam changes only its width/flex basis. This prevents
+        // a resize gesture from becoming a draggable panel.
+        assert!(EMBEDDED_INDEX.contains("order: -1; width: 16vw; min-width: 16vw; flex: 0 0 16vw;"));
+        assert!(EMBEDDED_INDEX.contains("id=\"side-resize-handle\" type=\"button\" role=\"separator\""));
+        assert!(EMBEDDED_INDEX.contains("Resize the command deck from its right edge"));
+        assert!(EMBEDDED_INDEX.contains("const SIDEBAR_WIDTH_STORAGE_KEY = \"civvis-sidebar-width-v1\";"));
+        assert!(EMBEDDED_INDEX.contains("function setSidebarWidth(width, persist = false)"));
+        assert!(EMBEDDED_INDEX.contains("sidebarDeck.classList.add(\"sidebar-width-custom\")"));
+        assert!(EMBEDDED_INDEX.contains("function resetSidebarWidth()"));
+
+        // On desktop the flex sibling leaves no overlap; in the compact fixed
+        // arrangement the same live rectangle supplies the HUD's safe left
+        // anchor. A narrowed map also receives the same full-width HUD topology
+        // as a naturally narrow viewport.
+        assert!(EMBEDDED_INDEX.contains("function playerHudSidebarInset()"));
+        assert!(EMBEDDED_INDEX.contains("area.style.setProperty(\"--player-hud-left\", `${inset}px`);"));
+        assert!(EMBEDDED_INDEX.contains("left: var(--player-hud-left, 0px);"));
+        assert!(EMBEDDED_INDEX.contains("area.classList.toggle(\"player-hud-compact\", width <= PLAYER_HUD_COMPACT_WIDTH);"));
+        assert!(EMBEDDED_INDEX.contains("#maparea.player-hud-compact #playerhud"));
+        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38, avoidsSidebar:true"));
+        assert!(EMBEDDED_INDEX.contains("function hudWidgetMinX(config, margin = 4)"));
     }
 
     /// Player-row color is reserved for a current war. Friendships and
