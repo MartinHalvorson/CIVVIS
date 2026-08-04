@@ -88,8 +88,9 @@ pub struct Cell {
     /// Unit vector from the centre of the world to the middle of the tile.
     pub center: [f64; 3],
     /// The tile's outline, counter-clockwise seen from outside. Corner `k` is
-    /// the point shared with neighbours `k` and `k + 1`, so the outline and
-    /// the neighbour list run together.
+    /// immediately before neighbour `k`, so the edge from corner `k` to
+    /// corner `k + 1` faces neighbour `k`. This keeps a polygon side aligned
+    /// with the direction index used by rivers, cliffs and other edge state.
     pub corners: Vec<[f64; 3]>,
 }
 
@@ -815,8 +816,9 @@ fn build(frequency: i32) -> Sphere {
         let sides = degree[index] as usize;
         let mut corners = Vec::with_capacity(sides);
         for at in 0..sides {
-            let a = cells[adjacent[index][at] as usize].center;
-            let b = cells[adjacent[index][(at + 1) % sides] as usize].center;
+            let before = (at + sides - 1) % sides;
+            let a = cells[adjacent[index][before] as usize].center;
+            let b = cells[adjacent[index][at] as usize].center;
             corners.push(normalize([
                 center[0] + a[0] + b[0],
                 center[1] + a[1] + b[1],
@@ -1161,6 +1163,49 @@ mod tests {
                 assert_eq!(globe.direction_to(cell.pos, neighbor), Some(direction));
                 assert!(globe.direction_to(neighbor, cell.pos).is_some());
             }
+        }
+    }
+
+    #[test]
+    fn outline_edges_follow_neighbor_indices() {
+        // The observation protocol sends a cell as its cyclic corner list.
+        // A client reconstructs each shared edge from consecutive corners, so
+        // edge `direction` must face the neighbor at that same direction.
+        // Rivers and cliffs use those direction indices in their tile masks.
+        for frequency in [1, 2, 5, 11] {
+            let globe = sphere(frequency);
+            let mut unmatched = HashMap::new();
+            for cell in globe.cells() {
+                for direction in 0..cell.corners.len() {
+                    let mut first = cell.corners[direction]
+                        .map(|coordinate| (coordinate * WELD).round() as i64);
+                    let mut second = cell.corners[(direction + 1) % cell.corners.len()]
+                        .map(|coordinate| (coordinate * WELD).round() as i64);
+                    if second < first {
+                        std::mem::swap(&mut first, &mut second);
+                    }
+                    let edge = (first, second);
+                    if let Some((other, other_direction)) = unmatched.remove(&edge) {
+                        assert_eq!(
+                            globe.neighbors(cell.pos)[direction],
+                            other,
+                            "frequency {frequency}: edge {direction} of {:?} faces the wrong tile",
+                            cell.pos,
+                        );
+                        assert_eq!(
+                            globe.neighbors(other)[other_direction],
+                            cell.pos,
+                            "frequency {frequency}: edge {other_direction} of {other:?} faces the wrong tile",
+                        );
+                    } else {
+                        unmatched.insert(edge, (cell.pos, direction));
+                    }
+                }
+            }
+            assert!(
+                unmatched.is_empty(),
+                "frequency {frequency}: an outline edge did not pair with a neighbor"
+            );
         }
     }
 
