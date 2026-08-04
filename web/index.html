@@ -3544,6 +3544,7 @@
         <label class="setting-row display-advanced-setting" data-advanced-order="30"><span><input type="checkbox" id="yieldchk"> Show yields per tile</span><kbd>Y</kbd></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="40"><span><input type="checkbox" id="artifactchk"> Show artifact sites &amp; shipwrecks</span></label>
         <label class="setting-row display-advanced-setting" data-advanced-order="45"><span><input type="checkbox" id="rocketanimchk" checked> Show rocket &amp; satellite animations</span></label>
+        <label class="setting-row display-advanced-setting" data-advanced-order="47"><span><input type="checkbox" id="inertiachk" checked> Enable world pan inertia</span></label>
         <div class="overlay-options display-advanced-setting" data-advanced-order="50" role="group" aria-labelledby="overlay-options-title">
           <h2 id="overlay-options-title">Map overlays</h2>
           <div class="small overlay-layout-help">Drag a title bar to move an overlay; drag any edge or corner to resize. Your layout saves automatically.</div>
@@ -4713,6 +4714,10 @@ let SHOW_ARTIFACT_SITES = localStorage.getItem("civvis-show-artifact-sites") ===
 // Space-race flights and satellites are on unless a viewer explicitly turns
 // their animated visual effects off. The completed mission remains in state.
 let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations") !== "0";
+// A brief coast makes direct drags feel physical; reduced-motion still takes
+// precedence, and a viewer can opt out here without changing system settings.
+const WORLD_PAN_INERTIA_STORAGE_KEY = "civvis-world-pan-inertia";
+let WORLD_PAN_INERTIA = localStorage.getItem(WORLD_PAN_INERTIA_STORAGE_KEY) !== "0";
 // Civ 6 binds G to the hex grid and Q to the resource icons, so both have to
 // be things a player can actually turn off here. The grid is off by default
 // because a clean strategic map is easier to scan; resources are on because
@@ -25628,7 +25633,8 @@ function endMapPointer(ev) {
     if (dragState && ev.pointerId !== dragState.pointerId) return;
     const released = dragState;
     dragState = null;
-    if (released && dragMoved && performance.now() - released.lastT < 90 &&
+    if (released && dragMoved && WORLD_PAN_INERTIA &&
+        performance.now() - released.lastT < 90 &&
         !REDUCED_MOTION_QUERY.matches) {
       // Each captured surface keeps the motion it actually received: Earth
       // spins about its final 3D axis, another world keeps turning, and an
@@ -25793,7 +25799,8 @@ function endMapTouch(ev) {
   const released = touchGesture;
   mapTouches.delete(ev.pointerId);
   if (!mapTouches.size) {
-    if (released?.mode === "pan" && released.controlled && !REDUCED_MOTION_QUERY.matches)
+    if (released?.mode === "pan" && released.controlled && WORLD_PAN_INERTIA &&
+        !REDUCED_MOTION_QUERY.matches)
       cameraInertia = released.skyMotion?.kind === "pan"
         ? stoppedCameraInertia({skyPan:{vx:released.skyMotion.vx,
                                         vy:released.skyMotion.vy}})
@@ -26712,6 +26719,15 @@ function setShowRocketAnimations(on) {
   // completed mission remains available to the victory and science UI.
   if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;
   if (state) draw();
+}
+function setWorldPanInertia(on) {
+  WORLD_PAN_INERTIA = !!on;
+  localStorage.setItem(WORLD_PAN_INERTIA_STORAGE_KEY, WORLD_PAN_INERTIA ? "1" : "0");
+  const box = document.getElementById("inertiachk");
+  if (box) box.checked = WORLD_PAN_INERTIA;
+  // Turning this off is immediate rather than waiting for a current glide to
+  // decay, which makes the preference reliable even while the map is moving.
+  if (!WORLD_PAN_INERTIA) clearCameraInertia();
 }
 function syncFlatMapWrapControls() {
   const group = document.getElementById("flat-map-wrap-settings");
@@ -28049,6 +28065,11 @@ document.getElementById("newgame-options").addEventListener("change", stageSelec
   const rockets = document.getElementById("rocketanimchk");
   rockets.checked = SHOW_ROCKET_ANIMATIONS;
   rockets.onchange = () => setShowRocketAnimations(rockets.checked);
+}
+{
+  const inertia = document.getElementById("inertiachk");
+  inertia.checked = WORLD_PAN_INERTIA;
+  inertia.onchange = () => setWorldPanInertia(inertia.checked);
 }
 {
   const wrapXBox = document.getElementById("wrapxchk");
