@@ -478,6 +478,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `city_housing_floor` without changing a single band, so the housing it
 /// returns is unchanged for every caller. A compatibility re-pin.
 ///
+/// #1095 keeps asking for a Campus in every city that can still repay one,
+/// behind `AdvancedAi::campus_every_city` — `false` in the constructor and set
+/// only by `enable_live_bridge`. Both of its paths short-circuit on the flag:
+/// `balanced_core`'s exemption is `campus_every_city && family == "campus"`,
+/// which is `false` for every legacy agent and reproduces the half-empire cliff
+/// exactly, and the coverage term keeps `research_horizon` unless the flag is
+/// set. So `advanced_v1` prices every district exactly as it did. A
+/// compatibility re-pin.
+///
 /// ⚠ Re-pinned twice in this PR. The first version was inert — it patched
 /// `BasicAi::tactical_step`, which a live probe showed the deployed controller
 /// never calls; the working change is in
@@ -547,7 +556,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// entrants return before the changed line is ever reached and the anchor's
 /// behaviour is bit-for-bit what it was. A compatibility re-pin;
 /// `elo_anchor_never_reaches_the_settler_commit_path` checks the claim.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8ae2_0366_ad17_eda1;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x158d_1d61_8a08_4d1e;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
