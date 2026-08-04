@@ -265,11 +265,12 @@ The treatment advances only if every term passes:
 After the focused tests, a two-map, 4-player, 44x28 Online smoke run used the
 same Continents/Planet/Poles rules but not the frozen 8-player 84x54 cell. It
 exists only to prove that the lifecycle reaches real games and that observer
-telemetry agrees with it. The final pass reported 13 appointments, 10
-breakthroughs, 9 mobilizations, and 7 declarations; all 7 declarations carried
-the complete package. Two objectives fell, both within 10 turns (median 5.5),
+telemetry agrees with it. The final pass, rerun after merging current `main`,
+reported 11 appointments, 9 breakthroughs, 10 mobilizations, and 7
+declarations; all 7 declarations carried the complete package. Two objectives
+fell, both within 10 turns (median 4.0),
 and no appointed campaign accepted generic peace before its objective fell.
-Paired score was 50.0% and terminal-score share 50.8%, both unresolved at two
+Paired score was 50.0% and terminal-score share 48.0%, both unresolved at two
 maps. All eight treatment seats formed a plan, outside the preregistered
 15%..75% promotion band; this reduced profile therefore supplies mechanism
 evidence, not permission to promote or retune. Production `advanced` remains
