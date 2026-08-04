@@ -17,6 +17,18 @@ fn default_one_limit() -> Option<usize> {
 
 use crate::world::Tile;
 
+/// Whether Gathering Storm permits Volcanic Soil on this ground.
+///
+/// `Feature_ValidTerrains` names every Grassland, Plains, Desert, Tundra and
+/// Snow flat/hills variant, but no Mountain or water terrain. CIVVIS stores
+/// hills separately, so the five base terrain names are the complete rule.
+pub(crate) fn volcanic_soil_valid_terrain(tile: &Tile) -> bool {
+    matches!(
+        tile.terrain.as_str(),
+        "grassland" | "plains" | "desert" | "tundra" | "snow"
+    )
+}
+
 pub const ERA_NAMES: [&str; 9] = [
     "ancient",
     "classical",
