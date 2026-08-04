@@ -16909,7 +16909,12 @@ function skyPixels(earthRadii, radius) { return earthRadii * radius; }
 // is a line across the picture.
 function drawSkyOrbits(radius, centerX, centerY, alpha) {
   const span = skyStageSpan();
-  const bodies = visibleSkyBodies().filter(body => body.orbitRadius > 0);
+  // Earth is home, so `visibleSkyBodies` deliberately leaves it out of the
+  // navigation/object list. Its Sun-centred path still belongs in the system
+  // diagram: it is the one astronomical-unit ring that tells the viewer where
+  // home is in relation to the Sun.
+  const bodies = [SKY_EARTH, ...visibleSkyBodies().filter(body => body.id !== "earth")]
+    .filter(body => body.orbitRadius > 0);
   if (!bodies.length) return;
   cx.save();
   cx.lineWidth = 1;
@@ -16923,8 +16928,9 @@ function drawSkyOrbits(radius, centerX, centerY, alpha) {
     const x = centerX + px * radius, y = centerY + py * radius;
     // Nothing to draw if the whole ring is off the stage in one direction.
     if (Math.abs(x) > span * 9 && Math.abs(y) > span * 9) continue;
-    cx.globalAlpha = shown * (body.parent ? .22 : .34);
-    cx.strokeStyle = body.parent ? "#8fa6bb" : "#7f94ab";
+    const homeOrbit = body.id === "earth";
+    cx.globalAlpha = shown * (body.parent ? .22 : homeOrbit ? .56 : .34);
+    cx.strokeStyle = body.parent ? "#8fa6bb" : homeOrbit ? "#9ccce9" : "#7f94ab";
     cx.beginPath(); cx.arc(x, y, ring, 0, 6.283185); cx.stroke();
   }
   cx.restore();
