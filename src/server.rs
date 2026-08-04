@@ -9,9 +9,9 @@ use std::hash::{Hash, Hasher};
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
 #[cfg(not(target_arch = "wasm32"))]
 use std::sync::OnceLock;
+use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::{json, Value};
@@ -21,8 +21,8 @@ use crate::civ6;
 use crate::game::{
     Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
 };
-use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
+use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::rules::Rules;
 use crate::setup::{
     start_era_from_id, start_era_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize,
@@ -161,10 +161,8 @@ const EMBEDDED_FEATURE_ATLAS: &[u8] = include_bytes!("../web/assets/feature-atla
 const EMBEDDED_ENVIRONMENT_FEATURE_ATLAS: &[u8] =
     include_bytes!("../web/assets/environment-feature-atlas.png");
 const EMBEDDED_MOUNTAIN_ATLAS: &[u8] = include_bytes!("../web/assets/mountain-atlas.png");
-const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] =
-    include_bytes!("../web/assets/hidden-map-monsters.png");
-const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] =
-    include_bytes!("../web/assets/civ6-unit-flags.png");
+const EMBEDDED_HIDDEN_MAP_MONSTERS: &[u8] = include_bytes!("../web/assets/hidden-map-monsters.png");
+const EMBEDDED_CIV6_UNIT_FLAGS: &[u8] = include_bytes!("../web/assets/civ6-unit-flags.png");
 
 /// The agents that exist in every build, whether or not a league snapshot is
 /// on disk, with the handle the leaderboards give them. `make_send_ai`
@@ -1352,10 +1350,7 @@ impl Shared {
             // while ringing it, so taking them in this order is safe.
             let current = {
                 let session = self.session.lock().unwrap();
-                spectator_frame(
-                    &session.game,
-                    self.frame_sequence.load(Ordering::Relaxed),
-                )
+                spectator_frame(&session.game, self.frame_sequence.load(Ordering::Relaxed))
             };
             if current != held {
                 return;
@@ -1668,19 +1663,17 @@ impl Session {
                 .map(|p| p.id)
                 .collect();
             if seat_from_roster && !l.exhibition_active().is_empty() {
-                let civs: Vec<String> =
-                    majors.iter().map(|id| game.players[*id].civ.clone()).collect();
+                let civs: Vec<String> = majors
+                    .iter()
+                    .map(|id| game.players[*id].civ.clone())
+                    .collect();
                 let table_size = game
                     .players
                     .iter()
                     .filter(|player| !player.is_minor && !player.is_barbarian)
                     .count();
                 for (id, pick) in majors.iter().zip(crate::league::seat_by_civ_seeded(
-                    l,
-                    &civs,
-                    table_size,
-                    game.seed,
-                    3,
+                    l, &civs, table_size, game.seed, 3,
                 )) {
                     seat_strategy[*id] = Some(pick);
                 }
@@ -2251,9 +2244,8 @@ impl Session {
     /// bargain and the size of the table, which is exactly what they should be.
     fn name_seat_ratings(&self, o: &mut Value) {
         let g = &self.game;
-        let rating_of = |pid: usize| {
-            crate::league::display_rating(self.seat_entry(pid), &g.players[pid].civ)
-        };
+        let rating_of =
+            |pid: usize| crate::league::display_rating(self.seat_entry(pid), &g.players[pid].civ);
         // The rating each seat brings to the table, before the world touches
         // it. A seat the league has never heard of is in here at the
         // provisional base rather than left out: leaving it out would make the
@@ -2268,10 +2260,7 @@ impl Session {
                 // Otherwise the roster still knows something about the civ
                 // they drew, even if this player has never played it.
                 shown.rating
-                    + self
-                    .league
-                    .as_ref()
-                    .map_or(0.0, |league| {
+                    + self.league.as_ref().map_or(0.0, |league| {
                         crate::odds::civ_edge_elo(league, &g.players[pid].civ)
                     })
             };
@@ -2415,14 +2404,14 @@ impl Session {
                                 // dozens of strings per seat on a document that
                                 // is already the bottleneck, and the card asks
                                 // one question of it.
-                                player["research_boosted"] = json!(seat
-                                    .research
-                                    .as_ref()
-                                    .is_some_and(|tech| seat.boosted_techs.contains(&Name::new(tech))));
-                                player["civic_boosted"] = json!(seat
-                                    .civic
-                                    .as_ref()
-                                    .is_some_and(|civic| seat.boosted_civics.contains(&Name::new(civic))));
+                                player["research_boosted"] =
+                                    json!(seat.research.as_ref().is_some_and(|tech| seat
+                                        .boosted_techs
+                                        .contains(&Name::new(tech))));
+                                player["civic_boosted"] =
+                                    json!(seat.civic.as_ref().is_some_and(|civic| seat
+                                        .boosted_civics
+                                        .contains(&Name::new(civic))));
                             }
                         }
                     }
@@ -2546,11 +2535,8 @@ impl Session {
         let rated: Vec<usize> = (0..seat_names.len())
             .filter(|pid| seat_names[*pid].is_some())
             .collect();
-        let (rated, ranks) = crate::league::competition_ranking(
-            rated,
-            Some(winner),
-            |pid| self.game.score(pid),
-        );
+        let (rated, ranks) =
+            crate::league::competition_ranking(rated, Some(winner), |pid| self.game.score(pid));
         let seats: Vec<crate::league::LiveGameSeat> = rated
             .iter()
             .enumerate()
@@ -2631,9 +2617,12 @@ impl Session {
                     .map(|s| s.kind.clone())
             })
             .or_else(|| {
-                BUILTIN_STRATEGIES.iter().any(|(id, _)| *id == name).then(|| {
-                    crate::league::StrategyKind::Builtin { ai: name.to_string() }
-                })
+                BUILTIN_STRATEGIES
+                    .iter()
+                    .any(|(id, _)| *id == name)
+                    .then(|| crate::league::StrategyKind::Builtin {
+                        ai: name.to_string(),
+                    })
             })
             .ok_or_else(|| format!("no strategy named {name}"))?;
         self.ais[seat] = crate::league::make_send_ai(&kind, seed);
@@ -2643,10 +2632,11 @@ impl Session {
         // The rated roster and the offered roster can be different rosters, so
         // only claim a rated identity for the seat when this name is in the
         // rated one; the name below is what the browser is told either way.
-        self.seat_strategy[seat] = self
-            .league
-            .as_ref()
-            .and_then(|l| l.strategies.iter().position(|s| s.name == name || s.username == name));
+        self.seat_strategy[seat] = self.league.as_ref().and_then(|l| {
+            l.strategies
+                .iter()
+                .position(|s| s.name == name || s.username == name)
+        });
         self.autoplay_strategy = Some(name.to_string());
         Ok(())
     }
@@ -2665,7 +2655,8 @@ impl Session {
         if let Some(player) = self.human_players.get(&seat) {
             return Some(&player.name);
         }
-        if let (Some(Some(index)), Some(league)) = (self.seat_strategy.get(seat), self.league.as_ref())
+        if let (Some(Some(index)), Some(league)) =
+            (self.seat_strategy.get(seat), self.league.as_ref())
         {
             return Some(league.strategies[*index].name.as_str());
         }
@@ -2673,7 +2664,11 @@ impl Session {
         // fleet built the default agent there, and the roster's name for that
         // agent is "advanced" — the cheaper baseline for minors.
         let player = self.game.players.get(seat)?;
-        Some(if player.is_minor || player.is_barbarian { "basic" } else { "advanced" })
+        Some(if player.is_minor || player.is_barbarian {
+            "basic"
+        } else {
+            "advanced"
+        })
     }
 
     /// Hand the player's own seat to the AI for `turns` turns.
@@ -2860,7 +2855,11 @@ fn list_saves() -> Vec<Value> {
         .flatten()
         .filter_map(|entry| {
             let path = entry.path();
-            let name = path.file_name()?.to_str()?.strip_suffix(".save.json")?.to_string();
+            let name = path
+                .file_name()?
+                .to_str()?
+                .strip_suffix(".save.json")?
+                .to_string();
             let raw = std::fs::read(&path).ok()?;
             let game: Game = serde_json::from_slice(&raw).ok()?;
             let leader = game
@@ -2923,7 +2922,8 @@ fn respond(stream: &mut TcpStream, code: &str, ctype: &str, body: &[u8]) -> bool
         "HTTP/1.1 {code}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\n\
          Cache-Control: no-store, must-revalidate\r\nPragma: no-cache\r\n\
          Connection: close\r\n\r\n",
-        body.len());
+        body.len()
+    );
     stream
         .write_all(head.as_bytes())
         .and_then(|()| stream.write_all(body))
@@ -3146,7 +3146,10 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(v) = request["seed"].as_u64() {
         p.seed = v;
     }
-    if let Some(v) = request["base_ruleset"].as_str().and_then(BaseRuleset::from_id) {
+    if let Some(v) = request["base_ruleset"]
+        .as_str()
+        .and_then(BaseRuleset::from_id)
+    {
         p.base_ruleset = v;
     }
     // A rung nobody has built yet is refused rather than substituted: a lobby
@@ -3166,7 +3169,10 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
             p.map_topology = MapTopology::Planet;
         }
     }
-    if let Some(v) = request["map_topology"].as_str().and_then(MapTopology::from_id) {
+    if let Some(v) = request["map_topology"]
+        .as_str()
+        .and_then(MapTopology::from_id)
+    {
         p.map_topology = v;
     }
     if let Some(v) = request["map_poles"].as_str().and_then(MapPoles::from_id) {
@@ -3198,7 +3204,10 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
     if let Some(v) = request["max_turns"].as_u64() {
         p.max_turns = v as u32;
     }
-    if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
+    if let Some(v) = request["leader_pool"]
+        .as_str()
+        .and_then(LeaderPool::from_id)
+    {
         p.leader_pool = v;
     }
     // The two settings a Civ 6 lobby asks for that this protocol could not
@@ -3375,8 +3384,7 @@ fn auto_step_loop(sh: Arc<Shared>) {
             }
             if s.game.winner.is_some() {
                 let t0 = *over_since.get_or_insert_with(Instant::now);
-                let left =
-                    final_countdown_ms().saturating_sub(t0.elapsed().as_millis() as u64);
+                let left = final_countdown_ms().saturating_sub(t0.elapsed().as_millis() as u64);
                 sh.restart_in.store(left, Ordering::Relaxed);
                 if left == 0 {
                     s.start_automatic_next_game(sh.take_next_game_params());
@@ -3479,7 +3487,9 @@ fn auto_step_loop(sh: Arc<Shared>) {
         // AI computation made the fast paces visibly slower as empires grew.
         // Spend only the remaining frame budget instead.
         let elapsed_ms = cadence_started.elapsed().as_millis().min(u64::MAX as u128) as u64;
-        std::thread::sleep(Duration::from_millis(delay.saturating_sub(elapsed_ms).max(1)));
+        std::thread::sleep(Duration::from_millis(
+            delay.saturating_sub(elapsed_ms).max(1),
+        ));
     }
 }
 
@@ -3616,7 +3626,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             // itself gets a seat of its own, and one too old to know to (a tab
             // open across a binary swap) shares the unnamed seat, which is the
             // single-cursor behaviour it was written against.
-            let viewer = query_value(&request_target, "viewer").unwrap_or("").to_string();
+            let viewer = query_value(&request_target, "viewer")
+                .unwrap_or("")
+                .to_string();
             // The frame the page's own tile array is built from, which is not
             // the frame it painted: a state can arrive, patch the tiles and
             // still fail to draw. It names its world as well as its turn — a
@@ -3640,18 +3652,22 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     query_value(&request_target, "finished"),
                     query_value(&request_target, "frame").map(str::parse::<u64>),
                 ) {
-                    (Ok(turn), Some(Ok(seed)), Some("0") | None, Some(Ok(sequence))) => Some(SpectatorFrame {
-                        seed,
-                        turn,
-                        finished: false,
-                        sequence,
-                    }),
-                    (Ok(turn), Some(Ok(seed)), Some("1"), Some(Ok(sequence))) => Some(SpectatorFrame {
-                        seed,
-                        turn,
-                        finished: true,
-                        sequence,
-                    }),
+                    (Ok(turn), Some(Ok(seed)), Some("0") | None, Some(Ok(sequence))) => {
+                        Some(SpectatorFrame {
+                            seed,
+                            turn,
+                            finished: false,
+                            sequence,
+                        })
+                    }
+                    (Ok(turn), Some(Ok(seed)), Some("1"), Some(Ok(sequence))) => {
+                        Some(SpectatorFrame {
+                            seed,
+                            turn,
+                            finished: true,
+                            sequence,
+                        })
+                    }
                     _ => None, // a page that has painted nothing yet
                 };
                 sh.note_viewer_request(&viewer, painted);
@@ -3668,10 +3684,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 .map(|cursor| cursor.parse::<u64>().unwrap_or(0));
             let (mut o, frame) = {
                 let session = sh.session.lock().unwrap();
-                let frame = spectator_frame(
-                    &session.game,
-                    sh.frame_sequence.load(Ordering::Relaxed),
-                );
+                let frame =
+                    spectator_frame(&session.game, sh.frame_sequence.load(Ordering::Relaxed));
                 let mut observed = session.state();
                 observed["frame_sequence"] = json!(frame.sequence);
                 if wants_planet {
@@ -3778,8 +3792,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         // `?city=<id>` narrows to one city, the default is every city.
         ("GET", "/adjacency") => {
             let session = sh.session.lock().unwrap();
-            let only: Option<u32> = query_value(&request_target, "city")
-                .and_then(|city| city.parse().ok());
+            let only: Option<u32> =
+                query_value(&request_target, "city").and_then(|city| city.parse().ok());
             let cities: Vec<Value> = session
                 .game
                 .cities
@@ -3809,9 +3823,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("POST", "/route") => {
             let session = sh.session.lock().unwrap();
             let unit = parsed["unit"].as_u64().map(|unit| unit as u32);
-            let to = parsed["to"]
-                .as_array()
-                .and_then(|pos| Some((pos.first()?.as_i64()? as i32, pos.get(1)?.as_i64()? as i32)));
+            let to = parsed["to"].as_array().and_then(|pos| {
+                Some((pos.first()?.as_i64()? as i32, pos.get(1)?.as_i64()? as i32))
+            });
             let answer = match (unit, to) {
                 (Some(unit), Some(to)) => {
                     let owned = session
@@ -3841,7 +3855,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("POST", "/save") => {
             let name = parsed["name"].as_str().unwrap_or("").to_string();
             let Some(path) = save_path(&name) else {
-                respond_json(stream, &json!({"error": "a save name is letters, digits, - and _"}));
+                respond_json(
+                    stream,
+                    &json!({"error": "a save name is letters, digits, - and _"}),
+                );
                 return;
             };
             let session = sh.session.lock().unwrap();
@@ -3898,8 +3915,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     let mut session = sh.session.lock().unwrap();
                     let params = session.params.clone();
                     *session = Session::from_game(params, game);
-                    sh.current_seed
-                        .store(session.game.seed, Ordering::Relaxed);
+                    sh.current_seed.store(session.game.seed, Ordering::Relaxed);
                     sh.adopt_live_params(&session.params);
                     if let Some(queued) = session.take_resumed_next_game_params() {
                         *sh.next_game_params.lock().unwrap() = Some(queued);
@@ -3962,7 +3978,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let mut session = sh.session.lock().unwrap();
             if session.params.spectate {
                 drop(session);
-                respond_json(stream, &json!({"error": "a spectated game is already playing itself"}));
+                respond_json(
+                    stream,
+                    &json!({"error": "a spectated game is already playing itself"}),
+                );
                 return;
             }
             // A stale page must never hand a seat in the successor world to an
@@ -3976,7 +3995,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     .is_some_and(|instance| instance != process_identity() as u64)
             {
                 drop(session);
-                respond_json(stream, &json!({"error": "the game changed before auto-play began"}));
+                respond_json(
+                    stream,
+                    &json!({"error": "the game changed before auto-play began"}),
+                );
                 return;
             }
             let request_id = parsed["request_id"]
@@ -4006,7 +4028,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             }
             let turns = match parsed["turns"].as_str() {
                 Some("all") => u32::MAX,
-                _ => parsed["turns"].as_u64().unwrap_or(1).clamp(1, u32::MAX as u64) as u32,
+                _ => parsed["turns"]
+                    .as_u64()
+                    .unwrap_or(1)
+                    .clamp(1, u32::MAX as u64) as u32,
             };
             let played = session.autoplay(turns);
             if let Some(request_id) = request_id {
@@ -4223,8 +4248,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let mut session = sh.session.lock().unwrap();
             let result = session.start_new_game(&parsed);
             if result.is_ok() {
-                sh.current_seed
-                    .store(session.game.seed, Ordering::Relaxed);
+                sh.current_seed.store(session.game.seed, Ordering::Relaxed);
                 sh.adopt_live_params(&session.params);
                 let paused = parsed["paused"]
                     .as_bool()
@@ -4321,15 +4345,13 @@ mod tests {
     use super::{
         automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
         new_game_params, publishes_player_turn_frames, query_value, request_path, save_path,
-        seat_delay_ms, spectator_frame, spectator_step_completes_frame, strategy_roster,
-        tile_mark, viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session,
-        Shared, SpectatorFrame, EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS,
-        EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, RESULT_COUNTDOWN_MS, SAVE_DIR,
-        STATE_LONG_POLL, VIEWER_ACTIVE,
+        seat_delay_ms, spectator_frame, spectator_step_completes_frame, strategy_roster, tile_mark,
+        viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, Session, Shared,
+        SpectatorFrame, EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX,
+        MAX_EXACT_JAVASCRIPT_INTEGER, RESULT_COUNTDOWN_MS, SAVE_DIR, STATE_LONG_POLL,
+        VIEWER_ACTIVE,
     };
-    use crate::game::{
-        Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
-    };
+    use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
     use crate::server::{generated_ai_name, simulation_settings};
     use crate::setup::{
         start_era_from_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapTopology, MAP_POLES,
@@ -4360,13 +4382,19 @@ mod tests {
             }
         }
         // Minors take a quarter of a major's slice, and unlimited never waits.
-        assert_eq!(seat_delay_ms(1_000, 4, 4, false) / 4, seat_delay_ms(1_000, 4, 4, true));
+        assert_eq!(
+            seat_delay_ms(1_000, 4, 4, false) / 4,
+            seat_delay_ms(1_000, 4, 4, true)
+        );
         assert_eq!(seat_delay_ms(0, 8, 12, false), 0);
     }
 
     #[test]
     fn player_turn_frames_begin_at_blitz() {
-        assert!(!publishes_player_turn_frames(0), "Lightning stays round-by-round");
+        assert!(
+            !publishes_player_turn_frames(0),
+            "Lightning stays round-by-round"
+        );
         assert!(!publishes_player_turn_frames(999));
         for pace in [1_000, 2_000, 4_000, 10_000, 60_000] {
             assert!(
@@ -4415,7 +4443,14 @@ mod tests {
             .collect();
         assert_eq!(
             kinds,
-            ["major", "major", "major", "city-state", "city-state", "barbarian"],
+            [
+                "major",
+                "major",
+                "major",
+                "city-state",
+                "city-state",
+                "barbarian"
+            ],
             "the live roster itself must follow Civilization's phase order"
         );
 
@@ -4460,12 +4495,8 @@ mod tests {
                 }
             }
 
-            let lightning_boundary = spectator_step_completes_frame(
-                0,
-                turn_before,
-                finished_before,
-                &session.game,
-            );
+            let lightning_boundary =
+                spectator_step_completes_frame(0, turn_before, finished_before, &session.game);
             assert_eq!(
                 lightning_boundary,
                 session.game.turn != turn_before || session.game.winner.is_some(),
@@ -4475,10 +4506,15 @@ mod tests {
 
         assert_eq!(seen, expected);
         assert!(
-            frames.windows(2).all(|pair| pair[1].sequence == pair[0].sequence + 1),
+            frames
+                .windows(2)
+                .all(|pair| pair[1].sequence == pair[0].sequence + 1),
             "each completed seat must receive its own frame identity"
         );
-        assert!(movement_seen, "the opening round exercised no unit movement");
+        assert!(
+            movement_seen,
+            "the opening round exercised no unit movement"
+        );
     }
 
     /// Ten seconds, and nothing can ask for anything else.
@@ -4509,9 +4545,11 @@ mod tests {
         let unique: std::collections::BTreeSet<&str> =
             science.iter().map(|name| name.as_str()).collect();
         assert_eq!(unique.len(), science.len());
-        assert!(science.iter().all(|name| ["Quantum", "Stellar", "Orbital", "Theory"]
+        assert!(science
             .iter()
-            .any(|prefix| name.starts_with(prefix))));
+            .all(|name| ["Quantum", "Stellar", "Orbital", "Theory"]
+                .iter()
+                .any(|prefix| name.starts_with(prefix))));
         assert_ne!(
             generated_ai_name(42, 0, Some("science")),
             generated_ai_name(42, 0, Some("conquest"))
@@ -4640,11 +4678,7 @@ mod tests {
             delivery.wait_remaining(turn_7, now).is_some(),
             "delivery to a socket is not a painted frame"
         );
-        delivery.viewer_request(
-            "one",
-            Some(turn_7),
-            now + Duration::from_millis(40),
-        );
+        delivery.viewer_request("one", Some(turn_7), now + Duration::from_millis(40));
         assert_eq!(delivery.wait_remaining(turn_7, now), None);
         assert!(delivery.wait_remaining(turn_8, now).is_some());
         assert!(delivery.wait_remaining(next_world, now).is_some());
@@ -4763,7 +4797,10 @@ mod tests {
         for _ in 0..5 {
             delivery.turns_simulated_without_a_frame(1);
         }
-        assert_eq!(delivery.missed, 0, "one turn per response is one frame each");
+        assert_eq!(
+            delivery.missed, 0,
+            "one turn per response is one frame each"
+        );
         assert_eq!(delivery.autoplayed, 5);
 
         // The shape that lost them: ten turns, one state.
@@ -4805,7 +4842,10 @@ mod tests {
 
         let deadline = Instant::now() + Duration::from_secs(60);
         while http_get(port, "/status").is_none() {
-            assert!(Instant::now() < deadline, "single-player server never came up");
+            assert!(
+                Instant::now() < deadline,
+                "single-player server never came up"
+            );
             std::thread::sleep(Duration::from_millis(50));
         }
         let audit = |port| -> Value {
@@ -4834,7 +4874,11 @@ mod tests {
             let played: Value =
                 serde_json::from_str(&http_post(port, "/autoplay", &body).expect("a response"))
                     .expect("response is JSON");
-            assert_eq!(played["autoplayed"], json!(1), "request {n} played one turn");
+            assert_eq!(
+                played["autoplayed"],
+                json!(1),
+                "request {n} played one turn"
+            );
         }
         let clean = audit(port);
         assert_eq!(clean["autoplay_turns"], json!(5));
@@ -4864,7 +4908,10 @@ mod tests {
         let retry: Value =
             serde_json::from_str(&http_post(port, "/autoplay", &batch).expect("retry response"))
                 .expect("retry response is JSON");
-        assert_eq!(retry["turn"], swallowed["turn"], "the retry replayed the batch");
+        assert_eq!(
+            retry["turn"], swallowed["turn"],
+            "the retry replayed the batch"
+        );
         let after_retry = audit(port);
         assert_eq!(
             after_retry["autoplay_turns"],
@@ -5283,9 +5330,11 @@ mod tests {
             .filter(|player| player["alive"].as_bool().unwrap_or(false))
             .map(|player| player["id"].as_u64().expect("player id") as usize)
             .collect();
-        assert!(living.len() >= 5, "the exhibition roster is too small: {living:?}");
-        http_post(port, "/pace", "{\"ms\":1000,\"paused\":false}")
-            .expect("run at Blitz");
+        assert!(
+            living.len() >= 5,
+            "the exhibition roster is too small: {living:?}"
+        );
+        http_post(port, "/pace", "{\"ms\":1000,\"paused\":false}").expect("run at Blitz");
 
         let mut movement_seen = false;
         for _ in 0..living.len() * 2 {
@@ -5298,10 +5347,7 @@ mod tests {
                 .filter_map(|unit| {
                     Some((
                         unit["id"].as_u64()?,
-                        (
-                            unit["owner"].as_u64()? as usize,
-                            unit["pos"].clone(),
-                        ),
+                        (unit["owner"].as_u64()? as usize, unit["pos"].clone()),
                     ))
                 })
                 .collect::<std::collections::BTreeMap<_, _>>();
@@ -5315,7 +5361,10 @@ mod tests {
                 json!(sequence + 1),
                 "one Blitz seat must produce exactly one new frame"
             );
-            let at = living.iter().position(|pid| *pid == acting).expect("living seat");
+            let at = living
+                .iter()
+                .position(|pid| *pid == acting)
+                .expect("living seat");
             let expected_next = living[(at + 1) % living.len()];
             assert_eq!(
                 next["current"],
@@ -5323,7 +5372,9 @@ mod tests {
                 "the frame after player {acting} skipped or reordered a seat"
             );
             for unit in next["units"].as_array().expect("units") {
-                let Some(id) = unit["id"].as_u64() else { continue };
+                let Some(id) = unit["id"].as_u64() else {
+                    continue;
+                };
                 if positions
                     .get(&id)
                     .is_some_and(|(_, before)| *before != unit["pos"])
@@ -5401,8 +5452,7 @@ mod tests {
                 assert!(site["yields"].is_object());
                 let mut ledger = 0.0;
                 for source in site["sources"].as_array().expect("ledger") {
-                    for yield_key in ["food", "production", "gold", "science", "culture", "faith"]
-                    {
+                    for yield_key in ["food", "production", "gold", "science", "culture", "faith"] {
                         ledger += source["yields"][yield_key].as_f64().unwrap_or(0.0);
                     }
                 }
@@ -5563,10 +5613,7 @@ mod tests {
             played_on["decided"]["victory_type"],
             decided["victory_type"]
         );
-        assert_eq!(
-            played_on["decided"]["mode"],
-            json!("until_next_victory")
-        );
+        assert_eq!(played_on["decided"]["mode"], json!("until_next_victory"));
         assert!(played_on["restart_in"].is_null());
         assert!(played_on["restart_in_ms"].is_null());
         assert!(played_on["turn_limit"].is_null(), "there is no new cap");
@@ -5677,8 +5724,8 @@ mod tests {
         changed(&|t| t["river_edges"][2] = json!(true));
         changed(&|t| t["disaster_yields"]["food"] = json!(2.0));
         changed(&|t| t["owner"] = json!(0)); // a field appearing at all
-        // The kinds that would otherwise all hash as "empty", and the numbers
-        // that would otherwise hash as each other.
+                                             // The kinds that would otherwise all hash as "empty", and the numbers
+                                             // that would otherwise hash as each other.
         changed(&|t| t["resource"] = json!(false));
         changed(&|t| t["resource"] = json!(0));
         changed(&|t| t["resource"] = json!(""));
@@ -5723,7 +5770,10 @@ mod tests {
             waited >= STATE_LONG_POLL - Duration::from_millis(50),
             "answered a page that had nothing to be told, after {waited:?}"
         );
-        assert!(waited < STATE_LONG_POLL * 4, "held far past the cap: {waited:?}");
+        assert!(
+            waited < STATE_LONG_POLL * 4,
+            "held far past the cap: {waited:?}"
+        );
 
         // A reader that names no baseline is never made to wait for one.
         let began = Instant::now();
@@ -5741,7 +5791,10 @@ mod tests {
             next["turn"].as_u64().expect("a turn") as u32 > turn,
             "the wait ended on the same turn it started on"
         );
-        assert!(woken < STATE_LONG_POLL, "timed out rather than woken: {woken:?}");
+        assert!(
+            woken < STATE_LONG_POLL,
+            "timed out rather than woken: {woken:?}"
+        );
     }
 
     /// The map is 1.2 MB of a 1.4 MB state and hardly any of it differs from
@@ -5957,8 +6010,9 @@ mod tests {
         // A seat somebody is playing is named after the player this game
         // registered for them, and it is preferred over any agent handle: a
         // person is never one of the entrants on the leaderboard.
-        assert!(player_hud
-            .contains("p.player_username || p.ai_username || p.ai_name || \"AI player\""));
+        assert!(
+            player_hud.contains("p.player_username || p.ai_username || p.ai_name || \"AI player\"")
+        );
         // Civilization has absorbed the old Empire action. Watch as remains a
         // distinct, wider perspective control with breathing room before the
         // player identity it changes.
@@ -5971,8 +6025,11 @@ mod tests {
         // are inset by the same single pixel. Four pixels of difference read as
         // a head overhanging its own column.
         assert!(EMBEDDED_INDEX.contains("width: calc(100% - 2px); height: 22px; margin: 0 1px;"));
-        assert_eq!(EMBEDDED_INDEX.matches("width: calc(100% - 2px);").count(), 2,
-            "the two controls in the Watch-as column are the same width at every screen size");
+        assert_eq!(
+            EMBEDDED_INDEX.matches("width: calc(100% - 2px);").count(),
+            2,
+            "the two controls in the Watch-as column are the same width at every screen size"
+        );
         // And a player with nothing behind them still wears a rating: the
         // 1500 every player starts from, marked provisional rather than
         // replaced by a dash that would read as "cannot be rated".
@@ -6002,10 +6059,8 @@ mod tests {
         // sequence distinguishes several player-turn frames inside one turn,
         // both for the simulation gate and for the missed-frame audit.
         assert!(EMBEDDED_INDEX.contains("paintedFrame = {seed:st.seed, turn:st.turn,"));
-        assert!(EMBEDDED_INDEX
-            .contains("finished:st.winner !== null && st.winner !== undefined"));
-        assert!(EMBEDDED_INDEX
-            .contains("&frame=${paintedFrame.sequence}"));
+        assert!(EMBEDDED_INDEX.contains("finished:st.winner !== null && st.winner !== undefined"));
+        assert!(EMBEDDED_INDEX.contains("&frame=${paintedFrame.sequence}"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/state\" + paintedQuery())"));
         // Two tabs are two promises, so a page says which one it is, and what
         // it holds is asked separately from what it drew — a state can arrive,
@@ -6071,13 +6126,14 @@ mod tests {
         // civvis-refresh.sh navigates a tab whose `instance=` disagrees — from
         // AppleScript, where no handoff can be staged. So an adoption says
         // where it went, without loading anything to say it.
-        assert!(EMBEDDED_INDEX.contains("history.replaceState(history.state, \"\", here.toString());"));
+        assert!(
+            EMBEDDED_INDEX.contains("history.replaceState(history.state, \"\", here.toString());")
+        );
         // The document's build is the one behind its *first* frame. Comparing
         // against the previous server instead would let a run of same-code
         // successors walk this page onto code it is not running.
-        assert!(EMBEDDED_INDEX.contains(
-            "if (documentCommit === null && typeof st.server_commit === \"string\" &&"
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("if (documentCommit === null && typeof st.server_commit === \"string\" &&"));
 
         // What an adoption forgets is exactly what belonged to the world being
         // left. A tile delta is keyed to its map, so `have=` must never name a
@@ -6171,13 +6227,15 @@ mod tests {
         // Free City keeps developing the cities it inherited and so keeps
         // making production decisions; without this it appeared under "All
         // civilizations" with no way to select it.
-        assert!(EMBEDDED_INDEX.contains("for (const thought of reasoningLog.thoughts) listed.add(thought.player);"));
+        assert!(EMBEDDED_INDEX
+            .contains("for (const thought of reasoningLog.thoughts) listed.add(thought.player);"));
         assert!(EMBEDDED_INDEX.contains("function logSeatNote(id)"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All topics</option>"));
         // Depth is a floor, not an equality — a decision read without the plan
         // it serves explains nothing — and the three rungs are the ones the
         // engine records at.
-        assert!(EMBEDDED_INDEX.contains("const REASON_LEVEL_RANK = {strategy: 0, decision: 1, detail: 2};"));
+        assert!(EMBEDDED_INDEX
+            .contains("const REASON_LEVEL_RANK = {strategy: 0, decision: 1, detail: 2};"));
         for level in ["strategy", "decision", "detail"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("<option value=\"{level}\"")),
@@ -6187,8 +6245,11 @@ mod tests {
         // Every topic the engine can record is offered, under the same name.
         for topic in crate::reasoning::Topic::ALL {
             assert!(
-                EMBEDDED_INDEX
-                    .contains(&format!("[\"{}\", \"{}\"]", topic.as_str(), topic.label())),
+                EMBEDDED_INDEX.contains(&format!(
+                    "[\"{}\", \"{}\"]",
+                    topic.as_str(),
+                    topic.label()
+                )),
                 "the topic filter is missing {}",
                 topic.as_str()
             );
@@ -6204,8 +6265,7 @@ mod tests {
         // defeated by having watched first, and the log under the Active
         // strategy panel names every civilization while the panel names one.
         assert!(EMBEDDED_INDEX.contains("const viewer = st.view_player ?? null;"));
-        assert!(EMBEDDED_INDEX
-            .contains("if (newWorld || reasoningLog.viewer !== viewer) {"));
+        assert!(EMBEDDED_INDEX.contains("if (newWorld || reasoningLog.viewer !== viewer) {"));
         // A log that is not the whole story says so.
         assert!(EMBEDDED_INDEX.contains("Earlier reasoning has been discarded"));
         // The three logs share the sidebar's spare height. Each floor is
@@ -6249,7 +6309,8 @@ mod tests {
         // All three logs name a seat with one vocabulary and correct a
         // selection that has left the list the same way, so a filter can never
         // strand a reader on an empty panel with no way back out of it.
-        assert!(EMBEDDED_INDEX.contains("function syncCivFilterOptions(select, seats, allLabel, chosen)"));
+        assert!(EMBEDDED_INDEX
+            .contains("function syncCivFilterOptions(select, seats, allLabel, chosen)"));
         assert!(EMBEDDED_INDEX
             .contains("const kept = chosen !== \"all\" && !seats.includes(Number(chosen)) ? \"all\" : chosen;"));
         assert!(EMBEDDED_INDEX.contains("function syncWarOptions(wars)"));
@@ -6258,7 +6319,8 @@ mod tests {
         // city-states dragged in by a Suzerain included — not on the two
         // civilizations in the declaration.
         assert!(EMBEDDED_INDEX.contains("function warBelligerents(war)"));
-        assert!(EMBEDDED_INDEX.contains("for (const party of (war.parties || [])) seats.add(party.player);"));
+        assert!(EMBEDDED_INDEX
+            .contains("for (const party of (war.parties || [])) seats.add(party.player);"));
         // The war log's own filtering happens in the hook the panel already
         // reads through, so the chronicle's order is still never rewritten.
         let war_filter = EMBEDDED_INDEX
@@ -6303,9 +6365,9 @@ mod tests {
         // the log is written. Matching on the text would make "Rome" in
         // "Rome captured Antium from Egypt" hide the entry from Egypt.
         assert!(EMBEDDED_INDEX.contains("function eventSubjects(event)"));
-        assert!(EMBEDDED_INDEX.contains(
-            "!eventSubjects(event).includes(Number(eventFilters.player))"
-        ));
+        assert!(
+            EMBEDDED_INDEX.contains("!eventSubjects(event).includes(Number(eventFilters.player))")
+        );
         assert!(EMBEDDED_INDEX.contains("\"War\", [event.player, event.former]"));
         assert!(EMBEDDED_INDEX.contains("\"War\", [event.aggressor, event.defender]"));
         // An engine entry is attributed by the id the engine sends, not by
@@ -6315,14 +6377,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("event.category, [event.player ?? eventViewPlayer(next)]"));
         // A choice is answered on the frame it is made on, and survives the
         // tab being closed.
-        assert!(EMBEDDED_INDEX
-            .contains("function applyLogFilter(filters, storageKey, field, value, listId, redraw)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function applyLogFilter(filters, storageKey, field, value, listId, redraw)"
+        ));
         for key in [
             "civvis-reasoning-filters-v1",
             "civvis-war-filters-v1",
             "civvis-event-filters-v1",
         ] {
-            assert!(EMBEDDED_INDEX.contains(key), "no stored preference for {key}");
+            assert!(
+                EMBEDDED_INDEX.contains(key),
+                "no stored preference for {key}"
+            );
         }
         // A narrowed panel says so rather than reading as a quiet world: "At
         // peace" under a filter would be a claim about the world made by a
@@ -6439,7 +6505,10 @@ mod tests {
             .iter()
             .filter_map(|thought| thought["id"].as_u64())
             .collect();
-        assert!(ids.windows(2).all(|pair| pair[0] < pair[1]), "ids are not ordered");
+        assert!(
+            ids.windows(2).all(|pair| pair[0] < pair[1]),
+            "ids are not ordered"
+        );
         // The plan itself has to be in there — it is what every other line is
         // an instance of.
         assert!(
@@ -6474,7 +6543,9 @@ mod tests {
         let fresh = next["thoughts"].as_array().unwrap();
         assert!(!fresh.is_empty());
         assert!(
-            fresh.iter().all(|thought| thought["id"].as_u64().unwrap() > cursor),
+            fresh
+                .iter()
+                .all(|thought| thought["id"].as_u64().unwrap() > cursor),
             "a cursor was answered with thoughts it already held"
         );
         // A cursor from a world this log is not — a tab that outlived the
@@ -6630,7 +6701,10 @@ mod tests {
             "n\u{0000}ull",
             &"x".repeat(65),
         ] {
-            assert!(save_path(bad).is_none(), "{bad:?} should not be a save name");
+            assert!(
+                save_path(bad).is_none(),
+                "{bad:?} should not be a save name"
+            );
         }
     }
 
@@ -6960,9 +7034,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));\n  syncMapSearchStatus();"
         ));
-        assert!(EMBEDDED_INDEX.contains(
-            "const message = `${count} visible ${count === 1 ? \"tile\" : \"tiles\"}`;"
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("const message = `${count} visible ${count === 1 ? \"tile\" : \"tiles\"}`;"));
     }
 
     /// Every lobby setting is answered before a game starts: each select
@@ -6996,10 +7069,15 @@ mod tests {
                 "the {setting} setting still offers a non-answer"
             );
         }
-        for victory in ["science", "culture", "religious", "diplomatic", "domination", "score"] {
-            assert!(EMBEDDED_INDEX.contains(&format!(
-                "id=\"victory-{victory}\" checked>"
-            )));
+        for victory in [
+            "science",
+            "culture",
+            "religious",
+            "diplomatic",
+            "domination",
+            "score",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(&format!("id=\"victory-{victory}\" checked>")));
         }
         // The lobby reads its own controls once, with no resolving pass and no
         // remembered marks between the panel and the payload.
@@ -7067,7 +7145,10 @@ mod tests {
             ..crate::game::GameOptions::new(2, width, height, 6_031, 30, 2)
         });
         let plain = crate::obs::observation_spectator(&game, 0);
-        assert!(plain["map"]["planet"].is_null(), "the poll never carries geometry");
+        assert!(
+            plain["map"]["planet"].is_null(),
+            "the poll never carries geometry"
+        );
         assert_eq!(plain["map"]["shape"], "planet");
 
         let geometry = crate::obs::planet_geometry(&game).expect("a globe has geometry");
@@ -7083,7 +7164,10 @@ mod tests {
         let mut pentagons = 0;
         for cell in cells {
             let entry = cell.as_array().unwrap();
-            let pos = (entry[0].as_i64().unwrap() as i32, entry[1].as_i64().unwrap() as i32);
+            let pos = (
+                entry[0].as_i64().unwrap() as i32,
+                entry[1].as_i64().unwrap() as i32,
+            );
             assert!(game.map.tiles.contains_key(&pos));
             match entry.len() - 2 {
                 5 => pentagons += 1,
@@ -7125,10 +7209,17 @@ mod tests {
         );
         // A stock size keeps its own globe.
         let stock = new_game_params(
-            &Params { width: size.width, height: size.height, ..current.clone() },
+            &Params {
+                width: size.width,
+                height: size.height,
+                ..current.clone()
+            },
             &json!({"map_topology": "planet"}),
         );
-        assert_eq!((stock.width, stock.height), (size.globe_width(), size.globe_height()));
+        assert_eq!(
+            (stock.width, stock.height),
+            (size.globe_width(), size.globe_height())
+        );
         assert_eq!(
             crate::setup::MapSize::from_dimensions(stock.width, stock.height).map(|found| found.id),
             Some(size.id),
@@ -7168,9 +7259,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("--type-body: 14px;"));
         assert!(EMBEDDED_INDEX.contains("font: var(--type-body)/1.5 var(--font-ui);"));
         assert!(EMBEDDED_INDEX.contains("text-size-adjust: 100%"));
-        assert!(EMBEDDED_INDEX.contains(
-            "9px system-ui, -apple-system, BlinkMacSystemFont, sans-serif"
-        ));
+        assert!(
+            EMBEDDED_INDEX.contains("9px system-ui, -apple-system, BlinkMacSystemFont, sans-serif")
+        );
         for illegible in [
             "font-size: 5.5px",
             "font-size: 6px",
@@ -7289,15 +7380,21 @@ mod tests {
         // lean a flat map has always had and which the globe recovered three per
         // cent of before this. The ceiling comes from the world being flown to,
         // not from whichever marble happens to be nearest the frame's middle.
-        assert!(EMBEDDED_INDEX.contains("function skyPointerWorld(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function skyPointerWorld(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN)"
+        ));
         assert!(EMBEDDED_INDEX.contains("function skyWorldGrab(drawn)"));
-        assert!(EMBEDDED_INDEX.contains("function skyZoomAim(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN)"));
-        assert!(EMBEDDED_INDEX.contains("function skySurfacePoint(body, sx, sy, radius, pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX
+            .contains("function skyZoomAim(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN)"));
+        assert!(EMBEDDED_INDEX
+            .contains("function skySurfacePoint(body, sx, sy, radius, pan = SKY_PAN)"));
         assert!(EMBEDDED_INDEX.contains("function skyLean(lean, ease)"));
         assert!(EMBEDDED_INDEX.contains(
             "applyPlanetBasis(planetSpin(basis, axis.map(value => value / length), -owed * ease));",
         ));
-        assert!(EMBEDDED_INDEX.contains("if (!body || !lean.point || body.id !== \"earth\") return 0;"));
+        assert!(
+            EMBEDDED_INDEX.contains("if (!body || !lean.point || body.id !== \"earth\") return 0;")
+        );
         assert!(EMBEDDED_INDEX
             .contains("function planetMaxScale(pan = SKY_PAN, body = skyNearestWorld(pan))"));
         assert!(EMBEDDED_INDEX.contains("const ceiling = planetMaxScale(basePan, subject);"));
@@ -7320,11 +7417,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function skyZoomStep(f)"));
         assert!(EMBEDDED_INDEX
             .contains("const pace = skyZoomLadder() / (SKY_ZOOM_SWEEPS * FLAT_ZOOM_LADDER);"));
-        assert!(EMBEDDED_INDEX.contains("zoomAt(skyZoomStep(factor), ev.clientX - r.left, ev.clientY - r.top);"));
+        assert!(EMBEDDED_INDEX
+            .contains("zoomAt(skyZoomStep(factor), ev.clientX - r.left, ev.clientY - r.top);"));
         assert!(EMBEDDED_INDEX.contains("zoomAt(skyZoomStep(1.35))"));
         assert!(EMBEDDED_INDEX.contains("zoomAt(skyZoomStep(1 / 1.35))"));
-        assert!(EMBEDDED_INDEX
-            .contains("const want = touchGesture.scale * Math.pow(spread, touchGesture.pace || 1);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const want = touchGesture.scale * Math.pow(spread, touchGesture.pace || 1);"
+        ));
         // And the divisor under it has to sit below every scale that can really
         // be standing there. At `1e-4` it sat above most of the sky, so past
         // Jupiter a pinch opening the fingers slammed the camera to the far
@@ -7344,15 +7443,15 @@ mod tests {
         // stages wide there. How slow an arrival is nobody chooses: the gearing
         // is handed back until one notch is the notch the flat board has.
         assert!(EMBEDDED_INDEX.contains("function skyArrival(body, radius, pan)"));
-        assert!(EMBEDDED_INDEX.contains(
-            "  return size * Math.max(0, 1 - away / (span * .6 + drawn));",
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("  return size * Math.max(0, 1 - away / (span * .6 + drawn));",));
         assert!(EMBEDDED_INDEX
             .contains("return pace / (1 + (pace - 1) * Math.max(0, Math.min(1, arrival)));"));
         // Home is one of the arrivals, so standing on the board the gearing is
         // fully off and a zoom over the map is the zoom it has always been.
         // Every notch this lengthens is a notch out in the dark.
-        assert!(EMBEDDED_INDEX.contains("const SKY_ARRIVALS = [\"earth\", \"moon\", \"mars\", \"exo\"];"));
+        assert!(EMBEDDED_INDEX
+            .contains("const SKY_ARRIVALS = [\"earth\", \"moon\", \"mars\", \"exo\"];"));
         // And the destination's own star with them, because out there the stop
         // belongs to the star: LHS 1140 is twelve times its own planet and sits
         // at the same catalogue point, so `planetMaxScale` answers with the
@@ -7360,8 +7459,9 @@ mod tests {
         // Keyed to the planet alone the arrival never got past 0.46.
         assert!(EMBEDDED_INDEX.contains("const star = skyTarget(st)?.star;"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\">Planet</option>"));
-        assert!(EMBEDDED_INDEX
-            .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
+        assert!(
+            EMBEDDED_INDEX.contains("<option value=\"true_start_earth\">True Start Earth</option>")
+        );
         // The world's shape and its poles are settings of their own, and the
         // renderer picks its projection from the shape the world reports
         // rather than from the world type it was filled with.
@@ -7392,15 +7492,20 @@ mod tests {
         // engine exists for, then the human seat, then the one that is still
         // "later". Single player is no longer "later" and is the only mode
         // that offers a leader and a difficulty.
-        assert!(
-            EMBEDDED_INDEX.contains("<option value=\"ai_sim\" selected>AI-only simulation</option>")
-        );
+        assert!(EMBEDDED_INDEX
+            .contains("<option value=\"ai_sim\" selected>AI-only simulation</option>"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"single\">Single player</option>"));
         assert!(!EMBEDDED_INDEX.contains("Single player · later"));
         assert!(EMBEDDED_INDEX.contains("Multiplayer · later"));
-        let ai_sim_mode = EMBEDDED_INDEX.find("AI-only simulation").expect("ai sim mode");
-        let single_mode = EMBEDDED_INDEX.find(">Single player<").expect("single player mode");
-        let multiplayer_mode = EMBEDDED_INDEX.find("Multiplayer · later").expect("multiplayer mode");
+        let ai_sim_mode = EMBEDDED_INDEX
+            .find("AI-only simulation")
+            .expect("ai sim mode");
+        let single_mode = EMBEDDED_INDEX
+            .find(">Single player<")
+            .expect("single player mode");
+        let multiplayer_mode = EMBEDDED_INDEX
+            .find("Multiplayer · later")
+            .expect("multiplayer mode");
         assert!(ai_sim_mode < single_mode && single_mode < multiplayer_mode);
         // A world already on screen sets the mode select, so the panel beside a
         // human game never offers to replace it with a simulation by default.
@@ -7433,9 +7538,8 @@ mod tests {
         // Losing the socket is what a process handoff *is*, so the veil does
         // not call the ordinary case a reconnection.
         assert!(EMBEDDED_INDEX.contains("const HANDOFF_QUIET_MS = 2500;"));
-        assert!(EMBEDDED_INDEX.contains(
-            "setWorldTransitionStage(Date.now() - watchStartedAt < HANDOFF_QUIET_MS"
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("setWorldTransitionStage(Date.now() - watchStartedAt < HANDOFF_QUIET_MS"));
         assert!(EMBEDDED_INDEX.contains("await settingsStageChain.catch(() => {})"));
         // A result timer belongs to one exact world. Background-tab timer
         // throttling can let it wake after the supervisor has already put a
@@ -7443,18 +7547,15 @@ mod tests {
         // request carry that original process/seed identity.
         assert!(EMBEDDED_INDEX.contains("let finaleCountdownWorld = null;"));
         assert!(EMBEDDED_INDEX.contains("if (finaleCountdownTimer === null) return;"));
-        assert!(EMBEDDED_INDEX.contains(
-            "state.server_instance !== finaleCountdownWorld.serverInstance"
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("state.server_instance !== finaleCountdownWorld.serverInstance"));
         assert!(EMBEDDED_INDEX.contains("state.seed !== finaleCountdownWorld.seed"));
         assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"finale_countdown\")"));
         assert!(EMBEDDED_INDEX.contains("const finishedInstance = handoff.finishedInstance;"));
         assert!(EMBEDDED_INDEX.contains("const finishedSeed = handoff.finishedSeed;"));
         assert!(EMBEDDED_INDEX.contains("replace_world: {"));
         assert!(EMBEDDED_INDEX.contains("restart_source: restartSource"));
-        assert!(EMBEDDED_INDEX.contains(
-            "server_instance: finishedInstance, seed: finishedSeed"
-        ));
+        assert!(EMBEDDED_INDEX.contains("server_instance: finishedInstance, seed: finishedSeed"));
         assert!(EMBEDDED_INDEX.contains("specFetching || specPending || worldTransitionPending()"));
         assert!(EMBEDDED_INDEX.contains("specFetchAbort?.abort()"));
         assert!(EMBEDDED_INDEX.contains("worldTransitionHandoff.supervised"));
@@ -7471,9 +7572,7 @@ mod tests {
         assert!(
             EMBEDDED_INDEX.contains("waitForSupervisedSuccessor(finishedInstance, finishedSeed)")
         );
-        assert!(EMBEDDED_INDEX.contains(
-            "waitForSupervisedSuccessor(st.server_instance, st.seed)"
-        ));
+        assert!(EMBEDDED_INDEX.contains("waitForSupervisedSuccessor(st.server_instance, st.seed)"));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/runtime\", {cache: \"no-store\"}, 500)"));
         assert!(EMBEDDED_INDEX.contains("render(adoptTiles(first), true, true);"));
         assert!(EMBEDDED_INDEX.contains("st.seed !== state.seed"));
@@ -7666,7 +7765,9 @@ mod tests {
             .split_once("<div id=\"map-lenses\"")
             .expect("map lens bar")
             .1;
-        let strip = lens_bar.find("<div id=\"map-lens-strip\"").expect("lens scroller");
+        let strip = lens_bar
+            .find("<div id=\"map-lens-strip\"")
+            .expect("lens scroller");
         let strip_end = lens_bar.find("</div>").expect("end of lens scroller");
         let close = lens_bar
             .find("data-overlay-close=\"lenses\"")
@@ -7676,8 +7777,9 @@ mod tests {
             "the lens bar's close control belongs outside the strip that scrolls"
         );
         assert!(EMBEDDED_INDEX.contains("#map-lens-strip::-webkit-scrollbar { display: none; }"));
-        assert!(EMBEDDED_INDEX
-            .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"
+        ));
         // One instrument, one name. The switch, the title bar it is dragged by
         // and the label that follows it across the map all say "World minimap",
         // so nothing in the interface reads as a second, separate world map —
@@ -7709,7 +7811,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function lockedSeats()"));
         assert!(EMBEDDED_INDEX.contains("function syncPlayerLockPins()"));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"lock\""));
-        assert!(EMBEDDED_INDEX.contains("if (target.dataset.hudAction === \"lock\") toggleSeatLock(id);"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (target.dataset.hudAction === \"lock\") toggleSeatLock(id);"));
         // Nothing but the viewer's own clicking may write the lock set. A
         // default synthesized from whichever civilization was being watched
         // moved the mark from row to row on its own, and the first real click
@@ -7729,11 +7832,11 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(38vh, 280px);"));
         assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
         assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(154, 50 + rows * 28);"));
+        assert!(
+            EMBEDDED_INDEX.contains("const requestedWidth = 854 + Math.max(0, rows - 1) * 100;")
+        );
         assert!(EMBEDDED_INDEX
-            .contains("const requestedWidth = 854 + Math.max(0, rows - 1) * 100;"));
-        assert!(EMBEDDED_INDEX.contains(
-            "mapArea.style.setProperty(\"--player-hud-width\", `${requestedWidth}px`);"
-        ));
+            .contains("mapArea.style.setProperty(\"--player-hud-width\", `${requestedWidth}px`);"));
         assert!(EMBEDDED_INDEX.contains(
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
         ));
@@ -7807,47 +7910,72 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "--hud-ident-min: 30px; --hud-ident-num-min: 60px; --hud-ident-odds-min: 76px;"
         ));
-        assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(), 1,
+        assert_eq!(
+            EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(),
+            1,
             "the Elo floor is declared once and holds at every width: a full \
-             score needs the same room on a laptop as on a wall");
+             score needs the same room on a laptop as on a wall"
+        );
         assert!(EMBEDDED_INDEX.contains("const HUD_ELO_MIN_FLOOR = 60;"));
         assert!(EMBEDDED_INDEX.contains("function syncPlayerHudEloFloor()"));
-        assert!(EMBEDDED_INDEX.contains(
-            "hud.style.setProperty(\"--hud-ident-num-min\", floor);"
-        ), "a rating longer than the signed five-digit floor raises its shared track");
-        assert_eq!(EMBEDDED_INDEX.matches("--hud-ident-odds-min:").count(), 1,
-            "and so does the two-category odds cell's own floor");
-        assert!(EMBEDDED_INDEX.contains(
-            "grid-template-columns: minmax(0, 1fr) 11px minmax(0, 1fr);"
-        ), "Start and Now flank one fixed-width trend column");
-        assert!(EMBEDDED_INDEX.contains(
-            "<span title=\"Win odds at the start of the game, per cent\">START</span>"
-        ));
+        assert!(
+            EMBEDDED_INDEX.contains("hud.style.setProperty(\"--hud-ident-num-min\", floor);"),
+            "a rating longer than the signed five-digit floor raises its shared track"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX.matches("--hud-ident-odds-min:").count(),
+            1,
+            "and so does the two-category odds cell's own floor"
+        );
+        assert!(
+            EMBEDDED_INDEX.contains("grid-template-columns: minmax(0, 1fr) 11px minmax(0, 1fr);"),
+            "Start and Now flank one fixed-width trend column"
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("<span title=\"Win odds at the start of the game, per cent\">START</span>"));
         assert!(EMBEDDED_INDEX.contains(
             "<span class=\"odds-trend-head\" title=\"Trend from start to now\">Δ</span>"
         ));
-        assert!(EMBEDDED_INDEX.contains(
-            "<span title=\"Win odds now, per cent\">NOW</span>"
-        ));
-        assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
-            "the identity track is written once and then only from the column model");
-        assert_eq!(EMBEDDED_INDEX.matches("--hud-stats-column:").count(), 1,
-            "the value track is written once and then only from the column model");
+        assert!(EMBEDDED_INDEX.contains("<span title=\"Win odds now, per cent\">NOW</span>"));
+        assert_eq!(
+            EMBEDDED_INDEX.matches("--hud-identity-column:").count(),
+            1,
+            "the identity track is written once and then only from the column model"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX.matches("--hud-stats-column:").count(),
+            1,
+            "the value track is written once and then only from the column model"
+        );
         // A gutter between adjacent figures, and no per-value hairline.
         assert!(EMBEDDED_INDEX.contains("column-gap: var(--hud-stat-gap, 0px);"));
         // Heading and rows read the same two track lists, which is the only
         // reason a dragged column moves the figures under it as well as its
         // own head.
-        assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-stat-tracks);").count(), 2,
-            "the value heads and the value cells are the same twelve tracks");
-        assert!(EMBEDDED_INDEX.contains(
-            "--hud-stat-tracks: repeat(12, minmax(var(--hud-stat-min), 1fr));"
-        ), "the initial style has the same twelve stat tracks before JavaScript synchronizes them");
-        assert!(EMBEDDED_INDEX.contains(
-            "calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);"
-        ), "the static stat-track floor covers every stat and its gutters");
-        assert_eq!(EMBEDDED_INDEX.matches("grid-template-columns: var(--hud-identity-tracks);").count(), 2,
-            "the identity heads and the identity cells are the same tracks");
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("grid-template-columns: var(--hud-stat-tracks);")
+                .count(),
+            2,
+            "the value heads and the value cells are the same twelve tracks"
+        );
+        assert!(
+            EMBEDDED_INDEX
+                .contains("--hud-stat-tracks: repeat(12, minmax(var(--hud-stat-min), 1fr));"),
+            "the initial style has the same twelve stat tracks before JavaScript synchronizes them"
+        );
+        assert!(
+            EMBEDDED_INDEX
+                .contains("calc(var(--hud-stat-min) * 12 + var(--hud-stat-gap) * 11), 12fr);"),
+            "the static stat-track floor covers every stat and its gutters"
+        );
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("grid-template-columns: var(--hud-identity-tracks);")
+                .count(),
+            2,
+            "the identity heads and the identity cells are the same tracks"
+        );
         // All three render-time lists must stay in one reading order: the
         // column model lays out and drags the cells, the heading names them,
         // and playerHudStats supplies their figures. Total population comes
@@ -7855,8 +7983,18 @@ mod tests {
         // yield payload rather than a separate request.
         fn assert_hud_stat_order(source: &str, section: &str) {
             let expected = [
-                "cities", "population", "food", "production", "science", "culture", "faith", "gold",
-                "military", "wonders", "suzerain", "score",
+                "cities",
+                "population",
+                "food",
+                "production",
+                "science",
+                "culture",
+                "faith",
+                "gold",
+                "military",
+                "wonders",
+                "suzerain",
+                "score",
             ];
             let mut cursor = 0;
             for key in expected {
@@ -7903,25 +8041,33 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "#playerhud .diplomacy-identity-secondary {\n    grid-template-columns: subgrid;\n  }"
         ), "the five identity columns inside one button are the parent's own tracks");
-        assert!(!EMBEDDED_INDEX.contains("minmax(0, .55fr) minmax(0, .55fr)"),
-            "a second copy of the identity ratios is exactly what subgrid replaced");
+        assert!(
+            !EMBEDDED_INDEX.contains("minmax(0, .55fr) minmax(0, .55fr)"),
+            "a second copy of the identity ratios is exactly what subgrid replaced"
+        );
         // The rows carry a 1px border that says at war or defeated, and
         // both boxes are border-box — so the heading carries a transparent one
         // or it divides two more pixels than a row does and every head sits off
         // its own figures by up to a pixel, in opposite directions at the two
         // ends of the table.
-        assert!(EMBEDDED_INDEX.contains(
-            "align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;\n    \
+        assert!(
+            EMBEDDED_INDEX.contains(
+                "align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;\n    \
              border: 1px solid transparent;"
-        ), "the heading has the row's border box, or the columns skew across the table");
+            ),
+            "the heading has the row's border box, or the columns skew across the table"
+        );
         // For the same reason the heading gives up its inline padding wherever
         // a row does. A breakpoint that moves one without the other reopens
         // the skew it was moved to close.
         assert!(EMBEDDED_INDEX.contains(
             "#playerhud .diplomacy-card, #playerhud .ribbon-stat-heading { padding-inline: 2px; }"
         ), "the heading is a row of the same table and gives up the same pixels");
-        assert_eq!(EMBEDDED_INDEX.matches("padding: 1px 4px 1px 3px;").count(), 1,
-            "the row's inline padding is written once, and the heading matches it");
+        assert_eq!(
+            EMBEDDED_INDEX.matches("padding: 1px 4px 1px 3px;").count(),
+            1,
+            "the row's inline padding is written once, and the heading matches it"
+        );
         // `clip`, not `ellipsis`: the fitter compares integral scrollWidth with
         // integral clientWidth while the browser applies text-overflow on any
         // sub-pixel overflow, so ellipsis spends a character on a head that
@@ -7932,17 +8078,23 @@ mod tests {
 
         // One bar per seam between two adjacent data columns, dragged to move
         // width from the column on its left into the column on its right.
-        assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
-        assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
+        assert!(
+            EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";")
+        );
+        assert!(EMBEDDED_INDEX
+            .contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
         assert!(EMBEDDED_INDEX.contains("function aimPlayerHudSeam(seam, targetWidth)"));
-        assert!(EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam="));
+        assert!(
+            EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam=")
+        );
         assert!(EMBEDDED_INDEX.contains("role=\"separator\" aria-orientation=\"vertical\""));
         // The bar takes the pointer; the layer over the heads does not, or the
         // heads lose their tooltips and the All button loses its click.
         assert!(EMBEDDED_INDEX.contains(
             ".hud-col-grips { position: absolute; inset: 0; z-index: 2; pointer-events: none; }"
         ));
-        assert!(EMBEDDED_INDEX.contains("cursor: col-resize; pointer-events: auto; touch-action: none;"));
+        assert!(EMBEDDED_INDEX
+            .contains("cursor: col-resize; pointer-events: auto; touch-action: none;"));
         // A repaint mid-gesture would take the bar out from under the pointer
         // along with its pointer capture.
         assert!(EMBEDDED_INDEX.contains(
@@ -7951,7 +8103,9 @@ mod tests {
         // The bars are placed from the rendered heading, so they cannot drift
         // from the columns they name.
         assert!(EMBEDDED_INDEX.contains("function syncPlayerHudColumnGrips()"));
-        assert!(EMBEDDED_INDEX.contains("grip.style.left = `${Math.round(left.right - origin)}px`;"));
+        assert!(
+            EMBEDDED_INDEX.contains("grip.style.left = `${Math.round(left.right - origin)}px`;")
+        );
         // The fitter has to measure the cell: the figure is centered content in
         // its own grid, so its clientWidth and scrollWidth are always equal and
         // it can never report the overflow that would shrink it.
@@ -7974,9 +8128,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("overlay-return-flash .24s ease-in-out 3"));
         assert!(EMBEDDED_INDEX.contains("restore in Display settings"));
         assert_eq!(
-            EMBEDDED_INDEX
-                .matches("class=\"sidebar-section\"")
-                .count(),
+            EMBEDDED_INDEX.matches("class=\"sidebar-section\"").count(),
             7,
             "every top-level left-panel section should be collapsible"
         );
@@ -8054,9 +8206,12 @@ mod tests {
         // panel's: `view_player` names a seat in a played game and in Watch as,
         // and is null only for the view entitled to read every plan.
         assert!(EMBEDDED_INDEX.contains("function strategySeats()"));
-        assert!(EMBEDDED_INDEX.contains("if (viewer !== null && viewer !== undefined) \
-             return players[viewer] ? [viewer] : [];"));
-        assert!(EMBEDDED_INDEX.contains("pick.style.display = seats.length > 1 ? \"block\" : \"none\";"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (viewer !== null && viewer !== undefined) \
+             return players[viewer] ? [viewer] : [];"
+        ));
+        assert!(EMBEDDED_INDEX
+            .contains("pick.style.display = seats.length > 1 ? \"block\" : \"none\";"));
         // The observed seat's study rides in `me`; a rival's rides in
         // `players[]`, and only the omniscient view is sent it.
         assert!(EMBEDDED_INDEX
@@ -8069,8 +8224,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const floor = active ? (SPEC ? 32 : 16) : 0"));
         // The repaint rate answers to what a frame actually costs.
         assert!(EMBEDDED_INDEX.contains("const MAX_ANIMATION_PAINT_SHARE = .5"));
-        assert!(EMBEDDED_INDEX
-            .contains("Math.max(floor, drawCost / MAX_ANIMATION_PAINT_SHARE)"));
+        assert!(EMBEDDED_INDEX.contains("Math.max(floor, drawCost / MAX_ANIMATION_PAINT_SHARE)"));
         // The command map is the only presentation surface. There is no style
         // selector, persisted mode, cinematic module, or painted atlas path.
         assert!(EMBEDDED_INDEX.contains("const MAP_PROJECTION = 0.92"));
@@ -8103,8 +8257,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const onscreen = []"));
         // Strategic combat stays diagrammatic: damage labels and compact hit
         // sparks, without a second cinematic effects renderer.
-        assert!(EMBEDDED_INDEX
-            .contains("anim.floats.push({ x, y: y - 16, txt: \"-\" + dmg"));
+        assert!(EMBEDDED_INDEX.contains("anim.floats.push({ x, y: y - 16, txt: \"-\" + dmg"));
         assert!(EMBEDDED_INDEX.contains("anim.sparks.push({ x, y, t0: now });"));
         assert!(EMBEDDED_INDEX.contains(".diplomacy-card.at-war"));
         assert!(EMBEDDED_INDEX.contains("function cameraYBounds"));
@@ -8125,9 +8278,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function mapWrapsY()"));
         assert!(EMBEDDED_INDEX.contains("function wrapY(y, about = null)"));
         assert!(EMBEDDED_INDEX.contains("const wy = wrapY(S * 1.5 * r) - cam.y;"));
-        assert!(EMBEDDED_INDEX.contains(
-            "return canonicalOffsetPos(p, mapWrapsX(), mapWrapsY());"
-        ));
+        assert!(EMBEDDED_INDEX.contains("return canonicalOffsetPos(p, mapWrapsX(), mapWrapsY());"));
         assert!(EMBEDDED_INDEX.contains("setFlatMapWrap(\"x\", wrapXBox.checked)"));
         assert!(EMBEDDED_INDEX.contains("setFlatMapWrap(\"y\", wrapYBox.checked)"));
 
@@ -8145,50 +8296,34 @@ mod tests {
         // asks it of the viewport that fit produced. One rule, two questions —
         // see `the_map_area_is_a_rectangle_the_viewer_can_set`.
         assert!(EMBEDDED_INDEX.contains("function mapOverlayVisible(name)"));
-        assert!(EMBEDDED_INDEX.contains(
-            "document.body.classList.contains(\"sidebar-hidden\")"
-        ));
+        assert!(EMBEDDED_INDEX.contains("document.body.classList.contains(\"sidebar-hidden\")"));
         assert!(EMBEDDED_INDEX.contains("function mapWidgetBox(name, origin)"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusBounds()"));
         assert!(EMBEDDED_INDEX.contains("function mapFocusPoint()"));
-        assert!(EMBEDDED_INDEX.contains(
-            "left = Math.max(0, Math.min(width, sideRect.right - origin.left));"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "if (players) top = Math.max(0, Math.min(height, players.bottom));"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "const spansWidth = victory.left <= 16 && victory.right >= width - 16;"
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("left = Math.max(0, Math.min(width, sideRect.right - origin.left));"));
+        assert!(EMBEDDED_INDEX
+            .contains("if (players) top = Math.max(0, Math.min(height, players.bottom));"));
+        assert!(EMBEDDED_INDEX
+            .contains("const spansWidth = victory.left <= 16 && victory.right >= width - 16;"));
         assert!(EMBEDDED_INDEX.contains(
             "if (spansWidth) top = Math.max(top, Math.max(0, Math.min(height, victory.bottom)));"
         ));
-        assert!(EMBEDDED_INDEX.contains(
-            "else right = Math.max(0, Math.min(width, victory.left));"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "if (right <= left) { left = 0; right = width; }"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "if (bottom <= top) { top = 0; bottom = height; }"
-        ));
-        assert!(!EMBEDDED_INDEX.contains(
-            "if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"
-        ));
+        assert!(EMBEDDED_INDEX.contains("else right = Math.max(0, Math.min(width, victory.left));"));
+        assert!(EMBEDDED_INDEX.contains("if (right <= left) { left = 0; right = width; }"));
+        assert!(EMBEDDED_INDEX.contains("if (bottom <= top) { top = 0; bottom = height; }"));
+        assert!(!EMBEDDED_INDEX
+            .contains("if (minimap) left = Math.max(left, (minimap.left + minimap.right) / 2);"));
         assert!(EMBEDDED_INDEX.contains(
             "return {x:(bounds.left + bounds.right) / 2, y:(bounds.top + bounds.bottom) / 2};"
         ));
         assert!(EMBEDDED_INDEX.contains("function reframeIfMapFocusBoundsChanged("));
-        assert!(EMBEDDED_INDEX.contains(
-            "reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);"
-        ));
+        assert!(EMBEDDED_INDEX.contains("reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);"));
         assert!(EMBEDDED_INDEX.contains("function cameraCenterForWorld("));
         assert!(EMBEDDED_INDEX.contains("const actualScale = Math.max(.01, scale);"));
         assert!(EMBEDDED_INDEX.contains("function currentMapFocusWorld()"));
         assert!(EMBEDDED_INDEX.contains("function reframeCurrentMapFocus(world)"));
-        assert!(EMBEDDED_INDEX.contains(
-            "const {x:desiredX, y:desiredY} = mapFocusPoint();"
-        ));
+        assert!(EMBEDDED_INDEX.contains("const {x:desiredX, y:desiredY} = mapFocusPoint();"));
         // The domination column counts captured capitals, and says so. "HQs"
         // was a word from no part of this game.
         assert!(EMBEDDED_INDEX.contains("<span></span><span>Capitals</span>"));
@@ -8201,28 +8336,23 @@ mod tests {
             2,
             "the initial and refreshed viewpoint menus should use the same spectator label"
         );
-        assert!(EMBEDDED_INDEX.contains(
-            "Player ${p.id + 1} - ${p.civ} (${p.leader || \"Unknown leader\"})"
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("Player ${p.id + 1} - ${p.civ} (${p.leader || \"Unknown leader\"})"));
         assert!(EMBEDDED_INDEX.contains("id=\"viewplayer\""));
         assert!(EMBEDDED_INDEX.contains("fetchJSON(\"/view\""));
         // The ribbon repaints under the cursor, so its buttons declare their
         // action as data and one delegated listener dispatches it.
-        assert!(EMBEDDED_INDEX.contains(
-            "class=\"watch-as-link\" data-hud-action=\"watch\""
-        ));
+        assert!(EMBEDDED_INDEX.contains("class=\"watch-as-link\" data-hud-action=\"watch\""));
         assert!(EMBEDDED_INDEX.contains(">Watch as</button>"));
         // The label is centred against a border rather than ellipsized, so the
         // fitter is asked for a few pixels back: fitted to the last pixel, its
         // own rounding tolerance let the "s" of "Watch as" sit on the frame.
         assert!(EMBEDDED_INDEX
             .contains("{selector:\"#playerhud .watch-as-link\", min:9, max:12, slack:6}"));
-        assert!(EMBEDDED_INDEX.contains(
-            "class=\"spectator-view-link\" data-hud-action=\"spectator\""
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "Spectator mode: see everyone with full map visibility"
-        ));
+        assert!(
+            EMBEDDED_INDEX.contains("class=\"spectator-view-link\" data-hud-action=\"spectator\"")
+        );
+        assert!(EMBEDDED_INDEX.contains("Spectator mode: see everyone with full map visibility"));
         assert!(EMBEDDED_INDEX.contains(">All</button>"));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"watch\" data-hud-civ=\"${p.id}\""));
         assert!(EMBEDDED_INDEX.contains("data-hud-action=\"dossier\" data-hud-civ=\"${p.id}\""));
@@ -8305,7 +8435,8 @@ mod tests {
         assert!(war_hold.contains(
             "const within = card.getBoundingClientRect().top - el.getBoundingClientRect().top + el.scrollTop;"
         ));
-        assert!(war_hold.contains("const target = Math.max(0, Math.min(reach, within - watchedWar.offset));"));
+        assert!(war_hold
+            .contains("const target = Math.max(0, Math.min(reach, within - watchedWar.offset));"));
         assert!(war_hold.contains("el.scrollTop = target;"));
         // Re-measured before every rebuild, so a viewer who scrolls the log
         // moves the lock rather than fighting it, and the sort order itself is
@@ -8319,8 +8450,10 @@ mod tests {
             .unwrap();
         assert!(war_draw.contains("measureWatchedWar(el);"));
         assert!(war_draw.contains("holdWatchedWar(el);"));
-        assert!(war_draw.contains("if (watchedWar && watchedWar.seed !== state.seed) watchedWar = null;"));
-        assert!(war_draw.contains("if (watchedWar && !warCardFor(el, watchedWar.key)) watchedWar = null;"));
+        assert!(war_draw
+            .contains("if (watchedWar && watchedWar.seed !== state.seed) watchedWar = null;"));
+        assert!(war_draw
+            .contains("if (watchedWar && !warCardFor(el, watchedWar.key)) watchedWar = null;"));
         assert!(
             !war_draw.contains("wars.sort("),
             "the war log must stay the engine's chronicle; a hold moves the scroll, not the order"
@@ -8330,7 +8463,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(".war-card.watched { border-color: #d8ad5e;"));
         assert!(
             EMBEDDED_INDEX.find(".war-card.ended .war-period").unwrap()
-                < EMBEDDED_INDEX.find(".war-card.watched .war-period").unwrap(),
+                < EMBEDDED_INDEX
+                    .find(".war-card.watched .war-period")
+                    .unwrap(),
             "the watched rules share `.ended`'s specificity and must follow it to win"
         );
         let war_focus = EMBEDDED_INDEX
@@ -8346,12 +8481,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function warBelligerentRows("));
         assert!(EMBEDDED_INDEX.contains("function warPartyIsCityState("));
         assert!(EMBEDDED_INDEX.contains("war-row-label\">Belligerents"));
-        assert!(EMBEDDED_INDEX.contains(
-            "[\"Start mil\", \"Peak mil\", \"Saw action\"]"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "[\"Saw action\", \"Peak mil\", \"Start mil\"]"
-        ));
+        assert!(EMBEDDED_INDEX.contains("[\"Start mil\", \"Peak mil\", \"Saw action\"]"));
+        assert!(EMBEDDED_INDEX.contains("[\"Saw action\", \"Peak mil\", \"Start mil\"]"));
         assert!(EMBEDDED_INDEX.contains("overflow-wrap: break-word"));
         assert!(EMBEDDED_INDEX.contains("height: 4px"));
         assert!(EMBEDDED_INDEX.contains("width: var(--war-effort, 0%)"));
@@ -8402,7 +8533,9 @@ mod tests {
             .next()
             .unwrap();
         let party_name = belligerent_row.find("class=\"war-party-name\"").unwrap();
-        let bar = belligerent_row.find("class=\"war-belligerent-bar\"").unwrap();
+        let bar = belligerent_row
+            .find("class=\"war-belligerent-bar\"")
+            .unwrap();
         let note = belligerent_row.find("class=\"war-party-note\"").unwrap();
         assert!(
             party_name < bar && bar < note,
@@ -8416,22 +8549,23 @@ mod tests {
         // replaced -- a bare `contains` over the body matches the prose too.
         assert!(belligerent_row.contains("class=\"war-party-role\">(aggressor)</span>"));
         assert!(!belligerent_row.contains("class=\"war-party-role\">(initial"));
-        assert!(EMBEDDED_INDEX.contains(".war-party-role {")
-            && EMBEDDED_INDEX
-                .split(".war-party-role {")
-                .nth(1)
-                .unwrap()
-                .split('}')
-                .next()
-                .unwrap()
-                .contains("white-space: nowrap"));
+        assert!(
+            EMBEDDED_INDEX.contains(".war-party-role {")
+                && EMBEDDED_INDEX
+                    .split(".war-party-role {")
+                    .nth(1)
+                    .unwrap()
+                    .split('}')
+                    .next()
+                    .unwrap()
+                    .contains("white-space: nowrap")
+        );
         assert!(belligerent_row.contains("party.player === war.aggressor"));
         // Cities are listed under the belligerent that lost them, said plainly,
         // and ranked capital first then by the population that changed hands.
         assert!(EMBEDDED_INDEX.contains("function warCityLosses(party, war)"));
         assert!(EMBEDDED_INDEX.contains("loss.razed ? \"razed\" : \"conquered\""));
-        assert!(EMBEDDED_INDEX
-            .contains("Number(b.capital) - Number(a.capital) || b.pop - a.pop"));
+        assert!(EMBEDDED_INDEX.contains("Number(b.capital) - Number(a.capital) || b.pop - a.pop"));
         // The class the ledger is ordered by is reachable on the row, never a
         // banner across it.
         assert!(!EMBEDDED_INDEX.contains("war-loss-category"));
@@ -8446,8 +8580,9 @@ mod tests {
         // the ledger entirely. Belligerents above it is where "who fought" is
         // answered; here the column is spent on what was actually lost.
         assert!(EMBEDDED_INDEX.contains("function warPartyLostAnything(party, war)"));
-        assert!(EMBEDDED_INDEX
-            .contains("warParties(war, declarerSide).filter(party => warPartyLostAnything(party, war))"));
+        assert!(EMBEDDED_INDEX.contains(
+            "warParties(war, declarerSide).filter(party => warPartyLostAnything(party, war))"
+        ));
         assert!(EMBEDDED_INDEX.contains("No losses"));
         assert!(EMBEDDED_INDEX.contains("No recorded losses"));
         assert!(EMBEDDED_INDEX.contains("sort((a, b) => a.turn - b.turn)"));
@@ -8463,7 +8598,8 @@ mod tests {
         // civilization it is speaking for, so the one view that can read every
         // plan is the last one that should hide it.
         assert!(
-            EMBEDDED_INDEX.contains("document.getElementById(\"strategysec\").style.display = \"block\";"),
+            EMBEDDED_INDEX
+                .contains("document.getElementById(\"strategysec\").style.display = \"block\";"),
             "the active strategy panel is shown in every view"
         );
         assert!(!EMBEDDED_INDEX
@@ -8495,15 +8631,14 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains(".diplomacy-card.friend"));
         assert!(!EMBEDDED_INDEX.contains("const relationClass ="));
         assert!(EMBEDDED_INDEX.contains("function activeWarPlayerIds()"));
-        assert!(EMBEDDED_INDEX.contains(
-            "if (war.ended !== null && war.ended !== undefined) continue;"
-        ));
+        assert!(
+            EMBEDDED_INDEX.contains("if (war.ended !== null && war.ended !== undefined) continue;")
+        );
         assert!(EMBEDDED_INDEX.contains(
             "if (party.exited === null || party.exited === undefined) players.add(party.player);"
         ));
-        assert!(EMBEDDED_INDEX.contains(
-            "const activeWarPlayers = SPEC && !Number.isInteger(state.view_player)"
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("const activeWarPlayers = SPEC && !Number.isInteger(state.view_player)"));
         assert!(EMBEDDED_INDEX.contains(
             "const atWar = activeWarPlayers ? activeWarPlayers.has(p.id) : p.at_war_with_me;"
         ));
@@ -8617,14 +8752,16 @@ mod tests {
             );
         }
         // The pedia's history is Civ 6's only chorded pair.
-        assert!(EMBEDDED_INDEX
-            .contains("{id: \"CivilopediaBack\", key: \",\", ctrl: true"));
-        assert!(EMBEDDED_INDEX
-            .contains("{id: \"CivilopediaForward\", key: \".\", ctrl: true"));
+        assert!(EMBEDDED_INDEX.contains("{id: \"CivilopediaBack\", key: \",\", ctrl: true"));
+        assert!(EMBEDDED_INDEX.contains("{id: \"CivilopediaForward\", key: \".\", ctrl: true"));
 
         // Three keys are the operator's deliberate overrides and keep their
         // CIVVIS meaning; Civ 6 spends them on lenses that do not exist here.
-        for (action, key) in [("NextAction", "1"), ("SettlerLens", "2"), ("PlaceTack", "3")] {
+        for (action, key) in [
+            ("NextAction", "1"),
+            ("SettlerLens", "2"),
+            ("PlaceTack", "3"),
+        ] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("{{id: \"{action}\", key: \"{key}\"")),
                 "the {key} override must stay {action}"
@@ -8638,7 +8775,10 @@ mod tests {
             "{id: \"HidePanel\", key: \"u\", ctrl: true",
             "{id: \"QuickDeals\", key: \"d\", ctrl: true",
         ] {
-            assert!(EMBEDDED_INDEX.contains(chord), "missing CIVVIS chord: {chord}");
+            assert!(
+                EMBEDDED_INDEX.contains(chord),
+                "missing CIVVIS chord: {chord}"
+            );
         }
         assert!(EMBEDDED_INDEX.contains("{id: \"Diplomacy\", key: \"F8\""));
 
@@ -8652,9 +8792,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function isSecondaryMapButton(ev)"));
         assert!(EMBEDDED_INDEX.contains("function issueSelectedUnitOrder(pos)"));
         assert!(EMBEDDED_INDEX.contains("issueSelectedUnitOrder(pos);"));
-        assert!(EMBEDDED_INDEX.contains(
-            "for (const p of (sel.reachable || [])) hl[key(p)] = 1;"
-        ));
+        assert!(EMBEDDED_INDEX.contains("for (const p of (sel.reachable || [])) hl[key(p)] = 1;"));
         let ordinary_click = EMBEDDED_INDEX
             .split_once("cv.addEventListener(\"click\", ev => {")
             .expect("the map must have an ordinary click handler")
@@ -8665,15 +8803,11 @@ mod tests {
         assert!(!ordinary_click.contains("move_to"));
         assert!(!ordinary_click.contains("orderTravel("));
         assert!(ordinary_click.contains("const here = state.units.filter"));
-        assert!(!EMBEDDED_INDEX.contains(
-            "sel = here.find(u => u.moves_left > 0) || here[0]"
-        ));
+        assert!(!EMBEDDED_INDEX.contains("sel = here.find(u => u.moves_left > 0) || here[0]"));
         assert!(EMBEDDED_INDEX.contains("else if (ev.button === 1) {"));
         // macOS Control-click is a platform secondary click; Command belongs to
         // the browser, and never becomes a map binding.
-        assert!(EMBEDDED_INDEX.contains(
-            "(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"
-        ));
+        assert!(EMBEDDED_INDEX.contains("(MAC_POINTER_PLATFORM && ev.button === 0 && ev.ctrlKey)"));
         assert!(EMBEDDED_INDEX.contains("if (ev.metaKey) return undefined;"));
     }
 
@@ -8754,7 +8888,10 @@ mod tests {
             .expect("continuous hidden-map parchment renderer");
         assert!(parchment.contains("for (const cell of layer.cells) appendHexPath"));
         assert!(parchment.contains("cx.fillStyle = PARCH; cx.fill()"));
-        assert!(!parchment.contains("PARCH_GRID"), "the hidden sheet must not expose a hex grid");
+        assert!(
+            !parchment.contains("PARCH_GRID"),
+            "the hidden sheet must not expose a hex grid"
+        );
 
         let monsters = EMBEDDED_INDEX
             .split("function drawHiddenMapMonsters")
@@ -8764,7 +8901,10 @@ mod tests {
         assert!(monsters.contains("hiddenMapIsDeep"));
         assert!(monsters.contains("hiddenMapMonsterSeat"));
         assert!(!monsters.contains("strideColumns"));
-        assert!(!monsters.contains("cam.scale"), "zoom must not thin stable tale seats");
+        assert!(
+            !monsters.contains("cam.scale"),
+            "zoom must not thin stable tale seats"
+        );
         assert!(!monsters.contains("const lod"));
         assert!(monsters.contains("cell.x +"));
         assert!(monsters.contains("cell.y +"));
@@ -8796,7 +8936,8 @@ mod tests {
             .expect("pre-globe chart marginalia");
         assert!(planet_tales.contains("candidates.slice(0, 1)"));
         assert!(planet_tales.contains("const size = 3 *"));
-        assert!(EMBEDDED_INDEX.contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
+        assert!(EMBEDDED_INDEX
+            .contains("drawHiddenMapParchment(hiddenMap);\n  drawHiddenMapMonsters(hiddenMap);"));
         assert!(EMBEDDED_INDEX.contains("drawHiddenMapFrontier(tiles);"));
         assert!(EMBEDDED_INDEX.contains("if (camera.chart && !spectator)"));
     }
@@ -8810,8 +8951,7 @@ mod tests {
         // spectator is not exploring anything, and `wentAround` already
         // answers true for one, so the exhibition keeps the whole rectangle.
         assert!(EMBEDDED_INDEX.contains("function mapEdgeVeiled()"));
-        assert!(EMBEDDED_INDEX
-            .contains("return !!state && !planetMap() && !wentAround();"));
+        assert!(EMBEDDED_INDEX.contains("return !!state && !planetMap() && !wentAround();"));
         // Three to fifteen tiles, per world and per side, so the give is never
         // the same twice and the two sides of one map never agree.
         assert!(EMBEDDED_INDEX.contains("const MAP_VEIL_MIN = 3, MAP_VEIL_MAX = 15;"));
@@ -8837,7 +8977,9 @@ mod tests {
             hidden.contains("const span = open || veiled ? framedHexBounds(12)"),
             "a veiled sheet and its large marginalia are spanned by the frame, not by the map's rectangle"
         );
-        assert!(hidden.contains("const [x, y] = open || veiled ? hexXYRaw(q, row) : hexXY(q, row);"));
+        assert!(
+            hidden.contains("const [x, y] = open || veiled ? hexXYRaw(q, row) : hexXY(q, row);")
+        );
         // Only one copy of a wrapping world is drawn, so the background either
         // side of it is somewhere nobody has been rather than somewhere that
         // does not exist — which is what closes the same leak at full zoom-out.
@@ -8866,7 +9008,8 @@ mod tests {
         // Soft, and bouncy: a drag past the bound is resisted rather than
         // refused, a coast into it stretches and is handed to a spring, and
         // both come home to the bound instead of sailing back over the world.
-        assert!(EMBEDDED_INDEX.contains("function cameraRubberBand(value, bounds, give = CAMERA_GIVE())"));
+        assert!(EMBEDDED_INDEX
+            .contains("function cameraRubberBand(value, bounds, give = CAMERA_GIVE())"));
         assert!(EMBEDDED_INDEX.contains("function holdCameraInBounds(x, y)"));
         assert!(EMBEDDED_INDEX.contains("function handOffCameraBounce()"));
         assert!(EMBEDDED_INDEX.contains("function settleCameraBounce(dt)"));
@@ -8923,12 +9066,12 @@ mod tests {
             .and_then(|tail| tail.split("function drawPlanetMini()").next())
             .expect("planet minimap natural wonder perimeter renderer");
         assert!(planet_mini.contains("TMAP.get(cell.nbrs[side])"));
-        assert!(planet_mini.contains(
-            "if (naturalWonderContinues(tile, neighbor)) continue;"
-        ));
+        assert!(planet_mini.contains("if (naturalWonderContinues(tile, neighbor)) continue;"));
 
         assert_eq!(
-            EMBEDDED_INDEX.matches("drawNaturalWonderPerimeters(tiles);").count(),
+            EMBEDDED_INDEX
+                .matches("drawNaturalWonderPerimeters(tiles);")
+                .count(),
             1,
             "the flat map must paint the landmark perimeter exactly once"
         );
@@ -9015,9 +9158,9 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("function drawFeatureEffects").next())
             .expect("shared strategic mountain icon renderer");
-        assert!(icon.contains(
-            "cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE)"
-        ));
+        assert!(
+            icon.contains("cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE)")
+        );
         assert!(icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
         assert!(icon.contains("cx.ellipse(0, -9, 4.5, 2.2"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
@@ -9174,7 +9317,10 @@ mod tests {
         let staged = started.elapsed();
 
         assert_eq!(shared.staged_next_game_settings()["players"], json!(6));
-        assert_eq!(shared.staged_next_game_settings()["map"], json!("continents"));
+        assert_eq!(
+            shared.staged_next_game_settings()["map"],
+            json!("continents")
+        );
         assert!(
             staged < Duration::from_millis(50),
             "choosing a setting waited {staged:?} on the turn in flight"
@@ -9248,7 +9394,9 @@ mod tests {
         assert_eq!(state["spectator_paused"], json!(true));
         // The same request is on the lock-free probe the supervisor polls.
         assert_eq!(
-            shared.pending_new_game_request().expect("a pending request")["mode"],
+            shared
+                .pending_new_game_request()
+                .expect("a pending request")["mode"],
             "fresh_code"
         );
         assert_eq!(state["supervisor_request"]["mode"], "fresh_code");
@@ -9836,7 +9984,9 @@ mod tests {
         game.cities.get_mut(&first_city).unwrap().pop = 4;
         game.players[0].religion = Some("Test Faith".to_string());
         game.players[0].government = Some("classical_republic".to_string());
-        game.players[0].techs.insert(crate::name!("horseback_riding"));
+        game.players[0]
+            .techs
+            .insert(crate::name!("horseback_riding"));
         game.players[0].civics.insert(crate::name!("drama_poetry"));
         let city_state = game
             .players
@@ -9903,9 +10053,7 @@ mod tests {
         let defeated = game
             .units
             .values()
-            .find(|unit| {
-                unit.owner == 1 && game.rules.units[unit.kind].class == "military"
-            })
+            .find(|unit| unit.owner == 1 && game.rules.units[unit.kind].class == "military")
             .map(|unit| unit.id)
             .expect("player two starts with a military unit");
         let before = ChronicleSnapshot::capture(&game);
@@ -10033,18 +10181,15 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX
             .contains(".spec-controls:has(#restart-sim.human-start) #specpause.primary {"));
-        assert!(EMBEDDED_INDEX.contains(
-            "document.getElementById(\"specbar\").style.display = \"block\";"
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("document.getElementById(\"specbar\").style.display = \"block\";"));
         // Adopting the running mode still re-reads the panel and relabels the
         // control, so the world that just arrived is described by the control
         // that will replace it.
-        assert!(EMBEDDED_INDEX.contains(
-            "syncSetupMode();\n  updateRestartSimulationButton();"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "body:not(.watching-sim) .spec-controls:has(#restart-sim) {"
-        ));
+        assert!(EMBEDDED_INDEX.contains("syncSetupMode();\n  updateRestartSimulationButton();"));
+        assert!(
+            EMBEDDED_INDEX.contains("body:not(.watching-sim) .spec-controls:has(#restart-sim) {")
+        );
         assert_eq!(EMBEDDED_INDEX.matches("id=\"restart-sim\"").count(), 1);
         assert!(!EMBEDDED_INDEX.contains("id=\"startgame\""));
         assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"watching-sim\", SPEC);"));
@@ -10072,12 +10217,10 @@ mod tests {
     #[test]
     fn browser_offers_the_civilization_vi_mode() {
         // The mode is in the list, named after what it does.
-        assert!(EMBEDDED_INDEX.contains(
-            "<option value=\"civ6\">Play Firaxis Civ 6 with computer control</option>"
-        ));
-        // A third body state, not a variation on either of the other two.
         assert!(EMBEDDED_INDEX
-            .contains("document.body.classList.toggle(\"playing-civ6\", civ6);"));
+            .contains("<option value=\"civ6\">Play Firaxis Civ 6 with computer control</option>"));
+        // A third body state, not a variation on either of the other two.
+        assert!(EMBEDDED_INDEX.contains("document.body.classList.toggle(\"playing-civ6\", civ6);"));
         assert!(EMBEDDED_INDEX.contains("body.playing-civ6 .civ6-hidden { display: none; }"));
         // Exactly the rows that are not carried, and no others. Difficulty is
         // deliberately absent: it is the setting the mode exists for.
@@ -10092,7 +10235,10 @@ mod tests {
             "class=\"victory-options game-advanced-setting civ6-hidden\"",
             "class=\"mod-options game-advanced-setting civ6-hidden\"",
         ] {
-            assert!(EMBEDDED_INDEX.contains(row), "{row} is not hidden in the Civ 6 mode");
+            assert!(
+                EMBEDDED_INDEX.contains(row),
+                "{row} is not hidden in the Civ 6 mode"
+            );
         }
         assert!(!EMBEDDED_INDEX.contains("class=\"small human-setting civ6-hidden\">Difficulty"));
         // The map control becomes the other game's roster rather than a
@@ -10142,26 +10288,39 @@ mod tests {
         assert!(host["ready"].is_boolean(), "{host}");
         assert_eq!(host["ready"].as_bool(), Some(host["blocked"].is_null()));
         if let Some(blocked) = host["blocked"].as_str() {
-            assert!(!blocked.is_empty() && !blocked.contains('\n'), "{blocked:?}");
+            assert!(
+                !blocked.is_empty() && !blocked.contains('\n'),
+                "{blocked:?}"
+            );
         }
         // The other game's vocabulary rides on the ruleset, because it never
         // changes while a server runs — unlike the host report above, which is
         // a question about this machine's installation.
         let rules = json_at("/rules");
         let civ6 = &rules["civ6"];
-        assert_eq!(civ6["maps"].as_array().map(Vec::len), Some(crate::civ6::MAPS.len()));
+        assert_eq!(
+            civ6["maps"].as_array().map(Vec::len),
+            Some(crate::civ6::MAPS.len())
+        );
         assert_eq!(civ6["difficulties"].as_array().map(Vec::len), Some(8));
         assert_eq!(civ6["default_map"].as_str(), Some(crate::civ6::DEFAULT_MAP));
         // Every map names a script this build would pass to the other game.
         for map in civ6["maps"].as_array().unwrap() {
-            assert!(map["id"].as_str().is_some_and(|id| id.ends_with(".lua")), "{map}");
+            assert!(
+                map["id"].as_str().is_some_and(|id| id.ends_with(".lua")),
+                "{map}"
+            );
         }
         // A start is refused, with a reason, rather than 404ing or hanging —
         // which is the only claim this test can make about starting one,
         // because the other one takes over the computer for hours.
         let refused: Value = serde_json::from_str(
-            &http_post(port, "/civ6/start", &json!({"difficulty": "not-a-rung"}).to_string())
-                .expect("a refusal"),
+            &http_post(
+                port,
+                "/civ6/start",
+                &json!({"difficulty": "not-a-rung"}).to_string(),
+            )
+            .expect("a refusal"),
         )
         .expect("refusal JSON");
         assert_eq!(
@@ -10342,7 +10501,8 @@ mod tests {
             .contains("if (state.winner !== null && state.winner !== undefined) return;"));
         // And a human finale offers a way on; a spectated one keeps its
         // countdown, because the supervisor owns that handoff.
-        assert!(EMBEDDED_INDEX.contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
+        assert!(EMBEDDED_INDEX
+            .contains("class=\"primary winner-again\" onclick=\"startNewSimulation()\""));
         assert!(EMBEDDED_INDEX.contains("id=\"respawn\" role=\"timer\""));
         // Both finales also offer three ways to keep this world. It is the
         // reason the countdown has to be long enough to read — a button nobody
@@ -10367,12 +10527,8 @@ mod tests {
             "title=\"Keep playing this world without a turn limit and ignore every later \
              victory.\">To infinity and beyond<"
         ));
-        assert!(EMBEDDED_INDEX.contains(
-            "playOnPastVictory('until_next_victory', true)"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "playOnPastVictory('until_next_victory', false)"
-        ));
+        assert!(EMBEDDED_INDEX.contains("playOnPastVictory('until_next_victory', true)"));
+        assert!(EMBEDDED_INDEX.contains("playOnPastVictory('until_next_victory', false)"));
         assert!(EMBEDDED_INDEX.contains("playOnPastVictory('indefinite', false)"));
         assert!(EMBEDDED_INDEX.contains("async function playOnPastVictory(mode, paused)"));
         assert!(EMBEDDED_INDEX.contains("body: JSON.stringify({mode, paused})"));
@@ -10387,28 +10543,33 @@ mod tests {
     fn a_human_finale_counts_itself_down_to_the_next_game() {
         assert!(EMBEDDED_INDEX.contains("const FINALE_RESTART_SECONDS = 10;"));
         assert!(EMBEDDED_INDEX.contains("id=\"finale-restart\""));
-        assert!(EMBEDDED_INDEX
-            .contains("button.textContent = `${FINALE_RESTART_LABEL} (${left})`;"));
+        assert!(
+            EMBEDDED_INDEX.contains("button.textContent = `${FINALE_RESTART_LABEL} (${left})`;")
+        );
         // The supervisor owns the exhibition's handoff, so a spectated finale
         // never arms this one on top of the countdown it already publishes.
-        assert!(EMBEDDED_INDEX
-            .contains("if (SPEC || finaleCountdownResult === signature) return;"));
+        assert!(EMBEDDED_INDEX.contains("if (SPEC || finaleCountdownResult === signature) return;"));
         // Both human endings count down: a victory and a last city lost.
-        assert_eq!(EMBEDDED_INDEX.matches("armFinaleCountdown(signature);").count(), 2);
+        assert_eq!(
+            EMBEDDED_INDEX
+                .matches("armFinaleCountdown(signature);")
+                .count(),
+            2
+        );
         // Any input stops it, the three ways to keep the world stop it, and a
         // result screen that goes away takes it with it.
-        assert!(EMBEDDED_INDEX.contains(
-            "for (const gesture of [\"pointerdown\", \"keydown\", \"wheel\"])"
-        ));
-        assert!(EMBEDDED_INDEX.contains("cancelFinaleCountdown(),\n    {capture: true, passive: true});"));
-        assert!(EMBEDDED_INDEX.contains("cancelSupervisedSuccessorWatch();\n  cancelFinaleCountdown();"));
+        assert!(EMBEDDED_INDEX
+            .contains("for (const gesture of [\"pointerdown\", \"keydown\", \"wheel\"])"));
+        assert!(EMBEDDED_INDEX
+            .contains("cancelFinaleCountdown(),\n    {capture: true, passive: true});"));
+        assert!(EMBEDDED_INDEX
+            .contains("cancelSupervisedSuccessorWatch();\n  cancelFinaleCountdown();"));
         assert!(EMBEDDED_INDEX.contains("clearFinaleCountdown();"));
         // Reaching zero starts the same flow as the button, but identifies the
         // unattended caller so the server can require a genuinely finished
         // session before it accepts a supervised handoff.
-        assert!(EMBEDDED_INDEX.contains(
-            "cancelFinaleCountdown();\n  // Name the only non-human caller."
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("cancelFinaleCountdown();\n  // Name the only non-human caller."));
         assert!(EMBEDDED_INDEX.contains("startNewSimulation(\"finale_countdown\");"));
     }
 
@@ -10428,7 +10589,10 @@ mod tests {
             .iter()
             .filter_map(|entry| entry["name"].as_str())
             .collect();
-        assert!(names.contains(&"advanced"), "the default agent is offerable");
+        assert!(
+            names.contains(&"advanced"),
+            "the default agent is offerable"
+        );
         assert!(
             !names.contains(&"strategic"),
             "a league-only search entrant is not a live auto-play offer"
@@ -10440,7 +10604,9 @@ mod tests {
         // Ratings are shown as ratings, and an entrant that has never played a
         // rated game is marked rather than shown as an authoritative 1500.
         for entry in roster.as_array().expect("a roster") {
-            assert!(entry["username"].as_str().is_some_and(|name| !name.is_empty()));
+            assert!(entry["username"]
+                .as_str()
+                .is_some_and(|name| !name.is_empty()));
             assert!(entry["provisional"].is_boolean());
         }
 
@@ -10592,7 +10758,11 @@ mod tests {
         session.game.victory_type = Some("score".to_string());
         session.record_league_result();
         let rated = crate::league::load_league(&dir).expect("roster on disk");
-        let person = rated.strategies.iter().find(|s| s.human).expect("the person");
+        let person = rated
+            .strategies
+            .iter()
+            .find(|s| s.human)
+            .expect("the person");
         assert_eq!((person.games, person.wins), (1, 1));
         assert!(person.rating > 1500.0);
         for agent in rated.strategies.iter().filter(|s| !s.human) {
@@ -10686,10 +10856,13 @@ mod tests {
         params.num_players = 4;
         let session = Session::new(params);
         let state = session.state();
-        let me = state["player"].as_u64().expect("an interactive game has a seat");
+        let me = state["player"]
+            .as_u64()
+            .expect("an interactive game has a seat");
         let mut unmet = 0;
         for player in state["players"].as_array().expect("a player list") {
-            let is_major = player["is_minor"] != json!(true) && player["is_barbarian"] != json!(true);
+            let is_major =
+                player["is_minor"] != json!(true) && player["is_barbarian"] != json!(true);
             if !is_major {
                 continue;
             }
@@ -10709,7 +10882,10 @@ mod tests {
                 );
             }
         }
-        assert!(unmet > 0, "a fresh interactive game has civilizations still to meet");
+        assert!(
+            unmet > 0,
+            "a fresh interactive game has civilizations still to meet"
+        );
     }
 
     /// The roster that labels an ordinary game is compiled in, so the ratings
@@ -10785,7 +10961,10 @@ mod tests {
     fn an_unrated_single_player_game_still_names_the_person() {
         let session = Session::new(current());
         assert_eq!(session.seated_strategy_name(0), Some("player"));
-        assert_eq!(session.seat_strategy[0], None, "there is nothing to rate into");
+        assert_eq!(
+            session.seat_strategy[0], None,
+            "there is nothing to rate into"
+        );
         let state = session.state();
         assert_eq!(state["players"][0]["player_username"], json!("Player"));
         assert_eq!(state["players"][0]["player_rated"], json!(false));
@@ -10847,7 +11026,10 @@ mod tests {
 
         let deadline = Instant::now() + Duration::from_secs(60);
         while http_get(port, "/status").is_none() {
-            assert!(Instant::now() < deadline, "single-player server never came up");
+            assert!(
+                Instant::now() < deadline,
+                "single-player server never came up"
+            );
             std::thread::sleep(Duration::from_millis(50));
         }
         // Exactly what boot asks for: a viewer that has painted nothing yet.
@@ -10891,7 +11073,10 @@ mod tests {
 
         let deadline = Instant::now() + Duration::from_secs(60);
         while http_get(port, "/status").is_none() {
-            assert!(Instant::now() < deadline, "single-player server never came up");
+            assert!(
+                Instant::now() < deadline,
+                "single-player server never came up"
+            );
             std::thread::sleep(Duration::from_millis(50));
         }
         let stale = json!({
@@ -11078,7 +11263,9 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains("const eliminated = state.players[0] && state.players[0].alive === false;"));
         assert!(EMBEDDED_INDEX.contains("button.disabled = won || eliminated || autoplaying;"));
-        assert!(EMBEDDED_INDEX.contains("Your civilization has fallen<span class=\"endturn-hint\">"));
+        assert!(
+            EMBEDDED_INDEX.contains("Your civilization has fallen<span class=\"endturn-hint\">")
+        );
         // The keys agree with the button.
         assert!(EMBEDDED_INDEX
             .contains("if (state.players[0] && state.players[0].alive === false) return;"));
@@ -11132,10 +11319,14 @@ mod tests {
         // Shift overrides the blockers; without that a disagreement with the
         // priority order becomes a trap the player cannot leave.
         assert!(EMBEDDED_INDEX.contains("advanceTurn(ev.shiftKey)"));
-        assert!(EMBEDDED_INDEX.contains("if (next && !force) { next.act(); drawTurnLoop(); return; }"));
+        assert!(
+            EMBEDDED_INDEX.contains("if (next && !force) { next.act(); drawTurnLoop(); return; }")
+        );
         // Standing orders are the client's own; they must never masquerade as
         // engine state, and a skip must expire with the turn that set it.
-        assert!(EMBEDDED_INDEX.contains("if (held.order === \"skip\") return held.turn === state.turn ? \"skip\" : null;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (held.order === \"skip\") return held.turn === state.turn ? \"skip\" : null;"
+        ));
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
@@ -11150,9 +11341,7 @@ mod tests {
     #[test]
     fn resting_over_a_tile_delays_details_survives_a_pan_and_tracks_new_turns() {
         assert!(
-            EMBEDDED_INDEX.contains(
-                "dragState || mapTouches.size || rdrag) {"
-            ),
+            EMBEDDED_INDEX.contains("dragState || mapTouches.size || rdrag) {"),
             "the hover guard must test a live gesture, never the stale dragMoved flag"
         );
         assert!(
@@ -11186,8 +11375,7 @@ mod tests {
         }
         // Ground level is terrain alone; only the cover a tile offers others
         // picks up the feature on top of it.
-        assert!(EMBEDDED_INDEX
-            .contains("t.terrain === \"mountain\" ? 2 : (t.hills ? 1 : 0)"));
+        assert!(EMBEDDED_INDEX.contains("t.terrain === \"mountain\" ? 2 : (t.hills ? 1 : 0)"));
         assert!(EMBEDDED_INDEX.contains("sight_through"));
     }
 
@@ -11289,7 +11477,9 @@ mod tests {
             .expect("the map control dock")
             .1;
         let bar = dock.find("id=\"skynav\"").expect("the sky navigator");
-        let zoom = dock.find("<div id=\"zoomctl\">").expect("the zoom controls");
+        let zoom = dock
+            .find("<div id=\"zoomctl\">")
+            .expect("the zoom controls");
         assert!(
             bar < zoom,
             "the sky navigator reads before the zoom buttons it stands over"
@@ -11319,8 +11509,9 @@ mod tests {
         // its own planet, sits at the same catalogue point, and is not even
         // painted at that zoom.
         assert!(EMBEDDED_INDEX.contains("if (!focus || focus.body.id !== \"earth\") return true;"));
-        assert!(EMBEDDED_INDEX
-            .contains("return 2 * focus.drawn < stage * (SKY_NAV_UP ? 1.05 : .9);"));
+        assert!(
+            EMBEDDED_INDEX.contains("return 2 * focus.drawn < stage * (SKY_NAV_UP ? 1.05 : .9);")
+        );
         assert!(!EMBEDDED_INDEX.contains("const across = 2 * skyDrawnRadius(SKY_EARTH);"));
         // And it is synced before the branch, so it comes down when the world
         // under it is a flat board as surely as it goes up above a globe.
@@ -11330,7 +11521,10 @@ mod tests {
         let branch = EMBEDDED_INDEX
             .find("if (drawPlanetMap()) return;")
             .expect("the planet branch");
-        assert!(sync < branch, "the sky navigator syncs before the renderer branches");
+        assert!(
+            sync < branch,
+            "the sky navigator syncs before the renderer branches"
+        );
 
         // The places are the arrivals and nothing else — one list, so the bar
         // can never name somewhere the gearing does not treat as a landing —
@@ -11382,9 +11576,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "  const dx = (ex - sx) * SKY_VOYAGE_ALONG, dy = (ey - sy) * SKY_VOYAGE_ALONG;"
         ));
-        assert!(EMBEDDED_INDEX.contains(
-            "  const lean = Math.min(1, room / Math.max(1e-9, Math.hypot(dx, dy)));"
-        ));
+        assert!(EMBEDDED_INDEX
+            .contains("  const lean = Math.min(1, room / Math.max(1e-9, Math.hypot(dx, dy)));"));
         assert!(EMBEDDED_INDEX.contains("  return {x:sx + dx * lean, y:sy + dy * lean, reach};"));
         // Two shots, named as the places they are: the solar system, and the
         // voyage. The third was the galaxy and it is gone with the picture it
@@ -11398,8 +11591,9 @@ mod tests {
         // between a world and a shot: it falls where the sky stops being
         // somewhere anyone has stood, so the destination sits with the far
         // pictures rather than beside the Moon.
-        assert!(EMBEDDED_INDEX
-            .contains("    const near = worlds.filter(stop => stop.id !== \"exo\");"));
+        assert!(
+            EMBEDDED_INDEX.contains("    const near = worlds.filter(stop => stop.id !== \"exo\");")
+        );
         assert!(EMBEDDED_INDEX.contains(
             "                 ...worlds.filter(stop => stop.id === \"exo\").map(stop => [\"world\", stop])];"
         ));
@@ -11439,7 +11633,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, \"\"),"
         ));
-        assert!(EMBEDDED_INDEX.contains("                                     : `Fly to ${body.name}`});"));
+        assert!(EMBEDDED_INDEX
+            .contains("                                     : `Fly to ${body.name}`});"));
         // And the bar's rebuild key carries the title, because the labels no
         // longer move: `Exoplanet` and `Voyage` read the same whichever world
         // the expedition settled on, so keyed on the labels alone the bar would
@@ -11458,7 +11653,8 @@ mod tests {
         // view, crosses, and comes back down.
         assert!(EMBEDDED_INDEX.contains("function skyTravelPath(from, w0, to, w1)"));
         assert!(EMBEDDED_INDEX.contains("const SKY_TRAVEL_RHO = 1.42;"));
-        assert!(EMBEDDED_INDEX.contains("cameraZoom = {kind:\"planet\", scale:want, pan:to, lean:null,"));
+        assert!(EMBEDDED_INDEX
+            .contains("cameraZoom = {kind:\"planet\", scale:want, pan:to, lean:null,"));
         // `ln(-b + sqrt(b*b + 1))` has to be written as `-asinh(b)`: out here
         // `b` reaches 1e15, `sqrt(b*b + 1)` is exactly `b` in float64, the
         // subtraction cancels to zero and the whole flight comes out NaN.
@@ -11489,13 +11685,15 @@ mod tests {
         // the caption reading "The Earth and the Moon". It is the same answer
         // as before wherever home really is the nearest place.
         assert!(!EMBEDDED_INDEX.contains("  return stop ? stop.body : SKY_EARTH;"));
-        assert!(EMBEDDED_INDEX.contains("    if (!best || away < best.away) best = {away, body:candidate.body};"));
+        assert!(EMBEDDED_INDEX
+            .contains("    if (!best || away < best.away) best = {away, body:candidate.body};"));
         // And the camera may not stand more than a third of a stage from that
         // subject. Keying the pan to the subject's *drawn size* alone left it
         // centred on the far stop for every rung below 2% of the stage, which
         // out here is most of the road: the ladder zoomed into empty sky
         // between here and the destination and never showed the destination.
-        assert!(EMBEDDED_INDEX.contains("  if (away > 0) ease = Math.max(ease, 1 - span * .35 / away);"));
+        assert!(EMBEDDED_INDEX
+            .contains("  if (away > 0) ease = Math.max(ease, 1 - span * .35 / away);"));
         // And a star is not something anybody turns. `skyFocusBody` takes the
         // largest disc over the stage, and at the destination the star is
         // eleven times its own planet at the *same catalogue point* — so every
@@ -11608,8 +11806,7 @@ mod tests {
         // The fit is on out of the box, in the stored default and in the
         // switch that reports it, and moving an edge by hand turns it off.
         assert!(EMBEDDED_INDEX.contains("const MAP_AREA_DEFAULT = {auto:true,"));
-        assert!(EMBEDDED_INDEX
-            .contains(r#"<input type="checkbox" id="map-area-auto" checked>"#));
+        assert!(EMBEDDED_INDEX.contains(r#"<input type="checkbox" id="map-area-auto" checked>"#));
         assert!(EMBEDDED_INDEX.contains("if (!MAP_AREA.auto || mapAreaRefitDepth) return false;"));
         // Every place a panel or an overlay moves refits a fitted area.
         assert_eq!(

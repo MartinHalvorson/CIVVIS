@@ -108,7 +108,11 @@ fn duel(
             // statistic exists to avoid.
             share += if table > 0.0 { mine / table } else { 0.5 };
         } else {
-            let won = if game.winner.is_some_and(is_treated) { 1.0 } else { 0.0 };
+            let won = if game.winner.is_some_and(is_treated) {
+                1.0
+            } else {
+                0.0
+            };
             share += 0.8 * (mine / table.max(1.0)) + 0.2 * won;
         }
     }
@@ -138,7 +142,11 @@ fn main() {
     );
     println!(
         "  statistic: {}",
-        if lane { "victory-lane progress (tracks WINS)" } else { "score share (tracks the ECONOMY)" }
+        if lane {
+            "victory-lane progress (tracks WINS)"
+        } else {
+            "score share (tracks the ECONOMY)"
+        }
     );
     println!("  each draw replaces a block with uniform samples from its own bounds");
     println!("  parity 0.500; a block that matters scores BELOW parity when scrambled\n");
@@ -168,7 +176,15 @@ fn main() {
         v[gene] = value;
         let genome = Weights::from_vec(&v);
         let shares = parallel::map(maps, jobs, move |index| {
-            duel(&genome, players, width, height, seed0 + index as u64, turns, lane)
+            duel(
+                &genome,
+                players,
+                width,
+                height,
+                seed0 + index as u64,
+                turns,
+                lane,
+            )
         });
         let n = shares.len().max(1) as f64;
         let mean = shares.iter().sum::<f64>() / n;
@@ -246,7 +262,15 @@ fn main() {
             }
             let genome = Weights::from_vec(&v);
             let shares = parallel::map(maps, jobs, move |index| {
-                duel(&genome, players, width, height, seed0 + index as u64, turns, lane)
+                duel(
+                    &genome,
+                    players,
+                    width,
+                    height,
+                    seed0 + index as u64,
+                    turns,
+                    lane,
+                )
             });
             let n = shares.len().max(1) as f64;
             let mean = shares.iter().sum::<f64>() / n;
@@ -256,8 +280,7 @@ fn main() {
                 0.0
             };
             let se = (variance / n).sqrt();
-            let mut order: Vec<(usize, &str)> =
-                perm.iter().copied().zip(labels).collect();
+            let mut order: Vec<(usize, &str)> = perm.iter().copied().zip(labels).collect();
             order.sort_by_key(|(rank, _)| *rank);
             let name = order
                 .iter()
@@ -296,14 +319,25 @@ fn main() {
         };
         let (lo, hi) = bounds[gene];
         let points = number(&args, "--points", 7).max(2);
-        println!("sweeping {target} over [{lo}, {hi}], shipped {:.3}\n", shipped[gene]);
+        println!(
+            "sweeping {target} over [{lo}, {hi}], shipped {:.3}\n",
+            shipped[gene]
+        );
         for step in 0..points {
             let value = lo + (hi - lo) * step as f64 / (points - 1) as f64;
             let mut v = shipped.clone();
             v[gene] = value;
             let genome = Weights::from_vec(&v);
             let shares = parallel::map(maps, jobs, move |index| {
-                duel(&genome, players, width, height, seed0 + index as u64, turns, lane)
+                duel(
+                    &genome,
+                    players,
+                    width,
+                    height,
+                    seed0 + index as u64,
+                    turns,
+                    lane,
+                )
             });
             let n = shares.len().max(1) as f64;
             let mean = shares.iter().sum::<f64>() / n;
@@ -314,7 +348,11 @@ fn main() {
             };
             let se = (variance / n).sqrt();
             let edge = mean - 0.5;
-            let flag = if se > 0.0 && edge.abs() > 2.0 * se { "  <-- outside the interval" } else { "" };
+            let flag = if se > 0.0 && edge.abs() > 2.0 * se {
+                "  <-- outside the interval"
+            } else {
+                ""
+            };
             println!("  {value:>8.3}   {mean:.4} +/- {se:.4}   {edge:+.4}{flag}");
         }
         println!(
@@ -340,7 +378,15 @@ fn main() {
             let genome = Weights::from_vec(&v);
             let map_seed = seed0 + 1_000 * (draw as u64 + 1);
             let shares = parallel::map(maps, jobs, move |index| {
-                duel(&genome, players, width, height, map_seed + index as u64, turns, lane)
+                duel(
+                    &genome,
+                    players,
+                    width,
+                    height,
+                    map_seed + index as u64,
+                    turns,
+                    lane,
+                )
             });
             per_draw.push(shares.iter().sum::<f64>() / shares.len().max(1) as f64);
         }

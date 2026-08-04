@@ -255,11 +255,7 @@ fn main() {
             }
             end_turn = turn;
 
-            let leading_score = majors
-                .iter()
-                .map(|pid| game.score(*pid))
-                .max()
-                .unwrap_or(0);
+            let leading_score = majors.iter().map(|pid| game.score(*pid)).max().unwrap_or(0);
             let mut row = vec![[0.0_f64; SIGNALS.len()]; majors.len()];
 
             // Who is close, on each instrument.
@@ -351,8 +347,7 @@ fn main() {
                 track.peak_belligerents = track.peak_belligerents.max(belligerents);
                 let after = track.first_named.is_some_and(|first| turn >= first);
                 if after {
-                    track.peak_belligerents_after =
-                        track.peak_belligerents_after.max(belligerents);
+                    track.peak_belligerents_after = track.peak_belligerents_after.max(belligerents);
                     track.turns_after += 1;
                     if at_war {
                         track.war_turns_after += 1;
@@ -378,7 +373,10 @@ fn main() {
         }
         let winner = game.winner;
         let denials_on_winner = winner.map_or(0, |w| {
-            named_by_turn.iter().filter(|(_, rival)| *rival == w).count() as u64
+            named_by_turn
+                .iter()
+                .filter(|(_, rival)| *rival == w)
+                .count() as u64
         });
 
         MapReading {
@@ -469,7 +467,10 @@ fn main() {
         }
     }
 
-    println!("\nthe eventual winner, over {} decided games:", decided.len());
+    println!(
+        "\nthe eventual winner, over {} decided games:",
+        decided.len()
+    );
     let report = |label: &str, values: &mut Vec<i64>| {
         match median(values) {
             Some(mid) => println!(
@@ -557,7 +558,13 @@ fn main() {
         }
     };
     println!("\ndoes being contested stop them? (every major, every map)");
-    println!("  {:<34} {} of {} → {}", "any major", all.1, all.0, rate(all));
+    println!(
+        "  {:<34} {} of {} → {}",
+        "any major",
+        all.1,
+        all.0,
+        rate(all)
+    );
     println!(
         "  {:<34} {} of {} → {}",
         "ever named by the denial layer",

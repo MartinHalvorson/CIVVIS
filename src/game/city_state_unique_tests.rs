@@ -1,5 +1,5 @@
-use crate::name::Name;
 use super::*;
+use crate::name::Name;
 
 fn game_with_capitals(players: usize, seed: u64) -> (Game, Vec<u32>) {
     let mut game = Game::new_full(players, 28, 18, seed, 300, 0, false);
@@ -242,11 +242,14 @@ fn hattusa_stockholm_and_vilnius_use_resources_gpp_and_real_adjacency() {
     game.map.tiles.get_mut(&wonder).unwrap().wonder = Some(crate::name!("pyramids"));
     install_alliance(&mut game, 0, 1, "research", 2);
     game.players[minor].civ = "Mohenjo-Daro".to_string();
-    let ordinary = game.district_yields(crate::name!("theater_square"), theater).culture;
+    let ordinary = game
+        .district_yields(crate::name!("theater_square"), theater)
+        .culture;
     assert!(ordinary > 0.0);
     game.players[minor].civ = "Vilnius".to_string();
     assert_close(
-        game.district_yields(crate::name!("theater_square"), theater).culture,
+        game.district_yields(crate::name!("theater_square"), theater)
+            .culture,
         ordinary * 2.0,
     );
 }
@@ -528,7 +531,12 @@ fn no_city_state_seat_claims_a_suzerain_bonus_the_engine_does_not_have() {
                 "{} is marked implemented with no bonus key",
                 seat.name
             );
-            assert_eq!(game.cs_bonus(&seat.name), seat.bonus.as_deref(), "{}", seat.name);
+            assert_eq!(
+                game.cs_bonus(&seat.name),
+                seat.bonus.as_deref(),
+                "{}",
+                seat.name
+            );
         } else {
             assert_eq!(game.cs_bonus(&seat.name), None, "{}", seat.name);
         }
@@ -566,7 +574,9 @@ fn valletta_purchases_city_center_and_encampment_buildings_with_discounted_walls
     assert!(game.legal_actions(0).contains(&purchase));
     game.apply(0, &purchase).unwrap();
     assert_close(game.players[0].faith, 920.0);
-    assert!(game.cities[&city].buildings.contains(&crate::name!("walls")));
+    assert!(game.cities[&city]
+        .buildings
+        .contains(&crate::name!("walls")));
     assert_eq!(game.cities[&city].wall_hp, 100);
 
     install_district(&mut game, city, "encampment");
@@ -853,10 +863,7 @@ fn brussels_hong_kong_and_muscat_pay_wonders_projects_and_amenities() {
     };
     let before = game.item_prod_mult(0, city, Some(&wonder));
     make_suzerain(&mut game, 0, brussels);
-    assert_close(
-        game.item_prod_mult(0, city, Some(&wonder)),
-        before + 0.15,
-    );
+    assert_close(game.item_prod_mult(0, city, Some(&wonder)), before + 0.15);
 
     // +20% Production towards city projects, and not towards wonders.
     game.players[brussels].civ = "Hong Kong".to_string();
@@ -868,10 +875,7 @@ fn brussels_hong_kong_and_muscat_pay_wonders_projects_and_amenities() {
         game.item_prod_mult(0, city, Some(&project))
     };
     make_suzerain(&mut game, 0, brussels);
-    assert_close(
-        game.item_prod_mult(0, city, Some(&project)),
-        base + 0.20,
-    );
+    assert_close(game.item_prod_mult(0, city, Some(&project)), base + 0.20);
     assert_close(game.item_prod_mult(0, city, Some(&wonder)), before);
 
     // +1 Amenity in cities with a Commercial Hub, and nothing without one.
@@ -962,7 +966,10 @@ fn mitla_grows_campus_cities_and_taruga_counts_resource_kinds_not_tiles() {
         })
         .take(3)
         .collect();
-    assert!(plain.len() >= 3, "the capital needs three workable land tiles");
+    assert!(
+        plain.len() >= 3,
+        "the capital needs three workable land tiles"
+    );
     // Level the city's whole workable ring, not just the three tiles about to
     // carry the resources. Taruga's bonus is a *percentage* of the city's
     // Science, and `city_yields` re-picks which tiles the Citizens work every

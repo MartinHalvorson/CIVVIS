@@ -49,8 +49,8 @@
 //! must equal that row of the matrix built from `doctrine_values`, because both
 //! are the same rollout. Any mismatch means the matrix is not the search's own
 //! numbers and the run says so instead of reporting them.
-use civvis::ai::{AdvancedAi, Ai, Weights};
 use civvis::ai::VictoryTarget;
+use civvis::ai::{AdvancedAi, Ai, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;
 use civvis::strategic::{Doctrine, StrategicAi};
@@ -102,7 +102,11 @@ impl Review {
             })
             .unwrap_or(0);
         let doctrine = (0..Doctrine::ALL.len())
-            .max_by(|a, b| self.value[lane][*a].partial_cmp(&self.value[lane][*b]).unwrap())
+            .max_by(|a, b| {
+                self.value[lane][*a]
+                    .partial_cmp(&self.value[lane][*b])
+                    .unwrap()
+            })
             .unwrap_or(0);
         (lane, doctrine)
     }
@@ -126,7 +130,11 @@ impl Review {
     fn doctrine_depends_on_lane(&self) -> bool {
         let best_for = |lane: usize| {
             (0..Doctrine::ALL.len())
-                .max_by(|a, b| self.value[lane][*a].partial_cmp(&self.value[lane][*b]).unwrap())
+                .max_by(|a, b| {
+                    self.value[lane][*a]
+                        .partial_cmp(&self.value[lane][*b])
+                        .unwrap()
+                })
                 .unwrap_or(0)
         };
         let first = best_for(0);
@@ -254,7 +262,11 @@ fn main() {
         jobs,
         |index| examine(seed + index as u64, seats, width, height, turns, reviews),
         |index, produced: &Vec<Review>| {
-            eprintln!("  game {} done, {} review points", index + 1, produced.len())
+            eprintln!(
+                "  game {} done, {} review points",
+                index + 1,
+                produced.len()
+            )
         },
     );
     let reviews: Vec<Review> = harvest.into_iter().flatten().collect();
@@ -264,7 +276,9 @@ fn main() {
         std::process::exit(1);
     }
 
-    let worst_check = reviews.iter().fold(0.0f64, |worst, r| worst.max(r.self_check));
+    let worst_check = reviews
+        .iter()
+        .fold(0.0f64, |worst, r| worst.max(r.self_check));
     if worst_check > 1e-9 {
         eprintln!(
             "joint_axes: the matrix disagrees with lane_values by up to {worst_check:.6} -- \
@@ -310,15 +324,12 @@ fn main() {
     }
     // The worst case over incumbents is what a real agent can actually be in,
     // so the verdict is taken there rather than on a flattering average.
-    let (either, over_doctrine, over_target) = per_incumbent.iter().fold(
-        (0usize, 0usize, 0usize),
-        |(e, d, t), row| (e.max(row.3), d.max(row.6), t.max(row.7)),
-    );
-    let gap_sum = per_incumbent
+    let (either, over_doctrine, over_target) = per_incumbent
         .iter()
-        .map(|row| row.4)
-        .fold(0.0f64, f64::max)
-        * n as f64;
+        .fold((0usize, 0usize, 0usize), |(e, d, t), row| {
+            (e.max(row.3), d.max(row.6), t.max(row.7))
+        });
+    let gap_sum = per_incumbent.iter().map(|row| row.4).fold(0.0f64, f64::max) * n as f64;
     let gap_max = per_incumbent.iter().map(|row| row.5).fold(0.0f64, f64::max);
     let lane_differs = per_incumbent.iter().map(|row| row.1).max().unwrap_or(0);
     let doctrine_differs = per_incumbent.iter().map(|row| row.2).max().unwrap_or(0);

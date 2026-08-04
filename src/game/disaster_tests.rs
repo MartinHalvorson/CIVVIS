@@ -48,7 +48,10 @@ fn intensity_zero_leaves_every_volcano_dormant_and_fires_nothing() {
 
     advance(&mut game, 30);
     assert!(game.storms.is_empty(), "no storms form with disasters off");
-    assert!(game.droughts.is_empty(), "no droughts form with disasters off");
+    assert!(
+        game.droughts.is_empty(),
+        "no droughts form with disasters off"
+    );
 }
 
 #[test]
@@ -229,10 +232,7 @@ fn a_storm_drifts_for_three_turns_and_then_dissipates() {
     advance(&mut game, 3);
     assert!(game.storms.is_empty(), "three turns and it is gone");
     assert!(
-        game.map
-            .tiles
-            .values()
-            .all(|tile| tile.storm.is_none()),
+        game.map.tiles.values().all(|tile| tile.storm.is_none()),
         "and it leaves no marker behind"
     );
 }

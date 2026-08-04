@@ -94,7 +94,11 @@ fn duel(candidate: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u
                 mine += score;
             }
         }
-        let won = if game.winner.is_some_and(is_treated) { 1.0 } else { 0.0 };
+        let won = if game.winner.is_some_and(is_treated) {
+            1.0
+        } else {
+            0.0
+        };
         share += 0.8 * (mine / table.max(1.0)) + 0.2 * won;
     }
     share / 2.0
@@ -203,8 +207,15 @@ fn main() {
         );
         println!(
             "book {} vs shipped {}",
-            book.iter().map(|v| option_name(*v)).collect::<Vec<_>>().join(" -> "),
-            shipped.iter().map(|v| option_name(*v)).collect::<Vec<_>>().join(" -> ")
+            book.iter()
+                .map(|v| option_name(*v))
+                .collect::<Vec<_>>()
+                .join(" -> "),
+            shipped
+                .iter()
+                .map(|v| option_name(*v))
+                .collect::<Vec<_>>()
+                .join(" -> ")
         );
         let edge = mean - 0.5;
         println!("  {mean:.4} +/- {se:.4}   edge {edge:+.4} ({:.1} SE) over {holdout_maps} maps, seed {holdout_seed}",

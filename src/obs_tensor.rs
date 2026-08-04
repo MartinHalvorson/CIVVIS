@@ -19,20 +19,20 @@ use crate::Pos;
 
 /// Static-terrain and dynamic-state feature planes, in tensor order.
 pub const PLANES: [&str; 25] = [
-    "visible",        // currently in sight
-    "explored",       // ever seen (all planes below are gated on this)
-    "water",          // coast/lake/ocean terrain
+    "visible",  // currently in sight
+    "explored", // ever seen (all planes below are gated on this)
+    "water",    // coast/lake/ocean terrain
     "hills",
     "mountain",
-    "forestlike",     // woods or rainforest feature
-    "river",          // river edge count / 6
-    "cliff",          // cliff edge count / 6
+    "forestlike", // woods or rainforest feature
+    "river",      // river edge count / 6
+    "cliff",      // cliff edge count / 6
     "road",
-    "resource",       // a resource this player can see (tech-gated)
-    "improvement",    // active (unpillaged) improvement
-    "pillaged",       // pillaged improvement or district
-    "district",       // completed district
-    "wonder",         // completed world wonder
+    "resource",    // a resource this player can see (tech-gated)
+    "improvement", // active (unpillaged) improvement
+    "pillaged",    // pillaged improvement or district
+    "district",    // completed district
+    "wonder",      // completed world wonder
     "territory_mine",
     "territory_other",
     "city_mine",
@@ -64,12 +64,15 @@ impl ObsTensor {
     pub fn at(&self, plane: usize, pos: Pos) -> f32 {
         let canon = hex::canon(pos, self.width);
         let (col, row) = hex::axial_to_offset(canon.0, canon.1);
-        self.data[(plane * self.height as usize + row as usize) * self.width as usize
-            + col as usize]
+        self.data
+            [(plane * self.height as usize + row as usize) * self.width as usize + col as usize]
     }
 
     pub fn plane_index(name: &str) -> usize {
-        PLANES.iter().position(|p| *p == name).expect("unknown plane")
+        PLANES
+            .iter()
+            .position(|p| *p == name)
+            .expect("unknown plane")
     }
 }
 
@@ -116,7 +119,9 @@ pub fn obs_tensor(g: &Game, pid: usize) -> ObsTensor {
     };
 
     for pos in &explored {
-        let Some(tile) = g.map.get(*pos) else { continue };
+        let Some(tile) = g.map.get(*pos) else {
+            continue;
+        };
         put(&mut data, plane_explored, *pos, 1.0);
         if vis.contains(pos) {
             put(&mut data, plane_visible, *pos, 1.0);
@@ -189,7 +194,12 @@ pub fn obs_tensor(g: &Game, pid: usize) -> ObsTensor {
         if vis.contains(&city.pos) || city.owner == pid {
             let pool = (city.hp + city.wall_hp).max(0) as f32;
             let cap = (100 + g.city_max_wall_hp(city).max(0)) as f32;
-            put(&mut data, plane_city_hp, city.pos, (pool / cap).clamp(0.0, 1.0));
+            put(
+                &mut data,
+                plane_city_hp,
+                city.pos,
+                (pool / cap).clamp(0.0, 1.0),
+            );
         }
     }
 
@@ -249,27 +259,66 @@ fn global_block(g: &Game, pid: usize, vis: &BTreeSet<Pos>) -> (Vec<f32>, Vec<Str
         yields[2] += y.gold;
         yields[3] += y.faith;
     }
-    push(&mut names, &mut out, "turn", g.turn as f32 / g.max_turns.max(1) as f32);
+    push(
+        &mut names,
+        &mut out,
+        "turn",
+        g.turn as f32 / g.max_turns.max(1) as f32,
+    );
     push(&mut names, &mut out, "cities", cids.len() as f32 / 12.0);
-    push(&mut names, &mut out, "population",
-        cids.iter().map(|c| g.cities[c].pop).sum::<i32>() as f32 / 80.0);
-    push(&mut names, &mut out, "techs",
-        p.techs.len() as f32 / g.rules.techs.len() as f32);
-    push(&mut names, &mut out, "civics",
-        p.civics.len() as f32 / g.rules.civics.len() as f32);
-    push(&mut names, &mut out, "science_rate", yields[0] as f32 / 200.0);
-    push(&mut names, &mut out, "culture_rate", yields[1] as f32 / 200.0);
+    push(
+        &mut names,
+        &mut out,
+        "population",
+        cids.iter().map(|c| g.cities[c].pop).sum::<i32>() as f32 / 80.0,
+    );
+    push(
+        &mut names,
+        &mut out,
+        "techs",
+        p.techs.len() as f32 / g.rules.techs.len() as f32,
+    );
+    push(
+        &mut names,
+        &mut out,
+        "civics",
+        p.civics.len() as f32 / g.rules.civics.len() as f32,
+    );
+    push(
+        &mut names,
+        &mut out,
+        "science_rate",
+        yields[0] as f32 / 200.0,
+    );
+    push(
+        &mut names,
+        &mut out,
+        "culture_rate",
+        yields[1] as f32 / 200.0,
+    );
     push(&mut names, &mut out, "gold_rate", yields[2] as f32 / 300.0);
     push(&mut names, &mut out, "faith_rate", yields[3] as f32 / 100.0);
     push(&mut names, &mut out, "treasury", p.gold as f32 / 2000.0);
     push(&mut names, &mut out, "faith", p.faith as f32 / 1000.0);
-    push(&mut names, &mut out, "military_power",
-        g.military_power(pid) as f32 / 500.0);
-    push(&mut names, &mut out, "units",
-        g.player_unit_ids(pid).len() as f32 / 30.0);
+    push(
+        &mut names,
+        &mut out,
+        "military_power",
+        g.military_power(pid) as f32 / 500.0,
+    );
+    push(
+        &mut names,
+        &mut out,
+        "units",
+        g.player_unit_ids(pid).len() as f32 / 30.0,
+    );
     push(&mut names, &mut out, "score", g.score(pid) as f32 / 1500.0);
-    push(&mut names, &mut out, "explored_share",
-        p.explored.len() as f32 / g.map.tiles.len().max(1) as f32);
+    push(
+        &mut names,
+        &mut out,
+        "explored_share",
+        p.explored.len() as f32 / g.map.tiles.len().max(1) as f32,
+    );
 
     let rivals: Vec<usize> = g
         .players
@@ -305,15 +354,31 @@ fn global_block(g: &Game, pid: usize, vis: &BTreeSet<Pos>) -> (Vec<f32>, Vec<Str
         match rivals.get(slot) {
             Some(&other) => {
                 let o = &g.players[other];
-                push(&mut names, &mut out, &format!("{prefix}_alive"),
-                    o.alive as u8 as f32);
-                push(&mut names, &mut out, &format!("{prefix}_war"),
-                    g.is_at_war(pid, other) as u8 as f32);
-                push(&mut names, &mut out, &format!("{prefix}_score"),
-                    g.score(other) as f32 / 1500.0);
+                push(
+                    &mut names,
+                    &mut out,
+                    &format!("{prefix}_alive"),
+                    o.alive as u8 as f32,
+                );
+                push(
+                    &mut names,
+                    &mut out,
+                    &format!("{prefix}_war"),
+                    g.is_at_war(pid, other) as u8 as f32,
+                );
+                push(
+                    &mut names,
+                    &mut out,
+                    &format!("{prefix}_score"),
+                    g.score(other) as f32 / 1500.0,
+                );
                 let seen = seen_by_rival[slot];
-                push(&mut names, &mut out, &format!("{prefix}_seen_military"),
-                    seen / 500.0);
+                push(
+                    &mut names,
+                    &mut out,
+                    &format!("{prefix}_seen_military"),
+                    seen / 500.0,
+                );
             }
             None => {
                 for field in ["alive", "war", "score", "seen_military"] {
@@ -341,7 +406,10 @@ mod tests {
         let again = obs_tensor(&g, 0);
         assert_eq!(t.data, again.data);
         assert_eq!(t.global, again.global);
-        assert!(t.data.iter().all(|v| v.is_finite() && *v >= 0.0 && *v <= 1.0));
+        assert!(t
+            .data
+            .iter()
+            .all(|v| v.is_finite() && *v >= 0.0 && *v <= 1.0));
         assert!(t.global.iter().all(|v| v.is_finite()));
     }
 

@@ -577,14 +577,13 @@ impl TournamentProfile {
                 .rating_anchor
                 .as_ref()
                 .is_none_or(|anchor| !anchor.trim().is_empty())
-            && self.controller_roster.iter().all(|name| !name.trim().is_empty())
+            && self
+                .controller_roster
+                .iter()
+                .all(|name| !name.trim().is_empty())
             && (self.controller_roster.is_empty()
                 || (self.controller_roster.len() >= self.players_per_game
-                    && self
-                        .controller_roster
-                        .iter()
-                        .collect::<BTreeSet<_>>()
-                        .len()
+                    && self.controller_roster.iter().collect::<BTreeSet<_>>().len()
                         == self.controller_roster.len()))
             && (2..=100).contains(&self.players_per_game)
             && self.width >= 8
@@ -948,9 +947,10 @@ impl EloPool {
                 None => true,
             };
             let valid_players = valid_rated_players(&game.players, game.id.is_some())
-                && stored.profile.as_ref().is_none_or(|profile| {
-                    game.players.len() == profile.players_per_game
-                });
+                && stored
+                    .profile
+                    .as_ref()
+                    .is_none_or(|profile| game.players.len() == profile.players_per_game);
             if !valid_id || !valid_players || !game.k.is_finite() || game.k < 0.0 {
                 return Err(io::Error::new(
                     ErrorKind::InvalidData,
@@ -1030,14 +1030,10 @@ impl EloPool {
                 "invalid tournament rating profile",
             ));
         }
-        if self
-            .history
-            .iter()
-            .any(|game| {
-                (game.k - profile.k).abs() > f64::EPSILON
-                    || game.players.len() != profile.players_per_game
-            })
-        {
+        if self.history.iter().any(|game| {
+            (game.k - profile.k).abs() > f64::EPSILON
+                || game.players.len() != profile.players_per_game
+        }) {
             return Err(io::Error::new(
                 ErrorKind::InvalidInput,
                 "raw game evidence does not match the tournament rating profile",
@@ -1287,8 +1283,7 @@ impl EloPool {
                         }
                     }
                     actual /= comparisons.max(1) as f64;
-                    let expectation =
-                        expected(self.overall[a_name].elo, self.overall[b_name].elo);
+                    let expectation = expected(self.overall[a_name].elo, self.overall[b_name].elo);
                     let change = scale * (actual - expectation);
                     *overall_delta.entry(a_name.clone()).or_default() += change;
                     *overall_delta.entry(b_name.clone()).or_default() -= change;
@@ -1500,7 +1495,8 @@ fn artifact_effective_alias(kind: ArmKind, dir: &str) -> ArmKind {
             | ArmKind::Strategic
             | ArmKind::StrategicWarm
             | ArmKind::ProductionNet
-    ) && crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
+    ) && crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH)
+        .is_some();
     let wide_net = matches!(kind, ArmKind::PolicyWide | ArmKind::PolicyWideFrozen)
         && crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
     let league = kind == ArmKind::StrategicDeepLeague && league_generalist().is_some();
@@ -2010,12 +2006,10 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // per-target turn limits are 650 for Domination and 300 for Score, and
         // the deployment runs **250**. At 6 players / 250 turns, 8 of 8 games
         // targeting domination ended by score at the limit instead.
-        "advanced_target_domination" => Box::new(AdvancedAi::targeting(
-            crate::ai::VictoryTarget::Domination,
-        )),
-        "advanced_target_score" => {
-            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score))
+        "advanced_target_domination" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Domination))
         }
+        "advanced_target_score" => Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score)),
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
         // ★★★★ THE AGENT THAT ACTUALLY PLAYS CIVILIZATION VI, PLAYABLE HEADLESS.
         //
@@ -2252,9 +2246,7 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // transfer screen favored the champion 33-27 games and 5-2 map
         // directions; retained evaluator-only for future artifact audits.
         "strategic_deep_default" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::ai::Weights::default(),
-            );
+            let mut ai = crate::strategic::StrategicAi::with_weights(crate::ai::Weights::default());
             ai.review_every = 20;
             ai.horizon = 80;
             Box::new(ai)
@@ -2573,11 +2565,7 @@ impl AgentSpec {
         if self.evaluator != other.evaluator {
             out.push("evaluator");
         }
-        for treatment in self
-            .treatments
-            .iter()
-            .chain(other.treatments.iter())
-        {
+        for treatment in self.treatments.iter().chain(other.treatments.iter()) {
             if self.treatments.contains(treatment) != other.treatments.contains(treatment)
                 && !out.contains(treatment)
             {
@@ -2693,12 +2681,12 @@ impl ArmKind {
     fn evaluator(self, net: bool, wide_net: bool) -> EvaluatorSource {
         match self {
             Self::Random => EvaluatorSource::Random,
-            Self::Neural | Self::Policy | Self::ProductionNet if net => {
-                EvaluatorSource::ValueNet { width: crate::evolve::FEATURE_WIDTH }
-            }
-            Self::PolicyWide | Self::PolicyWideFrozen if wide_net => {
-                EvaluatorSource::ValueNet { width: crate::decision_features::WIDTH }
-            }
+            Self::Neural | Self::Policy | Self::ProductionNet if net => EvaluatorSource::ValueNet {
+                width: crate::evolve::FEATURE_WIDTH,
+            },
+            Self::PolicyWide | Self::PolicyWideFrozen if wide_net => EvaluatorSource::ValueNet {
+                width: crate::decision_features::WIDTH,
+            },
             Self::StrategicScore | Self::Production => EvaluatorSource::ScoreShare,
             Self::Strategic
             | Self::StrategicCheap
@@ -2729,7 +2717,9 @@ impl ArmKind {
             | Self::StrategicUltra
             | Self::StrategicWarm => {
                 if net {
-                    EvaluatorSource::ValueNet { width: crate::evolve::FEATURE_WIDTH }
+                    EvaluatorSource::ValueNet {
+                        width: crate::evolve::FEATURE_WIDTH,
+                    }
                 } else {
                     EvaluatorSource::ScoreShare
                 }
@@ -2745,23 +2735,171 @@ impl ArmKind {
             // mechanism that differs instead of the catch-all
             // "implementation" axis, which the evaluator refuses.
             Self::Live => &LIVE_BRIDGE_TREATMENTS,
-            Self::LiveWithoutHomeDefense => &["live-trader-route", "live-religious-purchase", "siege-muster", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage"],
-            Self::LiveWithoutSolventFaithArmy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage"],
-            Self::LiveWithoutSiegeMuster => &["live-trader-route", "live-religious-purchase", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage"],
-            Self::LiveWithoutDistrictCoverage => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role"],
-            Self::LiveWithoutLoyaltyRateAlarm => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "ranged-line-of-sight", "siege-role", "district-coverage"],
-            Self::LiveWithoutBoundedRecovery => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage"],
-            Self::LiveWithoutArmyTargetWeighsEnemy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage"],
-            Self::LiveWithoutSiegeTracksWall => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage"],
-            Self::LiveWithoutBlindObjectiveStrength => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage"],
-            Self::LiveWithoutSiegeRole => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage"],
+            Self::LiveWithoutHomeDefense => &[
+                "live-trader-route",
+                "live-religious-purchase",
+                "siege-muster",
+                "recorded-tactical-step",
+                "strike-opening",
+                "bounded-recovery",
+                "army-target-weighs-enemy",
+                "siege-tracks-wall",
+                "blind-objective-strength",
+                "solvent-faith-army",
+                "loyalty-rate-alarm",
+                "ranged-line-of-sight",
+                "siege-role",
+                "district-coverage",
+            ],
+            Self::LiveWithoutSolventFaithArmy => &[
+                "live-trader-route",
+                "live-religious-purchase",
+                "siege-muster",
+                "home-defense",
+                "recorded-tactical-step",
+                "strike-opening",
+                "bounded-recovery",
+                "army-target-weighs-enemy",
+                "siege-tracks-wall",
+                "blind-objective-strength",
+                "loyalty-rate-alarm",
+                "ranged-line-of-sight",
+                "siege-role",
+                "district-coverage",
+            ],
+            Self::LiveWithoutSiegeMuster => &[
+                "live-trader-route",
+                "live-religious-purchase",
+                "home-defense",
+                "recorded-tactical-step",
+                "strike-opening",
+                "bounded-recovery",
+                "army-target-weighs-enemy",
+                "siege-tracks-wall",
+                "blind-objective-strength",
+                "solvent-faith-army",
+                "loyalty-rate-alarm",
+                "ranged-line-of-sight",
+                "siege-role",
+                "district-coverage",
+            ],
+            Self::LiveWithoutDistrictCoverage => &[
+                "live-trader-route",
+                "live-religious-purchase",
+                "siege-muster",
+                "home-defense",
+                "recorded-tactical-step",
+                "strike-opening",
+                "bounded-recovery",
+                "army-target-weighs-enemy",
+                "siege-tracks-wall",
+                "blind-objective-strength",
+                "solvent-faith-army",
+                "loyalty-rate-alarm",
+                "ranged-line-of-sight",
+                "siege-role",
+            ],
+            Self::LiveWithoutLoyaltyRateAlarm => &[
+                "live-trader-route",
+                "live-religious-purchase",
+                "siege-muster",
+                "home-defense",
+                "recorded-tactical-step",
+                "strike-opening",
+                "bounded-recovery",
+                "army-target-weighs-enemy",
+                "siege-tracks-wall",
+                "blind-objective-strength",
+                "solvent-faith-army",
+                "ranged-line-of-sight",
+                "siege-role",
+                "district-coverage",
+            ],
+            Self::LiveWithoutBoundedRecovery => &[
+                "live-trader-route",
+                "live-religious-purchase",
+                "siege-muster",
+                "home-defense",
+                "recorded-tactical-step",
+                "strike-opening",
+                "army-target-weighs-enemy",
+                "siege-tracks-wall",
+                "blind-objective-strength",
+                "solvent-faith-army",
+                "loyalty-rate-alarm",
+                "ranged-line-of-sight",
+                "siege-role",
+                "district-coverage",
+            ],
+            Self::LiveWithoutArmyTargetWeighsEnemy => &[
+                "live-trader-route",
+                "live-religious-purchase",
+                "siege-muster",
+                "home-defense",
+                "recorded-tactical-step",
+                "strike-opening",
+                "bounded-recovery",
+                "siege-tracks-wall",
+                "blind-objective-strength",
+                "solvent-faith-army",
+                "loyalty-rate-alarm",
+                "ranged-line-of-sight",
+                "siege-role",
+                "district-coverage",
+            ],
+            Self::LiveWithoutSiegeTracksWall => &[
+                "live-trader-route",
+                "live-religious-purchase",
+                "siege-muster",
+                "home-defense",
+                "recorded-tactical-step",
+                "strike-opening",
+                "bounded-recovery",
+                "army-target-weighs-enemy",
+                "blind-objective-strength",
+                "solvent-faith-army",
+                "loyalty-rate-alarm",
+                "ranged-line-of-sight",
+                "siege-role",
+                "district-coverage",
+            ],
+            Self::LiveWithoutBlindObjectiveStrength => &[
+                "live-trader-route",
+                "live-religious-purchase",
+                "siege-muster",
+                "home-defense",
+                "recorded-tactical-step",
+                "strike-opening",
+                "bounded-recovery",
+                "army-target-weighs-enemy",
+                "siege-tracks-wall",
+                "solvent-faith-army",
+                "loyalty-rate-alarm",
+                "ranged-line-of-sight",
+                "siege-role",
+                "district-coverage",
+            ],
+            Self::LiveWithoutSiegeRole => &[
+                "live-trader-route",
+                "live-religious-purchase",
+                "siege-muster",
+                "home-defense",
+                "recorded-tactical-step",
+                "strike-opening",
+                "bounded-recovery",
+                "army-target-weighs-enemy",
+                "siege-tracks-wall",
+                "blind-objective-strength",
+                "solvent-faith-army",
+                "loyalty-rate-alarm",
+                "ranged-line-of-sight",
+                "district-coverage",
+            ],
             Self::AdvancedBeliefPressure => &["belief-pressure"],
             // `advanced` now owns the confirmed Live + infrastructure +
             // priority composite. The retained arms below are therefore
             // explicit reversion controls, not forward treatments.
-            Self::AdvancedPolicyLiveControl => {
-                &["envoy-infrastructure-off", "envoy-priority-off"]
-            }
+            Self::AdvancedPolicyLiveControl => &["envoy-infrastructure-off", "envoy-priority-off"],
             Self::AdvancedPolicyEnvoyPriority => &[],
             Self::AdvancedEnvoyPolicy => &[
                 "envoy-influence",
@@ -2823,25 +2961,35 @@ impl ArmKind {
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
             Self::StrategicDeep => &["search-cadence-20", "search-horizon-80"],
-            Self::StrategicDeepAdaptive => {
-                &["search-cadence-20", "search-horizon-80", "search-adaptive-horizon"]
-            }
-            Self::StrategicDeepCheckmate => {
-                &["search-cadence-20", "search-horizon-80", "religious-checkmate-search"]
-            }
-            Self::StrategicDeepConversion => {
-                &["search-cadence-20", "search-horizon-80", "religious-conversion-search"]
-            }
+            Self::StrategicDeepAdaptive => &[
+                "search-cadence-20",
+                "search-horizon-80",
+                "search-adaptive-horizon",
+            ],
+            Self::StrategicDeepCheckmate => &[
+                "search-cadence-20",
+                "search-horizon-80",
+                "religious-checkmate-search",
+            ],
+            Self::StrategicDeepConversion => &[
+                "search-cadence-20",
+                "search-horizon-80",
+                "religious-conversion-search",
+            ],
             Self::StrategicDeepDefault => &["search-cadence-20", "search-horizon-80"],
             Self::StrategicDeepExpand => {
                 &["search-cadence-20", "search-horizon-80", "doctrine-expand"]
             }
-            Self::StrategicDeepConsolidate => {
-                &["search-cadence-20", "search-horizon-80", "doctrine-consolidate"]
-            }
-            Self::StrategicDeepMilitarize => {
-                &["search-cadence-20", "search-horizon-80", "doctrine-militarize"]
-            }
+            Self::StrategicDeepConsolidate => &[
+                "search-cadence-20",
+                "search-horizon-80",
+                "doctrine-consolidate",
+            ],
+            Self::StrategicDeepMilitarize => &[
+                "search-cadence-20",
+                "search-horizon-80",
+                "doctrine-militarize",
+            ],
             Self::StrategicDeepLeague => &["search-cadence-20", "search-horizon-80"],
             Self::StrategicDeepRivals => {
                 &["search-cadence-20", "search-horizon-80", "rival-lane-model"]
@@ -2869,13 +3017,10 @@ impl ArmKind {
 
     fn spec(self, dir: &str) -> AgentSpec {
         let champion = crate::evolve::load_champion(dir).is_some();
-        let net = crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH)
-            .is_some();
-        let wide_net = crate::valuenet::ValueNet::load_width(
-            dir,
-            crate::decision_features::WIDTH,
-        )
-        .is_some();
+        let net =
+            crate::valuenet::ValueNet::load_width(dir, crate::evolve::FEATURE_WIDTH).is_some();
+        let wide_net =
+            crate::valuenet::ValueNet::load_width(dir, crate::decision_features::WIDTH).is_some();
         let league = match self {
             Self::StrategicDeepLeague => league_generalist().is_some(),
             Self::AdvancedLeagueTop => shipped_league_top_advanced().is_some(),
@@ -2964,7 +3109,12 @@ impl AgentProvenance {
             true => format!("plays as {}", self.effective),
             false => format!("plays as {} with untrained defaults", self.requested),
         };
-        format!("{}: {} (missing {})", self.requested, plays, missing.join(", "))
+        format!(
+            "{}: {} (missing {})",
+            self.requested,
+            plays,
+            missing.join(", ")
+        )
     }
 
     fn artifacts_list(&self) -> String {
@@ -3210,10 +3360,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             vec![genome, value(true)],
             if net { "strategic" } else { "strategic_score" },
         ),
-        "strategic_religion_expand" => (
-            vec![genome, value(false)],
-            "strategic_religion_expand",
-        ),
+        "strategic_religion_expand" => (vec![genome, value(false)], "strategic_religion_expand"),
         "strategic_cold" => (vec![genome, value(false)], "strategic_cold"),
         "strategic_noprophet" => (vec![genome, value(false)], "strategic_noprophet"),
         "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
@@ -3225,18 +3372,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         // The frozen genome is in code; only the same optional value net read
         // by `strategic_deep` remains in its provenance.
         "strategic_deep_default" => (vec![value(false)], "strategic_deep_default"),
-        "strategic_deep_tempo" => (
-            vec![genome, value(false)],
-            "strategic_deep_tempo",
-        ),
-        "strategic_deep_conversion" => (
-            vec![genome, value(false)],
-            "strategic_deep_conversion",
-        ),
-        "strategic_deep_checkmate" => (
-            vec![genome, value(false)],
-            "strategic_deep_checkmate",
-        ),
+        "strategic_deep_tempo" => (vec![genome, value(false)], "strategic_deep_tempo"),
+        "strategic_deep_conversion" => (vec![genome, value(false)], "strategic_deep_conversion"),
+        "strategic_deep_checkmate" => (vec![genome, value(false)], "strategic_deep_checkmate"),
         "strategic_deep_expand" => (vec![genome, value(false)], "strategic_deep_expand"),
         "strategic_deep_consolidate" => (vec![genome, value(false)], "strategic_deep_consolidate"),
         "strategic_deep_militarize" => (vec![genome, value(false)], "strategic_deep_militarize"),
@@ -3271,10 +3409,14 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_solvent_faith_army" => (Vec::new(), "live_without_solvent_faith_army"),
         "live_without_siege_muster" => (Vec::new(), "live_without_siege_muster"),
         "live_without_bounded_recovery" => (Vec::new(), "live_without_bounded_recovery"),
-        "live_without_army_target_weighs_enemy" => (Vec::new(), "live_without_army_target_weighs_enemy"),
+        "live_without_army_target_weighs_enemy" => {
+            (Vec::new(), "live_without_army_target_weighs_enemy")
+        }
         "live_without_siege_tracks_wall" => (Vec::new(), "live_without_siege_tracks_wall"),
         "live_without_siege_role" => (Vec::new(), "live_without_siege_role"),
-        "live_without_blind_objective_strength" => (Vec::new(), "live_without_blind_objective_strength"),
+        "live_without_blind_objective_strength" => {
+            (Vec::new(), "live_without_blind_objective_strength")
+        }
         "live_without_loyalty_rate_alarm" => (Vec::new(), "live_without_loyalty_rate_alarm"),
         "live_without_district_coverage" => (Vec::new(), "live_without_district_coverage"),
         "advanced" => (Vec::new(), "advanced"),
@@ -3309,10 +3451,18 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_city_strategy_roles" => (Vec::new(), "advanced_city_strategy_roles"),
         "advanced_city_strategy_roles_raw" => (Vec::new(), "advanced_city_strategy_roles_raw"),
         "advanced_city_strategy_raw" => (Vec::new(), "advanced_city_strategy_raw"),
-        "advanced_city_strategy_bastion_only" => (Vec::new(), "advanced_city_strategy_bastion_only"),
-        "advanced_city_strategy_breadbasket_only" => (Vec::new(), "advanced_city_strategy_breadbasket_only"),
-        "advanced_city_strategy_comparative_only" => (Vec::new(), "advanced_city_strategy_comparative_only"),
-        "advanced_city_strategy_pressure_only" => (Vec::new(), "advanced_city_strategy_pressure_only"),
+        "advanced_city_strategy_bastion_only" => {
+            (Vec::new(), "advanced_city_strategy_bastion_only")
+        }
+        "advanced_city_strategy_breadbasket_only" => {
+            (Vec::new(), "advanced_city_strategy_breadbasket_only")
+        }
+        "advanced_city_strategy_comparative_only" => {
+            (Vec::new(), "advanced_city_strategy_comparative_only")
+        }
+        "advanced_city_strategy_pressure_only" => {
+            (Vec::new(), "advanced_city_strategy_pressure_only")
+        }
         "advanced_banking_dedication" => (
             vec![ArtifactStatus {
                 definitional: true,
@@ -3751,9 +3901,7 @@ fn tournament_event_id(
         })
         .collect::<Vec<_>>()
         .join("|");
-    format!(
-        "v{ELO_PROTOCOL_VERSION}:{run_seed:020}:{game_index:010}:{map_seed:020}:{seats}"
-    )
+    format!("v{ELO_PROTOCOL_VERSION}:{run_seed:020}:{game_index:010}:{map_seed:020}:{seats}")
 }
 
 /// Run a tournament against the latest shared ledger and atomically checkpoint
@@ -3821,9 +3969,7 @@ where
 
 pub fn leaderboard(pool: &EloPool) -> String {
     let mut overall: Vec<(&String, &Rating)> = pool.overall.iter().collect();
-    overall.sort_by(|(name_a, a), (name_b, b)| {
-        b.elo.total_cmp(&a.elo).then(name_a.cmp(name_b))
-    });
+    overall.sort_by(|(name_a, a), (name_b, b)| b.elo.total_cmp(&a.elo).then(name_a.cmp(name_b)));
     let mut out = String::new();
     if let Some(profile) = &pool.profile {
         out.push_str(&format!("rating profile: {}\n", profile.label()));
@@ -3932,7 +4078,10 @@ fn wilson_interval(score: f64, games: usize) -> (f64, f64) {
     let denominator = 1.0 + z2 / n;
     let centre = (p + z2 / (2.0 * n)) / denominator;
     let margin = z * (p * (1.0 - p) / n + z2 / (4.0 * n * n)).sqrt() / denominator;
-    ((centre - margin).clamp(0.0, 1.0), (centre + margin).clamp(0.0, 1.0))
+    (
+        (centre - margin).clamp(0.0, 1.0),
+        (centre + margin).clamp(0.0, 1.0),
+    )
 }
 
 fn performance_elo(base: f64, pair_score: f64) -> f64 {
@@ -4000,17 +4149,15 @@ mod tests {
         collapsed_entrants, direct_anchor_performance, expected, leaderboard, league_generalist,
         performance_elo, scheduled_seats, seat_schedule, strict_builtin_arm_in, wilson_interval,
         win_shares, ArmKind, BuiltinAiBuildError, EloPool, RatedPlayer, RatingKey,
-        TournamentProfile,
-        TourneyCfg, WeightSource, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE, DEFAULT_RATINGS_PATH,
-        ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS, HISTORICAL_V1_RATINGS_PATH,
-        LIVE_BRIDGE_TREATMENTS,
-        HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH,
-        VALUENET_FILE,
+        TournamentProfile, TourneyCfg, WeightSource, ARTIFACT_DIR, BUILTIN_AIS, CHAMPION_FILE,
+        DEFAULT_RATINGS_PATH, ELO_BASE_RATING, ELO_SCHEMA_VERSION, EVAL_ONLY_AIS,
+        HISTORICAL_V1_RATINGS_PATH, HISTORICAL_V2_RATINGS_PATH, HISTORICAL_V3_RATINGS_PATH,
+        LIVE_BRIDGE_TREATMENTS, VALUENET_FILE,
     };
-    use std::collections::BTreeSet;
     use crate::game::{Action, Game};
     use crate::rng::Rng;
     use std::collections::BTreeMap;
+    use std::collections::BTreeSet;
     use std::fs;
     use std::sync::{Arc, Barrier};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -4213,7 +4360,7 @@ mod tests {
                 &["advanced_banking_dedication", "advanced_evolved"],
                 ARTIFACT_DIR
             )[0]
-                .2,
+            .2,
             "advanced_evolved"
         );
         assert_eq!(
@@ -4242,8 +4389,8 @@ mod tests {
             "the economy control must expose its only changes from the promoted default"
         );
 
-        let policy_priority = builtin_arm("advanced_policy_envoy_priority")
-            .expect("composite is selectable");
+        let policy_priority =
+            builtin_arm("advanced_policy_envoy_priority").expect("composite is selectable");
         assert_eq!(policy_priority.spec, stock.spec);
         assert_eq!(
             builtin_provenance("advanced_policy_envoy_priority", ARTIFACT_DIR).line(),
@@ -4304,7 +4451,12 @@ mod tests {
         let arms = BUILTIN_AIS
             .iter()
             .chain(EVAL_ONLY_AIS.iter())
-            .map(|name| (*name, builtin_arm(name).expect("every selectable name has a typed arm")))
+            .map(|name| {
+                (
+                    *name,
+                    builtin_arm(name).expect("every selectable name has a typed arm"),
+                )
+            })
             .collect::<Vec<_>>();
         for (index, (left_name, left)) in arms.iter().enumerate() {
             for (right_name, right) in arms.iter().skip(index + 1) {
@@ -4666,9 +4818,7 @@ mod tests {
         assert!(performance_elo(1500.0, 0.0).is_infinite());
         assert!(performance_elo(1500.0, 1.0).is_infinite());
         assert!(
-            (performance_elo(1500.0, low) + performance_elo(1500.0, reverse_high)
-                - 3000.0)
-                .abs()
+            (performance_elo(1500.0, low) + performance_elo(1500.0, reverse_high) - 3000.0).abs()
                 < 1e-9
         );
     }
@@ -4776,7 +4926,10 @@ mod tests {
 
         let alice = &pool.overall["Alice"];
         assert_eq!((alice.games, alice.wins), (2, 1));
-        assert!(alice.elo < 1000.0, "the upset must erase more than the first win added");
+        assert!(
+            alice.elo < 1000.0,
+            "the upset must erase more than the first win added"
+        );
         assert_eq!(
             alice.elo,
             pool.ratings[&RatingKey::new("Alice", "Eleanor", "France")].elo
@@ -4830,8 +4983,14 @@ mod tests {
 
         assert_eq!(pool.overall["Alice"].elo, 1012.0);
         assert_eq!(pool.overall["Bob"].elo, 988.0);
-        assert_eq!((pool.overall["Alice"].games, pool.overall["Alice"].wins), (1, 1));
-        assert_eq!((pool.overall["Bob"].games, pool.overall["Bob"].wins), (1, 0));
+        assert_eq!(
+            (pool.overall["Alice"].games, pool.overall["Alice"].wins),
+            (1, 1)
+        );
+        assert_eq!(
+            (pool.overall["Bob"].games, pool.overall["Bob"].wins),
+            (1, 0)
+        );
     }
 
     #[test]
@@ -4851,11 +5010,10 @@ mod tests {
         assert_eq!(pool.profile, Some(original));
 
         let mut controller_changed = pool.profile.clone().unwrap();
-        controller_changed.controller_roster =
-            ["advanced", "advanced_v1", "basic", "strategic"]
-                .into_iter()
-                .map(str::to_string)
-                .collect();
+        controller_changed.controller_roster = ["advanced", "advanced_v1", "basic", "strategic"]
+            .into_iter()
+            .map(str::to_string)
+            .collect();
         let error = pool.bind_profile(controller_changed).unwrap_err();
         assert!(error.to_string().contains("rating profile mismatch"));
 
@@ -4882,10 +5040,7 @@ mod tests {
     fn old_schema_three_profiles_migrate_to_the_historical_lobby() {
         let mut encoded =
             serde_json::to_value(TournamentProfile::from_cfg(&TourneyCfg::default())).unwrap();
-        encoded
-            .as_object_mut()
-            .unwrap()
-            .remove("setup_contract");
+        encoded.as_object_mut().unwrap().remove("setup_contract");
 
         let migrated: TournamentProfile = serde_json::from_value(encoded).unwrap();
 
@@ -4898,9 +5053,7 @@ mod tests {
     #[test]
     fn persistent_ratings_reject_cloned_or_duplicate_entrants() {
         let cfg = TourneyCfg::default();
-        let make = |_: &str, _: u64| {
-            Box::new(crate::ai::BasicAi::new()) as Box<dyn crate::ai::Ai>
-        };
+        let make = |_: &str, _: u64| Box::new(crate::ai::BasicAi::new()) as Box<dyn crate::ai::Ai>;
         let too_few = vec!["advanced".to_string(), "basic".to_string()];
         let error = super::run_persistent_tournament(
             &too_few,
@@ -4909,7 +5062,9 @@ mod tests {
             "target/elo-test-must-not-exist.json",
         )
         .unwrap_err();
-        assert!(error.to_string().contains("cloned seats change the contest"));
+        assert!(error
+            .to_string()
+            .contains("cloned seats change the contest"));
 
         let duplicate = vec![
             "advanced".to_string(),
@@ -4943,7 +5098,9 @@ mod tests {
             "target/elo-test-must-not-exist.json",
         )
         .unwrap_err();
-        assert!(error.to_string().contains("must be one of the tournament entrants"));
+        assert!(error
+            .to_string()
+            .contains("must be one of the tournament entrants"));
 
         let error = super::run_persistent_tournament(
             &distinct,
@@ -5179,10 +5336,8 @@ mod tests {
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        let dir = std::env::temp_dir().join(format!(
-            "civvis-elo-tamper-{}-{nonce}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("civvis-elo-tamper-{}-{nonce}", std::process::id()));
         let path = dir.join("ratings.json");
         let mut pool = EloPool::with_base(1500.0);
         pool.record_game_once(
@@ -5223,10 +5378,7 @@ mod tests {
         let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
         historical_profile.protocol_version = 1;
         historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
-        assert_eq!(
-            pool.profile,
-            Some(historical_profile)
-        );
+        assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
         assert_eq!(
@@ -5274,17 +5426,13 @@ mod tests {
         let mut historical_profile = TournamentProfile::from_cfg(&expected_cfg);
         historical_profile.protocol_version = 2;
         historical_profile.rules_fingerprint = "fnv1a64:3423bd46da2b8cd7".to_string();
-        assert_eq!(
-            pool.profile,
-            Some(historical_profile)
-        );
+        assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
-        assert!(pool.history.iter().all(|game| {
-            game.id
-                .as_deref()
-                .is_some_and(|id| id.starts_with("v2:"))
-        }));
+        assert!(pool
+            .history
+            .iter()
+            .all(|game| { game.id.as_deref().is_some_and(|id| id.starts_with("v2:")) }));
         assert_eq!(
             pool.history.len(),
             pool.overall
@@ -5333,11 +5481,10 @@ mod tests {
         assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
-        assert!(pool.history.iter().all(|game| {
-            game.id
-                .as_deref()
-                .is_some_and(|id| id.starts_with("v3:"))
-        }));
+        assert!(pool
+            .history
+            .iter()
+            .all(|game| { game.id.as_deref().is_some_and(|id| id.starts_with("v3:")) }));
         assert_eq!(
             pool.history.len(),
             pool.overall
@@ -5388,11 +5535,10 @@ mod tests {
         assert_eq!(pool.profile, Some(historical_profile));
         assert!(pool.history_complete);
         assert_eq!(pool.history.len(), 40);
-        assert!(pool.history.iter().all(|game| {
-            game.id
-                .as_deref()
-                .is_some_and(|id| id.starts_with("v4:"))
-        }));
+        assert!(pool
+            .history
+            .iter()
+            .all(|game| { game.id.as_deref().is_some_and(|id| id.starts_with("v4:")) }));
         assert_eq!(
             pool.history.len(),
             pool.overall
@@ -5442,7 +5588,13 @@ mod tests {
         let rating = &pool.ratings[&RatingKey::new("advanced", "Trajan", "Rome")];
         assert_eq!((rating.elo, rating.games, rating.wins), (1111.0, 3, 2));
         assert_eq!(pool.overall["advanced"].elo, rating.elo);
-        assert_eq!((pool.overall["advanced"].games, pool.overall["advanced"].wins), (0, 0));
+        assert_eq!(
+            (
+                pool.overall["advanced"].games,
+                pool.overall["advanced"].wins
+            ),
+            (0, 0)
+        );
         assert!(!pool.history_complete);
         pool.save(&path).unwrap();
         let raw = fs::read_to_string(&path).unwrap();

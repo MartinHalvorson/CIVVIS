@@ -12,7 +12,8 @@ fn founded_two_cities() -> (Game, u32) {
             .find(|unit| game.units[unit].kind == "settler")
             .unwrap();
         game.current = pid;
-        game.apply(pid, &Action::FoundCity { unit: settler }).unwrap();
+        game.apply(pid, &Action::FoundCity { unit: settler })
+            .unwrap();
     }
     game.current = 0;
     let city = game.player_city_ids(0)[0];
@@ -48,7 +49,10 @@ fn purchased_missionary_adopts_the_city_majority_religion() {
         .unwrap()
         .pressure
         .insert("Adopted Faith".to_string(), 1_000.0);
-    assert_eq!(game.city_religion(&game.cities[&city]), Some("Adopted Faith"));
+    assert_eq!(
+        game.city_religion(&game.cities[&city]),
+        Some("Adopted Faith")
+    );
 
     game.apply(
         0,

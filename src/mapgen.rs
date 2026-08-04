@@ -61,7 +61,9 @@ fn grow_blob(
         }
         let index = rng.below(frontier.len());
         let current = frontier[index];
-        let candidates: Vec<Pos> = wm.neighbors(current).into_iter()
+        let candidates: Vec<Pos> = wm
+            .neighbors(current)
+            .into_iter()
             .filter(|neighbor| allowed.contains(neighbor) && !land.contains(neighbor))
             .collect();
         if candidates.is_empty() {
@@ -292,8 +294,7 @@ fn earth_tile(wm: &WorldMap, pos: Pos) -> EarthTile {
                 span * (2.0 * index as f64 / (count - 1) as f64 - 1.0)
             }
         };
-        let sample_latitude =
-            (latitude + offset(row, rows, span_latitude)).clamp(-89.999, 89.999);
+        let sample_latitude = (latitude + offset(row, rows, span_latitude)).clamp(-89.999, 89.999);
         for column in 0..columns {
             let cell = earth_cell(
                 longitude + offset(column, columns, span_longitude),
@@ -357,62 +358,62 @@ fn earth_tile(wm: &WorldMap, pos: Pos) -> EarthTile {
 /// and New Zealand, and the rest are the stepping stones that decide whether
 /// an ocean can be crossed at all.
 const EARTH_ISLANDS: &[(f64, f64, f64)] = &[
-    (-4.0, 54.0, 209.3),      // Britain
-    (-8.0, 53.3, 84.4),       // Ireland
-    (-19.0, 64.9, 103.0),     // Iceland
-    (-7.0, 62.0, 1.4),        // the Faroes
-    (-25.7, 37.8, 2.3),       // the Azores
-    (-15.6, 28.1, 7.5),       // the Canaries
-    (-23.6, 15.1, 4.0),       // Cape Verde
-    (14.3, 37.6, 25.7),       // Sicily
-    (9.0, 40.1, 24.1),        // Sardinia
-    (25.0, 35.3, 8.3),        // Crete
-    (33.3, 35.1, 9.3),        // Cyprus
-    (28.2, 36.4, 1.4),        // Rhodes
-    (-77.0, 21.5, 105.8),     // Cuba
-    (-71.0, 19.0, 76.2),      // Hispaniola
-    (-66.5, 18.2, 8.9),       // Puerto Rico
-    (-61.0, 13.5, 14.0),      // the Lesser Antilles
-    (-90.4, -0.6, 7.9),       // the Galapagos
-    (-109.4, -27.1, 0.2),     // Rapa Nui
-    (-149.5, -17.6, 1.0),     // Tahiti
-    (-171.8, -13.8, 2.8),     // Samoa
-    (178.4, -17.8, 18.3),     // Fiji
-    (166.5, -21.5, 18.6),     // New Caledonia
-    (168.0, -16.5, 12.2),     // Vanuatu
-    (159.9, -9.4, 28.4),      // the Solomons
-    (150.5, -5.5, 49.7),      // the Bismarcks
-    (-157.9, 21.3, 28.3),     // Hawaii
-    (145.7, 15.2, 1.0),       // the Marianas
-    (134.5, 7.5, 0.5),        // Palau
-    (168.7, 7.1, 0.2),        // the Marshalls
-    (172.9, 1.4, 0.8),        // Kiribati
-    (121.0, 23.7, 36.2),      // Taiwan
-    (127.8, 26.3, 2.3),       // Okinawa
-    (139.5, 36.5, 228.0),     // Japan
-    (142.5, 43.5, 83.4),      // Hokkaido
-    (124.0, 11.0, 56.0),      // the Visayas
-    (121.0, 15.5, 110.0),     // Luzon
-    (110.0, -7.3, 138.8),     // Java
-    (115.2, -8.4, 5.8),       // Bali
-    (101.5, 0.0, 473.5),      // Sumatra
-    (80.7, 7.9, 65.6),        // Sri Lanka
-    (73.0, 4.2, 0.3),         // the Maldives
-    (55.5, -4.6, 0.5),        // the Seychelles
-    (57.5, -20.3, 2.0),       // Mauritius
-    (46.5, -19.0, 587.0),     // Madagascar
-    (43.3, -11.7, 1.9),       // the Comoros
-    (39.3, -6.1, 2.5),        // Zanzibar
-    (50.6, 26.0, 0.8),        // Bahrain
-    (175.5, -38.5, 113.7),    // New Zealand, north
-    (170.5, -44.0, 150.4),    // New Zealand, south
-    (146.8, -42.0, 68.4),     // Tasmania
-    (-59.0, -51.7, 12.2),     // the Falklands
-    (-73.8, -42.6, 8.4),      // Chiloe
-    (-55.5, 48.5, 108.9),     // Newfoundland
-    (-63.0, 45.0, 55.3),      // Nova Scotia
-    (-132.3, 53.2, 10.2),     // Haida Gwaii
-    (-134.5, 57.0, 36.3),     // the Alexander Archipelago
+    (-4.0, 54.0, 209.3),   // Britain
+    (-8.0, 53.3, 84.4),    // Ireland
+    (-19.0, 64.9, 103.0),  // Iceland
+    (-7.0, 62.0, 1.4),     // the Faroes
+    (-25.7, 37.8, 2.3),    // the Azores
+    (-15.6, 28.1, 7.5),    // the Canaries
+    (-23.6, 15.1, 4.0),    // Cape Verde
+    (14.3, 37.6, 25.7),    // Sicily
+    (9.0, 40.1, 24.1),     // Sardinia
+    (25.0, 35.3, 8.3),     // Crete
+    (33.3, 35.1, 9.3),     // Cyprus
+    (28.2, 36.4, 1.4),     // Rhodes
+    (-77.0, 21.5, 105.8),  // Cuba
+    (-71.0, 19.0, 76.2),   // Hispaniola
+    (-66.5, 18.2, 8.9),    // Puerto Rico
+    (-61.0, 13.5, 14.0),   // the Lesser Antilles
+    (-90.4, -0.6, 7.9),    // the Galapagos
+    (-109.4, -27.1, 0.2),  // Rapa Nui
+    (-149.5, -17.6, 1.0),  // Tahiti
+    (-171.8, -13.8, 2.8),  // Samoa
+    (178.4, -17.8, 18.3),  // Fiji
+    (166.5, -21.5, 18.6),  // New Caledonia
+    (168.0, -16.5, 12.2),  // Vanuatu
+    (159.9, -9.4, 28.4),   // the Solomons
+    (150.5, -5.5, 49.7),   // the Bismarcks
+    (-157.9, 21.3, 28.3),  // Hawaii
+    (145.7, 15.2, 1.0),    // the Marianas
+    (134.5, 7.5, 0.5),     // Palau
+    (168.7, 7.1, 0.2),     // the Marshalls
+    (172.9, 1.4, 0.8),     // Kiribati
+    (121.0, 23.7, 36.2),   // Taiwan
+    (127.8, 26.3, 2.3),    // Okinawa
+    (139.5, 36.5, 228.0),  // Japan
+    (142.5, 43.5, 83.4),   // Hokkaido
+    (124.0, 11.0, 56.0),   // the Visayas
+    (121.0, 15.5, 110.0),  // Luzon
+    (110.0, -7.3, 138.8),  // Java
+    (115.2, -8.4, 5.8),    // Bali
+    (101.5, 0.0, 473.5),   // Sumatra
+    (80.7, 7.9, 65.6),     // Sri Lanka
+    (73.0, 4.2, 0.3),      // the Maldives
+    (55.5, -4.6, 0.5),     // the Seychelles
+    (57.5, -20.3, 2.0),    // Mauritius
+    (46.5, -19.0, 587.0),  // Madagascar
+    (43.3, -11.7, 1.9),    // the Comoros
+    (39.3, -6.1, 2.5),     // Zanzibar
+    (50.6, 26.0, 0.8),     // Bahrain
+    (175.5, -38.5, 113.7), // New Zealand, north
+    (170.5, -44.0, 150.4), // New Zealand, south
+    (146.8, -42.0, 68.4),  // Tasmania
+    (-59.0, -51.7, 12.2),  // the Falklands
+    (-73.8, -42.6, 8.4),   // Chiloe
+    (-55.5, 48.5, 108.9),  // Newfoundland
+    (-63.0, 45.0, 55.3),   // Nova Scotia
+    (-132.3, 53.2, 10.2),  // Haida Gwaii
+    (-134.5, 57.0, 36.3),  // the Alexander Archipelago
 ];
 
 /// The inland waters a tile-wide vote would drain, each with its area in
@@ -432,26 +433,26 @@ const EARTH_ISLANDS: &[(f64, f64, f64)] = &[
 /// overwhelmingly Ontario, and calling it water would be a plain error rather
 /// than a rounding of one.
 const EARTH_LAKES: &[(f64, f64, f64)] = &[
-    (51.0, 41.5, 371.0),      // the Caspian, southern basin
-    (50.5, 45.5, 371.0),      // the Caspian, northern basin
-    (59.5, 45.0, 68.0),       // the Aral, at its 1960 extent
-    (108.0, 53.5, 31.7),      // Baikal
-    (74.5, 46.3, 16.4),       // Balkhash
-    (31.5, 61.0, 17.7),       // Ladoga
-    (-87.5, 47.7, 82.1),      // Superior
-    (-87.0, 44.0, 58.0),      // Michigan
-    (-82.2, 44.8, 59.6),      // Huron
-    (-79.5, 43.0, 25.7),      // Erie and Ontario
-    (-97.5, 52.5, 24.5),      // Winnipeg
-    (-110.0, 59.3, 7.9),      // Athabasca
-    (-114.0, 61.5, 27.2),     // Great Slave
-    (-121.0, 66.0, 31.0),     // Great Bear
-    (33.0, -1.0, 68.8),       // Victoria
-    (29.6, -6.0, 32.9),       // Tanganyika
-    (34.5, -12.0, 29.6),      // Malawi
-    (14.3, 13.2, 25.0),       // Chad, at the extent it held into the 1960s
-    (-69.3, -15.8, 8.4),      // Titicaca
-    (-71.5, 9.8, 13.2),       // Maracaibo
+    (51.0, 41.5, 371.0),  // the Caspian, southern basin
+    (50.5, 45.5, 371.0),  // the Caspian, northern basin
+    (59.5, 45.0, 68.0),   // the Aral, at its 1960 extent
+    (108.0, 53.5, 31.7),  // Baikal
+    (74.5, 46.3, 16.4),   // Balkhash
+    (31.5, 61.0, 17.7),   // Ladoga
+    (-87.5, 47.7, 82.1),  // Superior
+    (-87.0, 44.0, 58.0),  // Michigan
+    (-82.2, 44.8, 59.6),  // Huron
+    (-79.5, 43.0, 25.7),  // Erie and Ontario
+    (-97.5, 52.5, 24.5),  // Winnipeg
+    (-110.0, 59.3, 7.9),  // Athabasca
+    (-114.0, 61.5, 27.2), // Great Slave
+    (-121.0, 66.0, 31.0), // Great Bear
+    (33.0, -1.0, 68.8),   // Victoria
+    (29.6, -6.0, 32.9),   // Tanganyika
+    (34.5, -12.0, 29.6),  // Malawi
+    (14.3, 13.2, 25.0),   // Chad, at the extent it held into the 1960s
+    (-69.3, -15.8, 8.4),  // Titicaca
+    (-71.5, 9.8, 13.2),   // Maracaibo
 ];
 
 /// Where each civilization actually began, in `(longitude, latitude)` degrees.
@@ -793,14 +794,11 @@ fn paint_earth(wm: &mut WorldMap, land: &BTreeSet<Pos>, poles: MapPoles, rng: &m
 /// The tile whose centre points nearest a place on Earth.
 fn nearest_tile(wm: &WorldMap, longitude: f64, latitude: f64) -> Option<Pos> {
     let target = earth_direction(longitude, latitude);
-    wm.tiles
-        .keys()
-        .copied()
-        .max_by(|a, b| {
-            dot(wm.direction(*a), target)
-                .partial_cmp(&dot(wm.direction(*b), target))
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
+    wm.tiles.keys().copied().max_by(|a, b| {
+        dot(wm.direction(*a), target)
+            .partial_cmp(&dot(wm.direction(*b), target))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })
 }
 
 /// Seat each civilization on the viable tile closest to its homeland.
@@ -1205,8 +1203,7 @@ fn scatter_islands(
         let wanted = if land.len() >= plan.target {
             plan.min_size
         } else {
-            (plan.min_size + rng.below(span))
-                .min((plan.target - land.len()).max(plan.min_size))
+            (plan.min_size + rng.below(span)).min((plan.target - land.len()).max(plan.min_size))
         };
         let island = grow_blob(wm, open, seed, wanted.max(1), rng);
         // A gap that cannot hold the promised minimum stays water. Committing
@@ -1366,20 +1363,18 @@ fn globe_land(
     // Below half, the land is the minority and is grown directly.
     let target = (tiles * land_share / 100).max(seats * WATER_WORLD_TILES_PER_SEAT);
     match script {
-        MapScript::Islands => {
-            scatter_islands(
-                wm,
-                &mut field,
-                IslandScatterPlan {
-                    target,
-                    min_size: MIN_LANDMASS_FOR_A_START,
-                    max_size: 24,
-                    channel: ISLAND_CHANNEL,
-                    min_bodies: seats,
-                },
-                rng,
-            )
-        }
+        MapScript::Islands => scatter_islands(
+            wm,
+            &mut field,
+            IslandScatterPlan {
+                target,
+                min_size: MIN_LANDMASS_FOR_A_START,
+                max_size: 24,
+                channel: ISLAND_CHANNEL,
+                min_bodies: seats,
+            },
+            rng,
+        ),
         MapScript::WaterWorld => scatter_islands(
             wm,
             &mut field,
@@ -1647,10 +1642,22 @@ impl CanalProfile {
 /// together average four and a quarter tiles bank to bank, which is the width
 /// [`canal_block_count`] sizes a block against.
 const CANAL_PROFILES: [CanalProfile; 4] = [
-    CanalProfile { shelf: 1, channel: 1 },
-    CanalProfile { shelf: 1, channel: 2 },
-    CanalProfile { shelf: 1, channel: 3 },
-    CanalProfile { shelf: 2, channel: 1 },
+    CanalProfile {
+        shelf: 1,
+        channel: 1,
+    },
+    CanalProfile {
+        shelf: 1,
+        channel: 2,
+    },
+    CanalProfile {
+        shelf: 1,
+        channel: 3,
+    },
+    CanalProfile {
+        shelf: 2,
+        channel: 1,
+    },
 ];
 
 /// The canal two blocks share.
@@ -1662,9 +1669,8 @@ const CANAL_PROFILES: [CanalProfile; 4] = [
 /// not dig the same canals between them.
 fn canal_profile(one: usize, other: usize, salt: u64) -> CanalProfile {
     let (low, high) = (one.min(other) as u64, one.max(other) as u64);
-    let mut mixed = salt
-        ^ low.wrapping_mul(0x9E37_79B9_7F4A_7C15)
-        ^ high.wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
+    let mut mixed =
+        salt ^ low.wrapping_mul(0x9E37_79B9_7F4A_7C15) ^ high.wrapping_mul(0xC2B2_AE3D_27D4_EB4F);
     mixed ^= mixed >> 29;
     mixed = mixed.wrapping_mul(0xBF58_476D_1CE4_E5B9);
     mixed ^= mixed >> 32;
@@ -1689,7 +1695,10 @@ fn canal_at(own: (usize, f64), rival: (usize, f64), salt: u64) -> Option<CanalPr
 
 /// How wide a canal runs on average, which is what a block's rim costs it.
 fn canal_mean_width() -> f64 {
-    CANAL_PROFILES.iter().map(|profile| profile.width()).sum::<f64>()
+    CANAL_PROFILES
+        .iter()
+        .map(|profile| profile.width())
+        .sum::<f64>()
         / CANAL_PROFILES.len() as f64
 }
 
@@ -2064,9 +2073,7 @@ fn canal_blocks(wm: &WorldMap, poles: MapPoles, rng: &mut Rng) -> CanalBlocks {
         .tiles
         .iter()
         .copied()
-        .filter(|pos| {
-            !canals.contains_key(pos) && !sea.contains(pos) && !reserved.contains(pos)
-        })
+        .filter(|pos| !canals.contains_key(pos) && !sea.contains(pos) && !reserved.contains(pos))
         .collect();
 
     // A block is somewhere a civilization lives. Where a canal has clipped a
@@ -2191,12 +2198,7 @@ fn spread_lake(wm: &mut WorldMap, land: &mut BTreeSet<Pos>, pos: Pos, rng: &mut 
 /// Civ VI's `AddLakes` (`RiversLakes.lua`), in its stock position in the
 /// pipeline: after the rivers, because "lakes would interfere with rivers,
 /// causing them to stop and not reach the ocean, if placed any sooner".
-fn add_lakes(
-    wm: &mut WorldMap,
-    land: &mut BTreeSet<Pos>,
-    mut large_lakes: usize,
-    rng: &mut Rng,
-) {
+fn add_lakes(wm: &mut WorldMap, land: &mut BTreeSet<Pos>, mut large_lakes: usize, rng: &mut Rng) {
     let (width, height) = (wm.width, wm.height);
     let scan: Vec<Pos> = (0..height)
         .flat_map(|row| (0..width).map(move |col| hex::offset_to_axial(col, row)))
@@ -2293,8 +2295,7 @@ pub fn generate_with_script(
     // rolled along with the blocks, so asking a second time would not get the
     // same answer back. Every other type, [`grand_canals`] included, is the
     // same geometry every time it is asked.
-    let blocks = (script == MapScript::GrandCanalsTwo)
-        .then(|| canal_blocks(&wm, poles, rng));
+    let blocks = (script == MapScript::GrandCanalsTwo).then(|| canal_blocks(&wm, poles, rng));
     let mut land = match &blocks {
         Some(plan) => plan.land.clone(),
         None => generate_land(&wm, script, poles, num_major_spawns, num_minor_spawns, rng),
@@ -2324,8 +2325,7 @@ pub fn generate_with_script(
         .tiles
         .iter()
         .filter(|(pos, t)| {
-            t.terrain == "ocean"
-                && wm.neighbors(**pos).iter().any(|n| land.contains(n))
+            t.terrain == "ocean" && wm.neighbors(**pos).iter().any(|n| land.contains(n))
         })
         .map(|(pos, _)| *pos)
         .collect();
@@ -2338,12 +2338,11 @@ pub fn generate_with_script(
             .iter()
             .filter(|(pos, tile)| {
                 tile.terrain == "ocean"
-                    && wm.neighbors(**pos).into_iter()
-                        .any(|neighbor| {
-                            wm.tiles
-                                .get(&neighbor)
-                                .is_some_and(|tile| tile.terrain == "coast")
-                        })
+                    && wm.neighbors(**pos).into_iter().any(|neighbor| {
+                        wm.tiles
+                            .get(&neighbor)
+                            .is_some_and(|tile| tile.terrain == "coast")
+                    })
             })
             .map(|(pos, _)| *pos)
             .collect();
@@ -2401,8 +2400,7 @@ pub fn generate_with_script(
         if wm.tiles[&pos].terrain == "mountain" {
             continue;
         }
-        for neighbor in wm.neighbors(pos).into_iter()
-        {
+        for neighbor in wm.neighbors(pos).into_iter() {
             if wm
                 .tiles
                 .get(&neighbor)
@@ -2471,12 +2469,11 @@ pub fn generate_with_script(
         .copied()
         .filter(|position| wm.tiles[position].terrain == "mountain")
         .filter(|position| {
-            wm.neighbors(*position).into_iter()
-                .any(|neighbor| {
-                    wm.tiles.get(&neighbor).is_some_and(|tile| {
-                        !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean")
-                    })
+            wm.neighbors(*position).into_iter().any(|neighbor| {
+                wm.tiles.get(&neighbor).is_some_and(|tile| {
+                    !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean")
                 })
+            })
         })
         .collect();
     for index in (1..volcano_candidates.len()).rev() {
@@ -2502,7 +2499,9 @@ pub fn generate_with_script(
     // Guarantee one deposit where geography allows, then scatter a few more
     // without consuming the RNG differently for later per-tile feature rolls.
     for volcano in &volcanoes {
-        let mut foothills: Vec<Pos> = wm.neighbors(*volcano).into_iter()
+        let mut foothills: Vec<Pos> = wm
+            .neighbors(*volcano)
+            .into_iter()
             .filter(|neighbor| {
                 wm.tiles.get(neighbor).is_some_and(|tile| {
                     !matches!(tile.terrain.as_str(), "mountain" | "coast" | "ocean")
@@ -2530,13 +2529,12 @@ pub fn generate_with_script(
             let tile = &wm.tiles[position];
             tile.terrain != "mountain"
                 && tile.feature.is_none()
-                && wm.neighbors(*position).into_iter()
-                    .any(|neighbor| {
-                        wm.tiles.get(&neighbor).is_some_and(|neighbor_tile| {
-                            neighbor_tile.terrain == "mountain"
-                                || neighbor_tile.feature.as_deref() == Some("volcano")
-                        })
+                && wm.neighbors(*position).into_iter().any(|neighbor| {
+                    wm.tiles.get(&neighbor).is_some_and(|neighbor_tile| {
+                        neighbor_tile.terrain == "mountain"
+                            || neighbor_tile.feature.as_deref() == Some("volcano")
                     })
+                })
         })
         .collect();
     for index in (1..fissure_candidates.len()).rev() {
@@ -2708,9 +2706,7 @@ pub fn generate_with_script(
                     .filter(|position| {
                         let tile = &wm.tiles[position];
                         if water_hex {
-                            tile.terrain == "coast"
-                                && unclaimed(tile)
-                                && tile.resource.is_none()
+                            tile.terrain == "coast" && unclaimed(tile) && tile.resource.is_none()
                         } else if strict {
                             wonder_ground(placement, tile)
                         } else {
@@ -2894,7 +2890,14 @@ pub fn generate_with_script(
         }
     }
 
-    place_strategic_quotas(rules, &mut wm, &land, num_major_spawns, &BTreeSet::new(), rng);
+    place_strategic_quotas(
+        rules,
+        &mut wm,
+        &land,
+        num_major_spawns,
+        &BTreeSet::new(),
+        rng,
+    );
 
     assign_continents(&mut wm, &land, num_continents, rng);
 
@@ -2917,14 +2920,13 @@ pub fn generate_with_script(
                     .is_none_or(|feature| !feature.natural_wonder)
         })
         .filter(|(position, _)| {
-            wm.neighbors(**position).into_iter()
-                .any(|neighbor| {
-                    // Sea level is what rises, so a lake shore is not lowland
-                    // however low it lies.
-                    wm.tiles
-                        .get(&neighbor)
-                        .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"))
-                })
+            wm.neighbors(**position).into_iter().any(|neighbor| {
+                // Sea level is what rises, so a lake shore is not lowland
+                // however low it lies.
+                wm.tiles
+                    .get(&neighbor)
+                    .is_some_and(|tile| matches!(tile.terrain.as_str(), "coast" | "ocean"))
+            })
         })
         .map(|(position, _)| *position)
         .collect();
@@ -3116,13 +3118,7 @@ pub fn generate_with_script(
     // within ten hexes while another had eighteen.
     let minor_pool = pool_clear_of_wonders(START_DISTANCE_MINOR_NATURAL_WONDER, num_minor_spawns);
     let minor_regions = if script == MapScript::Islands && !spawns.is_empty() {
-        archipelago_minor_regions(
-            &wm,
-            &passable,
-            &fertility,
-            &spawns,
-            num_minor_spawns,
-        )
+        archipelago_minor_regions(&wm, &passable, &fertility, &spawns, num_minor_spawns)
     } else if major_regions.is_empty() || spawns.is_empty() {
         regions_for_seats(&wm, &components, &fertility, num_minor_spawns)
     } else {
@@ -3280,8 +3276,7 @@ pub fn generate_with_script(
         .tiles
         .iter()
         .filter(|(position, tile)| {
-            tile.feature.as_deref() == Some("oasis")
-                && !placed_oasis_is_valid(&wm, **position)
+            tile.feature.as_deref() == Some("oasis") && !placed_oasis_is_valid(&wm, **position)
         })
         .map(|(position, _)| *position)
         .collect();
@@ -3375,7 +3370,15 @@ fn earth_wonder_site(wonder: &str) -> Option<(f64, f64)> {
 /// Base terrains a Natural Wonder placement rule can name, in bit order.
 /// `mountain` covers every coloured `TERRAIN_*_MOUNTAIN` variant.
 const WONDER_TERRAIN_BITS: [&str; 9] = [
-    "grassland", "plains", "desert", "tundra", "snow", "coast", "ocean", "mountain", "lake",
+    "grassland",
+    "plains",
+    "desert",
+    "tundra",
+    "snow",
+    "coast",
+    "ocean",
+    "mountain",
+    "lake",
 ];
 
 fn wonder_terrain_bit(terrain: &str) -> u32 {
@@ -3510,7 +3513,10 @@ fn wonder_anchor(
             if placement.avoid_feature.iter().any(|name| name == feature) {
                 return false;
             }
-            wanted |= placement.adjacent_feature.iter().any(|name| name == feature);
+            wanted |= placement
+                .adjacent_feature
+                .iter()
+                .any(|name| name == feature);
         }
         if !wanted {
             return false;
@@ -3592,7 +3598,8 @@ fn apply_tectonics(wm: &mut WorldMap, land: &BTreeSet<Pos>, rng: &mut Rng) {
         .copied()
         .filter(|pos| wm.tiles[pos].terrain == "mountain")
         .filter(|pos| {
-            wm.neighbors(*pos).into_iter()
+            wm.neighbors(*pos)
+                .into_iter()
                 .any(|neighbor| !land.contains(&neighbor))
         })
         .collect();
@@ -3706,7 +3713,8 @@ fn cluster_score(adjacent: usize) -> i32 {
 }
 
 fn adjacent_feature_count(wm: &WorldMap, pos: Pos, feature: &str) -> usize {
-    wm.neighbors(pos).into_iter()
+    wm.neighbors(pos)
+        .into_iter()
         .filter(|neighbor| {
             wm.get(*neighbor)
                 .is_some_and(|tile| tile.feature.as_deref() == Some(feature))
@@ -3930,12 +3938,13 @@ struct SpawnLayoutScore {
 fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
     let center = &wm.tiles[&pos];
     let fresh_water = center.has_river()
-        || wm.neighbors(pos).into_iter()
-            .any(|neighbor| {
-                wm.get(neighbor)
-                    .is_some_and(|tile| tile.feature.as_deref() == Some("oasis"))
-            });
-    let coastal = wm.neighbors(pos).into_iter()
+        || wm.neighbors(pos).into_iter().any(|neighbor| {
+            wm.get(neighbor)
+                .is_some_and(|tile| tile.feature.as_deref() == Some("oasis"))
+        });
+    let coastal = wm
+        .neighbors(pos)
+        .into_iter()
         .any(|neighbor| wm.get(neighbor).is_some_and(|tile| rules.is_water(tile)));
 
     let mut nearby_yields = Vec::new();
@@ -3986,7 +3995,11 @@ fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
 /// what it wants rather than exactly on it. A river bias asks the start tile
 /// itself, which is what "starts on a river" means.
 pub fn start_bias_score(rules: &Rules, wm: &WorldMap, pos: Pos, civ: &str) -> i32 {
-    let Some(bias) = rules.civs.get(civ).and_then(|spec| spec.start_bias.as_ref()) else {
+    let Some(bias) = rules
+        .civs
+        .get(civ)
+        .and_then(|spec| spec.start_bias.as_ref())
+    else {
         return 0;
     };
     let mut score = 0;
@@ -4284,7 +4297,10 @@ const REGION_CENTRALITY_PULL: i32 = 20;
 /// maps already have a constant-time coordinate formula; Planet builds one
 /// temporary graph row and releases it with the region pass that requested it.
 enum MapDistanceRow<'a> {
-    Flat { from: Pos, width: i32 },
+    Flat {
+        from: Pos,
+        width: i32,
+    },
     Planet {
         sphere: &'a crate::sphere::Sphere,
         row: Box<[u16]>,
@@ -4338,10 +4354,7 @@ fn region_center(wm: &WorldMap, region: &[Pos], fertility: &BTreeMap<Pos, i32>) 
     let mut costs = vec![0_i64; region.len()];
     for other in sample {
         let weight = fertility.get(&other).copied().unwrap_or(1) as i64;
-        for (cost, distance) in costs
-            .iter_mut()
-            .zip(map_distances_to(wm, other, region))
-        {
+        for (cost, distance) in costs.iter_mut().zip(map_distances_to(wm, other, region)) {
             *cost += distance as i64 * weight;
         }
     }
@@ -4694,8 +4707,7 @@ fn archipelago_minor_regions(
                     .iter()
                     .copied()
                     .filter(|position| {
-                        major_distances[owner].distance(*position)
-                            <= 2 * START_DISTANCE_MINOR_MAJOR
+                        major_distances[owner].distance(*position) <= 2 * START_DISTANCE_MINOR_MAJOR
                     })
                     .collect();
                 if !nearby.is_empty() {
@@ -4766,8 +4778,7 @@ fn regional_starts(
         };
         let mut chosen = None;
         'search: for relaxed in 0..=relax_limit {
-            let foreign_want =
-                (buffers.foreign_buffer - relaxed).max(MIN_START_SEPARATION - 1);
+            let foreign_want = (buffers.foreign_buffer - relaxed).max(MIN_START_SEPARATION - 1);
             let own_want = (buffers.own_buffer - relaxed).max(MIN_START_SEPARATION - 1);
             let blocked_by_placed: BTreeSet<Pos> = placed
                 .iter()
@@ -5151,7 +5162,9 @@ fn canonical_river_edge(a: Pos, b: Pos) -> RiverEdge {
 fn all_shared_edges(wm: &WorldMap) -> BTreeSet<RiverEdge> {
     let mut edges = BTreeSet::new();
     for pos in wm.tiles.keys().copied() {
-        for neighbor in wm.neighbors(pos).into_iter()
+        for neighbor in wm
+            .neighbors(pos)
+            .into_iter()
             .filter(|p| wm.tiles.contains_key(p))
         {
             edges.insert(canonical_river_edge(pos, neighbor));
@@ -5169,10 +5182,11 @@ fn all_shared_edges(wm: &WorldMap) -> BTreeSet<RiverEdge> {
 #[cfg(test)]
 fn connected_river_edges(wm: &WorldMap, edge: RiverEdge) -> Vec<RiverEdge> {
     let (a, b) = edge;
-    let b_neighbors: BTreeSet<Pos> = wm.neighbors(b).into_iter()
-        .collect();
+    let b_neighbors: BTreeSet<Pos> = wm.neighbors(b).into_iter().collect();
     let mut connected = BTreeSet::new();
-    for common in wm.neighbors(a).into_iter()
+    for common in wm
+        .neighbors(a)
+        .into_iter()
         .filter(|p| *p != b && wm.tiles.contains_key(p) && b_neighbors.contains(p))
     {
         connected.insert(canonical_river_edge(a, common));
@@ -5438,11 +5452,7 @@ const RIVER_TRIBUTARY_CLEARANCE: i32 = 3;
 const RIVER_MIN_COURSE: usize = 4;
 
 #[cfg(test)]
-fn river_edge_has_outlet(
-    wm: &WorldMap,
-    edge: RiverEdge,
-    is_water: &impl Fn(Pos) -> bool,
-) -> bool {
+fn river_edge_has_outlet(wm: &WorldMap, edge: RiverEdge, is_water: &impl Fn(Pos) -> bool) -> bool {
     !is_water(edge.0)
         && !is_water(edge.1)
         && connected_river_edges(wm, edge)
@@ -5479,7 +5489,8 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
     while let Some(position) = water_frontier.pop_front() {
         let next_distance = water_distance[&position] + 1;
         for neighbor in wm.neighbors(position) {
-            if let std::collections::btree_map::Entry::Vacant(entry) = water_distance.entry(neighbor)
+            if let std::collections::btree_map::Entry::Vacant(entry) =
+                water_distance.entry(neighbor)
             {
                 entry.insert(next_distance);
                 water_frontier.push_back(neighbor);
@@ -6228,7 +6239,10 @@ mod river_tests {
             &mut rng,
         );
         let components = connected_components(&wm, &land);
-        assert_eq!(components.iter().map(BTreeSet::len).collect::<Vec<_>>(), vec![8]);
+        assert_eq!(
+            components.iter().map(BTreeSet::len).collect::<Vec<_>>(),
+            vec![8]
+        );
         assert!(
             tiny.is_disjoint(&land),
             "a pocket too small to settle was committed as land"
@@ -6278,14 +6292,7 @@ mod river_tests {
         }
 
         let mut actual = initial;
-        fill_remaining_starts(
-            &rules,
-            &wm,
-            &candidates,
-            &land,
-            &mut actual,
-            7,
-        );
+        fill_remaining_starts(&rules, &wm, &candidates, &land, &mut actual, 7);
         assert_eq!(actual, expected);
     }
 
@@ -6382,8 +6389,19 @@ mod river_tests {
         let rules = Rules::embedded();
         for seed in 0..3u64 {
             let mut rng = Rng::new(31_400 + seed);
-            let (world, _) =
-                generate_with_script(&rules, 74, 46, 6, 9, 4, 3, MapScript::Lakes, FLAT, POLED, &mut rng);
+            let (world, _) = generate_with_script(
+                &rules,
+                74,
+                46,
+                6,
+                9,
+                4,
+                3,
+                MapScript::Lakes,
+                FLAT,
+                POLED,
+                &mut rng,
+            );
             let land = world
                 .tiles
                 .values()
@@ -6522,7 +6540,10 @@ mod river_tests {
     #[test]
     fn six_grand_canals_each_circle_the_world_and_meet_one_another() {
         let rules = Rules::embedded();
-        for (index, size) in [&CIV6_MAP_SIZES[0], &CIV6_MAP_SIZES[3]].into_iter().enumerate() {
+        for (index, size) in [&CIV6_MAP_SIZES[0], &CIV6_MAP_SIZES[3]]
+            .into_iter()
+            .enumerate()
+        {
             for topology in [FLAT, GLOBE] {
                 for poles in [POLED, SCATTERED] {
                     let mut rng = Rng::new(
@@ -6552,7 +6573,10 @@ mod river_tests {
                     // network is shallow water a fleet can enter on turn one.
                     for pos in &canals {
                         let tile = &world.tiles[pos];
-                        assert!(rules.is_water(tile), "{where_}: dry land in a canal at {pos:?}");
+                        assert!(
+                            rules.is_water(tile),
+                            "{where_}: dry land in a canal at {pos:?}"
+                        );
                         assert_eq!(
                             tile.terrain, "coast",
                             "{where_}: the canal at {pos:?} is {} rather than shallow water",
@@ -6572,9 +6596,7 @@ mod river_tests {
                             let lane: BTreeSet<Pos> = canals
                                 .iter()
                                 .copied()
-                                .filter(|pos| {
-                                    world.tiles[pos].feature.as_deref() != Some("ice")
-                                })
+                                .filter(|pos| world.tiles[pos].feature.as_deref() != Some("ice"))
                                 .filter(|pos| {
                                     let out_of_plane = dot(world.direction(*pos), direction)
                                         .clamp(-1.0, 1.0)
@@ -6610,7 +6632,10 @@ mod river_tests {
                             lanes += 1;
                         }
                     }
-                    assert_eq!(lanes, 6, "{where_}: six canals, two around each of three axes");
+                    assert_eq!(
+                        lanes, 6,
+                        "{where_}: six canals, two around each of three axes"
+                    );
 
                     // And the six are one network, not six rings: no two axes
                     // are parallel, so every lane crosses the four belonging to
@@ -6684,7 +6709,10 @@ mod river_tests {
     fn grand_canals_2_rings_every_block_with_a_three_layered_canal() {
         let rules = Rules::embedded();
         let target = CANAL_BLOCK_LAND_TILES as usize;
-        for (index, size) in [&CIV6_MAP_SIZES[0], &CIV6_MAP_SIZES[3]].into_iter().enumerate() {
+        for (index, size) in [&CIV6_MAP_SIZES[0], &CIV6_MAP_SIZES[3]]
+            .into_iter()
+            .enumerate()
+        {
             for topology in [FLAT, GLOBE] {
                 for poles in [POLED, SCATTERED] {
                     let mut rng = Rng::new(
@@ -6757,7 +6785,10 @@ mod river_tests {
                         .collect();
                     for pos in &deep {
                         assert!(
-                            world.neighbors(*pos).iter().all(|near| !land.contains(near)),
+                            world
+                                .neighbors(*pos)
+                                .iter()
+                                .all(|near| !land.contains(near)),
                             "{where_}: deep ocean at {pos:?} runs straight into a beach, so the \
                              canal there has lost its shelf"
                         );
@@ -6902,12 +6933,19 @@ mod river_tests {
                 assert_eq!(spawns.len(), 10, "{where_}: every seat is placed");
                 let mut seen = BTreeSet::new();
                 for start in &spawns {
-                    assert!(seen.insert(*start), "{where_}: two civilizations share {start:?}");
+                    assert!(
+                        seen.insert(*start),
+                        "{where_}: two civilizations share {start:?}"
+                    );
                     let tile = &world.tiles[start];
                     assert!(!rules.is_water(tile), "{where_}: a start is at sea");
                     assert!(tile.terrain != "mountain", "{where_}: a start is on a peak");
                 }
-                assert_eq!(world.sphere().is_some(), topology.is_globe(), "{where_}: shape");
+                assert_eq!(
+                    world.sphere().is_some(),
+                    topology.is_globe(),
+                    "{where_}: shape"
+                );
                 if topology.is_globe() {
                     let mut pentagons = 0;
                     for (pos, _) in world.tiles.iter() {
@@ -6917,7 +6955,10 @@ mod river_tests {
                             other => panic!("{where_}: {pos:?} has {other} neighbours"),
                         }
                     }
-                    assert_eq!(pentagons, 12, "{where_}: a globe closes with twelve pentagons");
+                    assert_eq!(
+                        pentagons, 12,
+                        "{where_}: a globe closes with twelve pentagons"
+                    );
                 }
             }
         }
@@ -6940,7 +6981,17 @@ mod river_tests {
             for seed in 0..3u64 {
                 let mut rng = Rng::new(37_000 + seed);
                 let (world, _) = generate_with_script(
-                    &rules, 74, 46, 6, 9, 4, 3, MapScript::LandOnly, topology, POLED, &mut rng,
+                    &rules,
+                    74,
+                    46,
+                    6,
+                    9,
+                    4,
+                    3,
+                    MapScript::LandOnly,
+                    topology,
+                    POLED,
+                    &mut rng,
                 );
                 for (pos, tile) in world.tiles.iter() {
                     if rules.is_water(tile) {
@@ -6966,7 +7017,10 @@ mod river_tests {
                 total.iter().all(|count| *count > 100),
                 "{topology:?}: every band needs land in it to measure, got {total:?}"
             );
-            assert_eq!(share[0], 0, "{topology:?}: the middle of the world is not cold");
+            assert_eq!(
+                share[0], 0,
+                "{topology:?}: the middle of the world is not cold"
+            );
             for band in 1..BANDS.len() {
                 assert!(
                     share[band] >= share[band - 1],
@@ -6990,7 +7044,17 @@ mod river_tests {
         for topology in [FLAT, GLOBE] {
             let mut rng = Rng::new(46_000);
             let (poled, _) = generate_with_script(
-                &rules, 60, 38, 4, 6, 3, 2, MapScript::Pangaea, topology, POLED, &mut rng,
+                &rules,
+                60,
+                38,
+                4,
+                6,
+                3,
+                2,
+                MapScript::Pangaea,
+                topology,
+                POLED,
+                &mut rng,
             );
             assert!(
                 poled
@@ -7024,7 +7088,16 @@ mod river_tests {
             for seed in 0..3u64 {
                 let mut rng = Rng::new(37_000 + seed);
                 let (world, _) = generate_with_script(
-                    &rules, 74, 46, 6, 9, 4, 3, MapScript::LandOnly, topology, SCATTERED,
+                    &rules,
+                    74,
+                    46,
+                    6,
+                    9,
+                    4,
+                    3,
+                    MapScript::LandOnly,
+                    topology,
+                    SCATTERED,
                     &mut rng,
                 );
                 for (pos, tile) in world.tiles.iter() {
@@ -7076,7 +7149,17 @@ mod river_tests {
         for topology in [FLAT, GLOBE] {
             let mut rng = Rng::new(46_000);
             let (world, _) = generate_with_script(
-                &rules, 60, 38, 4, 6, 3, 2, MapScript::Pangaea, topology, SCATTERED, &mut rng,
+                &rules,
+                60,
+                38,
+                4,
+                6,
+                3,
+                2,
+                MapScript::Pangaea,
+                topology,
+                SCATTERED,
+                &mut rng,
             );
             assert!(
                 world
@@ -7105,14 +7188,34 @@ mod river_tests {
             for poles in [POLED, SCATTERED] {
                 let mut first = Rng::new(51_000);
                 let (a, _) = generate_with_script(
-                    &rules, 60, 38, 4, 6, 3, 2, MapScript::Continents, topology, poles, &mut first,
+                    &rules,
+                    60,
+                    38,
+                    4,
+                    6,
+                    3,
+                    2,
+                    MapScript::Continents,
+                    topology,
+                    poles,
+                    &mut first,
                 );
                 // Drawing the same world again must leave `rng` in the same
                 // place: if the biome pass had consumed an extra fractal for
                 // these settings, the second draw would diverge.
                 let mut second = Rng::new(51_000);
                 let (b, _) = generate_with_script(
-                    &rules, 60, 38, 4, 6, 3, 2, MapScript::Continents, topology, poles, &mut second,
+                    &rules,
+                    60,
+                    38,
+                    4,
+                    6,
+                    3,
+                    2,
+                    MapScript::Continents,
+                    topology,
+                    poles,
+                    &mut second,
                 );
                 assert_eq!(
                     a.tiles.iter().map(|(_, t)| t.terrain).collect::<Vec<_>>(),
@@ -7138,7 +7241,9 @@ mod river_tests {
             assert_eq!(spawns.len(), 12, "{script:?} spawn count");
             for (spawn_index, start) in spawns.iter().enumerate() {
                 assert!(
-                    spawns[spawn_index + 1..].iter().all(|other| world.distance(*start, *other) >= 4),
+                    spawns[spawn_index + 1..]
+                        .iter()
+                        .all(|other| world.distance(*start, *other) >= 4),
                     "{script:?} starts must leave room for distinct cities"
                 );
             }
@@ -7147,12 +7252,14 @@ mod river_tests {
             // hold rather than by an exact component count.
             let components = land_components(&world, &rules);
             let total: usize = components.iter().map(|component| component.len()).sum();
-            let share = |count: usize| components[..count.min(components.len())]
-                .iter()
-                .map(|component| component.len())
-                .sum::<usize>()
-                * 100
-                / total.max(1);
+            let share = |count: usize| {
+                components[..count.min(components.len())]
+                    .iter()
+                    .map(|component| component.len())
+                    .sum::<usize>()
+                    * 100
+                    / total.max(1)
+            };
             match script {
                 MapScript::Pangaea | MapScript::InlandSea | MapScript::Lakes => assert!(
                     share(1) >= 80,
@@ -7277,7 +7384,10 @@ mod river_tests {
 
         // The size's rectangle is re-expressed as that size's globe.
         let frequency = size.globe_frequency;
-        assert_eq!((world.width, world.height), (5 * frequency, 2 * frequency + 2));
+        assert_eq!(
+            (world.width, world.height),
+            (5 * frequency, 2 * frequency + 2)
+        );
         assert_eq!(world.tiles.len(), (10 * frequency * frequency + 2) as usize);
 
         // No edge of the world, anywhere: every tile is surrounded, and the
@@ -7300,7 +7410,10 @@ mod river_tests {
         // Following the H3 grid's trick of keeping its pentagons in the ocean,
         // no pentagon carries land, so every workable tile is a full hexagon.
         for pos in world.sphere().unwrap().pentagons() {
-            assert!(rules.is_water(&world.tiles[&pos]), "{pos:?} is a land pentagon");
+            assert!(
+                rules.is_water(&world.tiles[&pos]),
+                "{pos:?} is a land pentagon"
+            );
         }
         let land: BTreeSet<Pos> = world
             .tiles
@@ -7326,7 +7439,10 @@ mod river_tests {
             let pole = hex::offset_to_axial(0, row);
             assert!(world.polar_fraction(pole) > 0.9, "row {row} holds a pole");
             assert_eq!(world.neighbors(pole).len(), 5, "a pole is a pentagon");
-            assert!(rules.is_water(&world.tiles[&pole]), "the caps stay open water");
+            assert!(
+                rules.is_water(&world.tiles[&pole]),
+                "the caps stay open water"
+            );
         }
 
         // Sailing keeps going: step away from a start and around the globe,
@@ -7348,7 +7464,10 @@ mod river_tests {
                 break;
             }
         }
-        assert!(world.distance(start, at) <= 3 * frequency, "the walk never left the globe");
+        assert!(
+            world.distance(start, at) <= 3 * frequency,
+            "the walk never left the globe"
+        );
 
         assert_eq!(spawns.len(), 15);
         for start in &spawns {
@@ -7381,7 +7500,10 @@ mod river_tests {
             &mut rng,
         );
         let frequency = size.globe_frequency;
-        assert_eq!((world.width, world.height), (5 * frequency, 2 * frequency + 2));
+        assert_eq!(
+            (world.width, world.height),
+            (5 * frequency, 2 * frequency + 2)
+        );
         assert_eq!(world.tiles.len(), (10 * frequency * frequency + 2) as usize);
 
         // Still a closed globe of hexagons and exactly twelve pentagons.
@@ -7427,7 +7549,10 @@ mod river_tests {
             ("the Australian interior", 133.0, -25.0),
         ] {
             let pos = nearest(longitude, latitude);
-            assert!(!rules.is_water(&world.tiles[&pos]), "{name} came out at sea");
+            assert!(
+                !rules.is_water(&world.tiles[&pos]),
+                "{name} came out at sea"
+            );
         }
         for (name, longitude, latitude) in [
             ("the mid-Pacific", -150.0, 0.0),
@@ -7447,7 +7572,10 @@ mod river_tests {
             ("Lake Victoria", 33.0, -1.0),
         ] {
             let pos = nearest(longitude, latitude);
-            assert!(rules.is_water(&world.tiles[&pos]), "{name} came out as land");
+            assert!(
+                rules.is_water(&world.tiles[&pos]),
+                "{name} came out as land"
+            );
         }
 
         // And it is made of what it is made of. Relief and climate are read
@@ -7826,7 +7954,11 @@ mod river_tests {
             .copied()
             .filter(|(longitude, latitude)| land_at(wrap(*longitude), *latitude))
             .collect();
-        assert_eq!(on_land.len(), 2, "expected two land corners, got {on_land:?}");
+        assert_eq!(
+            on_land.len(),
+            2,
+            "expected two land corners, got {on_land:?}"
+        );
         assert_eq!(on_land[0].0, 0.0, "the Saharan corner");
         assert_eq!(on_land[1].0, 72.0, "the Indus corner");
 
@@ -7843,7 +7975,10 @@ mod river_tests {
             })
             .max()
             .unwrap();
-        assert_eq!(best, 9, "no spin should seat all ten off-pole corners at sea");
+        assert_eq!(
+            best, 9,
+            "no spin should seat all ten off-pole corners at sea"
+        );
     }
 
     /// The seed moves what grows on Earth, never Earth itself. The two runs
@@ -7856,7 +7991,17 @@ mod river_tests {
         let land_of = |seed: u64| {
             let mut rng = Rng::new(seed);
             let (world, _) = generate_with_script(
-                &rules, 60, 38, 4, 6, 3, 2, MapScript::TrueStartEarth, GLOBE, POLED, &mut rng,
+                &rules,
+                60,
+                38,
+                4,
+                6,
+                3,
+                2,
+                MapScript::TrueStartEarth,
+                GLOBE,
+                POLED,
+                &mut rng,
             );
             let land: BTreeSet<Pos> = world
                 .tiles
@@ -7918,7 +8063,8 @@ mod river_tests {
             .enumerate()
         {
             let mut rng = Rng::new(81_000 + index as u64);
-            let (world, _) = generate_with_script(&rules, 60, 38, 6, 6, 0, 3, script, FLAT, POLED, &mut rng);
+            let (world, _) =
+                generate_with_script(&rules, 60, 38, 6, 6, 0, 3, script, FLAT, POLED, &mut rng);
             for resource in &strategics {
                 let count = world
                     .tiles
@@ -8014,9 +8160,7 @@ mod river_tests {
             .filter(|(a, b)| wm.has_river_edge(*a, *b))
             .collect();
         assert!(!river_edges.is_empty());
-        let is_water = |p: Pos| {
-            matches!(wm.tiles[&p].terrain.as_str(), "ocean" | "coast" | "lake")
-        };
+        let is_water = |p: Pos| matches!(wm.tiles[&p].terrain.as_str(), "ocean" | "coast" | "lake");
         for edge in &river_edges {
             assert!(
                 !is_water(edge.0) && !is_water(edge.1),
@@ -8067,9 +8211,8 @@ mod river_tests {
         let rules = Rules::embedded();
         for (index, script) in ROLLED_TYPES.into_iter().enumerate() {
             let mut rng = Rng::new(73_100 + index as u64);
-            let (world, _) = generate_with_script(
-                &rules, 42, 28, 4, 5, 2, 3, script, FLAT, POLED, &mut rng,
-            );
+            let (world, _) =
+                generate_with_script(&rules, 42, 28, 4, 5, 2, 3, script, FLAT, POLED, &mut rng);
             for edge in all_shared_edges(&world)
                 .into_iter()
                 .filter(|edge| world.has_river_edge(edge.0, edge.1))
@@ -8092,9 +8235,8 @@ mod river_tests {
             .enumerate()
         {
             let mut rng = Rng::new(73_200 + index as u64);
-            let (world, _) = generate_with_script(
-                &rules, 42, 28, 4, 5, 2, 3, script, FLAT, POLED, &mut rng,
-            );
+            let (world, _) =
+                generate_with_script(&rules, 42, 28, 4, 5, 2, 3, script, FLAT, POLED, &mut rng);
             for (position, tile) in &world.tiles {
                 if matches!(
                     tile.feature.as_deref(),
@@ -8133,9 +8275,7 @@ mod river_tests {
 
     /// Every river on the map, as the set of segments in one drainage system,
     /// alongside the degree of each corner the network touches.
-    fn drainage_systems(
-        world: &WorldMap,
-    ) -> (Vec<BTreeSet<RiverEdge>>, BTreeMap<Corner, usize>) {
+    fn drainage_systems(world: &WorldMap) -> (Vec<BTreeSet<RiverEdge>>, BTreeMap<Corner, usize>) {
         let edges: BTreeSet<RiverEdge> = all_shared_edges(world)
             .into_iter()
             .filter(|edge| world.has_river_edge(edge.0, edge.1))
@@ -8183,11 +8323,11 @@ mod river_tests {
         let rules = Rules::embedded();
         for (index, script) in ROLLED_TYPES.into_iter().enumerate() {
             let mut rng = Rng::new(74_200 + index as u64);
-            let (world, _) = generate_with_script(
-                &rules, 60, 38, 6, 6, 3, 4, script, FLAT, POLED, &mut rng,
-            );
+            let (world, _) =
+                generate_with_script(&rules, 60, 38, 6, 6, 3, 4, script, FLAT, POLED, &mut rng);
             let sea = |pos: Pos| {
-                world.tiles
+                world
+                    .tiles
                     .get(&pos)
                     .is_some_and(|tile| matches!(tile.terrain.as_str(), "ocean" | "coast"))
             };
@@ -8223,9 +8363,8 @@ mod river_tests {
         let rules = Rules::embedded();
         for (index, script) in ROLLED_TYPES.into_iter().enumerate() {
             let mut rng = Rng::new(74_300 + index as u64);
-            let (world, _) = generate_with_script(
-                &rules, 60, 38, 6, 6, 3, 4, script, FLAT, POLED, &mut rng,
-            );
+            let (world, _) =
+                generate_with_script(&rules, 60, 38, 6, 6, 3, 4, script, FLAT, POLED, &mut rng);
             let (systems, _) = drainage_systems(&world);
             for system in &systems {
                 assert!(
@@ -8238,7 +8377,11 @@ mod river_tests {
             // And the whole network stays inside the density Civ VI budgets
             // for: `RIVER_PLOTS_PER_EDGE` land tiles to each river segment,
             // with the headroom a per-landmass allowance rounds up to.
-            let land = world.tiles.values().filter(|tile| !rules.is_water(tile)).count();
+            let land = world
+                .tiles
+                .values()
+                .filter(|tile| !rules.is_water(tile))
+                .count();
             let segments: usize = systems.iter().map(|system| system.len()).sum();
             assert!(
                 segments * RIVER_PLOTS_PER_EDGE <= land * 2,
@@ -8265,7 +8408,17 @@ mod river_tests {
         for seed in 0..6u64 {
             let mut rng = Rng::new(74_400 + seed);
             let (world, _) = generate_with_script(
-                &rules, 84, 54, 8, 10, 4, 6, MapScript::Continents, FLAT, POLED, &mut rng,
+                &rules,
+                84,
+                54,
+                8,
+                10,
+                4,
+                6,
+                MapScript::Continents,
+                FLAT,
+                POLED,
+                &mut rng,
             );
             let (systems, degree) = drainage_systems(&world);
             confluences += degree.values().filter(|meeting| **meeting == 3).count();
@@ -9018,16 +9171,18 @@ mod river_tests {
                         assert_eq!(tile.terrain, "mountain", "volcano at {position:?}")
                     }
                     "volcanic_soil" => assert!(
-                        world.neighbors(*position).into_iter()
-                            .any(|neighbor| world.tiles.get(&neighbor).is_some_and(
-                                |neighbor_tile| {
-                                    neighbor_tile.feature.as_deref() == Some("volcano")
-                                }
-                            )),
+                        world.neighbors(*position).into_iter().any(|neighbor| world
+                            .tiles
+                            .get(&neighbor)
+                            .is_some_and(|neighbor_tile| {
+                                neighbor_tile.feature.as_deref() == Some("volcano")
+                            })),
                         "volcanic soil at {position:?} has no volcano"
                     ),
                     "geothermal_fissure" => assert!(
-                        world.neighbors(*position).into_iter()
+                        world
+                            .neighbors(*position)
+                            .into_iter()
                             .any(|neighbor| world.tiles.get(&neighbor).is_some_and(
                                 |neighbor_tile| { neighbor_tile.terrain == "mountain" }
                             )),
@@ -9093,7 +9248,9 @@ mod river_tests {
                         continue;
                     }
                     frontier.extend(
-                        world.neighbors(position).into_iter()
+                        world
+                            .neighbors(position)
+                            .into_iter()
                             .filter(|neighbor| tiles.contains(neighbor)),
                     );
                 }
@@ -9131,7 +9288,11 @@ mod river_tests {
                     }
                 }
             }
-            assert_eq!(here.len(), 5, "a standard map draws five wonders (seed {seed})");
+            assert_eq!(
+                here.len(),
+                5,
+                "a standard map draws five wonders (seed {seed})"
+            );
             for wonder in here {
                 *drawn.get_mut(wonder).unwrap() += 1;
             }
@@ -9141,7 +9302,10 @@ mod river_tests {
             .filter(|(_, count)| **count == 0)
             .map(|(name, _)| *name)
             .collect();
-        assert!(never.is_empty(), "never drawn over {maps} standard maps: {never:?}");
+        assert!(
+            never.is_empty(),
+            "never drawn over {maps} standard maps: {never:?}"
+        );
         // Five draws from a roster of thirty-odd is about a one-in-six rate.
         // A wonder on more than half the maps means the draw is not uniform —
         // that is the shape of the bug this test exists to catch.
@@ -9150,7 +9314,10 @@ mod river_tests {
             .filter(|(_, count)| **count * 2 > maps)
             .map(|(name, count)| (*name, *count))
             .collect();
-        assert!(hogs.is_empty(), "drawn far too often out of {maps}: {hogs:?}");
+        assert!(
+            hogs.is_empty(),
+            "drawn far too often out of {maps}: {hogs:?}"
+        );
     }
 
     /// A wonder stands on the ground its shipped placement rule names. The
@@ -9307,11 +9474,7 @@ mod river_tests {
         let rules = Rules::embedded();
         for (index, (script, size)) in [MapScript::WaterWorld]
             .into_iter()
-            .flat_map(|script| {
-                CIV6_MAP_SIZES
-                    .iter()
-                    .map(move |size| (script, size))
-            })
+            .flat_map(|script| CIV6_MAP_SIZES.iter().map(move |size| (script, size)))
             .enumerate()
         {
             for seed in 0..6u64 {
@@ -9569,18 +9732,18 @@ mod start_bias_tests {
         // (civ, terrain tier, feature tier, resource tier) -- 0 means no bias
         // of that kind ships for this civilization.
         let expected: &[(&str, i32, i32, i32)] = &[
-            ("Mali", 1, 0, 5),      // DESERT Tier 1, ten resources Tier 5
-            ("Maya", 1, 0, 2),      // GRASS/PLAINS Tier 1, thirteen luxuries Tier 2
-            ("Vietnam", 0, 1, 0),   // FOREST/JUNGLE/MARSH Tier 1
-            ("Gaul", 0, 0, 2),      // seven resources Tier 2
-            ("Kongo", 0, 2, 0),     // FOREST/JUNGLE Tier 2
-            ("Russia", 2, 0, 0),    // TUNDRA and TUNDRA_HILLS Tier 2
-            ("Nubia", 2, 0, 5),     // already exact before this change
+            ("Mali", 1, 0, 5),    // DESERT Tier 1, ten resources Tier 5
+            ("Maya", 1, 0, 2),    // GRASS/PLAINS Tier 1, thirteen luxuries Tier 2
+            ("Vietnam", 0, 1, 0), // FOREST/JUNGLE/MARSH Tier 1
+            ("Gaul", 0, 0, 2),    // seven resources Tier 2
+            ("Kongo", 0, 2, 0),   // FOREST/JUNGLE Tier 2
+            ("Russia", 2, 0, 0),  // TUNDRA and TUNDRA_HILLS Tier 2
+            ("Nubia", 2, 0, 5),   // already exact before this change
             ("Brazil", 0, 2, 0),
             ("Egypt", 0, 2, 0),
-            ("Korea", 3, 0, 0),     // four hills terrains, Tier 3
+            ("Korea", 3, 0, 0), // four hills terrains, Tier 3
             ("Greece", 3, 0, 0),
-            ("Scythia", 5, 0, 2),   // GRASS/PLAINS Tier 5, HORSES Tier 2
+            ("Scythia", 5, 0, 2), // GRASS/PLAINS Tier 5, HORSES Tier 2
         ];
         for &(civ, terrain, feature, resource) in expected {
             let bias = rules.civs[civ].start_bias.as_ref().expect(civ);
@@ -9595,7 +9758,11 @@ mod start_bias_tests {
         assert!(
             StartBias::weight(rules.civs["Mali"].start_bias.as_ref().unwrap().terrain_tier)
                 > StartBias::weight(
-                    rules.civs["Scythia"].start_bias.as_ref().unwrap().terrain_tier,
+                    rules.civs["Scythia"]
+                        .start_bias
+                        .as_ref()
+                        .unwrap()
+                        .terrain_tier,
                 )
         );
 

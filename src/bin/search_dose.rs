@@ -166,7 +166,7 @@
 //! promoted it on default weights — says the genome changes what the budget is
 //! worth. Any comparison between these two sets of numbers has to name the
 //! genome.
-use civvis::ai::{Ai, AdvancedAi, Weights};
+use civvis::ai::{AdvancedAi, Ai, Weights};
 use civvis::game::{Action, Game};
 use civvis::parallel;
 use civvis::strategic::StrategicAi;
@@ -210,22 +210,16 @@ fn agent(review_every: u32, horizon: u32) -> StrategicAi {
 
 /// One mirrored map pair: the dose against the control, scored on the treated
 /// seats' share of victory-lane progress.
-fn duel(
-    dose: (u32, u32),
-    players: usize,
-    w: i32,
-    h: i32,
-    seed: u64,
-    turns: u32,
-) -> f64 {
+fn duel(dose: (u32, u32), players: usize, w: i32, h: i32, seed: u64, turns: u32) -> f64 {
     let mut share = 0.0;
     for direction in 0..2usize {
         let mut game = Game::new(players, w, h, seed, turns, 0);
         let is_treated = |pid: usize| pid % 2 == direction;
         // The macro search is expensive, so only the seats under test carry it;
         // the rest of the table is the stock fleet, identical in both arms.
-        let mut treatment: Vec<StrategicAi> =
-            (0..game.players.len()).map(|_| agent(dose.0, dose.1)).collect();
+        let mut treatment: Vec<StrategicAi> = (0..game.players.len())
+            .map(|_| agent(dose.0, dose.1))
+            .collect();
         let mut control: Vec<StrategicAi> = (0..game.players.len())
             .map(|_| agent(CONTROL.1, CONTROL.2))
             .collect();

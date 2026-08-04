@@ -908,10 +908,9 @@ mod tests {
     use crate::game::{Action, Game, GameOptions, Item};
 
     use super::{
-        last_start_era, playable_start_eras, start_era_from_id, start_era_id,
-        stock_start_era_id, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
-        BASE_RULESETS, CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES,
-        MAP_TOPOLOGIES, START_ERAS,
+        last_start_era, playable_start_eras, start_era_from_id, start_era_id, stock_start_era_id,
+        BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology, BASE_RULESETS,
+        CIV6_GAME_SPEEDS, CIV6_MAP_SCRIPTS, CIV6_MAP_SIZES, MAP_POLES, MAP_TOPOLOGIES, START_ERAS,
     };
 
     /// One ruleset is offered, and the setting still has to behave like a
@@ -943,7 +942,11 @@ mod tests {
             assert!(seen.insert(spec.id), "{} is listed twice", spec.id);
             // An unbuilt rung still has to be described, or the lobby has
             // nothing honest to show for it.
-            assert!(!spec.description.is_empty(), "{} has no description", spec.id);
+            assert!(
+                !spec.description.is_empty(),
+                "{} has no description",
+                spec.id
+            );
             match spec.era {
                 Some(_) => history_has_begun = true,
                 // Prehistory precedes history: no unbuilt rung may appear
@@ -994,7 +997,10 @@ mod tests {
         assert_eq!(wire[0]["name"], "Stone Age");
         assert_eq!(wire[0]["playable"], false);
         assert_eq!(wire[1]["playable"], true);
-        assert!(wire[0].get("era").is_none(), "the era index reached the wire");
+        assert!(
+            wire[0].get("era").is_none(),
+            "the era index reached the wire"
+        );
     }
 
     /// A world set up to open in a later age of human history, built through
@@ -1005,7 +1011,14 @@ mod tests {
             barbarians: false,
             start_era: era,
             city_states: size.default_city_states,
-            ..GameOptions::new(2, size.width, size.height, 909, 250, size.default_city_states)
+            ..GameOptions::new(
+                2,
+                size.width,
+                size.height,
+                909,
+                250,
+                size.default_city_states,
+            )
         })
     }
 
@@ -1035,9 +1048,17 @@ mod tests {
         assert!(!earlier.is_empty());
         // Majors and city-states alike: a minor still holding Ancient spears
         // in a Renaissance world is free conquest, not a setting.
-        for player in renaissance.players.iter().filter(|player| !player.is_barbarian) {
+        for player in renaissance
+            .players
+            .iter()
+            .filter(|player| !player.is_barbarian)
+        {
             for tech in &earlier {
-                assert!(player.techs.contains(&crate::name::Name::new(tech)), "{} lacks {tech}", player.civ);
+                assert!(
+                    player.techs.contains(&crate::name::Name::new(tech)),
+                    "{} lacks {tech}",
+                    player.civ
+                );
             }
             assert!(
                 player
@@ -1067,8 +1088,14 @@ mod tests {
             .values()
             .map(|unit| unit.kind.as_str())
             .collect();
-        assert!(!kinds.contains("warrior"), "a Renaissance world still opens on Warriors: {kinds:?}");
-        assert!(kinds.contains("settler"), "the Settler is not an upgradeable unit: {kinds:?}");
+        assert!(
+            !kinds.contains("warrior"),
+            "a Renaissance world still opens on Warriors: {kinds:?}"
+        );
+        assert!(
+            kinds.contains("settler"),
+            "the Settler is not an upgradeable unit: {kinds:?}"
+        );
 
         // The whole setup survives a save, or a reloaded world would quietly
         // fall back to the Ancient era and undo its own floor.
@@ -1111,8 +1138,14 @@ mod tests {
             );
         }
         // The two ends are the ones the ordering is anchored on.
-        assert_eq!(rolled.first().map(|spec| spec.script), Some(MapScript::LandOnly));
-        assert_eq!(rolled.last().map(|spec| spec.script), Some(MapScript::WaterWorld));
+        assert_eq!(
+            rolled.first().map(|spec| spec.script),
+            Some(MapScript::LandOnly)
+        );
+        assert_eq!(
+            rolled.last().map(|spec| spec.script),
+            Some(MapScript::WaterWorld)
+        );
         assert_eq!(MapScript::LandOnly.land_percent(), 95);
         assert_eq!(MapScript::WaterWorld.land_percent(), 5);
         // Earth is outside the ordering, and is listed after all of it.
@@ -1124,7 +1157,12 @@ mod tests {
         // holds each of them exactly once.
         let mut seen = BTreeSet::new();
         for spec in CIV6_MAP_SCRIPTS {
-            assert_eq!(MapScript::from_id(spec.id), Some(spec.script), "{}", spec.id);
+            assert_eq!(
+                MapScript::from_id(spec.id),
+                Some(spec.script),
+                "{}",
+                spec.id
+            );
             assert_eq!(spec.script.id(), spec.id);
             assert!(seen.insert(spec.id), "{} is listed twice", spec.id);
         }
@@ -1160,7 +1198,11 @@ mod tests {
         assert_eq!(MapPoles::from_id("on"), Some(MapPoles::Poles));
         assert_eq!(MapPoles::from_id("randomized"), Some(MapPoles::Randomized));
         for retired in ["no_poles", "none", "off", "false"] {
-            assert_eq!(MapPoles::from_id(retired), None, "{retired} still names a world");
+            assert_eq!(
+                MapPoles::from_id(retired),
+                None,
+                "{retired} still names a world"
+            );
         }
         assert_eq!(MapPoles::from_id("hot_and_cold"), None);
         // A save is not a lobby. A checkpoint written while that world was on
@@ -1190,7 +1232,10 @@ mod tests {
 
         // `planet` named a world type before the globe became a shape of its
         // own. The old name still resolves, to the type that script generated.
-        assert_eq!(MapScript::from_id("planet"), Some(MapScript::SmallContinents));
+        assert_eq!(
+            MapScript::from_id("planet"),
+            Some(MapScript::SmallContinents)
+        );
         assert_eq!(MapTopology::from_id("planet"), Some(MapTopology::Planet));
         assert_eq!(MapScript::from_id("pangea"), Some(MapScript::Pangaea));
 
@@ -1210,7 +1255,10 @@ mod tests {
                 size.dimensions(MapTopology::Planet),
                 (size.globe_width(), size.globe_height())
             );
-            assert_eq!(size.dimensions(MapTopology::Flat), (size.width, size.height));
+            assert_eq!(
+                size.dimensions(MapTopology::Flat),
+                (size.width, size.height)
+            );
         }
     }
 
@@ -1265,7 +1313,11 @@ mod tests {
         ];
         for (standard, scaled) in rows {
             for (speed, want) in order.iter().zip(scaled) {
-                assert_eq!(speed.scale_turns(standard), want, "{speed:?} for {standard}");
+                assert_eq!(
+                    speed.scale_turns(standard),
+                    want,
+                    "{speed:?} for {standard}"
+                );
             }
         }
     }
@@ -1368,11 +1420,20 @@ mod tests {
     /// off those is a world that no longer plays like a Civilization VI map.
     #[test]
     fn the_scaled_worlds_keep_the_stock_ratios_and_stay_inside_the_roster() {
-        let scaled = [("massive", 15), ("enormous", 20), ("colossal", 50), ("ludicrous", 100)];
+        let scaled = [
+            ("massive", 15),
+            ("enormous", 20),
+            ("colossal", 50),
+            ("ludicrous", 100),
+        ];
         for (id, players) in scaled {
             let size = CIV6_MAP_SIZES.iter().find(|size| size.id == id).unwrap();
             assert_eq!(size.default_players, players, "{id} seats");
-            assert_eq!(MapSize::for_players(players).id, id, "{id} is chosen for {players}");
+            assert_eq!(
+                MapSize::for_players(players).id,
+                id,
+                "{id} is chosen for {players}"
+            );
 
             let tiles = (size.width * size.height) as f64;
             let per_civ = tiles / players as f64;

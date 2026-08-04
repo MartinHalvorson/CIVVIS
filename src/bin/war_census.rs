@@ -31,8 +31,8 @@
 //! Diagnostic only: it never changes a decision, and no agent can name it.
 use civvis::ai::{AdvancedAi, Ai, Weights};
 use civvis::game::{Action, Game};
-use civvis::Pos;
 use civvis::parallel;
+use civvis::Pos;
 
 fn number(args: &[String], flag: &str, default: usize) -> usize {
     args.iter()
@@ -107,7 +107,10 @@ fn main() {
             .collect();
         let mut open: Vec<(usize, usize, War)> = Vec::new();
         let mut done: Vec<War> = Vec::new();
-        let mut city_count: Vec<usize> = majors.iter().map(|p| game.player_city_ids(*p).len()).collect();
+        let mut city_count: Vec<usize> = majors
+            .iter()
+            .map(|p| game.player_city_ids(*p).len())
+            .collect();
 
         for turn in 0..turns {
             if game.winner.is_some() {
@@ -134,12 +137,13 @@ fn main() {
                             let power_b = game.military_power(*b).max(1.0);
                             // Credit the war to whichever side has force forward;
                             // the engine does not record who declared.
-                            let (attacker, defender) =
-                                if force_in_position(&game, *a, *b) >= force_in_position(&game, *b, *a) {
-                                    (*a, *b)
-                                } else {
-                                    (*b, *a)
-                                };
+                            let (attacker, defender) = if force_in_position(&game, *a, *b)
+                                >= force_in_position(&game, *b, *a)
+                            {
+                                (*a, *b)
+                            } else {
+                                (*b, *a)
+                            };
                             let force = force_in_position(&game, attacker, defender);
                             open.push((
                                 *a,

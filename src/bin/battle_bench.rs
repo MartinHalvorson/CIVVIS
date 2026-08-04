@@ -86,14 +86,15 @@ fn paired_t(differences: &[f64]) -> (f64, f64, f64, f64) {
         return (0.0, 0.0, 0.0, 1.0);
     }
     let mean = differences.iter().sum::<f64>() / n as f64;
-    let variance = differences
-        .iter()
-        .map(|d| (d - mean).powi(2))
-        .sum::<f64>()
-        / (n - 1) as f64;
+    let variance = differences.iter().map(|d| (d - mean).powi(2)).sum::<f64>() / (n - 1) as f64;
     let stderr = (variance / n as f64).sqrt();
     if stderr <= 0.0 {
-        return (mean, 0.0, f64::INFINITY, if mean == 0.0 { 1.0 } else { 0.0 });
+        return (
+            mean,
+            0.0,
+            f64::INFINITY,
+            if mean == 0.0 { 1.0 } else { 0.0 },
+        );
     }
     let t = mean / stderr;
     // Two-sided normal tail via erfc.
@@ -197,8 +198,14 @@ fn measure_cost(args: &[String], name: &str) {
     let a = per_turn(stock);
     let b = per_turn(mixed);
     println!();
-    println!("all advanced          {a:.2} ms a game-turn   ({} turns)", stock.1);
-    println!("{treated} seat(s) treated     {b:.2} ms a game-turn   ({} turns)", mixed.1);
+    println!(
+        "all advanced          {a:.2} ms a game-turn   ({} turns)",
+        stock.1
+    );
+    println!(
+        "{treated} seat(s) treated     {b:.2} ms a game-turn   ({} turns)",
+        mixed.1
+    );
     println!("ratio                 {:.2}x", b / a.max(1e-9));
     println!();
     println!(

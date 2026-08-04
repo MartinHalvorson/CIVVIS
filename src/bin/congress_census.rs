@@ -544,13 +544,9 @@ fn main() {
                     .copied()
                     .filter(living)
                     .max_by_key(|pid| (game.score(*pid), std::cmp::Reverse(*pid)));
-                let pressing = majors
-                    .iter()
-                    .copied()
-                    .filter(living)
-                    .max_by_key(|pid| {
-                        (probe.rival_pressure(&game, *pid).1, std::cmp::Reverse(*pid))
-                    });
+                let pressing = majors.iter().copied().filter(living).max_by_key(|pid| {
+                    (probe.rival_pressure(&game, *pid).1, std::cmp::Reverse(*pid))
+                });
                 if let (Some(d), Some(s), Some(p)) = (diplomatic, scoring, pressing) {
                     aim.push((d, s, p));
                 }
@@ -634,7 +630,10 @@ fn main() {
     println!("  mean final dvp per major {final_mean:.1}");
 
     let awarded = totals.from_prediction + totals.from_world_leader + totals.residual;
-    println!("\nwhere the points come from ({awarded} awarded, {} denied):", totals.denied_by_world_leader);
+    println!(
+        "\nwhere the points come from ({awarded} awarded, {} denied):",
+        totals.denied_by_world_leader
+    );
     let share = |value: i64| 100.0 * value as f64 / awarded.max(1) as f64;
     println!(
         "  exact prediction   {:>6}  {:>5.1}%   (+1 per voter per resolution)",
@@ -657,7 +656,10 @@ fn main() {
     );
 
     let wl = totals.wl_leader_gained + totals.wl_leader_denied + totals.wl_other_target;
-    println!("\nthe world_leader vote ({wl} resolutions, {} tied):", totals.wl_tied);
+    println!(
+        "\nthe world_leader vote ({wl} resolutions, {} tied):",
+        totals.wl_tied
+    );
     println!(
         "  leader gained +2   {:>5}  {:>5.1}%",
         totals.wl_leader_gained,
@@ -702,7 +704,9 @@ fn main() {
     let mut pressure_is_winner = 0_usize;
     let mut dvp_is_score = 0_usize;
     for reading in &readings {
-        let Some(winner) = reading.winner else { continue };
+        let Some(winner) = reading.winner else {
+            continue;
+        };
         for (diplomatic, scoring, pressing) in &reading.aim {
             sessions += 1;
             dvp_is_winner += usize::from(*diplomatic == winner);
@@ -739,7 +743,9 @@ fn main() {
     let mut penalties = 0_usize;
     let mut penalties_on_winner = 0_usize;
     for reading in &readings {
-        let Some(winner) = reading.winner else { continue };
+        let Some(winner) = reading.winner else {
+            continue;
+        };
         for hit in &reading.penalised {
             penalties += 1;
             penalties_on_winner += usize::from(*hit == winner);

@@ -26,11 +26,7 @@ fn every_world_type_generates_a_playable_world_on_either_shape_and_climate() {
             .into_iter()
             .enumerate()
         {
-            for (poles_index, poles) in MAP_POLES
-                .into_iter()
-                .map(|spec| spec.poles)
-                .enumerate()
-            {
+            for (poles_index, poles) in MAP_POLES.into_iter().map(|spec| spec.poles).enumerate() {
                 let seed = 71_000
                     + 101 * script_index as u64
                     + 7 * shape_index as u64

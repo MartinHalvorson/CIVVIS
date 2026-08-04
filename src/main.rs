@@ -4,8 +4,8 @@ use std::time::Instant;
 
 use civvis::ai::{run_game, AdvancedAi, Ai};
 use civvis::game::{
-    default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions,
-    WarRecord, DEFAULT_DISASTER_INTENSITY, GAME_MODES,
+    default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions, WarRecord,
+    DEFAULT_DISASTER_INTENSITY, GAME_MODES,
 };
 use civvis::rules::Rules;
 use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
@@ -672,9 +672,15 @@ fn start_era(args: &[String]) -> usize {
         let playable: Vec<&str> = setup::playable_start_eras().map(|spec| spec.id).collect();
         let known = setup::START_ERAS.iter().any(|spec| spec.id == id);
         if known {
-            eprintln!("cannot open in the {id:?} era yet; choose one of: {}", playable.join(", "));
+            eprintln!(
+                "cannot open in the {id:?} era yet; choose one of: {}",
+                playable.join(", ")
+            );
         } else {
-            eprintln!("unknown start era {id:?}; choose one of: {}", playable.join(", "));
+            eprintln!(
+                "unknown start era {id:?}; choose one of: {}",
+                playable.join(", ")
+            );
         }
         std::process::exit(2);
     })
@@ -694,7 +700,10 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
     }
     let speed = arg_text(args, "--speed", &default_speed());
     let Some(speed_spec) = rules.speeds.get(&speed) else {
-        eprintln!("unknown game speed {speed:?}; choose one of {:?}", speeds(&rules));
+        eprintln!(
+            "unknown game speed {speed:?}; choose one of {:?}",
+            speeds(&rules)
+        );
         std::process::exit(2);
     };
     // An explicit --turns wins; otherwise every speed brings its own stock
@@ -772,7 +781,8 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
                 .collect();
             for civ in &chosen {
                 if !rules.civs.contains_key(civ) {
-                    let mut known: Vec<&str> = rules.civs.keys().map(|name| name.as_str()).collect();
+                    let mut known: Vec<&str> =
+                        rules.civs.keys().map(|name| name.as_str()).collect();
                     known.sort_unstable();
                     eprintln!("unknown civilization {civ:?}; choose one of {known:?}");
                     std::process::exit(2);
@@ -880,7 +890,11 @@ fn standings(g: &Game) {
         let army: Vec<String> = army
             .iter()
             .map(|(kind, count)| {
-                let stale = if g.unit_is_obsolete(pid, civvis::name::Name::new(kind)) { "*" } else { "" };
+                let stale = if g.unit_is_obsolete(pid, civvis::name::Name::new(kind)) {
+                    "*"
+                } else {
+                    ""
+                };
                 format!("{count}x{kind}{stale}")
             })
             .collect();
@@ -963,11 +977,8 @@ fn main() {
             let players = arg(&args, "--players", 4);
             let jobs = single_simulation_jobs_arg(&args);
             let g0 = Instant::now();
-            let mut g = Game::new_with(game_options(
-                &args,
-                players,
-                arg(&args, "--seed", 0) as u64,
-            ));
+            let mut g =
+                Game::new_with(game_options(&args, players, arg(&args, "--seed", 0) as u64));
             let mut ais = AdvancedAi::fleet_parallel(&g, jobs);
             run_game(&mut g, &mut ais);
             println!("[{:.3}s]", g0.elapsed().as_secs_f64());
@@ -990,7 +1001,10 @@ fn main() {
                     // Every major's turns, pooled: what the empires in this game
                     // actually spent the game doing.
                     let mut census = civvis::ai::StrategyCensus::default();
-                    for ai in ais.iter().take(g.players.iter().filter(|p| !p.is_minor).count()) {
+                    for ai in ais
+                        .iter()
+                        .take(g.players.iter().filter(|p| !p.is_minor).count())
+                    {
                         census.absorb(&ai.strategy_census());
                     }
                     (g, census)
@@ -1039,9 +1053,7 @@ fn main() {
                         let (obsolete, ancient, army) = majors
                             .iter()
                             .filter(|p| p.alive)
-                            .flat_map(|p| {
-                                g.units.values().filter(move |unit| unit.owner == p.id)
-                            })
+                            .flat_map(|p| g.units.values().filter(move |unit| unit.owner == p.id))
                             .filter(|unit| g.rules.units[unit.kind].class == "military")
                             .fold((0, 0, 0), |(obsolete, ancient, army), unit| {
                                 (
@@ -1074,16 +1086,14 @@ fn main() {
                         let all_wars: Vec<&WarRecord> =
                             g.wars.values().chain(g.concluded_wars.iter()).collect();
                         let wars = all_wars.len();
-                        let (units_lost, cities_taken) = all_wars.iter().fold(
-                            (0u32, 0u32),
-                            |(units, cities), war| {
+                        let (units_lost, cities_taken) =
+                            all_wars.iter().fold((0u32, 0u32), |(units, cities), war| {
                                 (
                                     units + war.losses.values().map(|side| side.units).sum::<u32>(),
                                     cities
                                         + war.losses.values().map(|side| side.cities).sum::<u32>(),
                                 )
-                            },
-                        );
+                            });
                         let capitals_taken = all_wars
                             .iter()
                             .flat_map(|war| war.highlights.iter())
@@ -1092,16 +1102,14 @@ fn main() {
                         // How long the declarations lasted, because a war that
                         // ends in a handful of turns cannot take a walled city
                         // whatever army was pointed at it.
-                        let (turns_at_war, ended) = all_wars.iter().fold(
-                            (0u32, 0usize),
-                            |(turns, ended), war| {
+                        let (turns_at_war, ended) =
+                            all_wars.iter().fold((0u32, 0usize), |(turns, ended), war| {
                                 let stop = war.ended.unwrap_or(g.turn);
                                 (
                                     turns + stop.saturating_sub(war.started),
                                     ended + war.ended.is_some() as usize,
                                 )
-                            },
-                        );
+                            });
                         let mean_war = if wars > 0 {
                             turns_at_war as f64 / wars as f64
                         } else {
@@ -1230,7 +1238,8 @@ fn main() {
             let players = arg(&args, "--players", 6);
             let warmup = arg(&args, "--turns", 150) as u32;
             let samples = arg(&args, "--samples", 5000) as usize;
-            let mut g = Game::new_with(game_options(&args, players, arg(&args, "--seed", 0) as u64));
+            let mut g =
+                Game::new_with(game_options(&args, players, arg(&args, "--seed", 0) as u64));
             let mut ais = AdvancedAi::fleet(&g);
             // Play in to the requested turn first: an empty map clones far
             // faster than a settled one, and a settled one is what an agent
@@ -1302,19 +1311,31 @@ fn main() {
                 g.cities.len(),
                 g.units.len(),
             );
-            println!("clone            {clone_us:8.1} us  = {:.0}/sec", 1e6 / clone_us);
+            println!(
+                "clone            {clone_us:8.1} us  = {:.0}/sec",
+                1e6 / clone_us
+            );
             match move_us {
-                Some(us) => println!("clone + move     {us:8.1} us  = {:.0} rollouts/sec", 1e6 / us),
+                Some(us) => println!(
+                    "clone + move     {us:8.1} us  = {:.0} rollouts/sec",
+                    1e6 / us
+                ),
                 None => println!("clone + move          n/a  (no legal move for this seat)"),
             }
-            println!("clone + end turn {end_us:8.1} us  = {:.0}/sec", 1e6 / end_us);
+            println!(
+                "clone + end turn {end_us:8.1} us  = {:.0}/sec",
+                1e6 / end_us
+            );
             if let Some(us) = fast_us {
                 println!(
                     "clone + move (no fog){us:6.1} us  = {:.0} rollouts/sec",
                     1e6 / us
                 );
             }
-            println!("clone + end (no fog) {fast_end_us:6.1} us  = {:.0}/sec", 1e6 / fast_end_us);
+            println!(
+                "clone + end (no fog) {fast_end_us:6.1} us  = {:.0}/sec",
+                1e6 / fast_end_us
+            );
             let _ = sink;
         }
         "tournament" => {
@@ -1352,10 +1373,8 @@ fn main() {
             }
             let mut effective = BTreeMap::<&'static str, String>::new();
             for entrant in &entrants {
-                let provenance = civvis::elo::builtin_provenance(
-                    &entrant.controller,
-                    civvis::elo::ARTIFACT_DIR,
-                );
+                let provenance =
+                    civvis::elo::builtin_provenance(&entrant.controller, civvis::elo::ARTIFACT_DIR);
                 if provenance.degraded() {
                     eprintln!(
                         "cannot rate identity {:?}: {}",
@@ -1364,7 +1383,9 @@ fn main() {
                     );
                     std::process::exit(2);
                 }
-                if let Some(other) = effective.insert(provenance.effective, entrant.identity.clone()) {
+                if let Some(other) =
+                    effective.insert(provenance.effective, entrant.identity.clone())
+                {
                     eprintln!(
                         "rating identities {:?} and {:?} both play as {:?}; cloned controllers cannot be rated as separate players",
                         other,
@@ -1430,12 +1451,17 @@ fn main() {
             let rules = Rules::embedded();
             let speed = arg_text(&args, "--speed", &default_speed());
             if !rules.speeds.contains_key(&speed) {
-                eprintln!("unknown game speed {speed:?}; choose one of {:?}", speeds(&rules));
+                eprintln!(
+                    "unknown game speed {speed:?}; choose one of {:?}",
+                    speeds(&rules)
+                );
                 std::process::exit(2);
             }
             let map_id = arg_text(&args, "--map", "pangaea");
             let map_script = MapScript::from_id(&map_id).unwrap_or_else(|| {
-                eprintln!("unknown map script {map_id:?}; choose pangaea, continents, or archipelago");
+                eprintln!(
+                    "unknown map script {map_id:?}; choose pangaea, continents, or archipelago"
+                );
                 std::process::exit(2);
             });
             let topology_default = if map_id == "planet" { "planet" } else { "flat" };
@@ -1453,9 +1479,15 @@ fn main() {
             let (default_width, default_height) = size.dimensions(tournament_topology);
             let width = strict(strict_i64_arg(&args, "--width", i64::from(default_width)));
             let height = strict(strict_i64_arg(&args, "--height", i64::from(default_height)));
-            if width < 8 || height < 8 || width > i64::from(i32::MAX) || height > i64::from(i32::MAX)
+            if width < 8
+                || height < 8
+                || width > i64::from(i32::MAX)
+                || height > i64::from(i32::MAX)
             {
-                eprintln!("tournament dimensions must each be between 8 and {}", i32::MAX);
+                eprintln!(
+                    "tournament dimensions must each be between 8 and {}",
+                    i32::MAX
+                );
                 std::process::exit(2);
             }
             let games = strict(strict_i64_arg(&args, "--games", 20));
@@ -1685,8 +1717,8 @@ fn main() {
                 .and_then(|index| args.get(index + 1))
                 .map(|dir| {
                     let events = std::path::Path::new(dir).join("events.jsonl");
-                    let snapshot = civvis::mirror::snapshot_from_events(&events)
-                        .unwrap_or_else(|error| {
+                    let snapshot =
+                        civvis::mirror::snapshot_from_events(&events).unwrap_or_else(|error| {
                             eprintln!("cannot read {}: {error}", events.display());
                             std::process::exit(2);
                         });
@@ -1754,16 +1786,23 @@ fn main() {
                             // Loud, because silently mirroring the real board when the
                             // operator asked for a mocked one is a wrong answer that
                             // looks exactly like a right one.
-                            None => println!("  ⚠ could not read --state {path}: using observed board"),
+                            None => {
+                                println!("  ⚠ could not read --state {path}: using observed board")
+                            }
                         }
                     }
-                    let from_value = observed
-                        .as_ref()
-                        .and_then(|v| serde_json::from_value::<civvis::mirror::StateSnapshot>(v.clone()).ok());
+                    let from_value = observed.as_ref().and_then(|v| {
+                        serde_json::from_value::<civvis::mirror::StateSnapshot>(v.clone()).ok()
+                    });
                     match from_value.or_else(|| civvis::mirror::state_from_events(&events, None)) {
                         Some(state) => {
                             let rebuilt = civvis::mirror::rebuild_from_state(
-                                &snapshot, &state, players as usize, 1, 250, 6,
+                                &snapshot,
+                                &state,
+                                players as usize,
+                                1,
+                                250,
+                                6,
                             );
                             println!(
                                 "  empire: {} cities, {} units, {} rival cities, \
@@ -1883,8 +1922,11 @@ fn main() {
                 std::process::exit(1);
             }
             print!("{}", civvis::pedia::render(&found));
-            println!("
-{} entries", found.len());
+            println!(
+                "
+{} entries",
+                found.len()
+            );
         }
         "validate" => {
             let findings = civvis::validate::validate(&Rules::embedded());
@@ -1922,8 +1964,8 @@ fn main() {
                     std::process::exit(1);
                 }
             }
-            let seats = history.iter().map(|m| m.seats.len()).sum::<usize>() as f64
-                / history.len() as f64;
+            let seats =
+                history.iter().map(|m| m.seats.len()).sum::<usize>() as f64 / history.len() as f64;
             let burn_in = arg_f64(&args, "--burn-in", 0.3).clamp(0.0, 0.95);
             let mut cfg = civvis::rating::RatingCfg {
                 stage_decay: arg_f64(&args, "--stage-decay", 0.5).clamp(0.0, 1.0),
@@ -1967,12 +2009,11 @@ fn main() {
                 );
                 for step in 0..=10 {
                     let decay = step as f64 / 10.0;
-                    let mut model = civvis::rating::ContextualRating::new(
-                        civvis::rating::RatingCfg {
+                    let mut model =
+                        civvis::rating::ContextualRating::new(civvis::rating::RatingCfg {
                             stage_decay: decay,
                             ..cfg.clone()
-                        },
-                    );
+                        });
                     let m = civvis::rating::evaluate(&mut model, &history, burn_in);
                     println!(
                         "{decay:<14.1}{:>12.4}{:>9.1}%{:>12.4}",
@@ -2051,7 +2092,11 @@ mod tests {
             host_default.min(SINGLE_SIMULATION_DEFAULT_MAX_JOBS)
         );
 
-        let explicit = vec!["simulate".to_string(), "--jobs".to_string(), "9".to_string()];
+        let explicit = vec![
+            "simulate".to_string(),
+            "--jobs".to_string(),
+            "9".to_string(),
+        ];
         assert_eq!(jobs_arg(&explicit), 9);
         assert_eq!(single_simulation_jobs_arg(&explicit), 9);
     }

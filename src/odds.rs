@@ -202,10 +202,7 @@ where
     }
 
     // ---- the pregame prior, which no later turn may move -------------------
-    let ratings: Vec<PriorRating> = seats
-        .iter()
-        .map(|pid| prior_rating(*pid).into())
-        .collect();
+    let ratings: Vec<PriorRating> = seats.iter().map(|pid| prior_rating(*pid).into()).collect();
     let rated_strength = uncertainty_adjusted_elos(&ratings);
     let handicap: Vec<f64> = seats.iter().map(|pid| handicap_elo(game, *pid)).collect();
     let prior: Vec<f64> = ratings
@@ -279,8 +276,7 @@ where
         .iter()
         .zip(&standing)
         .map(|(pid, position)| {
-            (1.0 - PRIOR_FADE * progress)
-                * (pregame_elo[seat_index(&seats, *pid)] - mean_prior)
+            (1.0 - PRIOR_FADE * progress) * (pregame_elo[seat_index(&seats, *pid)] - mean_prior)
                 + (LEAD_BASE + LEAD_SHARPEN * progress) * position.elo
                 - no_city_penalty(game, *pid)
         })
@@ -362,9 +358,8 @@ fn handicap_elo(game: &Game, pid: usize) -> f64 {
     // Food is never handicapped, so the mean is taken over the five yields the
     // ladder actually scales.
     let yields = game.handicap_yield_pct(pid);
-    let mean_yield = (yields.production + yields.gold + yields.science + yields.culture
-        + yields.faith)
-        / 5.0;
+    let mean_yield =
+        (yields.production + yields.gold + yields.science + yields.culture + yields.faith) / 5.0;
     let bonus_units: usize = spec.ai_bonus_units.values().sum();
     HANDICAP_YIELD_ELO * mean_yield
         + HANDICAP_COMBAT_ELO * combat
@@ -529,8 +524,7 @@ fn uncertainty_adjusted_elos(ratings: &[PriorRating]) -> Vec<f64> {
         })
         .sum::<f64>()
         / ratings.len() as f64;
-    let attenuation =
-        1.0 / (1.0 + 6.0 * mean_variance / (std::f64::consts::PI.powi(2))).sqrt();
+    let attenuation = 1.0 / (1.0 + 6.0 * mean_variance / (std::f64::consts::PI.powi(2))).sqrt();
     ratings
         .iter()
         .map(|rating| mean_elo + attenuation * (rating.elo - mean_elo))
@@ -612,7 +606,6 @@ mod tests {
         odds.values().map(of).sum()
     }
 
-
     /// An even table splits one win, and on turn one the two answers still
     /// agree: six settlers and six escorts is nothing to disagree about. They
     /// are not identical — an opening escort can be worth a hair more than
@@ -636,8 +629,16 @@ mod tests {
     /// Deity, favoured at Settler, and level at Prince.
     #[test]
     fn the_difficulty_setting_prices_the_human_seat() {
-        let ladder = ["settler", "chieftain", "warlord", "prince", "king", "emperor",
-                      "immortal", "deity"];
+        let ladder = [
+            "settler",
+            "chieftain",
+            "warlord",
+            "prince",
+            "king",
+            "emperor",
+            "immortal",
+            "deity",
+        ];
         let mut human_odds = Vec::new();
         for difficulty in ladder {
             let game = even_table(4, difficulty, &[0]);
@@ -679,11 +680,7 @@ mod tests {
             let game = even_table(4, difficulty, &[]);
             let odds = table(&game, flat);
             for seat in odds.values() {
-                assert!(
-                    (seat.start - 0.25).abs() < 1e-9,
-                    "{difficulty}: {:?}",
-                    seat
-                );
+                assert!((seat.start - 0.25).abs() < 1e-9, "{difficulty}: {:?}", seat);
             }
         }
     }
@@ -791,7 +788,10 @@ mod tests {
             game.cities.remove(&city);
         }
         let odds = table(&game, flat);
-        assert!(game.players[2].alive, "the seat has not been eliminated yet");
+        assert!(
+            game.players[2].alive,
+            "the seat has not been eliminated yet"
+        );
         assert!(
             odds[&2].now < 0.12,
             "and it is marked well down while it still holds a settler: {:?}",
@@ -831,7 +831,11 @@ mod tests {
         assert_eq!(odds[&3].start, predicted);
         assert!((total(&odds, |seat| seat.now) - 1.0).abs() < 1e-9);
         for pid in 0..3 {
-            assert!((odds[&pid].now - 1.0 / 3.0).abs() < 0.03, "{:?}", odds[&pid]);
+            assert!(
+                (odds[&pid].now - 1.0 / 3.0).abs() < 0.03,
+                "{:?}",
+                odds[&pid]
+            );
         }
     }
 
@@ -904,7 +908,10 @@ mod tests {
         let early = table(&game, flat)[&1].now;
         game.turn = 240;
         let late = table(&game, flat)[&1].now;
-        assert!(late > early, "early {early} should be softer than late {late}");
+        assert!(
+            late > early,
+            "early {early} should be softer than late {late}"
+        );
     }
 
     /// A team wins together, so both members carry the side's chance rather
@@ -986,8 +993,7 @@ mod tests {
             options.difficulty = "prince".to_string();
             let mut game = Game::new_with(options);
             let mut ais = BasicAi::fleet(&game);
-            let mut sampled: [Option<BTreeMap<usize, SeatOdds>>; PHASES.len()] =
-                Default::default();
+            let mut sampled: [Option<BTreeMap<usize, SeatOdds>>; PHASES.len()] = Default::default();
             game.set_fog_memory(false);
             while game.winner.is_none() && game.turn <= game.max_turns {
                 for (index, phase) in PHASES.iter().enumerate() {
@@ -1104,8 +1110,14 @@ mod tests {
         league.strategies.push(player);
         let rome = civ_edge_elo(&league, "Rome");
         let norway = civ_edge_elo(&league, "Norway");
-        assert!(rome > 150.0, "400 games of a +200 edge is nearly all of it: {rome}");
-        assert!(norway < 25.0, "two games of the same edge is almost none: {norway}");
+        assert!(
+            rome > 150.0,
+            "400 games of a +200 edge is nearly all of it: {rome}"
+        );
+        assert!(
+            norway < 25.0,
+            "two games of the same edge is almost none: {norway}"
+        );
         assert_eq!(civ_edge_elo(&league, "Sumeria"), 0.0, "and none is none");
     }
 }

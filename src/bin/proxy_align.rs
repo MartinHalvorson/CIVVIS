@@ -103,7 +103,11 @@ fn play(seed: u64, seats: usize, width: i32, height: i32, turns: u32) -> Table {
     let mut proxy = Vec::with_capacity(majors.len());
     let mut score_only = Vec::with_capacity(majors.len());
     for index in 0..majors.len() {
-        let score_share = if total > 0.0 { scores[index] / total } else { 0.0 };
+        let score_share = if total > 0.0 {
+            scores[index] / total
+        } else {
+            0.0
+        };
         let combat_share = if combat_total > 0.0 {
             achievements[index] / combat_total
         } else {
@@ -203,7 +207,9 @@ fn main() {
     let jobs = number(&args, "--jobs", parallel::default_jobs());
 
     println!("proxy_align: {games} games, {seats} players, {width}x{height}, {turns} turns");
-    println!("objective under test: 50*P*score_share + 12*P*combat_share (evolve::selection_value)");
+    println!(
+        "objective under test: 50*P*score_share + 12*P*combat_share (evolve::selection_value)"
+    );
 
     let tables = parallel::map(games, jobs, |index| {
         play(seed + index as u64, seats, width, height, turns)
@@ -295,8 +301,9 @@ fn main() {
     }
     println!(
         "\ncombat_share across seats: mean spread {:.3}, flat (<0.10) in {flat}/{n} games, \
-         all-zero in {silent}/{n}; its leader differs from the score leader in {disagree}/{n}"
-    , spread_sum / n.max(1) as f64);
+         all-zero in {silent}/{n}; its leader differs from the score leader in {disagree}/{n}",
+        spread_sum / n.max(1) as f64
+    );
 
     // The verdict is stated rather than left to the reader, because the whole
     // point is to settle whether the objection to the split survives.

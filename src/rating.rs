@@ -448,13 +448,21 @@ impl ContextualRating {
     ) {
         let probs = self.stage_probabilities(beliefs, remaining);
         let n = remaining.len() as f64;
-        let mean_var = remaining.iter().map(|i| beliefs[*i].variance()).sum::<f64>() / n.max(1.0);
+        let mean_var = remaining
+            .iter()
+            .map(|i| beliefs[*i].variance())
+            .sum::<f64>()
+            / n.max(1.0);
         let g = attenuation(mean_var + self.cfg.beta * self.cfg.beta);
         let share = 1.0 / winners.len() as f64;
 
         for (slot, &seat_idx) in remaining.iter().enumerate() {
             let p = probs[slot].clamp(1e-9, 1.0 - 1e-9);
-            let actual = if winners.contains(&seat_idx) { share } else { 0.0 };
+            let actual = if winners.contains(&seat_idx) {
+                share
+            } else {
+                0.0
+            };
             // Laplace approximation of this stage's likelihood as a Gaussian
             // observation of the seat's strength: offset `grad / info`, with
             // variance `1 / info`. The stage weight scales its information.
@@ -770,11 +778,7 @@ impl Glicko2Model {
     /// Glicko-2 update for one player against `results` of
     /// `(opponent, score, weight)`.
     fn rate(p: Glicko2State, results: &[Glicko2Result], tau: f64) -> Glicko2State {
-        let (mu, phi, sigma) = (
-            (p.0 - BASE_ELO) / ELO_PER_LOGIT,
-            p.1 / ELO_PER_LOGIT,
-            p.2,
-        );
+        let (mu, phi, sigma) = ((p.0 - BASE_ELO) / ELO_PER_LOGIT, p.1 / ELO_PER_LOGIT, p.2);
         let mut v_inv = 0.0;
         let mut delta_sum = 0.0;
         for (o, s, w) in results {
@@ -1488,8 +1492,7 @@ mod tests {
         }
         rating.apply_evidence(&evidence);
 
-        let expected_variance =
-            1.0 / (1.0 / prior.variance() + observations / noise);
+        let expected_variance = 1.0 / (1.0 / prior.variance() + observations / noise);
         let expected_mu = prior.mu + expected_variance * observations * innovation / noise;
         let actual = rating.player("a");
         assert!(
@@ -1525,8 +1528,7 @@ mod tests {
         let expected_civ_mu = civ_prior.mu + civ_prior.variance() / total * innovation;
         let expected_player_variance =
             player_prior.variance() - player_prior.variance().powi(2) / total;
-        let expected_civ_variance =
-            civ_prior.variance() - civ_prior.variance().powi(2) / total;
+        let expected_civ_variance = civ_prior.variance() - civ_prior.variance().powi(2) / total;
         let player = rating.player("a");
         let civ = rating.civ_edge("Rome");
         assert!((player.mu - expected_player_mu).abs() < 1e-12);
@@ -1549,7 +1551,10 @@ mod tests {
         };
         let once = update(1);
         let twice = update(2);
-        assert!(twice > once, "a second agreeing observation must still add evidence");
+        assert!(
+            twice > once,
+            "a second agreeing observation must still add evidence"
+        );
         assert!(
             twice < 2.0 * once,
             "a second observation cannot apply the prior gain twice: {once} -> {twice}"
@@ -1614,10 +1619,12 @@ mod tests {
                 // Rotate who is where without changing the strength order, so
                 // the fit is about placement stages and not about seating.
                 order.rotate_left(g % 2);
-                game(&order
-                    .iter()
-                    .map(|i| (players[*i], "Rome"))
-                    .collect::<Vec<_>>())
+                game(
+                    &order
+                        .iter()
+                        .map(|i| (players[*i], "Rome"))
+                        .collect::<Vec<_>>(),
+                )
             })
             .collect();
 
@@ -1746,10 +1753,7 @@ mod tests {
         for g in 0..200u64 {
             let assign = rotate_seating(2, 2, g);
             let civs = ["Rome", "Egypt"];
-            let mut seats = vec![
-                seat("a", civs[assign[0]], 0),
-                seat("b", civs[assign[1]], 0),
-            ];
+            let mut seats = vec![seat("a", civs[assign[0]], 0), seat("b", civs[assign[1]], 0)];
             seats.sort_by_key(|s| u32::from(s.civ != "Rome"));
             for (rank, s) in seats.iter_mut().enumerate() {
                 s.rank = rank as u32;
@@ -1873,7 +1877,9 @@ mod tests {
         let strength = [3.0f64, 2.0, 1.0, 0.0, -1.0, -2.0];
         let mut state = 12345u64;
         let mut rand = move || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((state >> 33) as f64) / ((1u64 << 31) as f64)
         };
         for _ in 0..600 {
@@ -1940,12 +1946,18 @@ mod tests {
         let mut history = Vec::new();
         let mut state = 99u64;
         let mut rand = move || {
-            state = state.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            state = state
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(1442695040888963407);
             ((state >> 33) as f64) / ((1u64 << 31) as f64)
         };
         for _ in 0..600 {
             // p0 nearly always wins; the rest of the order is a shuffle.
-            let winner = if rand() < 0.8 { 0 } else { 1 + (rand() * 4.0) as usize };
+            let winner = if rand() < 0.8 {
+                0
+            } else {
+                1 + (rand() * 4.0) as usize
+            };
             let winner = winner.min(4);
             let mut rest: Vec<usize> = (0..5).filter(|i| *i != winner).collect();
             for i in (1..rest.len()).rev() {

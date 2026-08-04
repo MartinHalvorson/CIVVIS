@@ -112,7 +112,11 @@ fn main() {
     );
     println!(
         "genome: {}",
-        if on_champion { "evolved champion (as shipped)" } else { "Weights::default() (the fallback)" }
+        if on_champion {
+            "evolved champion (as shipped)"
+        } else {
+            "Weights::default() (the fallback)"
+        }
     );
 
     let per_map = parallel::map(maps, jobs, move |index| {
@@ -124,7 +128,10 @@ fn main() {
             .collect();
         let mut seats: Vec<Seat> = majors
             .iter()
-            .map(|_| Seat { history: Vec::new(), won: false })
+            .map(|_| Seat {
+                history: Vec::new(),
+                won: false,
+            })
             .collect();
 
         for _ in 0..turns {
@@ -157,7 +164,10 @@ fn main() {
     });
 
     let seats: Vec<Seat> = per_map.into_iter().flatten().collect();
-    let scored: Vec<&Seat> = seats.iter().filter(|seat| !seat.history.is_empty()).collect();
+    let scored: Vec<&Seat> = seats
+        .iter()
+        .filter(|seat| !seat.history.is_empty())
+        .collect();
     if scored.is_empty() {
         println!("no seat ever produced a plan; nothing to report");
         return;
@@ -192,7 +202,11 @@ fn main() {
         if seat.won {
             winners += 1;
             let final_label = seat.history[seat.history.len() - 1];
-            let held = seat.history.iter().filter(|label| **label == final_label).count();
+            let held = seat
+                .history
+                .iter()
+                .filter(|label| **label == final_label)
+                .count();
             winner_final_share += held as f64 / seat.history.len() as f64;
         }
     }
@@ -221,7 +235,10 @@ fn main() {
     let mut ranked: Vec<(&&'static str, &usize)> = shares.iter().collect();
     ranked.sort_by(|a, b| b.1.cmp(a.1));
     for (label, count) in ranked {
-        println!("  {label:<10} {:5.1}%", *count as f64 * 100.0 / turns_total as f64);
+        println!(
+            "  {label:<10} {:5.1}%",
+            *count as f64 * 100.0 / turns_total as f64
+        );
     }
 
     // Branch on what was measured. The point of the run is to decide between

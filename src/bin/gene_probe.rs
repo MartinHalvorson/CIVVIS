@@ -74,7 +74,15 @@ fn snapshot(g: &Game, pid: usize) -> Snapshot {
 }
 
 /// Play one game with `seat` carrying `genome`, and record that seat each turn.
-fn trace(genome: &Weights, players: usize, w: i32, h: i32, seed: u64, turns: u32, seat: usize) -> Vec<Snapshot> {
+fn trace(
+    genome: &Weights,
+    players: usize,
+    w: i32,
+    h: i32,
+    seed: u64,
+    turns: u32,
+    seat: usize,
+) -> Vec<Snapshot> {
     let mut game = Game::new(players, w, h, seed, turns, 0);
     let stock = Weights::default();
     let mut mine: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, genome);
@@ -214,7 +222,10 @@ fn main() {
     let quiet: Vec<&(usize, String, usize, Option<f64>)> =
         rows.iter().filter(|r| r.2 == 0).collect();
 
-    println!("{:<4} {:<20} {:>8}  mean first divergence turn", "idx", "gene", "bites");
+    println!(
+        "{:<4} {:<20} {:>8}  mean first divergence turn",
+        "idx", "gene", "bites"
+    );
     for (index, name, bit, mean) in &rows {
         let when = mean
             .map(|t| format!("{t:.0}"))

@@ -269,17 +269,17 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             })
         }),
 
-        ("GET", "/pedia") => with_session(|session| {
-            json!({ "entries": crate::pedia::entries(&session.game.rules) })
-        }),
+        ("GET", "/pedia") => {
+            with_session(|session| json!({ "entries": crate::pedia::entries(&session.game.rules) }))
+        }
 
         // A save is handed straight to the page, which owns the storage this
         // build has: there is no disk here, so `/saves` and the named half of
         // `/save` live in the shim's `localStorage` and only ever reach the
         // engine as an uploaded game on `/load`.
-        ("GET", "/save") => with_session(|session| {
-            serde_json::to_value(&session.game).unwrap_or(Value::Null)
-        }),
+        ("GET", "/save") => {
+            with_session(|session| serde_json::to_value(&session.game).unwrap_or(Value::Null))
+        }
 
         ("POST", "/pace") => {
             if let Some(ms) = parsed["ms"].as_u64() {
@@ -342,18 +342,21 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 let count = parsed["count"].as_u64().unwrap_or(1) as usize;
                 let steps = session.step_many(count);
                 if !steps.is_empty() {
-                    FRAME_SEQUENCE.with(|sequence| {
-                        sequence.set(sequence.get().wrapping_add(1))
-                    });
+                    FRAME_SEQUENCE.with(|sequence| sequence.set(sequence.get().wrapping_add(1)));
                 }
                 out = session.state();
                 let visible_steps: Vec<_> = steps
                     .iter()
-                    .filter(|step| session.view_player.is_none_or(|viewer| step.player == viewer))
+                    .filter(|step| {
+                        session
+                            .view_player
+                            .is_none_or(|viewer| step.player == viewer)
+                    })
                     .collect();
                 if let Some(step) = visible_steps.last() {
                     out["stepped"] = json!(step.player);
-                    out["actions_taken"] = serde_json::to_value(&step.actions).unwrap_or(Value::Null);
+                    out["actions_taken"] =
+                        serde_json::to_value(&step.actions).unwrap_or(Value::Null);
                 }
                 out["step_batches"] = Value::Array(
                     visible_steps
@@ -383,7 +386,10 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             if session.params.spectate {
                 return json!({"error": "a spectated game is already playing itself"});
             }
-            if parsed["seed"].as_u64().is_some_and(|seed| seed != session.game.seed) {
+            if parsed["seed"]
+                .as_u64()
+                .is_some_and(|seed| seed != session.game.seed)
+            {
                 return json!({"error": "the game changed before auto-play began"});
             }
             if let Some(name) = parsed["strategy"].as_str() {
@@ -393,7 +399,10 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             }
             let turns = match parsed["turns"].as_str() {
                 Some("all") => u32::MAX,
-                _ => parsed["turns"].as_u64().unwrap_or(1).clamp(1, u32::MAX as u64) as u32,
+                _ => parsed["turns"]
+                    .as_u64()
+                    .unwrap_or(1)
+                    .clamp(1, u32::MAX as u64) as u32,
             };
             let played = session.autoplay(turns);
             let mut out = session.state();
@@ -429,9 +438,9 @@ fn route(method: &str, target: &str, body: &str) -> Value {
 
         ("POST", "/route") => with_session(|session| {
             let unit = parsed["unit"].as_u64().map(|unit| unit as u32);
-            let to = parsed["to"]
-                .as_array()
-                .and_then(|pos| Some((pos.first()?.as_i64()? as i32, pos.get(1)?.as_i64()? as i32)));
+            let to = parsed["to"].as_array().and_then(|pos| {
+                Some((pos.first()?.as_i64()? as i32, pos.get(1)?.as_i64()? as i32))
+            });
             match (unit, to) {
                 (Some(unit), Some(to)) => {
                     let owned = session

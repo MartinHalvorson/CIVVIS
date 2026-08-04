@@ -36,12 +36,12 @@
 //! The baseline is always a stock `StrategicAi`; the flags describe the
 //! treatment. Both are measured **on the same positions with the same agent**,
 //! so the comparison is paired and the sign test over positions is meaningful.
-use civvis::ai::{run_game, Ai, AdvancedAi, VictoryTarget};
+use civvis::ai::Weights;
+use civvis::ai::{run_game, AdvancedAi, Ai, VictoryTarget};
+use civvis::evolve::{fitness_observations, EvoCfg};
 use civvis::game::{Action, Game};
 use civvis::parallel;
 use civvis::production::ProductionSearchAi;
-use civvis::ai::Weights;
-use civvis::evolve::{fitness_observations, EvoCfg};
 use civvis::strategic::{Doctrine, ReviewPath, StrategicAi};
 
 /// Fixed game and parallelism settings shared by the probe's audit modes.
@@ -384,8 +384,14 @@ fn main() {
         "  {:<24} {:>8} {:>8} {:>8} {:>10} {:>11} {:>11}",
         "branch-value spread", "median", "p90", "max", ">margin", "decided", "would commit"
     );
-    summarise("baseline (stock)", &sampled.iter().map(|(b, _)| b).collect::<Vec<_>>());
-    summarise("treatment", &sampled.iter().map(|(_, t)| t).collect::<Vec<_>>());
+    summarise(
+        "baseline (stock)",
+        &sampled.iter().map(|(b, _)| b).collect::<Vec<_>>(),
+    );
+    summarise(
+        "treatment",
+        &sampled.iter().map(|(_, t)| t).collect::<Vec<_>>(),
+    );
 
     // Spread is max - min over the projected branches, so it is only
     // comparable between arms that projected the SAME NUMBER of branches. A
@@ -451,7 +457,6 @@ fn main() {
          evidence of strength — noise separates branches as readily as signal does."
     );
 }
-
 
 fn audit_priors(config: ProbeConfig) {
     let ProbeConfig {
@@ -582,10 +587,7 @@ fn audit_priors(config: ProbeConfig) {
         .filter(|a| a.searched.is_some())
         .count();
     println!();
-    println!(
-        "who decides the lane, over {} sampled reviews:",
-        all.len()
-    );
+    println!("who decides the lane, over {} sampled reviews:", all.len());
     println!(
         "  priors    answered {:>4} reviews and named a lane in {:>4} ({:.0}%)",
         audits.len(),
@@ -618,7 +620,6 @@ fn audit_priors(config: ProbeConfig) {
          changed`."
     );
 }
-
 
 fn audit_production(config: ProbeConfig) {
     let ProbeConfig {
@@ -673,12 +674,15 @@ fn audit_production(config: ProbeConfig) {
             // orders them the same way once every payoff has landed.
             let best = |vals: &[(civvis::game::Item, f64)]| -> Option<String> {
                 vals.iter()
-                    .fold(None, |top: Option<&(civvis::game::Item, f64)>, cand| {
-                        match top.is_none_or(|t| cand.1 > t.1) {
+                    .fold(
+                        None,
+                        |top: Option<&(civvis::game::Item, f64)>, cand| match top
+                            .is_none_or(|t| cand.1 > t.1)
+                        {
                             true => Some(cand),
                             false => top,
-                        }
-                    })
+                        },
+                    )
                     .map(|(item, _)| format!("{item:?}"))
             };
             let shallow_pick = best(&values);
@@ -723,11 +727,26 @@ fn audit_production(config: ProbeConfig) {
         readings.len()
     );
     println!();
-    println!("  candidates projected per decision   {:.1}", candidates as f64 / readings.len() as f64);
-    println!("  values the evaluator can separate   {:.1}", distinct as f64 / readings.len() as f64);
-    println!("  median spread across candidates     {:.6}", percentile(&spreads, 0.5));
-    println!("  p90 spread                          {:.6}", percentile(&spreads, 0.9));
-    println!("  max spread                          {:.6}", spreads.last().copied().unwrap_or(0.0));
+    println!(
+        "  candidates projected per decision   {:.1}",
+        candidates as f64 / readings.len() as f64
+    );
+    println!(
+        "  values the evaluator can separate   {:.1}",
+        distinct as f64 / readings.len() as f64
+    );
+    println!(
+        "  median spread across candidates     {:.6}",
+        percentile(&spreads, 0.5)
+    );
+    println!(
+        "  p90 spread                          {:.6}",
+        percentile(&spreads, 0.9)
+    );
+    println!(
+        "  max spread                          {:.6}",
+        spreads.last().copied().unwrap_or(0.0)
+    );
     println!(
         "  decisions where every candidate scores the SAME   {blind} of {} ({:.0}%)",
         readings.len(),
@@ -747,7 +766,6 @@ fn audit_production(config: ProbeConfig) {
     );
 }
 
-
 /// Distinct-but-sane opponent policies, so a candidate can be continued
 /// against more than one future.
 ///
@@ -762,9 +780,9 @@ fn opponent_pool(index: usize) -> Box<dyn Ai> {
     match index % 5 {
         0 => Box::new(AdvancedAi::new()) as Box<dyn Ai>,
         4 => Box::new(AdvancedAi::legacy()) as Box<dyn Ai>,
-        other => Box::new(AdvancedAi::with_weights(
-            Doctrine::ALL[other].apply(&base),
-        )) as Box<dyn Ai>,
+        other => {
+            Box::new(AdvancedAi::with_weights(Doctrine::ALL[other].apply(&base))) as Box<dyn Ai>
+        }
     }
 }
 
@@ -918,7 +936,10 @@ fn audit_outcome(config: ProbeConfig, replicas: usize) {
          ({players}p {width}x{height}, warmup {warmup}, {turns}-turn budget, seeds {seed0}..)"
     );
     println!();
-    println!("  candidates continued per decision              {:.1}", candidates as f64 / n as f64);
+    println!(
+        "  candidates continued per decision              {:.1}",
+        candidates as f64 / n as f64
+    );
     println!(
         "  decisions where the label DISCRIMINATES         {} of {n} ({:.0}%)",
         discriminating.len(),
@@ -992,7 +1013,6 @@ fn audit_outcome(config: ProbeConfig, replicas: usize) {
          and the noise-floor line second: it says what that would cost."
     );
 }
-
 
 fn audit_genome(config: ProbeConfig, replicas: usize) {
     let ProbeConfig {
@@ -1096,7 +1116,10 @@ fn audit_genome(config: ProbeConfig, replicas: usize) {
     }
     println!();
     println!("  median spread across genomes at a position   {median:.3}");
-    println!("  p90 spread                                   {:.3}", percentile(&spreads, 0.9));
+    println!(
+        "  p90 spread                                   {:.3}",
+        percentile(&spreads, 0.9)
+    );
     println!("  per-candidate standard error                 {se:.3}");
     if median > se {
         println!(
@@ -1111,7 +1134,6 @@ fn audit_genome(config: ProbeConfig, replicas: usize) {
         );
     }
 }
-
 
 fn audit_selection(
     players: usize,
@@ -1206,11 +1228,8 @@ fn audit_selection(
         if obs.is_empty() {
             return None;
         }
-        let selection: f64 = obs
-            .iter()
-            .map(|o| o.selection_value(players))
-            .sum::<f64>()
-            / obs.len() as f64;
+        let selection: f64 =
+            obs.iter().map(|o| o.selection_value(players)).sum::<f64>() / obs.len() as f64;
         let wins = obs.iter().filter(|o| o.won).count() as f64 / obs.len() as f64;
         Some((selection, wins, index % 2 == 1))
     });
@@ -1292,9 +1311,7 @@ fn audit_selection(
     // be read off it. Saying so is the whole point of computing it.
     let win_se = (mw * (1.0 - mw) / games as f64).sqrt();
     let reliable = sdw > 2.0 * win_se;
-    println!(
-        "  win-rate SE per genome {win_se:.3} vs observed spread {sdw:.3} across genomes"
-    );
+    println!("  win-rate SE per genome {win_se:.3} vs observed spread {sdw:.3} across genomes");
     println!();
     if !reliable {
         let signal = (sdw * sdw - win_se * win_se).max(0.0).sqrt();
@@ -1358,7 +1375,10 @@ fn audit_selection(
     let retained = 1.0 - r * r;
     println!();
     println!("  as a CONTROL VARIATE for the win rate instead of a substitute for it:");
-    println!("    beta = {beta:+.5}, variance retained = {:.1}%", 100.0 * retained);
+    println!(
+        "    beta = {beta:+.5}, variance retained = {:.1}%",
+        100.0 * retained
+    );
     if retained < 0.999 {
         println!(
             "    -> same precision as plain win rate on {:.0} games/genome instead of {games}",
@@ -1393,13 +1413,24 @@ fn audit_selection(
     );
     let (a, b) = (signal(sd_random), signal(sd_structured));
     if b > 0.0 && a > 0.0 {
-        println!("    -> coordinated moves are {:.1}x wider than random ones", b / a);
+        println!(
+            "    -> coordinated moves are {:.1}x wider than random ones",
+            b / a
+        );
     }
     println!(
         "    A gate resolving a gap of g needs about {:.0} games per candidate at the \
          random arm's spread and {:.0} at the coordinated arm's.",
-        if a > 0.0 { mw * (1.0 - mw) / (a / 2.0).powi(2) } else { f64::NAN },
-        if b > 0.0 { mw * (1.0 - mw) / (b / 2.0).powi(2) } else { f64::NAN }
+        if a > 0.0 {
+            mw * (1.0 - mw) / (a / 2.0).powi(2)
+        } else {
+            f64::NAN
+        },
+        if b > 0.0 {
+            mw * (1.0 - mw) / (b / 2.0).powi(2)
+        } else {
+            f64::NAN
+        }
     );
 
     println!(
