@@ -7747,8 +7747,26 @@ mod tests {
         // Keyed to the planet alone the arrival never got past 0.46.
         assert!(EMBEDDED_INDEX.contains("const star = skyTarget(st)?.star;"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"planet\" selected>Planet</option>"));
-        assert!(EMBEDDED_INDEX
-            .contains("<option value=\"true_start_earth\">True Start Earth</option>"));
+        let map_menu = EMBEDDED_INDEX
+            .split("id=\"maptype\"")
+            .nth(1)
+            .and_then(|tail| tail.split("</select>").next())
+            .expect("browser map selector");
+        for option in [
+            "<option value=\"earth\">Earth</option>",
+            "<option value=\"true_start_earth\">True Start Earth</option>",
+            "<option value=\"fjords\">Fjords</option>",
+        ] {
+            assert!(map_menu.contains(option), "missing {option}");
+        }
+        let option_at = |value: &str| map_menu.find(value).expect("map option");
+        assert!(
+            option_at("value=\"earth\"")
+                < option_at("value=\"true_start_earth\"")
+                && option_at("value=\"true_start_earth\"") < option_at("value=\"continents\"")
+                && option_at("value=\"small_continents\"") < option_at("value=\"fjords\""),
+            "Earth, True Start Earth, Continents, Small Continents, and Fjords must keep their requested order"
+        );
         // The world's shape and its poles are settings of their own, and the
         // renderer picks its projection from the shape the world reports
         // rather than from the world type it was filled with.
