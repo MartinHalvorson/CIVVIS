@@ -4719,6 +4719,11 @@ let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations
 // that is the state Civ 6 starts in.
 let SHOW_GRID = localStorage.getItem("civvis-show-grid") === "1";
 let SHOW_RESOURCES = localStorage.getItem("civvis-show-resources") !== "0";
+// Q controls resource icons on the regular map. Deposits are part of choosing
+// a settlement site, so the Settler lens keeps them available regardless.
+function shouldDrawResourceBadges() {
+  return SHOW_RESOURCES || mapLens === "settler";
+}
 // Flat-map wrapping is a viewer choice. Horizontal wrapping starts on, as a
 // world map normally does; vertical wrapping starts off so the polar rows keep
 // their literal top and bottom until somebody explicitly asks for a torus.
@@ -16615,7 +16620,7 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
       } else if (t.improvement) {
         drawImprovement(t, 0, 0);
       }
-      if (SHOW_RESOURCES && t.resource &&
+      if (shouldDrawResourceBadges() && t.resource &&
           (SHOW_ARTIFACT_SITES || !ARTIFACT_RESOURCES.has(t.resource))) {
         if (occupied.has(tileKey)) occupiedResources.push(entry);
         else drawResourceBadge(t, 0, 0);
@@ -17090,26 +17095,27 @@ function drawEmpireDetailsPlanet(cells) {
 }
 
 // Civ 6's Settler lens is a water-availability guide, not a desirability
-// heatmap. It deliberately reuses the Appeal lens's dark green, light green,
-// gray and red: fresh water, coastal water, no water and unavailable ground.
+// heatmap. Keep that guide on the hex edge: the woods, hills, and deposits
+// inside the hex are themselves the information a settling decision needs.
 const SETTLER_LENS_STYLES = {
-  fresh:   {fill:"#176a3a", alpha:.90, label:"Fresh water", housing:3},
-  coast:   {fill:"#65ad5a", alpha:.86, label:"Coastal water", housing:1},
-  dry:     {fill:"#8b8f8a", alpha:.80, label:"No water access", housing:0},
-  blocked: {fill:"#b73535", alpha:.88, label:"Settlement unavailable", housing:0},
+  fresh:   {stroke:"#56d989", alpha:.92, label:"Fresh water", housing:3},
+  coast:   {stroke:"#b6e873", alpha:.88, label:"Coastal water", housing:1},
+  dry:     {stroke:"#d4d9d3", alpha:.76, label:"No water access", housing:0},
+  blocked: {stroke:"#f07069", alpha:.84, label:"Settlement unavailable", housing:0, dashed:true},
 };
+const SETTLER_LENS_UNIT_ALPHA = .32;
 function settleLensStyle(water) {
   return SETTLER_LENS_STYLES[water] || SETTLER_LENS_STYLES.dry;
 }
-function paintSettlerLensTile(path, style, scale) {
-  path(); cx.fillStyle = style.fill; cx.globalAlpha = style.alpha; cx.fill();
-  // Keep individual hexes readable through the opaque Civ 6 category colors.
-  path(); cx.strokeStyle = "#13201c"; cx.globalAlpha = .38;
-  cx.lineWidth = .9 * scale; cx.stroke();
-  cx.globalAlpha = 1;
+function outlineSettlerLensTile(path, style, scale) {
+  cx.save();
+  if (style.dashed) cx.setLineDash([3.6 * scale, 2.8 * scale]);
+  path(); cx.strokeStyle = style.stroke; cx.globalAlpha = style.alpha;
+  cx.lineWidth = Math.max(.8, 1.55 * scale); cx.stroke();
+  cx.restore();
 }
 function drawSettlerLensSite(path, site, lens, scale, center) {
-  paintSettlerLensTile(path, settleLensStyle(site.water), scale);
+  outlineSettlerLensTile(path, settleLensStyle(site.water), scale);
   if (!center || !settleSiteIsRecommended(site, lens)) return;
   const [x, y, radius] = center;
   cx.save();
@@ -17127,7 +17133,7 @@ function drawPlanetSettlerLens(cells) {
     const site = lens.sites.get(key(cell.tile.pos));
     if (!site) {
       if (isWater(cell.tile)) continue;
-      paintSettlerLensTile(
+      outlineSettlerLensTile(
         () => planetPaintPath(cx, cell, .15), SETTLER_LENS_STYLES.blocked,
         Math.max(.62, Math.min(1.15, planetCellInradius(cell) / 12)));
       continue;
@@ -17150,7 +17156,7 @@ function drawSettlerLensFlat(tiles) {
     const site = lens.sites.get(key(tile.pos));
     if (!site) {
       if (isWater(tile)) continue;
-      paintSettlerLensTile(
+      outlineSettlerLensTile(
         () => hexPath(x, y, S + .2), SETTLER_LENS_STYLES.blocked, UI_K());
       continue;
     }
@@ -17547,6 +17553,7 @@ function drawPlanetMap() {
     if (cityState) cx.restore();
   }
   const visibleUnits = empireLens ? [] : state.units;
+  const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
   // Use the same stable tile layout as the flat command map. The globe has no
   // in-flight unit animation, so every overview marker on a cell belongs here.
   const planetUnitStacks = strategicUnitStackSlots(visibleUnits);
@@ -17563,6 +17570,8 @@ function drawPlanetMap() {
     const ux = cell.center.x + stack.x, uy = cell.center.y + stack.y;
     const civilian = CIVILIAN_UNITS.has(unit.type);
     const tokenInk = unitTokenInk(unit.owner);
+    cx.save();
+    cx.globalAlpha = unitAlpha;
     cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : tokenInk;
     cx.lineWidth = outline;
     const commandTokenClip = !stack.stacked;
@@ -17573,6 +17582,7 @@ function drawPlanetMap() {
                       r * 1.48, tokenInk);
     drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
     if (commandTokenClip) cx.restore();
+    cx.restore();
   }
   // As on the flat map, a resource beneath a unit waits until the figure is
   // painted. Its lower strategic seat stays readable instead of losing one
@@ -18085,9 +18095,9 @@ function draw() {
     } else if (t.improvement) {
       drawImprovement(t, x, y);
     }
-    // main added the SHOW_RESOURCES toggle to this condition while this branch
-    // moved the body into drawResourceBadge; the tile still has to pass both.
-    if (SHOW_RESOURCES && t.resource &&
+    // The regular map follows its resource-icon toggle; Settler Lens keeps
+    // deposits visible because they affect the value of every candidate site.
+    if (shouldDrawResourceBadges() && t.resource &&
         (SHOW_ARTIFACT_SITES || !ARTIFACT_RESOURCES.has(t.resource))) {
       // A unit standing on a deposit covers about a third of its symbol, and
       // which third depends on the board's bearing, because the badge is
@@ -18487,6 +18497,7 @@ function draw() {
   // it has settled, so a defender does not jump sideways during an arrival.
   const strategicUnitStacks = strategicUnitStackSlots(drawnUnits, anim.moves);
   const now = performance.now();
+  const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
   for (const u of sorted) {
     const [tileX, tileY] = worldXY(u.pos);
     let x = tileX, y = tileY;
@@ -18521,7 +18532,7 @@ function draw() {
       gk.addColorStop(0, "#0d111700");
       gk.addColorStop(1, "#0d1117b0");
       cx.save();
-      cx.globalAlpha = 0.75 * Math.sin(mv.e * Math.PI);
+      cx.globalAlpha = unitAlpha * 0.75 * Math.sin(mv.e * Math.PI);
       cx.lineCap = "round";
       cx.strokeStyle = gk; cx.lineWidth = 5.4;   // casing, so it reads on sand
       cx.beginPath();
@@ -18553,7 +18564,8 @@ function draw() {
     if (strategicTokenClip) { cx.save(); hexPath(tileX, tileY); cx.clip(); }
     const civ = CIVILIAN_UNITS.has(u.type);
     // Spent units recede so the ones that can still act carry the eye.
-    cx.globalAlpha = (u.moves_left !== undefined && u.moves_left <= 0) ? 0.62 : 1;
+    cx.globalAlpha = unitAlpha *
+      ((u.moves_left !== undefined && u.moves_left <= 0) ? 0.62 : 1);
     cx.save();
     cx.fillStyle = pcol(u.owner);
     strategicUnitTokenPath(civ, x, y, rr);
@@ -18565,7 +18577,7 @@ function draw() {
     strategicUnitTokenPath(civ, x, y, rr);
     cx.stroke();
     drawUnitPictogram(u.type, x, y, rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
-    cx.globalAlpha = 1;
+    cx.globalAlpha = unitAlpha;
     drawStrategicUnitHealth(x, y, rr, u.hp, now);
     if (u.level > 1) {
       const count = u.level - 1;
@@ -18593,6 +18605,7 @@ function draw() {
       cx.beginPath(); cx.arc(x, y, selectionRadius, 0, 7); cx.stroke();
       cx.setLineDash([]);
     }
+    cx.globalAlpha = 1;
     if (strategicTokenClip) cx.restore();
   }
   // The deposits the figures were standing on. Held back above so a badge is
