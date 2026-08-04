@@ -3493,6 +3493,16 @@
               <option value="10000">Slow</option>
             </select>
           </div>
+          <div class="speed-row"><span>Between-game countdown</span>
+            <select id="between-game-countdown"
+                    title="How long to show a completed game before the next one begins"
+                    aria-label="Between-game countdown">
+              <option value="0">None</option>
+              <option value="3000">3s</option>
+              <option value="5000">5s</option>
+              <option value="10000" selected>10s</option>
+            </select>
+          </div>
           <div class="speed-row render-resolution-row"><span>Render resolution</span>
             <select id="renderresolution" aria-label="Map render resolution"
                     title="Changes map and minimap sharpness; does not change simulation speed">
@@ -7110,13 +7120,11 @@ function cancelSupervisedSuccessorWatch() {
 // A spectated finale is counted down by the supervisor, which owns that
 // handoff; a finished human game has nobody driving it at all, so its result
 // screen counts itself down to the next game instead of waiting on a click
-// that may never come. Ten seconds is long enough to read the verdict and
-// still reach one of the three ways to keep the world.
+// that may never come. Both use the selected between-game interval.
 //
 // Any click or key press stops it, because a person who is still deciding has
 // just proved they are there. That is the whole cancel affordance: the
 // countdown only ever fires for a screen nobody has touched.
-const FINALE_RESTART_SECONDS = 10;
 const FINALE_RESTART_LABEL = "Start another game";
 let finaleCountdownDeadline = 0;
 let finaleCountdownTimer = null;
@@ -7137,7 +7145,7 @@ function armFinaleCountdown(signature) {
     serverInstance: state?.server_instance ?? null,
     seed: state?.seed ?? null,
   };
-  finaleCountdownDeadline = Date.now() + FINALE_RESTART_SECONDS * 1000;
+  finaleCountdownDeadline = Date.now() + betweenGameCountdownMs();
   // Sub-second ticks so the number on the button is never a second stale, and
   // so a throttled background tab cannot overshoot the start by a whole tick.
   finaleCountdownTimer = setInterval(tickFinaleCountdown, 200);
@@ -7495,6 +7503,7 @@ async function boot() {
       firstLoad = false;
       adoptRunningMode();
       if (SPEC) updatePaceControl(state); // adopt the pace the server is keeping
+      updateBetweenGameCountdownControl(state);
       scheduleSpec(state);
       reportSpecStatus();
     }
@@ -7938,6 +7947,43 @@ function specPace() {
   const select = document.getElementById("specspeed");
   return select ? +select.value : 1000;
 }
+// The interval is a browser preference like watch pace rather than a world
+// setting. A supervised successor is a fresh process, so remember it here and
+// reassert it if that process opens at the stock ten seconds.
+const BETWEEN_GAME_COUNTDOWN_KEY = "civvis-between-game-countdown";
+let betweenGameCountdownRealigned = false;
+let betweenGameCountdownDisagreed = 0;
+let betweenGameCountdownChoice = null;
+let betweenGameCountdownAsserted = null;
+function betweenGameCountdownHeldOpen() {
+  const select = document.getElementById("between-game-countdown");
+  return !!select && document.activeElement === select;
+}
+function betweenGameCountdownOffered(select, ms) {
+  return [...select.options].some(option => +option.value === ms);
+}
+function betweenGameCountdownMs() {
+  const select = document.getElementById("between-game-countdown");
+  const ms = select ? +select.value : 10_000;
+  return select && betweenGameCountdownOffered(select, ms) ? ms : 10_000;
+}
+function rememberBetweenGameCountdown(ms) {
+  betweenGameCountdownChoice = ms;
+  betweenGameCountdownAsserted = null;
+  betweenGameCountdownDisagreed = 0;
+  try { localStorage.setItem(BETWEEN_GAME_COUNTDOWN_KEY, String(ms)); } catch (e) {}
+}
+function restoreBetweenGameCountdown() {
+  const select = document.getElementById("between-game-countdown");
+  if (!select) return;
+  let stored = null;
+  try { stored = localStorage.getItem(BETWEEN_GAME_COUNTDOWN_KEY); } catch (e) {}
+  if (stored === null || stored === "") return;
+  const ms = +stored;
+  if (!Number.isFinite(ms) || !betweenGameCountdownOffered(select, ms)) return;
+  betweenGameCountdownChoice = ms;
+  select.value = String(ms);
+}
 function rememberRenderResolution(value) {
   renderResolution = renderResolutionOffered(value) ? value : "native";
   try { localStorage.setItem(RENDER_RESOLUTION_KEY, renderResolution); } catch (e) {}
@@ -7985,6 +8031,33 @@ function updatePaceControl(st) {
       // A server left on a pace this page no longer offers gets the picked one.
       if (paceOffered(select, st.pace)) select.value = String(st.pace);
       else if (!paceRealigned) { paceRealigned = true; setPace({ms: specPace()}); }
+    }
+  }
+}
+function updateBetweenGameCountdownControl(st) {
+  const select = document.getElementById("between-game-countdown");
+  const serverMs = Number(st?.between_game_countdown_ms);
+  if (!select || !Number.isFinite(serverMs) || !betweenGameCountdownOffered(select, serverMs))
+    return;
+  if (+select.value === serverMs) {
+    betweenGameCountdownDisagreed = 0;
+    betweenGameCountdownAsserted = null;
+  } else if (betweenGameCountdownChoice !== null &&
+             betweenGameCountdownOffered(select, betweenGameCountdownChoice) &&
+             !betweenGameCountdownHeldOpen()) {
+    // A newly spawned supervised process begins at its safe default. The
+    // viewer's saved choice wins, just as it does for watch pace.
+    select.value = String(betweenGameCountdownChoice);
+    if (betweenGameCountdownAsserted !== serverMs) {
+      betweenGameCountdownAsserted = serverMs;
+      setPace({between_game_countdown_ms: betweenGameCountdownChoice});
+    }
+  } else if (++betweenGameCountdownDisagreed >= 4 && !betweenGameCountdownHeldOpen()) {
+    betweenGameCountdownDisagreed = 0;
+    if (betweenGameCountdownOffered(select, serverMs)) select.value = String(serverMs);
+    else if (!betweenGameCountdownRealigned) {
+      betweenGameCountdownRealigned = true;
+      setPace({between_game_countdown_ms: betweenGameCountdownMs()});
     }
   }
 }
@@ -8402,6 +8475,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   }
   updateSpecPauseButtons();
   if (SPEC) updatePaceControl(st);
+  updateBetweenGameCountdownControl(st);
   // An observation has arrived, so the seat is no longer a guess and the
   // human action bar may take its real state. See `html:not(.seat-known)`.
   document.documentElement.classList.add("seat-known");
@@ -25430,6 +25504,12 @@ document.getElementById("specspeed").onchange = () => {
   if (state) drawPlayerHud();
 };
 restorePace();
+document.getElementById("between-game-countdown").onchange = () => {
+  const ms = betweenGameCountdownMs();
+  rememberBetweenGameCountdown(ms);
+  setPace({between_game_countdown_ms: ms});
+};
+restoreBetweenGameCountdown();
 document.getElementById("renderresolution").onchange = () => {
   rememberRenderResolution(document.getElementById("renderresolution").value);
   refreshRenderResolution();

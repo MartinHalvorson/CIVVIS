@@ -354,13 +354,14 @@ error toast when pressed.
   has fallen and the finale says so too.
 
 Both offer the one thing still useful: another game, on the settings currently
-in the setup panel. **Start another game** counts itself down from ten seconds
-and then starts, so a finished game does not sit on its result screen forever
-waiting for a click; the button carries the count. Any click, key press or
-scroll stops the countdown, because somebody who is still deciding has just
-proved they are there — as does choosing one of the ways to keep the world
-below. A spectated finale keeps the supervisor's countdown instead, because
-the supervisor owns that handoff.
+in the setup panel. The observer settings' **Between-game countdown** offers
+**None**, **3s**, **5s**, and **10s** (the default). **Start another game**
+uses that interval, so a finished game does not sit on its result screen
+forever waiting for a click; choosing **None** starts immediately. Any click,
+key press or scroll stops a running human countdown, because somebody who is
+still deciding has just proved they are there — as does choosing one of the
+ways to keep the world below. A spectated finale keeps the supervisor's
+countdown instead, because the supervisor owns that handoff.
 
 ### Continue after victory
 
@@ -388,13 +389,12 @@ All three choices remove the turn cap from the continued world.
   repeat. A genuinely later result can end the next-victory continuation;
   indefinite play suppresses all of them.
 
-The offer is real on the exhibition too. Every result a browser can see is held
-for ten seconds — the same countdown a single-player finale runs, and not
-configurable in either place —
-the countdown is published on the same state that first carries the winner, and
-the supervisor re-reads the world after its cooldown: a continued world is not
-retired. Continuing is not a setup setting, so its uncapped turn rule is never
-carried into the next game.
+The offer is real on the exhibition too. The selected between-game interval is
+published on the same state that first carries the winner, and the supervisor
+re-reads the world after its countdown: a continued world is not retired. The
+browser remembers the selection and reapplies it after a supervised successor
+starts on a fresh process. Continuing is not a setup setting, so its uncapped
+turn rule is never carried into the next game.
 Headless simulation — `civvis sim`, soaks, the league — has no result screen and
 no viewer, and waits for nothing.
 
