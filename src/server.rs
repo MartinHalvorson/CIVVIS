@@ -7523,6 +7523,27 @@ mod tests {
     }
 
     #[test]
+    fn globe_tilt_rotates_the_camera_without_squashing_its_limb() {
+        // A flat chart is allowed to use a ground-plane projection.  Once the
+        // world is known to be round, pitch must instead be part of the 3D view
+        // basis, so the orthographic ocean, rim, tiles, and hit cells retain a
+        // circular silhouette at every tilt.
+        assert!(EMBEDDED_INDEX.contains("function planetCameraBase()"));
+        assert!(EMBEDDED_INDEX.contains("function planetTiltBasis(basis, tilt = cam.tilt)"));
+        assert!(EMBEDDED_INDEX.contains("planetSpin(basis, basis.right, angle)"));
+        assert!(EMBEDDED_INDEX.contains("function planetUntiltBasis(basis, tilt = cam.tilt)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "...planetBasisCamera(planetTiltBasis(planetViewBasis(camera)))"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const view = planetBasisCamera(planetUntiltBasis(basis));"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function planetGroundProjection()"));
+        assert!(EMBEDDED_INDEX.contains("return knowsGlobe() ? 1 : cameraTiltProjection();"));
+        assert!(EMBEDDED_INDEX.contains("const projection = planetGroundProjection();"));
+    }
+
+    #[test]
     fn browser_orders_controls_interface_setup_and_logs() {
         // Readability is a shared interface contract, not a collection of
         // one-off enlargements. Panels inherit one system stack and a named
