@@ -487,6 +487,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// set. So `advanced_v1` prices every district exactly as it did. A
 /// compatibility re-pin.
 ///
+/// #1099 puts `medina_quarter` and `insulae` in the deck when a city is short
+/// of housing, behind `AdvancedAi::housing_cards` — `false` in the constructor
+/// and set only by `enable_live_bridge`. The block short-circuits on the flag
+/// before it reads a city, so every legacy and Elo agent slots exactly the cards
+/// it always slotted. `Game::city_specialty_district_count` only widens from
+/// private to `pub(crate)`. A compatibility re-pin.
+///
 /// ⚠ Re-pinned twice in this PR. The first version was inert — it patched
 /// `BasicAi::tactical_step`, which a live probe showed the deployed controller
 /// never calls; the working change is in
@@ -556,7 +563,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// entrants return before the changed line is ever reached and the anchor's
 /// behaviour is bit-for-bit what it was. A compatibility re-pin;
 /// `elo_anchor_never_reaches_the_settler_commit_path` checks the claim.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x158d_1d61_8a08_4d1e;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6858_b812_904b_dae4;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
