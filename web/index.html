@@ -1962,9 +1962,10 @@
   .render-resolution-row { grid-template-columns: minmax(0, 1fr) minmax(104px, 1fr); }
   .render-resolution-row > span, .render-resolution-row > select { min-width: 0; }
   .render-resolution-row > span { overflow-wrap: anywhere; }
-  .resource-display-setting { grid-template-columns: minmax(0, .6fr) minmax(126px, 1.4fr); }
+  .resource-display-setting { grid-template-columns: minmax(0, 1fr); gap: 4px; }
   .resource-display-setting > span, .resource-display-setting > select { min-width: 0; }
   .resource-display-setting > span { overflow-wrap: anywhere; }
+  .resource-display-setting > select { width: 100%; }
   .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 10px; color: var(--muted); font-size: var(--type-secondary); cursor: pointer; }
   .setting-row span { display: flex; align-items: center; gap: 7px; }
   .setting-row kbd { margin: 0; }
