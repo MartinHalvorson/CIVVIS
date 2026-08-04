@@ -2186,6 +2186,31 @@ impl Session {
                 "readiness": (force.readiness * 100.0).round() / 100.0,
                 "strength_ratio": (force.strength_ratio * 100.0).round() / 100.0,
             })).collect::<Vec<_>>(),
+            "war": plan.war.as_ref().map(|war| json!({
+                "enabled": war.enabled,
+                "active": war.active,
+                "phase": war.phase,
+                "target_player": war.target_player,
+                "objective_city": city(war.objective_city),
+                "breakthrough_tech": war.breakthrough_tech,
+                "assault_unit": war.assault_unit,
+                "predecessor": war.predecessor,
+                "breach_unit": war.breach_unit,
+                "required_bodies": war.required_bodies,
+                "ready_bodies": war.ready_bodies,
+                "staged_bodies": war.staged_bodies,
+                "breach_ready": war.breach_ready,
+                "upgrade_gold_reserved": (war.upgrade_gold_reserved * 10.0).round() / 10.0,
+                "appointed_turn": war.appointed_turn,
+                "appointments": war.appointments,
+                "breakthroughs": war.breakthroughs,
+                "mobilizations": war.mobilizations,
+                "declarations": war.declarations,
+                "complete_package_declarations": war.complete_package_declarations,
+                "objectives_captured": war.objectives_captured,
+                "objectives_captured_within_ten": war.objectives_captured_within_ten,
+                "aborts": war.aborts,
+            })),
         })
     }
 
@@ -9795,6 +9820,65 @@ mod tests {
         assert!(plan["desired_cities"].as_u64().is_some());
         assert!(plan["assessed_turn"].as_u64().is_some());
         assert!(plan["forces"].is_array());
+    }
+
+    #[test]
+    fn unified_war_plan_crosses_the_json_and_browser_contract() {
+        let session = Session::new(current());
+        let plan = crate::ai::PlanReport {
+            strategy: "conquest",
+            victory_target: None,
+            rush: false,
+            target_player: Some(1),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: 37,
+            peace_offers: Vec::new(),
+            forces: Vec::new(),
+            war: Some(crate::ai::WarPlanReport {
+                enabled: true,
+                active: true,
+                phase: Some("strike"),
+                target_player: Some(1),
+                objective_city: None,
+                breakthrough_tech: Some(crate::name!("apprenticeship")),
+                assault_unit: Some(crate::name!("man_at_arms")),
+                predecessor: Some(crate::name!("swordsman")),
+                breach_unit: Some(crate::name!("battering_ram")),
+                required_bodies: 4,
+                ready_bodies: 4,
+                staged_bodies: 3,
+                breach_ready: true,
+                upgrade_gold_reserved: 123.46,
+                appointed_turn: Some(21),
+                appointments: 2,
+                breakthroughs: 2,
+                mobilizations: 1,
+                declarations: 1,
+                complete_package_declarations: 1,
+                objectives_captured: 0,
+                objectives_captured_within_ten: 0,
+                appointment_to_tech_turns: 12,
+                tech_to_declaration_turns: 4,
+                declaration_to_capture_turns: 0,
+                appointment_to_tech_samples: vec![12],
+                tech_to_declaration_samples: vec![4],
+                declaration_to_capture_samples: Vec::new(),
+                aborts: std::collections::BTreeMap::from([("target no longer alive", 2)]),
+            }),
+        };
+
+        let wire = session.plan_json(&plan);
+        assert_eq!(wire["war"]["phase"], json!("strike"));
+        assert_eq!(wire["war"]["breakthrough_tech"], json!("apprenticeship"));
+        assert_eq!(wire["war"]["ready_bodies"], json!(4));
+        assert_eq!(wire["war"]["staged_bodies"], json!(3));
+        assert_eq!(wire["war"]["upgrade_gold_reserved"], json!(123.5));
+        assert_eq!(wire["war"]["aborts"]["target no longer alive"], json!(2));
+        assert!(EMBEDDED_INDEX.contains("const warPlan = plan?.war || null;"));
+        assert!(EMBEDDED_INDEX.contains("row(\"Attack phase\""));
+        assert!(EMBEDDED_INDEX.contains("row(\"Strike package\""));
     }
 
     /// The Active AI strategy panel reads one civilization's plan beside what it

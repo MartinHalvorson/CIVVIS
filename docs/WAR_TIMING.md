@@ -1,6 +1,18 @@
 # The midgame power-spike appointment
 
-Status: **preregistered; no focal seed has been read**.
+Status: **implemented as the default-off `advanced_timing_attack` evaluator arm;
+the frozen 8-player outcome screen has not been run**.
+
+The implementation is one controller-owned `WarPlan`, not a collection of
+bonuses. Its lifecycle is validated before decisions and consumed by research,
+production, exact upgrade pricing, discretionary-spend floors, package-only
+staging, diplomacy, declaration, tactical finishing, the reasoning journal,
+spectator JSON/HUD, and `ai_eval`. Twelve focused deterministic tests cover the
+frozen mechanism contract, including the typed evaluator boundary and the
+minor-controller exclusion; a separate server contract test carries the plan
+through JSON into both browser renderers. The live screen below remains the preregistered
+outcome read; passing it is still required before enabling this behavior in
+production `advanced`.
 
 This is the next military experiment after the ancient-rush line was retired
 on the live Continents/Planet cell. It is deliberately not another ancient
@@ -248,6 +260,22 @@ The treatment advances only if every term passes:
 - favorable map directions outnumber adverse directions;
 - paired terminal-score share is at least 50%; and
 - the repository's unchanged promotion gate does not retain `advanced`.
+
+### Reduced implementation preflight (not a promotion read)
+
+After the focused tests, a two-map, 4-player, 44x28 Online smoke run used the
+same Continents/Planet/Poles rules but not the frozen 8-player 84x54 cell. It
+exists only to prove that the lifecycle reaches real games and that observer
+telemetry agrees with it. The final pass, rerun after merging current `main`,
+reported 11 appointments, 9 breakthroughs, 10 mobilizations, and 7
+declarations; all 7 declarations carried the complete package. Two objectives
+fell, both within 10 turns (median 4.0),
+and no appointed campaign accepted generic peace before its objective fell.
+Paired score was 50.0% and terminal-score share 48.0%, both unresolved at two
+maps. All eight treatment seats formed a plan, outside the preregistered
+15%..75% promotion band; this reduced profile therefore supplies mechanism
+evidence, not permission to promote or retune. Production `advanced` remains
+unchanged and the full command above remains the first strength gate.
 
 The exposure band prevents a nearly inert arm or a renamed universal-Conquest
 arm from advancing. The two mechanism rates are absolute capability gates,
