@@ -1,4 +1,4 @@
-//! Learn when a frozen counterfactual move ranker may safely override an expert.
+//! Archived test of when a frozen counterfactual move ranker may override an expert.
 //!
 //! Candidate ordering and override reliability are different tasks. This tool
 //! keeps the replica-aware destination ranker frozen, names its best sibling,
