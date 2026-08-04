@@ -11978,6 +11978,56 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const nav = skyNavBox(cv.getBoundingClientRect());"));
     }
 
+    /// Mercury, Ceres, Callisto, and Titan are surveyable tiled worlds. Their
+    /// resource marks use already-known Civ resource IDs, but remain separate
+    /// from the game rules until an off-world economy is deliberately designed.
+    #[test]
+    fn tiled_sky_resource_worlds_are_zoomable_without_navigation_buttons() {
+        let worlds = [
+            ("mercury", "iron"),
+            ("ceres", "salt"),
+            ("callisto", "iron"),
+            ("titan", "oil"),
+        ];
+        for (world, resource) in worlds {
+            let spec = EMBEDDED_INDEX
+                .split_once(&format!("id:\"{world}\""))
+                .unwrap_or_else(|| panic!("{world} is absent from the sky catalogue"))
+                .1
+                .split_once("},")
+                .unwrap_or_else(|| panic!("{world} sky catalogue entry is not closed"))
+                .0;
+            assert!(
+                spec.contains(&format!("skyResources:[\"{resource}\"]")),
+                "{world} must use the existing {resource} resource marker"
+            );
+        }
+        assert!(EMBEDDED_INDEX.contains(
+            "const SKY_TILED_RESOURCE_WORLDS = [\"mercury\", \"ceres\", \"callisto\", \"titan\"];"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const SKY_ZOOMABLE_WORLDS = [...SKY_ARRIVALS, ...SKY_TILED_RESOURCE_WORLDS];"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const ids = [...SKY_ZOOMABLE_WORLDS];"));
+        assert!(EMBEDDED_INDEX.contains("function skyResourceCells(body, cells)"));
+        assert!(
+            EMBEDDED_INDEX.contains("function drawSkyResourceBadge(resource, x, y, size, alpha)")
+        );
+        assert!(EMBEDDED_INDEX.contains("drawResourcePictogram(resource, x, y, size * 1.35);"));
+
+        // A world stop is a navigation button. These bodies are deliberately
+        // excluded from that list even though their zoom approach is paced.
+        let world_stops = EMBEDDED_INDEX
+            .split_once("function skyWorldStops()")
+            .expect("the sky navigation stop builder")
+            .1
+            .split_once("function skyScaleStops()")
+            .expect("the sky scale stop builder")
+            .0;
+        assert!(world_stops.contains("for (const id of SKY_ARRIVALS)"));
+        assert!(!world_stops.contains("SKY_ZOOMABLE_WORLDS"));
+    }
+
     /// The world is drawn into a rectangle of the map area rather than into
     /// all of it, so a viewer moves the map out from under the panels instead
     /// of dragging the world around underneath them. The canvas, the
