@@ -3998,6 +3998,19 @@ function initSidebarSections() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(SIDEBAR_SECTION_STATE_KEY) || "{}"); }
   catch (_) { saved = {}; }
+  const revealMapLensSection = () => {
+    const section = document.getElementById("maplensessec");
+    if (!section?.open) return;
+    requestAnimationFrame(() => section.scrollIntoView({block:"nearest", inline:"nearest"}));
+  };
+  const scheduleMapLensSectionReveal = () => {
+    // Browsers can restore a <details> disclosure after this script's first
+    // layout pass. These bounded retries see that late open state; a closed
+    // fresh profile is a no-op because revealMapLensSection returns first.
+    for (const delay of [0, 250, 750]) {
+      window.setTimeout(revealMapLensSection, delay);
+    }
+  };
   for (const section of document.querySelectorAll("#side details.sidebar-section[data-section]")) {
     const key = section.dataset.section;
     if (Object.prototype.hasOwnProperty.call(saved, key)) section.open = !!saved[key];
@@ -4009,10 +4022,15 @@ function initSidebarSections() {
       // scroll container when opened instead of leaving its controls behind
       // the fixed search and keyboard drawers below.
       if (section.id === "maplensessec" && section.open) {
-        requestAnimationFrame(() => section.scrollIntoView({block:"nearest", inline:"nearest"}));
+        revealMapLensSection();
       }
     });
   }
+  // A saved disclosure is applied before its toggle listener is attached. It
+  // needs the same reveal as an interactive opening, otherwise a persisted
+  // lower-deck lens grid can reload just beneath the scroll viewport.
+  scheduleMapLensSectionReveal();
+  window.addEventListener("resize", revealMapLensSection, {passive:true});
 }
 initSidebarSections();
 function initAdvancedSettings() {

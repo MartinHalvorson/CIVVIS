@@ -8338,8 +8338,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
         assert!(EMBEDDED_INDEX.contains("civvis-sidebar-sections-v1"));
         assert!(EMBEDDED_INDEX.contains("section.id === \"maplensessec\" && section.open"));
+        assert!(EMBEDDED_INDEX.contains("const revealMapLensSection = () => {"));
+        assert!(EMBEDDED_INDEX.contains("const scheduleMapLensSectionReveal = () => {"));
         assert!(EMBEDDED_INDEX.contains(
             "section.scrollIntoView({block:\"nearest\", inline:\"nearest\"})"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "for (const delay of [0, 250, 750]) {"
+        ));
+        assert!(EMBEDDED_INDEX.contains("window.setTimeout(revealMapLensSection, delay);"));
+        assert!(EMBEDDED_INDEX.contains("scheduleMapLensSectionReveal();"));
+        assert!(EMBEDDED_INDEX.contains(
+            "window.addEventListener(\"resize\", revealMapLensSection, {passive:true});"
         ));
         // Collapsing the command deck collapses the deck alone. Every map
         // overlay is switched from the deck's Interface Settings instead, so the
