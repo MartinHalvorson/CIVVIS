@@ -749,14 +749,9 @@ fn auto_dimension(args: &[String], key: &str, players: i64, width: bool) -> i32 
 /// Fixed geography changes where the land comes from, not which shape it is
 /// sampled onto: even True Start Earth can be a flat atlas or a globe.
 fn map_topology(args: &[String]) -> MapTopology {
-    // `--map planet` named a world type before the globe became a shape of its
-    // own, and still means both halves of what it meant then.
-    let default = if arg_text(args, "--map", "pangaea") == "planet" {
-        MapTopology::Planet
-    } else {
-        MapTopology::Flat
-    };
-    MapTopology::from_id(&arg_text(args, "--shape", default.id())).unwrap_or(default)
+    // New games open on a globe; Flat remains an explicit opt-in shape.
+    MapTopology::from_id(&arg_text(args, "--shape", MapTopology::Planet.id()))
+        .unwrap_or(MapTopology::Planet)
 }
 
 /// Whether the world has cold ends.
@@ -1570,6 +1565,8 @@ fn main() {
                 eprintln!("unknown map script {map_id:?}; choose pangaea, continents, or archipelago");
                 std::process::exit(2);
             });
+            // Ratings are a persistent experiment. Keep its historical flat
+            // default unless the operator explicitly selects a globe.
             let topology_default = if map_id == "planet" { "planet" } else { "flat" };
             let topology_id = arg_text(&args, "--shape", topology_default);
             let tournament_topology = MapTopology::from_id(&topology_id).unwrap_or_else(|| {
@@ -2207,11 +2204,29 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::{
-        jobs_arg, parse_tournament_entrants, single_simulation_jobs_arg, strict_f64_arg,
-        strict_i64_arg, ADVANCED_V1_SOURCE_CONTRACT_FNV, DEFAULT_TOURNAMENT_ENTRANTS,
-        SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
+        game_options, jobs_arg, map_topology, parse_tournament_entrants,
+        single_simulation_jobs_arg, strict_f64_arg, strict_i64_arg,
+        ADVANCED_V1_SOURCE_CONTRACT_FNV,
+        DEFAULT_TOURNAMENT_ENTRANTS, SINGLE_SIMULATION_DEFAULT_MAX_JOBS,
     };
     use civvis::game::{Action, Game};
+    use civvis::setup::{MapSize, MapTopology};
+
+    #[test]
+    fn omitted_map_shape_defaults_to_planet() {
+        assert_eq!(map_topology(&[]), MapTopology::Planet);
+
+        let options = game_options(&[], 2, 71_004);
+        let size = MapSize::for_players(2);
+        assert_eq!(options.map_topology, MapTopology::Planet);
+        assert_eq!(
+            (options.width, options.height),
+            size.dimensions(MapTopology::Planet)
+        );
+
+        let flat = vec!["--shape".to_string(), "flat".to_string()];
+        assert_eq!(map_topology(&flat), MapTopology::Flat);
+    }
 
     #[test]
     fn tournament_entrants_separate_immutable_identity_from_controller() {

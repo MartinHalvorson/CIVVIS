@@ -7581,6 +7581,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "if ([...select.options].some(option => option.value === chosen)) select.value = chosen;"
         ));
+        assert!(EMBEDDED_INDEX.contains("st.map.shape || \"planet\""));
         assert!(EMBEDDED_INDEX.contains("shape.disabled = false"));
         assert!(!EMBEDDED_INDEX.contains("if (earth) shape.value = \"planet\""));
         assert!(EMBEDDED_INDEX.contains("id=\"gamespeed\""));
