@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 97] = [
+pub const EVAL_ONLY_AIS: [&str; 98] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -104,6 +104,7 @@ pub const EVAL_ONLY_AIS: [&str; 97] = [
     "advanced_food_first",
     "advanced_measured_dedication",
     "advanced_lane_reachable",
+    "advanced_garrison_loyalty",
     "advanced_parallel_settlers",
     "advanced_settler_first",
     "advanced_prophet_first",
@@ -262,6 +263,7 @@ define_arm_kinds! {
     AdvancedReliefScoped => "advanced_relief_scoped",
     AdvancedRush => "advanced_rush",
     AdvancedRushConnected => "advanced_rush_connected",
+    AdvancedGarrisonLoyalty => "advanced_garrison_loyalty",
     AdvancedSettlerCommit => "advanced_settler_commit",
     AdvancedSettlerFirst => "advanced_settler_first",
     AdvancedTargetDomination => "advanced_target_domination",
@@ -2041,6 +2043,15 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_target_score" => {
             Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Score))
         }
+        // Prices `limitanei` (+2 Loyalty in garrisoned cities), which the hardcoded
+        // portfolios in `strategic_policies` never reach. Revolts are 42% of 192
+        // observed city losses and holding is worth roughly double the score, but
+        // that is a mechanism, not an effect size — this arm exists to find out.
+        "advanced_garrison_loyalty" => {
+            let mut ai = AdvancedAi::new();
+            ai.garrison_loyalty_policy = true;
+            Box::new(ai)
+        }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
         // ★★★★ THE AGENT THAT ACTUALLY PLAYS CIVILIZATION VI, PLAYABLE HEADLESS.
         //
@@ -2828,6 +2839,7 @@ impl ArmKind {
                 &["strategy-commitment"]
             }
             Self::AdvancedFoodFirst => &["food-first"],
+            Self::AdvancedGarrisonLoyalty => &["garrison-loyalty-policy"],
             Self::AdvancedSettlerCommit => &["settler-commitment"],
             // The two arms differ only in the lane they are told to win, which is
             // the axis: the deployed Civ 6 decider is handed one of these by
@@ -3408,6 +3420,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_civ_blind" => (Vec::new(), "advanced_civ_blind"),
         "advanced_rush" => (Vec::new(), "advanced_rush"),
         "advanced_rush_connected" => (Vec::new(), "advanced_rush_connected"),
+        "advanced_garrison_loyalty" => (Vec::new(), "advanced_garrison_loyalty"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
         "advanced_food_first" => (Vec::new(), "advanced_food_first"),
         "advanced_target_domination" => (Vec::new(), "advanced_target_domination"),
@@ -4431,7 +4444,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 64] = [
+            const SCRIPTED: [&str; 65] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4451,6 +4464,7 @@ mod tests {
                 "advanced_counter_stand_down",
                 "advanced_early_score_alarm",
                 "advanced_early_score_build",
+                "advanced_garrison_loyalty",
                 "advanced_settler_commit",
                 "advanced_wide_opening",
                 "advanced_plan_city_target",
