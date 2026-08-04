@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 95] = [
+pub const EVAL_ONLY_AIS: [&str; 96] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -49,11 +49,12 @@ pub const EVAL_ONLY_AIS: [&str; 95] = [
     "live_without_district_coverage",
     "live_without_bounded_recovery",
     "live_without_army_target_weighs_enemy",
-    "live_without_suzerain_cards",
     "live_without_siege_tracks_wall",
     "live_without_siege_role",
     "live_without_come_ashore",
+    "live_without_suzerain_cards",
     "live_without_blind_objective_strength",
+    "live_without_blind_objective_units",
     "live_without_loyalty_rate_alarm",
     "basic_evolved",
     "advanced_policy_live_control",
@@ -148,7 +149,7 @@ pub const EVAL_ONLY_AIS: [&str; 95] = [
 ///
 /// ⚠ Keep in step with `AdvancedAi::enable_live_bridge`. A flag added there and
 /// not here makes the arms claim a controlled comparison they are not running.
-const LIVE_BRIDGE_TREATMENTS: [&str; 17] = [
+const LIVE_BRIDGE_TREATMENTS: [&str; 18] = [
     "live-trader-route",
     "live-religious-purchase",
     "siege-muster",
@@ -165,6 +166,7 @@ const LIVE_BRIDGE_TREATMENTS: [&str; 17] = [
     "district-coverage",
     "siege-role",
     "come-ashore",
+    "blind-objective-units",
     "suzerain-cards",
 ];
 
@@ -205,11 +207,12 @@ define_arm_kinds! {
     LiveWithoutDistrictCoverage => "live_without_district_coverage",
     LiveWithoutBoundedRecovery => "live_without_bounded_recovery",
     LiveWithoutArmyTargetWeighsEnemy => "live_without_army_target_weighs_enemy",
-    LiveWithoutSuzerainCards => "live_without_suzerain_cards",
     LiveWithoutSiegeTracksWall => "live_without_siege_tracks_wall",
     LiveWithoutSiegeRole => "live_without_siege_role",
     LiveWithoutComeAshore => "live_without_come_ashore",
+    LiveWithoutSuzerainCards => "live_without_suzerain_cards",
     LiveWithoutBlindObjectiveStrength => "live_without_blind_objective_strength",
+    LiveWithoutBlindObjectiveUnits => "live_without_blind_objective_units",
     LiveWithoutLoyaltyRateAlarm => "live_without_loyalty_rate_alarm",
     Advanced => "advanced",
     AdvancedBankingDedication => "advanced_banking_dedication",
@@ -2075,12 +2078,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_army_target_weighs_the_enemy();
             Box::new(ai)
         }
-        "live_without_suzerain_cards" => {
-            let mut ai = AdvancedAi::new();
-            ai.enable_live_bridge();
-            ai.disable_suzerain_cards_need_a_suzerainty();
-            Box::new(ai)
-        }
         "live_without_siege_tracks_wall" => {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge();
@@ -2097,6 +2094,18 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge();
             ai.disable_come_ashore();
+            Box::new(ai)
+        }
+        "live_without_suzerain_cards" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_suzerain_cards_need_a_suzerainty();
+            Box::new(ai)
+        }
+        "live_without_blind_objective_units" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_blind_objective_units();
             Box::new(ai)
         }
         "live_without_blind_objective_strength" => {
@@ -2763,18 +2772,19 @@ impl ArmKind {
             // mechanism that differs instead of the catch-all
             // "implementation" axis, which the evaluator refuses.
             Self::Live => &LIVE_BRIDGE_TREATMENTS,
-            Self::LiveWithoutHomeDefense => &["live-trader-route", "live-religious-purchase", "siege-muster", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "suzerain-cards"],
-            Self::LiveWithoutSolventFaithArmy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "suzerain-cards"],
-            Self::LiveWithoutSiegeMuster => &["live-trader-route", "live-religious-purchase", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "suzerain-cards"],
-            Self::LiveWithoutDistrictCoverage => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "come-ashore", "suzerain-cards"],
-            Self::LiveWithoutLoyaltyRateAlarm => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "suzerain-cards"],
-            Self::LiveWithoutBoundedRecovery => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "suzerain-cards"],
-            Self::LiveWithoutArmyTargetWeighsEnemy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "suzerain-cards"],
-            Self::LiveWithoutSuzerainCards => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "siege-role", "come-ashore"],
-            Self::LiveWithoutSiegeTracksWall => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "suzerain-cards"],
-            Self::LiveWithoutBlindObjectiveStrength => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "suzerain-cards"],
-            Self::LiveWithoutSiegeRole => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "come-ashore", "suzerain-cards"],
-            Self::LiveWithoutComeAshore => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "suzerain-cards"],
+            Self::LiveWithoutHomeDefense => &["live-trader-route", "live-religious-purchase", "siege-muster", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "blind-objective-units", "suzerain-cards"],
+            Self::LiveWithoutSolventFaithArmy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "blind-objective-units", "suzerain-cards"],
+            Self::LiveWithoutSiegeMuster => &["live-trader-route", "live-religious-purchase", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "blind-objective-units", "suzerain-cards"],
+            Self::LiveWithoutDistrictCoverage => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "come-ashore", "blind-objective-units", "suzerain-cards"],
+            Self::LiveWithoutLoyaltyRateAlarm => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "blind-objective-units", "suzerain-cards"],
+            Self::LiveWithoutBoundedRecovery => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "blind-objective-units", "suzerain-cards"],
+            Self::LiveWithoutArmyTargetWeighsEnemy => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "blind-objective-units", "suzerain-cards"],
+            Self::LiveWithoutSiegeTracksWall => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "blind-objective-units", "suzerain-cards"],
+            Self::LiveWithoutBlindObjectiveStrength => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "come-ashore", "blind-objective-units", "suzerain-cards"],
+            Self::LiveWithoutSiegeRole => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "come-ashore", "blind-objective-units", "suzerain-cards"],
+            Self::LiveWithoutComeAshore => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "siege-role", "district-coverage", "blind-objective-units", "suzerain-cards"],
+            Self::LiveWithoutSuzerainCards => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "siege-role", "come-ashore", "blind-objective-units"],
+            Self::LiveWithoutBlindObjectiveUnits => &["live-trader-route", "live-religious-purchase", "siege-muster", "home-defense", "recorded-tactical-step", "strike-opening", "bounded-recovery", "army-target-weighs-enemy", "siege-tracks-wall", "blind-objective-strength", "solvent-faith-army", "loyalty-rate-alarm", "ranged-line-of-sight", "district-coverage", "siege-role", "come-ashore", "suzerain-cards"],
             Self::AdvancedBeliefPressure => &["belief-pressure"],
             // `advanced` now owns the confirmed Live + infrastructure +
             // priority composite. The retained arms below are therefore
@@ -3292,11 +3302,12 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_siege_muster" => (Vec::new(), "live_without_siege_muster"),
         "live_without_bounded_recovery" => (Vec::new(), "live_without_bounded_recovery"),
         "live_without_army_target_weighs_enemy" => (Vec::new(), "live_without_army_target_weighs_enemy"),
-        "live_without_suzerain_cards" => (Vec::new(), "live_without_suzerain_cards"),
         "live_without_siege_tracks_wall" => (Vec::new(), "live_without_siege_tracks_wall"),
         "live_without_siege_role" => (Vec::new(), "live_without_siege_role"),
         "live_without_come_ashore" => (Vec::new(), "live_without_come_ashore"),
+        "live_without_suzerain_cards" => (Vec::new(), "live_without_suzerain_cards"),
         "live_without_blind_objective_strength" => (Vec::new(), "live_without_blind_objective_strength"),
+        "live_without_blind_objective_units" => (Vec::new(), "live_without_blind_objective_units"),
         "live_without_loyalty_rate_alarm" => (Vec::new(), "live_without_loyalty_rate_alarm"),
         "live_without_district_coverage" => (Vec::new(), "live_without_district_coverage"),
         "advanced" => (Vec::new(), "advanced"),
@@ -4396,7 +4407,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 62] = [
+            const SCRIPTED: [&str; 63] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4454,11 +4465,12 @@ mod tests {
                 "live_without_siege_muster",
                 "live_without_bounded_recovery",
                 "live_without_army_target_weighs_enemy",
-                "live_without_suzerain_cards",
                 "live_without_siege_tracks_wall",
                 "live_without_siege_role",
                 "live_without_come_ashore",
+                "live_without_suzerain_cards",
                 "live_without_blind_objective_strength",
+                "live_without_blind_objective_units",
                 "live_without_loyalty_rate_alarm",
                 "live_without_solvent_faith_army",
                 "random",
