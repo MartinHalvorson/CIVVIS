@@ -498,8 +498,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// six scores equal (Arabia 994, Aztec 592, Ethiopia 651, Georgia 1012, Khmer
 /// 706, Maya 464), and the same 254 requests to get there. A compatibility
 /// re-pin.
+/// ⚠ And again for `relief_targets_the_siege`, which is `false` in every
+/// `AdvancedAi` default and set only by `enable_live_bridge`. Its whole effect is
+/// the leading component of one `min_by_key` in `domain_objective`, and with the
+/// flag off that component is the constant `0` — so the ordering, and therefore
+/// every objective any legacy or Elo entrant receives, is bit-for-bit what it was.
+/// A compatibility re-pin.
+///
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x53cd_1f4d_25f5_550d;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2eb6_44b1_b1b3_7a36;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
