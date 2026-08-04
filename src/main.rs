@@ -524,7 +524,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// number is right after the merge — only a fresh fingerprint is.
 /// `elo_anchor_speed_is_standard_so_the_pantheon_repin_is_free` checks the
 /// Standard-speed claim rather than asserting it.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xaa1d_13d5_e7d6_64ad;
+///
+/// ⚠ Re-pinned for the unified timed-war appointment. The behavior is behind
+/// `AdvancedAi::timed_war`, initialized `false` by `configured` and enabled
+/// only by the evaluator-only `AdvancedAi::timing_attack` constructor. Every
+/// shared call site short-circuits on an absent `war_plan`; frozen legacy and
+/// `advanced_v1` therefore retain the same research, spending, production,
+/// diplomacy, movement, and upgrade decisions. Focused construction tests
+/// additionally assert that `advanced` reports the treatment off.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb42d_0900_a9ff_c621;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
