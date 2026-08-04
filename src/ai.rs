@@ -220,6 +220,9 @@ pub struct WarPlanReport {
     /// Whether appointment and launch use the preregistered selective-v2
     /// policy. The mutable campaign still lives in the same `WarPlan`.
     pub selective: bool,
+    /// Whether appointment additionally requires the preregistered v3
+    /// ready-force package and short estimated launch window.
+    pub rapid: bool,
     pub active: bool,
     pub phase: Option<&'static str>,
     pub target_player: Option<usize>,

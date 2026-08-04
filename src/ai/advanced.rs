@@ -120,6 +120,7 @@ const RUSH_STAGING_RANGE: i32 = 3;
 const TIMED_WAR_BODIES: usize = 4;
 const SELECTIVE_TIMED_WAR_PREBUILT_BODIES: usize = 3;
 const SELECTIVE_TIMED_WAR_STRENGTH_FLOOR: f64 = 1.25;
+const RAPID_TIMED_WAR_LAUNCH_WINDOW: u32 = 30;
 const TIMED_WAR_MIN_STRENGTH_GAIN: f64 = 8.0;
 const TIMED_WAR_MIN_EXPECTED_DAMAGE: f64 = 36.0;
 const TIMED_WAR_ENDGAME_RESERVE: u32 = 40;
@@ -1543,6 +1544,9 @@ pub struct AdvancedAi {
     /// wants and launch only a fully staged, locally superior package. This is
     /// a policy over the same `WarPlan`, never a second execution path.
     pub selective_timed_war: bool,
+    /// Require the complete body/breach package up front and a short launch
+    /// estimate. This only narrows v2 appointment eligibility.
+    pub rapid_timed_war: bool,
     /// Restrict `early_rush` to rivals a starting land melee unit can actually
     /// reach. The reachable set is frozen once all living major capitals have
     /// been founded, before this treatment can change movement, research,
@@ -1859,6 +1863,13 @@ impl AdvancedAi {
         ai
     }
 
+    /// Evaluator treatment for the preregistered ready-force v3 policy.
+    pub fn rapid_timing_attack() -> AdvancedAi {
+        let mut ai = Self::selective_timing_attack();
+        ai.rapid_timed_war = true;
+        ai
+    }
+
     /// Exact pre-2026-08-01 Advanced configuration used only by evaluator
     /// controls. It intentionally retains the Legacy deck and leaves both
     /// envoy-production flags off; it is not the frozen `advanced_v1` anchor.
@@ -2078,6 +2089,7 @@ impl AdvancedAi {
             early_rush: false,
             timed_war: false,
             selective_timed_war: false,
+            rapid_timed_war: false,
             route_connected_rush: false,
             rush_route_targets: None,
             counter_in_lane: false,
@@ -3298,6 +3310,19 @@ impl AdvancedAi {
                 .count()
     }
 
+    fn war_breach_present(g: &Game, pid: usize, breach: Name) -> bool {
+        g.player_unit_ids(pid)
+            .into_iter()
+            .any(|uid| g.units[&uid].kind == breach)
+            || g.player_city_ids(pid).into_iter().any(|cid| {
+                g.cities[&cid]
+                    .queue
+                    .first()
+                    .and_then(Self::war_item_unit)
+                    .is_some_and(|(unit, _)| unit == breach)
+            })
+    }
+
     fn selective_timed_war_target(&self) -> Option<usize> {
         if !self.selective_timed_war || self.war_census.appointments > 0 {
             return None;
@@ -3388,9 +3413,12 @@ impl AdvancedAi {
                     let body_count = self
                         .war_existing_or_queued_count(g, pid, assault, predecessor)
                         .min(TIMED_WAR_BODIES);
-                    if self.selective_timed_war
-                        && body_count < SELECTIVE_TIMED_WAR_PREBUILT_BODIES
-                    {
+                    let prebuilt_floor = if self.rapid_timed_war {
+                        TIMED_WAR_BODIES
+                    } else {
+                        SELECTIVE_TIMED_WAR_PREBUILT_BODIES
+                    };
+                    if self.selective_timed_war && body_count < prebuilt_floor {
                         continue;
                     }
                     let missing = TIMED_WAR_BODIES.saturating_sub(body_count);
@@ -3398,17 +3426,10 @@ impl AdvancedAi {
                     let mut production_cost =
                         g.rules.units[build_body].cost * missing as f64;
                     if let Some(breach) = breach_unit {
-                        let breach_present = Self::war_can_field_unit(g, pid, breach)
-                            && (g.player_unit_ids(pid)
-                                .into_iter()
-                                .any(|uid| g.units[&uid].kind == breach)
-                                || g.player_city_ids(pid).into_iter().any(|cid| {
-                                    g.cities[&cid]
-                                        .queue
-                                        .first()
-                                        .and_then(Self::war_item_unit)
-                                        .is_some_and(|(unit, _)| unit == breach)
-                                }));
+                        let breach_present = Self::war_breach_present(g, pid, breach);
+                        if self.rapid_timed_war && !breach_present {
+                            continue;
+                        }
                         if !breach_present {
                             production_cost += g.rules.units[breach].cost;
                         }
@@ -3422,7 +3443,10 @@ impl AdvancedAi {
                     let launch_turns = research_turns
                         .saturating_add(production_turns)
                         .saturating_add(march_turns);
-                    if g.turn.saturating_add(launch_turns) >= horizon
+                    if (self.rapid_timed_war
+                        && launch_turns
+                            > g.standard_duration(RAPID_TIMED_WAR_LAUNCH_WINDOW))
+                        || g.turn.saturating_add(launch_turns) >= horizon
                         || !Self::war_resource_feasible(g, pid, assault, launch_turns)
                     {
                         continue;
@@ -19259,6 +19283,7 @@ impl Ai for AdvancedAi {
             WarPlanReport {
                 enabled: true,
                 selective: self.selective_timed_war,
+                rapid: self.rapid_timed_war,
                 active: active.is_some(),
                 phase: active.map(|plan| plan.phase.as_str()),
                 target_player: active.map(|plan| plan.target_player),
@@ -19725,6 +19750,83 @@ mod tests {
         assert!(
             v2.timed_war_staging_ready(&status),
             "the exact preregistered four-body, 1.25-strength gate launches"
+        );
+    }
+
+    #[test]
+    fn rapid_timed_war_requires_a_complete_near_term_package() {
+        let (mut game, _, objective) = timed_war_fixture(940_015);
+        clear_military(&mut game, 0);
+        let mut ai = AdvancedAi::rapid_timing_attack();
+        ai.plan = Some(StrategicPlan {
+            strategy: GrandStrategy::Conquest,
+            target_player: Some(1),
+            target_city: Some(objective),
+            threatened_city: None,
+            desired_cities: 4,
+            assessed_turn: game.turn,
+            rush: false,
+        });
+
+        let goal = crate::name!("military_tactics");
+        for tech in [
+            "mining",
+            "bronze_working",
+            "pottery",
+            "writing",
+            "currency",
+            "mathematics",
+        ] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+        game.players[0].research = Some(goal.as_str().to_string());
+        game.players[0].research_progress = game.tech_cost(goal.as_str()) - 1.0;
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..TIMED_WAR_BODIES - 1 {
+            game.spawn_test_unit("spearman", 0, home);
+        }
+        assert!(
+            ai.choose_war_plan(&game, 0).is_none(),
+            "v3 cannot appoint a package that still needs its fourth body built"
+        );
+        game.spawn_test_unit("spearman", 0, home);
+        assert_eq!(
+            ai.war_existing_or_queued_count(
+                &game,
+                0,
+                crate::name!("pikeman"),
+                Some(crate::name!("spearman"))
+            ),
+            TIMED_WAR_BODIES
+        );
+        assert!(ai
+            .war_staging_route(&game, 0, 1, game.cities[&objective].pos)
+            .is_some());
+        assert_eq!(
+            ai.war_breach_requirement(&game, 0, &game.cities[&objective]),
+            Some(None)
+        );
+        let open = ai
+            .choose_war_plan(&game, 0)
+            .expect("four bodies and a one-turn breakthrough fit the rapid window");
+        assert_eq!(open.assault_unit, crate::name!("pikeman"));
+
+        game.cities.get_mut(&objective).unwrap().wall_hp = 100;
+        game.players[0].techs.insert(crate::name!("engineering"));
+        assert!(
+            ai.choose_war_plan(&game, 0).is_none(),
+            "a trainable but absent breach element is not a ready-force package"
+        );
+        game.spawn_test_unit("catapult", 0, home);
+        let walled = ai
+            .choose_war_plan(&game, 0)
+            .expect("the same package qualifies once its compatible breach element exists");
+        assert_eq!(walled.breach_unit, Some(crate::name!("catapult")));
+        assert!(
+            walled.estimated_research_turns
+                + walled.estimated_production_turns
+                + walled.estimated_march_turns
+                <= game.standard_duration(RAPID_TIMED_WAR_LAUNCH_WINDOW)
         );
     }
 
