@@ -9393,10 +9393,21 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("// The Civ VI atlas cells").next())
             .expect("strategic unit health renderer");
-        assert!(renderer.contains("Math.round(hp ?? 100)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const CAPTURE_ONLY_CIVILIAN_UNITS = new Set([\"settler\", \"builder\"]);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function unitHasHealth(unit) {"));
+        assert!(renderer.contains("if (!Number.isFinite(hp)) return;"));
+        assert!(renderer.contains("Math.round(hp)"));
         assert!(renderer.contains("health >= 100"));
         assert!(renderer.contains("cx.strokeText(String(health), x, by + bh / 2)"));
         assert!(renderer.contains("cx.fillText(String(health), x, by + bh / 2)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const status = unitHasHealth(u) ? `hp ${u.hp}` : \"capturable\";"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : \"capturable\";"
+        ));
         assert_eq!(
             EMBEDDED_INDEX.matches("drawStrategicUnitHealth(").count(),
             3,

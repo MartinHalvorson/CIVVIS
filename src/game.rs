@@ -58796,38 +58796,47 @@ mod combat_scenarios {
             "military and religious units use separate map layers"
         );
 
-        let (mut g, target, ring) = controlled_game(3132);
-        let builder = g.spawn_unit("builder", 1, target);
-        let warrior = g.spawn_unit("warrior", 0, ring[0]);
-        let archer = g.spawn_unit("archer", 0, ring[1]);
-        assert!(
+        // Settlers and Builders have no combat health to wear down: a melee
+        // unit captures either one by walking onto its tile. Neither melee nor
+        // ranged combat can target them.
+        for (seed, civilian_kind) in [(3132, "settler"), (3133, "builder")] {
+            let (mut g, target, ring) = controlled_game(seed);
+            let civilian = g.spawn_unit(civilian_kind, 1, target);
+            let warrior = g.spawn_unit("warrior", 0, ring[0]);
+            let archer = g.spawn_unit("archer", 0, ring[1]);
+            assert!(
+                g.apply(
+                    0,
+                    &Action::Ranged {
+                        unit: archer,
+                        target
+                    }
+                )
+                .is_err(),
+                "ranged attacks cannot target capture-only {civilian_kind}s"
+            );
+            assert!(!g.legal_actions(0).into_iter().any(|action| {
+                matches!(action, Action::Attack { unit, target: to }
+                    if unit == warrior && to == target)
+                    || matches!(action, Action::Ranged { unit, target: to }
+                        if unit == archer && to == target)
+            }));
             g.apply(
                 0,
-                &Action::Ranged {
-                    unit: archer,
-                    target
-                }
+                &Action::Move {
+                    unit: warrior,
+                    to: target,
+                },
             )
-            .is_err(),
-            "ranged attacks cannot target undefended civilians"
-        );
-        assert!(!g.legal_actions(0).into_iter().any(|action| {
-            matches!(action, Action::Attack { unit, target: to }
-                if unit == warrior && to == target)
-                || matches!(action, Action::Ranged { unit, target: to }
-                    if unit == archer && to == target)
-        }));
-        g.apply(
-            0,
-            &Action::Move {
-                unit: warrior,
-                to: target,
-            },
-        )
-        .unwrap();
-        assert_eq!(g.units[&builder].owner, 0);
+            .unwrap();
+            assert_eq!(g.units[&civilian].owner, 0, "{civilian_kind} should be captured");
+            assert!(matches!(
+                g.log.last(),
+                Some((0, Action::Move { unit, to })) if *unit == warrior && *to == target
+            ));
+        }
 
-        let (mut g, city_pos, ring) = controlled_game(3133);
+        let (mut g, city_pos, ring) = controlled_game(3134);
         let cid = g.found_city_for(0, city_pos, None);
         g.cities
             .get_mut(&cid)
