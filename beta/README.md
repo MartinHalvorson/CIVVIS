@@ -209,30 +209,24 @@ front page, `/beta/build.json` for the head lane.
 ### 1. The host
 
 Cloudflare Pages, on the free plan. It is chosen over the alternatives because
-it is the only free host that can check the password **on the server** — the
-gate is not shipped to the browser — and because it serves the 6 MB module
-brotli-compressed at about 1.4 MB.
+it is the only free host that can run the site's routing **on the server** —
+`_worker.js` is not shipped to the browser — and because it serves the module
+brotli-compressed at roughly a fifth of its size.
 
-```bash
-npm install -g wrangler      # or use npx
-wrangler login               # opens a browser once
-wrangler pages project create civvis --production-branch main
-wrangler pages deploy beta/dist --project-name civvis
-```
-
-That already gives a working URL at `civvis.pages.dev`.
-
-Then, so nobody has to do that again, two repository secrets under **Settings →
-Secrets and variables → Actions**:
+No machine needs wrangler or Node. The whole host-side setup is two repository
+secrets under **Settings → Secrets and variables → Actions**:
 
 | Secret | Where it comes from |
 | --- | --- |
-| `CLOUDFLARE_API_TOKEN` | My Profile → API Tokens → Create Token → **Edit Cloudflare Workers** template, scoped to this account. Pages deploys use the Workers permission. |
-| `CLOUDFLARE_ACCOUNT_ID` | The right-hand column of the account's overview page, or `wrangler whoami`. |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → Create Token → **Create Custom Token**: one permission, `Account → Cloudflare Pages → Edit`, scoped to the account. (The "Edit Cloudflare Workers" template is the commonly suggested shortcut, but Pages deploys need the Pages permission, not the Workers one.) |
+| `CLOUDFLARE_ACCOUNT_ID` | The right-hand column of the account's overview page in the dashboard. |
 
-`publish-site.yml` runs without them — it builds, checks, and keeps the bundle
-as an artifact — and fails with a clear message if asked to deploy while they
-are missing, rather than appearing to publish and doing nothing.
+The first deploying run of `publish-site` creates the `civvis` Pages project
+itself if it does not exist, then deploys into it — which gives a working URL
+at `civvis.pages.dev` before the domain is attached. Without the secrets the
+workflow still builds and checks both lanes and keeps the site as an artifact,
+and fails with a clear message if asked to deploy — rather than appearing to
+publish and doing nothing.
 
 ### 2. The domain
 
