@@ -580,7 +580,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// production Advanced constructor. The focused regression test asserts that
 /// split and the production assignment; the frozen anchor never takes either
 /// new movement branch.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xce3b_35b8_de1d_84b5;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x30f1_5e46_6224_4754;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
