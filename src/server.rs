@@ -7173,6 +7173,30 @@ mod tests {
             "player && !player.is_barbarian && player.civ && owners.has(String(player.id))"
         ));
         assert!(EMBEDDED_INDEX.contains("if (Array.isArray(pos) && visible.has(key(pos))"));
+        let civilization_sync = EMBEDDED_INDEX
+            .split_once("function syncMapSearchCivilizations(st = state) {")
+            .expect("civilization-filter synchronizer")
+            .1
+            .split_once("\nfunction computeMapSearchMatches(")
+            .expect("end of civilization-filter synchronizer")
+            .0;
+        assert!(civilization_sync.contains(
+            "const optionsChanged = !mapSearchCivilizationOptions(select, entries);"
+        ));
+        assert!(civilization_sync.contains(
+            "if (optionsChanged && document.activeElement === select) return false;"
+        ));
+        assert!(civilization_sync.contains(
+            "if (optionsChanged) {\n    select.replaceChildren(...entries.map"
+        ));
+        assert_eq!(
+            civilization_sync.matches("select.replaceChildren").count(),
+            1,
+            "the native civilization picker must stay intact when the visible roster is unchanged"
+        );
+        assert!(EMBEDDED_INDEX.contains(
+            "mapSearchCiv.addEventListener(\"blur\", () => {\n  // Apply a roster change held back while the native picker was expanded.\n  if (!syncMapSearchCivilizations()) return;"
+        ));
         assert!(EMBEDDED_INDEX.contains("syncMapSearchCivilizations(st);"));
         assert!(EMBEDDED_INDEX.contains("drawFlatMapSearchHighlights(tiles);"));
         assert!(EMBEDDED_INDEX.contains("drawPlanetMapSearchHighlights(cells);"));
@@ -9388,6 +9412,27 @@ mod tests {
         assert!(icon.contains("cx.ellipse(0, rimY, rimHalfWidth, 1.35"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false)"));
+    }
+
+    #[test]
+    fn mountain_and_volcano_tiles_use_dark_shared_ground_with_glowing_lava() {
+        assert!(EMBEDDED_INDEX.contains("const MOUNTAIN_TILE_COLOR = \"#49453e\";"));
+        assert!(EMBEDDED_INDEX.contains("const VOLCANO_TILE_COLOR = \"#292421\";"));
+        assert!(EMBEDDED_INDEX.contains("tile.feature === \"volcano\""));
+        assert!(EMBEDDED_INDEX.contains("tileGroundColor(cell.tile, \"#4b5960\")"));
+        assert!(EMBEDDED_INDEX.contains("const base = tileGroundColor(t);"));
+        assert!(EMBEDDED_INDEX.contains("tileGroundColor(cell.tile, \"#44545a\")"));
+        assert!(EMBEDDED_INDEX.contains("const terrainColor = tileGroundColor(t);"));
+
+        let icon = EMBEDDED_INDEX
+            .split("function drawStrategicMountainIcon")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawFeatureEffects").next())
+            .expect("shared strategic mountain icon renderer");
+        assert!(icon.contains("cx.fillStyle = volcano ? \"#37302d\" : \"#565149\""));
+        assert!(icon.contains("cx.shadowColor = \"#ff4b19\""));
+        assert!(icon.contains("cx.shadowBlur = 9"));
+        assert!(icon.contains("cx.fillStyle = \"#ffb23c\""));
     }
 
     #[test]
