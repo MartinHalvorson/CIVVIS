@@ -8035,12 +8035,24 @@ mod tests {
         // needs both offsets, staggered by one row per row held above it.
         assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
         assert!(EMBEDDED_INDEX.contains("bottom: calc(var(--pin-tail, 0) * var(--hud-row-pitch));"));
-        // The standings grow from one consolidated row through eight readable
-        // rows. A twelve-player exhibition then scrolls even on a tall screen
-        // instead of continuing to consume the world below it.
-        assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(38vh, 280px);"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
-        assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(154, 50 + rows * 28);"));
+        // The standings grow through every civilization shown in the ribbon,
+        // with a two-seat floor that keeps the turn counter visible before
+        // enough rows exist to do so on their own.
+        assert!(EMBEDDED_INDEX.contains("--player-hud-content-height: 106px;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "--player-hud-max-height: min(var(--player-hud-content-height), calc(100% - 8px));"
+        ));
+        assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_MIN_ROWS = 2;"));
+        assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_ROW_PITCH = PLAYER_HUD_ROW_HEIGHT + PLAYER_HUD_ROW_GAP;"));
+        assert!(EMBEDDED_INDEX.contains("function playerHudRowPitch()"));
+        assert!(EMBEDDED_INDEX.contains("return Math.max(PLAYER_HUD_MIN_HEIGHT, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());"));
+        assert!(EMBEDDED_INDEX.contains("maxHeight:playerHudMaxContentHeight"));
+        assert!(!EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
+        assert!(EMBEDDED_INDEX.contains("const requestedHeight = playerHudContentHeight(rows);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "mapArea.style.setProperty(\"--player-hud-content-height\", `${requestedHeight}px`);"
+        ));
+        assert!(EMBEDDED_INDEX.contains("if (state && hudLayoutGesture?.name !== \"players\") drawPlayerHud();"));
         assert!(EMBEDDED_INDEX.contains(
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
         ));
@@ -8827,7 +8839,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("left: var(--player-hud-left, 0px);"));
         assert!(EMBEDDED_INDEX.contains("area.classList.toggle(\"player-hud-compact\", width <= PLAYER_HUD_COMPACT_WIDTH);"));
         assert!(EMBEDDED_INDEX.contains("#maparea.player-hud-compact #playerhud"));
-        assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38, avoidsSidebar:true"));
+        assert!(EMBEDDED_INDEX.contains("maxHeight:playerHudMaxContentHeight, avoidsSidebar:true"));
         assert!(EMBEDDED_INDEX.contains("function hudWidgetMinX(config, margin = 4)"));
     }
 
@@ -9334,9 +9346,10 @@ mod tests {
         assert!(splat.contains("neighbor?.feature === \"volcano\""));
         assert!(splat.contains("cx.rotate(Math.atan2(sourceY, sourceX))"));
         assert!(splat.contains("hexPath(x, y, S); cx.clip();"));
+        assert!(splat.contains("const soilFan = cx.createLinearGradient(0, 0, S + 2, 0)"));
         assert!(splat.contains("cx.moveTo(S + 2, -S)"));
-        assert!(splat.contains("cx.bezierCurveTo(6, -9, 2, -5, 0, 0)"));
-        assert!(splat.contains("cx.bezierCurveTo(18, 13, 25, 18, S + 2, S)"));
+        assert!(splat.contains("cx.bezierCurveTo(4, -7, 1, -3, -1, 0)"));
+        assert!(splat.contains("cx.bezierCurveTo(21, 14, 29, 18, S + 2, S)"));
         assert!(!splat.contains("performance.now"));
         assert!(!splat.contains("requestAnimationFrame"));
 
@@ -9366,8 +9379,11 @@ mod tests {
         assert!(icon.contains(
             "cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE)"
         ));
+        assert!(icon.contains(
+            "const rimY = -7, rimHalfWidth = 5.3, baseY = 19, baseHalfWidth = 16"
+        ));
         assert!(icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
-        assert!(icon.contains("cx.ellipse(0, -9, 4.5, 2.2"));
+        assert!(icon.contains("cx.ellipse(0, rimY, rimHalfWidth, 1.35"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false)"));
     }

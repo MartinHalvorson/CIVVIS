@@ -4,7 +4,7 @@ use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use crate::fractal::Fractal;
 use crate::name::Name;
 use crate::rng::Rng;
-use crate::rules::Rules;
+use crate::rules::{volcanic_soil_valid_terrain, Rules};
 use crate::setup::{MapPoles, MapScript, MapTopology};
 use crate::world::WorldMap;
 use crate::{hex, Pos};
@@ -3287,6 +3287,18 @@ pub fn generate_with_script(
         .collect();
     for position in invalid_oases {
         wm.tiles.get_mut(&position).unwrap().feature = None;
+    }
+    // The old-deposit pass above predates separate Lake terrain and can stage
+    // Volcanic Soil there while preserving the RNG sequence on which wonder,
+    // resource, and start placement depend. Retire any deposit whose final
+    // terrain is not one of Gathering Storm's valid flat/hills land types only
+    // after every seeded generation decision is complete.
+    for tile in wm.tiles.values_mut() {
+        if tile.feature.as_deref() == Some("volcanic_soil")
+            && !volcanic_soil_valid_terrain(tile)
+        {
+            tile.feature = None;
+        }
     }
     (wm, spawns)
 }
@@ -9017,15 +9029,22 @@ mod river_tests {
                     "volcano" => {
                         assert_eq!(tile.terrain, "mountain", "volcano at {position:?}")
                     }
-                    "volcanic_soil" => assert!(
-                        world.neighbors(*position).into_iter()
-                            .any(|neighbor| world.tiles.get(&neighbor).is_some_and(
-                                |neighbor_tile| {
-                                    neighbor_tile.feature.as_deref() == Some("volcano")
-                                }
-                            )),
-                        "volcanic soil at {position:?} has no volcano"
-                    ),
+                    "volcanic_soil" => {
+                        assert!(
+                            volcanic_soil_valid_terrain(tile),
+                            "volcanic soil generated on {} at {position:?}",
+                            tile.terrain
+                        );
+                        assert!(
+                            world.neighbors(*position).into_iter()
+                                .any(|neighbor| world.tiles.get(&neighbor).is_some_and(
+                                    |neighbor_tile| {
+                                        neighbor_tile.feature.as_deref() == Some("volcano")
+                                    }
+                                )),
+                            "volcanic soil at {position:?} has no volcano"
+                        );
+                    }
                     "geothermal_fissure" => assert!(
                         world.neighbors(*position).into_iter()
                             .any(|neighbor| world.tiles.get(&neighbor).is_some_and(
