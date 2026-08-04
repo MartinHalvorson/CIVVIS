@@ -37600,7 +37600,16 @@ impl Game {
         self.blocked_purchases = blocked;
     }
 
-    fn purchase_is_blocked(&self, cid: u32, item: &Item) -> bool {
+    /// Whether the host recently refused to let this city BUY this item.
+    ///
+    /// ⚠ `pub(crate)` because the legal-action enumeration is not the only way a
+    /// purchase happens. `buy_gold_infrastructure`, `buy_gold_unit`,
+    /// `buy_gold_military` and the missionary buyer all build an `Action::Buy*`
+    /// themselves and call `apply` directly, so a gate that lives only in the
+    /// enumeration never runs for them — which is exactly how the same Granary
+    /// was re-bought in the same city on turns 114, 117, 121, 122, 123 and 128 of
+    /// live run `civvis-20260804T091315Z`, 8 of that game's 9 purchases refused.
+    pub(crate) fn purchase_is_blocked(&self, cid: u32, item: &Item) -> bool {
         let Some(blocked) = self.blocked_purchases.get(&cid) else {
             return false;
         };
@@ -43888,6 +43897,17 @@ impl Game {
                 > 0.0
             || !self.can_produce(
                 pid,
+                cid,
+                &Item::Building {
+                    building: Name::new(building),
+                },
+            )
+            // ⚠ `can_produce` reads `blocked_production`; a PURCHASE refusal lands
+            // in `blocked_purchases`, a different set with a different meaning —
+            // "the host will not sell this here right now" rather than "this city
+            // cannot build it". Without this the two never met and a refused
+            // purchase was re-offered every turn.
+            || self.purchase_is_blocked(
                 cid,
                 &Item::Building {
                     building: Name::new(building),

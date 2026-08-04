@@ -9787,6 +9787,12 @@ pub fn rebuild_from_state(
     game.replace_blocked_production(blocked_production);
     let blocked_purchases =
         blocked_production_from(&state.refused_purchases, &city_ids, &game.rules);
+    if std::env::var("CIVVIS_DEBUG_PURCHASE_BLOCK").is_ok() {
+        eprintln!(
+            "[purchase-block] rebuild: refused_purchases={:?} city_ids={:?} -> blocked={:?}",
+            state.refused_purchases, city_ids, blocked_purchases
+        );
+    }
     game.replace_blocked_purchases(blocked_purchases);
     // ⚠ Wired on BOTH the rebuild (here) and the refresh path. `--fresh-board`
     // reconstructs the board every turn and never runs the refresh, so wiring only
