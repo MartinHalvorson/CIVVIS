@@ -12043,7 +12043,10 @@ mod tests {
             previous = at;
         }
         assert!(details.contains("${civPossessive(civ)} ${titleCase(unit.type)} - "));
-        assert!(details.contains("fmtYield(unit.hp) + \" HP</span>\""));
+        assert!(details.contains(
+            "const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : \"capturable\";"
+        ));
+        assert!(details.contains("unitStatus + \"</span>\""));
         assert!(details.contains("? (tileImpassable(t) ? \"Impassable\" : \"Unknown\")"));
         assert!(details.contains("const defenseText = (defense > 0 ? \"+\" : \"\") + defense;"));
         assert!(
