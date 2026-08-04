@@ -24,6 +24,13 @@ same unified executor only when ordinary strategy already chose Conquest and
 three of four assault bodies already exist; it gets one appointment and must
 stage all four bodies at 1.25 local strength before declaring.
 
+Selective v2 improved the frozen paired score to 47.1% and cut exposure to
+53.8%, with all 82 declarations carrying complete packages, but it still
+missed the quick-capture and outcome gates and remains default-off. The next
+preregistered `advanced_timing_attack_rapid` arm narrows the same system to a
+fully prebuilt force, an already-present breach element, and a launch estimate
+inside 15 Online turns. No timing-attack treatment is enabled in production.
+
 See [docs/WAR_TIMING.md](docs/WAR_TIMING.md) for the frozen mechanism and
 promotion gates. A small smoke comparison can be run with:
 

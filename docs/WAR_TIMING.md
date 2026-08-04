@@ -1,8 +1,8 @@
 # The midgame power-spike appointment
 
-Status: **v1 is implemented as the default-off `advanced_timing_attack`
-evaluator arm and was rejected by its frozen 8-player outcome screen. A
-selective v2 is preregistered below; production `advanced` remains unchanged**.
+Status: **v1 and selective v2 are implemented as default-off evaluator arms
+and were rejected by their frozen 8-player outcome screens. A ready-force v3
+is preregistered below; production `advanced` remains unchanged**.
 
 The implementation is one controller-owned `WarPlan`, not a collection of
 bonuses. Its lifecycle is validated before decisions and consumed by research,
@@ -361,10 +361,74 @@ more favorable than adverse map directions, terminal-score share at least
 is unresolved, not a pass. This is one frozen read; failure is reported and
 keeps the treatment default-off.
 
-## Disjoint v2 holdout and strongest-controller transfer
+### Frozen v2 result: materially safer, still reject
 
-Passing every v2 screen term earns one unchanged 240-map holdout at seed
-10,140,000
+The completed screen ran all 60 pairs (120 games, average 226.9 turns). V2 was
+far less destructive than v1 but did not earn promotion: it won 51 games
+(42.5%) against 58 (48.3%), produced a 47.1% paired score (95% Wilson interval
+35.0%..59.5%, Elo-equivalent -20 with interval -107..+67), and had 9 favorable,
+37 neutral, and 14 adverse map directions. The promotion gate was
+`INCONCLUSIVE`. Terminal-score share was 48.0%, with 12 favorable and 48
+adverse directions.
+
+The selectivity mechanism worked as specified. Plans formed in 258 of 480
+treatment seat-games (53.8%) and were active for 15.5% of observed treatment
+player-turns. All 82 declarations carried the complete modern package. Thirty
+objectives fell, 25 within ten turns: 30.5% of declarations, below the frozen
+35% threshold. Median appointment-to-tech, tech-to-declaration, and
+declaration-to-capture times were 10, 25, and 5 turns.
+
+V2 therefore passed exposure, declaration count, and package completeness but
+failed quick capture, paired score, favorable-over-adverse direction, and
+terminal-score gates. The residual cost was much smaller than v1 but remained
+visible: treatment empires averaged 8.65 cities, 90.0 population, and 1,079.5
+military strength against 8.87, 95.6, and 1,226.9 for `advanced`. The largest
+pre-declaration aborts were launch horizon (56), persistent home Recovery (53),
+and objective ownership changing (50). V2 remains reproducible and default-off.
+
+## Ready-force v3 amendment (preregistered before its focal seeds)
+
+V3 is the default-off `advanced_timing_attack_rapid` arm. It is v2 with one
+additional appointment filter, still inside the same `WarPlan` and the same
+research, treasury, staging, diplomacy, tactical, invalidation, and observer
+paths:
+
+1. All four assault bodies must already exist or be queued as the selected
+   assault unit, a stronger successor, or its direct upgradeable predecessor.
+2. If the objective is walled, the compatible breach unit must also already
+   exist or be queued; merely being trainable is insufficient.
+3. The chooser's existing research + production + real-route march estimate
+   must be no more than 30 Standard-speed turns, which is 15 turns on the live
+   Online profile.
+
+Every v2 constraint remains: one appointment, ordinary Conquest intent and
+the same victim, all four modern bodies staged, 1.25 local strength, legal war,
+and a safe homeland. V3 changes no combat odds and grants no production,
+research, movement, or Gold bonus. It tests one causal response to v2's
+remaining loss: appoint only a force that can plausibly strike before the
+target changes owner or a long mobilization taxes the empire. There is no
+threshold sweep or reuse of v1/v2 focal maps.
+
+### Frozen v3 screen
+
+```text
+ai_eval advanced_timing_attack_rapid advanced --players 8 \
+  --width 84 --height 54 --city-states 12 --pairs 60 --turns 250 \
+  --speed online --map continents --shape planet --poles poles \
+  --randomize-civs --victories science,culture,domination \
+  --seed 10160000 --jobs 6
+```
+
+V3 uses the same all-terms screen: 15%..75% seat-game exposure, at least 60%
+complete-package declarations, at least 35% ten-turn captures with 12 or more
+declarations, paired score at least 52%, more favorable than adverse maps,
+terminal-score share at least 50%, and no `RETAIN advanced` decision. Failure
+is reported and remains default-off.
+
+## Disjoint v3 holdout and strongest-controller transfer
+
+Passing every v3 screen term earns one unchanged 240-map holdout at seed
+10,170,000
 on the same profile. Coverage must remain in 15%..75%, complete-package
 declarations at or above 60%, ten-turn captures at or above 35% with at least
 30 declarations, terminal-score share at or above 50%, favorable directions
@@ -376,7 +440,7 @@ implementation sits below the wrappers, defaulting it transfers the behavior
 mechanically to evolved, Strategic, production-rollout, and Policy-fallback
 agents; it does **not** establish strength transfer. One final 60-map screen
 then compares a named `strategic_deep_timing_selective` entrant with the
-published `strategic_deep` on seed 10,150,000 and the identical live profile.
+published `strategic_deep` on seed 10,180,000 and the identical live profile.
 It must load the same embedded genome/value artifact provenance in both arms. The
 strongest controller keeps the default only if the treatment forms at least
 12 appointments, favorable directions are not fewer than adverse, terminal
