@@ -557,7 +557,9 @@ def restore_links(links: Sequence[Tuple[pathlib.Path, Optional[str]]]) -> None:
             link.symlink_to(previous_target, target_is_directory=True)
 
 
-def install_apps(apps_root: pathlib.Path, desktop: pathlib.Path, state_dir: pathlib.Path) -> InstalledSwap:
+def install_apps(
+    apps_root: pathlib.Path, desktop: pathlib.Path, state_dir: pathlib.Path
+) -> InstalledSwap:
     if not desktop.is_dir():
         desktop.mkdir(parents=True)
     previous = state_dir / "previous"
@@ -659,8 +661,8 @@ def install_apps(apps_root: pathlib.Path, desktop: pathlib.Path, state_dir: path
 
 def rollback_install(swap: InstalledSwap, relaunch: bool = False) -> None:
     # The generated source bundles remain in the build directory, so removing
-    # a failed installed copy loses nothing. Restore every previous bundle to
-    # its original Desktop name before asking it to launch again.
+    # a failed installed copy loses nothing. Restore every previous private or
+    # Desktop bundle before asking the stable links to launch again.
     restore_links(swap.links)
     for target in reversed(swap.targets):
         if target.exists():
