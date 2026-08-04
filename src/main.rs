@@ -540,7 +540,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// entrants return before the changed line is ever reached and the anchor's
 /// behaviour is bit-for-bit what it was. A compatibility re-pin;
 /// `elo_anchor_never_reaches_the_settler_commit_path` checks the claim.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8a72_0cde_441a_1ce5;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8c40_3653_32c9_ce22;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

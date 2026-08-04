@@ -5797,11 +5797,18 @@ impl BasicAi {
         // the actual deficit, so this outranks the lane's own families only
         // while the multiplier is genuinely being paid and disappears the
         // moment the city is neutral.
+        // ⚠ Taken BEFORE either repair is pushed, so the two repairs are each
+        // ranked against the LANE and then against EACH OTHER by their own
+        // magnitudes. Reading it after the Amenity push would stack the housing
+        // repair on top of the Amenity one and make housing win by construction
+        // — wrong in exactly the case that matters most, because
+        // `amenity_growth_mult` is **0.0** below −4 and an Aqueduct handed to a
+        // city that is not growing at all buys nothing.
+        let lane_top = dpri.iter().map(|(_, w)| *w).fold(0.0_f64, f64::max);
         if self.amenity_districts && !self.minor {
             let deficit = (-g.city_amenity_surplus(&g.cities[&cid])).max(0) as f64;
             if deficit > 0.0 {
-                let top = dpri.iter().map(|(_, w)| *w).fold(0.0_f64, f64::max);
-                dpri.push(("entertainment_complex", top + deficit));
+                dpri.push(("entertainment_complex", lane_top + deficit));
             }
         }
         // And a city that has run out of HOUSING asks for the districts that
@@ -5817,14 +5824,19 @@ impl BasicAi {
         // +2 to one already on a river, and a flat weight cannot tell those
         // apart. Capped by the shortfall so a city one short of the target does
         // not outrank its whole lane to over-build by three.
+        //
+        // Against the Amenity repair this then reads the way it should: a city
+        // at surplus −6 scores that repair 6 and this one at most 3, and the
+        // −6 city has growth 0.00 so housing genuinely cannot help it yet. A
+        // city merely displeased at −1 scores the Amenity repair 1 and a real
+        // housing block 2, and housing correctly goes first.
         if self.housing_districts && !self.minor {
             let shortfall = HOUSING_HEADROOM_TARGET - g.city_housing_headroom(&g.cities[&cid]);
             if shortfall > 0.0 {
-                let top = dpri.iter().map(|(_, w)| *w).fold(0.0_f64, f64::max);
                 for family in HOUSING_DISTRICTS {
                     let gain = Self::housing_gain(g, pid, cid, family);
                     if gain > 0.0 {
-                        dpri.push((family, top + shortfall.min(gain)));
+                        dpri.push((family, lane_top + shortfall.min(gain)));
                     }
                 }
             }
@@ -13394,6 +13406,42 @@ mod amenity_district_tests {
     #[test]
     fn the_headroom_target_is_where_the_growth_penalty_stops() {
         assert_eq!(HOUSING_HEADROOM_TARGET, 2.0);
+    }
+
+    /// ⚠ The two repairs are ranked against the LANE, not stacked on each
+    /// other. A city deep in the Amenity band is not growing AT ALL —
+    /// `amenity_growth_mult` is 0.0 below −4 — so an Aqueduct there buys
+    /// nothing and must not outrank the repair that restores growth. A merely
+    /// displeased city with a real housing block is the other way round.
+    ///
+    /// This reproduces the weights `pick_item` assigns rather than reaching
+    /// into it, because the ordering is the whole claim.
+    #[test]
+    fn the_amenity_repair_outranks_housing_exactly_when_growth_is_already_zero() {
+        let lane_top = 4.0_f64;
+        let weigh = |amenity_surplus: i64, headroom: f64, gain: f64| {
+            let deficit = (-amenity_surplus).max(0) as f64;
+            let shortfall = HOUSING_HEADROOM_TARGET - headroom;
+            (lane_top + deficit, lane_top + shortfall.min(gain))
+        };
+
+        // Unrest at −6: growth is 0.00, so the Amenity repair must go first.
+        let (amenity, housing) = weigh(-6, -1.0, 4.0);
+        assert!(
+            amenity > housing,
+            "at surplus −6 growth is zero and an Aqueduct cannot help: {amenity} vs {housing}"
+        );
+
+        // Displeased at −1 with the housing ceiling genuinely reached: growth
+        // is still 0.85 from amenities but only 0.25 from housing.
+        let (amenity, housing) = weigh(-1, 0.0, 4.0);
+        assert!(
+            housing > amenity,
+            "a real housing block beats mild unhappiness: {housing} vs {amenity}"
+        );
+
+        // And both stay above the lane whenever they fire at all.
+        assert!(amenity > lane_top && housing > lane_top);
     }
 
     /// An Aqueduct is worth twice as much to a dry city as to a river one, and
