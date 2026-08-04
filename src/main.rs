@@ -575,7 +575,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// ⚠ Re-pinned for test-only seeded-map fixture hardening after Natural
 /// Wonder silhouettes changed. Both edits are inside `#[cfg(test)]` modules;
 /// no controller path is compiled into an Elo game.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x74e1_449b_5bb7_e189;
+/// ⚠ Re-pinned for production unit-objective memory. The full objective,
+/// danger, and retreat path is behind `BasicAi::unit_objective_memory`, which
+/// initializes false in Basic and `AdvancedAi::legacy()` and true only in the
+/// production Advanced constructor. The focused regression test asserts that
+/// split and the production assignment; the frozen anchor never takes either
+/// new movement branch.
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xce3b_35b8_de1d_84b5;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
