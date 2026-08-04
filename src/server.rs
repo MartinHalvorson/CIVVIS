@@ -7885,6 +7885,7 @@ mod tests {
         let display_advanced = [
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"10\"><span><input type=\"checkbox\" id=\"gridchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"20\"><span><input type=\"checkbox\" id=\"reschk\"",
+            "class=\"speed-row display-advanced-setting resource-display-setting\" data-advanced-order=\"25\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"30\"><span><input type=\"checkbox\" id=\"yieldchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"40\"><span><input type=\"checkbox\" id=\"artifactchk\"",
             "class=\"setting-row display-advanced-setting\" data-advanced-order=\"45\"><span><input type=\"checkbox\" id=\"rocketanimchk\" checked> Show rocket &amp; satellite animations",
@@ -7896,6 +7897,31 @@ mod tests {
             }),
             "map and spaceflight switches should lead Interface Settings advanced controls"
         );
+        // Resource names are the default detailed-map treatment, but the
+        // existing compact symbol stays an explicit, persisted choice and the
+        // only treatment at survey scale.
+        for resource_display in [
+            "id=\"resourcedisplay\" aria-label=\"Resource display\"",
+            "<option value=\"symbol_word\" selected>Symbol &amp; word</option>",
+            "<option value=\"symbol\">Symbol</option>",
+            ".resource-display-setting { grid-template-columns: minmax(0, 1fr); gap: 4px; }",
+            ".resource-display-setting > select { width: 100%; }",
+            ".advanced-settings-body > .resource-display-setting { grid-column: 1 / -1; }",
+            "const RESOURCE_DISPLAY_STORAGE_KEY = \"civvis-resource-display\";",
+            "let RESOURCE_DISPLAY = localStorage.getItem(RESOURCE_DISPLAY_STORAGE_KEY) === \"symbol\"",
+            "function setResourceDisplay(mode) {",
+            "resourceDisplay.onchange = () => setResourceDisplay(resourceDisplay.value);",
+            "function drawResourceWordBadge(t, x, y, rim = resourceBadgeRim(t)) {",
+            "drawResourcePictogram(t.resource, iconX, ry - .1, RES_WORD_ICON_SIZE);",
+            "cx.strokeText(label, textX, ry + .25, textWidth);",
+            "if (RESOURCE_DISPLAY === \"symbol_word\" && cam.scale >= RES_WORD_LABEL_SCALE) {",
+            "drawResourceSymbolBadge(t, x, y, rim);",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(resource_display),
+                "resource display contract is missing: {resource_display}"
+            );
+        }
         assert!(EMBEDDED_INDEX.contains(
             "let SHOW_ROCKET_ANIMATIONS = localStorage.getItem(\"civvis-show-rocket-animations\") !== \"0\";"
         ));
