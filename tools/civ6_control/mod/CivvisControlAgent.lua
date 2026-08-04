@@ -1084,213 +1084,16 @@ local committedSite = {};
 local refusedSite = {};
 local findSettleSite;
 
--- CIVVIS's own ranking of where the next city goes, baked in at install time.
---
--- ★ THIS IS CIVVIS PROVIDING THE DECISION, which is the architecture asked for.
--- The route is indirect because it has to be: the mod cannot read a file at
--- runtime (no `io` in this sandbox) and FireTuner does not answer — with a live
--- game and the correct log path, seven plausible framings on ports 4318/4319
--- executed nothing. Config baked at install time is the only inbound channel that
--- works, and it is sufficient here because the world is a function of the SEED:
--- `civvis-advise --plan` reads one run's exported map, ranks the ground with
--- `AdvancedAi::settle_ranking`, and the next run on that same seed follows it.
---
--- Measured reason to bother: on run settler-20260730T034143Z the agent's own
--- choices sat at CIVVIS ranks 25/48, 10/25 and 4/15 — middling ground by CIVVIS's
--- reckoning, on the axis CIVVIS's oracle work calls its biggest lever.
---
--- ⚠ The plan is ADVICE, not an order. A site is taken only if the engine agrees it
--- is legal for this settler right now; anything refused falls through to the
--- hand-rolled search. A plan that disagreed with the live game would otherwise
--- strand settlers exactly the way `committedSite` was built to prevent.
-local settlePlan = nil;
-
--- ★ THE FIRES-CHECK, and it is not optional.
---
--- This project's most expensive mistakes have all been treatments that looked
--- applied and were not: a Settler requested on 83 consecutive turns with
--- `applied = true` and nothing ever built, and a value evaluator that has never
--- once loaded while `docs/EVAL.md` concluded it was "good and inert". A settle plan
--- baked into the config is exactly that shape of change — silent when it works and
--- silent when it does not.
---
--- So the stream says which brain chose each city: `plan` means CIVVIS's ranking
--- picked it, `search` means the hand-rolled Lua score did. An evaluation of
--- CIVVIS-as-decider is meaningless until `plan_sites` is non-zero.
-local planFires = { plan = 0, search = 0, offered = 0 };
 -- Is the loyalty-reach penalty starving the settle search? `capped` counts legal
 -- sites rejected for being out of support range, `in_reach` the ones inside it.
 -- ⚠ A single number could not answer this: `capped` alone rises on a big map with
 -- plenty of near ground, and `in_reach` alone cannot show what was given up.
 local siteCap = { capped = 0, in_reach = 0 };
 
-local function planSite(player, pid, unit)
-	-- ⚠ A PLAN SITE THE ENGINE HAS REFUSED MUST BE SKIPPED, or the plan is a trap.
-	--
-	-- Replacing the old "taken on offer" bookkeeping with board-derived occupancy
-	-- removed the only escape hatch: with ZERO cities nothing is occupied, so the
-	-- top-ranked site is offered every turn forever. If the settler cannot path
-	-- there it walks for the whole game. Run settler-20260730T053416Z reached turn 50
-	-- with **cities = 0** and one settler still trudging — worse than having no plan
-	-- at all.
-	--
-	-- `orderSettler` already records a refusal in `refusedSite[id]` when the engine
-	-- declines the move. Honouring it here is what lets the plan fall down its own
-	-- ranking instead of dying on its first entry.
-	local unitId = try(function() return unit:GetID(); end, -1);
-	local refused = refusedSite[unitId] or {};
-	if settlePlan == nil then
-		settlePlan = {};
-		local raw = cfg.SettlePlan;
-		if type(raw) == "table" then
-			for i = 1, #raw do
-				local entry = raw[i];
-				if type(entry) == "table" and entry.x ~= nil and entry.y ~= nil then
-					settlePlan[#settlePlan + 1] = { x = entry.x, y = entry.y };
-				end
-			end
-		end
-	end
-	if #settlePlan == 0 then return nil; end
-	planFires.offered = planFires.offered + 1;
-	-- ⚠ "USED" MEANS A CITY STANDS THERE, NOT THAT WE ONCE LOOKED AT IT.
-	--
-	-- The first version marked a site taken the moment it was OFFERED. This
-	-- function runs once per settler per turn, so the plan burned through all 24
-	-- sites in a handful of turns: run settler-20260730T045220Z read
-	-- `plan_sites 24` at turn 37 with ONE city. The plan destroyed itself and then
-	-- fell back to the Lua search, which is the opposite of the intent.
-	--
-	-- Occupancy is now derived from the board instead of remembered: a site is used
-	-- if one of our cities is within the spacing rule of it. Stateless, so it cannot
-	-- drift out of step with the game, and a settler that dies on the way leaves its
-	-- target available again.
-	local spacing = cfg.MinCitySpacing or 3;
-	local occupied = {};
-	eachCity(player, function(city)
-		local cx = try(function() return city:GetX(); end, -1);
-		local cy = try(function() return city:GetY(); end, -1);
-		if cx >= 0 then occupied[#occupied + 1] = { x = cx, y = cy }; end
-	end);
-	-- ★★★★★ NEAREST OF THE GOOD ONES, NOT SIMPLY THE BEST ONE.
-	--
-	-- This loop used to return the FIRST unoccupied site in plan order, and the plan
-	-- is CIVVIS's value ranking computed FROM THE CAPITAL (`advise.rs` passes
-	-- `from = capital`). So every settler, wherever it was built, was sent to the
-	-- globally top-ranked plot — often clean across the empire.
-	--
-	-- Measured cost of that, over twelve runs: **484 `move_to_site` orders against 48
-	-- `found_city` orders — about TEN TURNS OF WALKING PER CITY.** With one settler
-	-- in flight that is one city per ~15 turns, and over the ~100-turn horizon a run
-	-- actually gets ([[civvis-civ6-runs-never-finish]]) it caps the empire at 3-4
-	-- cities. The observed median is 3. That arithmetic, not any broken mechanism, is
-	-- what starves the army (`wantArmy = MilitaryPerCity x cities`), which is why war
-	-- is declared in only 19 of 47 runs, which is why no capital is ever taken.
-	--
-	-- ⚠ RAISING `SettlersInFlight` DOES NOT FIX IT AND WAS ALREADY REFUTED: run
-	-- 010409Z ordered SEVENTEEN settlers, walked 166 times and founded 2 cities. More
-	-- settlers walking the same long distances buys walking. The travel time is the
-	-- constraint, so cut the travel.
-	--
-	-- ⚠ CIVVIS STILL DECIDES WHICH GROUND IS GOOD — that is the operator's
-	-- architecture and this must not quietly become a hand-rolled scorer. What
-	-- changes is only the choice AMONG comparably good ground: take the top
-	-- `PlanNearWindow` sites CIVVIS offers, and let the settler that has to do the
-	-- walking pick the closest of them.
-	--
-	-- It also agrees with CIVVIS's own measurement: civilian MOVEMENT was the largest
-	-- single grant on its expansion axis (`expansion_swift`, 59.5%) while settler COST
-	-- measured null. Distance-to-site is that same quantity from the other end.
-	local window = cfg.PlanNearWindow or 6;
-	local ux = try(function() return unit:GetX(); end, -1);
-	local uy = try(function() return unit:GetY(); end, -1);
-	local best, bestKey, bestRank, bestDist = nil, nil, -1, nil;
-	local considered = 0;
-	for i = 1, #settlePlan do
-		local site = settlePlan[i];
-		local key = site.x .. ":" .. site.y;
-		local tooClose = refused[key] == true;
-		for j = 1, #occupied do
-			if plotDistance(occupied[j].x, occupied[j].y, site.x, site.y) < spacing then
-				tooClose = true;
-				break;
-			end
-		end
-		if not tooClose then
-			-- Legality is not asserted here. `orderSettler` already asks the
-			-- engine to FOUND_CITY or MOVE_TO and honours a refusal, and this
-			-- project has been burned repeatedly by gates that answered wrongly
-			-- in exactly the position that mattered. Offer the plot; let the
-			-- engine be the judge.
-			local plot = try(function() return Map.GetPlot(site.x, site.y); end);
-			if plot ~= nil then
-				-- ⚠ Distance from the SETTLER, not from the capital. A settler
-				-- built in the third city is the one that has to walk.
-				local dist = 0;
-				if ux >= 0 then
-					dist = plotDistance(ux, uy, site.x, site.y);
-				end
-				if best == nil or dist < bestDist then
-					best, bestKey, bestRank, bestDist = plot, key, i, dist;
-				end
-				considered = considered + 1;
-				-- The window keeps this a tie-break among CIVVIS's best ground
-				-- rather than a licence to settle anywhere near. Without it the
-				-- nearest legal plot on the whole map wins and the ranking is
-				-- discarded.
-				if considered >= window then break; end
-			end
-		end
-	end
-	if best ~= nil then
-		-- Both numbers, because "a plan site was chosen" reads green whether the
-		-- window saved a walk or changed nothing. `rank` says how far down
-		-- CIVVIS's ranking the choice was; `dist` is the walk it now faces.
-		planFires.near_rank = (planFires.near_rank or 0) + bestRank;
-		planFires.near_dist = (planFires.near_dist or 0) + (bestDist or 0);
-		planFires.near_n = (planFires.near_n or 0) + 1;
-		return best, bestKey, bestRank, bestDist;
-	end
-	return nil;
-end
-
 findSettleSite = function(player, pid, unit, turn)
-	-- CIVVIS first. Its ranking already accounts for ring yields, fresh water,
-	-- spacing against our own cities and distance; the hand-rolled search below is
-	-- the fallback for ground the plan does not cover (a map it never saw, or every
-	-- planned site already used).
-	-- ⚠⚠ THE PLAN MUST NEVER BE ABLE TO STOP US FOUNDING A CITY.
-	--
-	-- It has now broken two runs. Advice that can starve the empire is not advice,
-	-- and a settle plan is a nicety next to having any city at all: run
-	-- settler-20260730T053416Z sat at **cities = 0 through turn 80** with one settler
-	-- walking at a site it could not reach.
-	--
-	-- So the plan is abandoned outright if it has not produced a capital by
-	-- `PlanGiveUpTurn`. CIVVIS keeps the decision when CIVVIS is working; the
-	-- hand-rolled search takes over the moment the plan is demonstrably not.
-	local planUsable = turn < (cfg.PlanGiveUpTurn or 25)
-		or cityCount(player) > 0;
-	local planned, planKey, planRank, planDist = nil, nil, nil, nil;
-	if planUsable then
-		planned, planKey, planRank, planDist = planSite(player, pid, unit);
-	end
-	if planned ~= nil then
-		planFires.plan = planFires.plan + 1;
-		emit("settle_choice", {
-			source = "plan",
-			x = try(function() return planned:GetX(); end, -1),
-			y = try(function() return planned:GetY(); end, -1),
-			-- `rank` is how far down CIVVIS's ranking this choice sat and `dist`
-			-- is the walk it faces. Together they price the near-window: rank
-			-- rising while dist falls is the trade working, rank rising while
-			-- dist does NOT fall means the window is only losing value.
-			rank = planRank,
-			dist = planDist,
-			turn = turn,
-		});
-		return planned;
-	end
+	-- The built-in fallback ranks local legal ground. Per-turn CIVVIS decisions
+	-- arrive through the order database; a saved map from another random world is
+	-- not a valid substitute for either route.
 	local id = try(function() return unit:GetID(); end, -1);
 	if siteMemo.turn ~= turn then siteMemo = { turn = turn, sites = {} }; end
 	local cached = siteMemo.sites[id];
@@ -1389,11 +1192,9 @@ findSettleSite = function(player, pid, unit, turn)
 				-- Nothing charged distance from the EMPIRE. `nearest` was computed
 				-- and then only ever compared against the minimum spacing.
 				--
-					-- ⚠ A PENALTY, NOT A HARD CAP — deliberately, and I wrote it as a cap
-					-- first. A cap is authority, and three regressions this session came
-					-- from a mechanism handed a decision with no recourse when it was wrong:
-					-- the settle plan starved the empire to ZERO cities through turn 90 in
-					-- exactly that way. On a Tiny map shared with three rivals the 3..6 band
+					-- ⚠ A PENALTY, NOT A HARD CAP — deliberately. A cap is authority, and
+					-- a mechanism handed a decision with no recourse can strand a settler.
+					-- On a Tiny map shared with three rivals the 3..6 band
 					-- can hold no legal ground at all, and a cap would then strand the
 					-- settler for the whole game.
 					--
@@ -1477,9 +1278,7 @@ findSettleSite = function(player, pid, unit, turn)
 	siteMemo.sites[id] = best or false;
 	if best ~= nil then
 		committedSite[id] = { x = best:GetX(), y = best:GetY() };
-		-- The other half of the fires-check: a site the hand-rolled search chose.
-		-- `plan` against `search` is what says whether CIVVIS is actually deciding.
-		planFires.search = planFires.search + 1;
+		-- Keep a per-site event for the settler trace and live diagnosis.
 		emit("settle_choice", {
 			source = "search",
 			x = best:GetX(), y = best:GetY(), turn = turn,
@@ -4389,9 +4188,9 @@ local function chooseEnvoy(player, pid, turn)
 	-- UI script too, exactly like this one. What differs is holding a pointer to
 	-- a gameplay sub-object across operations that rewrite it. That matches the
 	-- recorded signature far better than a bad immediate call does: three
-	-- EXC_BAD_ACCESS faults in the game core on seed 425255, each **6-9 turns
-	-- AFTER** the single envoy was placed, against 0-for-2 on the same seed with
-	-- no envoy placed. A delayed fault is corrupted bookkeeping.
+	-- EXC_BAD_ACCESS faults in requested-seed-425255 runs, each **6-9 turns
+	-- AFTER** the single envoy was placed, while 0-for-2 no-envoy runs did not
+	-- crash. A delayed fault is corrupted bookkeeping.
 	--
 	-- ⚠ This does NOT re-enable envoys. `cfg.EnvoyEnabled` stays off and this
 	-- whole function is still unreachable in deployment, so shipping this changes
@@ -4488,15 +4287,17 @@ local SOFT_BLOCKERS = {
 	-- legacy heuristic fallback and should stay off in a CIVVIS-decided run.
 	ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT = true,
 	-- ⚠⚠ GIVE_INFLUENCE_TOKEN IS BACK HERE, AND THE REASON MATTERS. Answering it
-	-- with `chooseEnvoy` CRASHES THE GAME CORE. On one fixed seed (425255), same
-	-- flags, same everything:
+	-- with `chooseEnvoy` CRASHES THE GAME CORE. Across repeated requested seed
+	-- 425255 runs with the same flags:
 	--     envoy_events = 0  ->  t92, t106      no crash
 	--     envoy_events = 1  ->  t44, t47, t45  EXC_BAD_ACCESS each time
 	-- Three fresh SIGSEGVs in `GameCore_XP2.dll` on the `Game Core` thread, 6-9
 	-- turns AFTER the single envoy was placed — a delayed fault, so corrupted
 	-- state rather than a bad immediate call. Civ 6 does segfault on its own
 	-- (there is a pre-envoy crash at t25), but 3-for-3 against 0-for-2 on the
-	-- SAME SEED is a controlled comparison, not a coincidence.
+	-- The real-Civ6 seed request does not pin world generation, so this is not a
+	-- same-map control. The 3-for-3 versus 0-for-2 result is still a concrete
+	-- crash-isolation signal; it is not evidence that the seed had any effect.
 	-- ⚠ THE "WRONG CONTEXT" HYPOTHESIS IS DEAD — do not spend another cycle on it.
 	-- The shipped `UI/PartialScreens/CityStates.lua` `Close()` calls
 	-- `SetGivingTokensConsidered(true)` from a UI script, exactly like this agent.
@@ -4509,7 +4310,8 @@ local SOFT_BLOCKERS = {
 	--
 	-- Set `EnvoyEnabled` to re-enable. `EnvoyPlace` and `EnvoyConsider` already
 	-- switch the two mutations independently, so isolating them is a CONFIG
-	-- change, not a code change: place-only, then consider-only, same seed.
+	-- change, not a code change: place-only, then consider-only, across
+	-- independent random-world samples.
 	-- ⚠ Do it on a throwaway batch, never on a running one. Until then the
 	-- known-stable skip stands, and the ten-minute wedge is the lesser failure.
 	--
@@ -8142,7 +7944,7 @@ local function applyOrders(player, pid, turn, rows)
 	-- this event, so its absence also disabled the stall watchdog's only clock.
 	--
 	-- Leaner than the heuristic path's record on purpose: the fields it omits
-	-- (`war_blocked`, the settle-plan fires) describe built-ins that did not run.
+	-- (`war_blocked`) describe built-ins that did not run.
 	local counts = countUnits(player);
 	local rivalTop, metCount = rivalBest(player, pid);
 	local ourScore = try(function() return player:GetScore(); end, -1);
@@ -8501,18 +8303,6 @@ local function playTurn(player, pid, turn)
 		-- Whether the army was allowed to attack this turn, and how big it was.
 		army = armyNow,
 		assaulting = assaultReady,
-		-- Which brain is choosing city sites. `plan_sites` staying at zero while a
-		-- plan is configured means CIVVIS is NOT deciding, whatever the config says.
-		plan_sites = planFires.plan,
-		own_sites = planFires.search,
-		plan_offered = planFires.offered,
-		-- The near-window's price and its payoff, as running totals. Divide by
-		-- `near_n` for the means. ⚠ Both are needed: `near_rank` alone says only
-		-- that value was given up, `near_dist` alone says only that walks are
-		-- short. The trade is good when dist falls faster than rank rises.
-		near_rank = planFires.near_rank or 0,
-		near_dist = planFires.near_dist or 0,
-		near_n = planFires.near_n or 0,
 		actions = lastActions,
 		ticks_seen = ticksSeen, ticks_taken = ticksTaken,
 		blocker = blockerName(currentBlocker(pid)),
