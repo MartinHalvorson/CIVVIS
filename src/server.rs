@@ -4452,6 +4452,43 @@ mod tests {
     use std::sync::{mpsc, Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
 
+    #[test]
+    fn browser_gives_every_shipped_improvement_a_named_tile_marker() {
+        let markers = EMBEDDED_INDEX
+            .split_once("const IMPROVEMENT_MARKERS = Object.freeze({")
+            .expect("the improvement marker registry")
+            .1
+            .split_once("\n});")
+            .expect("the end of the improvement marker registry")
+            .0;
+        for improvement in crate::rules::Rules::embedded().improvements.keys() {
+            assert!(
+                markers.contains(&format!("\n  {}:", improvement.as_str())),
+                "{improvement} has no deliberate browser tile marker"
+            );
+        }
+
+        let renderer = EMBEDDED_INDEX
+            .split_once("function drawImprovement(t, x, y) {")
+            .expect("the improvement renderer")
+            .1
+            .split_once("\n// Every city drew")
+            .expect("the end of the improvement renderer")
+            .0;
+        assert!(renderer.contains("const marker = IMPROVEMENT_MARKERS[imp] || \"unknown\";"));
+        let marker_branch = renderer
+            .find("} else if (marker !== \"unknown\") {")
+            .expect("the named-marker branch");
+        let anonymous_fallback = renderer
+            .find("// Everything rarer still reads as a built installation")
+            .expect("the anonymous fallback");
+        assert!(
+            marker_branch < anonymous_fallback,
+            "known improvements must reach their marker before the generic fallback"
+        );
+        assert!(renderer.contains("paintImprovementMarker(marker, t, x, y, dir);"));
+    }
+
     /// The pace a viewer picks is what a turn costs, so the seats' waits have
     /// to add back up to it — at any player count, with minors on their
     /// quarter beat. A per-seat pace made big games crawl at the same label.
@@ -7196,6 +7233,9 @@ mod tests {
         assert!(sidebar.contains("id=\"map-search-input\" type=\"search\""));
         assert!(sidebar.contains("id=\"map-search-civ\""));
         assert!(sidebar.contains("aria-live=\"polite\""));
+        assert!(sidebar.contains(
+            "<details class=\"sidebar-section\" id=\"maplensessec\" data-section=\"map-lenses\">"
+        ));
         assert!(EMBEDDED_INDEX.contains(
             "#map-utility-panel {\n    position: relative; z-index: 3; flex: 0 0 auto;"
         ));
@@ -8017,8 +8057,11 @@ mod tests {
             .find("<summary>Keyboard shortcuts</summary>")
             .expect("keyboard shortcuts");
         let map_lenses = EMBEDDED_INDEX
-            .find("<div id=\"map-lenses\"")
-            .expect("map lens menu");
+            .find("<details class=\"sidebar-section\" id=\"maplensessec\" data-section=\"map-lenses\">")
+            .expect("collapsible map lens section");
+        let map_utility = EMBEDDED_INDEX
+            .find("<div id=\"map-utility-panel\"")
+            .expect("map utility band");
         let visible_tile_search = EMBEDDED_INDEX
             .find("<div id=\"map-search\"")
             .expect("visible tile search");
@@ -8040,6 +8083,7 @@ mod tests {
                 && war_log < event_log
                 && event_log < government
                 && government < map_lenses
+                && map_lenses < map_utility
                 && map_lenses < visible_tile_search
                 && visible_tile_search < keyboard_shortcuts,
             "left panel should show controls, interface settings, game setup, strategy, \
@@ -8088,24 +8132,36 @@ mod tests {
             "the switches read down the rail, then the map dock in the far corner"
         );
         assert!(EMBEDDED_INDEX.contains("id=\"map-lens-exit\""));
-        assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #map-lenses"));
-        // The menu belongs to the deck's lower utility band, where a dense
-        // two-column grid keeps every manual lens directly reachable. Search
-        // follows it before the keyboard drawer, rather than occupying a map
-        // overlay that would compete with an active lens.
-        let utility = EMBEDDED_INDEX
-            .split_once("<div id=\"map-utility-panel\"")
-            .expect("map utility band")
-            .1;
-        let lenses = utility.find("<div id=\"map-lenses\"").expect("map lens menu");
-        let search = utility.find("<div id=\"map-search\"").expect("visible tile search");
-        let strip = utility.find("<div id=\"map-lens-strip\"").expect("lens grid");
-        let close = utility
+        assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #maplensessec"));
+        // Lenses are a first-class deck section: collapsed by default, saved
+        // with the other disclosures, and expanded only when the viewer wants
+        // to change the map perspective. Search stays in the lower utility
+        // band, so a query remains reachable without opening the lens grid.
+        let lens_section = &EMBEDDED_INDEX[map_lenses..map_utility];
+        let lens_opening = lens_section
+            .split_once('>')
+            .expect("map lens section opening tag")
+            .0;
+        let lenses = lens_section.find("<div id=\"map-lenses\"").expect("map lens menu");
+        let strip = lens_section.find("<div id=\"map-lens-strip\"").expect("lens grid");
+        let close = lens_section
             .find("data-overlay-close=\"lenses\"")
             .expect("lens dismiss control");
         assert!(
-            lenses < strip && strip < search && close < strip,
-            "the menu header holds its dismiss control, the lens grid follows it, and search follows the menu"
+            lenses < strip && close < strip,
+            "the collapsible menu header holds its dismiss control and the lens grid follows it"
+        );
+        assert!(lens_section.contains("<summary class=\"section-label\">"));
+        assert!(lens_section.contains("data-section=\"map-lenses\""));
+        assert!(
+            !lens_opening.contains(" open"),
+            "a fresh profile should start with the map lens section collapsed"
+        );
+        let utility = &EMBEDDED_INDEX[map_utility..];
+        assert!(utility.contains("<div id=\"map-search\""));
+        assert!(
+            !utility.contains("<div id=\"map-lenses\""),
+            "the fixed utility band should not duplicate the collapsible lens section"
         );
         assert!(EMBEDDED_INDEX.contains(
             "#map-lens-strip {\n    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));"
@@ -8113,6 +8169,7 @@ mod tests {
         assert!(utility.contains("id=\"map-search-civ\""));
         assert!(EMBEDDED_INDEX
             .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
+        assert!(EMBEDDED_INDEX.contains("close.closest(\"#maplensessec\")"));
         // One instrument, one name. The switch, the title bar it is dragged by
         // and the label that follows it across the map all say "World minimap",
         // so nothing in the interface reads as a second, separate world map —
@@ -8471,11 +8528,25 @@ mod tests {
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
                 .count(),
-            7,
+            8,
             "every top-level left-panel section should be collapsible"
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
         assert!(EMBEDDED_INDEX.contains("civvis-sidebar-sections-v1"));
+        assert!(EMBEDDED_INDEX.contains("section.id === \"maplensessec\" && section.open"));
+        assert!(EMBEDDED_INDEX.contains("const revealMapLensSection = () => {"));
+        assert!(EMBEDDED_INDEX.contains("const scheduleMapLensSectionReveal = () => {"));
+        assert!(EMBEDDED_INDEX.contains(
+            "section.scrollIntoView({block:\"nearest\", inline:\"nearest\"})"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "for (const delay of [0, 250, 750]) {"
+        ));
+        assert!(EMBEDDED_INDEX.contains("window.setTimeout(revealMapLensSection, delay);"));
+        assert!(EMBEDDED_INDEX.contains("scheduleMapLensSectionReveal();"));
+        assert!(EMBEDDED_INDEX.contains(
+            "window.addEventListener(\"resize\", revealMapLensSection, {passive:true});"
+        ));
         // Collapsing the command deck collapses the deck alone. Every map
         // overlay is switched from the deck's Interface Settings instead, so the
         // two controls stay independent and the deck's width can be handed to
@@ -9490,7 +9561,7 @@ mod tests {
     }
 
     #[test]
-    fn strategic_mountains_and_volcanoes_share_a_fifty_percent_larger_icon() {
+    fn strategic_mountains_and_volcanoes_are_centered_top_down_landforms() {
         let icon = EMBEDDED_INDEX
             .split("const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;")
             .nth(1)
@@ -9499,13 +9570,36 @@ mod tests {
         assert!(icon.contains(
             "cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE)"
         ));
+        assert!(icon.contains("const mountainRadius = volcano ? 15 : 15.5;"));
+        assert!(icon.contains("cx.arc(0, 0, mountainRadius, 0, 7);"));
         assert!(icon.contains(
-            "const rimY = -7, rimHalfWidth = 5.3, baseY = 19, baseHalfWidth = 16"
+            "const rimRadius = 10.5, craterRadius = 6.2, lavaRadius = 3.7;"
         ));
-        assert!(icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
-        assert!(icon.contains("cx.ellipse(0, rimY, rimHalfWidth, 1.35"));
+        assert!(icon.contains("cx.arc(0, 0, craterRadius, 0, 7);"));
+        assert!(icon.contains("const peakX = 0, peakY = 0;"));
+        assert!(icon.contains("cx.quadraticCurveTo(-6, 1, peakX, peakY);"));
+        assert!(!icon.contains("const rimY = -7"));
+        assert!(!icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false)"));
+
+        let wonder = EMBEDDED_INDEX
+            .split("  volcano(x, y, k, art) {")
+            .nth(1)
+            .and_then(|tail| tail.split("  ruins(x, y, k, art) {").next())
+            .expect("top-down Natural Wonder volcano renderer");
+        assert!(wonder.contains("const calderaRadius = 14 * k;"));
+        assert!(wonder.contains("cx.arc(x, y, calderaRadius, 0, 7);"));
+        assert!(!wonder.contains("wonderFace(x, y, k, art.tint"));
+
+        let effects = EMBEDDED_INDEX
+            .split("function drawFeatureEffects")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawStrategicMarsh").next())
+            .expect("volcano feature effects renderer");
+        assert!(effects.contains("const erupting = t.volcano_state === 2;"));
+        assert!(effects.contains("[[8, .82], [12, .44]]"));
+        assert!(!effects.contains("[-5,-18,5]"));
     }
 
     #[test]

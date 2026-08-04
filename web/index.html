@@ -464,18 +464,16 @@
     background: linear-gradient(145deg, #172723fa, #0b1714fc);
     box-shadow: 0 -12px 32px #0008;
   }
-  /* These are the map tools a viewer reaches for while reading the command
-     deck. They stay at its lower edge, immediately before the keyboard
-     drawer: lenses first, then the visible-tile search that can refine an
-     active lens without replacing it. */
+  /* Search is a compact, always-available map tool at the deck's lower edge.
+     Lenses live with the other collapsible command-deck sections above it, so
+     a viewer can reclaim the grid until they want to change perspective. */
   #map-utility-panel {
     position: relative; z-index: 3; flex: 0 0 auto; padding: 8px 10px 10px;
     border-top: 1px solid #355047; background: linear-gradient(180deg, #101d1a, #091310);
     box-shadow: 0 -10px 28px #0005;
   }
   #map-lenses {
-    min-width: 0; padding: 7px; border: 1px solid #3c554c; border-radius: 11px;
-    background: #0a1512df; box-shadow: inset 0 1px #ffffff08, 0 7px 18px #0004;
+    min-width: 0;
   }
   .map-lens-head {
     display: flex; align-items: center; gap: 5px; min-height: 22px; margin-bottom: 6px;
@@ -557,7 +555,7 @@
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   #map-search {
-    min-width: 0; margin-top: 7px; padding: 6px 7px; border: 1px solid #3c554c; border-radius: 11px;
+    min-width: 0; padding: 6px 7px; border: 1px solid #3c554c; border-radius: 11px;
     background: #0a1512df; box-shadow: inset 0 1px #ffffff08, 0 7px 18px #0004;
   }
   #map-search:focus-within {
@@ -2724,7 +2722,7 @@
   body.overlay-victory-hidden #victoryhud,
   body.overlay-minimap-hidden .minimap-frame,
   body.overlay-controls-hidden #zoomctl,
-  body.overlay-lenses-hidden #map-lenses { display: none !important; }
+  body.overlay-lenses-hidden #maplensessec { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
 
@@ -3864,79 +3862,88 @@
       <div class="sec"><div id="gov"></div></div>
     </details>
 
+    <details class="sidebar-section" id="maplensessec" data-section="map-lenses">
+      <summary class="section-label">
+        <span class="section-title"><span class="section-icon" aria-hidden="true">◐</span><span>Map lenses</span></span>
+        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
+      </summary>
+      <div class="sec">
+        <div id="map-lenses" role="toolbar" aria-label="Map lenses">
+          <div class="map-lens-head">
+            <span class="map-lens-title">Map lenses</span>
+            <button id="map-lens-exit" type="button" hidden
+              title="Exit the active map lens" aria-label="Exit the active map lens">
+              <span class="map-lens-icon" aria-hidden="true">⊘</span>
+              <span class="map-lens-label">Clear</span>
+            </button>
+            <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Interface Settings" title="Hide map lenses · restore in Interface Settings">✕</button>
+          </div>
+          <div id="map-lens-strip" role="none">
+            <button type="button" data-map-lens="continent" aria-pressed="false"
+              title="Continent lens — geographic continent regions">
+              <span class="map-lens-icon" aria-hidden="true">◒</span>
+              <span class="map-lens-label">Continent</span>
+            </button>
+            <button type="button" data-map-lens="political" aria-pressed="false"
+              title="Political lens — territory grouped by civilization">
+              <span class="map-lens-icon" aria-hidden="true">◩</span>
+              <span class="map-lens-label">Political</span>
+            </button>
+            <button type="button" data-map-lens="settler" aria-pressed="false"
+              title="Settler map — legal sites, quality, and water access (2)">
+              <span class="map-lens-icon" aria-hidden="true">⌂</span>
+              <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
+            </button>
+            <button type="button" data-map-lens="empire" aria-pressed="false"
+              title="Empire lens — city borders, districts, adjacency, and wonders">
+              <span class="map-lens-icon" aria-hidden="true">◈</span>
+              <span class="map-lens-label">Empire</span>
+            </button>
+            <button type="button" data-map-lens="religion" aria-pressed="false"
+              title="Religion lens — majority faith and religious pressure">
+              <span class="map-lens-icon" aria-hidden="true">✦</span>
+              <span class="map-lens-label">Religion</span>
+            </button>
+            <button type="button" data-map-lens="government" aria-pressed="false"
+              title="Government lens — territory grouped by form of government">
+              <span class="map-lens-icon" aria-hidden="true">♜</span>
+              <span class="map-lens-label">Government</span>
+            </button>
+            <button type="button" data-map-lens="appeal" aria-pressed="false"
+              title="Appeal lens — Breathtaking through Disgusting tiles">
+              <span class="map-lens-icon" aria-hidden="true">❀</span>
+              <span class="map-lens-label">Appeal</span>
+            </button>
+            <button type="button" data-map-lens="tourism" aria-pressed="false"
+              title="Tourism lens — exact Tourism generated by each tile">
+              <span class="map-lens-icon" aria-hidden="true">♪</span>
+              <span class="map-lens-label">Tourism</span>
+            </button>
+            <button type="button" data-map-lens="loyalty" aria-pressed="false"
+              title="Loyalty lens — population pressure and city loyalty">
+              <span class="map-lens-icon" aria-hidden="true">⚑</span>
+              <span class="map-lens-label">Loyalty</span>
+            </button>
+            <button type="button" data-map-lens="power" aria-pressed="false"
+              title="Power lens — city generation, demand, and status">
+              <span class="map-lens-icon" aria-hidden="true">⚡</span>
+              <span class="map-lens-label">Power</span>
+            </button>
+            <details id="district-lens-section">
+              <summary title="District adjacency lenses">
+                <span class="map-lens-icon" aria-hidden="true">⬡</span>
+                <span class="map-lens-label">District adjacency</span>
+                <span class="district-lens-caret" aria-hidden="true">›</span>
+              </summary>
+              <div id="district-lens-list" role="group" aria-label="District adjacency lenses"></div>
+            </details>
+          </div>
+        </div>
+      </div>
+    </details>
+
   </div>
   <div id="map-utility-panel" aria-label="Map tools">
-    <div id="map-lenses" role="toolbar" aria-label="Map lenses">
-      <div class="map-lens-head">
-        <span class="map-lens-title">Map lenses</span>
-        <button id="map-lens-exit" type="button" hidden
-          title="Exit the active map lens" aria-label="Exit the active map lens">
-          <span class="map-lens-icon" aria-hidden="true">⊘</span>
-          <span class="map-lens-label">Clear</span>
-        </button>
-        <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Interface Settings" title="Hide map lenses · restore in Interface Settings">✕</button>
-      </div>
-      <div id="map-lens-strip" role="none">
-        <button type="button" data-map-lens="continent" aria-pressed="false"
-          title="Continent lens — geographic continent regions">
-          <span class="map-lens-icon" aria-hidden="true">◒</span>
-          <span class="map-lens-label">Continent</span>
-        </button>
-        <button type="button" data-map-lens="political" aria-pressed="false"
-          title="Political lens — territory grouped by civilization">
-          <span class="map-lens-icon" aria-hidden="true">◩</span>
-          <span class="map-lens-label">Political</span>
-        </button>
-        <button type="button" data-map-lens="settler" aria-pressed="false"
-          title="Settler map — legal sites, quality, and water access (2)">
-          <span class="map-lens-icon" aria-hidden="true">⌂</span>
-          <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
-        </button>
-        <button type="button" data-map-lens="empire" aria-pressed="false"
-          title="Empire lens — city borders, districts, adjacency, and wonders">
-          <span class="map-lens-icon" aria-hidden="true">◈</span>
-          <span class="map-lens-label">Empire</span>
-        </button>
-        <button type="button" data-map-lens="religion" aria-pressed="false"
-          title="Religion lens — majority faith and religious pressure">
-          <span class="map-lens-icon" aria-hidden="true">✦</span>
-          <span class="map-lens-label">Religion</span>
-        </button>
-        <button type="button" data-map-lens="government" aria-pressed="false"
-          title="Government lens — territory grouped by form of government">
-          <span class="map-lens-icon" aria-hidden="true">♜</span>
-          <span class="map-lens-label">Government</span>
-        </button>
-        <button type="button" data-map-lens="appeal" aria-pressed="false"
-          title="Appeal lens — Breathtaking through Disgusting tiles">
-          <span class="map-lens-icon" aria-hidden="true">❀</span>
-          <span class="map-lens-label">Appeal</span>
-        </button>
-        <button type="button" data-map-lens="tourism" aria-pressed="false"
-          title="Tourism lens — exact Tourism generated by each tile">
-          <span class="map-lens-icon" aria-hidden="true">♪</span>
-          <span class="map-lens-label">Tourism</span>
-        </button>
-        <button type="button" data-map-lens="loyalty" aria-pressed="false"
-          title="Loyalty lens — population pressure and city loyalty">
-          <span class="map-lens-icon" aria-hidden="true">⚑</span>
-          <span class="map-lens-label">Loyalty</span>
-        </button>
-        <button type="button" data-map-lens="power" aria-pressed="false"
-          title="Power lens — city generation, demand, and status">
-          <span class="map-lens-icon" aria-hidden="true">⚡</span>
-          <span class="map-lens-label">Power</span>
-        </button>
-        <details id="district-lens-section">
-          <summary title="District adjacency lenses">
-            <span class="map-lens-icon" aria-hidden="true">⬡</span>
-            <span class="map-lens-label">District adjacency</span>
-            <span class="district-lens-caret" aria-hidden="true">›</span>
-          </summary>
-          <div id="district-lens-list" role="group" aria-label="District adjacency lenses"></div>
-        </details>
-      </div>
-    </div>
     <div id="map-search" role="search" aria-label="Search visible map tiles">
       <div class="map-search-entry">
         <span id="map-search-icon" aria-hidden="true">⌕</span>
@@ -3977,14 +3984,39 @@ function initSidebarSections() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(SIDEBAR_SECTION_STATE_KEY) || "{}"); }
   catch (_) { saved = {}; }
+  const revealMapLensSection = () => {
+    const section = document.getElementById("maplensessec");
+    if (!section?.open) return;
+    requestAnimationFrame(() => section.scrollIntoView({block:"nearest", inline:"nearest"}));
+  };
+  const scheduleMapLensSectionReveal = () => {
+    // Browsers can restore a <details> disclosure after this script's first
+    // layout pass. These bounded retries see that late open state; a closed
+    // fresh profile is a no-op because revealMapLensSection returns first.
+    for (const delay of [0, 250, 750]) {
+      window.setTimeout(revealMapLensSection, delay);
+    }
+  };
   for (const section of document.querySelectorAll("#side details.sidebar-section[data-section]")) {
     const key = section.dataset.section;
     if (Object.prototype.hasOwnProperty.call(saved, key)) section.open = !!saved[key];
     section.addEventListener("toggle", () => {
       saved[key] = section.open;
       localStorage.setItem(SIDEBAR_SECTION_STATE_KEY, JSON.stringify(saved));
+      // The lens grid is intentionally taller than a closed deck row. It sits
+      // at the bottom of the scrolling command sections, so reveal it in that
+      // scroll container when opened instead of leaving its controls behind
+      // the fixed search and keyboard drawers below.
+      if (section.id === "maplensessec" && section.open) {
+        revealMapLensSection();
+      }
     });
   }
+  // A saved disclosure is applied before its toggle listener is attached. It
+  // needs the same reveal as an interactive opening, otherwise a persisted
+  // lower-deck lens grid can reload just beneath the scroll viewport.
+  scheduleMapLensSectionReveal();
+  window.addEventListener("resize", revealMapLensSection, {passive:true});
 }
 initSidebarSections();
 function initAdvancedSettings() {
@@ -4283,11 +4315,11 @@ const CIV6_UNIT_ICON_TYPES = [
   "man_at_arms", "maryannu_chariot_archer", "mechanized_infantry", "medic",
   "military_engineer", "missile_cruiser", "missionary", "mobile_sam",
   "modern_armor", "modern_at", "musketman", "naturalist",
-  "nuclear_submarine", "observation_balloon", "oromo_cavalry", "pike_and_shot", "pikeman",
+  "nau", "nuclear_submarine", "observation_balloon", "oromo_cavalry", "pike_and_shot", "pikeman",
   "pitati_archer", "privateer", "quadrireme", "ranger", "rock_band",
   "rocket_artillery", "saka_horse_archer", "scout", "settler", "siege_tower",
   "skirmisher", "slinger", "spearman", "spec_ops", "spy", "submarine",
-  "supply_convoy", "swordsman", "tagma", "tank", "trader", "trebuchet",
+  "supply_convoy", "swordsman", "tagma", "tank", "toa", "trader", "trebuchet",
   "war_cart", "warrior", "winged_hussar", "warrior_monk"
 ];
 const CIV6_UNIT_ICON_INDEX = new Map(
@@ -4872,7 +4904,7 @@ function runOverlayDismiss(event) {
   const name = close.dataset.overlayClose;
   const source = name === "minimap" ? close.closest(".minimap-frame")
     : name === "controls" ? close.closest("#zoomctl")
-    : name === "lenses" ? close.closest("#map-lenses")
+    : name === "lenses" ? close.closest("#maplensessec")
     : document.getElementById(name === "players" ? "playerhud" : "victoryhud");
   dismissOverlay(name, source);
   return true;
@@ -9827,17 +9859,24 @@ const WONDER_PAINTER = {
     }
   },
   volcano(x, y, k, art) {
-    wonderShadow(x, y, 15 * k);
-    wonderFace(x, y, k, art.tint, 24 * k, 13 * k);
-    if (art.ice) {
-      cx.fillStyle = "#dce8ed";
-      tri(x - 6 * k * LITF, y - 16 * k, x, y - 24 * k, x + 5 * k * LITF, y - 16 * k);
-    } else {
-      cx.fillStyle = "#ef5b25";
-      cx.beginPath(); cx.ellipse(x, y - 23 * k, 3.4 * k, 1.4 * k, 0, 0, 7); cx.fill();
-    }
-    cx.fillStyle = "rgba(150,150,148,.42)";
-    cx.beginPath(); cx.ellipse(x + 2 * k, y - 31 * k, 6 * k, 4 * k, 0, 0, 7); cx.fill();
+    // A volcano seen from a map is a caldera, not a side-on cone. Its rim,
+    // dark throat, and hot centre all share one centre so it remains a simple
+    // round landform at every Natural Wonder footprint size.
+    const calderaRadius = 14 * k;
+    cx.fillStyle = "rgba(0,0,0,.20)";
+    cx.beginPath(); cx.arc(x + 1.35 * k, y + 1.7 * k, calderaRadius, 0, 7); cx.fill();
+    cx.fillStyle = shade(art.tint, .74);
+    cx.beginPath(); cx.arc(x, y, calderaRadius, 0, 7); cx.fill();
+    cx.strokeStyle = shade(art.tint, 1.34); cx.lineWidth = 2.7 * k;
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .72, 0, 7); cx.stroke();
+    cx.strokeStyle = shade(art.tint, .58); cx.lineWidth = 2.1 * k;
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .52, 0, 7); cx.stroke();
+    cx.fillStyle = art.ice ? "#9baab0" : "#221714";
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .38, 0, 7); cx.fill();
+    cx.fillStyle = art.ice ? "#dce8ed" : "#ef5b25";
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .23, 0, 7); cx.fill();
+    cx.strokeStyle = art.ice ? "#f4fbfd" : "#ffbd4b"; cx.lineWidth = 1.25 * k;
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .15, 0, 7); cx.stroke();
   },
   ruins(x, y, k, art) {
     wonderShadow(x, y, 15 * k);
@@ -10029,34 +10068,52 @@ function drawStrategicVolcanicSoil(t, x, y) {
 
 const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;
 function drawStrategicMountainIcon(x, y, volcano) {
+  const mountainRadius = volcano ? 15 : 15.5;
   cx.save();
   cx.translate(x, y);
   cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE);
   cx.fillStyle = volcano ? "#37302d" : "#565149";
+  cx.beginPath(); cx.arc(0, 0, mountainRadius, 0, 7); cx.fill();
   if (volcano) {
-    // A crater is a horizontal opening, so its rim must meet a truncated cone
-    // at the ellipse's widest points. The old pointed mountain put the crater
-    // part-way down its slope, making the orange oval visibly float.
-    const rimY = -7, rimHalfWidth = 5.3, baseY = 19, baseHalfWidth = 16;
-    cx.beginPath();
-    cx.moveTo(-baseHalfWidth, baseY);
-    cx.lineTo(-rimHalfWidth, rimY);
-    cx.lineTo(rimHalfWidth, rimY);
-    cx.lineTo(baseHalfWidth, baseY);
-    cx.closePath(); cx.fill();
+    // A centered caldera keeps this landmark top-down. The warmer northwest
+    // rim and darker southeast rim add just enough depth without changing the
+    // plan-view silhouette into a cone laid on its side.
+    const rimRadius = 10.5, craterRadius = 6.2, lavaRadius = 3.7;
+    cx.strokeStyle = "#705d51"; cx.lineWidth = 2.8;
+    cx.beginPath(); cx.arc(0, 0, rimRadius, 0, 7); cx.stroke();
+    cx.strokeStyle = "#9f8873"; cx.lineWidth = 1.8;
+    cx.beginPath(); cx.arc(0, 0, rimRadius, Math.PI * 1.08, Math.PI * 1.82); cx.stroke();
+    cx.fillStyle = "#171210";
+    cx.beginPath(); cx.arc(0, 0, craterRadius, 0, 7); cx.fill();
     // Two hot cores over a soft bloom make this read as emitted lava light,
-    // not an orange badge pasted onto the now-near-black basalt.
+    // not an orange badge pasted onto the now-round basalt rim.
     cx.shadowColor = "#ff4b19";
     cx.shadowBlur = 9;
     cx.fillStyle = "#f04f1f";
-    cx.beginPath(); cx.ellipse(0, rimY, rimHalfWidth, 1.35, 0, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(0, 0, lavaRadius, 0, 7); cx.fill();
     cx.shadowBlur = 4;
     cx.fillStyle = "#ffb23c";
-    cx.beginPath(); cx.ellipse(0, rimY, rimHalfWidth * .68, .72, 0, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(-.8, -.8, lavaRadius * .52, 0, 7); cx.fill();
   } else {
-    tri(-14, 10, 0, -14, 14, 10);
-    cx.fillStyle = "#3c3934";
-    tri(0, -14, 0, 10, 14, 10);
+    // Closed contour bands keep the mountain's footprint on the ground. Four
+    // ridges trace inward to the middle peak, so it reads as elevation rather
+    // than as a sideways triangle hovering over its tile.
+    const peakX = 0, peakY = 0;
+    cx.fillStyle = "#6d675b";
+    cx.beginPath(); cx.arc(peakX, peakY, 10.6, 0, 7); cx.fill();
+    cx.fillStyle = "#817967";
+    cx.beginPath(); cx.arc(peakX, peakY, 5.7, 0, 7); cx.fill();
+    cx.strokeStyle = "#37332e"; cx.lineWidth = 1.25; cx.lineCap = "round";
+    cx.beginPath();
+    cx.moveTo(-12, 7); cx.quadraticCurveTo(-6, 1, peakX, peakY);
+    cx.moveTo(12, 7); cx.quadraticCurveTo(6, 1, peakX, peakY);
+    cx.moveTo(-7, -11); cx.quadraticCurveTo(-3, -5, peakX, peakY);
+    cx.moveTo(7, -11); cx.quadraticCurveTo(3, -5, peakX, peakY);
+    cx.stroke();
+    cx.strokeStyle = "#a89c85"; cx.lineWidth = 1.2;
+    cx.beginPath(); cx.arc(peakX, peakY, 13.3, Math.PI * 1.15, Math.PI * 1.9); cx.stroke();
+    cx.fillStyle = "#c9bda4";
+    cx.beginPath(); cx.arc(peakX, peakY, 2.25, 0, 7); cx.fill();
   }
   cx.restore();
 }
@@ -10076,10 +10133,18 @@ function drawFeatureEffects(t, x, y) {
     cx.beginPath(); cx.ellipse(x, y + 4, 22, 11, 0, 0, 7); cx.fill();
   }
   if (t.feature === "volcano" && t.volcano_state > 0) {
-    cx.fillStyle = t.volcano_state === 2 ? "#ff6b2ac8" : "#aeb7b4a8";
-    for (const [dx, dy, radius] of [[-5,-18,5],[2,-27,7],[9,-38,8]]) {
-      cx.beginPath(); cx.arc(x + dx, y + dy, radius, 0, Math.PI * 2); cx.fill();
+    // Eruption energy moves outward from the centered crater, rather than
+    // turning into a vertical plume that changes the volcano back into a
+    // side-view object.
+    const erupting = t.volcano_state === 2;
+    cx.save();
+    cx.strokeStyle = erupting ? "#ff6b2a" : "#aeb7b4";
+    cx.lineWidth = erupting ? 2.15 : 1.6;
+    for (const [radius, alpha] of erupting ? [[8, .82], [12, .44]] : [[8, .50], [12, .24]]) {
+      cx.globalAlpha = alpha;
+      cx.beginPath(); cx.arc(x, y, radius, 0, Math.PI * 2); cx.stroke();
     }
+    cx.restore();
   }
   const movingDisaster = (state?.active_disasters || []).find(event =>
     ["blizzard", "dust_storm", "tornado", "hurricane"].includes(event.kind) &&
@@ -12026,8 +12091,254 @@ function drawBarbarianCamp(x, y) {
   cx.restore();
 }
 
+// Every improvement serialized by the ruleset has a deliberate tile marker.
+// The common build forms below keep the strategic map legible without reducing
+// less-frequent civilization, city-state, scenario, and secret-society sites to
+// the old anonymous walled-house fallback.  Keep these IDs in lockstep with
+// data/improvements.json; the embedded-browser contract checks the full set.
+const IMPROVEMENT_MARKERS = Object.freeze({
+  airstrip: "airstrip",
+  alcazar: "citadel",
+  ancient_tower_defense: "tower",
+  ancient_trap_defense: "trap",
+  archaeological_dig: "dig",
+  barbarian_camp: "barbarian",
+  batey: "arena",
+  buried_treasure: "treasure",
+  camp: "camp",
+  chateau: "chateau",
+  chemamull: "totem",
+  city_park: "park",
+  colossal_head: "colossal_head",
+  corporation: "factory",
+  farm: "farm",
+  feitoria: "feitoria",
+  fishery: "boat",
+  fishing_boats: "boat",
+  floating_treasure: "treasure",
+  fort: "fort",
+  geothermal_plant: "geothermal",
+  golf_course: "golf",
+  goody_hut: "hut",
+  great_wall: "wall",
+  grieving_gift: "gift",
+  hacienda: "hacienda",
+  ice_hockey_rink: "rink",
+  improvised_trap: "trap",
+  industry: "factory",
+  kampung: "kampung",
+  kurgan: "burial",
+  lumber_mill: "mill",
+  mahavihara: "temple",
+  maori_pa: "pa",
+  mekewap: "teepee",
+  meteor_goody: "meteor",
+  mine: "mine",
+  missile_silo: "fort",
+  mission: "mission",
+  moai: "moai",
+  modern_tower_defense: "tower",
+  modern_trap_defense: "trap",
+  monastery: "monastery",
+  mound: "mound",
+  mountain_tunnel: "tunnel",
+  national_park: "park",
+  nazca_line: "nazca",
+  nubian_pyramid: "pyramid",
+  offshore_oil_rig: "oil",
+  offshore_wind_farm: "wind",
+  oil_well: "oil",
+  open_air_museum: "museum",
+  outback_station: "outback",
+  pairidaeza: "garden",
+  pasture: "pasture",
+  plantation: "plantation",
+  polder: "polder",
+  popped_goody: "popped",
+  qhapaq_nan: "tunnel",
+  quarry: "quarry",
+  rock_concert: "stage",
+  rock_hewn_church: "church",
+  roman_fort: "roman_fort",
+  seaside_resort: "resort",
+  seastead: "boat",
+  shipwreck_excavation: "shipwreck",
+  ski_resort: "ski",
+  solar_farm: "solar",
+  sphinx: "sphinx",
+  stepwell: "stepwell",
+  supply_drop: "supply",
+  terrace_farm: "terrace",
+  trading_dome: "dome",
+  vampire_castle: "vampire",
+  wind_farm: "wind",
+  ziggurat: "ziggurat"
+});
+
+function paintImprovementMarker(marker, t, x, y, dir) {
+  const outlined = (path, fill, edge = "rgba(28,24,19,.75)", width = 1) => {
+    cx.fillStyle = fill; cx.fill(path); cx.strokeStyle = edge; cx.lineWidth = width; cx.stroke(path);
+  };
+  const roofed = (wall, roofColor, height = 9, width = 8, cross = false) => {
+    const walls = new Path2D();
+    walls.roundRect(x - width, y + 7 - height, width * 2, height, 1.4);
+    outlined(walls, matteMat(wall, dir, width), "rgba(37,28,18,.74)", 1);
+    const roof = new Path2D();
+    roof.moveTo(x, y - height - 4); roof.lineTo(x + dir * (width + 3), y + 7 - height);
+    roof.lineTo(x - dir * (width + 3), y + 7 - height); roof.closePath();
+    outlined(roof, matteMat(roofColor, dir, width + 2), "rgba(37,28,18,.78)", 1);
+    cx.fillStyle = "rgba(30,25,20,.72)"; cx.fillRect(x - 1.8, y + 2, 3.6, 5);
+    if (cross) {
+      cx.strokeStyle = "#ead5a1"; cx.lineWidth = 1.45;
+      cx.beginPath(); cx.moveTo(x, y - height - 7); cx.lineTo(x, y - height - 1);
+      cx.moveTo(x - 2.3, y - height - 4.3); cx.lineTo(x + 2.3, y - height - 4.3); cx.stroke();
+    }
+  };
+  const monument = (stone, head = false) => {
+    const base = new Path2D(); base.roundRect(x - 10, y + 4, 20, 4.5, 1.4);
+    outlined(base, matteMat(stone, dir, 10));
+    const body = new Path2D();
+    body.moveTo(x - 5.2, y + 4); body.lineTo(x - 4.2, y - 10);
+    body.lineTo(x + 4.2, y - 10); body.lineTo(x + 5.2, y + 4); body.closePath();
+    outlined(body, matteMat(stone, dir, 5.2));
+    if (head) {
+      cx.fillStyle = tone(stone, 1.18); cx.beginPath(); cx.ellipse(x, y - 12.2, 4.3, 3.5, 0, 0, 7); cx.fill();
+      cx.strokeStyle = "rgba(31,26,20,.7)"; cx.lineWidth = .85; cx.stroke();
+      cx.fillStyle = "rgba(27,24,19,.8)"; cx.fillRect(x - 2.1, y - 12.5, 1.2, .9); cx.fillRect(x + .9, y - 12.5, 1.2, .9);
+    }
+  };
+  const palisade = (roman = false, high = false) => {
+    const height = high ? 17 : 13;
+    cx.fillStyle = roman ? "#aaa28f" : "#835633";
+    for (let i = -3; i <= 3; i++) {
+      const px = x + i * 4.2;
+      cx.beginPath(); cx.moveTo(px - 1.5, y + 7); cx.lineTo(px - 1.25, y - height + (i & 1 ? 2 : 0));
+      cx.lineTo(px, y - height - 2 + (i & 1 ? 2 : 0)); cx.lineTo(px + 1.25, y - height + (i & 1 ? 2 : 0));
+      cx.lineTo(px + 1.5, y + 7); cx.closePath(); cx.fill();
+    }
+    cx.strokeStyle = roman ? "#504b41" : "#3c2719"; cx.lineWidth = 1.2;
+    cx.beginPath(); cx.moveTo(x - 15, y + 1.5); cx.lineTo(x + 15, y + 1.5); cx.stroke();
+    if (roman) { cx.fillStyle = "#b63c35"; cx.fillRect(x + dir * 7 - 1.5, y - height - 7, 3, 7); }
+  };
+
+  switch (marker) {
+    case "citadel":
+    case "vampire":
+      palisade(true, false);
+      if (marker === "vampire") { cx.fillStyle = "#9a2e43"; cx.beginPath(); cx.arc(x, y - 7, 3.1, 0, 7); cx.fill(); }
+      break;
+    case "roman_fort": palisade(true, false); break;
+    case "pa": palisade(false, false); break;
+    case "tower":
+      palisade(true, true); cx.fillStyle = "#827d72"; cx.fillRect(x - 4.5, y - 15, 9, 20);
+      cx.strokeStyle = "#3c3933"; cx.lineWidth = 1; cx.strokeRect(x - 4.5, y - 15, 9, 20);
+      break;
+    case "trap":
+      cx.strokeStyle = "#8b5c34"; cx.lineWidth = 2;
+      for (const dx of [-8, -3, 3, 8]) { cx.beginPath(); cx.moveTo(x + dx - 2, y + 7); cx.lineTo(x + dx, y - 5); cx.lineTo(x + dx + 2, y + 7); cx.stroke(); }
+      break;
+    case "chateau": roofed("#cbbca2", "#75524a", 12, 9, false); cx.fillStyle = "#d8d0be"; cx.fillRect(x - 2, y - 17, 4, 8); break;
+    case "mission": roofed("#e1d5b8", "#9d5f45", 10, 7, true); break;
+    case "church": roofed("#b9ad98", "#567384", 11, 7, true); break;
+    case "monastery": roofed("#b99873", "#774d35", 9, 9, false); break;
+    case "temple": roofed("#c6aa71", "#a44638", 8, 10, false); cx.fillStyle = "#e6cd78"; cx.fillRect(x - 9, y - 8, 18, 2); break;
+    case "museum": roofed("#d8d6c5", "#476b78", 7, 11, false); cx.strokeStyle = "#e8d9aa"; cx.lineWidth = 1; for (let i = -7; i <= 7; i += 3.5) { cx.beginPath(); cx.moveTo(x + i, y); cx.lineTo(x + i, y + 7); cx.stroke(); } break;
+    case "hacienda": roofed("#d4b57a", "#a4553f", 7, 10, false); cx.fillStyle = "#6b984f"; cx.beginPath(); cx.ellipse(x - 10, y + 4, 3, 2, 0, 0, 7); cx.fill(); break;
+    case "kampung":
+      roofed("#b9845c", "#c7a247", 6, 8, false); cx.strokeStyle = "#6a482e"; cx.lineWidth = 1.3;
+      for (const dx of [-5, 5]) { cx.beginPath(); cx.moveTo(x + dx, y + 7); cx.lineTo(x + dx, y + 12); cx.stroke(); } break;
+    case "teepee":
+      cx.fillStyle = "#c7b388"; cx.beginPath(); cx.moveTo(x - 9, y + 7); cx.lineTo(x, y - 11); cx.lineTo(x + 9, y + 7); cx.closePath(); cx.fill();
+      cx.strokeStyle = "#5a4430"; cx.lineWidth = 1; cx.stroke(); break;
+    case "dome":
+      cx.fillStyle = "#b78344"; cx.beginPath(); cx.ellipse(x, y + 4, 11, 5, 0, 0, 7); cx.fill();
+      cx.beginPath(); cx.arc(x, y + 4, 8, Math.PI, 0); cx.fillStyle = "#d7b96e"; cx.fill(); cx.strokeStyle = "#4e3a22"; cx.stroke(); break;
+    case "factory":
+    case "geothermal":
+      cx.fillStyle = marker === "geothermal" ? "#776d61" : "#8e7461"; cx.fillRect(x - 11, y - 2, 22, 10);
+      cx.strokeStyle = "#3c3029"; cx.lineWidth = 1; cx.strokeRect(x - 11, y - 2, 22, 10);
+      cx.fillStyle = "#4c4a49"; cx.fillRect(x + dir * 6 - 2, y - 13, 4, 13);
+      if (marker === "geothermal") { cx.strokeStyle = "rgba(236,240,240,.65)"; cx.lineWidth = 2; cx.beginPath(); cx.arc(x - dir * 5, y - 7, 5, Math.PI, 0); cx.stroke(); }
+      break;
+    case "airstrip":
+      cx.fillStyle = "#59616a"; cx.fillRect(x - 14, y - 2.2, 28, 5); cx.strokeStyle = "#d8d3ad"; cx.lineWidth = 1; cx.strokeRect(x - 14, y - 2.2, 28, 5);
+      cx.strokeStyle = "#f2edc6"; cx.setLineDash([2, 2]); cx.beginPath(); cx.moveTo(x - 12, y + .3); cx.lineTo(x + 12, y + .3); cx.stroke(); cx.setLineDash([]); break;
+    case "arena":
+      cx.fillStyle = "#caa66d"; cx.beginPath(); cx.ellipse(x, y + 3, 13, 7, 0, 0, 7); cx.fill(); cx.strokeStyle = "#61472c"; cx.lineWidth = 1.2; cx.stroke();
+      cx.fillStyle = "#805e37"; cx.beginPath(); cx.ellipse(x, y + 3, 7, 3, 0, 0, 7); cx.fill(); break;
+    case "garden":
+    case "park":
+      cx.fillStyle = marker === "garden" ? "#618a46" : "#4f8751";
+      for (const [dx, dy] of [[-7,4],[0,-2],[7,4]]) { cx.beginPath(); cx.arc(x + dx, y + dy, 5, 0, 7); cx.fill(); }
+      cx.fillStyle = "#d7d0b4"; cx.fillRect(x - 10, y + 7, 20, 1.3); break;
+    case "golf":
+      cx.fillStyle = "#77a84e"; cx.beginPath(); cx.ellipse(x, y + 2, 13, 7, 0, 0, 7); cx.fill(); cx.strokeStyle = "#d6c376"; cx.lineWidth = 1; cx.stroke();
+      cx.strokeStyle = "#e8e5db"; cx.lineWidth = 1; cx.beginPath(); cx.moveTo(x + 4, y + 2); cx.lineTo(x + 4, y - 10); cx.stroke(); cx.fillStyle = "#d54a43"; cx.fillRect(x + 4, y - 10, 5, 3); break;
+    case "rink":
+      cx.fillStyle = "#9fd7e6"; cx.beginPath(); cx.roundRect(x - 13, y - 4, 26, 12, 3); cx.fill(); cx.strokeStyle = "#e6fbff"; cx.lineWidth = 1; cx.stroke();
+      cx.strokeStyle = "rgba(55,112,143,.65)"; cx.beginPath(); cx.moveTo(x - 11, y + 2); cx.lineTo(x + 11, y + 2); cx.stroke(); break;
+    case "outback":
+      cx.strokeStyle = "#9f7b4a"; cx.lineWidth = 1.2; cx.strokeRect(x - 11, y - 3, 22, 11);
+      cx.strokeStyle = "#d5d8db"; cx.lineWidth = 1.4; cx.beginPath(); cx.moveTo(x + 4, y + 7); cx.lineTo(x + 4, y - 8); cx.stroke(); for (let i = 0; i < 3; i++) { const a = -Math.PI / 2 + i * 2.094; cx.beginPath(); cx.moveTo(x + 4, y - 8); cx.lineTo(x + 4 + Math.cos(a) * 5.5, y - 8 + Math.sin(a) * 5.5); cx.stroke(); } break;
+    case "polder":
+      cx.fillStyle = "#668fb0"; cx.beginPath(); cx.ellipse(x, y + 4, 14, 6, 0, 0, 7); cx.fill();
+      cx.strokeStyle = "#d7c078"; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(x - 14, y + 5); cx.lineTo(x + 14, y + 5); cx.stroke();
+      cx.fillStyle = "#f2efe0"; cx.fillRect(x + dir * 4 - 1.5, y - 8, 3, 10); break;
+    case "terrace":
+      cx.strokeStyle = "#b69d63"; cx.lineWidth = 3; for (let i = 0; i < 3; i++) { cx.beginPath(); cx.moveTo(x - 13 + i * 3, y + 5 - i * 4); cx.lineTo(x + 13 - i * 3, y + 5 - i * 4); cx.stroke(); }
+      cx.strokeStyle = "#68a14c"; cx.lineWidth = 1.4; cx.beginPath(); cx.moveTo(x - 11, y + 2); cx.lineTo(x + 11, y + 2); cx.stroke(); break;
+    case "stepwell":
+      cx.fillStyle = "#b89b69"; cx.beginPath(); cx.roundRect(x - 10, y - 5, 20, 14, 2); cx.fill();
+      cx.fillStyle = "#4c98b6"; cx.fillRect(x - 5, y - 1, 10, 7); cx.strokeStyle = "#e4d7bb"; cx.lineWidth = 1; cx.strokeRect(x - 7, y - 3, 14, 11); break;
+    case "tunnel":
+      cx.fillStyle = "#776f63"; cx.beginPath(); cx.ellipse(x, y + 4, 13, 8, 0, Math.PI, 2 * Math.PI); cx.fill(); cx.strokeStyle = "#342f29"; cx.lineWidth = 1.3; cx.stroke();
+      cx.fillStyle = "#151c21"; cx.beginPath(); cx.ellipse(x, y + 5, 7, 5, 0, Math.PI, 2 * Math.PI); cx.fill(); break;
+    case "pyramid":
+    case "ziggurat":
+      cx.fillStyle = marker === "pyramid" ? "#d2b56f" : "#b48a55";
+      for (let i = 0; i < 3; i++) { cx.beginPath(); cx.moveTo(x - 12 + i * 3, y + 7 - i * 5); cx.lineTo(x + 12 - i * 3, y + 7 - i * 5); cx.lineTo(x + 8 - i * 3, y + 2 - i * 5); cx.lineTo(x - 8 + i * 3, y + 2 - i * 5); cx.closePath(); cx.fill(); }
+      cx.strokeStyle = "rgba(67,49,24,.7)"; cx.lineWidth = 1; cx.stroke(); break;
+    case "moai": monument("#6d6656", true); break;
+    case "colossal_head": monument("#8c7458", true); cx.fillStyle = "#b88d55"; cx.fillRect(x - 5.5, y - 18, 11, 2.6); break;
+    case "totem": monument("#7c5130", true); break;
+    case "burial":
+    case "mound":
+      cx.fillStyle = marker === "mound" ? "#9b7a4a" : "#a87942"; cx.beginPath(); cx.ellipse(x, y + 5, 13, 6, 0, Math.PI, 2 * Math.PI); cx.fill();
+      cx.strokeStyle = "#4f3823"; cx.lineWidth = 1; cx.stroke(); break;
+    case "nazca":
+      cx.strokeStyle = "#e4d197"; cx.lineWidth = 2.2; cx.beginPath(); cx.arc(x - 3, y + 2, 8, .25, Math.PI * 1.85); cx.arc(x + 3, y + 2, 3.3, Math.PI * 1.85, .25); cx.stroke(); break;
+    case "stage":
+      cx.fillStyle = "#4c506d"; cx.fillRect(x - 12, y + 1, 24, 7); cx.strokeStyle = "#22263b"; cx.lineWidth = 1; cx.strokeRect(x - 12, y + 1, 24, 7);
+      cx.fillStyle = "#edc64e"; for (const dx of [-7, 0, 7]) { cx.beginPath(); cx.arc(x + dx, y - 3, 2.1, 0, 7); cx.fill(); } break;
+    case "resort":
+      cx.fillStyle = "#efe7d4"; cx.fillRect(x - 8, y + 1, 16, 7); cx.strokeStyle = "#51402f"; cx.lineWidth = 1; cx.strokeRect(x - 8, y + 1, 16, 7);
+      cx.fillStyle = "#e35e52"; cx.beginPath(); cx.arc(x - 7, y - 2, 5, Math.PI, 0); cx.lineTo(x - 2, y - 2); cx.closePath(); cx.fill(); break;
+    case "ski":
+      cx.strokeStyle = "#edf5fb"; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(x - 11, y + 8); cx.lineTo(x + 11, y - 6); cx.stroke();
+      cx.strokeStyle = "#c84a3d"; cx.lineWidth = 1.2; cx.beginPath(); cx.moveTo(x, y - 9); cx.lineTo(x, y + 4); cx.stroke(); break;
+    case "dig":
+      cx.strokeStyle = "#a87b3f"; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(x - 9, y + 6); cx.lineTo(x + 6, y - 8); cx.stroke(); cx.fillStyle = "#d7c491"; cx.fillRect(x + 3, y - 10, 6, 3); break;
+    case "shipwreck":
+      cx.fillStyle = "#775336"; cx.beginPath(); cx.moveTo(x - 12, y + 4); cx.lineTo(x + 11, y + 4); cx.lineTo(x + 5, y + 9); cx.lineTo(x - 6, y + 9); cx.closePath(); cx.fill(); cx.strokeStyle = "#342417"; cx.stroke();
+      cx.strokeStyle = "#d6c89e"; cx.lineWidth = 1; cx.beginPath(); cx.moveTo(x - 1, y + 4); cx.lineTo(x - 1, y - 9); cx.lineTo(x + 7, y - 2); cx.stroke(); break;
+    case "meteor":
+      cx.fillStyle = "#5f6570"; cx.beginPath(); cx.arc(x, y + 1, 8, 0, 7); cx.fill(); cx.strokeStyle = "#232933"; cx.lineWidth = 1.2; cx.stroke(); cx.fillStyle = "rgba(230,240,250,.35)"; cx.beginPath(); cx.arc(x - 2, y - 2, 2, 0, 7); cx.fill(); break;
+    case "treasure":
+    case "popped":
+    case "gift":
+      cx.fillStyle = marker === "gift" ? "#b84157" : "#b98d3d"; cx.fillRect(x - 7, y - 1, 14, 9); cx.strokeStyle = "#4f3821"; cx.lineWidth = 1; cx.strokeRect(x - 7, y - 1, 14, 9);
+      cx.strokeStyle = marker === "gift" ? "#f2d18a" : "#ead178"; cx.lineWidth = 1.4; cx.beginPath(); cx.moveTo(x, y - 1); cx.lineTo(x, y + 8); cx.stroke(); break;
+    case "supply":
+      cx.fillStyle = "#738652"; cx.fillRect(x - 9, y - 2, 18, 10); cx.strokeStyle = "#26321e"; cx.lineWidth = 1; cx.strokeRect(x - 9, y - 2, 18, 10);
+      cx.strokeStyle = "#d8d4b6"; cx.beginPath(); cx.moveTo(x - 5, y - 5); cx.lineTo(x + 5, y - 5); cx.stroke(); break;
+    default:
+      roofed("#8e8474", "#cfc3ab", 9, 7.5, false);
+  }
+}
+
 function drawImprovement(t, x, y) {
   const imp = t.improvement;
+  const marker = IMPROVEMENT_MARKERS[imp] || "unknown";
   // `x, y` is always the visual centre of this tile; terrain does not offset
   // improvements, even when woodland or a hill is also painted here.
   cx.save();
@@ -12303,6 +12614,8 @@ function drawImprovement(t, x, y) {
     cx.lineTo(x + 8.4, y - 3.4); cx.lineTo(x + 7.4, y - 1.2); cx.lineTo(x + 6.5, y - 3.4);
     cx.lineTo(x + 4, y - 4.2); cx.lineTo(x + 6.5, y - 4.8);
     cx.closePath(); cx.fill();
+  } else if (marker !== "unknown") {
+    paintImprovementMarker(marker, t, x, y, dir);
   } else {
     // Everything rarer still reads as a built installation rather than a smear
     // of brown: a walled base with a roof catching the same light as the tiles.
