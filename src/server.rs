@@ -7523,6 +7523,27 @@ mod tests {
     }
 
     #[test]
+    fn globe_tilt_rotates_the_camera_without_squashing_its_limb() {
+        // A flat chart is allowed to use a ground-plane projection.  Once the
+        // world is known to be round, pitch must instead be part of the 3D view
+        // basis, so the orthographic ocean, rim, tiles, and hit cells retain a
+        // circular silhouette at every tilt.
+        assert!(EMBEDDED_INDEX.contains("function planetCameraBase()"));
+        assert!(EMBEDDED_INDEX.contains("function planetTiltBasis(basis, tilt = cam.tilt)"));
+        assert!(EMBEDDED_INDEX.contains("planetSpin(basis, basis.right, angle)"));
+        assert!(EMBEDDED_INDEX.contains("function planetUntiltBasis(basis, tilt = cam.tilt)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "...planetBasisCamera(planetTiltBasis(planetViewBasis(camera)))"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const view = planetBasisCamera(planetUntiltBasis(basis));"
+        ));
+        assert!(EMBEDDED_INDEX.contains("function planetGroundProjection()"));
+        assert!(EMBEDDED_INDEX.contains("return knowsGlobe() ? 1 : cameraTiltProjection();"));
+        assert!(EMBEDDED_INDEX.contains("const projection = planetGroundProjection();"));
+    }
+
+    #[test]
     fn browser_orders_controls_interface_setup_and_logs() {
         // Readability is a shared interface contract, not a collection of
         // one-off enlargements. Panels inherit one system stack and a named
@@ -9225,13 +9246,19 @@ mod tests {
         // so arriving from Civ 6 cannot find a shadowed binding.
         for chord in [
             "{id: \"AutoPlay\", key: \"a\", ctrl: true",
-            "{id: \"ResetFacing\", key: \"r\", ctrl: true",
             "{id: \"HidePanel\", key: \"u\", ctrl: true",
             "{id: \"QuickDeals\", key: \"d\", ctrl: true",
         ] {
             assert!(EMBEDDED_INDEX.contains(chord), "missing CIVVIS chord: {chord}");
         }
         assert!(EMBEDDED_INDEX.contains("{id: \"Diplomacy\", key: \"F8\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "let altTap = false; // tapping Alt/Option (no drag) faces north and levels the map"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (altTap) {\n    resetMapFacing(-cam.tilt);"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("{id: \"ResetFacing\", key: \"r\", ctrl: true"));
 
         // Movement: a left click only selects, a left drag pans, a secondary
         // press/release moves units, and the middle button centres. This is the
