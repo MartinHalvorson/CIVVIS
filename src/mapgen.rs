@@ -2,6 +2,7 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 use crate::fractal::Fractal;
+use crate::leader_roster::{self, TrueStartPoint};
 use crate::name::Name;
 use crate::rng::Rng;
 use crate::rules::{volcanic_soil_valid_terrain, Rules};
@@ -460,128 +461,6 @@ const EARTH_LAKES: &[(f64, f64, f64)] = &[
     (-71.5, 9.8, 13.2),       // Maracaibo
 ];
 
-/// Where each civilization actually began, in `(longitude, latitude)` degrees.
-///
-/// One entry per seat in `CIV_NAMES`, in that same order, so a True Start map
-/// is true in play and not merely Earth-shaped in the setup preview. Each is
-/// the civilization's own seat of power where one is known — Rome, Cusco,
-/// Angkor, Karakorum — and its heartland where the polity had no single
-/// capital.
-///
-/// A globe of this size gives each tile a degree or more, so two civilizations
-/// whose capitals stood within a tile of each other cannot both have theirs:
-/// Sumeria and Babylon are 150km apart and Byzantium sat where the Ottomans
-/// later did. [`historic_major_spawns`] settles that by moving one of them the
-/// shortest distance that frees a hex, which is why the table names the true
-/// site rather than a site pre-nudged to survive the sampling.
-const EARTH_HOMELANDS: [(f64, f64); 105] = [
-    (12.5, 41.9),     // Rome
-    (31.25, 29.85),   // Egypt: Memphis
-    (23.73, 37.98),   // Greece: Athens
-    (108.94, 34.34),  // China: Xi'an
-    (45.64, 31.32),   // Sumeria: Uruk
-    (-99.13, 19.43),  // Aztec: Tenochtitlan
-    (31.83, 18.53),   // Nubia: Napata
-    (55.0, 47.5),     // Scythia: the Pontic-Caspian steppe
-    (-1.5, 52.5),     // England
-    (6.08, 50.78),    // Germany: Aachen
-    (37.62, 55.75),   // Russia: Moscow
-    (129.22, 35.83),  // Korea: Gyeongju
-    (-89.62, 17.22),  // Maya: Tikal
-    (-8.44, 11.42),   // Mali: Niani
-    (35.2, 33.27),    // Phoenicia: Tyre
-    (28.98, 41.01),   // Byzantium: Constantinople
-    (31.42, -28.31),  // Zulu: Ulundi
-    (4.03, 46.92),    // Gaul: Bibracte
-    (14.25, -6.27),   // Kongo: Mbanza Kongo
-    (105.84, 21.03),  // Vietnam: Hanoi
-    (-43.2, -22.91),  // Brazil: Rio de Janeiro
-    (2.35, 48.86),    // France: Paris
-    (-3.7, 40.42),    // Spain: Madrid
-    (-8.42, 40.21),   // Portugal: Coimbra
-    (4.9, 52.37),     // Netherlands: Amsterdam
-    (17.64, 59.86),   // Sweden: Uppsala
-    (10.75, 59.91),   // Norway: Oslo
-    (9.42, 55.76),    // Denmark: Jelling
-    (17.6, 52.54),    // Poland: Gniezno
-    (19.04, 47.5),    // Hungary: Budapest
-    (16.37, 48.21),   // Austria: Vienna
-    (14.42, 50.09),   // Bohemia: Prague
-    (-4.25, 56.8),    // Scotland
-    (-6.61, 53.58),   // Ireland: Tara
-    (7.45, 46.95),    // Switzerland: Bern
-    (12.33, 45.44),   // Venice
-    (20.46, 44.79),   // Serbia: Belgrade
-    (27.13, 43.38),   // Bulgaria: Pliska
-    (25.28, 54.69),   // Lithuania: Vilnius
-    (30.52, 50.45),   // Ukraine: Kyiv
-    (22.27, 60.45),   // Finland: Turku
-    (25.46, 44.93),   // Romania: Targoviste
-    (31.28, 58.52),   // Novgorod
-    (20.51, 54.71),   // Prussia: Konigsberg
-    (2.17, 41.39),    // Catalonia: Barcelona
-    (72.25, 22.52),   // Gujarat: Lothal
-    (43.15, 36.36),   // Assyria: Nineveh
-    (52.89, 29.94),   // Persia: Persepolis
-    (48.51, 34.8),    // Media: Ecbatana
-    (123.43, 41.8),   // Manchuria: Mukden
-    (28.04, 38.49),   // Lydia: Sardis
-    (58.2, 37.96),    // Parthia: Nisa
-    (66.98, 39.65),   // Sogdiana: Samarkand
-    (29.06, 40.19),   // Ottomans: Bursa
-    (39.83, 21.42),   // Arabia: Mecca
-    (35.22, 31.78),   // Israel: Jerusalem
-    (44.51, 40.18),   // Armenia: Yerevan
-    (44.79, 41.72),   // Georgia: Tbilisi
-    (62.2, 34.35),    // Timurids: Herat
-    (68.25, 43.3),    // Kazakh: Turkestan
-    (66.9, 36.76),    // Bactria: Balkh
-    (37.47, 12.6),    // Ethiopia: Gondar
-    (38.72, 14.13),   // Axum
-    (-4.99, 34.03),   // Morocco: Fez
-    (6.61, 36.36),    // Numidia: Cirta
-    (0.04, 16.27),    // Songhai: Gao
-    (-7.97, 15.77),   // Ghana: Koumbi Saleh
-    (5.62, 6.34),     // Benin City
-    (-1.62, 6.69),    // Ashanti: Kumasi
-    (39.5, -8.96),    // Swahili: Kilwa
-    (30.93, -20.27),  // Great Zimbabwe
-    (32.58, 0.32),    // Buganda: Kampala
-    (3.93, 8.89),     // Oyo Ile
-    (5.53, 22.79),    // Tuareg: the Hoggar
-    (47.52, -18.88),  // Madagascar: Antananarivo
-    (77.23, 28.61),   // India: Delhi
-    (135.77, 35.01),  // Japan: Kyoto
-    (102.83, 47.2),   // Mongolia: Karakorum
-    (91.1, 29.65),    // Tibet: Lhasa
-    (85.32, 27.71),   // Nepal: Kathmandu
-    (85.83, 20.27),   // Kalinga: Bhubaneswar
-    (79.13, 10.79),   // Chola: Thanjavur
-    (88.13, 24.87),   // Bengal: Gaur
-    (73.86, 18.52),   // Maratha: Pune
-    (103.87, 13.41),  // Khmer: Angkor
-    (99.7, 17.01),    // Siam: Sukhothai
-    (94.86, 21.17),   // Burma: Bagan
-    (112.38, -7.55),  // Majapahit: Trowulan
-    (109.05, 13.77),  // Champa: Vijaya
-    (-77.04, 38.91),  // America: Washington
-    (-75.7, 45.42),   // Canada: Ottawa
-    (-107.96, 36.06), // Pueblo: Chaco Canyon
-    (-100.0, 34.0),   // Comanche: the southern plains
-    (-103.75, 43.9),  // Sioux: the Black Hills
-    (-71.98, -13.53), // Inca: Cusco
-    (-74.07, 4.71),   // Muisca: Bogota
-    (-72.6, -37.47),  // Mapuche: the Araucania
-    (-58.38, -34.6),  // Argentina: Buenos Aires
-    (151.21, -33.87), // Australia: Sydney
-    (175.5, -39.5),   // Maori: the Waikato
-    (44.42, 32.54),   // Babylon
-    (-100.0, 53.5),   // Cree: the Saskatchewan
-    (-66.9, 10.49),   // Gran Colombia: Caracas
-    (106.83, -6.18),  // Indonesia: Jakarta
-    (22.52, 40.76),   // Macedon: Pella
-];
-
 /// The unit vector a longitude and latitude in degrees point at.
 fn earth_direction(longitude: f64, latitude: f64) -> [f64; 3] {
     let (longitude, latitude) = (longitude.to_radians(), latitude.to_radians());
@@ -829,8 +708,10 @@ fn nearest_tile(wm: &WorldMap, longitude: f64, latitude: f64) -> Option<Pos> {
 /// Seat each civilization on the viable tile closest to its homeland.
 ///
 /// Closeness is measured on the globe, not in the storage rectangle: the tile
-/// whose centre points nearest the homeland's direction wins. Sites are handed
-/// out in `CIV_NAMES` order.
+/// whose centre points nearest the homeland's direction wins.  The caller
+/// hands in the selected roster's points, so a named civilization always
+/// receives *its* address rather than whatever happened to occupy its seat
+/// number in an old stock list.
 ///
 /// Spacing is a floor and being home is what is maximised, which is the
 /// opposite of how a rolled map is laid out and the whole difference between a
@@ -845,15 +726,21 @@ fn nearest_tile(wm: &WorldMap, longitude: f64, latitude: f64) -> Option<Pos> {
 ///
 /// The floor gives way rather than leaving a seat unfilled, one ring at a
 /// time, down to a plain refusal to share a hex.
-fn historic_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec<Pos> {
+fn historic_major_spawns(
+    wm: &WorldMap,
+    candidates: &[Pos],
+    homelands: &[TrueStartPoint],
+    count: usize,
+) -> Vec<Pos> {
+    assert!(!homelands.is_empty(), "True Start Earth needs at least one homeland");
     let mut available: Vec<Pos> = candidates.to_vec();
     let mut starts: Vec<Pos> = Vec::new();
     for index in 0..count {
         if available.is_empty() {
             break;
         }
-        let (longitude, latitude) = EARTH_HOMELANDS[index % EARTH_HOMELANDS.len()];
-        let target = earth_direction(longitude, latitude);
+        let home = homelands[index % homelands.len()];
+        let target = earth_direction(home.longitude, home.latitude);
         let closest = |pool: &mut dyn Iterator<Item = (usize, &Pos)>| {
             pool.max_by(|(_, a), (_, b)| {
                 dot(wm.direction(**a), target)
@@ -878,16 +765,16 @@ fn historic_major_spawns(wm: &WorldMap, candidates: &[Pos], count: usize) -> Vec
         starts.push(available.swap_remove(selected));
     }
 
-    // Seats are handed out in `CIV_NAMES` order, so an early civilization can
-    // take the hex a later one wanted and leave it walking. Nothing about the
-    // list says Rome should outrank Venice for Italian ground, so trade any
-    // pair of seats that both civilizations would rather have the other way.
+    // An early selected leader can take the hex a later leader wanted and
+    // leave it walking. Nothing about seating order says Rome should outrank
+    // Venice for Italian ground, so trade any pair of seats that both leaders
+    // would rather have the other way.
     // The occupied hexes never change, only who is on which, so every hex of
     // clearance the pass above bought survives untouched.
     let homes: Vec<[f64; 3]> = (0..starts.len())
         .map(|index| {
-            let (longitude, latitude) = EARTH_HOMELANDS[index % EARTH_HOMELANDS.len()];
-            earth_direction(longitude, latitude)
+            let home = homelands[index % homelands.len()];
+            earth_direction(home.longitude, home.latitude)
         })
         .collect();
     let seats: Vec<[f64; 3]> = starts.iter().map(|start| wm.direction(*start)).collect();
@@ -2303,6 +2190,43 @@ pub fn generate_with_script(
     poles: MapPoles,
     rng: &mut Rng,
 ) -> (WorldMap, Vec<Pos>) {
+    generate_with_script_and_leader_starts(
+        rules,
+        width,
+        height,
+        num_major_spawns,
+        num_minor_spawns,
+        num_natural_wonders,
+        num_continents,
+        script,
+        topology,
+        poles,
+        &[],
+        rng,
+    )
+}
+
+/// Generate a world with the supplied identities' exact True Start addresses.
+///
+/// Ordinary scripts deliberately ignore `leader_starts`: their balanced layout
+/// is independent of roster identity.  True Start Earth consumes one point per
+/// major in seating order; callers which predate the roster contract pass an
+/// empty slice and preserve the legacy data order.
+#[allow(clippy::too_many_arguments)]
+pub fn generate_with_script_and_leader_starts(
+    rules: &Rules,
+    width: i32,
+    height: i32,
+    num_major_spawns: usize,
+    num_minor_spawns: usize,
+    num_natural_wonders: usize,
+    num_continents: usize,
+    script: MapScript,
+    topology: MapTopology,
+    poles: MapPoles,
+    leader_starts: &[TrueStartPoint],
+    rng: &mut Rng,
+) -> (WorldMap, Vec<Pos>) {
     // The world's shape is asked for separately from what fills it. Fixed
     // geography only means its coastline is sampled rather than rolled: the
     // same longitudes and latitudes can be laid onto a flat atlas or a globe.
@@ -3143,8 +3067,16 @@ pub fn generate_with_script(
         // wooded hills and Cusco off its own mountainside to find some. Asking
         // for more seats than the world has tiles takes the wider pool
         // outright: every passable tile that is not a wonder or a village.
-        let homelands = candidates_for(&passable, usize::MAX);
-        historic_major_spawns(&wm, &homelands, num_major_spawns)
+        let candidates = candidates_for(&passable, usize::MAX);
+        let homelands: Vec<TrueStartPoint> = (0..num_major_spawns)
+            .map(|index| {
+                leader_starts
+                    .get(index)
+                    .copied()
+                    .unwrap_or_else(|| leader_roster::legacy_true_start(index))
+            })
+            .collect();
+        historic_major_spawns(&wm, &candidates, &homelands, num_major_spawns)
     } else {
         let mut seated = regional_starts(
             rules,
@@ -4287,6 +4219,12 @@ fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
 /// what it wants rather than exactly on it. A river bias asks the start tile
 /// itself, which is what "starts on a river" means.
 pub fn start_bias_score(rules: &Rules, wm: &WorldMap, pos: Pos, civ: &str) -> i32 {
+    // Bias rows are part of Civilization VI civilization content.  A neutral
+    // historical or contemporary identity keeps the fair generic site on
+    // rolled maps; True Start Earth has already used its own explicit point.
+    if !leader_roster::uses_civ6_mechanics(civ) {
+        return 0;
+    }
     let Some(bias) = rules.civs.get(civ).and_then(|spec| spec.start_bias.as_ref()) else {
         return 0;
     };
@@ -7800,17 +7738,68 @@ mod river_tests {
             components.iter().map(|body| body.len()).collect::<Vec<_>>()
         );
 
-        // Every civilization opens in its own homeland. The seats are handed
-        // out in CIV_NAMES order, so this game's eight majors lead the spawn
-        // list and take the first eight homelands.
-        for (index, (longitude, latitude)) in EARTH_HOMELANDS.iter().enumerate().take(8) {
-            let home = nearest(*longitude, *latitude);
+        // The legacy wrapper uses the data roster in CIV_NAMES order, so this
+        // game's eight majors lead the list and take the first eight homes.
+        for (index, civilization) in crate::game::CIV_NAMES.iter().enumerate().take(8) {
+            let address = leader_roster::true_start(civilization).unwrap();
+            let home = nearest(address.longitude, address.latitude);
             let start = spawns[index];
             assert!(!rules.is_water(&world.tiles[&start]));
             assert!(
                 sphere.distance(home, start) <= 4,
                 "civilization {index} opened {} tiles from its homeland",
                 sphere.distance(home, start)
+            );
+        }
+    }
+
+    #[test]
+    fn true_start_earth_uses_the_selected_leaders_not_legacy_seat_indices() {
+        let rules = Rules::embedded();
+        let size = CIV6_MAP_SIZES
+            .iter()
+            .find(|size| size.id == "standard")
+            .unwrap();
+        // Deliberately reverse the legacy head: the old seat-index table
+        // would put Rome first and Egypt second, not Aztec then Rome.
+        let leaders = ["Aztec", "Rome"];
+        let homes: Vec<TrueStartPoint> = leaders
+            .iter()
+            .map(|civ| leader_roster::true_start(civ).unwrap())
+            .collect();
+        let mut rng = Rng::new(74_102);
+        let (world, spawns) = generate_with_script_and_leader_starts(
+            &rules,
+            size.width,
+            size.height,
+            leaders.len(),
+            0,
+            size.natural_wonders,
+            size.continents,
+            MapScript::TrueStartEarth,
+            GLOBE,
+            POLED,
+            &homes,
+            &mut rng,
+        );
+
+        for ((leader, home), spawn) in leaders.iter().zip(homes).zip(spawns) {
+            let target = earth_direction(home.longitude, home.latitude);
+            let nearest_land = world
+                .tiles
+                .iter()
+                .filter(|(_, tile)| !rules.is_water(tile))
+                .map(|(pos, _)| *pos)
+                .max_by(|a, b| {
+                    dot(world.direction(*a), target)
+                        .partial_cmp(&dot(world.direction(*b), target))
+                        .unwrap()
+                })
+                .unwrap();
+            assert!(
+                world.distance(nearest_land, spawn) <= 3,
+                "{leader} started {} tiles from its selected latitude/longitude",
+                world.distance(nearest_land, spawn)
             );
         }
     }
@@ -7842,7 +7831,7 @@ mod river_tests {
             .find(|size| size.id == "ludicrous")
             .unwrap();
         assert_eq!(
-            EARTH_HOMELANDS.len(),
+            leader_roster::all().len(),
             crate::game::CIV_NAMES.len(),
             "every civilization needs a homeland of its own"
         );
@@ -7879,8 +7868,8 @@ mod river_tests {
             // Measured against the nearest *land*, because a capital on a
             // coast can have open water as its literal nearest hex and there
             // is nothing a seating rule could do about that.
-            let (longitude, latitude) = EARTH_HOMELANDS[index];
-            let target = earth_direction(longitude, latitude);
+            let address = leader_roster::true_start(civilization).unwrap();
+            let target = earth_direction(address.longitude, address.latitude);
             let home = world
                 .tiles
                 .iter()
