@@ -54,8 +54,8 @@ class RatingHostTests(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as held:
             root = pathlib.Path(held)
-            (root / "beta").mkdir()
-            (root / "beta/index.html").write_text("wasm", encoding="utf-8")
+            (root / "test").mkdir()
+            (root / "test/index.html").write_text("wasm", encoding="utf-8")
             rating = FakeRatingHost()
             handler = functools.partial(
                 serve.Handler, directory=str(root), rating_host=rating

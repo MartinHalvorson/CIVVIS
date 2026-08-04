@@ -645,8 +645,26 @@ def won(record: dict) -> bool:
     return False
 
 
+# How much lock time an attempt may be credited before it is abandoned.
+LOCK_CREDIT_CAP_S = 7200.0
+
+
+def screen_locked() -> bool:
+    """Whether the macOS console session is locked.
+
+    Same probe as `civ6_play.screen_locked`, duplicated rather than imported
+    because this script runs `civ6_play` as a SUBPROCESS and does not import it.
+    """
+    try:
+        result = subprocess.run(["ioreg", "-n", "Root", "-d1"],
+                                capture_output=True, text=True, check=False)
+    except OSError:
+        return False
+    return 'CGSSessionScreenIsLocked"=Yes' in result.stdout
+
+
 def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
-                           frozen_s: float) -> str:
+                           frozen_s: float, locked_probe=None) -> str:
     """Wait for the attempt, and kill it if its TURN stops advancing.
 
     ★★★★★ AN IN-LOOP WATCHDOG CANNOT CATCH A BLOCKED HARNESS. `civ6_play` has
@@ -677,12 +695,71 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
     events = RUN_ROOT / tag / "events.jsonl"
     deadline = time.time() + hard_timeout_s
     last_turn, last_turn_at, offset = None, time.time(), 0
+    # ⚠ CAP THE CREDIT. Pausing the clock while locked is right, but an
+    # UNBOUNDED pause means a machine left locked overnight holds the game
+    # forever and the attempt never resolves — the first version of this fix
+    # spun exactly that way in its own test. Past the cap, give up and SAY it
+    # was the lock, so the row is not filed as a mysterious timeout.
+    locked_total, said_locked = 0.0, False
+    lock_credit_cap = LOCK_CREDIT_CAP_S
+    # ⚠ INJECTED, not read from the module. Reading the real screen made every
+    # OTHER test in this file depend on whether the developer's machine happened
+    # to be locked — and on a locked machine they spun forever, because each
+    # locked slice extends the deadline it is racing.
+    is_locked = locked_probe if locked_probe is not None else screen_locked
     while time.time() < deadline:
+        slice_started = time.time()
         try:
             play.wait(timeout=20.0)
             return "exited"
         except subprocess.TimeoutExpired:
             pass
+        # ⚠⚠ A LOCKED SCREEN IS NOT A STALLED GAME, AND BOTH CLOCKS READ IT AS ONE.
+        #
+        # `civ6_play` waits at the macOS authentication boundary rather than
+        # scripting past it, which is correct — but neither timer here knew that.
+        # `deadline` is wall clock, and `last_turn_at` cannot advance while the
+        # game is not being driven, so a lock long enough to cross `frozen_s`
+        # killed an attempt that was doing nothing wrong.
+        #
+        # Live: run `civvis-20260804T102440Z` reached **turn 82, 4 cities, score
+        # 185** and was stopped by "attempt exceeded its own timeout" after the
+        # session locked mid-game. The game was healthy; only the operator's
+        # screen was not.
+        #
+        # So credit the locked interval back to BOTH timers. When the screen is
+        # never locked — the normal case — this changes nothing at all.
+        #
+        # ⚠ `continue`, not merely a credit: while the screen is locked the turn
+        # CANNOT advance, so freshness is unjudgeable and the frozen check below
+        # must not run at all. Crediting the interval and falling through still
+        # killed the attempt — the first version of this fix did exactly that,
+        # and `test_a_locked_screen_does_not_kill_a_healthy_attempt` caught it.
+        if is_locked():
+            locked_for = time.time() - slice_started
+            if locked_total + locked_for > lock_credit_cap:
+                print(f"[watchdog] screen has been locked for "
+                      f"{locked_total / 60.0:.0f} min, past the "
+                      f"{lock_credit_cap / 60.0:.0f} min credit cap; giving up "
+                      f"on this attempt", flush=True)
+                play.send_signal(signal.SIGTERM)
+                try:
+                    play.wait(timeout=60.0)
+                except subprocess.TimeoutExpired:
+                    play.kill()
+                return "locked"
+            deadline += locked_for
+            last_turn_at += locked_for
+            locked_total += locked_for
+            if not said_locked:
+                print("[watchdog] screen is locked; the attempt clock is paused "
+                      "until it unlocks", flush=True)
+                said_locked = True
+            continue
+        if said_locked:
+            print(f"[watchdog] screen unlocked; {locked_total / 60.0:.1f} min of "
+                  f"lock time was credited back to the attempt", flush=True)
+            said_locked = False
         # Read only what is new. The file reaches tens of megabytes on a long
         # run and this loop runs every twenty seconds for the whole attempt.
         try:
@@ -715,6 +792,9 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
+    ap.add_argument("--probe-citizens", action="store_true", default=False,
+                    help="ask once per batch whether this UI context may assign a "
+                         "citizen to a district; read-only, issues no command")
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER")
     # Six players, because the size IS the player count — see `civ6_play.py`.
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
@@ -1004,7 +1084,21 @@ def main() -> int:
              "--timeout", str(args.timeout),
              "--lock-wait", "30",
              "--report-every", "10",
-             "--export-state",
+             "--export-state"]
+            # ⚠⚠ THE CHAIN IS FOUR LINKS AND THIS IS THE FOURTH. The mod reads
+            # `cfg.ProbeCitizens` (#1098), `civ6_play.py` sets it from
+            # `--probe-citizens` (#1115) -- and this loop builds a FIXED argument
+            # list, so without this line the flag still could not reach a live
+            # game. #1098 shipped unreachable for exactly one missing link; a
+            # second missing link is the same bug with a different address.
+            #
+            # It answers the last untouched science lane: only 8 of 50 live
+            # campus cities carry a specialist ON the Campus, and 45% of all
+            # specialists sit on Commercial Hubs, because CIVVIS has never
+            # issued a citizen order. The probe is read-only -- it asks
+            # `CanStartCommand` and emits the verdict without issuing anything.
+            + (["--probe-citizens"] if args.probe_citizens else [])
+            + [
              # ⚠ Popups must not sit on the map. They are closed by the autoclose shim
              # already, but the delay is how long they are VISIBLE, and the operator is
              # watching this screen to check it against CIVVIS's. Near-zero rather than
@@ -1074,6 +1168,10 @@ def main() -> int:
             if why == "timeout":
                 print("attempt exceeded its own timeout; stopping it", flush=True)
                 play.send_signal(signal.SIGTERM)
+            elif why == "locked":
+                # Already signalled inside the watcher. Named separately so the
+                # log does not blame a timeout for an unattended machine.
+                print("attempt abandoned: the screen stayed locked", flush=True)
         finally:
             # `civ6_play` owns the decider now and stops it on the way out
             # (`stop_brain`, also registered with atexit), so there is nothing to

@@ -13,6 +13,7 @@ from pathlib import Path
 import json
 import sys
 import tempfile
+import time
 import unittest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -360,7 +361,7 @@ class WedgedAttempt(unittest.TestCase):
         def kill(self):
             self._dead = True
 
-    def _run(self, turns, frozen_s):
+    def _run(self, turns, frozen_s, locked_probe=None):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "run").mkdir()
@@ -371,10 +372,73 @@ class WedgedAttempt(unittest.TestCase):
             climb.RUN_ROOT = root
             try:
                 play = self._Play()
-                why = climb.wait_watching_the_turn(play, "run", 3.0, frozen_s)
+                why = climb.wait_watching_the_turn(
+                    play, "run", 3.0, frozen_s,
+                    locked_probe=locked_probe or (lambda: False))
                 return why, play.signalled
             finally:
                 climb.RUN_ROOT = original
+
+    def test_a_locked_screen_does_not_kill_a_healthy_attempt(self):
+        """⚠⚠ A LOCKED SCREEN IS NOT A STALLED GAME.
+
+        `civ6_play` waits at the macOS authentication boundary instead of
+        scripting past it. Neither timer here knew that: `deadline` is wall
+        clock and `last_turn_at` cannot advance while the game is not being
+        driven, so a long enough lock killed a healthy attempt.
+
+        Live: run `civvis-20260804T102440Z` reached turn 82 with 4 cities and
+        score 185, then was stopped by "attempt exceeded its own timeout" after
+        the session locked mid-game.
+
+        With the screen reported LOCKED and `frozen_s=0`, the pre-fix code kills
+        the attempt immediately. It must not.
+        """
+        original_cap = climb.LOCK_CREDIT_CAP_S
+        # A ZERO cap keeps the test bounded: the first locked slice exceeds it.
+        # Without ANY cap the loop spins forever, because every locked slice
+        # extends the deadline it is racing — precisely what the first version
+        # of this fix did, and the fake `play.wait` returns instantly so almost
+        # no wall clock accrues to reach a larger cap.
+        climb.LOCK_CREDIT_CAP_S = 0.0
+        started = time.time()
+        try:
+            why, signalled = self._run([1, 2, 206], frozen_s=0.0,
+                                        locked_probe=lambda: True)
+        finally:
+            climb.LOCK_CREDIT_CAP_S = original_cap
+        self.assertNotEqual(
+            why, "frozen",
+            "a locked screen must not be read as a frozen turn")
+        self.assertEqual(
+            why, "locked",
+            "past the credit cap the attempt must end, and must SAY it was the lock")
+
+    def test_a_permanent_lock_cannot_hang_the_attempt_forever(self):
+        """⚠ An unbounded pause holds the game hostage on a machine left locked.
+
+        Every locked slice extends the deadline it is racing, so without a cap
+        this loop never terminates. Bounded here by construction: the call must
+        return rather than run past the test's own patience.
+        """
+        original_cap = climb.LOCK_CREDIT_CAP_S
+        climb.LOCK_CREDIT_CAP_S = 0.0
+        started = time.time()
+        try:
+            why, signalled = self._run([1, 2, 206], frozen_s=600.0,
+                                        locked_probe=lambda: True)
+        finally:
+            climb.LOCK_CREDIT_CAP_S = original_cap
+        self.assertEqual(why, "locked")
+        self.assertLess(time.time() - started, 30.0,
+                        "the capped wait must resolve promptly, not spin")
+
+    def test_an_unlocked_frozen_turn_is_still_killed(self):
+        """The pause must be conditional — with the screen UNLOCKED the guard stands."""
+        why, signalled = self._run([1, 2, 206], frozen_s=0.0,
+                                   locked_probe=lambda: False)
+        self.assertEqual(why, "frozen")
+        self.assertEqual(signalled, climb.signal.SIGTERM)
 
     def test_a_frozen_turn_is_killed_from_outside(self):
         why, signalled = self._run([1, 2, 206], frozen_s=0.0)

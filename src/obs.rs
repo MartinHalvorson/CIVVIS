@@ -1628,11 +1628,11 @@ mod tests {
 
         const INDEX: &str = include_str!("../web/index.html");
         assert!(INDEX.contains("id=\"map-controls-dock\""));
-        // The strip reads outward from the ground under the cursor: the land
-        // itself, where to settle it, who holds it, what they built on it —
-        // and only then the softer cultural readings of that same territory.
+        // The compact two-column menu pairs related readings: land and borders,
+        // city planning and empire detail, then culture, tile value, and the
+        // two city-pressure lenses.
         let toolbar = INDEX
-            .split_once("<div id=\"map-lenses\"")
+            .split_once("<div id=\"map-lens-strip\"")
             .expect("map lens toolbar")
             .1
             .split_once("</div>")
@@ -1649,8 +1649,8 @@ mod tests {
             lenses,
             [
                 "continent",
-                "settler",
                 "political",
+                "settler",
                 "empire",
                 "religion",
                 "government",
