@@ -23,6 +23,7 @@ use crate::civ6;
 use crate::game::{
     Action, Game, GameOptions, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL,
 };
+use crate::leader_roster;
 use crate::obs::{observation, observation_player_view, observation_spectator};
 use crate::name::Name;
 use crate::rules::Rules;
@@ -3493,8 +3494,12 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         p.max_turns = v;
     }
     if let Some(v) = request["leader_pool"].as_str().and_then(LeaderPool::from_id) {
-        p.leader_pool = v;
+        p.leader_pool = v.available_or_default();
     }
+    let selected_pool = p.leader_pool;
+    p.civs.retain(|civ| {
+        leader_roster::entry(civ).is_some_and(|entry| entry.available && entry.pool == selected_pool)
+    });
     // The two settings a Civ 6 lobby asks for that this protocol could not
     // carry: how hard the rivals play, and who the player is. Both are
     // validated against the live ruleset rather than trusted, because the
@@ -3506,11 +3511,14 @@ fn new_game_params(current: &Params, request: &Value) -> Params {
         }
     }
     if let Some(civs) = request["civs"].as_array() {
-        let rules = Rules::shared();
+        let selected_pool = p.leader_pool;
         p.civs = civs
             .iter()
             .filter_map(|civ| civ.as_str())
-            .filter(|civ| rules.civs.contains_key(civ))
+            .filter(|civ| {
+                leader_roster::entry(civ)
+                    .is_some_and(|entry| entry.available && entry.pool == selected_pool)
+            })
             .map(str::to_string)
             .collect();
     }
@@ -4260,6 +4268,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
                     "city_state_limit": r.city_states.roster.len(),
                     "civ6_leaders": CIV6_LEADER_POOL.as_slice(),
+                    "leader_pools": leader_roster::browser_pools(),
                     "great_people": r.great_people, "governors": r.governors,
                     "map_sizes": CIV6_MAP_SIZES,
                     "difficulties": r.difficulties, "speeds": r.speeds,
@@ -7161,7 +7170,7 @@ mod tests {
     #[test]
     fn a_saved_game_reloads_onto_the_same_turn() {
         let mut params = current();
-        params.leader_pool = LeaderPool::Expanded;
+        params.leader_pool = LeaderPool::ExpandedHistorical;
         let mut session = Session::new(params);
         for _ in 0..3 {
             session.act(&json!({"type": "end_turn"}));
@@ -7173,11 +7182,11 @@ mod tests {
             serde_json::from_value(serde_json::to_value(&session.game).unwrap()).unwrap();
         assert_eq!(round_tripped.turn, turn);
         assert_eq!(round_tripped.seed, session.game.seed);
-        assert_eq!(round_tripped.leader_pool, LeaderPool::Expanded);
+        assert_eq!(round_tripped.leader_pool, LeaderPool::ExpandedHistorical);
 
         let mut restored = Session::from_game(session.params.clone(), round_tripped);
         assert_eq!(restored.game.turn, turn);
-        assert_eq!(restored.params.leader_pool, LeaderPool::Expanded);
+        assert_eq!(restored.params.leader_pool, LeaderPool::ExpandedHistorical);
         assert!(restored.act(&json!({"type": "end_turn"})).is_none());
         assert!(restored.game.turn > turn, "a loaded game plays on");
     }
@@ -7440,18 +7449,23 @@ mod tests {
     }
 
     #[test]
-    fn leader_pool_defaults_to_civ6_and_accepts_expanded_explicitly() {
+    fn leader_pool_defaults_to_civ6_and_normalizes_legacy_expanded_to_historical() {
         let stock = current();
         assert_eq!(stock.leader_pool, LeaderPool::Civ6);
 
         let ignored = new_game_params(&stock, &json!({"leader_pool": "unknown"}));
         assert_eq!(ignored.leader_pool, LeaderPool::Civ6);
 
-        let expanded = new_game_params(&stock, &json!({"leader_pool": "expanded"}));
-        assert_eq!(expanded.leader_pool, LeaderPool::Expanded);
-        let session = Session::new(expanded);
-        assert_eq!(session.game.leader_pool, LeaderPool::Expanded);
-        assert_eq!(session.state()["leader_pool"], "expanded");
+        let historical = new_game_params(&stock, &json!({"leader_pool": "historical"}));
+        assert_eq!(historical.leader_pool, LeaderPool::ExpandedHistorical);
+        let session = Session::new(historical);
+        assert_eq!(session.game.leader_pool, LeaderPool::ExpandedHistorical);
+        assert_eq!(session.state()["leader_pool"], "historical");
+
+        let legacy = new_game_params(&stock, &json!({"leader_pool": "expanded"}));
+        assert_eq!(legacy.leader_pool, LeaderPool::ExpandedHistorical);
+        let unavailable_today = new_game_params(&stock, &json!({"leader_pool": "today"}));
+        assert_eq!(unavailable_today.leader_pool, LeaderPool::Civ6);
 
         let stock_session = Session::new(stock);
         assert!(stock_session
@@ -7460,6 +7474,27 @@ mod tests {
             .iter()
             .filter(|player| !player.is_minor && !player.is_barbarian)
             .all(|player| CIV6_LEADER_POOL.contains(&player.civ.as_str())));
+    }
+
+    #[test]
+    fn leader_choices_must_belong_to_the_selected_available_tier() {
+        let historical = new_game_params(
+            &current(),
+            &json!({
+                "leader_pool": "historical",
+                "civs": ["Denmark", "Rome", "Romania"],
+            }),
+        );
+        assert_eq!(historical.civs, vec!["Denmark"]);
+
+        let civ6 = new_game_params(
+            &current(),
+            &json!({
+                "leader_pool": "civ6",
+                "civs": ["Denmark", "Rome"],
+            }),
+        );
+        assert_eq!(civ6.civs, vec!["Rome"]);
     }
 
     #[test]
@@ -7952,10 +7987,19 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("start_eon"));
         assert!(EMBEDDED_INDEX.contains("id=\"leaderpool\""));
         assert!(EMBEDDED_INDEX.contains(">Civ 6 Leaders</option>"));
-        assert!(EMBEDDED_INDEX.contains(">Expanded</option>"));
+        assert!(EMBEDDED_INDEX.contains(">Expanded Historical Figures</option>"));
+        assert!(EMBEDDED_INDEX.contains(">Today's Leaders — roster pending</option>"));
+        assert!(
+            EMBEDDED_INDEX.find(">Civ 6 Leaders</option>")
+                < EMBEDDED_INDEX.find(">Expanded Historical Figures</option>")
+                && EMBEDDED_INDEX.find(">Expanded Historical Figures</option>")
+                    < EMBEDDED_INDEX.find(">Today's Leaders — roster pending</option>"),
+            "leader tiers must remain Civ 6, historical, then today"
+        );
         assert!(EMBEDDED_INDEX.contains("leader_pool: leaderPool"));
         assert!(EMBEDDED_INDEX.contains("function syncLeaderPool()"));
-        assert!(EMBEDDED_INDEX.contains("RULES.civ6_leaders"));
+        assert!(EMBEDDED_INDEX.contains("RULES.leader_pools"));
+        assert!(EMBEDDED_INDEX.contains("True Start:"));
         assert!(EMBEDDED_INDEX.contains("id=\"maptype\""));
         // The globe has its own renderer, and it is the only one: both globe
         // scripts are drawn by it, so neither needs a projection of its own.
@@ -8720,18 +8764,20 @@ mod tests {
         //
         // Every data column is now a share rather than a pixel count, and each
         // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 7 identity columns totalling 11.387 against 12 value
-        // columns of 1. That identity is not decoration: it is what lets the
+        // inside it — 8 data identity columns totalling 12.087, plus the fixed
+        // Watch-as action, against 12 value columns of 1. That identity is not
+        // decoration: it is what lets the
         // bar between the two blocks move width across itself, and it is the
         // ratio the table uses at every width. Changing one number here without
         // the other silently re-weights the whole masthead.
         //
-        // The floor is 5 label columns, the ELO figure and the wider odds cell,
-        // whose two named numeric tracks flank a narrow trend track.
+        // The floor is the rank track, 5 label columns, the ELO figure and the
+        // wider odds cell, whose two named numeric tracks flank a narrow trend
+        // track.
         assert!(EMBEDDED_INDEX.contains(
             "--hud-identity-column: minmax(\n      \
-             calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)\n           \
-             + var(--hud-ident-odds-min)), 11.387fr);"
+             calc(var(--hud-rank-min) + var(--hud-ident-min) * 5\n           \
+             + var(--hud-ident-num-min) + var(--hud-ident-odds-min)), 12.087fr);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
@@ -8872,16 +8918,24 @@ mod tests {
         // One bar per seam between two adjacent data columns, dragged to move
         // width from the column on its left into the column on its right.
         assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
-        // Every fact in the player-HUD column model can order its rows. The
-        // Watch-as and lock cells are actions, deliberately outside that model,
-        // so an operator never has to sort a meaningless column just to reach
-        // ELO, a yield, or an active plan.
+        // Every fact in the player HUD can order its rows. Rank is the first
+        // dedicated standings column and is derived from the score standing,
+        // while Watch-as and lock cells are actions, deliberately outside the
+        // model, so an operator never has to sort a meaningless column just to
+        // reach ELO, a yield, or an active plan.
         assert!(EMBEDDED_INDEX.contains(
             "...PLAYER_HUD_COLUMNS.map(column => column.key), \"win_start\", \"win_delta\","
         ));
+        assert!(EMBEDDED_INDEX.contains(
+            "{key:\"rank\", label:\"Score rank\", block:\"identity\", head:0, min:\"--hud-rank-min\", width:.7},"
+        ), "rank should be a measured, draggable identity column");
         assert!(EMBEDDED_INDEX.contains("const HUD_SORT_STORAGE_KEY = \"civvis-player-hud-sort-v1\";"));
-        assert!(EMBEDDED_INDEX.contains("function playerHudSortValue(player, key, stats)"));
-        assert!(EMBEDDED_INDEX.contains("function sortedPlayerHudPlayers(players, statsByPlayer)"));
+        assert!(EMBEDDED_INDEX.contains("function playerHudSortValue(player, key, stats, rankById)"));
+        assert!(EMBEDDED_INDEX.contains("if (key === \"rank\") return rankById.get(player.id) ?? null;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "return key === \"rank\" || PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? \"asc\" : \"desc\";"
+        ), "rank should initially put #1 first");
+        assert!(EMBEDDED_INDEX.contains("function sortedPlayerHudPlayers(players, statsByPlayer, rankById)"));
         assert!(EMBEDDED_INDEX.contains("function togglePlayerHudSort(key)"));
         assert!(EMBEDDED_INDEX.contains("if (leftValue === null || rightValue === null) {"));
         assert!(EMBEDDED_INDEX.contains(
@@ -8894,7 +8948,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("if (key === \"win_delta\") {"));
         assert!(EMBEDDED_INDEX.contains("return oddsValue(player.odds_now);"),
             "the NOW Win heading should order by its current estimate");
-        for key in ["civ", "leader", "player", "elo", "win_start", "win_delta", "win", "age", "plan"] {
+        for key in ["rank", "civ", "leader", "player", "elo", "win_start", "win_delta", "win", "age", "plan"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("playerHudSortHead(\"{key}\"")),
                 "the {key} heading should be sortable"
@@ -8905,10 +8959,21 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("playerHudSortHead(\"watch\""),
             "Watch-as stays an action instead of a sort target");
         assert!(EMBEDDED_INDEX.contains("class=\"hud-sort-head\" data-hud-sort=\"${key}\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "playerHudSortHead(\"rank\", \"RANK\", \"Score rank\")"
+        ), "the rank figures need their own named sort header");
+        assert!(EMBEDDED_INDEX.contains(
+            "minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)"
+        ), "the rank heading should occupy its own first identity track");
+        assert!(EMBEDDED_INDEX.contains(
+            "#playerhud .diplomacy-rank { grid-column: 1; grid-row: 1; }"
+        ), "the rank figure should align under its own heading");
         assert!(EMBEDDED_INDEX.contains("const sort = ev.target.closest?.(\"[data-hud-sort]\");"));
         assert!(EMBEDDED_INDEX.contains("#playerhud .hud-sort-cell[data-hud-sort-active=\"true\"]"));
         assert!(EMBEDDED_INDEX.contains("const scoreRankedMajors = state.players"));
-        assert!(EMBEDDED_INDEX.contains("const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);"
+        ));
         assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
         assert!(EMBEDDED_INDEX.contains("function aimPlayerHudSeam(seam, targetWidth)"));
         assert!(EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam="));
@@ -9460,7 +9525,9 @@ mod tests {
             .contains("document.getElementById(\"strategysec\").style.display = fullMapSpectator"));
         assert!(EMBEDDED_INDEX.contains("if (!fullMapSpectator && (SPEC || govs.length"));
         assert!(EMBEDDED_INDEX.contains(".sort((a, b) => b.score - a.score || a.id - b.id)"));
-        assert!(EMBEDDED_INDEX.contains("class=\"diplomacy-rank\">#${rank}"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"diplomacy-rank\" title=\"Score rank ${rank}\">#${rank}"
+        ));
         // The sidebar sits left of the map. Match the declaration rather than
         // its formatting, so restyling the block cannot fail the rule.
         let side_rule = EMBEDDED_INDEX
@@ -10138,7 +10205,7 @@ mod tests {
             "num_players": 6,
             "map_script": "continents",
             "game_speed": "quick",
-            "leader_pool": "expanded",
+            "leader_pool": "historical",
             "victory_conditions": {"culture": false, "score": false},
         }));
 
@@ -10164,7 +10231,7 @@ mod tests {
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
-                "leader_pool": "expanded",
+                "leader_pool": "historical",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
@@ -10182,7 +10249,7 @@ mod tests {
         assert_eq!(session.params.num_players, 6);
         assert_eq!(session.params.map_script, MapScript::Continents);
         assert_eq!(session.params.game_speed, GameSpeed::Quick);
-        assert_eq!(session.params.leader_pool, LeaderPool::Expanded);
+        assert_eq!(session.params.leader_pool, LeaderPool::ExpandedHistorical);
         assert!(!session.game.victory_conditions.culture);
         assert!(!session.game.victory_conditions.score);
         drop(session);
@@ -10284,7 +10351,7 @@ mod tests {
                 "num_players": 4,
                 "map_script": "continents",
                 "game_speed": "quick",
-                "leader_pool": "expanded",
+                "leader_pool": "historical",
                 "victory_conditions": {"culture": false, "score": false},
             }))
             .unwrap();
@@ -10323,7 +10390,7 @@ mod tests {
                 "shape": "flat",
                 "poles": "poles",
                 "speed": "quick",
-                "leader_pool": "expanded",
+                "leader_pool": "historical",
                 "teams": [],
                 "victories": ["science", "religious", "diplomatic", "domination"],
             })
@@ -11107,8 +11174,9 @@ mod tests {
                 "the setup screen is missing {piece}"
             );
         }
-        // Both selects are filled from the live ruleset, never a hardcoded list.
-        assert!(EMBEDDED_INDEX.contains("RULES.civs && typeof RULES.civs === \"object\""));
+        // The leader picker follows the live roster API, while difficulty is
+        // still supplied by the active ruleset; neither is a hardcoded list.
+        assert!(EMBEDDED_INDEX.contains("RULES.leader_pools"));
         assert!(EMBEDDED_INDEX
             .contains("RULES.difficulties && typeof RULES.difficulties === \"object\""));
         // A spectated world has nobody to hand a leader or a handicap to, and
