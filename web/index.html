@@ -3689,7 +3689,8 @@
         </select></label>
         <label class="small game-advanced-setting civ6-hidden" data-advanced-order="20">Leader Pool<select id="leaderpool" style="margin-top:4px">
           <option value="civ6" selected>Civ 6 Leaders</option>
-          <option value="expanded">Expanded</option>
+          <option value="historical">Expanded Historical Figures</option>
+          <option value="today" disabled>Today's Leaders — roster pending</option>
         </select></label>
         <label class="small civ6-hidden">Scenario<select id="scenario" style="margin-top:4px">
           <option value="custom" selected>Custom Game</option>
@@ -3728,11 +3729,13 @@
           <option value="grand_canals">Grand Canals</option>
           <option value="grand_canals_2">Grand Canals II</option>
           <option value="pangaea">Pangaea</option>
+          <option value="earth">Earth</option>
+          <option value="true_start_earth">True Start Earth</option>
           <option value="continents">Continents</option>
           <option value="small_continents">Small Continents</option>
+          <option value="fjords">Fjords</option>
           <option value="islands">Islands</option>
           <option value="water_world">Water World</option>
-          <option value="true_start_earth">True Start Earth</option>
         </select></label>
         <label class="small game-advanced-setting civ6-hidden" data-advanced-order="40">Thermal distribution<select id="mappoles" style="margin-top:4px">
           <option value="poles">Hot equator, cold poles</option>
@@ -8319,9 +8322,10 @@ async function boot() {
       if ([...select.options].some(option => option.value === chosen)) select.value = chosen;
     }
     syncEarthShape();
-    // A leader is a civilization plus the person who leads it; the ruleset
-    // knows both, and their agendas, so the setup screen never invents names.
-    if (RULES.civs && typeof RULES.civs === "object") {
+    // Roster data names both the civilization and its leader, even when that
+    // neutral historical identity is intentionally absent from this game's
+    // modeled Civilization VI rules.
+    if (Array.isArray(RULES.leader_pools)) {
       syncLeaderPool();
     }
     if (RULES.difficulties && typeof RULES.difficulties === "object") {
@@ -9370,7 +9374,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
       defaultTurnLimitForSpeed(st.game_speed));
     setOptionalWorldNumber("mapseed", st.seed);
     syncWorldSetupInputs();
-    document.getElementById("leaderpool").value = st.leader_pool || "civ6";
+    document.getElementById("leaderpool").value = normalizedLeaderPoolId(st.leader_pool || "civ6");
     syncLeaderPool();
     // The seat a person is playing and the handicap they are playing it on are
     // settings of this world too, so the panel adopts them alongside the map
@@ -16840,7 +16844,12 @@ function skyPixels(earthRadii, radius) { return earthRadii * radius; }
 // is a line across the picture.
 function drawSkyOrbits(radius, centerX, centerY, alpha) {
   const span = skyStageSpan();
-  const bodies = visibleSkyBodies().filter(body => body.orbitRadius > 0);
+  // Earth is home, so `visibleSkyBodies` deliberately leaves it out of the
+  // navigation/object list. Its Sun-centred path still belongs in the system
+  // diagram: it is the one astronomical-unit ring that tells the viewer where
+  // home is in relation to the Sun.
+  const bodies = [SKY_EARTH, ...visibleSkyBodies().filter(body => body.id !== "earth")]
+    .filter(body => body.orbitRadius > 0);
   if (!bodies.length) return;
   cx.save();
   cx.lineWidth = 1;
@@ -16854,8 +16863,9 @@ function drawSkyOrbits(radius, centerX, centerY, alpha) {
     const x = centerX + px * radius, y = centerY + py * radius;
     // Nothing to draw if the whole ring is off the stage in one direction.
     if (Math.abs(x) > span * 9 && Math.abs(y) > span * 9) continue;
-    cx.globalAlpha = shown * (body.parent ? .22 : .34);
-    cx.strokeStyle = body.parent ? "#8fa6bb" : "#7f94ab";
+    const homeOrbit = body.id === "earth";
+    cx.globalAlpha = shown * (body.parent ? .22 : homeOrbit ? .56 : .34);
+    cx.strokeStyle = body.parent ? "#8fa6bb" : homeOrbit ? "#9ccce9" : "#7f94ab";
     cx.beginPath(); cx.arc(x, y, ring, 0, 6.283185); cx.stroke();
   }
   cx.restore();
@@ -29073,7 +29083,7 @@ function applyQueuedSimulationSettings(settings) {
     defaultTurnLimitForSpeed(settings.speed));
   setOptionalWorldNumber("mapseed", settings.seed);
   syncWorldSetupInputs();
-  document.getElementById("leaderpool").value = settings.leader_pool || "civ6";
+  document.getElementById("leaderpool").value = normalizedLeaderPoolId(settings.leader_pool || "civ6");
   syncLeaderPool();
   document.getElementById("baseruleset").value = settings.base_ruleset || "civ6";
   if (settings.start_era) document.getElementById("startera").value = settings.start_era;
@@ -29234,23 +29244,40 @@ function syncMapRoster(civ6) {
   syncEarthShape();
 }
 
-// The broad historical ruleset remains available, but a normal lobby offers
-// only civilizations that Civilization VI itself ships. The same pool fills
-// random AI seats on the server and filters the person's explicit leader
-// choice here, so "Random leader" and a named pick describe one roster.
+function normalizedLeaderPoolId(id) {
+  return id === "expanded" ? "historical" : id;
+}
+
+// The server owns the ordered roster data.  That makes the picker match the
+// identities it can actually seat, including future Today's Leaders records
+// that do not have an entry in the Civilization VI rules data.
 function syncLeaderPool() {
   const select = document.getElementById("leader");
   const pool = document.getElementById("leaderpool");
-  if (!select || !pool || !RULES || !RULES.civs || typeof RULES.civs !== "object") return;
+  if (!select || !pool || !RULES || !Array.isArray(RULES.leader_pools)) return;
   const selected = select.value;
-  const civ6 = new Set(Array.isArray(RULES.civ6_leaders) ? RULES.civ6_leaders : []);
-  const leaders = Object.entries(RULES.civs)
-    .filter(([civ]) => pool.value === "expanded" || civ6.has(civ))
-    .map(([civ, spec]) => ({civ, leader: spec.leader || civ, note: spec.note || ""}))
+  const requested = normalizedLeaderPoolId(pool.value);
+  const pools = RULES.leader_pools;
+  const active = pools.find(entry => entry.id === requested && entry.available)
+    || pools.find(entry => entry.available);
+  if (!active) return;
+  pool.innerHTML = pools.map(entry =>
+    `<option value="${escapeAttr(entry.id)}"${entry.available ? "" : " disabled"}` +
+    ` title="${escapeAttr(entry.description || "")}">${escapeAttr(entry.name)}</option>`
+  ).join("");
+  pool.value = active.id;
+  const leaders = (active.leaders || [])
+    .map(entry => ({
+      civ: entry.civ,
+      leader: entry.leader || entry.civ,
+      latitude: Number(entry.latitude),
+      longitude: Number(entry.longitude),
+    }))
     .sort((first, second) => first.leader.localeCompare(second.leader));
   select.innerHTML = `<option value="">Random leader</option>` + leaders.map(entry =>
-    `<option value="${entry.civ}" title="${escapeAttr(entry.note)}">` +
-    `${entry.leader} of ${entry.civ}</option>`).join("");
+    `<option value="${escapeAttr(entry.civ)}" title="${escapeAttr(
+      `True Start: ${entry.latitude.toFixed(2)}°, ${entry.longitude.toFixed(2)}°`
+    )}">${escapeAttr(entry.leader)} of ${escapeAttr(entry.civ)}</option>`).join("");
   if (leaders.some(entry => entry.civ === selected)) select.value = selected;
 }
 

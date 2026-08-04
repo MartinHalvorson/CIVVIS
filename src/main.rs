@@ -7,6 +7,7 @@ use civvis::game::{
     default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions,
     WarRecord, DEFAULT_DISASTER_INTENSITY, GAME_MODES,
 };
+use civvis::leader_roster;
 use civvis::rules::Rules;
 use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 
@@ -876,6 +877,18 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         }
         teams
     };
+    let leader_pool = {
+        let id = arg_text(args, "--leader-pool", LeaderPool::default().id());
+        let pool = LeaderPool::from_id(&id).unwrap_or_else(|| {
+            eprintln!("unknown leader pool {id:?}; choose civ6, historical, or today");
+            std::process::exit(2);
+        });
+        if !pool.is_available() {
+            eprintln!("leader pool {id:?} has no supplied roster data yet");
+            std::process::exit(2);
+        }
+        pool
+    };
     GameOptions {
         base_ruleset: base_ruleset(args),
         start_era: start_era(args),
@@ -893,17 +906,11 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
             .filter_map(|seat| seat.trim().parse().ok())
             .collect(),
         teams,
-        leader_pool: {
-            let id = arg_text(args, "--leader-pool", LeaderPool::default().id());
-            LeaderPool::from_id(&id).unwrap_or_else(|| {
-                eprintln!("unknown leader pool {id:?}; choose civ6 or expanded");
-                std::process::exit(2);
-            })
-        },
+        leader_pool,
         // Who the player is. `--civ Egypt` seats Egypt at seat 0; `--civs
         // Egypt,Rome` names the leading seats in order. Anything unnamed
-        // falls back to the stock roster, and a name the ruleset does not
-        // know is refused here rather than silently ignored downstream.
+        // falls back to the selected stock roster, and a name outside that
+        // roster is refused here rather than silently ignored downstream.
         civs: {
             let named = arg_text(args, "--civs", &arg_text(args, "--civ", ""));
             let chosen: Vec<String> = named
@@ -912,10 +919,18 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
                 .filter(|civ| !civ.is_empty())
                 .collect();
             for civ in &chosen {
-                if !rules.civs.contains_key(civ) {
-                    let mut known: Vec<&str> = rules.civs.keys().map(|name| name.as_str()).collect();
+                if !leader_roster::entry(civ).is_some_and(|entry| {
+                    entry.available && entry.pool == leader_pool
+                }) {
+                    let mut known: Vec<&str> = leader_pool
+                        .entries()
+                        .map(|entry| entry.civ.as_str())
+                        .collect();
                     known.sort_unstable();
-                    eprintln!("unknown civilization {civ:?}; choose one of {known:?}");
+                    eprintln!(
+                        "civilization {civ:?} is not available in {}: choose one of {known:?}",
+                        leader_pool.name()
+                    );
                     std::process::exit(2);
                 }
             }
@@ -2197,13 +2212,13 @@ fn main() {
                 "usage: civvis <simulate|soak|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
-                      [--map land_only|lakes|inland_sea|grand_canals|grand_canals_2|pangaea|continents|small_continents|islands|water_world|true_start_earth] \
+                      [--map land_only|lakes|inland_sea|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world] \
                       [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
                       [--game-modes apocalypse,secret_societies] \
-                      [--leader-pool civ6|expanded] \
+                      [--leader-pool civ6|historical|today] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--force-strategy NAME] [--resume checkpoint.json] [--strict] \
