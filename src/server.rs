@@ -11776,12 +11776,13 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "function nextAction() {\n  if (!state || SPEC) return;\n  advanceToNextActionUnit(true);"
         ));
-        // Period/comma and Tab remain a reversible roster cycle rather than
-        // acquiring an unmatched proximity-based "previous" behavior.
+        // The requested fixed action map invokes the new selector from key 1;
+        // unit roster cycling is no longer a global keyboard shortcut.
         assert!(EMBEDDED_INDEX.contains("if (step > 0) { advanceToNextUnit(true); return; }"));
         assert!(EMBEDDED_INDEX.contains(
-            "{id: \"NextUnitTab\", key: \"Tab\", run: () => advanceToNextUnit(true)}"
+            "{id: \"NextAction\", key: \"1\", run: () => nextAction()},"
         ));
+        assert!(!EMBEDDED_INDEX.contains("id: \"NextUnitTab\""));
     }
 
     /// Resting over a tile reports it, the way Civ 6's plot tooltip does — and
