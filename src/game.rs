@@ -25960,8 +25960,11 @@ impl Game {
             .max(self.unit_bombard_strength(u))
     }
 
-    pub fn city_housing(&self, city: &City) -> f64 {
-        // fresh water (river/oasis) = 5, coastal = 3, otherwise 2 (Civ 6)
+    /// Whether the city centre stands on fresh water, and whether it is
+    /// coastal. Both decide the housing floor, and an Aqueduct's whole worth
+    /// is the gap between the two floors — so the test lives in one place and
+    /// `city_housing` and `aqueduct_housing_gain` read it from here.
+    fn city_water(&self, city: &City) -> (bool, bool) {
         let center = &self.map.tiles[&city.pos];
         let fresh = self.grants_city_state_unique_bonus(city.owner, "Mohenjo-Daro")
             || center.has_river()
@@ -25976,8 +25979,18 @@ impl Game {
                 .map(|t| matches!(t.terrain.as_str(), "coast" | "ocean"))
                 .unwrap_or(false)
         });
-        let has_aqueduct = self.city_has_active_district_family(city, crate::name!("aqueduct"));
-        let mut h = if has_aqueduct {
+        (fresh, coastal)
+    }
+
+    /// The housing a city centre carries before any building, improvement or
+    /// district adds to it: fresh water 5, coastal 3, otherwise 2, and an
+    /// Aqueduct raises the floor to 7 on fresh water or 6 without it (Civ 6).
+    ///
+    /// ⚠ Stated ONCE. `aqueduct_housing_gain` is this function's difference
+    /// across `has_aqueduct`, so a governor deciding whether an Aqueduct is
+    /// worth building cannot disagree with the model that pays for it.
+    pub(crate) fn city_housing_floor(fresh: bool, coastal: bool, has_aqueduct: bool) -> f64 {
+        if has_aqueduct {
             if fresh {
                 7.0
             } else {
@@ -25989,7 +26002,37 @@ impl Game {
             3.0
         } else {
             2.0
-        };
+        }
+    }
+
+    /// What an Aqueduct this city does not yet have would add to its housing:
+    /// **+2** on fresh water, **+3** coastal, **+4** on a dry inland centre.
+    /// Zero once one is standing.
+    ///
+    /// This is the largest single housing step available to an early city and
+    /// the district that supplies it is the cheapest in the ruleset (36), which
+    /// is why the chooser is given the number rather than a flat weight — the
+    /// dry city that needs it most gains twice what a river city does.
+    pub fn aqueduct_housing_gain(&self, city: &City) -> f64 {
+        if self.city_has_active_district_family(city, crate::name!("aqueduct")) {
+            return 0.0;
+        }
+        let (fresh, coastal) = self.city_water(city);
+        Self::city_housing_floor(fresh, coastal, true)
+            - Self::city_housing_floor(fresh, coastal, false)
+    }
+
+    /// Housing headroom: what the city may still grow into before
+    /// `housing_growth_mult` starts throttling it. Negative once population
+    /// has overrun the ceiling.
+    pub fn city_housing_headroom(&self, city: &City) -> f64 {
+        self.city_housing(city) - city.pop as f64
+    }
+
+    pub fn city_housing(&self, city: &City) -> f64 {
+        let (fresh, coastal) = self.city_water(city);
+        let has_aqueduct = self.city_has_active_district_family(city, crate::name!("aqueduct"));
+        let mut h = Self::city_housing_floor(fresh, coastal, has_aqueduct);
         if self.city_has_palace(city) {
             h += self.rules.buildings["palace"].housing;
         }

@@ -2273,6 +2273,17 @@ impl AdvancedAi {
         // `live_without_` arm — which is the invariant working, and the reason a
         // gated-off flag here would be dead code of the `culture_focus` kind.
         self.enable_district_coverage();
+        // ⚠⚠ AND THE POPULATION THE SCIENCE IS COMPUTED FROM IS CAPPED BY HOUSING.
+        // The lane above decides which specialty district a city builds; none of
+        // them raises the ceiling on the citizens who work them. Measured over
+        // 6,282 host-exported city-turns in 9 live runs: median headroom 0,
+        // **78.4% of city-turns below the break-even 2**, mean growth multiplier
+        // 0.457 — and at pop >= 8, 94.2% throttled. Over the same corpus the
+        // Aqueduct family took 27 of 1,837 district orders and the Neighborhood
+        // took 2, against 323 for Theatre Square. Science is ~1.16 x population,
+        // so this is the same defect shape as #999 and #1003: a repair the
+        // governor making most of the builds could not reach.
+        self.enable_housing_districts();
     }
 
     /// Hold ONE live-bridge flag off so an arm can price it. These exist for
@@ -2304,6 +2315,18 @@ impl AdvancedAi {
 
     pub fn disable_district_coverage(&mut self) {
         self.base.district_coverage = false;
+    }
+
+    /// Let the baseline governor raise the housing ceiling. See
+    /// `BasicAi::housing_districts`: 78.4% of live city-turns are growth-
+    /// throttled by housing, the median headroom is 0, and the Aqueduct and
+    /// Neighborhood together take 1.6% of district orders.
+    pub fn enable_housing_districts(&mut self) {
+        self.base.housing_districts = true;
+    }
+
+    pub fn disable_housing_districts(&mut self) {
+        self.base.housing_districts = false;
     }
 
     /// Require a faith-bought soldier's gold upkeep to be payable. Native
@@ -31601,5 +31624,21 @@ mod research_probe {
         println!(
             "TOTALS n={n} science {ts:.1} vs {cs:.1} | techs {tt} vs {tc} | campuses {tcp} vs {ccp} | score {tsc} vs {csc}"
         );
+    }
+    /// Off by default and set only by the live bridge, so the control arm can
+    /// hold exactly this one mechanism off — which is what makes
+    /// `live_without_housing_districts` a controlled comparison rather than a
+    /// second implementation.
+    #[test]
+    fn only_the_live_bridge_raises_the_housing_ceiling() {
+        assert!(
+            !AdvancedAi::new().base.housing_districts,
+            "the frozen tournament controller must keep its recorded ladders"
+        );
+        let mut live = AdvancedAi::new();
+        live.enable_live_bridge();
+        assert!(live.base.housing_districts, "the deployment turns it on");
+        live.disable_housing_districts();
+        assert!(!live.base.housing_districts, "and the control arm holds it off");
     }
 }

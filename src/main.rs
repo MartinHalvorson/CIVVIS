@@ -469,6 +469,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `false` exactly. So every configured, legacy and Elo agent explores and
 /// moves exactly as it always did. A compatibility re-pin.
 ///
+/// #1087 lets the baseline governor raise the housing ceiling — the Aqueduct
+/// and the Neighborhood — behind `BasicAi::housing_districts`. That field is
+/// `false` in both `BasicAi` constructors and is set only by
+/// `enable_live_bridge`; the added block in `pick_item` short-circuits on it
+/// before it reads a city, so `advanced_v1` ranks the same district families in
+/// the same order. `Game::city_housing` is refactored onto `city_water` and
+/// `city_housing_floor` without changing a single band, so the housing it
+/// returns is unchanged for every caller. A compatibility re-pin.
+///
 /// ⚠ Re-pinned twice in this PR. The first version was inert — it patched
 /// `BasicAi::tactical_step`, which a live probe showed the deployed controller
 /// never calls; the working change is in
