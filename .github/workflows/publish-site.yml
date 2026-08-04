@@ -172,6 +172,18 @@ jobs:
         if: ${{ env.WANT_DEPLOY == 'true' && env.CLOUDFLARE_API_TOKEN == '' && github.event_name == 'schedule' }}
         run: echo "::warning::No Cloudflare credentials; built and checked both lanes, deployed nothing."
 
+      # So that standing the site up needs no machine with wrangler on it:
+      # the first real run creates the Pages project itself, and every later
+      # run finds it already there and moves on. Failure here is deliberately
+      # soft — "already exists" is the normal case and wrangler's exit codes
+      # do not distinguish it — because the deploy immediately after is the
+      # real gate: no project, and it fails loudly by name.
+      - name: Ensure the Pages project exists
+        if: ${{ env.WANT_DEPLOY == 'true' && env.CLOUDFLARE_API_TOKEN != '' }}
+        run: |
+          npx --yes wrangler pages project create civvis --production-branch main \
+            || echo "project civvis already exists (or the deploy below will say why not)"
+
       - name: Deploy to Cloudflare Pages
         if: ${{ env.WANT_DEPLOY == 'true' && env.CLOUDFLARE_API_TOKEN != '' }}
         uses: cloudflare/wrangler-action@v3
