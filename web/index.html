@@ -13428,12 +13428,22 @@ const SKY_RUNG_ORDER = {chart:0, eye:1, glass:2, space:3};
 // `frequency` is that world's own tiling: the same hexagons-and-twelve-
 // pentagons construction the Earth has, coarser on a smaller world so a tile is
 // about the same size on screen whichever one you are standing over.
+//
+// `skyResources` is a survey annotation, not a ruleset deposit: it reuses an
+// existing Civilization resource pictogram to say what has actually been found
+// on a body, without creating a yield, stockpile, action, or gameplay hook.
+// That keeps the sky truthful in both Future Era modes while leaving any future
+// off-world economy to the Modified Future Era's own design.
 const SKY_SYSTEM_SPECS = [
   {id:"sun", name:"The Sun", km:695700, au:0, period:0, rung:"eye", floor:3.4,
    tint:"#fff2c0", dark:"#e07d10", light:true},
 
+  // Mercury's enormous core is predominantly iron. Its surface is sulfur-rich
+  // too, but sulfur is not a Civilization resource, so the honest available
+  // marker is iron rather than the planet's misleadingly namesake resource.
   {id:"mercury", name:"Mercury", km:2439.7, au:0.38710, period:0.24085,
-   rung:"eye", floor:2.2, tint:"#a49a90", dark:"#2b2723", frequency:8,  seed:2617},
+   rung:"eye", floor:2.2, tint:"#a49a90", dark:"#2b2723", frequency:8,  seed:2617,
+   skyResources:["iron"]},
   {id:"venus",   name:"Venus",   km:6051.8, au:0.72333, period:0.61520,
    rung:"eye", floor:2.4, tint:"#e8dcb0", dark:"#4d4126", frequency:10, seed:3121},
   {id:"earth",   name:"Earth",   km:6371,   au:1.00000, period:1.00000,
@@ -13444,8 +13454,10 @@ const SKY_SYSTEM_SPECS = [
   {id:"mars",    name:"Mars",    km:3389.5, au:1.52371, period:1.88082,
    rung:"eye", floor:2.2, tint:"#c8683c", dark:"#3d1d13", frequency:11, seed:4409},
 
+  // Dawn found sodium-carbonate salt crusts left by brine in Occator crater.
   {id:"ceres",   name:"Ceres",   km:473,    au:2.76750, period:4.6011,
-   rung:"glass", floor:1.6, tint:"#8c8378", dark:"#2a2622", frequency:6, seed:5501},
+   rung:"glass", floor:1.6, tint:"#8c8378", dark:"#2a2622", frequency:6, seed:5501,
+   skyResources:["salt"]},
 
   {id:"jupiter", name:"Jupiter", km:69911,  au:5.20440, period:11.862,
    rung:"eye", floor:3.0, tint:"#d8bd94", dark:"#5a4127", frequency:13, seed:6113,
@@ -13459,16 +13471,20 @@ const SKY_SYSTEM_SPECS = [
   {id:"ganymede", name:"Ganymede", km:2634.1, moonKm:1070412, parent:"jupiter",
    period:0.0195900, rung:"glass", floor:1.5, tint:"#9d9384", dark:"#332f28",
    frequency:8, seed:6373},
+  // Galileo's bulk model is ice mixed with rock that includes iron and iron
+  // sulfide. Iron is the matching resource already in the Civ catalogue.
   {id:"callisto", name:"Callisto", km:2410.3, moonKm:1882709, parent:"jupiter",
    period:0.0456890, rung:"glass", floor:1.5, tint:"#7c7264", dark:"#2a251f",
-   frequency:8, seed:6449},
+   frequency:8, seed:6449, skyResources:["iron"]},
 
   {id:"saturn",  name:"Saturn",  km:58232,  au:9.58260, period:29.457,
    rung:"eye", floor:3.0, tint:"#e6d3a4", dark:"#5e4d2c", frequency:13, seed:7219,
    giant:true, rings:[1.24, 2.27]},
+  // Cassini measured methane and ethane seas: hydrocarbons, represented by
+  // the existing oil resource rather than inventing a Titan-only one.
   {id:"titan",    name:"Titan",    km:2574.7, moonKm:1221870, parent:"saturn",
    period:0.0436880, rung:"glass", floor:1.5, tint:"#d9a05a", dark:"#4a3418",
-   frequency:8, seed:7307},
+   frequency:8, seed:7307, skyResources:["oil"]},
 
   {id:"uranus",  name:"Uranus",  km:25362,  au:19.2184, period:84.021,
    rung:"glass", floor:2.4, tint:"#b6e3e6", dark:"#1f5761", frequency:12, seed:8291,
@@ -13905,12 +13921,13 @@ function planetEarthRadius(scale = cam.scale) {
 
 // ------------------------------------------------- the other worlds' tilings
 // Earth's tiling belongs to the game and comes from the server, because units
-// stand on it. The other three are not played on, so theirs is built here — by
+// stand on it. The other worlds are not played on, so theirs is built here — by
 // the same construction, which is the point: subdivide an icosahedron, take its
 // vertices as cell centres and the triangle centroids around each one as that
 // cell's corners. That is what puts hexagons everywhere and exactly twelve
-// pentagons on every world, so the Moon and Mars are recognisably the same kind
-// of object as the world you play on rather than textured spheres.
+// pentagons on every world, so the Moon, Mars, and surveyed resource worlds are
+// recognisably the same kind of object as the world you play on rather than
+// textured spheres.
 const ICO_X = .5257311121191336, ICO_Z = .8506508083520399;
 const ICO_VERTICES = [
   [-ICO_X, 0, ICO_Z], [ICO_X, 0, ICO_Z], [-ICO_X, 0, -ICO_Z], [ICO_X, 0, -ICO_Z],
@@ -14253,6 +14270,29 @@ function skyGroundRule(body) {
   if (body.catalogue) return SKY_GROUND[`exo_${body.hz}`] || SKY_GROUND.exo_good;
   return SKY_GROUND[body.id] || SKY_GROUND.moon;
 }
+// The sky's resource sites are stable facts of a body's rendered survey, not
+// map generation. They deliberately take no game RNG and never reach the
+// engine, so classic and Modified Future Era games see the same world. A sparse
+// spread makes several sites likely to be on the visible hemisphere while still
+// leaving the tiles themselves legible.
+function skyResourceCells(body, cells) {
+  const sites = new Map(), taken = new Set();
+  const resources = body.skyResources || [];
+  for (let resourceIndex = 0; resourceIndex < resources.length; resourceIndex++) {
+    const resource = resources[resourceIndex];
+    const count = Math.max(3, Math.round(body.frequency * .7));
+    const ranked = cells.map((_, index) => ({index, rank:hash2(
+      (body.seed || 0) + 97 * (resourceIndex + 1), index + 1)}))
+      .sort((left, right) => left.rank - right.rank);
+    let placed = 0;
+    for (const {index} of ranked) {
+      if (taken.has(index)) continue;
+      sites.set(index, resource); taken.add(index);
+      if (++placed >= count) break;
+    }
+  }
+  return sites;
+}
 function skyGlobe(body) {
   const key = skyGlobeKey(body);
   let globe = SKY_GLOBES.get(key);
@@ -14263,8 +14303,10 @@ function skyGlobe(body) {
   const broad = skyRanks(cells.map(cell => skyNoise(shape, cell.center)));
   const fine = skyRanks(cells.map(cell => skyNoise(weather, cell.center)));
   const paint = skyGroundRule(body);
+  const resources = skyResourceCells(body, cells);
   globe = cells.map((cell, index) =>
-    ({...cell, fill:paint(cell.center, broad[index], fine[index])}));
+    ({...cell, fill:paint(cell.center, broad[index], fine[index]),
+      resource:resources.get(index) || null}));
   SKY_GLOBES.set(key, globe);
   return globe;
 }
@@ -14498,7 +14540,8 @@ function skySurfaceAngle(reach, drawn, chart) {
   return across <= .985 ? Math.asin(across) : null;
 }
 // The basis a world is being seen through. Only the Earth's is steered by the
-// camera proper, because it is the only one with tiles under it.
+// camera proper, because it is the only board with game tiles under it; every
+// other tiled body keeps its own scenic face between visits.
 function skyWorldBasis(body) {
   return planetViewBasis(body.id === "earth" ? planetCamera() : skyBodyCamera(body.id));
 }
@@ -14934,7 +14977,14 @@ function skyZoomLadder() {
 // standing on the board, the arrival is complete, so the gearing is fully handed
 // back and a zoom over the map is exactly the zoom it has always been. Every
 // notch this change makes longer is a notch out in the dark.
+// These are the named navigation stops: they are places the space programme
+// explicitly reaches, so and only so they receive map-control buttons.
 const SKY_ARRIVALS = ["earth", "moon", "mars", "exo"];
+// The four survey worlds need the same slow final approach and whole-world
+// zoom ceiling as a named destination, but deliberately stay off the controls.
+// The resource markers are visual only; this list adds no gameplay destination.
+const SKY_TILED_RESOURCE_WORLDS = ["mercury", "ceres", "callisto", "titan"];
+const SKY_ZOOMABLE_WORLDS = [...SKY_ARRIVALS, ...SKY_TILED_RESOURCE_WORLDS];
 // Those four, and the destination's own star with them, because out there the
 // stop belongs to the star. LHS 1140 is twelve times its own planet and sits at
 // the same point in the catalogue, so `planetMaxScale` answers with the star's
@@ -14945,7 +14995,7 @@ const SKY_ARRIVALS = ["earth", "moon", "mars", "exo"];
 // full gearing before it stopped.
 function skyArrivalBodies(st = state) {
   const known = new Set(skyKnownWorlds(st).map(body => body.id));
-  const ids = [...SKY_ARRIVALS];
+  const ids = [...SKY_ZOOMABLE_WORLDS];
   const star = skyTarget(st)?.star;
   if (star) ids.push(star.id);
   const out = [];
@@ -15984,7 +16034,7 @@ function drawSkyScale(radius, alpha) {
 // underneath goes on supplying the limb the tiles never quite reach.
 function drawSkyGlobe(place, alpha) {
   const camera = skyBodyCamera(place.id);
-  const cells = [];
+  const cells = [], resources = [];
   for (const cell of skyGlobe(place)) {
     const center = planetProject(cell.center, camera, place.r, place.x, place.y);
     if (center.z <= -.03) continue;
@@ -16000,6 +16050,8 @@ function drawSkyGlobe(place, alpha) {
       point.y = place.y + dy * place.r / length;
     }
     cells.push({fill:cell.fill, points, z:center.z});
+    if (cell.resource && center.z > .06)
+      resources.push({resource:cell.resource, x:center.x, y:center.y, z:center.z});
   }
   cells.sort((a, b) => a.z - b.z);
   cx.save();
@@ -16018,6 +16070,31 @@ function drawSkyGlobe(place, alpha) {
     cx.fill();
     if (grid) cx.stroke();
   }
+  cx.restore();
+  const resourceAlpha = alpha * skyFade(place.r, 7 * place.frequency,
+                                         11 * place.frequency);
+  if (resourceAlpha <= .01) return;
+  const size = Math.max(4, Math.min(11, place.r / place.frequency * .32));
+  for (const resource of resources)
+    drawSkyResourceBadge(resource.resource, resource.x, resource.y, size,
+                         resourceAlpha * (.7 + .3 * resource.z));
+}
+
+// Same resource vocabulary as the board, but these marks are evidence in a
+// sky survey rather than tile state: no owner can work, trade, or consume one.
+// The existing pictogram is retained deliberately, so iron, salt, and oil mean
+// exactly what they already mean everywhere else in the UI.
+function drawSkyResourceBadge(resource, x, y, size, alpha) {
+  const resourceClass = RULES?.resources?.[resource]?.class ||
+    (resource === "salt" ? "luxury" : "strategic");
+  const rim = resourceClass === "strategic" ? "#ff9d5c"
+    : resourceClass === "luxury" ? "#d9a0f0" : "#e6ddbd";
+  cx.save();
+  cx.globalAlpha = alpha;
+  cx.fillStyle = "#10151ae0";
+  cx.beginPath(); cx.arc(x, y, size, 0, 7); cx.fill();
+  cx.strokeStyle = rim; cx.lineWidth = Math.max(.8, size * .13); cx.stroke();
+  drawResourcePictogram(resource, x, y, size * 1.35);
   cx.restore();
 }
 
