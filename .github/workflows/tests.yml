@@ -139,3 +139,5 @@ jobs:
           echo "no _G references outside comments"
       - name: Envoy spend order
         run: lua5.1 tools/civ6_control/mod/envoy_spend_test.lua
+      - name: Stranded settler gate
+        run: lua5.1 tools/civ6_control/mod/stranded_settler_test.lua
