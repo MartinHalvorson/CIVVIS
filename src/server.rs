@@ -7134,6 +7134,9 @@ mod tests {
         assert!(sidebar.contains("id=\"map-search-input\" type=\"search\""));
         assert!(sidebar.contains("id=\"map-search-civ\""));
         assert!(sidebar.contains("aria-live=\"polite\""));
+        assert!(sidebar.contains(
+            "<details class=\"sidebar-section\" id=\"maplensessec\" data-section=\"map-lenses\">"
+        ));
         assert!(EMBEDDED_INDEX.contains(
             "#map-utility-panel {\n    position: relative; z-index: 3; flex: 0 0 auto;"
         ));
@@ -7894,8 +7897,11 @@ mod tests {
             .find("<summary>Keyboard shortcuts</summary>")
             .expect("keyboard shortcuts");
         let map_lenses = EMBEDDED_INDEX
-            .find("<div id=\"map-lenses\"")
-            .expect("map lens menu");
+            .find("<details class=\"sidebar-section\" id=\"maplensessec\" data-section=\"map-lenses\">")
+            .expect("collapsible map lens section");
+        let map_utility = EMBEDDED_INDEX
+            .find("<div id=\"map-utility-panel\"")
+            .expect("map utility band");
         let visible_tile_search = EMBEDDED_INDEX
             .find("<div id=\"map-search\"")
             .expect("visible tile search");
@@ -7917,6 +7923,7 @@ mod tests {
                 && war_log < event_log
                 && event_log < government
                 && government < map_lenses
+                && map_lenses < map_utility
                 && map_lenses < visible_tile_search
                 && visible_tile_search < keyboard_shortcuts,
             "left panel should show controls, interface settings, game setup, strategy, \
@@ -7965,24 +7972,36 @@ mod tests {
             "the switches read down the rail, then the map dock in the far corner"
         );
         assert!(EMBEDDED_INDEX.contains("id=\"map-lens-exit\""));
-        assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #map-lenses"));
-        // The menu belongs to the deck's lower utility band, where a dense
-        // two-column grid keeps every manual lens directly reachable. Search
-        // follows it before the keyboard drawer, rather than occupying a map
-        // overlay that would compete with an active lens.
-        let utility = EMBEDDED_INDEX
-            .split_once("<div id=\"map-utility-panel\"")
-            .expect("map utility band")
-            .1;
-        let lenses = utility.find("<div id=\"map-lenses\"").expect("map lens menu");
-        let search = utility.find("<div id=\"map-search\"").expect("visible tile search");
-        let strip = utility.find("<div id=\"map-lens-strip\"").expect("lens grid");
-        let close = utility
+        assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #maplensessec"));
+        // Lenses are a first-class deck section: collapsed by default, saved
+        // with the other disclosures, and expanded only when the viewer wants
+        // to change the map perspective. Search stays in the lower utility
+        // band, so a query remains reachable without opening the lens grid.
+        let lens_section = &EMBEDDED_INDEX[map_lenses..map_utility];
+        let lens_opening = lens_section
+            .split_once('>')
+            .expect("map lens section opening tag")
+            .0;
+        let lenses = lens_section.find("<div id=\"map-lenses\"").expect("map lens menu");
+        let strip = lens_section.find("<div id=\"map-lens-strip\"").expect("lens grid");
+        let close = lens_section
             .find("data-overlay-close=\"lenses\"")
             .expect("lens dismiss control");
         assert!(
-            lenses < strip && strip < search && close < strip,
-            "the menu header holds its dismiss control, the lens grid follows it, and search follows the menu"
+            lenses < strip && close < strip,
+            "the collapsible menu header holds its dismiss control and the lens grid follows it"
+        );
+        assert!(lens_section.contains("<summary class=\"section-label\">"));
+        assert!(lens_section.contains("data-section=\"map-lenses\""));
+        assert!(
+            !lens_opening.contains(" open"),
+            "a fresh profile should start with the map lens section collapsed"
+        );
+        let utility = &EMBEDDED_INDEX[map_utility..];
+        assert!(utility.contains("<div id=\"map-search\""));
+        assert!(
+            !utility.contains("<div id=\"map-lenses\""),
+            "the fixed utility band should not duplicate the collapsible lens section"
         );
         assert!(EMBEDDED_INDEX.contains(
             "#map-lens-strip {\n    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));"
@@ -7990,6 +8009,7 @@ mod tests {
         assert!(utility.contains("id=\"map-search-civ\""));
         assert!(EMBEDDED_INDEX
             .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
+        assert!(EMBEDDED_INDEX.contains("close.closest(\"#maplensessec\")"));
         // One instrument, one name. The switch, the title bar it is dragged by
         // and the label that follows it across the map all say "World minimap",
         // so nothing in the interface reads as a second, separate world map —
@@ -8311,11 +8331,15 @@ mod tests {
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
                 .count(),
-            7,
+            8,
             "every top-level left-panel section should be collapsible"
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
         assert!(EMBEDDED_INDEX.contains("civvis-sidebar-sections-v1"));
+        assert!(EMBEDDED_INDEX.contains("section.id === \"maplensessec\" && section.open"));
+        assert!(EMBEDDED_INDEX.contains(
+            "section.scrollIntoView({block:\"nearest\", inline:\"nearest\"})"
+        ));
         // Collapsing the command deck collapses the deck alone. Every map
         // overlay is switched from the deck's Interface Settings instead, so the
         // two controls stay independent and the deck's width can be handed to
