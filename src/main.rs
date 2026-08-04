@@ -395,8 +395,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// legacy and Elo agent wants exactly the army it always wanted. A
 /// compatibility re-pin.
 ///
-/// #1056 skips policy cards that multiply a suzerainty count of zero — Raj,
-/// Wisselbanken, Collective Activism, the International Space Agency — behind
+/// #1056 skips policy cards that multiply a suzerainty count of zero, behind
 /// `suzerain_cards_need_a_suzerainty`, `false` in `AdvancedAi::new()` and set
 /// only by `enable_live_bridge`. `strategic_policies` reorders nothing on that
 /// flag before it counts a single city-state, so every configured, legacy and
@@ -505,8 +504,15 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// six scores equal (Arabia 994, Aztec 592, Ethiopia 651, Georgia 1012, Khmer
 /// 706, Maya 464), and the same 254 requests to get there. A compatibility
 /// re-pin.
+/// ⚠ And again for `relief_targets_the_siege`, which is `false` in every
+/// `AdvancedAi` default and set only by `enable_live_bridge`. Its whole effect is
+/// the leading component of one `min_by_key` in `domain_objective`, and with the
+/// flag off that component is the constant `0` — so the ordering, and therefore
+/// every objective any legacy or Elo entrant receives, is bit-for-bit what it was.
+/// A compatibility re-pin.
+///
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5afa_353e_0ce2_2964;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd3b7_82d6_34dc_7985;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
