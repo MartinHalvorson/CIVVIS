@@ -571,7 +571,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// entrants return before the changed line is ever reached and the anchor's
 /// behaviour is bit-for-bit what it was. A compatibility re-pin;
 /// `elo_anchor_never_reaches_the_settler_commit_path` checks the claim.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6733_9142_ece9_26b6;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xb2d8_3bf3_4b28_0cb8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -2290,6 +2290,26 @@ mod tests {
         // and is untouched, which is what this guard asks about — but v5 rows for
         // `advanced` straddle this change.
         assert!(civvis::ai::AdvancedAi::new().settler_commit);
+        // ⚠ SAME QUESTION, ASKED AGAIN FOR THE GARRISON-LOYALTY ARM.
+        //
+        // The `limitanei` portfolio insert in `strategic_policies` is guarded by
+        // `self.garrison_loyalty_policy`, and BOTH the anchor and the stock
+        // entrant leave it false — only the eval-only arm
+        // `advanced_garrison_loyalty` turns it on. So the source fingerprint
+        // moved while the legacy path did not, and the re-pin below is free.
+        //
+        // Checked rather than asserted in a comment, because the last time this
+        // was written down instead of tested the written claim was wrong.
+        assert!(
+            !civvis::ai::AdvancedAi::legacy().garrison_loyalty_policy,
+            "advanced_v1 must not slot limitanei; if it ever does, the re-pin is \
+             no longer free and ELO_PROTOCOL_VERSION must be bumped"
+        );
+        assert!(
+            !civvis::ai::AdvancedAi::new().garrison_loyalty_policy,
+            "the stock entrant must not slot limitanei either — the arm measured \
+             a null and ships OFF"
+        );
     }
 
     #[test]
