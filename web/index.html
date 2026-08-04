@@ -9899,17 +9899,24 @@ const WONDER_PAINTER = {
     }
   },
   volcano(x, y, k, art) {
-    wonderShadow(x, y, 15 * k);
-    wonderFace(x, y, k, art.tint, 24 * k, 13 * k);
-    if (art.ice) {
-      cx.fillStyle = "#dce8ed";
-      tri(x - 6 * k * LITF, y - 16 * k, x, y - 24 * k, x + 5 * k * LITF, y - 16 * k);
-    } else {
-      cx.fillStyle = "#ef5b25";
-      cx.beginPath(); cx.ellipse(x, y - 23 * k, 3.4 * k, 1.4 * k, 0, 0, 7); cx.fill();
-    }
-    cx.fillStyle = "rgba(150,150,148,.42)";
-    cx.beginPath(); cx.ellipse(x + 2 * k, y - 31 * k, 6 * k, 4 * k, 0, 0, 7); cx.fill();
+    // A volcano seen from a map is a caldera, not a side-on cone. Its rim,
+    // dark throat, and hot centre all share one centre so it remains a simple
+    // round landform at every Natural Wonder footprint size.
+    const calderaRadius = 14 * k;
+    cx.fillStyle = "rgba(0,0,0,.20)";
+    cx.beginPath(); cx.arc(x + 1.35 * k, y + 1.7 * k, calderaRadius, 0, 7); cx.fill();
+    cx.fillStyle = shade(art.tint, .74);
+    cx.beginPath(); cx.arc(x, y, calderaRadius, 0, 7); cx.fill();
+    cx.strokeStyle = shade(art.tint, 1.34); cx.lineWidth = 2.7 * k;
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .72, 0, 7); cx.stroke();
+    cx.strokeStyle = shade(art.tint, .58); cx.lineWidth = 2.1 * k;
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .52, 0, 7); cx.stroke();
+    cx.fillStyle = art.ice ? "#9baab0" : "#221714";
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .38, 0, 7); cx.fill();
+    cx.fillStyle = art.ice ? "#dce8ed" : "#ef5b25";
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .23, 0, 7); cx.fill();
+    cx.strokeStyle = art.ice ? "#f4fbfd" : "#ffbd4b"; cx.lineWidth = 1.25 * k;
+    cx.beginPath(); cx.arc(x, y, calderaRadius * .15, 0, 7); cx.stroke();
   },
   ruins(x, y, k, art) {
     wonderShadow(x, y, 15 * k);
@@ -10101,34 +10108,52 @@ function drawStrategicVolcanicSoil(t, x, y) {
 
 const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;
 function drawStrategicMountainIcon(x, y, volcano) {
+  const mountainRadius = volcano ? 15 : 15.5;
   cx.save();
   cx.translate(x, y);
   cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE);
   cx.fillStyle = volcano ? "#37302d" : "#565149";
+  cx.beginPath(); cx.arc(0, 0, mountainRadius, 0, 7); cx.fill();
   if (volcano) {
-    // A crater is a horizontal opening, so its rim must meet a truncated cone
-    // at the ellipse's widest points. The old pointed mountain put the crater
-    // part-way down its slope, making the orange oval visibly float.
-    const rimY = -7, rimHalfWidth = 5.3, baseY = 19, baseHalfWidth = 16;
-    cx.beginPath();
-    cx.moveTo(-baseHalfWidth, baseY);
-    cx.lineTo(-rimHalfWidth, rimY);
-    cx.lineTo(rimHalfWidth, rimY);
-    cx.lineTo(baseHalfWidth, baseY);
-    cx.closePath(); cx.fill();
+    // A centered caldera keeps this landmark top-down. The warmer northwest
+    // rim and darker southeast rim add just enough depth without changing the
+    // plan-view silhouette into a cone laid on its side.
+    const rimRadius = 10.5, craterRadius = 6.2, lavaRadius = 3.7;
+    cx.strokeStyle = "#705d51"; cx.lineWidth = 2.8;
+    cx.beginPath(); cx.arc(0, 0, rimRadius, 0, 7); cx.stroke();
+    cx.strokeStyle = "#9f8873"; cx.lineWidth = 1.8;
+    cx.beginPath(); cx.arc(0, 0, rimRadius, Math.PI * 1.08, Math.PI * 1.82); cx.stroke();
+    cx.fillStyle = "#171210";
+    cx.beginPath(); cx.arc(0, 0, craterRadius, 0, 7); cx.fill();
     // Two hot cores over a soft bloom make this read as emitted lava light,
-    // not an orange badge pasted onto the now-near-black basalt.
+    // not an orange badge pasted onto the now-round basalt rim.
     cx.shadowColor = "#ff4b19";
     cx.shadowBlur = 9;
     cx.fillStyle = "#f04f1f";
-    cx.beginPath(); cx.ellipse(0, rimY, rimHalfWidth, 1.35, 0, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(0, 0, lavaRadius, 0, 7); cx.fill();
     cx.shadowBlur = 4;
     cx.fillStyle = "#ffb23c";
-    cx.beginPath(); cx.ellipse(0, rimY, rimHalfWidth * .68, .72, 0, 0, 7); cx.fill();
+    cx.beginPath(); cx.arc(-.8, -.8, lavaRadius * .52, 0, 7); cx.fill();
   } else {
-    tri(-14, 10, 0, -14, 14, 10);
-    cx.fillStyle = "#3c3934";
-    tri(0, -14, 0, 10, 14, 10);
+    // Closed contour bands keep the mountain's footprint on the ground. Four
+    // ridges trace inward to the middle peak, so it reads as elevation rather
+    // than as a sideways triangle hovering over its tile.
+    const peakX = 0, peakY = 0;
+    cx.fillStyle = "#6d675b";
+    cx.beginPath(); cx.arc(peakX, peakY, 10.6, 0, 7); cx.fill();
+    cx.fillStyle = "#817967";
+    cx.beginPath(); cx.arc(peakX, peakY, 5.7, 0, 7); cx.fill();
+    cx.strokeStyle = "#37332e"; cx.lineWidth = 1.25; cx.lineCap = "round";
+    cx.beginPath();
+    cx.moveTo(-12, 7); cx.quadraticCurveTo(-6, 1, peakX, peakY);
+    cx.moveTo(12, 7); cx.quadraticCurveTo(6, 1, peakX, peakY);
+    cx.moveTo(-7, -11); cx.quadraticCurveTo(-3, -5, peakX, peakY);
+    cx.moveTo(7, -11); cx.quadraticCurveTo(3, -5, peakX, peakY);
+    cx.stroke();
+    cx.strokeStyle = "#a89c85"; cx.lineWidth = 1.2;
+    cx.beginPath(); cx.arc(peakX, peakY, 13.3, Math.PI * 1.15, Math.PI * 1.9); cx.stroke();
+    cx.fillStyle = "#c9bda4";
+    cx.beginPath(); cx.arc(peakX, peakY, 2.25, 0, 7); cx.fill();
   }
   cx.restore();
 }
@@ -10148,10 +10173,18 @@ function drawFeatureEffects(t, x, y) {
     cx.beginPath(); cx.ellipse(x, y + 4, 22, 11, 0, 0, 7); cx.fill();
   }
   if (t.feature === "volcano" && t.volcano_state > 0) {
-    cx.fillStyle = t.volcano_state === 2 ? "#ff6b2ac8" : "#aeb7b4a8";
-    for (const [dx, dy, radius] of [[-5,-18,5],[2,-27,7],[9,-38,8]]) {
-      cx.beginPath(); cx.arc(x + dx, y + dy, radius, 0, Math.PI * 2); cx.fill();
+    // Eruption energy moves outward from the centered crater, rather than
+    // turning into a vertical plume that changes the volcano back into a
+    // side-view object.
+    const erupting = t.volcano_state === 2;
+    cx.save();
+    cx.strokeStyle = erupting ? "#ff6b2a" : "#aeb7b4";
+    cx.lineWidth = erupting ? 2.15 : 1.6;
+    for (const [radius, alpha] of erupting ? [[8, .82], [12, .44]] : [[8, .50], [12, .24]]) {
+      cx.globalAlpha = alpha;
+      cx.beginPath(); cx.arc(x, y, radius, 0, Math.PI * 2); cx.stroke();
     }
+    cx.restore();
   }
   const movingDisaster = (state?.active_disasters || []).find(event =>
     ["blizzard", "dust_storm", "tornado", "hurricane"].includes(event.kind) &&
