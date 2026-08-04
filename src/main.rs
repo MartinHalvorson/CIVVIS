@@ -505,8 +505,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// every objective any legacy or Elo entrant receives, is bit-for-bit what it was.
 /// A compatibility re-pin.
 ///
+/// ⚠ And again for `siege_stands_off_the_city`, false in every `AdvancedAi`
+/// default and set only by `enable_live_bridge`. Its whole effect is one
+/// conditional reassignment of `target` in `coordinated_tactical_step`, guarded
+/// by the flag, so with it off the tile every legacy and Elo entrant is scored
+/// against is unchanged. A compatibility re-pin.
+///
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x2eb6_44b1_b1b3_7a36;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x33ba_5cc7_420d_a0a6;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

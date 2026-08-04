@@ -827,6 +827,49 @@ pub struct AdvancedAi {
     /// live-regime one. See [`AdvancedAi::remembered_objective_strength`] for
     /// the mechanism and the 294-of-426 measurement behind it.
     pub blind_objective_strength: bool,
+    /// Set the SIEGE up against the city it was sent to, not against whichever
+    /// skirmish the column happens to have walked into.
+    ///
+    /// ★★★★★ THE SIEGE NEVER REACHES BOMBARD RANGE. In
+    /// `coordinated_tactical_step` the tile a unit is scored against is
+    /// `match posture { Muster|Hold|Recover => anchor, Engage => focus_target
+    /// .unwrap_or(objective), Advance => objective }`, and `force_focus_target`
+    /// returns any enemy tile inside a unit's own attack radius — a LOCAL
+    /// contact. So on every Engage turn the whole force, siege included,
+    /// re-anchors its depth on the field units in front of it. `preferred_depth`
+    /// for Siege is `unit_attack_range`, so the trebuchet dutifully parks two
+    /// hexes from a WARRIOR — and `attack_threshold` charges Siege +14 for a
+    /// non-district target on top of its +5 role, so it will not shoot the thing
+    /// it is standing next to either.
+    ///
+    /// ⚠⚠⚠ Measured on two independent live runs, different opponents, same
+    /// result — the objective was never the problem:
+    ///
+    /// | | `…T231038Z` vs Portugal | `…T235619Z` vs Norway |
+    /// |---|---|---|
+    /// | siege unit-turns in the war | 391 | 97 |
+    /// | **within bombard range (≤2) of an enemy city** | **0** | **0** |
+    /// | distance to nearest enemy city, min / median | 5 / 11 | 4 / 8 |
+    /// | enemy city damage, whole war | **0** | **0** |
+    ///
+    /// On the first of those, **334 of 341 force-group decisions (97.9%) named an
+    /// enemy city as the objective** — 330 of them Braga — and Braga was
+    /// reachable on foot, about ten hexes from Ostia. The column was aimed
+    /// correctly and never arrived, because 206 Engage decisions kept handing it
+    /// a nearer skirmish to stand off from. We held a four-to-one military
+    /// advantage for 88 turns and never scratched a city.
+    ///
+    /// ⚠⚠ Deliberately SIEGE ONLY. Pinning the whole column's `focus_target` to
+    /// the objective city is recorded directly above `force_focus_target` as
+    /// MEASURED AND REJECTED: blows on cities by turn 60 fell 6.1 to 2.9 and
+    /// first capture slipped turn 65 to 86, because "a rush that walks past the
+    /// defenders to stand on the ring is a rush that gets killed on the ring."
+    /// The line must keep meeting the defenders. Only the unit whose doctrine is
+    /// already priced for districts — Siege takes −22 against one and +14
+    /// against a field target — is positioned against the city instead.
+    ///
+    /// **Off by default, live-bridge only.**
+    pub siege_stands_off_the_city: bool,
     /// Aim a relief force at what is actually hitting the city, not at whichever
     /// besieger happens to stand nearest the force.
     ///
@@ -1909,6 +1952,7 @@ impl AdvancedAi {
             army_target_weighs_the_enemy: false,
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
+            siege_stands_off_the_city: false,
             relief_targets_the_siege: false,
             blind_objective_units: false,
             refuse_unreachable_lanes: false,
@@ -2082,6 +2126,13 @@ impl AdvancedAi {
         self.blind_objective_strength = true;
     }
 
+    /// Position the siege against the objective city rather than the nearest
+    /// skirmish. Native tournament games leave this disabled so their recorded
+    /// ladders stay comparable.
+    pub fn enable_siege_stands_off_the_city(&mut self) {
+        self.siege_stands_off_the_city = true;
+    }
+
     /// Send a relief force at the units actually besieging the city rather than
     /// the nearest one to itself. Native tournament games leave this disabled so
     /// their recorded ladders stay comparable.
@@ -2223,6 +2274,7 @@ impl AdvancedAi {
         // into range and cannot fire.
         self.enable_ranged_needs_line_of_sight();
         self.enable_blind_objective_strength();
+        self.enable_siege_stands_off_the_city();
         self.enable_relief_targets_the_siege();
         self.enable_blind_objective_units();
         // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
@@ -2316,6 +2368,10 @@ impl AdvancedAi {
 
     pub fn disable_blind_objective_strength(&mut self) {
         self.blind_objective_strength = false;
+    }
+
+    pub fn disable_siege_stands_off_the_city(&mut self) {
+        self.siege_stands_off_the_city = false;
     }
 
     pub fn disable_relief_targets_the_siege(&mut self) {
@@ -14661,11 +14717,24 @@ impl AdvancedAi {
             && g.rules.units[unit.kind].domain.as_deref() != Some("sea");
         let role = Self::force_role(g, uid);
         let spec = &g.rules.units[unit.kind];
-        let target = match group.posture {
+        let mut target = match group.posture {
             ForcePosture::Muster | ForcePosture::Hold | ForcePosture::Recover => group.anchor,
             ForcePosture::Engage => group.focus_target.unwrap_or(group.objective),
             ForcePosture::Advance => group.objective,
         };
+        // The siege sets up against the city it was sent to. See
+        // [`AdvancedAi::siege_stands_off_the_city`]: `focus_target` is a local
+        // contact, and letting it move the siege's standoff is why the train
+        // spends whole wars parked two hexes from a warrior and eight from the
+        // walls. The line keeps its own target, deliberately.
+        if self.siege_stands_off_the_city
+            && role == ForceRole::Siege
+            && g.city_at(group.objective)
+                .is_some_and(|city| enemies.contains(&g.cities[&city].owner))
+        {
+            target = group.objective;
+        }
+        let target = target;
         let preferred_depth = match role {
             ForceRole::Recon => spec.range.max(2),
             ForceRole::Vanguard | ForceRole::Mobile => 1,
@@ -28954,6 +29023,116 @@ mod tests {
             "an enemy this controller has SEEN standing on the objective must still \
              count against it once it goes back into fog; got {believing}"
         );
+    }
+
+    /// ★★★★★ THE SIEGE SETS UP AGAINST THE CITY, NOT AGAINST THE SKIRMISH.
+    ///
+    /// `coordinated_tactical_step` scores a unit's tile against
+    /// `focus_target.unwrap_or(objective)` while the group is Engaging, and
+    /// `force_focus_target` returns any enemy tile inside a unit's own attack
+    /// radius. So a trebuchet whose group is besieging a city re-anchors onto
+    /// whatever field unit the column has just met, parks at its own attack
+    /// range from THAT, and then declines to shoot it — Siege doctrine is
+    /// charged +14 for a non-district target on top of its +5 role.
+    ///
+    /// ⚠⚠⚠ Two independent live runs, different opponents, identical outcome:
+    /// `civvis-20260803T231038Z` vs Portugal, 391 siege unit-turns, and
+    /// `civvis-20260803T235619Z` vs Norway, 97 siege unit-turns. **Neither ever
+    /// put a siege unit within bombard range of an enemy city** — closest 5 and
+    /// 4 hexes, median 11 and 8 — and **no enemy city took a single point of
+    /// damage in either war**, one of them fought at a four-to-one military
+    /// advantage for 88 turns. On the first run 334 of 341 force decisions
+    /// (97.9%) correctly named an enemy city as the objective, and it was
+    /// reachable on foot. The column was aimed right and never arrived.
+    #[test]
+    fn the_siege_stands_off_the_city_not_the_skirmish() {
+        let mut game = Game::new_full(2, 30, 18, 411_013, 120, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.players[0].met.insert(1);
+        game.players[1].met.insert(0);
+        game.apply(0, &Action::DeclareWar { player: 1 })
+            .expect("the seats can go to war");
+
+        let mut land: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !game.rules.is_water(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        land.sort();
+
+        // Their city is the objective; a field unit stands between it and us.
+        let their_city_pos = land[0];
+        let settler = game.spawn_test_unit("settler", 1, their_city_pos);
+        game.current = 1;
+        game.apply(1, &Action::FoundCity { unit: settler })
+            .expect("the rival city can be founded");
+        game.current = 0;
+
+        let pick = |d: i32| -> Pos {
+            *land
+                .iter()
+                .find(|pos| game.wdist(**pos, their_city_pos) == d)
+                .unwrap_or_else(|| panic!("a land tile {d} from the city"))
+        };
+        let skirmish = pick(6);
+        let staging = pick(8);
+
+        game.spawn_test_unit("warrior", 1, skirmish);
+        let trebuchet = game.spawn_test_unit("catapult", 0, staging);
+        assert_eq!(
+            AdvancedAi::force_role(&game, trebuchet),
+            ForceRole::Siege,
+            "the test needs a unit the force actually classes as siege"
+        );
+
+        let group = ForceGroup {
+            id: trebuchet,
+            domain: ForceDomain::Land,
+            units: vec![trebuchet],
+            anchor: staging,
+            objective: their_city_pos,
+            focus_target: Some(skirmish),
+            posture: ForcePosture::Engage,
+            readiness: 1.0,
+            local_strength_ratio: 1.0,
+        };
+        let enemies = [1usize];
+
+        let mut ai = AdvancedAi::new();
+        ai.battlefront_observation = false;
+
+        let step_and_measure = |ai: &AdvancedAi, game: &Game| -> (i32, i32) {
+            let mut board = game.clone();
+            ai.coordinated_tactical_step(&mut board, 0, trebuchet, &group, &enemies, false);
+            let now = board.units[&trebuchet].pos;
+            (
+                board.wdist(now, their_city_pos),
+                board.wdist(now, skirmish),
+            )
+        };
+
+        ai.disable_siege_stands_off_the_city();
+        let (city_before, skirmish_before) = step_and_measure(&ai, &game);
+        ai.enable_siege_stands_off_the_city();
+        let (city_after, skirmish_after) = step_and_measure(&ai, &game);
+
+        // The defect signature: left alone, the siege sets up at its own attack
+        // range from the FIELD UNIT — which it will then decline to shoot.
+        assert!(
+            skirmish_before <= 2,
+            "the unrepaired siege parks at bombard range of the skirmish; got \
+             {skirmish_before} hexes from it and {city_before} from the city"
+        );
+        assert!(
+            city_after < city_before,
+            "the repaired siege must end nearer the CITY than the unrepaired one: \
+             {city_before} -> {city_after} hexes"
+        );
+        let _ = skirmish_after;
     }
 
     #[test]
