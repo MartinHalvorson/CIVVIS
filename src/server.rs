@@ -9099,7 +9099,7 @@ mod tests {
         assert!(icon.contains(
             "const base = y + r * .45, wallTop = y + r * .06;"
         ));
-        assert!(icon.contains("context.lineTo(x - r * .72, base);"));
+        assert!(icon.contains("context.moveTo(x - r * .72, base);"));
         assert!(icon.contains("capital && r >= 2.6"));
         for call in [
             "drawCityIcon(cx, cell.center.x, cell.center.y, r, bannerColor,",
