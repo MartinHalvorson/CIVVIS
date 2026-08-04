@@ -792,6 +792,9 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
+    ap.add_argument("--probe-citizens", action="store_true", default=False,
+                    help="ask once per batch whether this UI context may assign a "
+                         "citizen to a district; read-only, issues no command")
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER")
     # Six players, because the size IS the player count — see `civ6_play.py`.
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
@@ -1081,7 +1084,21 @@ def main() -> int:
              "--timeout", str(args.timeout),
              "--lock-wait", "30",
              "--report-every", "10",
-             "--export-state",
+             "--export-state"]
+            # ⚠⚠ THE CHAIN IS FOUR LINKS AND THIS IS THE FOURTH. The mod reads
+            # `cfg.ProbeCitizens` (#1098), `civ6_play.py` sets it from
+            # `--probe-citizens` (#1115) -- and this loop builds a FIXED argument
+            # list, so without this line the flag still could not reach a live
+            # game. #1098 shipped unreachable for exactly one missing link; a
+            # second missing link is the same bug with a different address.
+            #
+            # It answers the last untouched science lane: only 8 of 50 live
+            # campus cities carry a specialist ON the Campus, and 45% of all
+            # specialists sit on Commercial Hubs, because CIVVIS has never
+            # issued a citizen order. The probe is read-only -- it asks
+            # `CanStartCommand` and emits the verdict without issuing anything.
+            + (["--probe-citizens"] if args.probe_citizens else [])
+            + [
              # ⚠ Popups must not sit on the map. They are closed by the autoclose shim
              # already, but the delay is how long they are VISIBLE, and the operator is
              # watching this screen to check it against CIVVIS's. Near-zero rather than
