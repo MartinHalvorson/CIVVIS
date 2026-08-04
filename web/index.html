@@ -4686,6 +4686,11 @@ let SHOW_ROCKET_ANIMATIONS = localStorage.getItem("civvis-show-rocket-animations
 // that is the state Civ 6 starts in.
 let SHOW_GRID = localStorage.getItem("civvis-show-grid") === "1";
 let SHOW_RESOURCES = localStorage.getItem("civvis-show-resources") !== "0";
+// Q controls resource icons on the regular map. Deposits are part of choosing
+// a settlement site, so the Settler lens keeps them available regardless.
+function shouldDrawResourceBadges() {
+  return SHOW_RESOURCES || mapLens === "settler";
+}
 // Flat-map wrapping is a viewer choice. Horizontal wrapping starts on, as a
 // world map normally does; vertical wrapping starts off so the polar rows keep
 // their literal top and bottom until somebody explicitly asks for a torus.
@@ -11031,6 +11036,22 @@ function radialSprite(stops) {
 // Status marks keep their on-screen size as the map zooms out, so a unit's
 // state stays readable at the scale you actually survey an empire at.
 const UI_K = () => 1 / Math.min(1, Math.max(cam.scale, 0.5));
+// Roads naturally become thinner under the canvas transform as the view pulls
+// back, but a complete network can still overpower the terrain at survey zoom.
+// Fade its contrast there while retaining enough of the actual network to read
+// an empire's connected infrastructure.
+function roadProminence(scale = cam.scale) {
+  const progress = Math.max(0, Math.min(1, (scale - .25) / .65));
+  const eased = progress * progress * (3 - 2 * progress);
+  return .16 + .84 * eased;
+}
+
+// Route state belongs to tiles, not to cities. This is also the condition the
+// game uses for a road movement discount: each side of the step must carry a
+// route before the edge is connected.
+function hasRoad(tile) {
+  return !!tile && tile.road > 0;
+}
 // Strategic's unit *is* its token, so its footprint is stated in hexes instead
 // of in fixed screen pixels. At the flat map's far zoom it can use 90% of the
 // hex's inscribed diameter; at the close zoom it uses 50%. Zoom is
@@ -13364,6 +13385,32 @@ function skyPointerWorld(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN) {
     if (!best || claim < best.claim) best = {body, claim};
   }
   return best ? best.body : SKY_EARTH;
+}
+// The named arrivals are controls as well as scenery.  Unlike `skyPointerWorld`
+// this is deliberately a real hit test: its broad halos make wheel zooming
+// forgiving, but a click in empty sky must not unexpectedly launch a flight.
+// The extra margin keeps a coin-sized world practical to select without making
+// neighbouring bodies indistinguishable.
+function skyArrivalHit(sx, sy, radius = planetEarthRadius(), pan = SKY_PAN) {
+  if (!planetMap() || !knowsGlobe()) return null;
+  const margin = Math.max(8, Math.min(22, skyStageSpan() * .025));
+  let best = null;
+  for (const stop of skyWorldStops()) {
+    const {body} = stop;
+    // While Earth fills the frame, canvas clicks still belong to its playable
+    // tiles. Once it is a sky object, it joins the other arrival targets.
+    if (body.id === "earth") {
+      if (radius >= SKY_SURFACE) continue;
+    } else if (body.separation * radius <= 2.5) {
+      // Match the point where the renderer lets a body emerge from its parent.
+      continue;
+    }
+    const [x, y] = skyBodyScreen(body, radius, pan);
+    const reach = skyDrawnRadius(body, radius) + margin;
+    const claim = Math.hypot(x - sx, y - sy) / Math.max(1, reach);
+    if (claim <= 1 && (!best || claim < best.claim)) best = {stop, claim};
+  }
+  return best?.stop || null;
 }
 // How much of the pointer's authority a world takes for itself. A marble is a
 // destination — a pointer on it means *go there*, and there is no ground on a
@@ -16028,15 +16075,14 @@ function drawPlanetStrategicVolcanicSoil(cells, visible, spectator) {
 }
 
 function drawPlanetStrategicRoads(cells, visible, spectator) {
-  const cityTiles = new Set(state.cities.map(city => key(city.pos)));
-  const roaded = tile => !!tile && (tile.road > 0 || cityTiles.has(key(tile.pos)));
+  const prominence = roadProminence();
   const groups = {byWeight:new Map(), visible, spectator};
   for (const entry of cells) {
     const {tile, cell, points, center} = entry;
-    if (planetCellInradius(entry) < 3 || !roaded(tile)) continue;
+    if (planetCellInradius(entry) < 3 || !hasRoad(tile)) continue;
     let linked = false;
     for (let side = 0; side < points.length; side++) {
-      if (!roaded(TMAP.get(cell.nbrs[side]))) continue;
+      if (!hasRoad(TMAP.get(cell.nbrs[side]))) continue;
       const a = points[side], b = points[(side + 1) % points.length];
       planetStrategicGroup(groups, entry).segments.push([
         center.x, center.y, (a.x + b.x) / 2, (a.y + b.y) / 2,
@@ -16056,7 +16102,7 @@ function drawPlanetStrategicRoads(cells, visible, spectator) {
   for (const [width, color, alpha] of [[5.6, "#2b2015", .4], [3.0, "#c0a67e", .85]]) {
     for (const group of groups.byWeight.values()) {
       cx.strokeStyle = color; cx.lineWidth = width * group.weight;
-      cx.globalAlpha = alpha * group.alpha;
+      cx.globalAlpha = alpha * group.alpha * prominence;
       cx.beginPath();
       for (const [ax, ay, bx, by] of group.segments) {
         cx.moveTo(ax, ay); cx.lineTo(bx, by);
@@ -16349,7 +16395,7 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
       } else if (t.improvement) {
         drawImprovement(t, 0, 0);
       }
-      if (SHOW_RESOURCES && t.resource &&
+      if (shouldDrawResourceBadges() && t.resource &&
           (SHOW_ARTIFACT_SITES || !ARTIFACT_RESOURCES.has(t.resource))) {
         if (occupied.has(tileKey)) occupiedResources.push(entry);
         else drawResourceBadge(t, 0, 0);
@@ -16824,26 +16870,27 @@ function drawEmpireDetailsPlanet(cells) {
 }
 
 // Civ 6's Settler lens is a water-availability guide, not a desirability
-// heatmap. It deliberately reuses the Appeal lens's dark green, light green,
-// gray and red: fresh water, coastal water, no water and unavailable ground.
+// heatmap. Keep that guide on the hex edge: the woods, hills, and deposits
+// inside the hex are themselves the information a settling decision needs.
 const SETTLER_LENS_STYLES = {
-  fresh:   {fill:"#176a3a", alpha:.90, label:"Fresh water", housing:3},
-  coast:   {fill:"#65ad5a", alpha:.86, label:"Coastal water", housing:1},
-  dry:     {fill:"#8b8f8a", alpha:.80, label:"No water access", housing:0},
-  blocked: {fill:"#b73535", alpha:.88, label:"Settlement unavailable", housing:0},
+  fresh:   {stroke:"#56d989", alpha:.92, label:"Fresh water", housing:3},
+  coast:   {stroke:"#b6e873", alpha:.88, label:"Coastal water", housing:1},
+  dry:     {stroke:"#d4d9d3", alpha:.76, label:"No water access", housing:0},
+  blocked: {stroke:"#f07069", alpha:.84, label:"Settlement unavailable", housing:0, dashed:true},
 };
+const SETTLER_LENS_UNIT_ALPHA = .32;
 function settleLensStyle(water) {
   return SETTLER_LENS_STYLES[water] || SETTLER_LENS_STYLES.dry;
 }
-function paintSettlerLensTile(path, style, scale) {
-  path(); cx.fillStyle = style.fill; cx.globalAlpha = style.alpha; cx.fill();
-  // Keep individual hexes readable through the opaque Civ 6 category colors.
-  path(); cx.strokeStyle = "#13201c"; cx.globalAlpha = .38;
-  cx.lineWidth = .9 * scale; cx.stroke();
-  cx.globalAlpha = 1;
+function outlineSettlerLensTile(path, style, scale) {
+  cx.save();
+  if (style.dashed) cx.setLineDash([3.6 * scale, 2.8 * scale]);
+  path(); cx.strokeStyle = style.stroke; cx.globalAlpha = style.alpha;
+  cx.lineWidth = Math.max(.8, 1.55 * scale); cx.stroke();
+  cx.restore();
 }
 function drawSettlerLensSite(path, site, lens, scale, center) {
-  paintSettlerLensTile(path, settleLensStyle(site.water), scale);
+  outlineSettlerLensTile(path, settleLensStyle(site.water), scale);
   if (!center || !settleSiteIsRecommended(site, lens)) return;
   const [x, y, radius] = center;
   cx.save();
@@ -16861,7 +16908,7 @@ function drawPlanetSettlerLens(cells) {
     const site = lens.sites.get(key(cell.tile.pos));
     if (!site) {
       if (isWater(cell.tile)) continue;
-      paintSettlerLensTile(
+      outlineSettlerLensTile(
         () => planetPaintPath(cx, cell, .15), SETTLER_LENS_STYLES.blocked,
         Math.max(.62, Math.min(1.15, planetCellInradius(cell) / 12)));
       continue;
@@ -16884,7 +16931,7 @@ function drawSettlerLensFlat(tiles) {
     const site = lens.sites.get(key(tile.pos));
     if (!site) {
       if (isWater(tile)) continue;
-      paintSettlerLensTile(
+      outlineSettlerLensTile(
         () => hexPath(x, y, S + .2), SETTLER_LENS_STYLES.blocked, UI_K());
       continue;
     }
@@ -17281,6 +17328,7 @@ function drawPlanetMap() {
     if (cityState) cx.restore();
   }
   const visibleUnits = empireLens ? [] : state.units;
+  const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
   // Use the same stable tile layout as the flat command map. The globe has no
   // in-flight unit animation, so every overview marker on a cell belongs here.
   const planetUnitStacks = strategicUnitStackSlots(visibleUnits);
@@ -17297,6 +17345,8 @@ function drawPlanetMap() {
     const ux = cell.center.x + stack.x, uy = cell.center.y + stack.y;
     const civilian = CIVILIAN_UNITS.has(unit.type);
     const tokenInk = unitTokenInk(unit.owner);
+    cx.save();
+    cx.globalAlpha = unitAlpha;
     cx.fillStyle = pcol(unit.owner); cx.strokeStyle = sel?.id === unit.id ? "#fff2a8" : tokenInk;
     cx.lineWidth = outline;
     const commandTokenClip = !stack.stacked;
@@ -17307,6 +17357,7 @@ function drawPlanetMap() {
                       r * 1.48, tokenInk);
     drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
     if (commandTokenClip) cx.restore();
+    cx.restore();
   }
   // As on the flat map, a resource beneath a unit waits until the figure is
   // painted. Its lower strategic seat stays readable instead of losing one
@@ -17381,7 +17432,6 @@ function draw() {
   const visible = new Set(state.visible.map(key));
   const visSet = new Set((state.turn_visible || state.visible).map(key));
   const campSet = new Set(state.camps.map(key));
-  const cityTiles = new Set(state.cities.map(c => key(c.pos)));
   const workedSet = new Set(state.cities.flatMap(c =>
     c.citizens ? c.citizens.worked_tiles.map(key) : []));
   const unitOwnerByTile = new Map(state.units.map(u => [key(u.pos), u.owner]));
@@ -17560,23 +17610,18 @@ function draw() {
     }
   }
   cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
-  // --- roads: the arteries of an empire, and until now the one piece of tile
-  // state the map never showed. Each roaded tile runs a spur to the midpoint of
-  // every shared edge with a roaded neighbor, so the spurs meet and the network
-  // reads as continuous route rather than a row of disconnected dashes.
-  const roaded = p => {
-    const t2 = TMAP.get(key(p));
-    return !!(t2 && t2.road) || cityTiles.has(key(p));
-  };
+  // --- roads: each real route tile runs a spur to the midpoint of every shared
+  // edge with another route tile, so the picture follows the game's actual
+  // two-tile movement connection rather than treating every city as a road.
   const roadSegs = [];
   for (const t of tiles) {
-    if (!roaded(t.pos)) continue;
+    if (!hasRoad(t)) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
     let linked = false;
     for (let i = 0; i < 6; i++) {
       const n = nbrTile(t.pos, DIRS[i]);
-      if (!n || !roaded(n.pos)) continue;
+      if (!hasRoad(n)) continue;
       // share the seam elevation the way rivers do, so a spur meets its
       // opposite number exactly even across a height change
       const ey = yy - (elev(t) + elev(n)) / 2;
@@ -17589,9 +17634,10 @@ function draw() {
     if (!linked) roadSegs.push([x, y, x, y]);   // a lone stretch still reads
   }
   if (roadSegs.length) {
+    const prominence = roadProminence();
     cx.lineCap = "round"; cx.lineJoin = "round";
     for (const [w, c, a] of [[5.6, "#2b2015", 0.4], [3.0, "#c0a67e", 0.85]]) {
-      cx.strokeStyle = c; cx.lineWidth = w; cx.globalAlpha = a;
+      cx.strokeStyle = c; cx.lineWidth = w; cx.globalAlpha = a * prominence;
       cx.beginPath();
       for (const [ax, ay, bx, by] of roadSegs) { cx.moveTo(ax, ay); cx.lineTo(bx, by); }
       cx.stroke();
@@ -17818,9 +17864,9 @@ function draw() {
     } else if (t.improvement) {
       drawImprovement(t, x, y);
     }
-    // main added the SHOW_RESOURCES toggle to this condition while this branch
-    // moved the body into drawResourceBadge; the tile still has to pass both.
-    if (SHOW_RESOURCES && t.resource &&
+    // The regular map follows its resource-icon toggle; Settler Lens keeps
+    // deposits visible because they affect the value of every candidate site.
+    if (shouldDrawResourceBadges() && t.resource &&
         (SHOW_ARTIFACT_SITES || !ARTIFACT_RESOURCES.has(t.resource))) {
       // A unit standing on a deposit covers about a third of its symbol, and
       // which third depends on the board's bearing, because the badge is
@@ -18220,6 +18266,7 @@ function draw() {
   // it has settled, so a defender does not jump sideways during an arrival.
   const strategicUnitStacks = strategicUnitStackSlots(drawnUnits, anim.moves);
   const now = performance.now();
+  const unitAlpha = mapLens === "settler" ? SETTLER_LENS_UNIT_ALPHA : 1;
   for (const u of sorted) {
     const [tileX, tileY] = worldXY(u.pos);
     let x = tileX, y = tileY;
@@ -18254,7 +18301,7 @@ function draw() {
       gk.addColorStop(0, "#0d111700");
       gk.addColorStop(1, "#0d1117b0");
       cx.save();
-      cx.globalAlpha = 0.75 * Math.sin(mv.e * Math.PI);
+      cx.globalAlpha = unitAlpha * 0.75 * Math.sin(mv.e * Math.PI);
       cx.lineCap = "round";
       cx.strokeStyle = gk; cx.lineWidth = 5.4;   // casing, so it reads on sand
       cx.beginPath();
@@ -18286,7 +18333,8 @@ function draw() {
     if (strategicTokenClip) { cx.save(); hexPath(tileX, tileY); cx.clip(); }
     const civ = CIVILIAN_UNITS.has(u.type);
     // Spent units recede so the ones that can still act carry the eye.
-    cx.globalAlpha = (u.moves_left !== undefined && u.moves_left <= 0) ? 0.62 : 1;
+    cx.globalAlpha = unitAlpha *
+      ((u.moves_left !== undefined && u.moves_left <= 0) ? 0.62 : 1);
     cx.save();
     cx.fillStyle = pcol(u.owner);
     strategicUnitTokenPath(civ, x, y, rr);
@@ -18298,7 +18346,7 @@ function draw() {
     strategicUnitTokenPath(civ, x, y, rr);
     cx.stroke();
     drawUnitPictogram(u.type, x, y, rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
-    cx.globalAlpha = 1;
+    cx.globalAlpha = unitAlpha;
     drawStrategicUnitHealth(x, y, rr, u.hp, now);
     if (u.level > 1) {
       const count = u.level - 1;
@@ -18326,6 +18374,7 @@ function draw() {
       cx.beginPath(); cx.arc(x, y, selectionRadius, 0, 7); cx.stroke();
       cx.setLineDash([]);
     }
+    cx.globalAlpha = 1;
     if (strategicTokenClip) cx.restore();
   }
   // The deposits the figures were standing on. Held back above so a badge is
@@ -24626,7 +24675,15 @@ cv.addEventListener("click", ev => {
   if (suppressControlClick) { suppressControlClick = false; ev.preventDefault(); return; }
   if (dragMoved) { dragMoved = false; return; }
   const r = cv.getBoundingClientRect();
-  const pos = pixelToHex(ev.clientX - r.left, ev.clientY - r.top);
+  const sx = ev.clientX - r.left, sy = ev.clientY - r.top;
+  // M/A/R and tack mode are explicit map actions, so they keep precedence over
+  // the sky's direct-travel gesture. Ordinary clicks on a named sky world fly
+  // to that world through the same animated route as its navigation button.
+  if (!tackMode && !interfaceMode) {
+    const target = skyArrivalHit(sx, sy);
+    if (target) { skyGoToWorld(target.id); return; }
+  }
+  const pos = pixelToHex(sx, sy);
   if (!pos || !state) return;
   const k = key(pos);
   if (tackMode) {
