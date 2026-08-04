@@ -123,7 +123,7 @@ shadow a binding somebody arrived with.
 | `Tab` | Next unit needing orders (`.` is the Civ 6 way to the same place) |
 | `=` / `−` | Zoom, for a keyboard with no numeric keypad |
 | `Ctrl+A` | Hand the seat to an agent for a stretch of turns |
-| `Ctrl+R` | Face north and reset the view |
+| `Alt` / `Option` | Face north and reset the view; drag while held to rotate and tilt |
 | `Ctrl+U` | Hide and show the command deck |
 | `Ctrl+←` `Ctrl+→` | Rotate the map |
 | `Shift`+scroll | Rotate the map |

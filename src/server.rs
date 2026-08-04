@@ -9282,13 +9282,19 @@ mod tests {
         // so arriving from Civ 6 cannot find a shadowed binding.
         for chord in [
             "{id: \"AutoPlay\", key: \"a\", ctrl: true",
-            "{id: \"ResetFacing\", key: \"r\", ctrl: true",
             "{id: \"HidePanel\", key: \"u\", ctrl: true",
             "{id: \"QuickDeals\", key: \"d\", ctrl: true",
         ] {
             assert!(EMBEDDED_INDEX.contains(chord), "missing CIVVIS chord: {chord}");
         }
         assert!(EMBEDDED_INDEX.contains("{id: \"Diplomacy\", key: \"F8\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "let altTap = false; // tapping Alt/Option (no drag) faces north and levels the map"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "if (altTap) {\n    resetMapFacing(-cam.tilt);"
+        ));
+        assert!(!EMBEDDED_INDEX.contains("{id: \"ResetFacing\", key: \"r\", ctrl: true"));
 
         // Movement: a left click only selects, a left drag pans, a secondary
         // press/release moves units, and the middle button centres. This is the
