@@ -41769,6 +41769,26 @@ impl Game {
         if !can_build || u.charges <= 0 {
             return Err("unit cannot build that improvement".into());
         }
+        // ⚠⚠ THE ENUMERATION IS NOT THE ONLY WAY AN IMPROVEMENT IS ORDERED.
+        //
+        // #1107 added this rule to `legal_actions_within`, and live testing on
+        // run `civvis-20260804T173018Z` showed it had NOT taken: all three
+        // `improve_refused` events still had `moves == 0`, the exact pattern the
+        // gate was meant to stop. The reason is that `builder_step` computes
+        // `valid_improvements` itself and calls `apply` DIRECTLY, never touching
+        // the enumeration — the same shape as the purchase block in #1105, where
+        // the gold buyers bypassed the layer the gate lived in.
+        //
+        // So the rule belongs HERE, in the one function every path reaches:
+        // `legal_actions_within`, `builder_step`, `naturalist_step`,
+        // `archaeologist_step` and anything added later.
+        //
+        // Civilization VI refuses BUILD_IMPROVEMENT from a unit with no movement,
+        // and completing one spends all of it — which is why a builder that has
+        // already improved a tile this turn cannot improve another.
+        if u.moves_left <= 0.0 {
+            return Err("unit has no movement left to build".into());
+        }
         if !self.valid_improvements(pid, u.pos).iter().any(|i| i == imp) {
             return Err("invalid improvement here".into());
         }
