@@ -824,9 +824,9 @@ fn generate_land(
     rng: &mut Rng,
 ) -> BTreeSet<Pos> {
     if script.is_fixed_geography() {
-        // The one type that is read rather than rolled. See [`earth_land`] for
-        // what the world is asked, and why the two pentagons that fall on land
-        // are allowed to stay there.
+        // Earth is read rather than rolled. See [`earth_land`] for what the
+        // world is asked, and why the two pentagons that fall on land are
+        // allowed to stay there.
         return earth_land(wm);
     }
     if script == MapScript::GrandCanals {
@@ -946,6 +946,7 @@ fn flat_land(
             }
             land
         }
+        MapScript::Fjords => fjord_land(wm, rng),
         MapScript::InlandSea => {
             let center_col = (width - 1) as f64 / 2.0;
             let center_row = (height - 1) as f64 / 2.0;
@@ -1036,8 +1037,8 @@ fn flat_land(
         }
         // Answered before the shape was dispatched on, because Earth's
         // coastlines are read rather than rolled and are the same coastlines
-        // on either shape.
-        MapScript::TrueStartEarth => earth_land(wm),
+        // on either shape. The two choices differ only when starts are seated.
+        MapScript::Earth | MapScript::TrueStartEarth => earth_land(wm),
         // Likewise: a canal is cut at an angle to an axis of the world, which
         // is a question neither shape answers differently. [`generate_land`]
         // sends it to [`canal_world`] before it reaches here.
@@ -1046,6 +1047,45 @@ fn flat_land(
         // in tiles and so are the same construction on either shape.
         MapScript::GrandCanalsTwo => canal_blocks(wm, poles, rng).land,
     }
+}
+
+/// A water-carved coastal world with room for all three requested terrain
+/// classes: forty percent sea, forty percent ordinary land, and twenty percent
+/// mountain. The high ridges of the field are removed as water rather than
+/// grown as isolated lakes, so they make long inlets, shorter cuts, and narrow
+/// passages throughout the map instead of one ocean around a continent.
+fn fjord_land(wm: &WorldMap, rng: &mut Rng) -> BTreeSet<Pos> {
+    let total = wm.tiles.len();
+    let target = total * MapScript::Fjords.land_percent() as usize / 100;
+    // Flat worlds keep their two polar rows wet. Choose the remaining water
+    // from the reachable interior, so that reservation does not quietly turn
+    // the advertised 40/40/20 mix into a drier map.
+    let interior = offset_region(wm, 0, wm.width, 1, wm.height - 1);
+    let water_inside = interior.len().saturating_sub(target.min(interior.len()));
+    let mut channels = Fractal::new(rng, wm.width, wm.height, 3);
+    // More plates than an ordinary world gives the sea many independent cuts:
+    // some run the length of a continent, some stop at a bay, and their joins
+    // leave the constricted passages the script is named for.
+    channels.build_ridges(rng, 18, 5.0, 5.0);
+    let mut ranked: Vec<(u8, Pos)> = interior
+        .iter()
+        .copied()
+        .map(|pos| {
+            let (col, row) = noise_cell(wm, pos);
+            (channels.at(col, row), pos)
+        })
+        .collect();
+    ranked.sort_unstable_by(|(left_height, left_pos), (right_height, right_pos)| {
+        right_height
+            .cmp(left_height)
+            .then_with(|| left_pos.cmp(right_pos))
+    });
+    let water: BTreeSet<Pos> = ranked
+        .into_iter()
+        .take(water_inside)
+        .map(|(_, pos)| pos)
+        .collect();
+    interior.difference(&water).copied().collect()
 }
 
 /// The land a seat needs under it on a Water World before the share is allowed
@@ -1257,13 +1297,42 @@ fn globe_land(
         // Cut the sea out of a solid world. What is left over — the caps and
         // the pentagons — stays water too, which is why the world never comes
         // out at exactly the share asked for on a poled globe.
-        let water = tiles * (100 - land_share) / 100;
+        let reserved_water = tiles.saturating_sub(field.len());
+        let water = if script == MapScript::Fjords {
+            // Fjords promises a composition, not merely a ratio in the part
+            // of a globe that happened not to be its polar cap. Count those
+            // permanently wet cells first, then cut just enough additional
+            // sea to finish its forty percent share.
+            (tiles * 40 / 100).saturating_sub(reserved_water)
+        } else {
+            tiles * (100 - land_share) / 100
+        };
         let seas = match script {
             MapScript::InlandSea => 1,
             MapScript::Lakes => (tiles / 320).clamp(6, 40),
+            // The water is the script's carving tool: several smaller bodies
+            // distribute inlets round the globe instead of cutting one ocean
+            // out of its middle.
+            // Enough bodies to make a network of inlets, but not so many
+            // that their one-tile buffers consume the field before the forty
+            // percent water target can be reached.
+            MapScript::Fjords => (tiles / 400).clamp(8, 20),
             _ => (tiles / 220).clamp(8, 60),
         };
-        let sea = scatter_bodies(wm, &mut field, seas, water, rng);
+        let mut sea = scatter_bodies(wm, &mut field, seas, water, rng);
+        if script == MapScript::Fjords {
+            // The initial scatter deliberately leaves a one-tile buffer around
+            // every inlet. On a globe that can prevent the last small body
+            // from finding a seed, so finish the remaining water as a larger
+            // cut rather than quietly returning a too-dry Fjords world.
+            while sea.len() < water && !field.is_empty() {
+                let extra = scatter_bodies(wm, &mut field, 1, water - sea.len(), rng);
+                if extra.is_empty() {
+                    break;
+                }
+                sea.extend(extra);
+            }
+        }
         return wm
             .tiles
             .keys()
@@ -2028,9 +2097,11 @@ fn large_lake_budget(script: MapScript, num_continents: usize) -> usize {
         // bank and a spread lake would be most of what a city had to work.
         // The one-plot ponds the same roll produces still fall.
         MapScript::GrandCanalsTwo => 0,
-        MapScript::TrueStartEarth
+        MapScript::Earth
+        | MapScript::TrueStartEarth
         | MapScript::LandOnly
         | MapScript::SmallContinents
+        | MapScript::Fjords
         | MapScript::Islands
         | MapScript::WaterWorld => 0,
     }
@@ -2275,7 +2346,7 @@ pub fn generate_with_script_and_leader_starts(
     let mut mountain_terrain = if script.is_fixed_geography() {
         paint_earth(&mut wm, &land, poles, rng)
     } else {
-        apply_tectonics(&mut wm, &land, continental_rifts, rng);
+        apply_tectonics(&mut wm, &land, script, continental_rifts, rng);
         assign_biomes(&mut wm, &land_list, poles, rng)
     };
 
@@ -2400,7 +2471,7 @@ pub fn generate_with_script_and_leader_starts(
     // its water is real. `classify_lakes` still runs: the Caspian, the Great
     // Lakes, Victoria and Baikal arrive as water the coastline encloses, and
     // sorting those by area is exactly what it is for.
-    if !script.is_fixed_geography() {
+    if !script.is_fixed_geography() && script != MapScript::Fjords {
         add_lakes(
             &mut wm,
             &mut land,
@@ -3056,7 +3127,7 @@ pub fn generate_with_script_and_leader_starts(
     } else {
         regions_for_seats(&wm, &components, &fertility, num_major_spawns)
     };
-    let mut spawns = if script == MapScript::TrueStartEarth {
+    let mut spawns = if script.is_true_start() {
         // Earth does not divide into regions: the whole point of the script is
         // that Rome opens in Italy and the Aztecs open in Mexico, however
         // lopsided that leaves the continents.
@@ -3704,11 +3775,27 @@ const GRASS_LATITUDE: f64 = 0.1;
 const DESERT_BOTTOM_LATITUDE: f64 = 0.2;
 const DESERT_TOP_LATITUDE: f64 = 0.5;
 
-/// The highest part of a continental rift belt becomes mountains. The normal
-/// mountain cutoff is the ninety-fourth percentile at Normal world age; an
-/// eighty-sixth percentile inside this one-hex-wide belt makes a boundary
-/// visibly more tectonic without turning it into an impassable wall.
-const CONTINENTAL_RIFT_MOUNTAIN_PERCENTILE: u32 = 86;
+/// The knobs that make a named map's mountains read as that map rather than
+/// as a different coastline painted under the stock relief pass.
+#[derive(Clone, Copy)]
+struct TectonicProfile {
+    plates: usize,
+    mountain_percentile: u32,
+    foothills_percentile: u32,
+    pass_percentile: u32,
+    coastal_demote_numerator: usize,
+    coastal_demote_denominator: usize,
+    /// A share of every tile on the map, rather than a share of land. Fjords
+    /// names its three categories this way: 40% ordinary land, 20% mountains,
+    /// and 40% water.
+    exact_mountain_percent: Option<usize>,
+}
+
+/// A continental rift lowers its mountain cutoff by eight percentiles. With
+/// the stock normal-age cutoff of ninety-four that is eighty-six; Continents'
+/// deliberately denser base profile gets the matching eighty-four so the
+/// seam remains visibly more tectonic without becoming an impassable wall.
+const CONTINENTAL_RIFT_MOUNTAIN_PERCENTILE_DELTA: u32 = 8;
 
 /// Most fissures should read as part of a continental rift, while leaving a
 /// minority for other mountain systems such as isolated volcanic ranges.
@@ -3740,23 +3827,119 @@ fn continent_rift_band(wm: &WorldMap, position: Pos) -> bool {
 /// line, ringed by their own foothills, rather than as short random walks;
 /// hills additionally come in clumps wherever the hills field sits inside one
 /// of its two bands.
+fn tectonic_profile(script: MapScript) -> TectonicProfile {
+    let standard = TectonicProfile {
+        // `MountainsCliffs.lua` weaves nine tectonic plates through the field
+        // whatever the map size; the ridges they collide along are the ranges.
+        plates: 9,
+        mountain_percentile: (97 - WORLD_AGE) as u32,
+        foothills_percentile: (91 - 2 * WORLD_AGE) as u32,
+        pass_percentile: (91 - 2 * WORLD_AGE) as u32,
+        coastal_demote_numerator: 9,
+        coastal_demote_denominator: 10,
+        exact_mountain_percent: None,
+    };
+    match script {
+        // Normal Continents used the top six percent of its ridged field.
+        // Taking the top eight instead is one third more raw mountain range;
+        // the same coast erosion and passes still keep the resulting shores
+        // and routes playable.
+        MapScript::Continents => TectonicProfile {
+            mountain_percentile: 92,
+            ..standard
+        },
+        // Fjords needs a denser network of shorter and longer ranges, many
+        // more passable breaks, and mountains that meet its advertised share.
+        // Coastal peaks stay: water against a range is the point of a fjord.
+        MapScript::Fjords => TectonicProfile {
+            plates: 18,
+            mountain_percentile: 60,
+            foothills_percentile: 78,
+            pass_percentile: 82,
+            coastal_demote_numerator: 0,
+            coastal_demote_denominator: 1,
+            exact_mountain_percent: Some(20),
+        },
+        _ => standard,
+    }
+}
+
+/// Bring a profile that promises an exact mountain share to that number while
+/// retaining the ridged field's own order. Any added peak is therefore still
+/// part of a natural range, and the high hill values reserved as passes stay
+/// open through it.
+fn balance_mountain_share(
+    wm: &mut WorldMap,
+    land: &BTreeSet<Pos>,
+    mountains: &Fractal,
+    hills: &Fractal,
+    pass_threshold: u8,
+    wanted_percent: usize,
+) {
+    let wanted = wm.tiles.len() * wanted_percent / 100;
+    let mut current: Vec<Pos> = land
+        .iter()
+        .copied()
+        .filter(|pos| wm.tiles[pos].terrain == "mountain")
+        .collect();
+    if current.len() > wanted {
+        let excess = current.len() - wanted;
+        current.sort_unstable_by_key(|pos| {
+            let (col, row) = noise_cell(wm, *pos);
+            mountains.at(col, row)
+        });
+        for pos in current.into_iter().take(excess) {
+            let tile = wm.tiles.get_mut(&pos).unwrap();
+            // The climate pass immediately after this one repaints the ground;
+            // this only says that a lowered peak remains a foothill.
+            tile.terrain = "grassland".into();
+            tile.hills = true;
+        }
+        return;
+    }
+    if current.len() == wanted {
+        return;
+    }
+
+    let needed = wanted - current.len();
+    let mut candidates: Vec<Pos> = land
+        .iter()
+        .copied()
+        .filter(|pos| wm.tiles[pos].terrain != "mountain")
+        .filter(|pos| {
+            let (col, row) = noise_cell(wm, *pos);
+            // This was deliberately made a pass in the ridge. Filling it back
+            // in merely to hit a percentage would defeat the navigable cuts.
+            hills.at(col, row) < pass_threshold
+        })
+        .collect();
+    candidates.sort_unstable_by_key(|pos| {
+        let (col, row) = noise_cell(wm, *pos);
+        std::cmp::Reverse(mountains.at(col, row))
+    });
+    for pos in candidates.into_iter().take(needed) {
+        let tile = wm.tiles.get_mut(&pos).unwrap();
+        tile.terrain = "mountain".into();
+        tile.hills = false;
+    }
+}
+
 fn apply_tectonics(
     wm: &mut WorldMap,
     land: &BTreeSet<Pos>,
+    script: MapScript,
     continental_rifts: bool,
     rng: &mut Rng,
 ) {
+    let profile = tectonic_profile(script);
     let (width, height) = (wm.width, wm.height);
-    // `MountainsCliffs.lua` weaves nine tectonic plates through the field
-    // whatever the map size; the ridges they collide along are the ranges.
-    const PLATES: usize = 9;
     let mut mountains = Fractal::new(rng, width, height, 3);
-    mountains.build_ridges(rng, PLATES, 5.0, 5.0);
+    mountains.build_ridges(rng, profile.plates, 5.0, 5.0);
     let hills = Fractal::new(rng, width, height, 3);
 
     let cells: Vec<(i32, i32)> = land.iter().map(|pos| noise_cell(wm, *pos)).collect();
     let mountain_threshold =
-        mountains.percentile_within(cells.iter().copied(), (97 - WORLD_AGE) as u32);
+        mountains.percentile_within(cells.iter().copied(), profile.mountain_percentile);
     let rift_mountain_threshold = if continental_rifts {
         let rift_cells: Vec<(i32, i32)> = land
             .iter()
@@ -3766,16 +3949,17 @@ fn apply_tectonics(
         mountains
             .percentile_within(
                 rift_cells.iter().copied(),
-                CONTINENTAL_RIFT_MOUNTAIN_PERCENTILE,
+                profile
+                    .mountain_percentile
+                    .saturating_sub(CONTINENTAL_RIFT_MOUNTAIN_PERCENTILE_DELTA),
             )
             .min(mountain_threshold)
     } else {
         mountain_threshold
     };
     let foothills_threshold =
-        mountains.percentile_within(cells.iter().copied(), (91 - 2 * WORLD_AGE) as u32);
-    let pass_threshold =
-        hills.percentile_within(cells.iter().copied(), (91 - 2 * WORLD_AGE) as u32);
+        mountains.percentile_within(cells.iter().copied(), profile.foothills_percentile);
+    let pass_threshold = hills.percentile_within(cells.iter().copied(), profile.pass_percentile);
     let low_band = (
         hills.percentile_within(cells.iter().copied(), (28 - WORLD_AGE) as u32),
         hills.percentile_within(cells.iter().copied(), (28 + WORLD_AGE) as u32),
@@ -3811,24 +3995,38 @@ fn apply_tectonics(
     }
 
     // The stock generator demotes nine in ten mountains that reach the water,
-    // which is what keeps coastlines workable and leaves the ranges inland.
-    let coastal_peaks: Vec<Pos> = land
-        .iter()
-        .copied()
-        .filter(|pos| wm.tiles[pos].terrain == "mountain")
-        .filter(|pos| {
-            wm.neighbors(*pos).into_iter()
-                .any(|neighbor| !land.contains(&neighbor))
-        })
-        .collect();
-    for pos in coastal_peaks {
-        if rng.below(10) < 9 {
-            let tile = wm.tiles.get_mut(&pos).unwrap();
-            // The climate pass, which runs next, repaints every tile that is
-            // no longer a mountain, so only the elevation matters here.
-            tile.terrain = "grassland".into();
-            tile.hills = true;
+    // which is what keeps ordinary coastlines workable and leaves the ranges
+    // inland. Fjords deliberately sets this to zero: its sea meets mountains.
+    if profile.coastal_demote_numerator > 0 {
+        let coastal_peaks: Vec<Pos> = land
+            .iter()
+            .copied()
+            .filter(|pos| wm.tiles[pos].terrain == "mountain")
+            .filter(|pos| {
+                wm.neighbors(*pos).into_iter()
+                    .any(|neighbor| !land.contains(&neighbor))
+            })
+            .collect();
+        for pos in coastal_peaks {
+            if rng.below(profile.coastal_demote_denominator) < profile.coastal_demote_numerator {
+                let tile = wm.tiles.get_mut(&pos).unwrap();
+                // The climate pass, which runs next, repaints every tile that
+                // is no longer a mountain, so only the elevation matters here.
+                tile.terrain = "grassland".into();
+                tile.hills = true;
+            }
         }
+    }
+
+    if let Some(wanted_percent) = profile.exact_mountain_percent {
+        balance_mountain_share(
+            wm,
+            land,
+            &mountains,
+            &hills,
+            pass_threshold,
+            wanted_percent,
+        );
     }
 }
 
@@ -6245,9 +6443,8 @@ mod river_tests {
     const POLED: MapPoles = MapPoles::Poles;
     const SCATTERED: MapPoles = MapPoles::Randomized;
 
-    /// Every world type but Earth, in the order the lobby lists them: most
-    /// land first, most water last.
-    const ROLLED_TYPES: [MapScript; 10] = [
+    /// Every non-Earth world type, in the order the lobby lists them.
+    const ROLLED_TYPES: [MapScript; 11] = [
         MapScript::LandOnly,
         MapScript::Lakes,
         MapScript::InlandSea,
@@ -6256,9 +6453,12 @@ mod river_tests {
         MapScript::Pangaea,
         MapScript::Continents,
         MapScript::SmallContinents,
+        MapScript::Fjords,
         MapScript::Islands,
         MapScript::WaterWorld,
     ];
+
+    const FIXED_GEOGRAPHY_TYPES: [MapScript; 2] = [MapScript::Earth, MapScript::TrueStartEarth];
 
     /// What share of a generated world is dry land.
     fn land_share(world: &WorldMap, rules: &Rules) -> usize {
@@ -6669,14 +6869,12 @@ mod river_tests {
         }
     }
 
-    /// The world types are a dial from all land to all water, and the lobby
-    /// lists them in that order. Two claims are checked here, on both shapes:
-    /// that each type lands near the share it advertises, and that going down
-    /// the list never gains land. Without the second, "ordered from land to
-    /// water" is a comment rather than a property, and the two ends stop
-    /// meaning anything.
+    /// Every rolled world stays near the land share it advertises on both
+    /// shapes. Fjords deliberately interrupts the old land-to-water dial: its
+    /// 40% ordinary land plus 20% mountain terrain is a composition promise,
+    /// and its requested place in the menu is after Small Continents.
     #[test]
-    fn world_types_run_from_all_land_to_all_water_on_either_shape() {
+    fn world_types_aim_at_their_advertised_land_share_on_either_shape() {
         let rules = Rules::embedded();
         for topology in [FLAT, GLOBE] {
             let mut measured: Vec<(MapScript, usize)> = Vec::new();
@@ -6704,25 +6902,115 @@ mod river_tests {
                     "{script:?} on {topology:?} is {share}% land, but the lobby says {claimed}%"
                 );
             }
-            for pair in measured.windows(2) {
-                let ((above, more), (below, less)) = (pair[0], pair[1]);
+            let land_only = measured
+                .iter()
+                .find(|(script, _)| *script == MapScript::LandOnly)
+                .map(|(_, share)| *share)
+                .unwrap();
+            let water_world = measured
+                .iter()
+                .find(|(script, _)| *script == MapScript::WaterWorld)
+                .map(|(_, share)| *share)
+                .unwrap();
+            assert!(land_only >= 85, "Land Only came out {land_only}% land on {topology:?}");
+            assert!(water_world <= 12, "Water World came out {water_world}% land on {topology:?}");
+        }
+    }
+
+    #[test]
+    fn continents_default_has_about_one_third_more_mountain_range_than_stock() {
+        let stock = tectonic_profile(MapScript::Pangaea);
+        let continents = tectonic_profile(MapScript::Continents);
+        let stock_share = 100 - stock.mountain_percentile;
+        let continents_share = 100 - continents.mountain_percentile;
+        // The stock normal-age profile takes the top 6% of its ridged field.
+        // Continents takes 8%, which is 33% more before the same coast and
+        // pass rules turn that field into playable terrain.
+        assert_eq!(stock_share, 6);
+        assert_eq!(continents_share, 8);
+        assert_eq!(continents_share * 3, stock_share * 4);
+        assert_eq!(continents.plates, stock.plates);
+        assert_eq!(continents.pass_percentile, stock.pass_percentile);
+    }
+
+    #[test]
+    fn fjords_hold_the_requested_land_water_and_mountain_mix() {
+        let rules = Rules::embedded();
+        for topology in [FLAT, GLOBE] {
+            for seed in 0..4u64 {
+                let mut rng = Rng::new(62_000 + seed + 100 * topology.is_globe() as u64);
+                let (world, _) = generate_with_script(
+                    &rules,
+                    84,
+                    54,
+                    8,
+                    12,
+                    4,
+                    4,
+                    MapScript::Fjords,
+                    topology,
+                    POLED,
+                    &mut rng,
+                );
+                let total = world.tiles.len();
+                let mut water = 0;
+                let mut ordinary_land = 0;
+                let mut mountains = 0;
+                let mut mountain_regions = BTreeSet::new();
+                let mut passages = 0;
+                for (position, tile) in &world.tiles {
+                    if rules.is_water(tile) {
+                        water += 1;
+                        continue;
+                    }
+                    if tile.terrain == "mountain" {
+                        mountains += 1;
+                        let (column, row) = noise_cell(&world, *position);
+                        mountain_regions.insert((column * 4 / world.width, row * 3 / world.height));
+                    } else {
+                        ordinary_land += 1;
+                        if tile.hills
+                            && world
+                                .neighbors(*position)
+                                .into_iter()
+                                .filter(|neighbor| {
+                                    world
+                                        .tiles
+                                        .get(neighbor)
+                                        .is_some_and(|other| other.terrain == "mountain")
+                                })
+                                .count()
+                                >= 2
+                        {
+                            passages += 1;
+                        }
+                    }
+                }
+                let share = |count: usize| count * 100 / total.max(1);
                 assert!(
-                    more + 2 >= less,
-                    "{below:?} ({less}% land) holds more land than {above:?} ({more}%), \
-                     so the list is no longer ordered from land to water"
+                    (38..=42).contains(&share(water)),
+                    "{topology:?} seed {seed}: Fjords has {}% water, wanted 40%",
+                    share(water)
+                );
+                assert!(
+                    (38..=42).contains(&share(ordinary_land)),
+                    "{topology:?} seed {seed}: Fjords has {}% ordinary land, wanted 40%",
+                    share(ordinary_land)
+                );
+                assert!(
+                    (18..=22).contains(&share(mountains)),
+                    "{topology:?} seed {seed}: Fjords has {}% mountains, wanted 20%",
+                    share(mountains)
+                );
+                assert!(
+                    mountain_regions.len() >= 6,
+                    "{topology:?} seed {seed}: fjord ranges did not reach across the map: {mountain_regions:?}"
+                );
+                assert!(
+                    passages >= 3,
+                    "{topology:?} seed {seed}: fjord ranges have too few passable breaks ({passages})"
                 );
             }
-            // The two ends have to actually be the ends.
-            assert!(
-                measured[0].1 >= 85,
-                "Land Only came out {}% land on {topology:?}",
-                measured[0].1
-            );
-            assert!(
-                measured[measured.len() - 1].1 <= 12,
-                "Water World came out {}% land on {topology:?}",
-                measured[measured.len() - 1].1
-            );
         }
     }
 
@@ -7129,7 +7417,7 @@ mod river_tests {
         let rules = Rules::embedded();
         for (index, script) in ROLLED_TYPES
             .into_iter()
-            .chain([MapScript::TrueStartEarth])
+            .chain(FIXED_GEOGRAPHY_TYPES)
             .enumerate()
         {
             for topology in [FLAT, GLOBE] {
@@ -7410,6 +7698,11 @@ mod river_tests {
                     "Small Continents needs several separated landmasses, got {:?}",
                     components.iter().map(|c| c.len()).collect::<Vec<_>>()
                 ),
+                // Fjords is pinned by its own composition and passage test.
+                // Its channels intentionally produce a variable mix of joined
+                // coasts and separate peninsulas, so a component count would
+                // be an accidental generator detail rather than its promise.
+                MapScript::Fjords => {}
                 MapScript::LandOnly => assert!(
                     share(1) >= 80,
                     "Land Only should be one unbroken world, largest holds {}%",
@@ -7437,8 +7730,8 @@ mod river_tests {
                     "Grand Canals II should cut the world into blocks of a size, got {:?}",
                     components.iter().map(|c| c.len()).collect::<Vec<_>>()
                 ),
-                MapScript::TrueStartEarth => {
-                    unreachable!("Earth is not in this list")
+                MapScript::Earth | MapScript::TrueStartEarth => {
+                    unreachable!("fixed-geography Earth is not in this list")
                 }
             }
 
@@ -8204,7 +8497,7 @@ mod river_tests {
         assert!(strategics.contains(&"iron") && strategics.contains(&"horses"));
         for (index, script) in ROLLED_TYPES
             .into_iter()
-            .chain([MapScript::TrueStartEarth])
+            .chain(FIXED_GEOGRAPHY_TYPES)
             .enumerate()
         {
             let mut rng = Rng::new(81_000 + index as u64);
@@ -8423,7 +8716,7 @@ mod river_tests {
         let rules = Rules::embedded();
         for (index, script) in ROLLED_TYPES
             .into_iter()
-            .chain(std::iter::once(MapScript::TrueStartEarth))
+            .chain(FIXED_GEOGRAPHY_TYPES)
             .enumerate()
         {
             let mut rng = Rng::new(73_200 + index as u64);
