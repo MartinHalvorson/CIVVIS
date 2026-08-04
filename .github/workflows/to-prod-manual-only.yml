@@ -1,19 +1,19 @@
-name: promote-site
+name: to-prod-manual-only
 
 # Makes a chosen revision the front page of civvis.ai.
 #
-# The site has two lanes: `/beta` follows main automatically, and `/` is
-# whatever the `site-stable` tag names. This workflow is the only thing that
-# moves that tag. Promotion is deliberately a human act — the automated lane
+# The site has two lanes: `/test` follows main automatically
+# (to-test-auto-30), and `/` is whatever the `site-stable` tag names. This
+# workflow is the only thing that moves that tag. Promotion is deliberately a human act — the automated lane
 # proves a build runs; whether it is worth being the thing a visitor lands on
 # is a judgement.
 #
-#   Actions -> promote-site -> Run workflow -> ref = main (or any sha/tag)
+#   Actions -> to-prod-manual-only -> Run workflow -> ref = main (or any sha/tag)
 #
 # The tag is a pointer, not a release: it is expected to move, which is why it
 # is pushed with force and why nothing else may use it. After moving it, this
-# runs the ordinary publish-site job, so a promotion deploys exactly what the
-# schedule would have deployed with the same tag — one code path, no drift.
+# runs the ordinary to-test-auto-30 job, so a promotion deploys exactly what
+# the schedule would have deployed with the same tag — one code path, no drift.
 
 on:
   workflow_dispatch:
@@ -26,7 +26,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: promote-site
+  group: to-prod-manual-only
   cancel-in-progress: false
 
 jobs:
@@ -48,7 +48,7 @@ jobs:
 
   deploy:
     needs: move-the-tag
-    uses: ./.github/workflows/publish-site.yml
+    uses: ./.github/workflows/to-test-auto-30.yml
     secrets: inherit
     with:
       deploy: true

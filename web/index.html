@@ -3628,6 +3628,10 @@
           <option value="civ6" selected>Civ 6 Leaders</option>
           <option value="expanded">Expanded</option>
         </select></label>
+        <label class="small civ6-hidden">Scenario<select id="scenario" style="margin-top:4px">
+          <option value="custom" selected>Custom Game</option>
+          <option value="earth_today">Earth Today</option>
+        </select></label>
         <label class="small">Game mode<select id="gamemode" style="margin-top:4px">
           <option value="ai_sim" selected>AI-only simulation</option>
           <option value="single">Single player</option>
@@ -4072,7 +4076,7 @@ function initAdvancedSettings() {
   const game = document.getElementById("newgame-options");
   const gameAdvanced = document.getElementById("game-advanced-settings");
   moveByOrder(game, ".game-advanced-setting", document.getElementById("game-advanced-settings-body"));
-  const basic = ["gamemode", "mapshape", "maptype", "leader", "difficulty", "np", "citystates",
+  const basic = ["scenario", "gamemode", "mapshape", "maptype", "leader", "difficulty", "np", "citystates",
     "startera", "gamespeed", "futureera"]
     .map(id => document.getElementById(id).closest("label"));
   basic.push(document.getElementById("victory-options"), document.getElementById("saves-group"));
@@ -4139,7 +4143,7 @@ const MOUNTAIN_TILE_COLOR = "#49453e";
 const VOLCANO_TILE_COLOR = "#292421";
 const TERRAIN = { grassland:"#5e9440", plains:"#ab9e4e", desert:"#d8c184",
                   tundra:"#98a089", snow:"#e8eef2", coast:"#20647e",
-                  ocean:"#0e3752", mountain:MOUNTAIN_TILE_COLOR, lake:"#2b7a86" };
+                  ocean:"#12305c", mountain:MOUNTAIN_TILE_COLOR, lake:"#2b7a86" };
 function tileGroundColor(tile, fallback = "#333") {
   return tile.feature === "volcano"
     ? VOLCANO_TILE_COLOR
@@ -8148,7 +8152,13 @@ async function boot() {
     }
     // The ruleset carries the other game's vocabulary too, and the mode may
     // already be selected by the time it lands.
+    const scenarioChanged = applySelectedScenario();
     syncSetupMode();
+    syncScenarioFromSettings();
+    // A person can choose Earth Today before `/rules` has supplied the Future
+    // Era option. Apply it again now that every preset value exists, then
+    // replace that early partial staging request with the complete scenario.
+    if (scenarioChanged) stageSelectedSimulationSettings();
     fillStrategies(RULES);
     render(adoptTiles(await fetchJSON("/state" + paintedQuery())));
     if (bootAttempts) { bootAttempts = 0; clearBootRetrying(); }
@@ -13676,7 +13686,7 @@ async function ensurePlanetGeometry() {
   }
 }
 
-function planetCamera() {
+function planetCameraBase() {
   const span = Math.max(1, S * 1.5 * (state.map.height - 1));
   const north = Math.min(1, Math.max(0, cam.y / span));
   return {
@@ -13696,19 +13706,47 @@ function planetCamera() {
     chart:!knowsGlobe(),
   };
 }
+// A ground plane can be foreshortened by squeezing one screen axis.  A sphere
+// cannot: doing that to its completed orthographic drawing turns the limb into
+// an ellipse.  Once the world is known to be round, pitch the *view basis*
+// about its screen-right axis instead.  The surface then moves toward a horizon
+// while the ball, its atmosphere, and every hit cell retain one circular limb.
+// Before that discovery, this is still the old chart and its planar pitch stays
+// appropriate (and deliberately does not reveal a globe through its shape).
+function planetTiltBasis(basis, tilt = cam.tilt) {
+  const angle = knowsGlobe() ? clampCameraTilt(tilt) : 0;
+  return angle > 1e-9 ? planetSpin(basis, basis.right, angle) : basis;
+}
+function planetUntiltBasis(basis, tilt = cam.tilt) {
+  const angle = knowsGlobe() ? clampCameraTilt(tilt) : 0;
+  return angle > 1e-9 ? planetSpin(basis, basis.right, -angle) : basis;
+}
+function planetCamera() {
+  const camera = planetCameraBase();
+  if (camera.chart) return camera;
+  return {...camera,
+          ...planetBasisCamera(planetTiltBasis(planetViewBasis(camera)))};
+}
 // The camera is steered in the same world coordinates the flat maps use, so
 // centring on a tile means turning the globe until that tile faces the viewer.
 function planetCameraTargetFor(pos) {
   const cell = PLANET?.cells.get(key(pos));
   if (!cell) return null;
   const [x, y, z] = cell.center;
-  const longitude = Math.atan2(y, x);
-  const latitude = Math.asin(Math.max(-1, Math.min(1, z)));
+  // `cam` stores the level basis so its coordinates remain stable for flights
+  // and wrapping.  A target, however, is a point in the tilted on-screen view;
+  // undo that camera-only pitch before saving its longitude and latitude.
+  const target = {
+    longitude:Math.atan2(y, x),
+    latitude:Math.asin(Math.max(-1, Math.min(1, z))),
+    roll:planetCamera().roll,
+  };
+  const base = planetBasisCamera(planetUntiltBasis(planetViewBasis(target)));
   const span = Math.max(1, S * 1.5 * (state.map.height - 1));
-  let column = (longitude + Math.PI) / (2 * Math.PI) * WW();
+  let column = (base.longitude + Math.PI) / (2 * Math.PI) * WW();
   const width = WW();
   column += Math.round((cam.x - column) / width) * width;
-  return [column, (Math.PI / 2 - latitude) / Math.PI * span];
+  return [column, (Math.PI / 2 - base.latitude) / Math.PI * span];
 }
 function planetStageCenter() {
   // The globe and its wider sky are painted into the canvas, and that canvas
@@ -13844,7 +13882,10 @@ function planetTurn(basis, dx, dy) {
 // that reads a column — a flight target, the world map's own frame — jumps a
 // whole world when the view crosses the date line or comes over a pole.
 function applyPlanetBasis(basis) {
-  const view = planetBasisCamera(basis);
+  // Pointer and inertia turns arrive in the visible, tilted basis.  Persist
+  // the level camera beneath it, otherwise the same pitch would be added again
+  // the next time `planetCamera()` reconstructs the view.
+  const view = planetBasisCamera(planetUntiltBasis(basis));
   const span = Math.max(1, S * 1.5 * (state.map.height - 1));
   const width = Math.max(1, WW());
   let column = (view.longitude + Math.PI) / (2 * Math.PI) * width;
@@ -15149,27 +15190,31 @@ function planetEarthCenter(radius = planetEarthRadius()) {
   const [stageX, stageY] = planetStageCenter();
   return [stageX - SKY_PAN.x * radius, stageY - SKY_PAN.y * radius];
 }
-// Globe geometry is still calculated in its honest orthographic coordinates.
-// Pitch is applied afterwards as the camera's ground-plane transform, which
-// means a marker, its tile, and the globe limb all share exactly one plane.
+// The unknown-world chart is a ground plane, so it still receives the flat
+// camera's vertical projection.  A discovered globe is pitched in
+// `planetCamera()` before orthographic projection and must leave this factor at
+// one: scaling it here would squash the spherical limb into an ellipse.
+function planetGroundProjection() {
+  return knowsGlobe() ? 1 : cameraTiltProjection();
+}
 function planetGroundScreenY(y, centerY) {
-  return centerY + (y - centerY) * cameraTiltProjection();
+  return centerY + (y - centerY) * planetGroundProjection();
 }
 function planetGroundInputY(y, centerY) {
-  return centerY + (y - centerY) / cameraTiltProjection();
+  return centerY + (y - centerY) / planetGroundProjection();
 }
 function planetGroundPoint(point, centerY) {
   return {...point, y:planetGroundScreenY(point.y, centerY)};
 }
 function applyPlanetGroundTilt(centerY) {
-  const projection = cameraTiltProjection();
+  const projection = planetGroundProjection();
   if (projection >= .999999) return;
   cx.translate(0, centerY);
   cx.scale(1, projection);
   cx.translate(0, -centerY);
 }
 function planetGroundDrag(dx, dy) {
-  return [dx, dy / cameraTiltProjection()];
+  return [dx, dy / planetGroundProjection()];
 }
 // The world the camera is actually looking at: the one big enough to fill the
 // stage and standing near the middle of it. Dragging means turn-this-world when
@@ -19151,10 +19196,12 @@ function drawPlanetMap() {
   // picture; the disc behind it is two fills either way and costs nothing.
   const earthInFrame = skyOnCanvas({x:centerX, y:centerY, r:radius});
 
-  // Everything that belongs to the Earth is painted in one tilted plane. This
-  // is deliberately outside the individual icon painters: a unit, building,
-  // badge, border, and its host cell cannot disagree about how far toward the
-  // horizon the camera has turned. The sky remains in screen space below.
+  // Everything that belongs to the Earth is painted through one camera. On a
+  // known globe that camera was tilted in 3D before projection, preserving the
+  // circular limb; only an undiscovered chart needs the planar transform below.
+  // Keeping it outside individual icon painters still makes a unit, building,
+  // badge, border, and host cell agree about their projection. The sky remains
+  // in screen space below.
   cx.save();
   applyPlanetGroundTilt(centerY);
 
@@ -19179,8 +19226,8 @@ function drawPlanetMap() {
     ocean.addColorStop(0, PARCH_LIGHT); ocean.addColorStop(.52, PARCH);
     ocean.addColorStop(.88, "#aa9364"); ocean.addColorStop(1, "#77623f");
   } else if (spectator) {
-    ocean.addColorStop(0, "#477f9b"); ocean.addColorStop(.52, "#163f57");
-    ocean.addColorStop(.88, "#082437"); ocean.addColorStop(1, "#020b13");
+    ocean.addColorStop(0, "#46679f"); ocean.addColorStop(.52, "#14315e");
+    ocean.addColorStop(.88, "#091a3a"); ocean.addColorStop(1, "#020714");
   } else {
     // Under fog the bare sphere is everything this empire has never seen, so
     // it reads as unknown rather than as an ocean nobody needs to explore.
@@ -28598,6 +28645,45 @@ let civ6Status = null;
 let civ6StatusTimer = null;
 let civ6StatusInFlight = false;
 let civvisMapOptions = null;
+// A scenario is a starting point, not a lock. The selector stays on Earth
+// Today while its three defining settings hold, so speed, size and every
+// other filter remain free for the person setting up the game.
+const GAME_SCENARIOS = Object.freeze({
+  custom: Object.freeze({}),
+  earth_today: Object.freeze({
+    mapshape: "planet",
+    maptype: "true_start_earth",
+    startera: "future",
+  }),
+});
+function scenarioControlCanUse(id, value) {
+  const control = document.getElementById(id);
+  return !!control && [...control.options].some(option => option.value === value);
+}
+function earthTodayScenarioMatches() {
+  return Object.entries(GAME_SCENARIOS.earth_today)
+    .every(([id, value]) => readSetting(id) === value);
+}
+function syncScenarioFromSettings() {
+  const scenario = document.getElementById("scenario");
+  if (!scenario) return;
+  scenario.value = earthTodayScenarioMatches() ? "earth_today" : "custom";
+}
+function applySelectedScenario() {
+  const scenario = document.getElementById("scenario");
+  const preset = GAME_SCENARIOS[scenario?.value] || GAME_SCENARIOS.custom;
+  let changed = false;
+  for (const [id, value] of Object.entries(preset)) {
+    const control = document.getElementById(id);
+    if (scenarioControlCanUse(id, value) && control.value !== value) {
+      control.value = value;
+      changed = true;
+    }
+  }
+  syncEarthShape();
+  return changed;
+}
+document.getElementById("scenario").addEventListener("change", applySelectedScenario);
 document.getElementById("gamemode").addEventListener("change", syncSetupMode);
 document.getElementById("leaderpool").addEventListener("change", syncLeaderPool);
 document.getElementById("maptype").addEventListener("change", syncEarthShape);
@@ -28932,6 +29018,7 @@ function applyQueuedSimulationSettings(settings) {
   const victories = new Set(settings.victories || []);
   for (const track of VICTORY_TRACKS)
     document.getElementById(`victory-${track.id}`).checked = victories.has(track.id);
+  syncScenarioFromSettings();
 }
 function updateRestartSimulationButton() {
   const button = document.getElementById("restart-sim");
@@ -29042,6 +29129,7 @@ function syncSetupMode() {
   document.body.classList.toggle("spectating", mode === "ai_sim");
   document.body.classList.toggle("playing-civ6", civ6);
   syncMapRoster(civ6);
+  syncScenarioFromSettings();
   // The control's label is not relabelled from here. This runs once during
   // load, before the settings state it would read has been initialised, and
   // `#newgame-options`'s delegated change listener already relabels it on
@@ -29370,7 +29458,10 @@ async function playOnPastVictory(mode, paused) {
   }
 }
 document.getElementById("restart-sim").onclick = startNewSimulation;
-document.getElementById("newgame-options").addEventListener("change", stageSelectedSimulationSettings);
+document.getElementById("newgame-options").addEventListener("change", event => {
+  if (event.target.id !== "scenario") syncScenarioFromSettings();
+  stageSelectedSimulationSettings();
+});
 // The three logs' filters. They are read back from storage before the first
 // frame, so a reader who narrowed to one civilization's policy cards last
 // night is still there this morning.
