@@ -1624,6 +1624,15 @@
   .tip-primary, .tip-unit {
     display: inline-block; color: #fffaf0; font-size: var(--type-body); font-weight: 850; line-height: 1.45;
   }
+  /* These are the same coloured, numbered yield markers painted on the map.
+     A tooltip needs a slightly larger target than a hex, but it deliberately
+     carries no second emoji vocabulary for the six yields. */
+  .tip-yields { display: inline-flex; align-items: center; gap: 3px; vertical-align: middle; }
+  .tip-yield-marker {
+    width: 18px; height: 18px; display: inline-grid; place-items: center; box-sizing: border-box;
+    border: 1px solid #0c1012cc; border-radius: 50%; color: var(--tip-yield-ink); background: var(--tip-yield-fill);
+    font: 800 10px/1 var(--font-ui); font-variant-numeric: tabular-nums;
+  }
   /* The adjacency ledger is a list under the district line: a heading in the
      yield's own voice, then one indented row per source that pays. */
   .tip-adj-head { color: var(--muted); font-size: var(--type-small); font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
@@ -10295,6 +10304,29 @@ const YIELD_ROWS = [
   ["science", "culture", "faith"],
   ["food", "production", "gold"],
 ];
+// Hover details follow the reading order requested for the single, compact
+// yield row. The colours and circular numeral are exactly the map renderer's
+// YPIP/YINK vocabulary above, rather than a separate set of pictographs.
+const TILE_TIP_YIELD_ORDER = ["food", "production", "gold", "science", "culture", "faith"];
+
+function tileYieldMarkers(yields) {
+  return TILE_TIP_YIELD_ORDER
+    .map(kind => [kind, Number(yields?.[kind] || 0)])
+    .filter(([, amount]) => amount >= 1)
+    .map(([kind, amount]) => {
+      const value = fmtYield(amount);
+      return `<span class="tip-yield-marker" style="--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]}" ` +
+        `title="${value} ${kind}" aria-label="${value} ${kind}">${value}</span>`;
+    }).join("");
+}
+
+function tileDetailYieldWords(yields, sign = false) {
+  return TILE_TIP_YIELD_ORDER
+    .map(kind => [kind, Number(yields?.[kind] || 0)])
+    .filter(([, amount]) => Math.abs(amount) >= .05)
+    .map(([kind, amount]) => `${sign && amount > 0 ? "+" : ""}${fmtYield(amount)} ${kind}`)
+    .join(" ");
+}
 
 function drawTileYields(t, x, y, worked) {
   if (cam.scale < .5) return;
@@ -24220,19 +24252,6 @@ function tileDefense(t) {
     bonus += ((ruleSpec("improvements", t.improvement) || {}).effects || {}).defense || 0;
   return bonus;
 }
-// How high this tile stands for line of sight. Terrain alone decides what a
-// unit standing here looks out from; the feature on top adds only to what the
-// tile hides from everyone else.
-function tileGroundLevel(t) { return t.terrain === "mountain" ? 2 : (t.hills ? 1 : 0); }
-function tileCoverLevel(t) {
-  return tileGroundLevel(t) + ((ruleSpec("features", t.feature) || {}).sight_through || 0);
-}
-function sightTipLine(t) {
-  const ground = tileGroundLevel(t), cover = tileCoverLevel(t);
-  const vantage = ground > 0 ? " · vantage " + ground : "";
-  if (cover === 0) return "👁 open to sight" + vantage;
-  return "👁 cover " + cover + " — hides anything no taller behind it" + vantage;
-}
 // Civ 6's appeal bands. The engine already reads Breathtaking at 4 and Charming
 // at 2 for the Preserve; these are the rest of the same ladder.
 function appealBand(appeal) {
@@ -26568,154 +26587,106 @@ function plannedTipLines(t) {
   return lines.concat(adjacencyLines(p.adjacency, "projected adjacency", p.district));
 }
 
-const ROAD_LABELS = [null, "Ancient Road", "Medieval Road", "Industrial Road",
-                     "Modern Road", "Railroad"];
-// Unit ownership reads as a name, not a database join: "Roman Archer" rather
-// than "Rome Archer". Mods and city-states fall back to their supplied name.
-const CIV_ADJECTIVES = {
-  Rome:"Roman", Egypt:"Egyptian", Greece:"Greek", China:"Chinese", Sumeria:"Sumerian",
-  Aztec:"Aztec", Nubia:"Nubian", Scythia:"Scythian", England:"English", Germany:"German",
-  Russia:"Russian", Korea:"Korean", Maya:"Mayan", Mali:"Malian", Phoenicia:"Phoenician",
-  Byzantium:"Byzantine", Zulu:"Zulu", Gaul:"Gallic", Kongo:"Kongolese", Vietnam:"Vietnamese",
-  Brazil:"Brazilian", France:"French", Spain:"Spanish", Portugal:"Portuguese", Netherlands:"Dutch",
-  Sweden:"Swedish", Norway:"Norwegian", Denmark:"Danish", Poland:"Polish", Hungary:"Hungarian",
-  Austria:"Austrian", Bohemia:"Bohemian", Scotland:"Scottish", Ireland:"Irish", Switzerland:"Swiss",
-  Venice:"Venetian", Serbia:"Serbian", Bulgaria:"Bulgarian", Lithuania:"Lithuanian", Ukraine:"Ukrainian",
-  Finland:"Finnish", Romania:"Romanian", Novgorod:"Novgorodian", Prussia:"Prussian", Catalonia:"Catalan",
-  Gujarat:"Gujarati", Assyria:"Assyrian", Persia:"Persian", Media:"Median", Manchuria:"Manchu",
-  Lydia:"Lydian", Parthia:"Parthian", Sogdiana:"Sogdian", Ottomans:"Ottoman", Arabia:"Arabian",
-  Israel:"Israeli", Armenia:"Armenian", Georgia:"Georgian", Timurids:"Timurid", Kazakh:"Kazakh",
-  Bactria:"Bactrian", Ethiopia:"Ethiopian", Axum:"Aksumite", Morocco:"Moroccan", Numidia:"Numidian",
-  Songhai:"Songhai", Ghana:"Ghanaian", Benin:"Beninese", Ashanti:"Ashanti", Swahili:"Swahili",
-  "Great Zimbabwe":"Zimbabwean", Buganda:"Bagandan", Oyo:"Oyo", Tuareg:"Tuareg", Madagascar:"Malagasy",
-  India:"Indian", Japan:"Japanese", Mongolia:"Mongolian", Tibet:"Tibetan", Nepal:"Nepali",
-  Kalinga:"Kalingan", Chola:"Chola", Bengal:"Bengali", Maratha:"Maratha", Khmer:"Khmer",
-  Siam:"Siamese", Burma:"Burmese", Majapahit:"Majapahit", Champa:"Cham", America:"American",
-  Canada:"Canadian", Pueblo:"Pueblo", Comanche:"Comanche", Sioux:"Sioux", Inca:"Incan",
-  Muisca:"Muisca", Mapuche:"Mapuche", Argentina:"Argentine", Australia:"Australian", Maori:"Māori",
-};
-function civAdjective(civ) { return CIV_ADJECTIVES[civ] || civ; }
+function civPossessive(civ) { return civ.toLowerCase().endsWith("s") ? civ + "'" : civ + "'s"; }
 function tileOwnershipTipLine(t) {
   if (t.owner === null || t.owner === undefined) return null;
   const empire = state.players[t.owner];
   if (!empire) return null;
-  const knownCity = state.cities.find(city => city.id === t.owner_city);
-  const cityName = t.owner_city_name || knownCity?.name;
-  return `<span class="tip-primary">${empire.civ}${cityName ? ` (${cityName})` : ""}</span>`;
+  const owningCity = state.cities.find(city => city.id === t.owner_city);
+  const cityName = t.owner_city_name || owningCity?.name;
+  const capital = owningCity?.is_capital ? "Capital: " : "";
+  const territory = cityName ? `${capital}${cityName}, ${empire.civ}` : empire.civ;
+  return `<span class="tip-primary">${territory}</span>`;
+}
+function tileTerrainTipLine(t) {
+  const geography = [];
+  if (t.feature) geography.push(FEATURE_LABEL[t.feature] || titleCase(t.feature));
+  geography.push(titleCase(t.terrain) + (t.hills ? " Hills" : "") + (t.river ? " River" : ""));
+  if (t.continent !== null && t.continent !== undefined)
+    geography.push(CONTINENT_NAMES[t.continent] || "Continent " + (t.continent + 1));
+  return geography.join(" · ");
+}
+function tileDevelopmentTipLine(t) {
+  const development = [];
+  if (t.improvement) development.push(titleCase(t.improvement));
+  if (t.resource) development.push(titleCase(t.resource));
+  return development.join(" · ");
 }
 function tileTipLines(t, pos, tileKey) {
   const lines = [];
   // Who is standing here is what a hover over an occupied tile is asking, so
-  // the units lead and the ground they are standing on follows them.
+  // the units lead and state their remaining health in the compact map-detail
+  // form: Empire's unit - xx HP.
   for (const unit of state.units) {
     if (key(unit.pos) !== tileKey) continue;
     const civ = state.players[unit.owner]?.civ || `Player ${unit.owner}`;
-    lines.push(`<span class="tip-unit">● ${civAdjective(civ)} ${titleCase(unit.type)} — ` +
-      fmtYield(unit.hp) + " HP, " + fmtYield(unit.moves_left) + " MP" +
-      (unit.level > 1 ? ", level " + unit.level : "") + (unit.embarked ? ", embarked" : "") +
-      (unit.fortified ? ", fortified" : "") + "</span>");
+    lines.push(`<span class="tip-unit">${civPossessive(civ)} ${titleCase(unit.type)} - ` +
+      fmtYield(unit.hp) + " HP</span>");
   }
   const owner = tileOwnershipTipLine(t);
   if (owner) lines.push(owner);
-  if (mapLens === "government" && t.owner !== null && t.owner !== undefined) {
-    const player = state.players[t.owner];
-    lines.push(player?.government
-      ? "♜ Government: " + titleCase(player.government)
-      : "♜ Government: none");
-  }
-  if (mapLens === "religion" && t.owner_city !== null && t.owner_city !== undefined) {
-    const religiousCity = state.cities.find(city => city.id === t.owner_city);
-    lines.push(religiousCity?.religion
-      ? "✦ Majority religion: " + titleCase(religiousCity.religion)
-      : "✦ Majority religion: none");
-  }
-
-  let terrainName = titleCase(t.terrain) + (t.hills ? " Hills" : "");
-  if (t.feature) terrainName += " · " + (FEATURE_LABEL[t.feature] || titleCase(t.feature));
-  if (t.river) terrainName += " · 💧 River";
-  if (t.continent !== null && t.continent !== undefined)
-    terrainName += " · 🗺 " + (CONTINENT_NAMES[t.continent] || "Continent " + (t.continent + 1));
-  lines.push("Terrain: " + terrainName);
-
-  if (t.fallout_until > state.turn) lines.push(`☢ Fallout · ${t.fallout_until - state.turn} turns remain`);
-  if (t.drought) lines.push("Drying drought");
-  if (t.storm) lines.push("🌀 " + titleCase(t.storm) + " passing over");
-  if (t.disaster_yields && t.disaster_yields.food > 0)
-    lines.push("Fertile ground left by disaster · +" + t.disaster_yields.food + "🍞");
-  if (t.feature === "volcano" && t.volcano_state)
-    lines.push(t.volcano_state === 2 ? "Erupting volcano" : "Active volcano · eruption warning");
-  for (const event of state.active_disasters || []) {
-    if (["blizzard", "dust_storm", "tornado", "hurricane"].includes(event.kind) &&
-        event.tiles.some(eventPos => eventPos[0] === t.pos[0] && eventPos[1] === t.pos[1]))
-      lines.push(`${titleCase(event.kind)} · phase ${event.age + 1} of ${event.duration}`);
-  }
-  if (t.flooded) lines.push("Flooded coastal lowland");
-  if (t.submerged) lines.push("Submerged by sea-level rise");
-  lines.push(sightTipLine(t));
-
-  if (t.resource) {
-    const resource = ruleSpec("resources", t.resource);
-    lines.push(resourceTextMark(t.resource) + " Resource: " + titleCase(t.resource) +
-      (resource?.class ? " (" + titleCase(resource.class) + ")" : ""));
-  }
-  if (t.improvement && t.improvement !== "barbarian_camp")
-    lines.push("⚒ Improvement: " + titleCase(t.improvement));
-  if (t.improvement === "barbarian_camp")
-    lines.push("⛺ Improvement: Barbarian Camp (+50🪙 to clear)");
+  lines.push(tileTerrainTipLine(t));
+  const development = tileDevelopmentTipLine(t);
+  if (development) lines.push(development);
 
   const yields = t.district ? t.district_yields
     : t.wonder ? ruleSpec("wonders", t.wonder)?.yields
     : tileYieldFull(t);
-  const yieldText = yieldStr(yields);
-  if (yieldText) lines.push("Yields: " + yieldText);
-  if (Number(t.tourism) > 0)
-    lines.push("♪ Tourism: " + fmtYield(t.tourism) + " per turn from this tile");
+  const yieldMarkers = tileYieldMarkers(yields);
+  if (yieldMarkers) lines.push(`Yields: <span class="tip-yields">${yieldMarkers}</span>`);
 
-  // These are all properties of crossing or occupying the ground, and stay
-  // together immediately before the things constructed on top of it.
-  const movement = [];
   const mp = tileMoveCost(t);
-  if (mp !== null) movement.push("🥾 " + (mp % 1 ? mp.toFixed(1) : mp) + " MP");
-  else if (tileImpassable(t)) movement.push("🥾 Impassable");
+  const movement = mp === null
+    ? (tileImpassable(t) ? "Impassable" : "Unknown")
+    : (mp % 1 ? mp.toFixed(1) : mp) + " MP";
   const defense = tileDefense(t);
-  if (defense) movement.push("🛡 " + (defense > 0 ? "+" : "") + defense + " defense");
+  const defenseText = (defense > 0 ? "+" : "") + defense;
+  lines.push(`Movement: ${movement} · Defense: ${defenseText}`);
   if (t.appeal !== null && t.appeal !== undefined)
-    movement.push("🌸 appeal " + (t.appeal > 0 ? "+" : "") + t.appeal +
+    lines.push("Appeal: " + (t.appeal > 0 ? "+" : "") + t.appeal +
       " · " + appealBand(t.appeal));
-  if (movement.length) lines.push("Movement: " + movement.join(" · "));
+
+  // The normal map is intentionally compact above. A selected lens still gets
+  // its extra reading below the shared details, so changing this presentation
+  // does not turn the lens into a decorative overlay.
+  if (mapLens === "government" && t.owner !== null && t.owner !== undefined) {
+    const player = state.players[t.owner];
+    lines.push(player?.government
+      ? "Government: " + titleCase(player.government)
+      : "Government: none");
+  }
+  if (mapLens === "religion" && t.owner_city !== null && t.owner_city !== undefined) {
+    const religiousCity = state.cities.find(city => city.id === t.owner_city);
+    lines.push(religiousCity?.religion
+      ? "Majority religion: " + titleCase(religiousCity.religion)
+      : "Majority religion: none");
+  }
   if (mapLens === "settler") {
     const lens = settlerLensSites();
     const site = lens.sites.get(tileKey);
     if (site) {
       const water = settleLensStyle(site.water);
-      lines.push(`⌂ ${water.label} · +${water.housing} Housing from water` +
+      lines.push(`${water.label} · +${water.housing} Housing from water` +
         (settleSiteIsRecommended(site, lens) ? " · recommended site" : ""));
     }
-    else lines.push("⌂ Settlement unavailable");
+    else lines.push("Settlement unavailable");
   }
   const selectedDistrict = districtLensDistrict();
   if (selectedDistrict) {
     const reading = districtLensData().values.get(tileKey);
     if (reading) {
       const kind = reading.kind === "candidate" ? "candidate" : "existing district";
-      lines.push(`⬡ ${titleCase(selectedDistrict)} ${kind}: ` +
-        `${districtLensLabel(reading.yields, reading.kind === "candidate")} visible adjacency`);
+      lines.push(`${titleCase(selectedDistrict)} ${kind}: ` +
+        `${tileDetailYieldWords(reading.yields, true) || "+0"} visible adjacency`);
     }
   }
 
-  if (t.road > 0) lines.push("🛤 " + (ROAD_LABELS[t.road] || "Road"));
-  if (t.district) lines.push(...districtTipLines(t));
-  else if (t.planned_district) lines.push(...plannedTipLines(t));
-  if (t.wonder) lines.push("★ " + titleCase(t.wonder) + " Wonder");
   const city = state.cities.find(candidate => candidate.pos[0] === pos[0] && candidate.pos[1] === pos[1]);
   if (city) {
-    lines.push("🏛 " + city.name + " · population " + city.pop);
-    if (city.religion && mapLens !== "religion")
-      lines.push("✦ Majority religion: " + titleCase(city.religion));
     if (mapLens === "religion") {
       const entries = religiousPressureEntries(city);
       const total = entries.reduce((sum, entry) => sum + entry.pressure, 0);
-      if (total > 0) lines.push("✦ Religious pressure: " + entries.map(entry =>
+      if (total > 0) lines.push("Religious pressure: " + entries.map(entry =>
         `${entry.religion ? titleCase(entry.religion) : "No religion"} ` +
         `${Math.round(entry.pressure * 100 / total)}%`).join(" · "));
     }
@@ -26723,17 +26694,17 @@ function tileTipLines(t, pos, tileKey) {
       const status = loyaltyLensStatus(city);
       if (status) {
         const rate = Math.round(status.rate);
-        lines.push(`⚑ Loyalty: ${Math.round(status.loyalty)}/100 · ` +
+        lines.push(`Loyalty: ${Math.round(status.loyalty)}/100 · ` +
           `${rate >= 0 ? "+" : ""}${rate} per turn · ${status.label}`);
       }
       const sources = loyaltyLensSources(city).slice(0, 3);
-      if (sources.length) lines.push("⚑ Incoming population pressure: " +
+      if (sources.length) lines.push("Incoming population pressure: " +
         sources.map(({source, pressure}) => `${state.players[source.owner]?.civ || source.name} ` +
           `${Math.round(pressure)}`).join(" · "));
     }
     if (mapLens === "power") {
       const status = powerLensStatus(city);
-      if (status) lines.push(`⚡ Power: ${lensPowerAmount(status.supply)} supplied / ` +
+      if (status) lines.push(`Power: ${lensPowerAmount(status.supply)} supplied / ` +
         `${lensPowerAmount(status.demand)} needed · ${status.label}`);
     }
   }

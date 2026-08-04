@@ -11656,27 +11656,88 @@ mod tests {
         for piece in [
             "function tileMoveCost(t)",
             "function tileDefense(t)",
-            "function tileGroundLevel(t)",
-            "function tileCoverLevel(t)",
-            "function sightTipLine(t)",
             "function appealBand(appeal)",
-            // The four lines the panel gains: cost to cross, worth defending,
-            // how it looks, and what it lets a unit see past.
-            "🥾 \" + (mp % 1 ? mp.toFixed(1) : mp) + \" MP\"",
-            "\" defense\"",
-            "\"🌸 appeal \"",
-            "lines.push(sightTipLine(t));",
+            "function tileYieldMarkers(yields)",
+            "function tileDetailYieldWords(yields, sign = false)",
+            "const TILE_TIP_YIELD_ORDER = [\"food\", \"production\", \"gold\", \"science\", \"culture\", \"faith\"];",
+            "class=\"tip-yield-marker\"",
+            "style=\"--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]}\"",
+            "const capital = owningCity?.is_capital ? \"Capital: \" : \"\";",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(piece),
                 "the tile tooltip is missing {piece}"
             );
         }
-        // Ground level is terrain alone; only the cover a tile offers others
-        // picks up the feature on top of it.
-        assert!(EMBEDDED_INDEX
-            .contains("t.terrain === \"mountain\" ? 2 : (t.hills ? 1 : 0)"));
-        assert!(EMBEDDED_INDEX.contains("sight_through"));
+        let tip_start = EMBEDDED_INDEX
+            .find("function tileTipLines(t, pos, tileKey) {")
+            .expect("the map detail formatter is declared");
+        let tip_end = EMBEDDED_INDEX[tip_start..]
+            .find("\n// tooltip")
+            .map(|offset| tip_start + offset)
+            .expect("the map detail formatter ends before tooltip lifecycle code");
+        let details = &EMBEDDED_INDEX[tip_start..tip_end];
+
+        // These are intentionally a stable reading order: unit, owning city,
+        // feature/terrain/continent, improvement/resource, the map's own
+        // numbered yield marks, movement/defense, then appeal.
+        let ordered = [
+            "lines.push(`<span class=\"tip-unit\">${civPossessive(civ)} ${titleCase(unit.type)} - ",
+            "const owner = tileOwnershipTipLine(t);",
+            "lines.push(tileTerrainTipLine(t));",
+            "const development = tileDevelopmentTipLine(t);",
+            "const yieldMarkers = tileYieldMarkers(yields);",
+            "lines.push(`Movement: ${movement} · Defense: ${defenseText}`);",
+            "lines.push(\"Appeal: \" + (t.appeal > 0 ? \"+\" : \"\") + t.appeal +",
+        ];
+        let mut previous = 0;
+        for piece in ordered {
+            let at = details
+                .find(piece)
+                .unwrap_or_else(|| panic!("the map-detail order is missing {piece}"));
+            assert!(
+                at >= previous,
+                "{piece} must follow the preceding map-detail row"
+            );
+            previous = at;
+        }
+        assert!(details.contains("${civPossessive(civ)} ${titleCase(unit.type)} - "));
+        assert!(details.contains("fmtYield(unit.hp) + \" HP</span>\""));
+        assert!(details.contains("? (tileImpassable(t) ? \"Impassable\" : \"Unknown\")"));
+        assert!(details.contains("const defenseText = (defense > 0 ? \"+\" : \"\") + defense;"));
+        assert!(
+            !details.contains("districtLensLabel("),
+            "supplemental lens details use words rather than the old emoji-yield helper"
+        );
+        let terrain_start = EMBEDDED_INDEX
+            .find("function tileTerrainTipLine(t) {")
+            .expect("the terrain detail formatter is declared");
+        let terrain_end = EMBEDDED_INDEX[terrain_start..]
+            .find("\nfunction tileDevelopmentTipLine")
+            .map(|offset| terrain_start + offset)
+            .expect("the terrain detail formatter ends before development");
+        let terrain = &EMBEDDED_INDEX[terrain_start..terrain_end];
+        let feature = terrain.find("if (t.feature)").expect("features are included first");
+        let ground = terrain.find("geography.push(titleCase(t.terrain)").expect("terrain is included");
+        let continent = terrain.find("if (t.continent").expect("continents are included last");
+        assert!(feature < ground && ground < continent, "feature, terrain, continent order");
+        let development_start = terrain_end;
+        let development_end = EMBEDDED_INDEX[development_start..]
+            .find("\nfunction tileTipLines")
+            .map(|offset| development_start + offset)
+            .expect("the development formatter ends before details");
+        let development = &EMBEDDED_INDEX[development_start..development_end];
+        assert!(
+            development.find("if (t.improvement)").expect("improvements are listed")
+                < development.find("if (t.resource)").expect("resources are listed"),
+            "improvements precede resources"
+        );
+        for emoji in ["●", "🥾", "🛡", "🌸", "👁", "♜", "✦", "⌂", "⬡", "🏗", "🛤", "🏛", "⚑", "⚡"] {
+            assert!(
+                !details.contains(emoji),
+                "map details should use text and map yield markers, not {emoji}"
+            );
+        }
     }
 
     /// The map's own overlays must be siblings, not each other's children.
