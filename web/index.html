@@ -3311,7 +3311,7 @@
       <button id="paneltoggle" class="icon" title="Hide command deck" aria-label="Hide command deck">&lt;</button>
       <button id="collapsepause" hidden title="Pause simulation" aria-label="Pause simulation">⏸</button>
       <button id="mapareaset" type="button" aria-pressed="false" title="Set map area — drag the four edges" aria-label="Set map area">⛶</button>
-      <button id="compass" type="button" title="Face north · R" aria-label="Face north"><span id="compass-needle"></span></button>
+      <button id="compass" type="button" title="Face north · Alt/⌥" aria-label="Face north"><span id="compass-needle"></span></button>
       <button id="zin" title="Zoom in" aria-label="Zoom in">＋</button>
       <button id="zout" title="Zoom out" aria-label="Zoom out">−</button>
       <div id="skynav" hidden role="group" aria-label="Sky navigation">
@@ -4004,7 +4004,7 @@
       <span><kbd>^ A</kbd>Auto-play</span><span><kbd>^ U</kbd>Hide the command deck</span>
       <span><kbd>= / −</kbd>Zoom without a keypad</span><span><kbd>Tab</kbd>Next unit needing orders</span>
       <span><kbd>Alt/⌥ drag</kbd>Rotate · tilt</span><span><kbd>^ ← →</kbd>Rotate</span>
-      <span><kbd>^ R</kbd>Face north · reset the view</span><span><kbd>⇧ scroll</kbd>Rotate · <kbd>⌥ scroll</kbd>tilt</span>
+      <span><kbd>Alt/⌥</kbd>Face north · reset the view</span><span><kbd>⇧ scroll</kbd>Rotate · <kbd>⌥ scroll</kbd>tilt</span>
     </div>
   </details>
   <button id="side-resize-handle" type="button" role="separator" aria-orientation="vertical"
@@ -7098,8 +7098,8 @@ function updateCompass() {
   // squares the chart to the axis the world repeats in, which is a real thing
   // to put the map back to.
   compassButton.disabled = !found && !around;
-  const title = found ? "Face north · R"
-    : around ? `Square the chart to the world's axis · R · ${northTechLabel()} finds north`
+  const title = found ? "Face north · Alt/⌥"
+    : around ? `Square the chart to the world's axis · Alt/⌥ · ${northTechLabel()} finds north`
     : `Bearing unknown · a way round the world squares the chart · ${northTechLabel()} finds north`;
   if (compassButton.title === title) return;
   compassButton.title = title;
@@ -26635,7 +26635,7 @@ bindHeldZoom("zout", () => { takeCameraControl(true); zoomAt(skyZoomStep(1 / 1.3
 // ---------------------------------------------------------------- input
 let dragState = null, dragMoved = false, rdrag = null, rdragTo = null;
 let suppressControlClick = false;
-let altTap = false; // tapping Alt (no drag) resets the map's viewing angles
+let altTap = false; // tapping Alt/Option (no drag) faces north and levels the map
 // Civ 6 listens to the platform's secondary mouse button. Browsers expose a
 // real right/two-finger click as button 2; macOS also defines Control-click as
 // the secondary-click gesture, but exposes that compatibility gesture as a
@@ -28246,8 +28246,6 @@ const CIVVIS_BINDINGS = [
   {id: "ZoomInRow", key: "=", spectator: true, run: () => { takeCameraControl(true); zoomAt(skyZoomStep(1.35)); }},
   {id: "ZoomOutRow", key: "-", spectator: true, run: () => { takeCameraControl(true); zoomAt(skyZoomStep(1 / 1.35)); }},
   {id: "AutoPlay", key: "a", ctrl: true, run: () => autoplay(autoplayRequest())},
-  {id: "ResetFacing", key: "r", ctrl: true, spectator: true,
-   run: () => resetMapFacing(-cam.tilt)},
   {id: "HidePanel", key: "u", ctrl: true, spectator: true, run: () => togglePanel()},
   {id: "OrbitLeft", key: "ArrowLeft", ctrl: true, spectator: true, run: () => orbitCamera(-Math.PI / 12, 0)},
   {id: "OrbitRight", key: "ArrowRight", ctrl: true, spectator: true, run: () => orbitCamera(Math.PI / 12, 0)},
