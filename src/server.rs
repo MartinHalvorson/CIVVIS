@@ -12718,7 +12718,7 @@ mod tests {
         // framed — every constant, every trace and the caption that read off
         // them, so nothing is left drawing a hundred thousand light-years that
         // no zoom can now reach.
-        assert!(EMBEDDED_INDEX.contains("label:\"Solar system\", mark:\"☉\""));
+        assert!(EMBEDDED_INDEX.contains("label:\"Solar System\", mark:\"☉\""));
         assert!(EMBEDDED_INDEX.contains("stops.push({id:\"voyage\", label:\"Voyage\""));
         // The complete old route lives in the control row in the order a
         // journey reads: the local arrivals Earth, Moon, and Mars; the solar
@@ -12743,9 +12743,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "document.querySelectorAll(\"#skynav [data-sky-stop]\")"
         ));
-        assert!(EMBEDDED_INDEX.contains(
-            "button.setAttribute(\"aria-label\", kind === \"world\" ?"
-        ));
+        assert!(EMBEDDED_INDEX.contains("button.setAttribute(\"aria-label\", stop.label);"));
         // A switch takes three times as long as it first shipped at, both ways.
         // The distances are the content, and at the old pace the crossing was
         // over before it had said anything about what lay between the two ends.
@@ -12769,24 +12767,20 @@ mod tests {
                 "the galaxy view is dropped, but {gone} is still in the client"
             );
         }
-        // The destination is a button called Exoplanet, not one called whatever
-        // that game's survey happened to turn up: the same control reads
-        // `Teegarden's Star b` in one game and `82 Eridani d` in the next, and
-        // a control that renames itself between games is one nobody learns.
-        // The real name stays on the tooltip and on the world's own captions.
+        // These controls stay practical and stable: each button is named only
+        // for its destination, with no changing survey name or hover copy.
         assert!(EMBEDDED_INDEX
-            .contains("const SKY_STOP_LABELS = {earth:\"Earth\", exo:\"Exoplanet\"};"));
+            .contains("const SKY_STOP_LABELS = {earth:\"Earth\", moon:\"Moon\", mars:\"Mars\", exo:\"Exoplanet\"};"));
         assert!(EMBEDDED_INDEX.contains(
-            "                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, \"\"),"
+            "                label:SKY_STOP_LABELS[id] || body.name.replace(/^The /, \"\")});"
         ));
-        assert!(EMBEDDED_INDEX.contains("                                     : `Fly to ${body.name}`});"));
-        // And the bar's rebuild key carries the title, because the labels no
-        // longer move: `Exoplanet` and `Voyage` read the same whichever world
-        // the expedition settled on, so keyed on the labels alone the bar would
-        // never rebuild when the destination was chosen and both tooltips would
-        // name the pre-launch default for the rest of the game.
+        assert!(EMBEDDED_INDEX.contains("button.title = stop.label;"));
+        assert!(!EMBEDDED_INDEX.contains("Fly to ${body.name}"));
+        // The labels are fixed, so they are all the rebuild key needs.
         assert!(EMBEDDED_INDEX
-            .contains(".map(stop => `${stop.id}/${stop.label}/${stop.title}`).join(\",\");"));
+            .contains(".map(stop => `${stop.id}/${stop.label}`).join(\",\");"));
+        assert!(!EMBEDDED_INDEX.contains("function skySceneCaption"));
+        assert!(EMBEDDED_INDEX.contains("function mapControlsBox(viewRect)"));
         // Short of the ceiling on purpose: a jump that lands exactly on the
         // stop leaves the zoom-in button dead in the hand on arrival.
         assert!(EMBEDDED_INDEX.contains("const SKY_STOP_FILL = .8;"));
@@ -12872,11 +12866,16 @@ mod tests {
         ));
         assert!(!EMBEDDED_INDEX.contains("Math.max(1e-6, cam.scale)"));
 
-        // The sky keeps its captions clear of the bar the way it does of every
-        // other widget, and the block that says what the picture is a picture
-        // of is measured off the same edge the bar is.
+        // The practical ruler sits beside the map controls whenever that space
+        // fits, and otherwise rises above them without covering a button.
         assert!(EMBEDDED_INDEX.contains("  const nav = skyNavBox(viewRect);"));
-        assert!(EMBEDDED_INDEX.contains("const nav = skyNavBox(cv.getBoundingClientRect());"));
+        assert!(EMBEDDED_INDEX.contains("const controls = mapControlsBox(viewRect);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const right = mapScaleRightEdge(viewRect, controls, frame.right - 12);"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "const beside = controls && controls.right + 14 + width <= right;"
+        ));
     }
 
     /// Mercury, Ceres, Callisto, and Titan are surveyable tiled worlds. Their
