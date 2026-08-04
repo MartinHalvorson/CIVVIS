@@ -1680,11 +1680,10 @@ mod tests {
             );
         }
         assert!(INDEX.contains(
-            "{id: \"LoyaltyLens\", key: \"8\", spectator: true, run: () => setMapLens(\"loyalty\")},"
+            "{id: \"SettlerLens\", key: \"2\", spectator: true, run: () => setMapLens(\"settler\")},"
         ));
-        assert!(INDEX.contains(
-            "{id: \"PowerLens\", key: \"0\", spectator: true, run: () => setMapLens(\"power\")},"
-        ));
+        assert!(!INDEX.contains("id: \"LoyaltyLens\""));
+        assert!(!INDEX.contains("id: \"PowerLens\""));
         let start = INDEX
             .find("function tileTipLines(t, pos, tileKey)")
             .expect("the tile hover has one ordered builder");
@@ -1696,15 +1695,12 @@ mod tests {
         let ordered = [
             "for (const unit of state.units)",
             "tileOwnershipTipLine(t)",
-            "lines.push(\"Terrain: \"",
-            "if (t.resource)",
-            "if (t.improvement",
-            "if (yieldText)",
-            "const movement = []",
-            "if (t.road > 0)",
-            "if (t.district)",
-            "if (t.wonder)",
-            "const city = state.cities.find",
+            "lines.push(tileTerrainTipLine(t));",
+            "const development = tileDevelopmentTipLine(t);",
+            "const yieldMarkers = tileYieldMarkers(yields);",
+            "const mp = tileMoveCost(t);",
+            "const defense = tileDefense(t);",
+            "if (t.appeal !== null && t.appeal !== undefined)",
         ];
         let mut previous = 0;
         for marker in ordered {
@@ -1718,11 +1714,17 @@ mod tests {
             previous = at;
         }
         assert!(INDEX.contains(".tip-primary, .tip-unit"));
-        assert!(INDEX.contains("font-size: var(--type-body); font-weight: 850"));
-        assert!(INDEX.contains("Rome:\"Roman\""));
-        assert!(INDEX.contains(
-            "<span class=\"tip-unit\">● ${civAdjective(civ)} ${titleCase(unit.type)}"
-        ));
+        assert!(INDEX.contains("function civPossessive(civ)"));
+        assert!(INDEX.contains("function tileTerrainTipLine(t)"));
+        assert!(INDEX.contains("function tileDevelopmentTipLine(t)"));
+        assert!(INDEX.contains("function tileYieldMarkers(yields)"));
+        assert!(hover.contains("${civPossessive(civ)} ${titleCase(unit.type)} - "));
+        assert!(hover.contains("Yields: <span class=\"tip-yields\">${yieldMarkers}</span>"));
+        assert!(hover.contains("Movement: ${movement} · Defense: ${defenseText}"));
+        assert!(hover.contains("Appeal: "));
+        assert!(!hover.contains("civAdjective("));
+        assert!(!hover.contains("🏗"));
+        assert!(!hover.contains("🔥"));
     }
 
     #[test]
