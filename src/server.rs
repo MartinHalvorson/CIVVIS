@@ -9090,6 +9090,28 @@ mod tests {
     }
 
     #[test]
+    fn city_icons_are_shared_by_flat_globe_and_minimaps() {
+        let icon = EMBEDDED_INDEX
+            .split("function drawCityIcon")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawSettlement").next())
+            .expect("shared city icon renderer");
+        assert!(icon.contains(
+            "const base = y + r * .45, wallTop = y + r * .06;"
+        ));
+        assert!(icon.contains("context.lineTo(x - r * .72, base);"));
+        assert!(icon.contains("capital && r >= 2.6"));
+        for call in [
+            "drawCityIcon(cx, cell.center.x, cell.center.y, r, bannerColor,",
+            "drawCityIcon(cx, x, y + cityIconRadius * .16, cityIconRadius,",
+            "drawCityIcon(mx2, cell.center.x, cell.center.y, cityRadius,",
+            "drawCityIcon(mx2, x, y, citySize * (cityState ? .55 : .62),",
+        ] {
+            assert!(EMBEDDED_INDEX.contains(call), "missing city icon path: {call}");
+        }
+    }
+
+    #[test]
     fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 500_000);

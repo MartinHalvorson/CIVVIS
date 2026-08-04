@@ -12031,6 +12031,73 @@ function faithColor(name) {
 function settlementSpread(pop) {
   return 8.5 + Math.min(7, Math.sqrt(Math.max(1, pop || 1)) * 1.9);
 }
+// A city is more than its owner colour or nameplate. This small, canvas-native
+// skyline keeps a recognizable urban mark at survey scale, while the town
+// beneath it still carries the useful population detail at close range.
+function cityIconInk(fill, cityState) {
+  if (cityState) return "#e7e9e3";
+  return lightness(fill) < .55 ? "#fff4d4" : "#11161b";
+}
+function drawCityIcon(context, x, y, radius, fill, outline, cityState = false,
+                      capital = false, badge = true) {
+  const r = Math.max(.75, radius);
+  const ink = cityIconInk(fill, cityState);
+  context.save();
+  context.lineJoin = "round"; context.lineCap = "round";
+  if (badge) {
+    context.fillStyle = fill; context.strokeStyle = outline;
+    context.lineWidth = Math.max(.5, Math.min(2.2, r * .22));
+    context.beginPath(); context.arc(x, y, r, 0, 7); context.fill(); context.stroke();
+  }
+  // Three stepped towers and their shared wall make a city silhouette rather
+  // than a generic round token. The central keep stays tall enough to survive
+  // the thumbnail, and its crown gives capitals a small pennant of their own.
+  const base = y + r * .45, wallTop = y + r * .06;
+  context.fillStyle = ink;
+  context.beginPath();
+  context.moveTo(x - r * .72, base);
+  context.lineTo(x - r * .72, y - r * .27);
+  context.lineTo(x - r * .53, y - r * .27);
+  context.lineTo(x - r * .53, y - r * .45);
+  context.lineTo(x - r * .32, y - r * .45);
+  context.lineTo(x - r * .32, wallTop);
+  context.lineTo(x - r * .22, wallTop);
+  context.lineTo(x - r * .22, y - r * .68);
+  context.lineTo(x - r * .07, y - r * .68);
+  context.lineTo(x - r * .07, y - r * .80);
+  context.lineTo(x + r * .07, y - r * .80);
+  context.lineTo(x + r * .07, y - r * .68);
+  context.lineTo(x + r * .22, y - r * .68);
+  context.lineTo(x + r * .22, wallTop);
+  context.lineTo(x + r * .32, wallTop);
+  context.lineTo(x + r * .32, y - r * .45);
+  context.lineTo(x + r * .53, y - r * .45);
+  context.lineTo(x + r * .53, y - r * .27);
+  context.lineTo(x + r * .72, y - r * .27);
+  context.lineTo(x + r * .72, base);
+  context.closePath(); context.fill();
+  // An arched gate reads at a glance when there is room for it, but is omitted
+  // from the smallest markers instead of becoming a fuzzy extra pixel.
+  if (r >= 2) {
+    context.fillStyle = fill; context.globalAlpha = .78;
+    context.beginPath(); context.arc(x, base, r * .2, Math.PI, 0);
+    context.lineTo(x + r * .2, base); context.closePath(); context.fill();
+  }
+  if (capital && r >= 2.6) {
+    context.globalAlpha = 1; context.strokeStyle = ink;
+    context.lineWidth = Math.max(.5, r * .09);
+    context.beginPath();
+    context.moveTo(x + r * .10, y - r * .79);
+    context.lineTo(x + r * .10, y - r * 1.04); context.stroke();
+    context.fillStyle = ink;
+    context.beginPath();
+    context.moveTo(x + r * .10, y - r * 1.03);
+    context.lineTo(x + r * .40, y - r * .95);
+    context.lineTo(x + r * .10, y - r * .87);
+    context.closePath(); context.fill();
+  }
+  context.restore();
+}
 function drawSettlement(c, x, y) {
   const pop = Math.max(1, c.pop || 1);
   const n = Math.max(3, Math.min(11, 2 + Math.round(Math.sqrt(pop) * 2)));
@@ -18424,11 +18491,10 @@ function drawPlanetMap() {
       ? Math.max(3, Math.min(5.8, 3.8 * Math.sqrt(scale)))
       : Math.max(5.5, Math.min(10.5, 6.6 * Math.sqrt(scale)));
     const bannerColor = cityBannerColor(city.owner);
-    cx.fillStyle = bannerColor;
-    cx.strokeStyle = cityState ? "#10151d" : pcol2(city.owner);
-    cx.lineWidth = cityState ? .9 : 2.4;
     if (!cityState) { cx.shadowColor = bannerColor; cx.shadowBlur = 7; }
-    cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r, 0, 7); cx.fill(); cx.stroke();
+    drawCityIcon(cx, cell.center.x, cell.center.y, r, bannerColor,
+                 cityState ? "#10151d" : pcol2(city.owner), cityState,
+                 Boolean(city.is_capital));
     cx.shadowBlur = 0;
     if (!cityState) {
       cx.strokeStyle = bannerColor; cx.lineWidth = 1.2;
@@ -19143,6 +19209,13 @@ function draw() {
       cx.restore();
     }
     drawSettlement(c, x, y);
+    // The settlement scales with the map so it can become a real town up
+    // close; this badge has a bounded screen size so every city remains
+    // unmistakable while surveying an empire.
+    const cityIconRadius = (cityState ? 4.7 : 6.6) * UI_K();
+    drawCityIcon(cx, x, y + cityIconRadius * .16, cityIconRadius,
+                 cityBannerColor(c.owner), cityState ? "#10151d" : pcol2(c.owner),
+                 cityState, Boolean(c.is_capital));
     // Which faith holds this city. Religion is one of the six ways to win and
     // it spreads city by city across the map, yet the map said nothing at all —
     // a religious conquest rolling through your neighbours was visible only as
@@ -19710,11 +19783,9 @@ function drawPlanetMini() {
     const cityState = ownerIsCityState(city.owner);
     const cityRadius = cityState ? 1.15 : 2.35;
     mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
-    mx2.fillStyle = cityBannerColor(city.owner);
-    mx2.beginPath(); mx2.arc(cell.center.x, cell.center.y, cityRadius, 0, 7); mx2.fill();
-    if (!cityState) {
-      mx2.strokeStyle = "#f8edca"; mx2.lineWidth = .75; mx2.stroke();
-    }
+    drawCityIcon(mx2, cell.center.x, cell.center.y, cityRadius,
+                 cityBannerColor(city.owner), cityState ? "#0b0e13" : "#f8edca",
+                 cityState, Boolean(city.is_capital));
     mx2.globalAlpha = 1;
   }
   mx2.setTransform(1, 0, 0, 1, 0, 0);
@@ -19898,6 +19969,11 @@ function drawMini() {
     mx2.strokeStyle = cityState ? "#0b0e13" : "#f8edca";
     mx2.lineWidth = cityState ? .45 : .9;
     miniHexPath(x, y, citySize - 0.35); mx2.stroke();
+    // Retain the hex backing at thumbnail scale, then put the same city
+    // silhouette inside it so the minimap shares the map's settlement grammar.
+    drawCityIcon(mx2, x, y, citySize * (cityState ? .55 : .62),
+                 cityBannerColor(c.owner), cityState ? "#0b0e13" : "#f8edca",
+                 cityState, Boolean(c.is_capital), false);
     mx2.globalAlpha = 1;
   }
   // Detonations. The minimap is the only view that always holds the whole
