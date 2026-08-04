@@ -8720,18 +8720,20 @@ mod tests {
         //
         // Every data column is now a share rather than a pixel count, and each
         // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 7 identity columns totalling 11.387 against 12 value
-        // columns of 1. That identity is not decoration: it is what lets the
+        // inside it — 8 data identity columns totalling 12.087, plus the fixed
+        // Watch-as action, against 12 value columns of 1. That identity is not
+        // decoration: it is what lets the
         // bar between the two blocks move width across itself, and it is the
         // ratio the table uses at every width. Changing one number here without
         // the other silently re-weights the whole masthead.
         //
-        // The floor is 5 label columns, the ELO figure and the wider odds cell,
-        // whose two named numeric tracks flank a narrow trend track.
+        // The floor is the rank track, 5 label columns, the ELO figure and the
+        // wider odds cell, whose two named numeric tracks flank a narrow trend
+        // track.
         assert!(EMBEDDED_INDEX.contains(
             "--hud-identity-column: minmax(\n      \
-             calc(var(--hud-ident-min) * 5 + var(--hud-ident-num-min)\n           \
-             + var(--hud-ident-odds-min)), 11.387fr);"
+             calc(var(--hud-rank-min) + var(--hud-ident-min) * 5\n           \
+             + var(--hud-ident-num-min) + var(--hud-ident-odds-min)), 12.087fr);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
@@ -8872,16 +8874,24 @@ mod tests {
         // One bar per seam between two adjacent data columns, dragged to move
         // width from the column on its left into the column on its right.
         assert!(EMBEDDED_INDEX.contains("const HUD_COLUMN_STORAGE_KEY = \"civvis-hud-columns-v1\";"));
-        // Every fact in the player-HUD column model can order its rows. The
-        // Watch-as and lock cells are actions, deliberately outside that model,
-        // so an operator never has to sort a meaningless column just to reach
-        // ELO, a yield, or an active plan.
+        // Every fact in the player HUD can order its rows. Rank is the first
+        // dedicated standings column and is derived from the score standing,
+        // while Watch-as and lock cells are actions, deliberately outside the
+        // model, so an operator never has to sort a meaningless column just to
+        // reach ELO, a yield, or an active plan.
         assert!(EMBEDDED_INDEX.contains(
             "...PLAYER_HUD_COLUMNS.map(column => column.key), \"win_start\", \"win_delta\","
         ));
+        assert!(EMBEDDED_INDEX.contains(
+            "{key:\"rank\", label:\"Score rank\", block:\"identity\", head:0, min:\"--hud-rank-min\", width:.7},"
+        ), "rank should be a measured, draggable identity column");
         assert!(EMBEDDED_INDEX.contains("const HUD_SORT_STORAGE_KEY = \"civvis-player-hud-sort-v1\";"));
-        assert!(EMBEDDED_INDEX.contains("function playerHudSortValue(player, key, stats)"));
-        assert!(EMBEDDED_INDEX.contains("function sortedPlayerHudPlayers(players, statsByPlayer)"));
+        assert!(EMBEDDED_INDEX.contains("function playerHudSortValue(player, key, stats, rankById)"));
+        assert!(EMBEDDED_INDEX.contains("if (key === \"rank\") return rankById.get(player.id) ?? null;"));
+        assert!(EMBEDDED_INDEX.contains(
+            "return key === \"rank\" || PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? \"asc\" : \"desc\";"
+        ), "rank should initially put #1 first");
+        assert!(EMBEDDED_INDEX.contains("function sortedPlayerHudPlayers(players, statsByPlayer, rankById)"));
         assert!(EMBEDDED_INDEX.contains("function togglePlayerHudSort(key)"));
         assert!(EMBEDDED_INDEX.contains("if (leftValue === null || rightValue === null) {"));
         assert!(EMBEDDED_INDEX.contains(
@@ -8894,7 +8904,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("if (key === \"win_delta\") {"));
         assert!(EMBEDDED_INDEX.contains("return oddsValue(player.odds_now);"),
             "the NOW Win heading should order by its current estimate");
-        for key in ["civ", "leader", "player", "elo", "win_start", "win_delta", "win", "age", "plan"] {
+        for key in ["rank", "civ", "leader", "player", "elo", "win_start", "win_delta", "win", "age", "plan"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("playerHudSortHead(\"{key}\"")),
                 "the {key} heading should be sortable"
@@ -8905,10 +8915,21 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("playerHudSortHead(\"watch\""),
             "Watch-as stays an action instead of a sort target");
         assert!(EMBEDDED_INDEX.contains("class=\"hud-sort-head\" data-hud-sort=\"${key}\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "playerHudSortHead(\"rank\", \"RANK\", \"Score rank\")"
+        ), "the rank figures need their own named sort header");
+        assert!(EMBEDDED_INDEX.contains(
+            "minmax(var(--hud-rank-min), .7fr) minmax(var(--hud-ident-min), 2.035fr)"
+        ), "the rank heading should occupy its own first identity track");
+        assert!(EMBEDDED_INDEX.contains(
+            "#playerhud .diplomacy-rank { grid-column: 1; grid-row: 1; }"
+        ), "the rank figure should align under its own heading");
         assert!(EMBEDDED_INDEX.contains("const sort = ev.target.closest?.(\"[data-hud-sort]\");"));
         assert!(EMBEDDED_INDEX.contains("#playerhud .hud-sort-cell[data-hud-sort-active=\"true\"]"));
         assert!(EMBEDDED_INDEX.contains("const scoreRankedMajors = state.players"));
-        assert!(EMBEDDED_INDEX.contains("const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const majors = sortedPlayerHudPlayers(scoreRankedMajors, statsByPlayer, rankById);"
+        ));
         assert!(EMBEDDED_INDEX.contains("const PLAYER_HUD_COLUMN_SEAMS = PLAYER_HUD_COLUMNS.slice(0, -1)"));
         assert!(EMBEDDED_INDEX.contains("function aimPlayerHudSeam(seam, targetWidth)"));
         assert!(EMBEDDED_INDEX.contains("class=\"hud-col-grip\" type=\"button\" data-hud-column-seam="));
@@ -9460,7 +9481,9 @@ mod tests {
             .contains("document.getElementById(\"strategysec\").style.display = fullMapSpectator"));
         assert!(EMBEDDED_INDEX.contains("if (!fullMapSpectator && (SPEC || govs.length"));
         assert!(EMBEDDED_INDEX.contains(".sort((a, b) => b.score - a.score || a.id - b.id)"));
-        assert!(EMBEDDED_INDEX.contains("class=\"diplomacy-rank\">#${rank}"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"diplomacy-rank\" title=\"Score rank ${rank}\">#${rank}"
+        ));
         // The sidebar sits left of the map. Match the declaration rather than
         // its formatting, so restyling the block cannot fail the rule.
         let side_rule = EMBEDDED_INDEX
