@@ -157,7 +157,14 @@ pub const EVAL_ONLY_AIS: [&str; 104] = [
 ///
 /// ⚠ Keep in step with `AdvancedAi::enable_live_bridge`. A flag added there and
 /// not here makes the arms claim a controlled comparison they are not running.
-const LIVE_BRIDGE_TREATMENTS: [&str; 23] = [
+/// ⚠⚠ PUBLIC SO A RUN CAN SAY WHAT ITS BINARY CARRIES. A stale binary is
+/// invisible today: `summary.json` records no revision at all, and three of
+/// thirty-two recent live runs were executing a pre-fix build — detectable only
+/// because they emitted a build name a later commit had already corrected, a
+/// trick that will not work for the next one. Emitting this list per run makes
+/// staleness self-describing (an old binary emits a shorter list) and tells any
+/// A/B exactly which repairs were live in the arm it measured.
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 23] = [
     "live-trader-route",
     "live-religious-purchase",
     "siege-muster",
@@ -4704,6 +4711,29 @@ mod tests {
              arms claim a controlled comparison they are not running",
             LIVE_BRIDGE_TREATMENTS.len()
         );
+    }
+
+    /// ⚠ The run log's identity must be the SAME list `enable_live_bridge`
+    /// drives, or a stale binary would still look current. That agreement is
+    /// already enforced by `live_bridge_treatments_name_every_flag_the_helper_sets`;
+    /// this pins that the list is PUBLIC, which is what makes it emittable, and
+    /// that it is non-empty so the stamp can never be a silently empty array.
+    #[test]
+    fn the_treatment_list_is_emittable_as_a_run_stamp() {
+        let stamped: Vec<&str> = crate::elo::LIVE_BRIDGE_TREATMENTS.to_vec();
+        assert!(
+            stamped.len() >= 20,
+            "a run stamp of {} treatments is too short to be this build",
+            stamped.len()
+        );
+        assert!(
+            stamped.iter().all(|tag| !tag.is_empty()),
+            "an empty tag would make the stamp unreadable"
+        );
+        // The stamp is only useful if a binary predating a repair emits a
+        // shorter list, so every tag must be distinct.
+        let unique: BTreeSet<&str> = stamped.iter().copied().collect();
+        assert_eq!(unique.len(), stamped.len(), "a duplicate tag breaks the diff");
     }
 
     /// Each `live_without_*` arm exists to hold exactly ONE mechanism off, so

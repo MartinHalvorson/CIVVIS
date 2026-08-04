@@ -102,6 +102,17 @@ fn launched_built_at() -> Option<String> {
 /// This deliberately reads the launch environment or promoted executable name
 /// instead of `option_env!`: a compile-time revision would force a complete
 /// optimized rebuild even when the source code itself has not changed.
+/// The revision a supervisor selected, or `None` for an unstamped build.
+///
+/// ⚠ Deliberately NOT `runtime_commit("unknown")`: a run log that says
+/// `"revision": "unknown"` reads like a failed lookup, while `null` says
+/// plainly that nobody stamped this build. The identity that always reports is
+/// the treatment list emitted beside it — see `civvis_orders`'s genome line.
+pub fn runtime_commit_or_none() -> Option<String> {
+    let commit = runtime_commit("");
+    (!commit.is_empty()).then_some(commit)
+}
+
 pub(crate) fn runtime_commit(fallback: &str) -> String {
     #[cfg(target_arch = "wasm32")]
     {
