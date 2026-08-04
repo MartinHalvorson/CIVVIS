@@ -1,31 +1,53 @@
 name: publish-site
 
-# Builds and publishes civvis.ai.
+# Builds and publishes civvis.ai — both lanes of it, in one deployment.
 #
-# Cutting a build used to mean being at a particular Mac with wasm-opt, Pillow,
-# Node and a Cloudflare login on it. That is one machine and one person, and it
-# is why `beta/README.md` describes publishing as something that happens "every
-# few days" — the cost was the setup, not the judgement. Here the whole
-# toolchain is declared and the deploy needs two repository secrets, so the
-# judgement is all that is left.
+#   /        the STABLE lane: whatever the `site-stable` tag names. It moves
+#            only when somebody runs the promote-site workflow, because
+#            whether a build is worth being the front page is a judgement,
+#            and no gate can make it.
+#   /beta    the HEAD lane: origin/main as of this run, republished on a
+#            schedule. It exists so the newest engine is always playable
+#            without anyone deciding anything.
 #
-# It is deliberately **manual**. Publishing is a decision about whether a whole
-# game is worth watching, which no gate can make; the gates below only prove
-# the build is not broken.
+# Every deployment carries both lanes. That is not an implementation shortcut,
+# it is what Cloudflare Pages deployments are: immutable snapshots of a whole
+# directory. There is no such thing as updating half a site, so each deploy
+# rebuilds the stable lane from its pinned tag and the beta lane from head,
+# assembles one directory, and ships it. Both lanes therefore always exist,
+# and a promotion is nothing but moving the tag and deploying again.
 #
-#   Actions -> publish-site -> Run workflow -> pick a branch or tag
+# **Why a six-hour schedule and not on-push:** Cloudflare Pages allows 500
+# deployments a month. This repository has recently merged several hundred
+# commits a day; deploying each one would exhaust the month inside two days.
+# Four scheduled deploys a day is ~125 a month, which leaves the rest of the
+# quota for promotions and manual runs. If beta staleness ever matters more
+# than the margin, "0 */2 * * *" is 372 a month and still fits.
 #
-# Without the Cloudflare secrets it still builds, checks, and uploads the
-# bundle as an artifact — which is the useful thing to have before the domain
-# exists, and stays useful as a dry run afterwards.
+# Without the Cloudflare secrets this still builds and checks both lanes and
+# keeps the assembled site as an artifact — a scheduled run degrades to a dry
+# run rather than a red X, so the schedule is safe to leave on before the
+# Cloudflare account exists.
 
 on:
+  schedule:
+    # Minute 17, not 0: GitHub delays and drops on-the-hour cron jobs under
+    # load, and an odd minute dodges the rush.
+    - cron: "17 */6 * * *"
   workflow_dispatch:
     inputs:
       deploy:
         description: "Deploy to Cloudflare Pages (otherwise build and check only)"
         type: boolean
         default: true
+  # promote-site runs this same job after moving the site-stable tag, so a
+  # promotion cannot drift from what the schedule does.
+  workflow_call:
+    inputs:
+      deploy:
+        type: boolean
+        default: true
+        required: false
 
 permissions:
   contents: read
@@ -37,12 +59,23 @@ concurrency:
 jobs:
   publish:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 90
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      # schedule has no inputs; a scheduled run always wants to deploy.
+      WANT_DEPLOY: ${{ github.event_name == 'schedule' && 'true' || inputs.deploy }}
+      # publish.sh --commit builds in a throwaway worktree, whose default
+      # target dir would miss the cache above every time. One shared target
+      # dir means the second lane's build starts warm from the first's, and
+      # both start warm from the last run's.
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
     steps:
       - uses: actions/checkout@v4
+        with:
+          # The stable lane is built from whatever `site-stable` names, which
+          # can be any commit — so the whole history, and the tags.
+          fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: wasm32-unknown-unknown
@@ -56,11 +89,6 @@ jobs:
           key: cargo-wasm-publish-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: cargo-wasm-publish-
 
-      # `wasm-opt` takes a fifth off the module and Pillow republishes the
-      # atlases as lossless WebP; between them the bundle goes from 92% of its
-      # size budget to 71%. Both are optional in `publish.sh` — it degrades to
-      # a bigger bundle rather than failing — so they are installed here rather
-      # than assumed.
       - name: Toolchain for the bundle
         run: |
           sudo apt-get update -qq
@@ -68,60 +96,115 @@ jobs:
           python3 -m pip install --quiet --disable-pip-version-check pillow
           wasm-opt --version
 
-      - name: Build the bundle
-        run: ./beta/publish.sh
+      - name: Resolve the two lanes
+        id: lanes
+        run: |
+          set -euo pipefail
+          head="$(git rev-parse HEAD)"
+          # Before the first promotion the tag does not exist; the stable lane
+          # then follows head, so the site is whole from day one and the first
+          # promote simply pins it.
+          stable="$(git rev-parse --verify --quiet 'refs/tags/site-stable^{commit}' || echo "$head")"
+          echo "head=$head" >> "$GITHUB_OUTPUT"
+          echo "stable=$stable" >> "$GITHUB_OUTPUT"
+          echo "stable lane: $stable"
+          echo "beta lane:   $head"
 
-      # The site's routing — the forward to the channel, and the password on
-      # /beta — is the one part no static check touches. It is also the part
-      # that has already been lost silently once.
+      - name: Build the stable lane
+        run: ./beta/publish.sh --commit "${{ steps.lanes.outputs.stable }}" --out "$PWD/lane-stable"
+
+      - name: Build the beta lane
+        run: |
+          if [ "${{ steps.lanes.outputs.stable }}" = "${{ steps.lanes.outputs.head }}" ]; then
+            # Same commit, same bundle; a second three-minute wasm build would
+            # prove nothing. cp keeps the two-lane assembly identical either way.
+            cp -R lane-stable lane-beta
+          else
+            ./beta/publish.sh --commit "${{ steps.lanes.outputs.head }}" --out "$PWD/lane-beta"
+          fi
+
+      # One site from the two lanes. publish.sh emits a single-lane shape —
+      # landing at index.html, viewer under beta/ — and the viewer is
+      # relative-pathed, so it works at any mount point. The head build
+      # provides the shell (landing, download page, _worker.js, its viewer as
+      # /beta); the stable build's viewer is then mounted at the root; the
+      # landing page becomes a real file at /home.
+      - name: Assemble the site
+        run: |
+          set -euo pipefail
+          rm -rf site
+          cp -R lane-beta site
+          mkdir -p site/home
+          mv site/index.html site/home/index.html
+          cp -R lane-stable/beta/. site/
+          echo "root  $(python3 -c "import json;print(json.load(open('site/build.json'))['short'])")"
+          echo "beta  $(python3 -c "import json;print(json.load(open('site/beta/build.json'))['short'])")"
+
       - name: Check the routing
         run: ./beta/worker_test.py
 
-      # And the part that proves the engine underneath is alive rather than
-      # merely present: a real browser, watched until turns advance.
-      - name: Check it plays
-        run: ./beta/verify.py --seconds 40
+      - name: Check the stable lane plays
+        run: ./beta/verify.py --dist site --mount root --seconds 40
 
-      # Kept whether or not the deploy runs: a bundle that failed to publish is
-      # still the thing you need to look at.
+      - name: Check the beta lane plays
+        run: ./beta/verify.py --dist site --mount beta --seconds 40 --no-gate
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: civvis-site
           path: |
-            beta/dist
-            beta/verify.png
+            site
+            beta/verify-root.png
+            beta/verify-beta.png
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Refuse to deploy without credentials
-        if: ${{ inputs.deploy && env.CLOUDFLARE_API_TOKEN == '' }}
+      - name: Refuse a requested deploy without credentials
+        if: ${{ env.WANT_DEPLOY == 'true' && env.CLOUDFLARE_API_TOKEN == '' && github.event_name != 'schedule' }}
         run: |
           echo "::error::CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID are not set." \
                "Add them under Settings -> Secrets and variables -> Actions," \
                "or run this workflow with deploy unchecked."
           exit 1
 
+      - name: Note a scheduled run with nowhere to deploy
+        if: ${{ env.WANT_DEPLOY == 'true' && env.CLOUDFLARE_API_TOKEN == '' && github.event_name == 'schedule' }}
+        run: echo "::warning::No Cloudflare credentials; built and checked both lanes, deployed nothing."
+
+      # So that standing the site up needs no machine with wrangler on it:
+      # the first real run creates the Pages project itself, and every later
+      # run finds it already there and moves on. Failure here is deliberately
+      # soft — "already exists" is the normal case and wrangler's exit codes
+      # do not distinguish it — because the deploy immediately after is the
+      # real gate: no project, and it fails loudly by name.
+      - name: Ensure the Pages project exists
+        if: ${{ env.WANT_DEPLOY == 'true' && env.CLOUDFLARE_API_TOKEN != '' }}
+        run: |
+          npx --yes wrangler pages project create civvis --production-branch main \
+            || echo "project civvis already exists (or the deploy below will say why not)"
+
       - name: Deploy to Cloudflare Pages
-        if: ${{ inputs.deploy && env.CLOUDFLARE_API_TOKEN != '' }}
+        if: ${{ env.WANT_DEPLOY == 'true' && env.CLOUDFLARE_API_TOKEN != '' }}
         uses: cloudflare/wrangler-action@v3
         with:
           apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          command: pages deploy beta/dist --project-name civvis --branch main
+          command: pages deploy site --project-name civvis --branch main
 
       - name: Where it went
-        if: ${{ inputs.deploy && env.CLOUDFLARE_API_TOKEN != '' }}
+        if: ${{ env.WANT_DEPLOY == 'true' && env.CLOUDFLARE_API_TOKEN != '' }}
         run: |
           {
             echo "### Published"
             echo
-            echo '```json'
-            cat beta/dist/beta/build.json
-            echo '```'
+            echo "| lane | commit |"
+            echo "| --- | --- |"
+            echo "| civvis.ai (stable) | \`$(python3 -c "import json;print(json.load(open('site/build.json'))['short'])")\` |"
+            echo "| civvis.ai/beta (head) | \`$(python3 -c "import json;print(json.load(open('site/beta/build.json'))['short'])")\` |"
             echo
-            echo "- https://civvis.ai — forwards to the channel"
+            echo "- https://civvis.ai — the promoted build"
+            echo "- https://civvis.ai/beta/ — the latest main"
             echo "- https://civvis.ai/home — the landing page"
-            echo "- https://civvis.ai/beta/ — the build, behind the password"
             echo "- https://civvis.ai/download/ — the native binaries"
           } >> "$GITHUB_STEP_SUMMARY"
