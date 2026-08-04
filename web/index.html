@@ -11907,53 +11907,58 @@ function drawImprovement(t, x, y) {
       cx.beginPath(); cx.ellipse(x + bx + 4, y + by + 1.2, 3.4, 1.1, 0, 0, 7); cx.fill();
     }
   } else if (imp === "mine") {
-    // A mine needs a dark portal and timber headframe — a tiny spoil triangle
-    // reads as a quarry or just another grey rock at ordinary map zoom.
-    const spoil = new Path2D();
-    spoil.moveTo(x - 14, y + 8); spoil.quadraticCurveTo(x - 10, y - 2, x - 3, y - 8);
-    spoil.quadraticCurveTo(x + 5, y - 6, x + 13, y + 8);
-    spoil.lineTo(x - 14, y + 8); spoil.closePath();
-    cx.fillStyle = matteMat("#66707a", dir, 13); cx.fill(spoil);
-    cx.strokeStyle = "rgba(25,31,35,.78)"; cx.lineWidth = 1.1; cx.stroke(spoil);
-    cx.fillStyle = "rgba(198,211,218,.24)";
-    cx.beginPath(); cx.moveTo(x - 11, y + 6); cx.quadraticCurveTo(x - 7, y - 1, x - 2, y - 5);
-    cx.lineTo(x - 2, y + 7); cx.closePath(); cx.fill();
-    cx.strokeStyle = "rgba(38,43,45,.68)"; cx.lineWidth = .95;
-    cx.beginPath();
-    cx.moveTo(x - 12, y + 6); cx.lineTo(x - 5, y + 2);
-    cx.moveTo(x + 2, y - 4); cx.lineTo(x + 9, y + 6);
-    cx.stroke();
+    // The cart and its converging rails say "mine" at survey zoom more clearly
+    // than a headframe. Lift the whole motif over tall hill arcs, not behind them.
+    const mineY = y - (t.hills ? 6 : 0);
+    const railLeft = [[-15, 16], [-3, 6]];
+    const railRight = [[15, 16], [3, 6]];
+    cx.lineCap = "round";
 
-    // Timbered adit: bright posts make a doorway around the black opening.
-    const adit = new Path2D();
-    adit.moveTo(x - 9, y + 8); adit.lineTo(x - 9, y + 2.5);
-    adit.quadraticCurveTo(x - 9, y - 3, x - 4, y - 3);
-    adit.quadraticCurveTo(x + 1, y - 3, x + 1, y + 2.5);
-    adit.lineTo(x + 1, y + 8); adit.closePath();
-    cx.fillStyle = "#0b1215"; cx.fill(adit);
-    cx.strokeStyle = "#bd8d4d"; cx.lineWidth = 2.05;
-    cx.beginPath();
-    cx.moveTo(x - 8, y + 8); cx.lineTo(x - 8, y + 2.5);
-    cx.quadraticCurveTo(x - 8, y - 1.8, x - 4, y - 1.8);
-    cx.quadraticCurveTo(x, y - 1.8, x, y + 2.5);
-    cx.lineTo(x, y + 8); cx.stroke();
-    cx.strokeStyle = "rgba(255,220,150,.46)"; cx.lineWidth = .7;
-    cx.beginPath(); cx.moveTo(x - 6.7, y + 7); cx.lineTo(x - 6.7, y + 1.5); cx.stroke();
+    // Wooden sleepers under two steel rails establish the cart's direction first.
+    cx.strokeStyle = "#4b3424"; cx.lineWidth = 1.8;
+    for (const p of [.05, .27, .5, .73, .95]) {
+      const lx = railLeft[0][0] + (railLeft[1][0] - railLeft[0][0]) * p;
+      const ly = mineY + railLeft[0][1] + (railLeft[1][1] - railLeft[0][1]) * p;
+      const rx = railRight[0][0] + (railRight[1][0] - railRight[0][0]) * p;
+      const ry = mineY + railRight[0][1] + (railRight[1][1] - railRight[0][1]) * p;
+      cx.beginPath(); cx.moveTo(x + lx - 1.2, ly); cx.lineTo(x + rx + 1.2, ry); cx.stroke();
+    }
+    for (const [width, color] of [[3.15, "#252a2c"], [1.1, "#c5c7bd"]]) {
+      cx.strokeStyle = color; cx.lineWidth = width;
+      cx.beginPath();
+      cx.moveTo(x + railLeft[0][0], mineY + railLeft[0][1]);
+      cx.lineTo(x + railLeft[1][0], mineY + railLeft[1][1]);
+      cx.moveTo(x + railRight[0][0], mineY + railRight[0][1]);
+      cx.lineTo(x + railRight[1][0], mineY + railRight[1][1]);
+      cx.stroke();
+    }
 
-    // The A-frame rises above the spoil mound, so this still says "mine" when
-    // nearby terrain and unit art share the centre of the tile.
-    cx.strokeStyle = "#9d713a"; cx.lineWidth = 1.65;
+    // A flared ore bin, black load and paired wheels keep the cart legible at
+    // ordinary zoom without relying on a tooltip or a tiny pickaxe badge.
+    const cart = new Path2D();
+    cart.moveTo(x - 9.5, mineY - 5.5); cart.lineTo(x + 9.5, mineY - 5.5);
+    cart.lineTo(x + 6.5, mineY + 4.2); cart.lineTo(x - 6.5, mineY + 4.2);
+    cart.closePath();
+    cx.fillStyle = matteMat("#b55f31", dir, 9.5); cx.fill(cart);
+    cx.strokeStyle = "#43271d"; cx.lineWidth = 1.35; cx.stroke(cart);
+    cx.fillStyle = "#202729"; cx.strokeStyle = "#111719"; cx.lineWidth = 1;
     cx.beginPath();
-    cx.moveTo(x + 4, y + 8); cx.lineTo(x + 8, y - 11); cx.lineTo(x + 13, y + 8);
-    cx.moveTo(x + 5.8, y + 1); cx.lineTo(x + 11.3, y + 1);
-    cx.moveTo(x + 6.8, y - 5); cx.lineTo(x + 9.8, y - 5);
-    cx.stroke();
-    cx.fillStyle = "#e1bd63"; cx.strokeStyle = "#2b261d"; cx.lineWidth = 1;
-    cx.beginPath(); cx.arc(x + 8.3, y - 5, 2.45, 0, 7); cx.fill(); cx.stroke();
-    cx.strokeStyle = "#4d3822"; cx.lineWidth = .9;
-    cx.beginPath(); cx.moveTo(x + 8.3, y - 2.5); cx.lineTo(x + 8.3, y + 5.4); cx.stroke();
-    cx.fillStyle = "#4d5960";
-    cx.beginPath(); cx.roundRect(x + 5.8, y + 4.6, 5, 3.1, .7); cx.fill();
+    cx.moveTo(x - 7.6, mineY - 5.1); cx.lineTo(x + 7.6, mineY - 5.1);
+    cx.lineTo(x + 5.7, mineY - 1.6); cx.lineTo(x - 5.7, mineY - 1.6);
+    cx.closePath(); cx.fill(); cx.stroke();
+    cx.beginPath(); cx.moveTo(x - 8.4, mineY - 4.35); cx.lineTo(x + 8.4, mineY - 4.35);
+    cx.strokeStyle = "rgba(255,202,122,.55)"; cx.lineWidth = .85; cx.stroke();
+    cx.fillStyle = "#596164";
+    for (const [ox, oy, r] of [[-4.1, -4.7, 2.0], [0, -5.1, 2.35], [4.1, -4.55, 1.85]]) {
+      cx.beginPath(); cx.arc(x + ox, mineY + oy, r, 0, 7); cx.fill();
+    }
+    cx.strokeStyle = "#4d3021"; cx.lineWidth = 1;
+    cx.beginPath(); cx.moveTo(x - 5.5, mineY + .2); cx.lineTo(x + 5.5, mineY + .2); cx.stroke();
+    for (const wheelX of [-5, 5]) {
+      cx.fillStyle = "#303638"; cx.strokeStyle = "#13191b"; cx.lineWidth = 1.15;
+      cx.beginPath(); cx.arc(x + wheelX, mineY + 6.3, 3.25, 0, 7); cx.fill(); cx.stroke();
+      cx.fillStyle = "#c2aa77"; cx.beginPath(); cx.arc(x + wheelX, mineY + 6.3, .9, 0, 7); cx.fill();
+    }
   } else if (imp === "lumber_mill") {
     for (const [lx, ly] of [[-8, 4], [-1, 4], [-4.5, -1.5]]) {
       ball(x + lx, y + ly, 3.4, "#8a6033", dir, "rgba(40,28,14,.7)", .9);
