@@ -19865,8 +19865,12 @@ function civDossier(p, rank, relation) {
   const forces = plan?.forces || [];
   const warPlan = plan?.war || null;
   const warRows = warPlan?.active
-    ? row("Attack phase", titleCase(warPlan.phase || "forming"),
-        "One appointed target, breakthrough, military package, treasury reserve, staging gate and declaration lifecycle") +
+    ? row("Attack phase", `${titleCase(warPlan.phase || "forming")}${warPlan.rapid ? " · Rapid" : warPlan.selective ? " · Selective" : ""}`,
+        warPlan.rapid
+          ? "One fully prebuilt organic Conquest package with a short launch window"
+          : warPlan.selective
+          ? "One organic Conquest target, one appointment, a mostly prebuilt army, and a fully staged superior launch"
+          : "One appointed target, breakthrough, military package, treasury reserve, staging gate and declaration lifecycle") +
       row("Breakthrough", titleCase(warPlan.breakthrough_tech || ""),
         `${warPlan.ready_bodies || 0}/${warPlan.required_bodies || 4} modern assault bodies ready · ` +
         `${warPlan.staged_bodies || 0} staged · ${exactStat(warPlan.upgrade_gold_reserved || 0)} Gold still reserved`) +
@@ -21463,8 +21467,12 @@ function strategyPlanHtml(p) {
         "Cities held against the cities this plan wants") +
       row("Campaign", target, target ? "The city or civilization this plan is measured against" : "") +
       (warPlan?.active
-        ? row("Attack phase", titleCase(warPlan.phase || "forming"),
-            "The phase shared by research, production, treasury, diplomacy and movement") +
+        ? row("Attack phase", `${titleCase(warPlan.phase || "forming")}${warPlan.rapid ? " · Rapid" : warPlan.selective ? " · Selective" : ""}`,
+            warPlan.rapid
+              ? "One ready-force Conquest appointment shared by research, treasury, diplomacy and movement"
+              : warPlan.selective
+              ? "One organic Conquest appointment shared by research, production, treasury, diplomacy and movement"
+              : "The phase shared by research, production, treasury, diplomacy and movement") +
           row("Strike package", `${warPlan.ready_bodies || 0}/${warPlan.required_bodies || 4} ${titleCase(warPlan.assault_unit || "bodies")} · ${warPlan.staged_bodies || 0} staged`,
             `${titleCase(warPlan.breakthrough_tech || "Breakthrough")} · ${exactStat(warPlan.upgrade_gold_reserved || 0)} Gold reserved`)
         : "") +

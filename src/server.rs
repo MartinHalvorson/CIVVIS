@@ -2202,6 +2202,8 @@ impl Session {
             })).collect::<Vec<_>>(),
             "war": plan.war.as_ref().map(|war| json!({
                 "enabled": war.enabled,
+                "selective": war.selective,
+                "rapid": war.rapid,
                 "active": war.active,
                 "phase": war.phase,
                 "target_player": war.target_player,
@@ -9859,6 +9861,8 @@ mod tests {
             forces: Vec::new(),
             war: Some(crate::ai::WarPlanReport {
                 enabled: true,
+                selective: true,
+                rapid: true,
                 active: true,
                 phase: Some("strike"),
                 target_player: Some(1),
@@ -9891,6 +9895,8 @@ mod tests {
         };
 
         let wire = session.plan_json(&plan);
+        assert_eq!(wire["war"]["selective"], json!(true));
+        assert_eq!(wire["war"]["rapid"], json!(true));
         assert_eq!(wire["war"]["phase"], json!("strike"));
         assert_eq!(wire["war"]["breakthrough_tech"], json!("apprenticeship"));
         assert_eq!(wire["war"]["ready_bodies"], json!(4));
@@ -9898,6 +9904,8 @@ mod tests {
         assert_eq!(wire["war"]["upgrade_gold_reserved"], json!(123.5));
         assert_eq!(wire["war"]["aborts"]["target no longer alive"], json!(2));
         assert!(EMBEDDED_INDEX.contains("const warPlan = plan?.war || null;"));
+        assert!(EMBEDDED_INDEX.contains("warPlan.selective"));
+        assert!(EMBEDDED_INDEX.contains("warPlan.rapid"));
         assert!(EMBEDDED_INDEX.contains("row(\"Attack phase\""));
         assert!(EMBEDDED_INDEX.contains("row(\"Strike package\""));
     }

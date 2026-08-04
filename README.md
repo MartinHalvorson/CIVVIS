@@ -16,6 +16,24 @@ shares that exact plan across research, military production, upgrade Gold,
 staging, declaration, and the first-city capture. The spectator dossier and
 `ai_eval` expose its phase, package readiness, timing, captures, and aborts.
 
+Its frozen 60-pair live-profile screen proved that the lifecycle works but
+rejected the broad policy: it exposed 97.7% of treatment seats and scored only
+20.8% paired wins. Production `advanced` therefore remains unchanged. The
+follow-up `advanced_timing_attack_selective` arm is preregistered to reuse the
+same unified executor only when ordinary strategy already chose Conquest and
+three of four assault bodies already exist; it gets one appointment and must
+stage all four bodies at 1.25 local strength before declaring.
+
+Selective v2 improved the frozen paired score to 47.1% and cut exposure to
+53.8%, with all 82 declarations carrying complete packages, but it still
+missed the quick-capture and outcome gates. Ready-force v3 then required a
+fully prebuilt force, an already-present breach element, and a launch estimate
+inside 15 Online turns. It won 57 games to `advanced`'s 54 and executed all 52
+declarations with complete packages, but its 51.2% paired score, 25.0%
+ten-turn capture rate, and 49.1% terminal score missed three preregistered
+gates. The disjoint holdout was therefore not run, and no timing-attack
+treatment is enabled in production.
+
 See [docs/WAR_TIMING.md](docs/WAR_TIMING.md) for the frozen mechanism and
 promotion gates. A small smoke comparison can be run with:
 
