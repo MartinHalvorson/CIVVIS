@@ -9003,7 +9003,7 @@ mod tests {
             .split_once("cv.addEventListener(\"click\", ev => {")
             .expect("the map must have an ordinary click handler")
             .1
-            .split_once("\n});\n\n// Civ 6's ordinary unit order gesture")
+            .split_once("\nfunction issueSelectedUnitOrder(pos)")
             .expect("the selection handler must end before the movement handler")
             .0;
         assert!(!ordinary_click.contains("move_to"));
