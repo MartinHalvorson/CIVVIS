@@ -2203,9 +2203,23 @@ mod tests {
         assert!(INDEX.contains("length:starshipLength * 2"));
         assert!(INDEX.contains("halfWidth:starshipHalfWidth * 4"));
 
+        // Launches default to visible, retain a viewer preference, and can be
+        // switched off without leaving a temporary flight hiding its finished
+        // mission marker.
+        assert!(INDEX.contains(
+            "<input type=\"checkbox\" id=\"rocketanimchk\" checked> Show rocket animations"
+        ));
+        assert!(INDEX.contains(
+            "let SHOW_ROCKET_ANIMATIONS = localStorage.getItem(\"civvis-show-rocket-animations\") !== \"0\";"
+        ));
+        assert!(INDEX.contains("function setShowRocketAnimations(on)"));
+        assert!(INDEX.contains("if (!SHOW_ROCKET_ANIMATIONS) anim.skyLaunches.length = 0;"));
+        assert!(INDEX.contains("rockets.onchange = () => setShowRocketAnimations(rockets.checked);"));
+
         // State-diff detection is shared, then each projection owns a flight
         // path while both call the same rocket-art renderer.
         assert!(INDEX.contains("function queueSkyLaunches(prev, next"));
+        assert!(INDEX.contains("if (!SHOW_ROCKET_ANIMATIONS || !prev || !next"));
         assert!(INDEX.contains("function drawSkyLaunches(crews, placements"));
         assert!(INDEX.contains("drawMissionRocket(flight.rocket, player, size, now);"));
         assert!(INDEX.contains("function flatLaunchRoute(launch, player)"));
