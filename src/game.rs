@@ -38683,7 +38683,26 @@ impl Game {
             if u.kind == "settler" && !p.is_minor && self.can_found_city(uid) {
                 acts.push(Action::FoundCity { unit: uid });
             }
-            if (u.kind == "builder" || !spec.builds.is_empty()) && u.charges > 0 {
+            // ⚠ MOVEMENT IS REQUIRED TO BUILD, AND BUILDING SPENDS ALL OF IT.
+            //
+            // Civilization VI refuses `BUILD_IMPROVEMENT` from a unit with no
+            // movement left, and completing one zeroes the unit's movement. So a
+            // builder that has already improved a tile this turn cannot improve
+            // another, and CIVVIS was proposing exactly that.
+            //
+            // Measured on live run `civvis-20260804T091315Z`: **all 19
+            // `improve_refused` events** in the game had the right improvement for
+            // the terrain, on a tile we owned, with the enabling tech researched,
+            // with build charges remaining, and with the builder standing on the
+            // target — and every one had `moves=0` after spending a charge that
+            // same turn. Nothing else distinguished them.
+            //
+            // The project branch four lines below already required `moves_left`;
+            // this one did not, which is what made the omission visible.
+            if (u.kind == "builder" || !spec.builds.is_empty())
+                && u.charges > 0
+                && u.moves_left > 0.0
+            {
                 for imp in self.valid_improvements(pid, u.pos) {
                     if (u.kind == "builder"
                         && !self.rules.improvements[&imp].builder_buildable)
