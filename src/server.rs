@@ -6766,9 +6766,9 @@ mod tests {
                 "the log filters are missing {control}"
             );
         }
-        // All three logs name a seat with one vocabulary and correct a
-        // selection that has left the list the same way, so a filter can never
-        // strand a reader on an empty panel with no way back out of it.
+        // The two world chronicles name a seat with one vocabulary and correct
+        // a selection that has left the list the same way, so a filter can
+        // never strand a reader on an empty panel with no way back out of it.
         assert!(EMBEDDED_INDEX.contains("function syncCivFilterOptions(select, seats, allLabel, chosen)"));
         assert!(EMBEDDED_INDEX
             .contains("const kept = chosen !== \"all\" && !seats.includes(Number(chosen)) ? \"all\" : chosen;"));
@@ -6833,12 +6833,12 @@ mod tests {
         // spectator's feed rotates through the seats between frames, so the
         // combined log's entries come from all of them.
         assert!(EMBEDDED_INDEX.contains("event.category, [event.player ?? eventViewPlayer(next)]"));
-        // A choice is answered on the frame it is made on, and survives the
-        // tab being closed.
+        // A dossier or chronicle choice is answered on the frame it is made
+        // on, and survives the tab being closed.
         assert!(EMBEDDED_INDEX
             .contains("function applyLogFilter(filters, storageKey, field, value, listId, redraw)"));
         for key in [
-            "civvis-reasoning-filters-v1",
+            "civvis-ai-strategy-filters-v1",
             "civvis-war-filters-v1",
             "civvis-event-filters-v1",
         ] {
