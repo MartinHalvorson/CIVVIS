@@ -5437,12 +5437,36 @@ local function exportState(player, pid, turn)
 	-- reachable: `CanResearch` would let CIVVIS build from a tree it does not
 	-- have.  The active node and its progress are separate facts, needed so a
 	-- persistent reconstruction does not forget an in-flight choice each turn.
+	-- ⚠⚠ THE EUREKA IS THE LARGEST SCIENCE DISCOUNT IN THE GAME AND NOBODY ASKED
+	-- FOR IT. **62 of 77 technologies carry a boost** worth 40-50% of their cost,
+	-- and `AdvancedAi::tech_value` already pays **+28** for a tech whose boost is
+	-- triggered -- but nothing has ever sent that fact. The state export carried
+	-- `techs`, `research` and `research_progress` and no boost field at all, and
+	-- `mirror.rs` imported none, so in every live game the agent's
+	-- `boosted_techs` is whatever its own simulation happened to derive rather
+	-- than what Civilization VI actually granted.
+	--
+	-- Same class as the Amenity export (#967) and the Housing export (#1007):
+	-- the valuation is right and the input is absent. It matters here because the
+	-- median live empire ends on **30 technologies of 77** -- taking the
+	-- discounted ones first is the cheapest tech-count there is.
+	--
+	-- `HasBoostBeenTriggered` is the shipped predicate: `TechTree.lua` reads it
+	-- as `pPlayerTechs:HasBoostBeenTriggered(iTech)` and `CivicsTree.lua` the same
+	-- for civics. Boosts are reported for technologies the empire does NOT yet
+	-- have -- a triggered boost on a completed tech is spent and says nothing
+	-- about what to research next.
 	local techs, civics = {}, {};
+	local boosted_techs, boosted_civics = {}, {};
 	local ptechs = try(function() return player:GetTechs(); end);
 	if ptechs ~= nil then
 		for row in GameInfo.Technologies() do
 			if try(function() return ptechs:HasTech(row.Index); end, false) then
 				techs[#techs + 1] = row.TechnologyType;
+			elseif try(function()
+				return ptechs:HasBoostBeenTriggered(row.Index);
+			end, false) then
+				boosted_techs[#boosted_techs + 1] = row.TechnologyType;
 			end
 		end
 	end
@@ -5464,6 +5488,10 @@ local function exportState(player, pid, turn)
 		for row in GameInfo.Civics() do
 			if try(function() return pculture:HasCivic(row.Index); end, false) then
 				civics[#civics + 1] = row.CivicType;
+			elseif try(function()
+				return pculture:HasBoostBeenTriggered(row.Index);
+			end, false) then
+				boosted_civics[#boosted_civics + 1] = row.CivicType;
 			end
 		end
 	end
@@ -5731,6 +5759,18 @@ local function exportState(player, pid, turn)
 	emit("state", {
 		turn = turn,
 		techs = techs,
+		-- ⚠ Boosts on technologies and civics the empire does NOT yet hold. A
+		-- triggered boost on something already researched is spent and says
+		-- nothing about what to take next.
+		--
+		-- ⚠ An empty table is CORRECT here and must stay a plain table: `encode`
+		-- emits `[]` whenever `#v == n`, which `{}` satisfies, and the Rust side
+		-- is a `Vec<String>` — so `[]` is exactly what serde wants. That is the
+		-- opposite of the Great-Person-points field below, which is a MAP and
+		-- must return `nil` rather than `{}` precisely because `{}` would go out
+		-- as `[]` and take the whole StateSnapshot down with it.
+		boosted_techs = boosted_techs,
+		boosted_civics = boosted_civics,
 		civics = civics,
 		research = research,
 		research_progress = research_progress,
