@@ -812,6 +812,10 @@ pub struct AdvancedAi {
     /// `bounded_recovery`. See [`AdvancedAi::wartime_army_target`] for the
     /// 94-of-188-turns measurement behind it.
     pub army_target_weighs_the_enemy: bool,
+    /// Skip policy cards that multiply a suzerainty count of zero. Off here so
+    /// every configured, legacy and Elo agent keeps the deck order it has always
+    /// had; `strategic_policies` reorders nothing on this flag.
+    pub suzerain_cards_need_a_suzerainty: bool,
     /// Size the siege train against the wall standing at the target city,
     /// instead of asking for exactly one siege unit for any target at all.
     ///
@@ -1907,6 +1911,7 @@ impl AdvancedAi {
             strike_opening: false,
             ranged_needs_line_of_sight: false,
             army_target_weighs_the_enemy: false,
+            suzerain_cards_need_a_suzerainty: false,
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
             relief_targets_the_siege: false,
@@ -2048,6 +2053,10 @@ impl AdvancedAi {
         self.army_target_weighs_the_enemy = true;
     }
 
+    pub fn enable_suzerain_cards_need_a_suzerainty(&mut self) {
+        self.suzerain_cards_need_a_suzerainty = true;
+    }
+
     /// Let the siege train be sized by the wall it has to breach. Native
     /// tournament games leave this disabled so their recorded ladders stay
     /// comparable.
@@ -2164,6 +2173,12 @@ impl AdvancedAi {
         // the rival fielded 1050 military against our 658 while the target still
         // read satisfied at 11 against a wanted 10.
         self.enable_army_target_weighs_the_enemy();
+        // Raj, Wisselbanken, Collective Activism and the International Space
+        // Agency all scale off SUZERAIN city-states and pay nothing at zero.
+        // Live run `civvis-20260803T220954Z` held Raj AND Wisselbanken slotted
+        // at turn 208 with 0 suzerainties and 41 unspent envoys — two of six
+        // slots returning zero for the whole game.
+        self.enable_suzerain_cards_need_a_suzerainty();
         // ⚠ The siege appetite was one unit for any target city at all, walled
         // or not. The engine halves a non-siege unit's wall damage
         // (`mult = if spec.siege { 1.0 } else { 0.5 }`) and docks a non-siege
@@ -2308,6 +2323,10 @@ impl AdvancedAi {
 
     pub fn disable_army_target_weighs_the_enemy(&mut self) {
         self.army_target_weighs_the_enemy = false;
+    }
+
+    pub fn disable_suzerain_cards_need_a_suzerainty(&mut self) {
+        self.suzerain_cards_need_a_suzerainty = false;
     }
 
     pub fn disable_siege_tracks_the_wall(&mut self) {
@@ -5530,6 +5549,47 @@ impl AdvancedAi {
                 desired.splice(at..at, RESEARCH_MULTIPLIERS);
             }
         }
+        // ⚠⚠ A CARD THAT MULTIPLIES SOMETHING WE DO NOT HAVE IS WORTH ZERO, and
+        // the deck lists above are static, so nothing noticed. Every one of these
+        // scales off SUZERAIN city-states:
+        //
+        //   raj                         suzerain_all_yields          2
+        //   wisselbanken                allied_suzerain_trade_*      2
+        //   collective_activism         culture_pct_per_suzerain     5
+        //   international_space_agency  science_pct_per_suzerain     5
+        //
+        // At zero suzerainties each pays exactly nothing, and they sit in the
+        // Religion, Diplomacy and Recovery lists unconditionally. Live run
+        // `civvis-20260803T191900Z` finished holding **0 suzerainties with 56
+        // unspent envoys** and had slotted BOTH `raj` and `wisselbanken` — two of
+        // six slots returning zero for the whole game.
+        //
+        // Demoted, not dropped: they are the right cards the moment a suzerainty
+        // exists, and the empire that takes one mid-game should pick them up
+        // without a second mechanism. Sending them to the tail lets the slot go
+        // to a card that pays now, and self-corrects when the board changes.
+        //
+        // Same shape as the Campus gate directly above — "the empire must own a
+        // Campus for them to mean anything" — applied to the other precondition
+        // the deck ignores.
+        const SUZERAIN_CONDITIONAL: [&str; 4] = [
+            "raj",
+            "wisselbanken",
+            "collective_activism",
+            "international_space_agency",
+        ];
+        let suzerainties = g
+            .players
+            .iter()
+            .filter(|p| p.is_minor && p.alive)
+            .map(|p| p.id)
+            .filter(|minor| g.suzerain_of(*minor) == Some(pid))
+            .count();
+        if self.suzerain_cards_need_a_suzerainty && suzerainties == 0 {
+            desired.retain(|card| !SUZERAIN_CONDITIONAL.contains(card));
+            desired.extend(SUZERAIN_CONDITIONAL);
+        }
+
         let elite_active = g.players[pid].policies.contains(&crate::name!("elite_forces"));
         let elite_affordable = if elite_active {
             g.players[pid].gold_per_turn >= 5.0
@@ -18476,6 +18536,145 @@ mod tests {
         assert!(
             treated.contains(&crate::name!("rationalism")),
             "a Religion empire holding a Campus must be able to multiply it: {treated:?}"
+        );
+    }
+
+    /// `raj` and its three siblings scale off SUZERAIN city-states. At zero
+    /// suzerainties they pay exactly nothing, and the deck lists are static, so
+    /// nothing noticed: live run `civvis-20260803T191900Z` finished with 0
+    /// suzerainties, 56 unspent envoys, and BOTH `raj` and `wisselbanken`
+    /// slotted — two of six slots returning zero for the whole game.
+    ///
+    /// ⚠ THE ASSERTION IS DISPLACEMENT, NOT ABSENCE. An empty diplomatic slot
+    /// is worth exactly as much as a zero-value card, so slotting Raj when it
+    /// is the only unlocked diplomatic card costs nothing and the first version
+    /// of this test wrongly failed on it. What costs is Raj taking the slot
+    /// from a card that pays — here Gunboat Diplomacy, whose influence is how
+    /// a seat with no suzerainty buys its first one.
+    #[test]
+    fn a_dead_suzerain_card_does_not_displace_one_that_pays() {
+        let build = |suzerain: bool| {
+            let mut game = Game::new(3, 32, 24, 5_416, 250, 1);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("starting settler");
+            game.apply(0, &Action::FoundCity { unit: settler })
+                .expect("found city");
+            // ⚠ THE SLOTS MUST BE SCARCE OR NOTHING IS DISPLACED. Classical
+            // Republic is economic 2 / diplomatic 1 / wildcard 1, and the civics
+            // below unlock three economic cards that all outrank Raj — so the
+            // wildcard is taken and the single diplomatic seat is genuinely
+            // contested. With two diplomatic slots (Merchant Republic) or a free
+            // wildcard, everything unlocked simply fits and the ordering never
+            // shows. Displacement is the whole cost, so the test creates it.
+            game.players[0].government = Some("classical_republic".to_string());
+            // Both cards unlocked, so the deck has a genuine choice to make.
+            game.players[0].civics.extend([
+                crate::name!("recorded_history"),
+                crate::name!("medieval_faires"),
+                crate::name!("the_enlightenment"),
+                crate::name!("colonialism"),
+                crate::name!("ideology"),
+                crate::name!("civil_service"),
+                crate::name!("class_struggle"),
+            ]);
+            if suzerain {
+                let minor = game
+                    .players
+                    .iter()
+                    .find(|p| p.is_minor && p.alive)
+                    .map(|p| p.id)
+                    .expect("a city-state");
+                game.players[0].envoys = vec![(minor, 3)];
+            }
+            game.players[0].policies.clear();
+            let mut ai = AdvancedAi::new();
+            ai.enable_suzerain_cards_need_a_suzerainty();
+            ai.refresh_research_weight(&game);
+            ai.strategic_policies(&mut game, 0, GrandStrategy::Recovery);
+            game.players[0].policies.clone()
+        };
+
+        let barren = build(false);
+        assert!(
+            barren.contains(&crate::name!("gunboat_diplomacy")),
+            "with no suzerainty the influence card is what buys the first one: {barren:?}"
+        );
+        assert!(
+            !barren.contains(&crate::name!("raj")),
+            "Raj must not outrank a card that pays when it pays nothing: {barren:?}"
+        );
+    }
+
+    /// ⚠ OFF BY DEFAULT, and this is what keeps the Elo ledger valid. A
+    /// behaviour change to `advanced.rs` that fires for every agent invalidates
+    /// every rated game ever played under the `advanced_v1` anchor; the source
+    /// contract test in `main.rs` exists to catch exactly that, and it caught
+    /// this. Legacy and Elo agents must reorder nothing.
+    #[test]
+    fn the_suzerain_gate_is_off_unless_the_live_bridge_asks() {
+        let plain = AdvancedAi::new();
+        assert!(
+            !plain.suzerain_cards_need_a_suzerainty,
+            "a configured or Elo agent must keep the deck order it has always had"
+        );
+        let mut bridged = AdvancedAi::new();
+        bridged.enable_live_bridge();
+        assert!(
+            bridged.suzerain_cards_need_a_suzerainty,
+            "the live bridge is where this is meant to fire"
+        );
+        bridged.disable_suzerain_cards_need_a_suzerainty();
+        assert!(
+            !bridged.suzerain_cards_need_a_suzerainty,
+            "every live-bridge flag needs a disable or it ships unpriced"
+        );
+    }
+
+    /// ⚠ DEMOTED, NOT DROPPED. The moment a suzerainty exists these are the
+    /// right cards again, and an empire that takes one mid-game must pick them
+    /// up without a second mechanism.
+    #[test]
+    fn suzerain_cards_return_once_a_suzerainty_exists() {
+        let mut game = Game::new(3, 32, 24, 5_416, 250, 1);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .expect("starting settler");
+        game.apply(0, &Action::FoundCity { unit: settler })
+            .expect("found city");
+        game.players[0].government = Some("merchant_republic".to_string());
+        game.players[0].civics.extend([
+            crate::name!("recorded_history"),
+            crate::name!("medieval_faires"),
+            crate::name!("the_enlightenment"),
+            crate::name!("colonialism"),
+        ]);
+        let minor = game
+            .players
+            .iter()
+            .find(|p| p.is_minor && p.alive)
+            .map(|p| p.id)
+            .expect("a city-state to be suzerain of");
+        // Three envoys and an uncontested lead is the whole suzerainty rule.
+        game.players[0].envoys = vec![(minor, 3)];
+        assert_eq!(
+            game.suzerain_of(minor),
+            Some(0),
+            "test setup must actually make us the suzerain"
+        );
+        game.players[0].policies.clear();
+        let mut ai = AdvancedAi::new();
+        ai.enable_suzerain_cards_need_a_suzerainty();
+        ai.refresh_research_weight(&game);
+        ai.strategic_policies(&mut game, 0, GrandStrategy::Recovery);
+        assert!(
+            game.players[0].policies.contains(&crate::name!("raj")),
+            "with a suzerainty in hand Raj pays: {:?}",
+            game.players[0].policies
         );
     }
 
