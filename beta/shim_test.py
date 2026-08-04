@@ -34,6 +34,7 @@ window.Worker = class {
     } else if (message.path.startsWith("/state")) {
       answer = {
         seed: 7, turn: 227, winner: 0,
+        server_commit: "test",
         between_game_countdown_ms: window.betweenGameCountdownMs,
       };
     } else if (message.path === "/pace") {
@@ -73,7 +74,9 @@ def main() -> int:
     shutil.copy(here / "shim.js", stage / "shim.js")
     (stage / "index.html").write_text(HARNESS, encoding="utf-8")
     build = stage / "build.json"
-    build.write_text('{"commit":"test"}\n', encoding="utf-8")
+    build.write_text(
+        '{"commit":"test","wasm_bytes":7340032}\n', encoding="utf-8"
+    )
 
     port = free_port()
     server = socketserver.TCPServer(
@@ -133,6 +136,7 @@ def main() -> int:
         assert selected["between_game_countdown_ms"] == 3000, selected
         first = dev.evaluate("fetch('/state?have=226').then(r => r.json())")
         assert first["seed"] == 7 and first["restart_in"] == 3, first
+        assert first["server_wasm_bytes"] == 7 * 1024 * 1024, first
 
         # Metadata fetches happen throughout a result screen. Advancing fake
         # wall time across one proves they cannot restart the finale clock.

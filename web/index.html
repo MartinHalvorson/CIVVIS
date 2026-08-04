@@ -1561,8 +1561,10 @@
   }
   #buildmark {
     /* The authored World minimap owns the lower-right corner at z-index 6.
-       Keep provenance one layer above it so commit and build age remain
-       visible even before anyone moves or closes the minimap. */
+       Keep provenance one layer above it and let the live minimap geometry
+       put the badge immediately to its left. The declarations here are the
+       fallback when the minimap is hidden or has been moved too far left to
+       leave the badge useful room. */
     position: fixed; z-index: 7;
     right: max(7px, env(safe-area-inset-right)); bottom: max(5px, env(safe-area-inset-bottom));
     max-width: calc(100vw - 14px); padding: 3px 6px;
@@ -4690,6 +4692,7 @@ function setOverlayVisibility(name, visible) {
   if (checkbox) checkbox.checked = visible;
   try { localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(OVERLAY_VISIBILITY)); }
   catch (_) {}
+  if (name === "minimap") syncBuildMarkerPosition();
   // An overlay that has just left the map hands its edge back to the world.
   refitMapAreaToChrome();
   reframeCurrentMapFocus(priorFocus);
@@ -6182,7 +6185,10 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   // resize handle that currently owns the pointer gesture.
   if (name === "victory" && state) syncVictoryLeaderCapacity(config.element);
   if (persist) saveHudLayout();
-  if (name === "minimap") refreshMiniForLayout();
+  if (name === "minimap") {
+    refreshMiniForLayout();
+    syncBuildMarkerPosition();
+  }
   refitMapAreaToChrome();
   reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
@@ -6216,7 +6222,10 @@ function resetHudWidget(name, persist = true) {
   if (name === "minimap") syncDefaultMinimapGeometry();
   if ((name === "players" || name === "victory") && state) drawPlayerHud();
   if (persist) saveHudLayout();
-  if (name === "minimap") requestAnimationFrame(refreshMiniForLayout);
+  if (name === "minimap") requestAnimationFrame(() => {
+    refreshMiniForLayout();
+    syncBuildMarkerPosition();
+  });
   refitMapAreaToChrome();
   reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
@@ -6966,6 +6975,7 @@ function resize() {
   finally { mapAreaRefitDepth--; }
   syncMapViewport();
   syncMiniCanvas();
+  syncBuildMarkerPosition();
   if (watchedEmpireAutoFrame && Number.isInteger(state?.view_player))
     setObservedPlayersView(false);
   draw(); if (state) drawMini();
@@ -7222,11 +7232,45 @@ function formatBuildAge(buildDate) {
   ].filter(Boolean);
   return parts.join(" ") || "0m";
 }
+function formatBinarySize(bytes) {
+  const mib = bytes / (1024 * 1024);
+  return `${mib < 10 ? mib.toFixed(2) : mib.toFixed(1)} MiB`;
+}
+// The revision belongs beside the world overview, not on top of it. Read the
+// live frame because its authored size follows the screen diagonal and a
+// viewer can move or resize it. Compact layouts put the minimap at the left;
+// when there is not useful room on that side, retain the lower-right fallback
+// instead of squeezing the revision into the command deck.
+function syncBuildMarkerPosition() {
+  const marker = document.getElementById("buildmark");
+  const frame = document.querySelector(".minimap-frame");
+  if (!marker || !frame || !mapOverlayVisible("minimap")) {
+    marker?.style.removeProperty("right");
+    marker?.style.removeProperty("bottom");
+    marker?.style.removeProperty("max-width");
+    return;
+  }
+  const rect = frame.getBoundingClientRect();
+  const gap = 6, edge = 7;
+  const areaLeft = document.getElementById("maparea")?.getBoundingClientRect().left || 0;
+  const available = Math.floor(rect.left - gap - Math.max(edge, areaLeft + edge));
+  const useful = Math.min(180, Math.max(1, marker.scrollWidth));
+  if (!rect.width || !rect.height || available < useful) {
+    marker.style.removeProperty("right");
+    marker.style.removeProperty("bottom");
+    marker.style.removeProperty("max-width");
+    return;
+  }
+  marker.style.right = `${Math.round(window.innerWidth - rect.left + gap)}px`;
+  marker.style.bottom = `${Math.max(5, Math.round(window.innerHeight - rect.bottom + 5))}px`;
+  marker.style.maxWidth = `${available}px`;
+}
 function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
   const commit = st?.server_commit;
   const commitTime = st?.server_commit_time;
   const builtAt = st?.server_built_at;
+  const wasmBytes = Number(st?.server_wasm_bytes);
   const commitDate = typeof commitTime === "string" ? new Date(commitTime) : null;
   const buildDate = typeof builtAt === "string" ? new Date(builtAt) : null;
   if (!marker || typeof commit !== "string" || commit === "unknown" ||
@@ -7237,9 +7281,14 @@ function updateBuildMarker(st = state) {
   }
   marker.textContent = `${commit.slice(0, 7)} · ` +
     `Commit is ${formatBuildAge(commitDate)} old · ` +
-    `Build is ${formatBuildAge(buildDate)} old`;
-  marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}`;
+    `Build is ${formatBuildAge(buildDate)} old` +
+    (Number.isSafeInteger(wasmBytes) && wasmBytes > 0
+      ? ` · WASM is ${formatBinarySize(wasmBytes)}` : "");
+  marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}` +
+    (Number.isSafeInteger(wasmBytes) && wasmBytes > 0
+      ? `\nWASM ${wasmBytes.toLocaleString()} bytes` : "");
   marker.hidden = false;
+  syncBuildMarkerPosition();
 }
 setInterval(() => updateBuildMarker(), 60_000);
 function servesThisDocumentsCode(commit) {
@@ -23348,6 +23397,15 @@ function uncoveredMapBox(origin, width, height) {
     if (spansWidth) top = Math.max(top, Math.max(0, Math.min(height, victory.bottom)));
     else right = Math.max(0, Math.min(width, victory.left));
   }
+  // The bottom control dock is a frame below the world, not an overlay on its
+  // last row. Measuring the dock itself covers either half independently: if
+  // zoom/search controls or map lenses remain visible, the fitted map ends at
+  // their shared top edge; if both are hidden the zero-height dock reserves
+  // nothing. Against an already-fitted canvas this clamps to `height`, so the
+  // camera does not pay for the same strip twice.
+  const controls = document.getElementById("map-controls-dock")?.getBoundingClientRect();
+  if (controls?.height)
+    bottom = Math.max(0, Math.min(height, controls.top - origin.top));
   // A custom widget layout can put the nominal right edge left of the deck,
   // or the nominal top edge below the screen. There is no uncovered rectangle
   // on that axis, so retain a real on-screen center instead of returning an
