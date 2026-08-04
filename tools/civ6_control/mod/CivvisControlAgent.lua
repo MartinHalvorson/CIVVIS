@@ -6055,6 +6055,111 @@ local function probeCitizenSlots(turn)
 	end
 end
 
+-- ⭐ PUT ONE CITIZEN IN THE CAMPUS, WHERE THE MULTIPLIER ALREADY STANDS.
+--
+-- The probe answered the open question. Live run `civvis-20260804T173018Z`,
+-- turn 50, for every district asked:
+--
+--     verdicts: absent=false, true=true, one=true, zero=true
+--
+-- `CanStartCommand(city, MANAGE, {PARAM_MANAGE_CITIZEN=<any non-nil>, X, Y})`
+-- returns TRUE, and returns FALSE only when the parameter is ABSENT. The
+-- interface mode was never the gate — `UI.GetInterfaceModeParameter` merely
+-- supplies a value the command needs to be PRESENT, and any non-nil value does.
+--
+-- The gap this closes: across 100 live end-of-game cities there are 53
+-- specialist assignments in total, **45.3% of them on Commercial Hubs and only
+-- 26.4% on Campuses**, and of the 50 cities holding a Campus only **8** carry a
+-- specialist on it. Every one of those placements is Civilization VI's own
+-- citizen governor, because this agent has never issued a citizen order.
+-- Specialists are also the widest-spread metric in the corpus: the top science
+-- quartile of live runs holds **9** and the bottom holds **0**.
+--
+-- ⚠⚠ THIS IS A REALLOCATION, NOT FREE YIELD. A citizen moved into a specialist
+-- slot stops working a tile. So it is deliberately narrow:
+--
+--   * only a CAMPUS, and only one whose plot currently has ZERO workers;
+--   * only in a city that already holds a LIBRARY, so the science the
+--     specialist makes is actually multiplied — a Campus specialist in a city
+--     with no Library is the weakest version of this trade;
+--   * at most ONE citizen per city per turn, so a bad trade cannot compound;
+--   * `CanStartCommand` is asked BEFORE `RequestCommand`, and the outcome of
+--     both is emitted, because "the request did not throw" is not "the engine
+--     took it" and this project keeps a ledger of exactly that mistake.
+--
+-- Off unless `cfg.CampusSpecialist` is set.
+local function fillCampusSpecialists(turn)
+	local pid = Game.GetLocalPlayer();
+	if pid == nil or pid < 0 then return; end
+	local player = Players[pid];
+	if player == nil then return; end
+	local cities = try(function() return player:GetCities(); end);
+	if cities == nil then return; end
+	local libraryIndex = try(function() return GameInfo.Buildings["BUILDING_LIBRARY"].Index; end);
+	if libraryIndex == nil then return; end
+	for _, city in cities:Members() do
+		local cityId = try(function() return city:GetID(); end, -1);
+		-- The multiplier gate. Without a Library the specialist's beakers are
+		-- not multiplied by anything and the tile it left may well be worth more.
+		local blds = try(function() return city:GetBuildings(); end);
+		local hasLibrary = blds ~= nil
+			and try(function() return blds:HasBuilding(libraryIndex); end, false);
+		if hasLibrary then
+			local ownedPlots = try(function()
+				return Map.GetCityPlots():GetPurchasedPlots(city);
+			end);
+			for _, plotIndex in ipairs(ownedPlots or {}) do
+				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+				local dtype = nil;
+				if plot ~= nil then
+					local d = try(function() return plot:GetDistrictType(); end, -1);
+					if d ~= nil and d >= 0 then
+						dtype = try(function() return GameInfo.Districts[d].DistrictType; end);
+					end
+				end
+				-- `DISTRICT_CAMPUS` and nothing else. The civilization uniques
+				-- that REPLACE a Campus (Seowon, Observatory) carry their own
+				-- type and are deliberately left for a follow-up rather than
+				-- guessed at here.
+				if dtype == "DISTRICT_CAMPUS"
+					and try(function() return plot:GetWorkerCount(); end, -1) == 0 then
+					local px = try(function() return plot:GetX(); end, -1);
+					local py = try(function() return plot:GetY(); end, -1);
+					local ok, can = pcall(function()
+						local params = {};
+						params[CityCommandTypes.PARAM_X] = px;
+						params[CityCommandTypes.PARAM_Y] = py;
+						params[CityCommandTypes.PARAM_MANAGE_CITIZEN] = true;
+						return CityManager.CanStartCommand(
+							city, CityCommandTypes.MANAGE, params, true);
+					end);
+					local applied = false;
+					if ok and can == true then
+						applied = pcall(function()
+							local params = {};
+							params[CityCommandTypes.PARAM_X] = px;
+							params[CityCommandTypes.PARAM_Y] = py;
+							params[CityCommandTypes.PARAM_MANAGE_CITIZEN] = true;
+							CityManager.RequestCommand(
+								city, CityCommandTypes.MANAGE, params);
+						end);
+					end
+					emit("civvis_campus_specialist", {
+						turn = turn,
+						city = cityId,
+						x = px, y = py,
+						can = (ok and tostring(can) or "threw"),
+						applied = applied,
+					});
+					-- One per city per turn, whatever happened. A refusal is
+					-- information; a retry loop is a stall.
+					break;
+				end
+			end
+		end
+	end
+end
+
 local function probeChannels(turn)
 	local report = { turn = turn };
 	-- Bare globals, not `_G[name]`: each Civ 6 UI context runs in its own
@@ -7984,6 +8089,13 @@ local function beginTurn(player, pid, turn)
 	if cfg.ProbeCitizens
 		and (turn % (cfg.ProbeCitizenEvery or 25)) == 0 then
 		probeCitizenSlots(turn);
+	end
+	-- Every `CampusSpecialistEvery` turns rather than every turn: a citizen the
+	-- game's own governor moves back is not worth fighting over each turn, and
+	-- the emit would drown the log the rest of the run is read out of.
+	if cfg.CampusSpecialist
+		and (turn % (cfg.CampusSpecialistEvery or 10)) == 0 then
+		fillCampusSpecialists(turn);
 	end
 	-- ⚠⚠⚠ ENVOYS ARE SPENT ON THE TURN, NOT ON THE PROMPT. `chooseEnvoy` was
 	-- reachable only from the `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` handler,
