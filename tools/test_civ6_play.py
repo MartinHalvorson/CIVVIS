@@ -44,6 +44,37 @@ class Civ6PlayTest(unittest.TestCase):
             close_fds=True,
         )
 
+    def test_desktop_size_rejects_a_multi_display_union(self) -> None:
+        """⚠⚠ A SECOND MONITOR MUST NOT PLACE THE GAME OFF-SCREEN.
+
+        `desktop_size` used to ask Finder for its desktop scroll area, which
+        spans every attached display. On 2026-08-04 an external 2560x1440
+        monitor was plugged in and Finder reported 3225x2557 — the union.
+        `place_game` halved it, put Civ 6 at y=1333 on a 1117-point screen, and
+        the setup vision could not read the difficulty dropdown. Every attempt
+        in the batch died with "could not start a game from the main menu".
+
+        The ceiling is the last line of defence if the source ever returns a
+        union again.
+        """
+        with patch.object(civ6_play.subprocess, "run",
+                          return_value=SimpleNamespace(stdout="3225,2557", returncode=0)):
+            self.assertIsNone(
+                civ6_play.desktop_size(),
+                "a display-union-sized answer must be refused, not halved")
+
+    def test_desktop_size_accepts_a_single_display(self) -> None:
+        with patch.object(civ6_play.subprocess, "run",
+                          return_value=SimpleNamespace(stdout="1728,1117", returncode=0)):
+            self.assertEqual(civ6_play.desktop_size(), (1728, 1117))
+
+    def test_desktop_size_refuses_an_unreadable_answer(self) -> None:
+        """None means 'leave the window alone' — never a guess."""
+        for bad in ("", "not,numbers", "1728", "0,0"):
+            with patch.object(civ6_play.subprocess, "run",
+                              return_value=SimpleNamespace(stdout=bad, returncode=0)):
+                self.assertIsNone(civ6_play.desktop_size(), f"{bad!r} must be refused")
+
     def test_place_game_sizes_before_positioning_the_upper_quadrant(self) -> None:
         with patch.object(civ6_play, "desktop_size", return_value=(1512, 982)), \
              patch.object(civ6_play.subprocess, "run") as run:
