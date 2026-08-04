@@ -8076,7 +8076,7 @@ mod tests {
             ".minimap-frame.minimap-world-planet { width: 164px; height: 150px; }"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "position: absolute; z-index: 1; left: 10px; bottom: 9px;"
+            "position: absolute; z-index: 1; right: 10px; bottom: 9px;"
         ));
         assert!(!EMBEDDED_INDEX.contains("--player-hud-width"));
         // Every path keeps its top three plus the player's own civilization
