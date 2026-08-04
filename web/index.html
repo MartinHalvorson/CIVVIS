@@ -500,6 +500,33 @@
   #map-lens-strip {
     display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px;
   }
+  #district-lens-section {
+    grid-column: 1 / -1; min-width: 0; margin-top: 2px;
+    border-top: 1px solid #ffffff0d;
+  }
+  #district-lens-section > summary {
+    position: relative; min-width: 0; height: 31px;
+    display: grid; grid-template-columns: 17px minmax(0, 1fr) auto; align-items: center; gap: 4px;
+    margin: 3px 0 0; padding: 0 5px; border: 1px solid transparent; border-radius: 7px;
+    color: #b8c7c0; cursor: pointer; font-size: var(--type-caption); font-weight: 800;
+    list-style: none;
+  }
+  #district-lens-section > summary::-webkit-details-marker { display: none; }
+  #district-lens-section > summary:hover { border-color: #4d6b60; background: #183027; }
+  #district-lens-section.active > summary,
+  #district-lens-section[open] > summary {
+    border-color: #d7b66a75; color: #fff6dc;
+    background: linear-gradient(135deg, #3d3a26aa, #173128d8);
+  }
+  .district-lens-caret { color: #9fb2a8; font-size: 11px; transition: transform .14s ease; }
+  #district-lens-section[open] .district-lens-caret { transform: rotate(90deg); }
+  #district-lens-list {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 3px;
+    max-height: min(196px, 31vh); margin-top: 4px; overflow-y: auto;
+    scrollbar-width: thin;
+  }
+  #district-lens-list button { height: 29px; }
+  #district-lens-list button .map-lens-icon { color: var(--district-lens-color, #e6c978); }
   #map-lens-exit {
     flex: 0 0 auto; width: auto; height: 24px !important; padding: 0 6px !important;
     color: #d7b6ad; font-size: var(--type-caption) !important;
@@ -3884,6 +3911,14 @@
           <span class="map-lens-icon" aria-hidden="true">⚡</span>
           <span class="map-lens-label">Power</span><kbd aria-hidden="true">0</kbd>
         </button>
+        <details id="district-lens-section">
+          <summary title="District adjacency lenses">
+            <span class="map-lens-icon" aria-hidden="true">⬡</span>
+            <span class="map-lens-label">District adjacency</span>
+            <span class="district-lens-caret" aria-hidden="true">›</span>
+          </summary>
+          <div id="district-lens-list" role="group" aria-label="District adjacency lenses"></div>
+        </details>
       </div>
     </div>
     <div id="map-search" role="search" aria-label="Search visible map tiles">
@@ -4732,7 +4767,7 @@ let SHOW_RESOURCES = localStorage.getItem("civvis-show-resources") !== "0";
 // Q controls resource icons on the regular map. Deposits are part of choosing
 // a settlement site, so the Settler lens keeps them available regardless.
 function shouldDrawResourceBadges() {
-  return SHOW_RESOURCES || mapLens === "settler";
+  return SHOW_RESOURCES || mapLens === "settler" || !!districtLensDistrict();
 }
 // Flat-map wrapping is a viewer choice. Horizontal wrapping starts on, as a
 // world map normally does; vertical wrapping starts off so the polar rows keep
@@ -7829,6 +7864,10 @@ async function boot() {
   bootBusy = true;
   try {
     RULES = await fetchJSON("/rules");
+    // Rules arrive after the shell. Building district buttons now keeps the
+    // initial page light and, importantly, does not calculate a single tile
+    // until a viewer actually selects one of them.
+    syncMapLensControls();
     // The outermost setting: which published game's rules everything below is
     // expressed in. One is modeled, and the control still comes from the
     // server rather than being spelled out here, so a second never means
@@ -8969,6 +9008,11 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));
   syncMapSearchCivilizations(st);
   syncMapSearchStatus();
+  // A watched player can change between observations. Keep the district menu
+  // in that civilization's vocabulary before this frame asks the lens for a
+  // visible-only calculation.
+  syncMapLensControls();
+  modeline();
   if (newWorld || viewChanged) {
     setObservedPlayersView(false);
   }
@@ -17727,6 +17771,21 @@ function politicalLensColor(owner) {
   return pcol(owner);
 }
 function lensTileStyle(tile, context) {
+  const district = districtLensDistrict();
+  if (district) {
+    const lens = districtLensData();
+    const reading = lens.values.get(key(tile.pos));
+    if (!reading) return null;
+    const total = districtLensTotal(reading.yields);
+    const strength = Math.min(1, Math.abs(total) / lens.high);
+    if (total < 0) return {fill:"#9b4d52", alpha:.44 + strength * .3};
+    if (reading.kind === "existing")
+      return {fill:mixLensColor("#6e5d37", districtColor(district), .55), alpha:.44 + strength * .24};
+    if (total > 0)
+      return {fill:mixLensColor("#496454", districtColor(district), .35 + strength * .65),
+        alpha:.42 + strength * .32};
+    return {fill:isWater(tile) ? "#254653" : "#526059", alpha:.35};
+  }
   if (mapLens === "continent") {
     if (isWater(tile)) return null;
     const continent = Number.isInteger(tile.continent) ? tile.continent : -1;
@@ -17776,6 +17835,11 @@ function lensTileStyle(tile, context) {
   return null;
 }
 function lensTileValue(tile) {
+  const district = districtLensDistrict();
+  if (district) {
+    const reading = districtLensData().values.get(key(tile.pos));
+    return reading ? districtLensLabel(reading.yields, reading.kind === "candidate") : "";
+  }
   if (mapLens === "appeal" && Number.isFinite(tile.appeal)) return String(tile.appeal);
   if (mapLens === "tourism" && Number(tile.tourism) > 0)
     return `${Number(tile.tourism).toFixed(Number(tile.tourism) % 1 ? 1 : 0)}♪`;
@@ -24179,6 +24243,350 @@ const MAP_LENS_INFO = {
   loyalty:"LOYALTY LENS — population-pressure arrows · city Loyalty and change per turn (8)",
   power:"POWER LENS — city generation, demand, and powered status (0)",
 };
+
+// District planning is deliberately a client-side reading of the current
+// observation. The normal state stream already withholds tiles outside the
+// player's sight, while the server-side /adjacency endpoint is omniscient and
+// city-specific. Keeping this work here makes a selected lens both lazy and
+// honest about the information it is using.
+const DISTRICT_LENS_PREFIX = "district:";
+const DISTRICT_LENS_YIELDS = ["food", "production", "gold", "science", "culture", "faith"];
+let districtLensCache = {state:null, rules:null, district:null, planet:null, data:null};
+let districtLensListKey = null;
+
+function districtLensDistrict(lens = mapLens) {
+  if (typeof lens !== "string" || !lens.startsWith(DISTRICT_LENS_PREFIX)) return null;
+  const district = lens.slice(DISTRICT_LENS_PREFIX.length);
+  return district || null;
+}
+function districtLensId(district) { return DISTRICT_LENS_PREFIX + district; }
+function districtLensViewer() {
+  if (!state) return null;
+  if (Number.isInteger(state.view_player)) return state.view_player;
+  return Number.isInteger(state.player) ? state.player : null;
+}
+function districtLensChoices() {
+  const viewer = districtLensViewer();
+  const civ = state?.players?.[viewer]?.civ;
+  return Object.keys(RULES?.districts || {})
+    // This is the same future-facing menu as the engine's planner: every
+    // district this civilization can build, including the useful +0 lenses.
+    // A unique replacement occupies its parent's row for its own civilization.
+    .filter(district => RULES.districts[district]?.buildable !== false)
+    .filter(district => {
+      const spec = RULES.districts[district];
+      return !spec.unique_to || spec.unique_to === civ;
+    })
+    .filter(district => !Object.values(RULES.districts).some(spec =>
+      spec.replaces === district && spec.unique_to === civ))
+    .sort((left, right) => titleCase(left).localeCompare(titleCase(right)));
+}
+function districtLensFamily(district) {
+  let family = district;
+  const seen = new Set();
+  while (family && !seen.has(family)) {
+    seen.add(family);
+    const parent = RULES?.districts?.[family]?.replaces;
+    if (!parent) break;
+    family = parent;
+  }
+  return family;
+}
+function districtLensIsFamily(district, family) {
+  return district === family || districtLensFamily(district) === districtLensFamily(family);
+}
+function districtLensBlankYields() {
+  return Object.fromEntries(DISTRICT_LENS_YIELDS.map(kind => [kind, 0]));
+}
+function districtLensTotal(yields) {
+  return DISTRICT_LENS_YIELDS.reduce((total, kind) => total + (Number(yields?.[kind]) || 0), 0);
+}
+function districtLensHasBonus(yields) {
+  return DISTRICT_LENS_YIELDS.some(kind => Math.abs(Number(yields?.[kind]) || 0) >= .05);
+}
+function districtLensLabel(yields, includeZero = false) {
+  return yieldStr(yields, true) || (includeZero ? "+0" : "");
+}
+function districtLensNaturalWonder(feature) {
+  return Boolean(ruleSpec("features", feature)?.natural_wonder);
+}
+function districtLensNeighbors(tile) {
+  if (!tile || !state) return [];
+  if (planetMap()) {
+    const cell = PLANET?.cells?.get(key(tile.pos));
+    return cell ? cell.nbrs.map(neighbor => TMAP.get(neighbor)).filter(Boolean) : [];
+  }
+  return DIRS.map(direction =>
+    TMAP.get(key(worldCanonPos([tile.pos[0] + direction[0], tile.pos[1] + direction[1]]))))
+    .filter(Boolean);
+}
+function districtLensNeighborIndex(tile, position) {
+  if (!tile || !position) return -1;
+  const wanted = key(position);
+  if (planetMap()) return PLANET?.cells?.get(key(tile.pos))?.nbrs?.indexOf(wanted) ?? -1;
+  return DIRS.findIndex(direction =>
+    key(worldCanonPos([tile.pos[0] + direction[0], tile.pos[1] + direction[1]])) === wanted);
+}
+function districtLensWorldDistance(a, b) {
+  if (!a || !b || !state) return Infinity;
+  if (planetMap()) {
+    const from = PLANET?.cells?.get(key(a));
+    const target = key(b);
+    if (from) {
+      const seen = new Set([key(a)]), queue = [{at:key(a), distance:0}];
+      while (queue.length) {
+        const next = queue.shift();
+        if (next.at === target) return next.distance;
+        if (next.distance >= 3) continue;
+        for (const neighbor of PLANET.cells.get(next.at)?.nbrs || []) {
+          if (seen.has(neighbor)) continue;
+          seen.add(neighbor); queue.push({at:neighbor, distance:next.distance + 1});
+        }
+      }
+      return Infinity;
+    }
+  }
+  const columns = worldWrapsX() ? [-state.map.width, 0, state.map.width] : [0];
+  const bColumn = offsetColumn(b);
+  return Math.min(...columns.map(column =>
+    hexDist(a, [bColumn + column - Math.floor(b[1] / 2), b[1]])));
+}
+function districtLensKnownTechs() { return new Set(state?.me?.techs || []); }
+function districtLensPlacementIsVisible(tile, spec, neighbors, cityCenters, city, owner) {
+  if (!tile || !spec || tile.flooded || tile.submerged || tile.district || tile.planned_district ||
+      tile.wonder || cityCenters.has(key(tile.pos)) || tile.improvement === "national_park" ||
+      tile.terrain === "mountain" || tileImpassable(tile) || districtLensNaturalWonder(tile.feature))
+    return false;
+  const knownTechs = districtLensKnownTechs();
+  const civ = state?.players?.[owner]?.civ;
+  const vietnamSpecialty = civ === "Vietnam" && spec.specialty !== false;
+  const removalTech = {forest:"mining", jungle:"bronze_working", marsh:"irrigation"}[tile.feature];
+  if (vietnamSpecialty && !["forest", "jungle", "marsh"].includes(tile.feature)) return false;
+  if (!vietnamSpecialty && removalTech && !knownTechs.has(removalTech)) return false;
+  const resource = ruleSpec("resources", tile.resource);
+  if (resource && !["bonus", "artifact"].includes(resource.class)) return false;
+  const resourceImprovement = ruleSpec("improvements", resource?.improvement);
+  if (resourceImprovement?.tech && !knownTechs.has(resourceImprovement.tech)) return false;
+
+  const water = isWater(tile);
+  const placement = spec.placement || (spec.water ? "water" : "land");
+  const adjacentCity = neighbors.some(neighbor => cityCenters.has(key(neighbor.pos)));
+  const adjacentOwnCity = !!city && neighbors.some(neighbor => key(neighbor.pos) === key(city.pos));
+  const adjacentLand = neighbors.some(neighbor => !isWater(neighbor));
+  let valid;
+  switch (placement) {
+    case "coast":
+    case "water_park":
+      valid = water && ["coast", "lake"].includes(tile.terrain) &&
+        tile.feature !== "reef" && adjacentLand;
+      break;
+    case "flat_land": valid = !water && !tile.hills; break;
+    case "hills": valid = !water && !!tile.hills; break;
+    case "hills_adjacent_city": valid = !water && !!tile.hills && adjacentOwnCity; break;
+    case "not_adjacent_city": valid = !water && !adjacentCity; break;
+    case "forest": valid = !water && ["forest", "jungle"].includes(tile.feature); break;
+    case "vietnam_feature": valid = !water && ["forest", "jungle", "marsh"].includes(tile.feature); break;
+    case "aqueduct": {
+      const cityEdge = districtLensNeighborIndex(tile, city?.pos);
+      const riverSource = (tile.river_edges || []).some((present, edge) => present && edge !== cityEdge);
+      const waterSource = riverSource || neighbors.some(neighbor =>
+        neighbor.terrain === "mountain" || neighbor.feature === "oasis" || neighbor.terrain === "lake");
+      valid = !water && adjacentOwnCity && waterSource;
+      break;
+    }
+    case "dam":
+      valid = !water && ["floodplains", "grassland_floodplains", "plains_floodplains"]
+        .includes(tile.feature) && !!tile.river;
+      break;
+    case "canal": {
+      const connections = neighbors
+        .filter(neighbor => (city && key(neighbor.pos) === key(city.pos)) || isWater(neighbor))
+        .map(neighbor => districtLensNeighborIndex(tile, neighbor.pos))
+        .filter(index => index >= 0);
+      valid = !water && !tile.hills && connections.some(left => connections.some(right => {
+        const difference = Math.abs(left - right);
+        return Math.min(difference, 6 - difference) >= 2;
+      }));
+      break;
+    }
+    case "land":
+    case "": valid = !water && !spec.water; break;
+    default: valid = water === !!spec.water;
+  }
+  return valid && !(civ === "Gaul" && spec.specialty !== false && adjacentOwnCity);
+}
+function districtLensSourceCount(source, tile, neighbors, district, cityCenters, owner, includePlans = false) {
+  switch (source) {
+    case "self": return 1;
+    case "river": return tile.river ? 1 : 0;
+    case "mountain": return neighbors.filter(neighbor => neighbor.terrain === "mountain").length;
+    case "forest":
+    case "woods": return neighbors.filter(neighbor => neighbor.feature === "forest").length;
+    case "rainforest":
+    case "jungle": return neighbors.filter(neighbor => neighbor.feature === "jungle").length;
+    case "natural_wonder": return neighbors.filter(neighbor =>
+      districtLensNaturalWonder(neighbor.feature)).length;
+    case "reef": return neighbors.filter(neighbor =>
+      ["reef", "great_barrier_reef"].includes(neighbor.feature)).length;
+    case "great_barrier_reef": return neighbors.filter(neighbor =>
+      neighbor.feature === "great_barrier_reef").length;
+    case "geothermal_fissure": return neighbors.filter(neighbor =>
+      neighbor.feature === "geothermal_fissure").length;
+    case "pamukkale": return neighbors.filter(neighbor => neighbor.feature === "pamukkale").length;
+    case "district": {
+      const gaul = state?.players?.[owner]?.civ === "Gaul" &&
+        RULES?.districts?.[district]?.specialty !== false;
+      return gaul ? 0 : neighbors.filter(neighbor =>
+        !!neighbor.district || cityCenters.has(key(neighbor.pos)) ||
+        (includePlans && !!neighbor.planned_district)).length;
+    }
+    case "city_center": return neighbors.filter(neighbor => cityCenters.has(key(neighbor.pos))).length;
+    case "wonder": return neighbors.filter(neighbor => !!neighbor.wonder).length;
+    case "coast_resource":
+    case "sea_resource": return neighbors.filter(neighbor => isWater(neighbor) && !!neighbor.resource).length;
+    case "strategic_resource": return neighbors.filter(neighbor =>
+      ruleSpec("resources", neighbor.resource)?.class === "strategic").length;
+    case "luxury_resource": return neighbors.filter(neighbor =>
+      ruleSpec("resources", neighbor.resource)?.class === "luxury").length;
+    case "resource": return neighbors.filter(neighbor => !!neighbor.resource).length;
+    case "mine":
+    case "quarry":
+    case "lumber_mill":
+    case "plantation":
+    case "farm": return neighbors.filter(neighbor => neighbor.improvement === source).length;
+    default:
+      return RULES?.districts?.[source]
+        ? neighbors.filter(neighbor =>
+          (neighbor.district && districtLensIsFamily(neighbor.district, source)) ||
+          (includePlans && neighbor.planned_district?.district &&
+            districtLensIsFamily(neighbor.planned_district.district, source))).length
+        : 0;
+  }
+}
+function districtLensPolicyPercent(district, owner) {
+  // Policies are private. The focused player's cards are the one set the
+  // observation legitimately carries, so only use them for that player's
+  // prospective and existing districts; foreign sites stay at their visible
+  // map-derived amount.
+  if (owner !== districtLensViewer()) return 0;
+  const family = districtLensFamily(district);
+  const effect = `${family}_adjacency_pct`;
+  let percent = 0;
+  for (const policy of state?.me?.policies || [])
+    percent += Number(RULES?.policies?.[policy]?.effects?.[effect]) || 0;
+  return percent;
+}
+function districtLensYields(district, tile, neighbors, cityCenters, owner, includePlans = false) {
+  const spec = RULES?.districts?.[district];
+  const yields = districtLensBlankYields();
+  if (!spec) return yields;
+  for (const [source, bonus] of Object.entries(spec.adjacency || {})) {
+    const count = districtLensSourceCount(
+      source, tile, neighbors, district, cityCenters, owner, includePlans);
+    for (const kind of DISTRICT_LENS_YIELDS)
+      yields[kind] += Math.trunc(count * (Number(bonus?.[kind]) || 0));
+  }
+  if (state?.players?.[owner]?.civ === "Gaul" && spec.specialty !== false) {
+    const kind = {
+      campus:"science", holy_site:"faith", commercial_hub:"gold", harbor:"gold",
+      theater_square:"culture", industrial_zone:"production",
+    }[districtLensFamily(district)];
+    if (kind) yields[kind] += Math.trunc(
+      neighbors.filter(neighbor => neighbor.improvement === "mine").length * .5);
+  }
+  const percent = districtLensPolicyPercent(district, owner);
+  if (percent) for (const kind of DISTRICT_LENS_YIELDS)
+    yields[kind] += yields[kind] * percent / 100;
+  return yields;
+}
+function districtLensCityVisibleDistricts(city, visible) {
+  return (state?.map?.tiles || []).filter(tile =>
+    visible.has(key(tile.pos)) && tile.owner_city === city.id &&
+    (tile.district || tile.planned_district?.district));
+}
+function districtLensCityCanBuild(district, city, visible) {
+  const spec = RULES?.districts?.[district];
+  if (!spec || !city) return false;
+  const tiles = districtLensCityVisibleDistricts(city, visible);
+  const familyCount = family => tiles.filter(tile =>
+    districtLensIsFamily(tile.district || tile.planned_district?.district, family)).length;
+  const ownTiles = (state?.map?.tiles || []).filter(tile =>
+    visible.has(key(tile.pos)) && tile.owner === city.owner &&
+    (tile.district || tile.planned_district?.district));
+  const perCity = spec.max_per_city === null ? Infinity
+    : (Number.isFinite(spec.max_per_city) ? spec.max_per_city : 1);
+  if (familyCount(district) >= perCity) return false;
+  if (Number.isFinite(spec.max_per_empire) && ownTiles.filter(tile =>
+    districtLensIsFamily(tile.district || tile.planned_district?.district, district)).length >= spec.max_per_empire)
+    return false;
+  if ((spec.excludes || []).some(excluded => familyCount(excluded) > 0)) return false;
+  if (spec.specialty !== false) {
+    const capacity = 1 + Math.floor((Math.max(1, Number(city.pop) || 1) - 1) / 3);
+    if (tiles.filter(tile => RULES?.districts?.[tile.district || tile.planned_district?.district]?.specialty !== false)
+      .length >= capacity) return false;
+  }
+  return true;
+}
+function districtLensData() {
+  const district = districtLensDistrict();
+  if (!district || !state || !RULES?.districts?.[district])
+    return {values:new Map(), high:1};
+  const planet = planetMap() ? PLANET : null;
+  if (districtLensCache.state === state && districtLensCache.rules === RULES &&
+      districtLensCache.district === district && districtLensCache.planet === planet)
+    return districtLensCache.data;
+
+  const visible = new Set((state.visible || []).map(key));
+  const cityCenters = new Set((state.cities || [])
+    .filter(city => Array.isArray(city.pos) && visible.has(key(city.pos)))
+    .map(city => key(city.pos)));
+  const viewer = districtLensViewer();
+  const ownCities = new Map((state.cities || [])
+    .filter(city => city.owner === viewer && visible.has(key(city.pos)))
+    .map(city => [city.id, city]));
+  const cityBuildable = new Map();
+  const values = new Map();
+  let high = 0;
+  for (const tile of state.map.tiles || []) {
+    const tileKey = key(tile.pos);
+    // Remembered tiles are deliberately excluded, including from the neighbor
+    // sets below. A value can therefore change when a different civilization
+    // looks at the same ground, but it can never disclose fogged information.
+    if (!visible.has(tileKey)) continue;
+    const owner = tile.owner;
+    const foreign = owner !== null && owner !== undefined && owner !== viewer;
+    const neighbors = districtLensNeighbors(tile).filter(neighbor => visible.has(key(neighbor.pos)));
+    if (tile.district) {
+      if (tile.district !== district) continue;
+      const yields = districtLensYields(district, tile, neighbors, cityCenters, owner);
+      // Existing districts in another empire are the one exception to the
+      // no-foreign-planning rule: show only their selected district and only
+      // when visible surroundings give it a bonus.
+      if (!districtLensHasBonus(yields)) continue;
+      values.set(tileKey, {kind:"existing", yields});
+      high = Math.max(high, Math.abs(districtLensTotal(yields)));
+      continue;
+    }
+    const city = ownCities.get(tile.owner_city);
+    if (foreign || owner !== viewer || !city || districtLensWorldDistance(tile.pos, city.pos) > 3) continue;
+    if (!cityBuildable.has(city.id))
+      cityBuildable.set(city.id, districtLensCityCanBuild(district, city, visible));
+    if (!cityBuildable.get(city.id) || !districtLensPlacementIsVisible(
+      tile, RULES.districts[district], neighbors, cityCenters, city, viewer)) continue;
+    const yields = districtLensYields(district, tile, neighbors, cityCenters, viewer, true);
+    values.set(tileKey, {kind:"candidate", yields});
+    high = Math.max(high, Math.abs(districtLensTotal(yields)));
+  }
+  const data = {values, high:Math.max(1, high)};
+  districtLensCache = {state, rules:RULES, district, planet, data};
+  return data;
+}
+function districtLensInfo(district) {
+  const viewer = districtLensViewer();
+  const civ = state?.players?.[viewer]?.civ;
+  return `${titleCase(district)} ADJACENCY — visible map information only` +
+    (civ ? ` · ${civ} perspective` : "");
+}
 const SETTLE_DISK = [];
 for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++)
   if (Math.max(Math.abs(q), Math.abs(r), Math.abs(q + r)) <= 2)
@@ -24432,7 +24840,58 @@ mapSearchInput.addEventListener("keydown", event => {
 });
 syncMapSearchCivilizations();
 syncMapSearchStatus();
+function syncDistrictLensList() {
+  const list = document.getElementById("district-lens-list");
+  const section = document.getElementById("district-lens-section");
+  if (!list || !section) return;
+  const viewer = districtLensViewer();
+  const civ = state?.players?.[viewer]?.civ || "";
+  const choices = districtLensChoices();
+  const signature = `${civ}|${choices.join("|")}`;
+  if (districtLensListKey?.rules === RULES && districtLensListKey.signature === signature) return;
+  districtLensListKey = {rules:RULES, signature};
+
+  const selected = districtLensDistrict();
+  if (selected && !choices.includes(selected)) {
+    const family = districtLensFamily(selected);
+    const replacement = choices.find(district => districtLensFamily(district) === family);
+    mapLens = replacement ? districtLensId(replacement) : null;
+  }
+  const buttons = choices.map(district => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.districtLens = district;
+    button.setAttribute("aria-pressed", "false");
+    button.title = `${titleCase(district)} adjacency lens — visible map information only`;
+    button.style.setProperty("--district-lens-color", districtColor(district));
+    const icon = document.createElement("span");
+    icon.className = "map-lens-icon";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "⬡";
+    const label = document.createElement("span");
+    label.className = "map-lens-label";
+    label.textContent = titleCase(district);
+    button.append(icon, label);
+    button.onclick = () => {
+      section.open = true;
+      setMapLens(districtLensId(district));
+    };
+    return button;
+  });
+  list.replaceChildren(...buttons);
+  section.hidden = choices.length === 0;
+}
+function syncDistrictLensControls() {
+  const district = districtLensDistrict();
+  for (const button of document.querySelectorAll("[data-district-lens]")) {
+    const active = button.dataset.districtLens === district;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  }
+  document.getElementById("district-lens-section")?.classList.toggle("active", !!district);
+}
 function syncMapLensControls() {
+  syncDistrictLensList();
   for (const button of document.querySelectorAll("[data-map-lens]")) {
     const active = button.dataset.mapLens === mapLens;
     button.classList.toggle("active", active);
@@ -24440,6 +24899,7 @@ function syncMapLensControls() {
   }
   const exit = document.getElementById("map-lens-exit");
   if (exit) exit.hidden = !mapLens;
+  syncDistrictLensControls();
 }
 function setMapLens(next) {
   mapLens = mapLens === next ? null : next;
@@ -24452,7 +24912,9 @@ for (const button of document.querySelectorAll("[data-map-lens]"))
 document.getElementById("map-lens-exit").onclick = () => setMapLens(null);
 function modeline() {
   const m = [];
-  if (mapLens && MAP_LENS_INFO[mapLens]) m.push(MAP_LENS_INFO[mapLens]);
+  const district = districtLensDistrict();
+  if (district) m.push(districtLensInfo(district));
+  else if (mapLens && MAP_LENS_INFO[mapLens]) m.push(MAP_LENS_INFO[mapLens]);
   if (tackMode) m.push("TACK MODE — click to place/remove a 📍 (3 to exit)");
   if (interfaceMode && INTERFACE_MODE_NOTE[interfaceMode]) m.push(INTERFACE_MODE_NOTE[interfaceMode]);
   const el = document.getElementById("modeline");
@@ -26172,6 +26634,15 @@ function tileTipLines(t, pos, tileKey) {
         (settleSiteIsRecommended(site, lens) ? " · recommended site" : ""));
     }
     else lines.push("⌂ Settlement unavailable");
+  }
+  const selectedDistrict = districtLensDistrict();
+  if (selectedDistrict) {
+    const reading = districtLensData().values.get(tileKey);
+    if (reading) {
+      const kind = reading.kind === "candidate" ? "candidate" : "existing district";
+      lines.push(`⬡ ${titleCase(selectedDistrict)} ${kind}: ` +
+        `${districtLensLabel(reading.yields, reading.kind === "candidate")} visible adjacency`);
+    }
   }
 
   if (t.road > 0) lines.push("🛤 " + (ROAD_LABELS[t.road] || "Road"));
