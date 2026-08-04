@@ -4434,6 +4434,43 @@ mod tests {
     use std::sync::{mpsc, Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
 
+    #[test]
+    fn browser_gives_every_shipped_improvement_a_named_tile_marker() {
+        let markers = EMBEDDED_INDEX
+            .split_once("const IMPROVEMENT_MARKERS = Object.freeze({")
+            .expect("the improvement marker registry")
+            .1
+            .split_once("\n});")
+            .expect("the end of the improvement marker registry")
+            .0;
+        for improvement in crate::rules::Rules::embedded().improvements.keys() {
+            assert!(
+                markers.contains(&format!("\n  {}:", improvement.as_str())),
+                "{improvement} has no deliberate browser tile marker"
+            );
+        }
+
+        let renderer = EMBEDDED_INDEX
+            .split_once("function drawImprovement(t, x, y) {")
+            .expect("the improvement renderer")
+            .1
+            .split_once("\n// Every city drew")
+            .expect("the end of the improvement renderer")
+            .0;
+        assert!(renderer.contains("const marker = IMPROVEMENT_MARKERS[imp] || \"unknown\";"));
+        let marker_branch = renderer
+            .find("} else if (marker !== \"unknown\") {")
+            .expect("the named-marker branch");
+        let anonymous_fallback = renderer
+            .find("// Everything rarer still reads as a built installation")
+            .expect("the anonymous fallback");
+        assert!(
+            marker_branch < anonymous_fallback,
+            "known improvements must reach their marker before the generic fallback"
+        );
+        assert!(renderer.contains("drawImprovementMarker(marker, t, x, y, dir);"));
+    }
+
     /// The pace a viewer picks is what a turn costs, so the seats' waits have
     /// to add back up to it — at any player count, with minors on their
     /// quarter beat. A per-seat pace made big games crawl at the same label.

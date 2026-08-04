@@ -4237,11 +4237,11 @@ const CIV6_UNIT_ICON_TYPES = [
   "man_at_arms", "maryannu_chariot_archer", "mechanized_infantry", "medic",
   "military_engineer", "missile_cruiser", "missionary", "mobile_sam",
   "modern_armor", "modern_at", "musketman", "naturalist",
-  "nuclear_submarine", "observation_balloon", "oromo_cavalry", "pike_and_shot", "pikeman",
+  "nau", "nuclear_submarine", "observation_balloon", "oromo_cavalry", "pike_and_shot", "pikeman",
   "pitati_archer", "privateer", "quadrireme", "ranger", "rock_band",
   "rocket_artillery", "saka_horse_archer", "scout", "settler", "siege_tower",
   "skirmisher", "slinger", "spearman", "spec_ops", "spy", "submarine",
-  "supply_convoy", "swordsman", "tagma", "tank", "trader", "trebuchet",
+  "supply_convoy", "swordsman", "tagma", "tank", "toa", "trader", "trebuchet",
   "war_cart", "warrior", "winged_hussar", "warrior_monk"
 ];
 const CIV6_UNIT_ICON_INDEX = new Map(
@@ -11707,8 +11707,254 @@ function drawBarbarianCamp(x, y) {
   cx.restore();
 }
 
+// Every improvement serialized by the ruleset has a deliberate tile marker.
+// The common build forms below keep the strategic map legible without reducing
+// less-frequent civilization, city-state, scenario, and secret-society sites to
+// the old anonymous walled-house fallback.  Keep these IDs in lockstep with
+// data/improvements.json; the embedded-browser contract checks the full set.
+const IMPROVEMENT_MARKERS = Object.freeze({
+  airstrip: "airstrip",
+  alcazar: "citadel",
+  ancient_tower_defense: "tower",
+  ancient_trap_defense: "trap",
+  archaeological_dig: "dig",
+  barbarian_camp: "barbarian",
+  batey: "arena",
+  buried_treasure: "treasure",
+  camp: "camp",
+  chateau: "chateau",
+  chemamull: "totem",
+  city_park: "park",
+  colossal_head: "colossal_head",
+  corporation: "factory",
+  farm: "farm",
+  feitoria: "feitoria",
+  fishery: "boat",
+  fishing_boats: "boat",
+  floating_treasure: "treasure",
+  fort: "fort",
+  geothermal_plant: "geothermal",
+  golf_course: "golf",
+  goody_hut: "hut",
+  great_wall: "wall",
+  grieving_gift: "gift",
+  hacienda: "hacienda",
+  ice_hockey_rink: "rink",
+  improvised_trap: "trap",
+  industry: "factory",
+  kampung: "kampung",
+  kurgan: "burial",
+  lumber_mill: "mill",
+  mahavihara: "temple",
+  maori_pa: "pa",
+  mekewap: "teepee",
+  meteor_goody: "meteor",
+  mine: "mine",
+  missile_silo: "fort",
+  mission: "mission",
+  moai: "moai",
+  modern_tower_defense: "tower",
+  modern_trap_defense: "trap",
+  monastery: "monastery",
+  mound: "mound",
+  mountain_tunnel: "tunnel",
+  national_park: "park",
+  nazca_line: "nazca",
+  nubian_pyramid: "pyramid",
+  offshore_oil_rig: "oil",
+  offshore_wind_farm: "wind",
+  oil_well: "oil",
+  open_air_museum: "museum",
+  outback_station: "outback",
+  pairidaeza: "garden",
+  pasture: "pasture",
+  plantation: "plantation",
+  polder: "polder",
+  popped_goody: "popped",
+  qhapaq_nan: "tunnel",
+  quarry: "quarry",
+  rock_concert: "stage",
+  rock_hewn_church: "church",
+  roman_fort: "roman_fort",
+  seaside_resort: "resort",
+  seastead: "boat",
+  shipwreck_excavation: "shipwreck",
+  ski_resort: "ski",
+  solar_farm: "solar",
+  sphinx: "sphinx",
+  stepwell: "stepwell",
+  supply_drop: "supply",
+  terrace_farm: "terrace",
+  trading_dome: "dome",
+  vampire_castle: "vampire",
+  wind_farm: "wind",
+  ziggurat: "ziggurat"
+});
+
+function drawImprovementMarker(marker, t, x, y, dir) {
+  const outlined = (path, fill, edge = "rgba(28,24,19,.75)", width = 1) => {
+    cx.fillStyle = fill; cx.fill(path); cx.strokeStyle = edge; cx.lineWidth = width; cx.stroke(path);
+  };
+  const roofed = (wall, roofColor, height = 9, width = 8, cross = false) => {
+    const walls = new Path2D();
+    walls.roundRect(x - width, y + 7 - height, width * 2, height, 1.4);
+    outlined(walls, matteMat(wall, dir, width), "rgba(37,28,18,.74)", 1);
+    const roof = new Path2D();
+    roof.moveTo(x, y - height - 4); roof.lineTo(x + dir * (width + 3), y + 7 - height);
+    roof.lineTo(x - dir * (width + 3), y + 7 - height); roof.closePath();
+    outlined(roof, matteMat(roofColor, dir, width + 2), "rgba(37,28,18,.78)", 1);
+    cx.fillStyle = "rgba(30,25,20,.72)"; cx.fillRect(x - 1.8, y + 2, 3.6, 5);
+    if (cross) {
+      cx.strokeStyle = "#ead5a1"; cx.lineWidth = 1.45;
+      cx.beginPath(); cx.moveTo(x, y - height - 7); cx.lineTo(x, y - height - 1);
+      cx.moveTo(x - 2.3, y - height - 4.3); cx.lineTo(x + 2.3, y - height - 4.3); cx.stroke();
+    }
+  };
+  const monument = (stone, head = false) => {
+    const base = new Path2D(); base.roundRect(x - 10, y + 4, 20, 4.5, 1.4);
+    outlined(base, matteMat(stone, dir, 10));
+    const body = new Path2D();
+    body.moveTo(x - 5.2, y + 4); body.lineTo(x - 4.2, y - 10);
+    body.lineTo(x + 4.2, y - 10); body.lineTo(x + 5.2, y + 4); body.closePath();
+    outlined(body, matteMat(stone, dir, 5.2));
+    if (head) {
+      cx.fillStyle = tone(stone, 1.18); cx.beginPath(); cx.ellipse(x, y - 12.2, 4.3, 3.5, 0, 0, 7); cx.fill();
+      cx.strokeStyle = "rgba(31,26,20,.7)"; cx.lineWidth = .85; cx.stroke();
+      cx.fillStyle = "rgba(27,24,19,.8)"; cx.fillRect(x - 2.1, y - 12.5, 1.2, .9); cx.fillRect(x + .9, y - 12.5, 1.2, .9);
+    }
+  };
+  const palisade = (roman = false, high = false) => {
+    const height = high ? 17 : 13;
+    cx.fillStyle = roman ? "#aaa28f" : "#835633";
+    for (let i = -3; i <= 3; i++) {
+      const px = x + i * 4.2;
+      cx.beginPath(); cx.moveTo(px - 1.5, y + 7); cx.lineTo(px - 1.25, y - height + (i & 1 ? 2 : 0));
+      cx.lineTo(px, y - height - 2 + (i & 1 ? 2 : 0)); cx.lineTo(px + 1.25, y - height + (i & 1 ? 2 : 0));
+      cx.lineTo(px + 1.5, y + 7); cx.closePath(); cx.fill();
+    }
+    cx.strokeStyle = roman ? "#504b41" : "#3c2719"; cx.lineWidth = 1.2;
+    cx.beginPath(); cx.moveTo(x - 15, y + 1.5); cx.lineTo(x + 15, y + 1.5); cx.stroke();
+    if (roman) { cx.fillStyle = "#b63c35"; cx.fillRect(x + dir * 7 - 1.5, y - height - 7, 3, 7); }
+  };
+
+  switch (marker) {
+    case "citadel":
+    case "vampire":
+      palisade(true, false);
+      if (marker === "vampire") { cx.fillStyle = "#9a2e43"; cx.beginPath(); cx.arc(x, y - 7, 3.1, 0, 7); cx.fill(); }
+      break;
+    case "roman_fort": palisade(true, false); break;
+    case "pa": palisade(false, false); break;
+    case "tower":
+      palisade(true, true); cx.fillStyle = "#827d72"; cx.fillRect(x - 4.5, y - 15, 9, 20);
+      cx.strokeStyle = "#3c3933"; cx.lineWidth = 1; cx.strokeRect(x - 4.5, y - 15, 9, 20);
+      break;
+    case "trap":
+      cx.strokeStyle = "#8b5c34"; cx.lineWidth = 2;
+      for (const dx of [-8, -3, 3, 8]) { cx.beginPath(); cx.moveTo(x + dx - 2, y + 7); cx.lineTo(x + dx, y - 5); cx.lineTo(x + dx + 2, y + 7); cx.stroke(); }
+      break;
+    case "chateau": roofed("#cbbca2", "#75524a", 12, 9, false); cx.fillStyle = "#d8d0be"; cx.fillRect(x - 2, y - 17, 4, 8); break;
+    case "mission": roofed("#e1d5b8", "#9d5f45", 10, 7, true); break;
+    case "church": roofed("#b9ad98", "#567384", 11, 7, true); break;
+    case "monastery": roofed("#b99873", "#774d35", 9, 9, false); break;
+    case "temple": roofed("#c6aa71", "#a44638", 8, 10, false); cx.fillStyle = "#e6cd78"; cx.fillRect(x - 9, y - 8, 18, 2); break;
+    case "museum": roofed("#d8d6c5", "#476b78", 7, 11, false); cx.strokeStyle = "#e8d9aa"; cx.lineWidth = 1; for (let i = -7; i <= 7; i += 3.5) { cx.beginPath(); cx.moveTo(x + i, y); cx.lineTo(x + i, y + 7); cx.stroke(); } break;
+    case "hacienda": roofed("#d4b57a", "#a4553f", 7, 10, false); cx.fillStyle = "#6b984f"; cx.beginPath(); cx.ellipse(x - 10, y + 4, 3, 2, 0, 0, 7); cx.fill(); break;
+    case "kampung":
+      roofed("#b9845c", "#c7a247", 6, 8, false); cx.strokeStyle = "#6a482e"; cx.lineWidth = 1.3;
+      for (const dx of [-5, 5]) { cx.beginPath(); cx.moveTo(x + dx, y + 7); cx.lineTo(x + dx, y + 12); cx.stroke(); } break;
+    case "teepee":
+      cx.fillStyle = "#c7b388"; cx.beginPath(); cx.moveTo(x - 9, y + 7); cx.lineTo(x, y - 11); cx.lineTo(x + 9, y + 7); cx.closePath(); cx.fill();
+      cx.strokeStyle = "#5a4430"; cx.lineWidth = 1; cx.stroke(); break;
+    case "dome":
+      cx.fillStyle = "#b78344"; cx.beginPath(); cx.ellipse(x, y + 4, 11, 5, 0, 0, 7); cx.fill();
+      cx.beginPath(); cx.arc(x, y + 4, 8, Math.PI, 0); cx.fillStyle = "#d7b96e"; cx.fill(); cx.strokeStyle = "#4e3a22"; cx.stroke(); break;
+    case "factory":
+    case "geothermal":
+      cx.fillStyle = marker === "geothermal" ? "#776d61" : "#8e7461"; cx.fillRect(x - 11, y - 2, 22, 10);
+      cx.strokeStyle = "#3c3029"; cx.lineWidth = 1; cx.strokeRect(x - 11, y - 2, 22, 10);
+      cx.fillStyle = "#4c4a49"; cx.fillRect(x + dir * 6 - 2, y - 13, 4, 13);
+      if (marker === "geothermal") { cx.strokeStyle = "rgba(236,240,240,.65)"; cx.lineWidth = 2; cx.beginPath(); cx.arc(x - dir * 5, y - 7, 5, Math.PI, 0); cx.stroke(); }
+      break;
+    case "airstrip":
+      cx.fillStyle = "#59616a"; cx.fillRect(x - 14, y - 2.2, 28, 5); cx.strokeStyle = "#d8d3ad"; cx.lineWidth = 1; cx.strokeRect(x - 14, y - 2.2, 28, 5);
+      cx.strokeStyle = "#f2edc6"; cx.setLineDash([2, 2]); cx.beginPath(); cx.moveTo(x - 12, y + .3); cx.lineTo(x + 12, y + .3); cx.stroke(); cx.setLineDash([]); break;
+    case "arena":
+      cx.fillStyle = "#caa66d"; cx.beginPath(); cx.ellipse(x, y + 3, 13, 7, 0, 0, 7); cx.fill(); cx.strokeStyle = "#61472c"; cx.lineWidth = 1.2; cx.stroke();
+      cx.fillStyle = "#805e37"; cx.beginPath(); cx.ellipse(x, y + 3, 7, 3, 0, 0, 7); cx.fill(); break;
+    case "garden":
+    case "park":
+      cx.fillStyle = marker === "garden" ? "#618a46" : "#4f8751";
+      for (const [dx, dy] of [[-7,4],[0,-2],[7,4]]) { cx.beginPath(); cx.arc(x + dx, y + dy, 5, 0, 7); cx.fill(); }
+      cx.fillStyle = "#d7d0b4"; cx.fillRect(x - 10, y + 7, 20, 1.3); break;
+    case "golf":
+      cx.fillStyle = "#77a84e"; cx.beginPath(); cx.ellipse(x, y + 2, 13, 7, 0, 0, 7); cx.fill(); cx.strokeStyle = "#d6c376"; cx.lineWidth = 1; cx.stroke();
+      cx.strokeStyle = "#e8e5db"; cx.lineWidth = 1; cx.beginPath(); cx.moveTo(x + 4, y + 2); cx.lineTo(x + 4, y - 10); cx.stroke(); cx.fillStyle = "#d54a43"; cx.fillRect(x + 4, y - 10, 5, 3); break;
+    case "rink":
+      cx.fillStyle = "#9fd7e6"; cx.beginPath(); cx.roundRect(x - 13, y - 4, 26, 12, 3); cx.fill(); cx.strokeStyle = "#e6fbff"; cx.lineWidth = 1; cx.stroke();
+      cx.strokeStyle = "rgba(55,112,143,.65)"; cx.beginPath(); cx.moveTo(x - 11, y + 2); cx.lineTo(x + 11, y + 2); cx.stroke(); break;
+    case "outback":
+      cx.strokeStyle = "#9f7b4a"; cx.lineWidth = 1.2; cx.strokeRect(x - 11, y - 3, 22, 11);
+      cx.strokeStyle = "#d5d8db"; cx.lineWidth = 1.4; cx.beginPath(); cx.moveTo(x + 4, y + 7); cx.lineTo(x + 4, y - 8); cx.stroke(); for (let i = 0; i < 3; i++) { const a = -Math.PI / 2 + i * 2.094; cx.beginPath(); cx.moveTo(x + 4, y - 8); cx.lineTo(x + 4 + Math.cos(a) * 5.5, y - 8 + Math.sin(a) * 5.5); cx.stroke(); } break;
+    case "polder":
+      cx.fillStyle = "#668fb0"; cx.beginPath(); cx.ellipse(x, y + 4, 14, 6, 0, 0, 7); cx.fill();
+      cx.strokeStyle = "#d7c078"; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(x - 14, y + 5); cx.lineTo(x + 14, y + 5); cx.stroke();
+      cx.fillStyle = "#f2efe0"; cx.fillRect(x + dir * 4 - 1.5, y - 8, 3, 10); break;
+    case "terrace":
+      cx.strokeStyle = "#b69d63"; cx.lineWidth = 3; for (let i = 0; i < 3; i++) { cx.beginPath(); cx.moveTo(x - 13 + i * 3, y + 5 - i * 4); cx.lineTo(x + 13 - i * 3, y + 5 - i * 4); cx.stroke(); }
+      cx.strokeStyle = "#68a14c"; cx.lineWidth = 1.4; cx.beginPath(); cx.moveTo(x - 11, y + 2); cx.lineTo(x + 11, y + 2); cx.stroke(); break;
+    case "stepwell":
+      cx.fillStyle = "#b89b69"; cx.beginPath(); cx.roundRect(x - 10, y - 5, 20, 14, 2); cx.fill();
+      cx.fillStyle = "#4c98b6"; cx.fillRect(x - 5, y - 1, 10, 7); cx.strokeStyle = "#e4d7bb"; cx.lineWidth = 1; cx.strokeRect(x - 7, y - 3, 14, 11); break;
+    case "tunnel":
+      cx.fillStyle = "#776f63"; cx.beginPath(); cx.ellipse(x, y + 4, 13, 8, 0, Math.PI, 2 * Math.PI); cx.fill(); cx.strokeStyle = "#342f29"; cx.lineWidth = 1.3; cx.stroke();
+      cx.fillStyle = "#151c21"; cx.beginPath(); cx.ellipse(x, y + 5, 7, 5, 0, Math.PI, 2 * Math.PI); cx.fill(); break;
+    case "pyramid":
+    case "ziggurat":
+      cx.fillStyle = marker === "pyramid" ? "#d2b56f" : "#b48a55";
+      for (let i = 0; i < 3; i++) { cx.beginPath(); cx.moveTo(x - 12 + i * 3, y + 7 - i * 5); cx.lineTo(x + 12 - i * 3, y + 7 - i * 5); cx.lineTo(x + 8 - i * 3, y + 2 - i * 5); cx.lineTo(x - 8 + i * 3, y + 2 - i * 5); cx.closePath(); cx.fill(); }
+      cx.strokeStyle = "rgba(67,49,24,.7)"; cx.lineWidth = 1; cx.stroke(); break;
+    case "moai": monument("#6d6656", true); break;
+    case "colossal_head": monument("#8c7458", true); cx.fillStyle = "#b88d55"; cx.fillRect(x - 5.5, y - 18, 11, 2.6); break;
+    case "totem": monument("#7c5130", true); break;
+    case "burial":
+    case "mound":
+      cx.fillStyle = marker === "mound" ? "#9b7a4a" : "#a87942"; cx.beginPath(); cx.ellipse(x, y + 5, 13, 6, 0, Math.PI, 2 * Math.PI); cx.fill();
+      cx.strokeStyle = "#4f3823"; cx.lineWidth = 1; cx.stroke(); break;
+    case "nazca":
+      cx.strokeStyle = "#e4d197"; cx.lineWidth = 2.2; cx.beginPath(); cx.arc(x - 3, y + 2, 8, .25, Math.PI * 1.85); cx.arc(x + 3, y + 2, 3.3, Math.PI * 1.85, .25); cx.stroke(); break;
+    case "stage":
+      cx.fillStyle = "#4c506d"; cx.fillRect(x - 12, y + 1, 24, 7); cx.strokeStyle = "#22263b"; cx.lineWidth = 1; cx.strokeRect(x - 12, y + 1, 24, 7);
+      cx.fillStyle = "#edc64e"; for (const dx of [-7, 0, 7]) { cx.beginPath(); cx.arc(x + dx, y - 3, 2.1, 0, 7); cx.fill(); } break;
+    case "resort":
+      cx.fillStyle = "#efe7d4"; cx.fillRect(x - 8, y + 1, 16, 7); cx.strokeStyle = "#51402f"; cx.lineWidth = 1; cx.strokeRect(x - 8, y + 1, 16, 7);
+      cx.fillStyle = "#e35e52"; cx.beginPath(); cx.arc(x - 7, y - 2, 5, Math.PI, 0); cx.lineTo(x - 2, y - 2); cx.closePath(); cx.fill(); break;
+    case "ski":
+      cx.strokeStyle = "#edf5fb"; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(x - 11, y + 8); cx.lineTo(x + 11, y - 6); cx.stroke();
+      cx.strokeStyle = "#c84a3d"; cx.lineWidth = 1.2; cx.beginPath(); cx.moveTo(x, y - 9); cx.lineTo(x, y + 4); cx.stroke(); break;
+    case "dig":
+      cx.strokeStyle = "#a87b3f"; cx.lineWidth = 2; cx.beginPath(); cx.moveTo(x - 9, y + 6); cx.lineTo(x + 6, y - 8); cx.stroke(); cx.fillStyle = "#d7c491"; cx.fillRect(x + 3, y - 10, 6, 3); break;
+    case "shipwreck":
+      cx.fillStyle = "#775336"; cx.beginPath(); cx.moveTo(x - 12, y + 4); cx.lineTo(x + 11, y + 4); cx.lineTo(x + 5, y + 9); cx.lineTo(x - 6, y + 9); cx.closePath(); cx.fill(); cx.strokeStyle = "#342417"; cx.stroke();
+      cx.strokeStyle = "#d6c89e"; cx.lineWidth = 1; cx.beginPath(); cx.moveTo(x - 1, y + 4); cx.lineTo(x - 1, y - 9); cx.lineTo(x + 7, y - 2); cx.stroke(); break;
+    case "meteor":
+      cx.fillStyle = "#5f6570"; cx.beginPath(); cx.arc(x, y + 1, 8, 0, 7); cx.fill(); cx.strokeStyle = "#232933"; cx.lineWidth = 1.2; cx.stroke(); cx.fillStyle = "rgba(230,240,250,.35)"; cx.beginPath(); cx.arc(x - 2, y - 2, 2, 0, 7); cx.fill(); break;
+    case "treasure":
+    case "popped":
+    case "gift":
+      cx.fillStyle = marker === "gift" ? "#b84157" : "#b98d3d"; cx.fillRect(x - 7, y - 1, 14, 9); cx.strokeStyle = "#4f3821"; cx.lineWidth = 1; cx.strokeRect(x - 7, y - 1, 14, 9);
+      cx.strokeStyle = marker === "gift" ? "#f2d18a" : "#ead178"; cx.lineWidth = 1.4; cx.beginPath(); cx.moveTo(x, y - 1); cx.lineTo(x, y + 8); cx.stroke(); break;
+    case "supply":
+      cx.fillStyle = "#738652"; cx.fillRect(x - 9, y - 2, 18, 10); cx.strokeStyle = "#26321e"; cx.lineWidth = 1; cx.strokeRect(x - 9, y - 2, 18, 10);
+      cx.strokeStyle = "#d8d4b6"; cx.beginPath(); cx.moveTo(x - 5, y - 5); cx.lineTo(x + 5, y - 5); cx.stroke(); break;
+    default:
+      roofed("#8e8474", "#cfc3ab", 9, 7.5, false);
+  }
+}
+
 function drawImprovement(t, x, y) {
   const imp = t.improvement;
+  const marker = IMPROVEMENT_MARKERS[imp] || "unknown";
   cx.save();
   if (t.pillaged) cx.globalAlpha = 0.62;   // wrecked work, still on the ground
   cx.lineJoin = "round";
@@ -11977,6 +12223,8 @@ function drawImprovement(t, x, y) {
     cx.lineTo(x + 8.4, y - 3.4); cx.lineTo(x + 7.4, y - 1.2); cx.lineTo(x + 6.5, y - 3.4);
     cx.lineTo(x + 4, y - 4.2); cx.lineTo(x + 6.5, y - 4.8);
     cx.closePath(); cx.fill();
+  } else if (marker !== "unknown") {
+    drawImprovementMarker(marker, t, x, y, dir);
   } else {
     // Everything rarer still reads as a built installation rather than a smear
     // of brown: a walled base with a roof catching the same light as the tiles.

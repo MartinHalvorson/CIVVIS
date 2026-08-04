@@ -106,6 +106,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
     let id = match name.as_str() {
         "tagma" => "BYZANTINE_TAGMA",
         "legion" => "ROMAN_LEGION",
+        "nau" => "PORTUGUESE_NAU",
         "hoplite" => "GREEK_HOPLITE",
         "eagle_warrior" => "AZTEC_EAGLE_WARRIOR",
         "war_cart" => "SUMERIAN_WAR_CART",
@@ -115,6 +116,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
         "keshig" => "MONGOLIAN_KESHIG",
         "winged_hussar" => "POLISH_HUSSAR",
         "oromo_cavalry" => "ETHIOPIAN_OROMO_CAVALRY",
+        "toa" => "MAORI_TOA",
         "crouching_tiger" => "CHINESE_CROUCHING_TIGER",
         "anti_air_gun" => "ANTIAIR_GUN",
         other => return format!("UNIT_{}", other.to_ascii_uppercase()),
@@ -125,6 +127,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
 fn civ6_improvement_type(name: &civvis::name::Name) -> String {
     let id = match name.as_str() {
         "seaside_resort" => "BEACH_RESORT",
+        "qhapaq_nan" => "MOUNTAIN_ROAD",
         "nubian_pyramid" => "PYRAMID",
         other => return format!("IMPROVEMENT_{}", other.to_ascii_uppercase()),
     };
@@ -3551,6 +3554,12 @@ mod tests {
         let oromo = civvis::game::Item::Unit {
             unit: civvis::name!("oromo_cavalry"),
         };
+        let nau = civvis::game::Item::Unit {
+            unit: civvis::name!("nau"),
+        };
+        let toa = civvis::game::Item::Unit {
+            unit: civvis::name!("toa"),
+        };
         assert_eq!(
             civ6_build_name(&winged_hussar).as_deref(),
             Some("UNIT_POLISH_HUSSAR")
@@ -3564,8 +3573,20 @@ mod tests {
             Some("UNIT_ETHIOPIAN_OROMO_CAVALRY")
         );
         assert_eq!(
+            civ6_build_name(&nau).as_deref(),
+            Some("UNIT_PORTUGUESE_NAU")
+        );
+        assert_eq!(
+            civ6_build_name(&toa).as_deref(),
+            Some("UNIT_MAORI_TOA")
+        );
+        assert_eq!(
             civ6_improvement_type(&civvis::name!("seaside_resort")),
             "IMPROVEMENT_BEACH_RESORT"
+        );
+        assert_eq!(
+            civ6_improvement_type(&civvis::name!("qhapaq_nan")),
+            "IMPROVEMENT_MOUNTAIN_ROAD"
         );
 
         let district = civvis::game::Item::District {
