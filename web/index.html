@@ -132,20 +132,35 @@
   }
   button, select, input, textarea { font: inherit; }
   button { -webkit-tap-highlight-color: transparent; }
-  /* The default spectator geometry is literal: the victory tracker owns ten
-     per cent of the screen width, the player HUD reaches exactly to its left
-     edge, and the world minimap's frame spans 17% of the screen diagonal.
-     JavaScript refreshes the latter two dimensions from the viewport while a
-     viewer has not saved a custom layout; a dragged panel still writes its
-     own measurements inline and keeps them exactly. */
+  /* The default spectator geometry is a small shared system rather than a
+     collection of offsets. `syncResponsivePanelGeometry()` measures the live
+     map rectangle and publishes these values on every resize: all panels use
+     the same edge gutter and inter-panel gap, compact screens reserve just
+     enough vertical room for each band, and the large-screen rails stop
+     growing once they are comfortably readable. CSS values keep first paint
+     composed before JavaScript has measured anything. A dragged panel still
+     writes its own measurements inline and keeps that deliberate layout. */
   #maparea {
     flex: 1; min-width: 0; position: relative; overflow: hidden; background: #07110f;
-    /* These are safe first-paint fallbacks. syncDefaultMinimapGeometry() then
-       preserves this frame's 320:172 proportion at 17% of the viewport's
-       actual diagonal. */
+    container: map-stage / inline-size;
+    --panel-edge: clamp(6px, 1.15vmin, 16px);
+    --panel-gap: clamp(5px, .9vmin, 12px);
+    --panel-control-height: 46px;
+    --panel-controls-clearance: calc(var(--panel-edge) + var(--panel-control-height) + var(--panel-gap));
+    --compact-victory-hud-height: clamp(76px, 18vh, 132px);
+    --compact-minimap-width: clamp(130px, 22vw, 190px);
+    --compact-minimap-height: clamp(96px, 19vh, 148px);
+    --workspace-inline-inset: clamp(10px, 3vw, 48px);
+    --workspace-block-inset: clamp(10px, 4vh, 48px);
+    --workspace-wide-inline-inset: clamp(12px, 6vw, 96px);
+    --workspace-wide-block-inset: clamp(12px, 5vh, 56px);
+    --modal-padding: clamp(14px, 2vmin, 22px);
+    /* Safe first-paint fallbacks. syncDefaultMinimapGeometry() then preserves
+       the reference minimap's proportion from the live viewport diagonal,
+       bounded so a 4K screen does not produce an oversized corner panel. */
     --world-minimap-width: 320px;
     --minimap-height: 172px;
-    --victory-hud-width: 10vw;
+    --victory-hud-width: clamp(156px, 15vw, 280px);
     /* The command deck is a flex sibling on desktop and an overlay on compact
        screens. JavaScript publishes only the part that actually overlaps this
        area, so the standings can start clear of it in either arrangement. */
@@ -204,7 +219,8 @@
     /* This is the first flex track, so its left edge stays at the page edge.
        The resizer changes its width/flex basis only; it never translates the
        deck across the map. */
-    order: -1; width: 16vw; min-width: 16vw; flex: 0 0 16vw; height: 100%; max-height: 100vh; max-height: 100dvh;
+    order: -1; width: clamp(220px, 18vw, 332px); min-width: clamp(220px, 18vw, 332px);
+    flex: 0 0 clamp(220px, 18vw, 332px); height: 100%; max-height: 100vh; max-height: 100dvh;
     min-height: 0; position: relative; z-index: 12;
     display: flex; flex-direction: column; overflow-x: hidden; overflow-y: auto; overscroll-behavior-y: contain;
     scrollbar-color: #385148 transparent; scrollbar-width: thin;
@@ -312,6 +328,16 @@
   }
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
+  /* A split-screen deck cannot afford the landing-page-sized mark and title.
+     The compact band preserves both, but gives the map its working width and
+     lets the copy wrap instead of flowing beyond the deck edge. */
+  #side[data-type-size="compact"] .side-head { min-height: 102px; padding: 14px 12px; }
+  #side[data-type-size="compact"] .brand { gap: 10px; }
+  #side[data-type-size="compact"] .brand-mark { width: 54px; height: 54px; }
+  #side[data-type-size="compact"] .brand-mark svg { width: 49px; height: 49px; }
+  #side[data-type-size="compact"] h1 { width: auto; font-size: 28px; letter-spacing: .055em; }
+  #side[data-type-size="compact"] .tagline { max-width: none; margin-top: 6px; font-size: var(--type-small); }
+  #side[data-type-size="compact"] .tagline span { white-space: normal; }
   /* The deck is a column: the fixed panels take the height they need and the
      two chronicles share whatever is left, so a tall screen reads more
      history rather than more empty parchment. Below the point where the
@@ -922,9 +948,9 @@
 
   #map-controls-dock {
     position: absolute; z-index: 14;
-    right: calc(var(--world-minimap-width) + 6px);
-    bottom: 0; left: 0;
-    display: flex; align-items: stretch; gap: 6px; min-width: 0;
+    right: calc(var(--world-minimap-width) + var(--panel-gap) + var(--panel-edge));
+    bottom: var(--panel-edge); left: var(--panel-edge);
+    display: flex; align-items: stretch; gap: var(--panel-gap); min-width: 0;
     pointer-events: none;
   }
   #zoomctl {
@@ -940,8 +966,8 @@
      deck is open or collapsed. The exact result count is part of the control
      so a search with matches beyond the current camera still answers clearly. */
   #map-search {
-    position: absolute; z-index: 2; left: 0; bottom: calc(100% + 6px);
-    width: min(310px, calc(100vw - 18px)); min-height: 38px;
+    position: absolute; z-index: 2; left: 0; bottom: calc(100% + var(--panel-gap));
+    width: min(310px, calc(100vw - 2 * var(--panel-edge))); min-height: 38px;
     display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center;
     gap: 5px; padding: 4px 7px; border: 1px solid #3c554c; border-radius: 13px;
     background: #0a1512df; box-shadow: 0 12px 26px #0006;
@@ -971,7 +997,8 @@
      keeps its captions clear of the bar the same way it does of every other
      widget. */
   #skynav {
-    position: absolute; z-index: 1; left: 0; bottom: calc(100% + 50px);
+    position: absolute; z-index: 1; left: 0;
+    bottom: calc(100% + var(--panel-control-height) + var(--panel-gap));
     max-width: 100%; display: flex; flex-wrap: wrap; align-items: center;
     gap: 4px; padding: 5px; border-radius: 13px;
     background: #0a1512d8; border: 1px solid #3c554c;
@@ -1185,7 +1212,7 @@
   #map-area-tools {
     position: absolute; display: flex; justify-content: center;
     left: var(--map-area-left); width: var(--map-area-width);
-    top: calc(var(--map-area-top) + 16px); pointer-events: none;
+    top: calc(var(--map-area-top) + var(--panel-edge)); pointer-events: none;
   }
   #map-area-tools .map-area-panel {
     display: flex; flex-wrap: wrap; align-items: center; gap: 10px;
@@ -1214,8 +1241,9 @@
   }
   #collapsepause { display: none; }
   #ubar {
-    position: absolute; z-index: 7; left: 50%; bottom: 22px; transform: translateX(-50%);
-    display: none; min-width: 360px; max-width: min(680px, calc(100% - 450px)); padding: 13px 16px;
+    position: absolute; z-index: 7; left: 50%; bottom: calc(var(--panel-edge) + var(--panel-gap)); transform: translateX(-50%);
+    display: none; min-width: min(360px, calc(100% - 2 * var(--panel-edge)));
+    max-width: min(680px, calc(100% - 2 * var(--panel-edge))); padding: 13px 16px;
     color: var(--text); text-align: center; border-radius: 14px; border: 1px solid #50675f;
     background: #0a1512ec; box-shadow: var(--shadow); backdrop-filter: blur(18px);
   }
@@ -1233,11 +1261,11 @@
     position: absolute; z-index: 8; top: 196px; bottom: 200px;
     /* Reserve the upper-right victory rail so notification chips cannot
        obscure its values. Hiding it in Interface Settings returns this edge. */
-    right: calc(var(--victory-hud-width) + 20px);
+    right: calc(var(--victory-hud-width) + var(--panel-gap) + var(--panel-edge));
     display: none; flex-direction: column; align-items: flex-end; gap: 6px;
     overflow: hidden auto; scrollbar-width: none; pointer-events: none;
   }
-  body.overlay-victory-hidden #notify { right: 14px; }
+  body.overlay-victory-hidden #notify { right: var(--panel-edge); }
   #notify::-webkit-scrollbar { display: none; }
   #notify.on { display: flex; }
   .notice {
@@ -1300,7 +1328,8 @@
      all ten screens fit on a 900px-tall laptop without a scroll nobody can
      see. */
   #launchbar {
-    position: absolute; z-index: 8; left: 14px; top: 196px; bottom: 96px;
+    position: absolute; z-index: 8; left: max(var(--panel-edge), var(--player-hud-left, 0px)); top: 196px;
+    bottom: calc(var(--panel-control-height) + 2 * var(--panel-edge));
     display: none; flex-direction: column; gap: 6px;
     overflow: hidden auto; scrollbar-width: none;
   }
@@ -1340,7 +1369,9 @@
   }
   .launch:hover .launch-key { color: var(--gold); }
   #empire {
-    position: absolute; z-index: 18; inset: 4% 3%; display: none; flex-direction: column;
+    position: absolute; z-index: 18;
+    inset: var(--workspace-block-inset) var(--workspace-inline-inset);
+    display: none; flex-direction: column;
     overflow: hidden; color: var(--text); border: 1px solid #536c63; border-radius: 18px;
     background: radial-gradient(circle at 18% 0, #1e332ef5, #091310fc 58%);
     box-shadow: 0 28px 100px #000e; backdrop-filter: blur(20px);
@@ -1432,7 +1463,9 @@
      already compares every acceptable trade at once; this is the other half —
      war, peace, denouncement, and the standing relationship each one moves. */
   #diplomacy {
-    position: absolute; z-index: 18; inset: 4% 3%; display: none; flex-direction: column;
+    position: absolute; z-index: 18;
+    inset: var(--workspace-block-inset) var(--workspace-inline-inset);
+    display: none; flex-direction: column;
     overflow: hidden; color: var(--text); border: 1px solid #6a5c53; border-radius: 18px;
     background: radial-gradient(circle at 82% 0, #2c2620f5, #091310fc 58%);
     box-shadow: 0 28px 100px #000e; backdrop-filter: blur(20px);
@@ -1483,7 +1516,9 @@
      work at — everything the city is, and everything it could build, in one
      place, the way Civ 6 opens a city rather than a dropdown. */
   #cityscreen {
-    position: absolute; z-index: 18; inset: 4% 3%; display: none; flex-direction: column;
+    position: absolute; z-index: 18;
+    inset: var(--workspace-block-inset) var(--workspace-inline-inset);
+    display: none; flex-direction: column;
     overflow: hidden; color: var(--text); border: 1px solid #536c63; border-radius: 18px;
     background: radial-gradient(circle at 12% 0, #1d322df5, #091310fc 58%);
     box-shadow: 0 28px 100px #000e; backdrop-filter: blur(20px);
@@ -1585,7 +1620,7 @@
   /* The world minimap is anchored in the lower-right corner. Its top is the
      seam where the victory tracker ends. */
   .minimap-frame {
-    position: absolute; z-index: 6; left: auto; right: 0; bottom: 0;
+    position: absolute; z-index: 6; left: auto; right: var(--panel-edge); bottom: var(--panel-edge);
     width: var(--world-minimap-width); height: var(--minimap-height);
     display: flex; flex-direction: column; min-width: 0; min-height: 0; padding: 6px; border-radius: 12px;
     background: #091310e6; border: 1px solid #40584f; box-shadow: 0 14px 35px #0008;
@@ -1609,7 +1644,8 @@
   }
   #winner {
     position: absolute; z-index: 18; top: 44%; left: 50%; transform: translate(-50%,-50%);
-    display: none; min-width: 340px; padding: 34px 44px; text-align: center;
+    display: none; width: min(520px, calc(100% - 2 * var(--workspace-inline-inset)));
+    min-width: 0; padding: clamp(22px, 4vmin, 34px) clamp(22px, 5vmin, 44px); text-align: center;
     color: var(--gold-bright); font: 600 28px/1.2 Georgia, serif;
     background: radial-gradient(circle at top, #2c3524, #0c1714f7 65%); border: 1px solid var(--gold);
     border-radius: 20px; box-shadow: 0 24px 90px #000e, 0 0 60px #d7b66a22;
@@ -1986,7 +2022,9 @@
 
   /* Tech and civic overlay */
   #pedia {
-    position: absolute; z-index: 16; inset: 5% 6%; display: none; flex-direction: column;
+    position: absolute; z-index: 16;
+    inset: var(--workspace-wide-block-inset) var(--workspace-wide-inline-inset);
+    display: none; flex-direction: column;
     padding: 18px; border: 1px solid #536c63; border-radius: 18px;
     background: radial-gradient(circle at top left, #1e332e, #091310f8 58%);
     box-shadow: 0 28px 100px #000e; backdrop-filter: blur(20px);
@@ -2019,13 +2057,20 @@
     background: none; color: inherit; font: inherit; font-size: var(--type-control); cursor: pointer;
   }
   #tree {
-    position: absolute; z-index: 15; inset: 4% 3%; display: none; flex-direction: column;
+    position: absolute; z-index: 15;
+    inset: var(--workspace-block-inset) var(--workspace-inline-inset);
+    display: none; flex-direction: column;
     padding: 20px; border: 1px solid #536c63; border-radius: 18px;
     background: radial-gradient(circle at top left, #1e332e, #091310f8 58%);
     box-shadow: 0 28px 100px #000e; backdrop-filter: blur(20px);
   }
   #tree.open { display: flex; animation: rise .18s ease-out; }
   @keyframes rise { from { opacity: 0; transform: translateY(8px) scale(.99); } }
+  /* This dialog is centered with its own transform. Its entrance must compose
+     with that transform rather than replace it for the first animation frame. */
+  @keyframes centered-rise {
+    from { opacity: 0; transform: translate(-50%, -50%) translateY(8px) scale(.99); }
+  }
   #treehead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
   #treetitle { color: var(--gold-bright); font: 600 20px Georgia, serif; }
   #treecols { display: flex; gap: 18px; flex: 1; overflow: auto; align-items: flex-start; }
@@ -2042,7 +2087,9 @@
   /* Quick Deals: compare every acceptable AI quote without leader-by-leader
      haggling. The engine still revalues both sides when Accept is clicked. */
   #trade {
-    position: absolute; z-index: 19; inset: 5% max(3%, 34px); display: none; flex-direction: column;
+    position: absolute; z-index: 19;
+    inset: var(--workspace-wide-block-inset) var(--workspace-inline-inset);
+    display: none; flex-direction: column;
     overflow: hidden; color: var(--text); border: 1px solid #6f7659; border-radius: 20px;
     background: radial-gradient(circle at 20% 0, #26362df5, #091310fc 55%);
     box-shadow: 0 32px 110px #000f, inset 0 1px #ffffff14; backdrop-filter: blur(22px);
@@ -2110,13 +2157,14 @@
   }
 
   #capture-choice {
-    position: absolute; z-index: 24; left: 50%; top: 50%; width: min(520px, calc(100% - 36px));
-    display: none; transform: translate(-50%, -50%); padding: 22px;
+    position: absolute; z-index: 24; left: 50%; top: 50%;
+    width: min(520px, calc(100% - 2 * var(--workspace-inline-inset)));
+    display: none; transform: translate(-50%, -50%); padding: var(--modal-padding);
     color: var(--text); border: 1px solid #9f8050; border-radius: 18px;
     background: radial-gradient(circle at 25% 0, #3a3024f8, #091310fc 62%);
     box-shadow: 0 32px 120px #000f, inset 0 1px #ffffff17; backdrop-filter: blur(22px);
   }
-  #capture-choice.open { display: block; animation: rise .18s ease-out; }
+  #capture-choice.open { display: block; animation: centered-rise .18s ease-out; }
   .capture-kicker { color: var(--gold); font-size: var(--type-small); font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
   .capture-title { margin-top: 7px; color: var(--gold-bright); font: 600 26px/1.1 Georgia, serif; }
   .capture-copy { margin: 9px 0 17px; color: var(--muted); font-size: var(--type-control); line-height: 1.55; }
@@ -2135,7 +2183,6 @@
     .dossier-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 980px) {
-    #side { width: 340px; min-width: 340px; flex-basis: 340px; }
     #ubar { max-width: calc(100% - 70px); }
   }
   @media (max-width: 1600px) {
@@ -2157,6 +2204,15 @@
     .trade-balance { display: none; }
     #tradelist { grid-template-columns: 1fr; padding-inline: 10px; }
   }
+  /* A short quadrant needs a working strip of map more than the roomy deck's
+     desktop measure. Keep a roughly 390px map lane when it can exist, while
+     preserving a viewer's deliberate drag width. */
+  @media (max-width: 720px) and (max-height: 640px) {
+    #side:not(.sidebar-width-custom),
+    body.sidebar-hidden #side:not(.sidebar-width-custom) {
+      width: min(330px, max(220px, calc(100% - 390px)));
+    }
+  }
   @media (max-width: 620px) {
     .victory-turn { padding-inline: 6px; }
   }
@@ -2171,6 +2227,32 @@
     .ribbon-stat b { font-size: var(--type-small); }
   }
 
+  /* The map can be narrow because the browser is narrow or because a viewer
+     has widened the command deck. These work surfaces therefore follow the
+     map container rather than the page media query: their outer frame keeps
+     its shared inset, while their interiors switch to one useful reading
+     column before a second column becomes a sliver. */
+  @container map-stage (max-width: 760px) {
+    #empire, #diplomacy, #cityscreen, #tree, #pedia, #trade { border-radius: 14px; }
+    .empire-head, .diplo-head, .city-head, .trade-head { gap: 10px; padding: 12px 13px 10px; }
+    .empire-body, .diplo-body { padding: 12px 13px 15px; }
+    .city-cols { grid-template-columns: minmax(0, 1fr); }
+    .city-dossier { padding: 12px 13px 14px; border-right: 0; border-bottom: 1px solid var(--line-soft); }
+    .city-build { padding: 12px 13px 15px; }
+    .diplo-grid { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+    #pediabody { grid-template-columns: minmax(118px, .72fr) minmax(0, 1fr); gap: 8px; }
+    #tree { padding: 13px; }
+    #treehead { margin-bottom: 11px; }
+    #treecols { gap: 10px; }
+    .tcol { min-width: 152px; }
+    #tradelist { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 13px 16px; }
+    .trade-toolbar { flex-wrap: wrap; padding: 9px 13px; }
+    .quick-deal { grid-template-columns: 38px minmax(0, 1fr); min-height: 0; gap: 8px; padding: 10px; }
+    .quick-deal .deal-icon { width: 38px; height: 38px; font-size: 19px; }
+    .quick-deal .deal-action { grid-column: 2; min-width: 0; text-align: left; }
+    .quick-deal .deal-action button { width: auto; }
+  }
+
   /* The standings are the map's masthead, with the turn plate as the left cell
      and the table filling every pixel through the victory tracker's left edge.
      The player count changes its height, not that horizontal contract. Every
@@ -2178,7 +2260,8 @@
      scrolls instead of swallowing the map. */
   #playerhud {
     position: absolute; z-index: 7; pointer-events: auto;
-    top: 0; left: var(--player-hud-left, 0px); right: var(--victory-hud-width); width: auto;
+    top: var(--panel-edge); left: max(var(--panel-edge), var(--player-hud-left, 0px));
+    right: calc(var(--victory-hud-width) + var(--panel-gap) + var(--panel-edge)); width: auto;
     height: min(var(--player-hud-height, 200px), var(--player-hud-max-height));
     /* Wide enough for the whole of "Watch as" at the fitter's own type size.
        At 68px the button's own text overflowed its content box by a pixel and
@@ -2255,7 +2338,7 @@
   }
   /* Hiding the victory rail hands its column back to the masthead. */
   body.overlay-victory-hidden #playerhud {
-    right: 0; width: auto;
+    right: var(--panel-edge); width: auto;
   }
   /* Across the masthead the plate stacks in its own left cell, which is the one
      place in the panel where height is cheaper than width. */
@@ -2552,7 +2635,8 @@
      rather than shortening the tracker to however many rows are present. */
   #victoryhud {
     position: absolute; z-index: 7; right: 0; left: auto;
-    top: 0; bottom: var(--minimap-height);
+    right: var(--panel-edge); top: var(--panel-edge);
+    bottom: calc(var(--minimap-height) + var(--panel-gap) + var(--panel-edge));
     width: var(--victory-hud-width); height: auto;
     display: grid; grid-template-columns: minmax(0, 1fr);
     grid-template-rows: 22px minmax(0, 1fr);
@@ -2564,7 +2648,7 @@
   }
   /* With no world minimap, the tracker takes the full right edge. */
   body.overlay-minimap-hidden #victoryhud {
-    bottom: 0; height: auto;
+    bottom: var(--panel-edge); height: auto;
   }
   #victoryhud > .hud-section-heading {
     position: relative; grid-column: 1; grid-row: 1; min-height: 22px;
@@ -2684,6 +2768,10 @@
   body.overlay-lenses-hidden #map-lenses { display: none !important; }
   body.sidebar-hidden #collapsepause:not([hidden]) { display: block; }
   #collapsepause[hidden] { display: none; }
+  /* Once the minimap has been dismissed its former corner is genuinely free;
+     the control dock follows the same shared gutter rather than preserving a
+     blank minimap-sized strip. */
+  body.overlay-minimap-hidden #map-controls-dock { right: var(--panel-edge); }
 
   /* Width breakpoints for the masthead and the rail beside it. These have to
      sit below the base #playerhud and #maparea rules: they carry the same
@@ -2761,20 +2849,27 @@
     /* Seven identity columns plus twelve value columns need the map's full width at
        this point. The instruments stack as bands across the top, with the
        tracker's paths in columns because there is no height left to stack them. */
-    #map-controls-dock { right: 0; }
+    #map-controls-dock {
+      left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: var(--panel-edge);
+    }
     #map-lenses { flex: 1 1 auto; }
     #playerhud, body.overlay-victory-hidden #playerhud {
-      top: 8px; left: max(8px, var(--player-hud-left, 0px)); right: 8px; width: auto; padding: 4px;
+      top: var(--panel-edge); left: max(var(--panel-edge), var(--player-hud-left, 0px));
+      right: var(--panel-edge); width: auto; padding: 4px;
       --hud-lock-column: 11px;
       --hud-watch-column: 70px;
       --hud-ident-min: 31px;
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
-      top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
-      left: 8px; right: 8px; bottom: auto; width: auto; height: 132px;
+      top: calc(var(--panel-edge) + min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + var(--panel-gap));
+      left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: var(--panel-edge); bottom: auto; width: auto;
+      height: var(--compact-victory-hud-height);
       grid-template-columns: minmax(0, 1fr); padding: 4px;
     }
-    .minimap-frame { left: 0; right: auto; bottom: 50px; width: 174px; }
+    .minimap-frame {
+      left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: auto; bottom: var(--panel-controls-clearance);
+      width: var(--compact-minimap-width); height: var(--compact-minimap-height);
+    }
     #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
     #victoryhud .victory-ribbon {
       min-height: 0; width: max(100%, var(--victory-min-width, 514px));
@@ -2796,20 +2891,62 @@
      window's media-query width: it becomes the same full-width top band that a
      naturally narrow screen uses, and its left edge stays clear of any deck
      that overlays the map. */
-  #maparea.player-hud-compact #map-controls-dock { right: 0; }
+  #maparea.player-hud-compact #map-controls-dock {
+    left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: var(--panel-edge);
+  }
   #maparea.player-hud-compact #map-lenses { flex: 1 1 auto; }
   #maparea.player-hud-compact #playerhud {
-    top: 8px; left: max(8px, var(--player-hud-left, 0px)); right: 8px; width: auto; padding: 4px;
+    top: var(--panel-edge); left: max(var(--panel-edge), var(--player-hud-left, 0px));
+    right: var(--panel-edge); width: auto; padding: 4px;
     grid-template-columns: 140px minmax(0, 1fr);
     --hud-lock-column: 11px; --hud-watch-column: 70px; --hud-ident-min: 27.5px;
     --hud-column-gap: 3px; --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
   #maparea.player-hud-compact #victoryhud {
-    top: calc(min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + 14px);
-    left: 8px; right: 8px; bottom: auto; width: auto; height: 132px;
+    top: calc(var(--panel-edge) + min(var(--player-hud-height, 200px), var(--player-hud-max-height)) + var(--panel-gap));
+    left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: var(--panel-edge); bottom: auto; width: auto;
+    height: var(--compact-victory-hud-height);
     grid-template-columns: minmax(0, 1fr); padding: 4px;
   }
-  #maparea.player-hud-compact .minimap-frame { left: 0; right: auto; bottom: 50px; width: 174px; }
+  #maparea.player-hud-compact .minimap-frame {
+    left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: auto; bottom: var(--panel-controls-clearance);
+    width: var(--compact-minimap-width); height: var(--compact-minimap-height);
+  }
+  /* The lower instruments have two compact arrangements. A normal quadrant
+     has enough width to place search beside the minimap; a narrow, tall split
+     instead puts search in the clear vertical lane above it. JavaScript picks
+     the mode from the *uncovered* map width and the real space between the
+     victory band and minimap, so neither control floats over the world map. */
+  #maparea.player-hud-compact[data-controls-layout="inline"] #map-search {
+    left: calc(var(--compact-minimap-width) + var(--panel-gap)); right: auto;
+    width: min(310px, calc(100% - var(--compact-minimap-width) - var(--panel-gap)));
+  }
+  #maparea.player-hud-compact[data-controls-layout="inline"] #skynav {
+    left: calc(var(--compact-minimap-width) + var(--panel-gap));
+    max-width: calc(100% - var(--compact-minimap-width) - var(--panel-gap));
+  }
+  #maparea.player-hud-compact[data-controls-layout="stacked"] #map-search {
+    left: 0; right: 0; width: auto;
+    bottom: calc(100% + var(--compact-minimap-height) + 2 * var(--panel-gap));
+  }
+  #maparea.player-hud-compact[data-controls-layout="stacked"] #skynav {
+    left: 0; max-width: 100%;
+    bottom: calc(100% + var(--compact-minimap-height) + 2 * var(--panel-gap) + var(--panel-control-height));
+  }
+  /* If the viewer dismisses the minimap, return its former share to search
+     regardless of which compact mode the last resize selected. */
+  body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="inline"] #map-search {
+    left: 0; width: min(310px, 100%);
+  }
+  body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="inline"] #skynav {
+    left: 0; max-width: 100%;
+  }
+  body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="stacked"] #map-search {
+    bottom: calc(100% + var(--panel-gap));
+  }
+  body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="stacked"] #skynav {
+    bottom: calc(100% + var(--panel-control-height) + var(--panel-gap));
+  }
   #maparea.player-hud-compact #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
   #maparea.player-hud-compact #victoryhud .victory-ribbon {
     min-height: 0; width: max(100%, var(--victory-min-width, 514px));
@@ -5100,6 +5237,91 @@ function mapAreaSize() {
 function windowSize() {
   return {width:Math.max(1, window.innerWidth || 1), height:Math.max(1, window.innerHeight || 1)};
 }
+
+// ------------------------------------------------------- panel geometry
+// Every anchored panel reads the same measured geometry. This is deliberately
+// based on #maparea, not only on window.innerWidth: a half-screen browser with
+// the command deck open and a wide browser with a deliberately widened deck
+// have the same usable map width, so they should receive the same topology.
+// The few values below are roles rather than component-specific guesses:
+// edge, gap, a compact tracker band, a compact minimap, and workspace insets.
+let responsivePanelGeometry = {
+  edge:4, gap:6, compact:false, minimapWidth:320, minimapHeight:172,
+  controlClearance:56, maxPlayerHeight:280,
+};
+function clampPanelDimension(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+function syncResponsivePanelGeometry() {
+  const {width, height} = mapAreaSize();
+  const shortEdge = Math.max(1, Math.min(width, height));
+  const edge = Math.round(clampPanelDimension(shortEdge * .014, 6, 16));
+  const gap = Math.round(clampPanelDimension(shortEdge * .01, 5, 12));
+  const compact = width <= 1100;
+  const controlHeight = 46;
+  const controlClearance = edge + controlHeight + gap;
+  // The player masthead scrolls internally below this ceiling. Let the cap
+  // fall below its ordinary two-row preference on a very short quadrant so the
+  // victory band and minimap retain a visible gap instead of painting through
+  // one another.
+  const maxPlayerHeight = Math.round(clampPanelDimension(height * .38, 104, 280));
+  const requestedPlayerHeight = Number.parseFloat(area.style.getPropertyValue("--player-hud-height")) || 200;
+  const playerReserve = Math.min(requestedPlayerHeight, maxPlayerHeight);
+  const compactMinimapWidth = Math.round(clampPanelDimension(width * .22, 130, 190));
+  const compactMinimapHeight = Math.round(clampPanelDimension(height * .19, 80, 148));
+  // Reserve the complete lower-left instrument stack before sizing the band
+  // above it. The smaller of the natural band and the remaining space keeps a
+  // common 960x540 quadrant from having the tracker overlap the minimap.
+  const compactVictoryRoom = height - edge - playerReserve - gap -
+    compactMinimapHeight - controlClearance - gap;
+  const compactVictoryHeight = Math.round(clampPanelDimension(
+    Math.min(132, Math.max(64, compactVictoryRoom)), 64, 132));
+  const sidebarInset = Number.parseFloat(area.style.getPropertyValue("--player-hud-left")) || 0;
+  const uncoveredWidth = Math.max(1, width - sidebarInset - edge);
+  const compactSearchRoom = height - controlClearance - compactMinimapHeight -
+    (edge + playerReserve + gap + compactVictoryHeight);
+  // A compact command deck can cover most of a vertical split. Search then
+  // either uses the lane above the minimap (when it genuinely fits there) or
+  // stays beside it; it never gets to obscure the travel map below.
+  const controlsLayout = compact && uncoveredWidth < 440 &&
+    compactSearchRoom >= controlHeight + gap * 2 ? "stacked" : "inline";
+  const viewport = window.visualViewport;
+  const viewportWidth = Math.max(1, viewport?.width || window.innerWidth || width);
+  const viewportHeight = Math.max(1, viewport?.height || window.innerHeight || height);
+  const referenceDiagonal = Math.hypot(320, 172);
+  const diagonalWidth = .17 * Math.hypot(viewportWidth, viewportHeight) /
+    referenceDiagonal * 320;
+  const wideMinimapWidth = Math.round(clampPanelDimension(
+    diagonalWidth, 180, Math.min(360, Math.max(180, width * .32))));
+  const wideMinimapHeight = Math.round(clampPanelDimension(
+    wideMinimapWidth * 172 / 320, 96, 194));
+  const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 280));
+  const style = area.style;
+  style.setProperty("--panel-edge", `${edge}px`);
+  style.setProperty("--panel-gap", `${gap}px`);
+  style.setProperty("--panel-control-height", `${controlHeight}px`);
+  style.setProperty("--panel-controls-clearance", `${controlClearance}px`);
+  style.setProperty("--player-hud-max-height", `${maxPlayerHeight}px`);
+  style.setProperty("--compact-victory-hud-height", `${compactVictoryHeight}px`);
+  style.setProperty("--compact-minimap-width", `${compactMinimapWidth}px`);
+  style.setProperty("--compact-minimap-height", `${compactMinimapHeight}px`);
+  style.setProperty("--victory-hud-width", `${victoryWidth}px`);
+  style.setProperty("--workspace-inline-inset", `${Math.round(clampPanelDimension(width * .03, 10, 48))}px`);
+  style.setProperty("--workspace-block-inset", `${Math.round(clampPanelDimension(height * .04, 10, 48))}px`);
+  style.setProperty("--workspace-wide-inline-inset", `${Math.round(clampPanelDimension(width * .06, 12, 96))}px`);
+  style.setProperty("--workspace-wide-block-inset", `${Math.round(clampPanelDimension(height * .05, 12, 56))}px`);
+  style.setProperty("--modal-padding", `${Math.round(clampPanelDimension(shortEdge * .02, 14, 22))}px`);
+  area.dataset.controlsLayout = controlsLayout;
+  responsivePanelGeometry = {
+    edge, gap, compact,
+    minimapWidth:compact ? compactMinimapWidth : wideMinimapWidth,
+    minimapHeight:compact ? compactMinimapHeight : wideMinimapHeight,
+    controlClearance, maxPlayerHeight,
+  };
+  return responsivePanelGeometry;
+}
+function hudWidgetMargin() { return responsivePanelGeometry.edge || 4; }
+function hudWidgetGap() { return responsivePanelGeometry.gap || 6; }
 // Where the four edges want to be, as pixels in from each side of `#maparea`.
 function wantedMapAreaInsets() {
   const {width, height} = mapAreaSize();
@@ -5372,8 +5594,8 @@ const HUD_WIDGETS = {
   // layout saved earlier — so a large table never swallows the world.
   players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:154,
             maxHeightRatio:.38, avoidsSidebar:true},
-  victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
-  minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
+  victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88, avoidsSidebar:true},
+  minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96, avoidsSidebar:true},
 };
 const dossierWidgetName = id => `dossier-${id}`;
 const HUD_RESIZE_EDGES = [
@@ -6048,29 +6270,15 @@ try {
 } catch (_) { HUD_LAYOUT = {}; }
 
 // Keep the authored frame proportion while sizing the *frame diagonal* against
-// the screen rather than against a particular monitor. The fallback CSS values
-// cover first paint; this runs during every viewport resize and when a viewer
-// resets a previously dragged minimap. Narrow layouts retain their dedicated
-// compact geometry below 1100px.
-const WORLD_MINIMAP_DIAGONAL_SHARE = .17;
-const WORLD_MINIMAP_REFERENCE_WIDTH = 320;
-const WORLD_MINIMAP_REFERENCE_HEIGHT = 172;
-const WIDE_SPECTATOR_LAYOUT_QUERY = window.matchMedia("(min-width: 1101px)");
+// the screen rather than against a particular monitor. The shared panel
+// geometry also caps it at a useful working size, and chooses compactness from
+// the map's live width rather than from the browser width alone — a wide screen
+// with a deliberately widened command deck then behaves like split screen.
 function syncDefaultMinimapGeometry() {
-  if (HUD_LAYOUT.minimap || !WIDE_SPECTATOR_LAYOUT_QUERY.matches) {
-    // A CSS media rule owns the compact layout. Do not leave the former desktop
-    // calculation inline when a browser window crosses into that layout.
-    if (!HUD_LAYOUT.minimap) {
-      area.style.removeProperty("--world-minimap-width");
-      area.style.removeProperty("--minimap-height");
-    }
-    return;
-  }
-  const scale = WORLD_MINIMAP_DIAGONAL_SHARE *
-    Math.hypot(window.innerWidth, window.innerHeight) /
-    Math.hypot(WORLD_MINIMAP_REFERENCE_WIDTH, WORLD_MINIMAP_REFERENCE_HEIGHT);
-  area.style.setProperty("--world-minimap-width", `${Math.round(WORLD_MINIMAP_REFERENCE_WIDTH * scale)}px`);
-  area.style.setProperty("--minimap-height", `${Math.round(WORLD_MINIMAP_REFERENCE_HEIGHT * scale)}px`);
+  const geometry = syncResponsivePanelGeometry();
+  if (HUD_LAYOUT.minimap) return;
+  area.style.setProperty("--world-minimap-width", `${geometry.minimapWidth}px`);
+  area.style.setProperty("--minimap-height", `${geometry.minimapHeight}px`);
 }
 
 function hudWidgetMetrics(element) {
@@ -6082,27 +6290,27 @@ function hudWidgetMetrics(element) {
 
 // The tallest a widget may be: the map it floats over, less its margins, and
 // less again for any widget that claims only a share of the height.
-function hudWidgetMaxHeight(config) {
+function hudWidgetMaxHeight(config, margin = hudWidgetMargin()) {
   const ceiling = config.maxHeightRatio
     ? area.clientHeight * config.maxHeightRatio : Infinity;
-  return Math.max(1, Math.min(area.clientHeight - 8, ceiling));
+  return Math.max(1, Math.min(area.clientHeight - margin * 2, ceiling));
 }
 
-// A saved player-HUD position is local to #maparea. On a desktop the command
-// deck is outside that box, but on a compact layout it can overlap it. Preserve
-// a viewer's custom placement as far as possible while never letting the HUD
-// slide under that live deck edge.
-function hudWidgetMinX(config, margin = 4) {
+// Saved HUD positions are local to #maparea. On a desktop the command deck is
+// outside that box, but on a compact layout it can overlap it. Preserve each
+// protected widget's custom placement as far as possible while never letting
+// it slide under that live deck edge.
+function hudWidgetMinX(config, margin = hudWidgetMargin()) {
   if (!config.avoidsSidebar) return margin;
   const inset = Number.parseFloat(area.style.getPropertyValue("--player-hud-left")) || 0;
   return Math.max(margin, Math.min(Math.max(margin, area.clientWidth - margin), inset));
 }
 
 function clampHudWidget(config, metrics) {
-  const margin = 4;
+  const margin = hudWidgetMargin();
   const minX = hudWidgetMinX(config, margin);
   const maxWidth = Math.max(1, area.clientWidth - margin - minX);
-  const maxHeight = hudWidgetMaxHeight(config);
+  const maxHeight = hudWidgetMaxHeight(config, margin);
   const minWidth = Math.min(config.minWidth, maxWidth);
   const minHeight = Math.min(config.minHeight, maxHeight);
   const width = Math.max(minWidth, Math.min(maxWidth, Number(metrics.width) || minWidth));
@@ -6117,22 +6325,37 @@ function clampHudWidget(config, metrics) {
 }
 
 function serializeHudWidget(config, metrics) {
-  const margin = 4;
+  const margin = hudWidgetMargin();
   const minX = hudWidgetMinX(config, margin);
+  const maxWidth = Math.max(1, area.clientWidth - margin - minX);
+  const maxHeight = hudWidgetMaxHeight(config, margin);
   const travelX = Math.max(0, area.clientWidth - margin - metrics.width - minX);
   const travelY = Math.max(0, area.clientHeight - margin * 2 - metrics.height);
   return {
     xRatio:travelX ? (metrics.x - minX) / travelX : 0,
     yRatio:travelY ? (metrics.y - margin) / travelY : 0,
     width:Math.round(metrics.width), height:Math.round(metrics.height),
+    // A deliberately resized panel keeps its relative physical presence when
+    // the same saved layout opens on a laptop, a split screen, or a large
+    // display. Positions are still fractions of their travel range; this
+    // diagonal is only the measured basis for dimensions.
+    sizeBasis:Math.round(Math.hypot(maxWidth, maxHeight)),
   };
 }
 
 function metricsFromSaved(config, saved) {
-  const margin = 4;
-  const width = Number(saved.width) || config.minWidth;
-  const height = Number(saved.height) || config.minHeight;
+  const margin = hudWidgetMargin();
   const minX = hudWidgetMinX(config, margin);
+  const maxWidth = Math.max(1, area.clientWidth - margin - minX);
+  const maxHeight = hudWidgetMaxHeight(config, margin);
+  const savedBasis = Number(saved.sizeBasis);
+  const sizeScale = savedBasis > 0
+    ? clampPanelDimension(Math.hypot(maxWidth, maxHeight) / savedBasis, .6, 1.35)
+    : 1;
+  // v3 layouts did not carry a basis. Keep those exact once, then every new
+  // deliberate resize stores one and becomes proportionate on future screens.
+  const width = (Number(saved.width) || config.minWidth) * sizeScale;
+  const height = (Number(saved.height) || config.minHeight) * sizeScale;
   const travelX = Math.max(0, area.clientWidth - margin - width - minX);
   const travelY = Math.max(0, area.clientHeight - margin * 2 - height);
   const xRatio = Math.max(0, Math.min(1, Number(saved.xRatio) || 0));
@@ -6195,6 +6418,54 @@ function applySavedHudLayouts() {
   }
 }
 
+function visibleHudWidgetMetrics(name) {
+  const element = HUD_WIDGETS[name]?.element;
+  return element && getComputedStyle(element).display !== "none"
+    ? hudWidgetMetrics(element) : null;
+}
+
+function horizontalHudOverlap(first, second) {
+  return first.x < second.x + second.width && first.x + first.width > second.x;
+}
+
+// A dragged layout remains free-form on the screen where it was arranged. On
+// a later compact resize, however, the default chrome becomes a stack and its
+// old proportional coordinates can put two panels in the same band. Keep the
+// saved sizes and horizontal intent, but settle the movable lower panels into
+// the live gaps before painting the resized frame.
+function settleCompactHudWidgets() {
+  if (!responsivePanelGeometry.compact) return;
+  const margin = hudWidgetMargin();
+  const gap = hudWidgetGap();
+  const minimap = HUD_WIDGETS.minimap;
+  if (minimap?.element?.classList.contains("layout-widget-custom")) {
+    const metrics = visibleHudWidgetMetrics("minimap");
+    if (metrics) {
+      const maximumY = Math.max(margin, area.clientHeight -
+        responsivePanelGeometry.controlClearance - metrics.height);
+      if (metrics.y > maximumY)
+        applyHudWidgetMetrics("minimap", {...metrics, y:maximumY});
+    }
+  }
+  const victory = HUD_WIDGETS.victory;
+  if (!victory?.element?.classList.contains("layout-widget-custom")) return;
+  const metrics = visibleHudWidgetMetrics("victory");
+  if (!metrics) return;
+  const player = visibleHudWidgetMetrics("players");
+  const minimapMetrics = visibleHudWidgetMetrics("minimap");
+  let minimumY = margin;
+  let maximumY = Math.max(margin, area.clientHeight - margin - metrics.height);
+  if (player && horizontalHudOverlap(metrics, player))
+    minimumY = Math.max(minimumY, player.y + player.height + gap);
+  if (minimapMetrics && horizontalHudOverlap(metrics, minimapMetrics))
+    maximumY = Math.min(maximumY, minimapMetrics.y - gap - metrics.height);
+  if (minimumY <= maximumY) {
+    const y = Math.max(minimumY, Math.min(maximumY, metrics.y));
+    if (Math.abs(y - metrics.y) > .5)
+      applyHudWidgetMetrics("victory", {...metrics, y});
+  }
+}
+
 function resetHudWidget(name, persist = true) {
   const config = HUD_WIDGETS[name];
   if (!config?.element) return;
@@ -6213,6 +6484,7 @@ function resetHudWidget(name, persist = true) {
   config.element.classList.remove("layout-widget-custom", "layout-widget-active");
   // The tracker reads its neighbours' heights to know where to start and stop.
   // Hand those back to the stylesheet at the same moment the neighbour returns.
+  if (name === "players") area.style.removeProperty("--player-hud-height");
   if (name === "minimap") syncDefaultMinimapGeometry();
   if ((name === "players" || name === "victory") && state) drawPlayerHud();
   if (persist) saveHudLayout();
@@ -6229,10 +6501,10 @@ function resetAllHudWidgets() {
 }
 
 function resizeHudWidget(config, start, edge, dx, dy) {
-  const margin = 4;
+  const margin = hudWidgetMargin();
   const minX = hudWidgetMinX(config, margin);
   const minWidth = Math.min(config.minWidth, Math.max(1, area.clientWidth - margin - minX));
-  const maxHeight = hudWidgetMaxHeight(config);
+  const maxHeight = hudWidgetMaxHeight(config, margin);
   const minHeight = Math.min(config.minHeight, maxHeight);
   let left = start.x, right = start.x + start.width;
   let top = start.y, bottom = start.y + start.height;
@@ -6340,7 +6612,7 @@ function bindHudWidget(name, config) {
 let dossierWindowZ = 1;
 
 function defaultDossierMetrics(id) {
-  const margin = 10, gap = 10;
+  const margin = hudWidgetMargin(), gap = hudWidgetGap();
   const index = Math.max(0, hudOpenDossiers.indexOf(id));
   // On a desktop, two dossiers open directly beside one another for an
   // immediate comparison. Narrow maps cascade them instead, while retaining
@@ -6349,14 +6621,14 @@ function defaultDossierMetrics(id) {
   const width = columns === 2
     ? Math.min(620, (area.clientWidth - margin * 2 - gap) / 2)
     : Math.min(720, area.clientWidth - margin * 2);
-  const height = Math.min(304, area.clientHeight - 8);
+  const height = Math.min(304, area.clientHeight - margin * 2);
   const areaRect = area.getBoundingClientRect();
   const playersRect = document.getElementById("playerhud")?.getBoundingClientRect();
-  const belowPlayers = playersRect ? playersRect.bottom - areaRect.top + 8 : 44;
+  const belowPlayers = playersRect ? playersRect.bottom - areaRect.top + gap : margin + 34;
   const row = Math.floor(index / columns);
   return clampHudWidget(HUD_WIDGETS[dossierWidgetName(id)], {
     x:margin + (index % columns) * (width + gap),
-    y:belowPlayers + row * 32,
+    y:Math.max(margin, belowPlayers + row * (24 + gap)),
     width, height,
   });
 }
@@ -6962,8 +7234,15 @@ function resize() {
   // they landed, so a fitted area is never one window size out of date. The
   // suspend keeps each widget from re-fitting the area on its way past.
   mapAreaRefitDepth++;
-  try { applySavedHudLayouts(); }
+  try {
+    applySavedHudLayouts();
+    settleCompactHudWidgets();
+  }
   finally { mapAreaRefitDepth--; }
+  // A saved player masthead can scale on this resize. Recompute the compact
+  // bands after its new height is known so the tracker and minimap retain the
+  // same reserved gap on the very first frame, not the next resize.
+  syncResponsivePanelGeometry();
   syncMapViewport();
   syncMiniCanvas();
   if (watchedEmpireAutoFrame && Number.isInteger(state?.view_player))
