@@ -5469,7 +5469,7 @@ mod tests {
     }
 
     #[test]
-    fn viewer_marks_the_selected_revision_and_its_compact_ages_beneath_the_minimap() {
+    fn viewer_marks_the_selected_revision_and_its_compact_ages_above_the_minimap() {
         assert!(EMBEDDED_INDEX.contains("id=\"buildmark\""));
         assert!(EMBEDDED_INDEX.contains("function updateBuildMarker(st = state)"));
         assert!(EMBEDDED_INDEX.contains("st?.server_commit_time"));
@@ -5481,7 +5481,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "#buildmark {\n    /* The authored World minimap owns the lower-right corner at z-index 6."
         ));
-        assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 5;\n    right:"));
+        assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 7;\n    right:"));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
