@@ -15,12 +15,12 @@ MAX_RESULT_BYTES = 64 * 1024
 
 
 def channel_path(path):
-    """Map the local /wasm channel onto the published /beta bundle."""
+    """Map the local /wasm channel onto the published /test bundle."""
     parsed = urllib.parse.urlsplit(path)
     if parsed.path == "/wasm":
-        mapped = "/beta/"
+        mapped = "/test/"
     elif parsed.path.startswith("/wasm/"):
-        mapped = "/beta/" + parsed.path.removeprefix("/wasm/")
+        mapped = "/test/" + parsed.path.removeprefix("/wasm/")
     else:
         return path
     return urllib.parse.urlunsplit(("", "", mapped, parsed.query, parsed.fragment))

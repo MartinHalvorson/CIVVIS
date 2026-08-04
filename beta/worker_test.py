@@ -3,11 +3,11 @@
 
 Everything civvis.ai does *before* a file is served lives in that one module:
 the forward from the apex to the YouTube channel, the landing page's move to
-`/home`, and the password on `/beta`. None of it is exercised by opening the
+`/home`, and the password on `/test`. None of it is exercised by opening the
 bundle in a browser, because a static server never runs it, so the whole file
 is invisible to `verify.py`'s browser check. That is the exact shape of failure
 the gate has already had once — written as a Pages `functions/` directory it was
-silently left out of a deploy and the beta was wide open with nothing to say so.
+silently left out of a deploy and the test lane was wide open with nothing to say so.
 
 `verify.py --no-gate` skips this class of check entirely, and the full check
 needs `npx wrangler`, which means Node — so on a machine without it the routing
@@ -43,7 +43,7 @@ from verify import Devtools, find_chrome, free_port  # noqa: E402
 # The page that loads the worker and hands it fabricated requests.
 #
 # `env.ASSETS` answers every request with the path it was asked for, so a test
-# can tell "served the landing page" from "served the beta" without any of the
+# can tell "served the landing page" from "served the test lane" without any of the
 # bundle being present.
 HARNESS = """<!doctype html><meta charset="utf-8"><title>worker</title>
 <script type="module">
@@ -158,7 +158,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--chrome", default=find_chrome())
     # There is no password in `_worker.js` any more; this is one made up here
-    # purely to prove that setting BETA_PASSWORD still closes the door.
+    # purely to prove that setting TEST_PASSWORD still closes the door.
     parser.add_argument("--password", default="not-the-real-one")
     args = parser.parse_args(argv)
 
@@ -273,56 +273,67 @@ def main(argv: list[str] | None = None) -> int:
 
         wasm = hit(path="/wasm?game=7311")
         check(problems, "/wasm points at the latest WASM build",
-              wasm["status"] == 302 and wasm["location"] == "/beta/?game=7311",
+              wasm["status"] == 302 and wasm["location"] == "/test/?game=7311",
               f"got {wasm['status']} {wasm['location']!r}")
         check(problems, "/wasm is temporary and uncached",
               wasm["status"] != 301 and wasm["cacheControl"] == "no-store",
               f"got {wasm['status']} {wasm['cacheControl']!r}")
         wasm_slash = hit(path="/wasm/")
         check(problems, "/wasm/ is the same browser channel",
-              wasm_slash["location"] == "/beta/",
+              wasm_slash["location"] == "/test/",
               f"got {wasm_slash['location']!r}")
 
-        print("==> so is the beta, which is the point of publishing it")
-        beta = hit(path="/beta/")
-        check(problems, "/beta/ serves the viewer to anyone", beta["body"].strip() == "asset:/beta/",
-              f"got {beta['status']} {beta['body'][:60]!r}")
-        check(problems, "/beta/ asks for no password", "Beta build" not in beta["body"])
+        print("==> so is the test lane, which is the point of publishing it")
+        lane = hit(path="/test/")
+        check(problems, "/test/ serves the viewer to anyone", lane["body"].strip() == "asset:/test/",
+              f"got {lane['status']} {lane['body'][:60]!r}")
+        check(problems, "/test/ asks for no password", "Test build" not in lane["body"])
         # Open to anyone following a link is not the same as wanting an
         # unfinished build to be the first search result for the project.
-        check(problems, "the beta is not indexed", beta["robots"] == "noindex", f"got {beta['robots']!r}")
+        check(problems, "the test lane is not indexed", lane["robots"] == "noindex", f"got {lane['robots']!r}")
+
+        # /beta — the lane's day-one name — is scrapped, not forwarded: the
+        # worker gives it no case at all, so it falls through to the asset
+        # layer (which has no files there in a real deploy, hence a plain
+        # 404). What this pins is the *absence* of routing: no redirect, no
+        # gate, no special headers keeping the old name alive.
+        scrapped = hit(path="/beta/")
+        check(problems, "/beta is scrapped, not forwarded",
+              scrapped["status"] == 200 and scrapped["body"].strip() == "asset:/beta/"
+              and not scrapped["location"],
+              f"got {scrapped['status']} {scrapped['location']!r} {scrapped['body'][:40]!r}")
 
         # The same engine-and-atlas header rules hold in both lanes; a rule
-        # keyed on "/beta/" alone would quietly leave the root lane's module
+        # keyed on "/test/" alone would quietly leave the root lane's module
         # untyped, and instantiateStreaming refuses anything but
         # application/wasm.
-        for prefix, lane in (("", "the stable lane's"), ("/beta", "the beta lane's")):
+        for prefix, which in (("", "the stable lane's"), ("/test", "the test lane's")):
             module = hit(path=f"{prefix}/civvis.wasm")
-            check(problems, f"{lane} module is served as application/wasm",
+            check(problems, f"{which} module is served as application/wasm",
                   module["contentType"] == "application/wasm", f"got {module['contentType']!r}")
-            check(problems, f"{lane} module is revalidated rather than trusted",
+            check(problems, f"{which} module is revalidated rather than trusted",
                   "must-revalidate" in (module["cacheControl"] or ""), f"got {module['cacheControl']!r}")
             atlas = hit(path=f"{prefix}/assets/feature-atlas.webp")
-            check(problems, f"{lane} atlases are cached", "max-age=86400" in (atlas["cacheControl"] or ""),
+            check(problems, f"{which} atlases are cached", "max-age=86400" in (atlas["cacheControl"] or ""),
                   f"got {atlas['cacheControl']!r}")
 
         # The door still exists; it is just not shut unless somebody shuts it.
         # This is checked because an unused capability is one that has quietly
         # stopped working, and the day it is wanted is not the day to find out.
-        print("==> BETA_PASSWORD closes it again")
-        gated = {"BETA_PASSWORD": args.password}
-        closed = hit(path="/beta/", env=gated)
-        check(problems, "a set password shuts the door", "Beta build" in closed["body"],
+        print("==> TEST_PASSWORD closes it again")
+        gated = {"TEST_PASSWORD": args.password}
+        closed = hit(path="/test/", env=gated)
+        check(problems, "a set password shuts the door", "Test build" in closed["body"],
               f"got {closed['body'][:60]!r}")
         check(problems, "a shut door serves no viewer", "asset:" not in closed["body"])
         check(problems, "a shut door hides the engine too",
-              "asset:" not in hit(path="/beta/civvis.wasm", env=gated)["body"])
+              "asset:" not in hit(path="/test/civvis.wasm", env=gated)["body"])
 
-        wrong = hit(path="/beta/", method="POST", body={"password": "0000"}, env=gated)
+        wrong = hit(path="/test/", method="POST", body={"password": "0000"}, env=gated)
         check(problems, "a wrong password is refused", wrong["status"] == 401, f"got {wrong['status']}")
         check(problems, "a wrong password sets no cookie", not wrong["setCookie"])
 
-        right = hit(path="/beta/", method="POST", body={"password": args.password}, env=gated)
+        right = hit(path="/test/", method="POST", body={"password": args.password}, env=gated)
         check(problems, "the password is accepted", right["status"] == 303, f"got {right['status']}")
         cookie = (right["setCookie"] or "").split(";")[0]
         check(problems, "the cookie is HttpOnly and Secure",
@@ -331,9 +342,9 @@ def main(argv: list[str] | None = None) -> int:
         # password: it is readable by anything that can read the response.
         check(problems, "the cookie is not the password itself", args.password not in cookie, f"got {cookie!r}")
         check(problems, "the cookie opens it",
-              hit(path="/beta/", cookie=cookie, env=gated)["body"].strip() == "asset:/beta/")
+              hit(path="/test/", cookie=cookie, env=gated)["body"].strip() == "asset:/test/")
         check(problems, "a forged cookie does not",
-              "asset:" not in hit(path="/beta/", cookie="civvis_beta=" + "0" * 64, env=gated)["body"])
+              "asset:" not in hit(path="/test/", cookie="civvis_test=" + "0" * 64, env=gated)["body"])
     finally:
         chrome.terminate()
         try:
