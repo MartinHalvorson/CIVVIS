@@ -1680,11 +1680,10 @@ mod tests {
             );
         }
         assert!(INDEX.contains(
-            "{id: \"LoyaltyLens\", key: \"8\", spectator: true, run: () => setMapLens(\"loyalty\")},"
+            "{id: \"SettlerLens\", key: \"2\", spectator: true, run: () => setMapLens(\"settler\")},"
         ));
-        assert!(INDEX.contains(
-            "{id: \"PowerLens\", key: \"0\", spectator: true, run: () => setMapLens(\"power\")},"
-        ));
+        assert!(!INDEX.contains("id: \"LoyaltyLens\""));
+        assert!(!INDEX.contains("id: \"PowerLens\""));
         let start = INDEX
             .find("function tileTipLines(t, pos, tileKey)")
             .expect("the tile hover has one ordered builder");
