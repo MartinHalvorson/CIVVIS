@@ -465,6 +465,58 @@ def settings_mismatch(asked: dict, dealt: dict) -> dict:
     }
 
 
+def longest_idle_settler(events: Path) -> int:
+    """The longest run of turns a settler sat still while it still had movement.
+
+    ⚠⚠⚠ MEASURED ACROSS THE WHOLE ARCHIVE 2026-08-03: 54 of 142 runs of >=50 turns
+    (38%) park a settler for >=15 consecutive turns at FULL movement, median streak
+    37 turns, worst 143. It is invisible on every instrument the ladder already has.
+
+    The tell is `moves > 0` with an UNCHANGED position. A settler that is BLOCKED
+    spends its movement and fails; one that is never asked to move keeps it. So a
+    high number here is not "the map was hard", it is "nobody told this unit
+    anything" — on run `civvis-20260803T231038Z` the settler's last order was on
+    turn 70 and it sat at full movement for the remaining 100+ turns while
+    `desired_cities` was 7 and the empire finished with 4.
+
+    ⚠ It also freezes PRODUCTION: `advanced_units` computes
+    `decline_settlers = counts.settlers > 0`, so one idle settler stops CIVVIS
+    building another. That run ordered no settler between turns 51 and 134.
+
+    ⚠ And the journal reports it as working — "Settler marching to (6, 34) | 1 tiles
+    away, the site is worth 152.4" — so `why.log` cannot be used to detect it and
+    the applied-order rate never dips, because no order is issued to fail.
+    """
+    best, current = 0, {}
+    previous: dict[int, tuple] = {}
+    try:
+        stream = events.read_text(errors="replace").splitlines()
+    except OSError:
+        return 0
+    for line in stream:
+        if '"state"' not in line:
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("kind") != "state":
+            continue
+        for unit in event.get("units") or []:
+            if unit.get("kind") != "UNIT_SETTLER":
+                continue
+            uid = unit.get("id")
+            here = (unit.get("x"), unit.get("y"))
+            has_moves = (unit.get("moves") or 0) > 0
+            if previous.get(uid) == here and has_moves:
+                current[uid] = current.get(uid, 0) + 1
+            else:
+                current[uid] = 0
+            previous[uid] = here
+            best = max(best, current[uid])
+    return best
+
+
 def outcome_of(tag: str) -> dict:
     """The run's own summary, MERGED with what its event stream says.
 
@@ -542,6 +594,9 @@ def outcome_of(tag: str) -> dict:
         "army": (last_turn or {}).get("army"),
         "met": (last_turn or {}).get("met"),
         "seat": seat,
+        # A settler nobody ordered. See `longest_idle_settler` — 38% of runs
+        # park one, and no other column in this row can show it.
+        "idle_settler_turns": longest_idle_settler(events) or None,
         # ⚠ The civ is the largest single covariate on a row and it was only ever
         # reachable by digging into the nested `seat` blob, so no ledger query ever
         # grouped by it. Promote both to columns: `civ`/`leader` are what Civ 6
