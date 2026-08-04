@@ -416,12 +416,15 @@ def stage_apps(repo: pathlib.Path, artifacts: BuildArtifacts, template_path: pat
         macos.mkdir(parents=True)
         resources.mkdir()
         built_at = artifacts.native_built_at if spec.mode == "rust" else artifacts.wasm_built_at
-        launcher_script = macos / spec.launcher_script_name
+        launcher_script = resources / spec.launcher_script_name
         launcher_script.write_text(
             render_launcher(template, spec, artifacts.revision, built_at, repo),
             encoding="utf-8",
         )
-        launcher_script.chmod(0o755)
+        # The native wrapper passes this resource to /bin/zsh; only the Mach-O
+        # wrapper belongs in Contents/MacOS. Files there are always treated as
+        # nested code, whose script-signature xattrs shutil cannot preserve.
+        launcher_script.chmod(0o644)
         native_launcher = macos / spec.executable_name
         run(
             (
@@ -740,7 +743,7 @@ def launch_apps(desktop: pathlib.Path, artifacts: BuildArtifacts) -> None:
 
 
 def launcher_metadata(app: pathlib.Path, launcher_script: str) -> dict:
-    text = (app / "Contents/MacOS" / launcher_script).read_text(encoding="utf-8")
+    text = (app / "Contents/Resources" / launcher_script).read_text(encoding="utf-8")
     values = {}
     for name in ("mode", "commit", "commit_time", "built_at"):
         match = re.search(r'^readonly civvis_{}="([^"]+)"$'.format(name), text, re.MULTILINE)
@@ -764,7 +767,7 @@ def installed_pair_needs_refresh(
     metadata = []
     for spec in APPS:
         app = desktop / spec.bundle_name
-        launcher = app / "Contents/MacOS" / spec.launcher_script_name
+        launcher = app / "Contents/Resources" / spec.launcher_script_name
         if not launcher.is_file():
             return True
         try:
@@ -847,7 +850,7 @@ def verify_installed(
         if not native_launcher.is_file() or not os.access(native_launcher, os.X_OK):
             raise DesktopAppError("missing native bundle executable " + str(native_launcher))
         run(("/usr/bin/codesign", "--verify", "--verbose=2", str(native_launcher)))
-        run(("/bin/zsh", "-n", str(app / "Contents/MacOS" / spec.launcher_script_name)))
+        run(("/bin/zsh", "-n", str(app / "Contents/Resources" / spec.launcher_script_name)))
         metadata[spec.mode] = launcher_metadata(app, spec.launcher_script_name)
 
     rust, wasm = metadata["rust"], metadata["wasm"]
