@@ -8,9 +8,10 @@ runs wrote and reports, for each, how the genome-driven player did against the
 field it played in.
 
 Measuring against the field rather than against the other run's raw numbers is
-deliberate: unless the runs shared a map seed they had different starts,
-different neighbours and different land. The genome-driven player's margin over
-its *own* opponents is the comparable quantity; the absolute score is not.
+deliberate: without a working real-Civ6 seed channel, runs have different
+starts, neighbours and land. The genome-driven player's margin over its *own*
+opponents is the quantity to inspect across independently drawn worlds; the
+absolute score is not.
 
 Even so, one game per genome is an anecdote. This prints the sample size it
 used and does not pretend otherwise.
@@ -111,11 +112,13 @@ def render(rows: list[dict]) -> str:
     out += [
         "",
         "`margin` is the driven player's score minus its own field's mean, which is",
-        "the only quantity comparable across runs that did not share a map seed.",
+        "the quantity to inspect across independently drawn real-Civ6 worlds.",
         "",
         f"Sample: {len(rows)} game(s), one per genome. That is an anecdote, not a",
         "result -- Civilization's variance across starts is larger than the gaps",
-        "below. Repeat on a fixed seed before drawing a conclusion.",
+        "below. Extend a preregistered independent-world sample before drawing a",
+        "conclusion. A fixed-world paired design is unavailable unless",
+        "tools/civ6_seed_check.py passes.",
     ]
     return "\n".join(out)
 
