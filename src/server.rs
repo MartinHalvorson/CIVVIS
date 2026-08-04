@@ -4452,6 +4452,43 @@ mod tests {
     use std::sync::{mpsc, Arc, Condvar, Mutex};
     use std::time::{Duration, Instant};
 
+    #[test]
+    fn browser_gives_every_shipped_improvement_a_named_tile_marker() {
+        let markers = EMBEDDED_INDEX
+            .split_once("const IMPROVEMENT_MARKERS = Object.freeze({")
+            .expect("the improvement marker registry")
+            .1
+            .split_once("\n});")
+            .expect("the end of the improvement marker registry")
+            .0;
+        for improvement in crate::rules::Rules::embedded().improvements.keys() {
+            assert!(
+                markers.contains(&format!("\n  {}:", improvement.as_str())),
+                "{improvement} has no deliberate browser tile marker"
+            );
+        }
+
+        let renderer = EMBEDDED_INDEX
+            .split_once("function drawImprovement(t, x, y) {")
+            .expect("the improvement renderer")
+            .1
+            .split_once("\n// Every city drew")
+            .expect("the end of the improvement renderer")
+            .0;
+        assert!(renderer.contains("const marker = IMPROVEMENT_MARKERS[imp] || \"unknown\";"));
+        let marker_branch = renderer
+            .find("} else if (marker !== \"unknown\") {")
+            .expect("the named-marker branch");
+        let anonymous_fallback = renderer
+            .find("// Everything rarer still reads as a built installation")
+            .expect("the anonymous fallback");
+        assert!(
+            marker_branch < anonymous_fallback,
+            "known improvements must reach their marker before the generic fallback"
+        );
+        assert!(renderer.contains("paintImprovementMarker(marker, t, x, y, dir);"));
+    }
+
     /// The pace a viewer picks is what a turn costs, so the seats' waits have
     /// to add back up to it — at any player count, with minors on their
     /// quarter beat. A per-seat pace made big games crawl at the same label.
@@ -9583,7 +9620,7 @@ mod tests {
     }
 
     #[test]
-    fn strategic_mountains_and_volcanoes_share_a_fifty_percent_larger_icon() {
+    fn strategic_mountains_and_volcanoes_are_centered_top_down_landforms() {
         let icon = EMBEDDED_INDEX
             .split("const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;")
             .nth(1)
@@ -9592,13 +9629,36 @@ mod tests {
         assert!(icon.contains(
             "cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE)"
         ));
+        assert!(icon.contains("const mountainRadius = volcano ? 15 : 15.5;"));
+        assert!(icon.contains("cx.arc(0, 0, mountainRadius, 0, 7);"));
         assert!(icon.contains(
-            "const rimY = -7, rimHalfWidth = 5.3, baseY = 19, baseHalfWidth = 16"
+            "const rimRadius = 10.5, craterRadius = 6.2, lavaRadius = 3.7;"
         ));
-        assert!(icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
-        assert!(icon.contains("cx.ellipse(0, rimY, rimHalfWidth, 1.35"));
+        assert!(icon.contains("cx.arc(0, 0, craterRadius, 0, 7);"));
+        assert!(icon.contains("const peakX = 0, peakY = 0;"));
+        assert!(icon.contains("cx.quadraticCurveTo(-6, 1, peakX, peakY);"));
+        assert!(!icon.contains("const rimY = -7"));
+        assert!(!icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
         assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false)"));
+
+        let wonder = EMBEDDED_INDEX
+            .split("  volcano(x, y, k, art) {")
+            .nth(1)
+            .and_then(|tail| tail.split("  ruins(x, y, k, art) {").next())
+            .expect("top-down Natural Wonder volcano renderer");
+        assert!(wonder.contains("const calderaRadius = 14 * k;"));
+        assert!(wonder.contains("cx.arc(x, y, calderaRadius, 0, 7);"));
+        assert!(!wonder.contains("wonderFace(x, y, k, art.tint"));
+
+        let effects = EMBEDDED_INDEX
+            .split("function drawFeatureEffects")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawStrategicMarsh").next())
+            .expect("volcano feature effects renderer");
+        assert!(effects.contains("const erupting = t.volcano_state === 2;"));
+        assert!(effects.contains("[[8, .82], [12, .44]]"));
+        assert!(!effects.contains("[-5,-18,5]"));
     }
 
     #[test]
@@ -11828,6 +11888,55 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function wakeSleepers()"));
     }
 
+    #[test]
+    fn browser_next_action_prefers_nearby_unvisited_units_before_revisiting() {
+        let start = EMBEDDED_INDEX
+            .find("const nextActionVisited = new Set();")
+            .expect("next action should retain a visited-unit pass");
+        let end = EMBEDDED_INDEX[start..]
+            .find("// Civ 6's explicit previous/next-unit controls")
+            .map(|offset| start + offset)
+            .expect("the ordinary unit cycle should remain separate from next action");
+        let action_pass = &EMBEDDED_INDEX[start..end];
+
+        // Mark the current unit before looking for candidates, so the action
+        // moves onward instead of selecting the unit already under review.
+        let mark_current = action_pass
+            .find("if (origin) nextActionVisited.add(origin.id);")
+            .expect("next action should mark the current unit visited");
+        let fresh_candidates = action_pass
+            .find("let candidates = waiting.filter(unit => !nextActionVisited.has(unit.id));")
+            .expect("next action should prefer unvisited units");
+        assert!(
+            mark_current < fresh_candidates,
+            "the current unit must be visited before the fresh candidate set is made"
+        );
+        let revisit = action_pass
+            .find("if (!candidates.length) {")
+            .expect("next action should reopen visited units after a full pass");
+        assert!(
+            fresh_candidates < revisit,
+            "visited units may be reconsidered only after every fresh candidate"
+        );
+        assert!(action_pass.contains("nextActionVisited.clear();"));
+        assert!(action_pass.contains("candidates = waiting.filter(unit => !origin || unit.id !== origin.id);"));
+        // `whexDist` keeps the nearest-unit promise true across wrapped map
+        // seams instead of measuring the long way around the world.
+        assert!(action_pass.contains(
+            "whexDist(origin.pos, first.pos) - whexDist(origin.pos, second.pos)"
+        ));
+        assert!(action_pass.contains("nextActionVisited.add(sel.id);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "function nextAction() {\n  if (!state || SPEC) return;\n  advanceToNextActionUnit(true);"
+        ));
+        // Period/comma and Tab remain a reversible roster cycle rather than
+        // acquiring an unmatched proximity-based "previous" behavior.
+        assert!(EMBEDDED_INDEX.contains("if (step > 0) { advanceToNextUnit(true); return; }"));
+        assert!(EMBEDDED_INDEX.contains(
+            "{id: \"NextUnitTab\", key: \"Tab\", run: () => advanceToNextUnit(true)}"
+        ));
+    }
+
     /// Resting over a tile reports it, the way Civ 6's plot tooltip does — and
     /// it keeps doing so after the map has been panned or the simulation advances.
     ///
@@ -11918,8 +12027,8 @@ mod tests {
     }
 
     /// The map controls read left to right in the order a viewer reaches for
-    /// them: collapse the command deck, set the map area, face north, choose a
-    /// sky destination when one is available, zoom in, zoom out, dismiss.
+    /// them: collapse the command deck, set the map area, face north, zoom in,
+    /// zoom out, choose a sky route when one is available, dismiss.
     /// Dismissal is last because it is the only one that removes the bar, and
     /// it hides itself while the deck is collapsed — Interface Settings is the
     /// only way back and it lives inside the deck.
@@ -11938,9 +12047,9 @@ mod tests {
             "id=\"paneltoggle\"",
             "id=\"mapareaset\"",
             "id=\"compass\"",
-            "id=\"skyworlds\"",
             "id=\"zin\"",
             "id=\"zout\"",
+            "id=\"skynav\"",
             "data-overlay-close=\"controls\"",
         ] {
             let at = dock
@@ -11964,33 +12073,41 @@ mod tests {
     /// Gearing the wheel made fourteen orders of magnitude *reachable*; it did
     /// not make them navigable. Sixty-five notches is a distance nobody
     /// scrolls, and every one of them has to be aimed over empty space. So the
-    /// sky carries its own way about: the four places the gearing already
-    /// calls arrivals in the map controls, the shots that hold a whole scale,
-    /// and the zoom laid out end to end as a ladder — one sky bar standing
-    /// over those controls, up only while there is a sky to cross.
+    /// sky carries its own way about: the places the gearing already calls
+    /// arrivals, the shots that hold a whole scale, and the zoom laid out end
+    /// to end as a ladder — one complete route inside the map controls, up
+    /// only while there is a sky to cross.
     #[test]
     fn the_sky_carries_its_own_way_about() {
-        // It is part of the map controls: the same dock, the same dismissal.
-        // Its scale shots and ladder stand *above* the zoom buttons rather
-        // than in the dock's flow, because the dock's height is ground the
-        // framing already reserves and a second row in the flow would move the
-        // world every time the camera left the globe. The world arrivals are
-        // compact map controls between north and zoom-in.
+        // It is part of the map controls: the same dock, same row, and same
+        // dismissal. The complete labelled route follows zoom-out and precedes
+        // the exit, rather than splitting compact world glyphs by the compass
+        // from the solar-system route above the map.
         let dock = EMBEDDED_INDEX
             .split_once("<div id=\"map-controls-dock\">")
             .expect("the map control dock")
             .1;
         let bar = dock.find("id=\"skynav\"").expect("the sky navigator");
         let zoom = dock.find("<div id=\"zoomctl\">").expect("the zoom controls");
+        let minus = dock.find("id=\"zout\"").expect("the zoom-out control");
+        let exit = dock
+            .find("data-overlay-close=\"controls\"")
+            .expect("the map-control dismissal");
         assert!(
-            bar < zoom,
-            "the sky navigator reads before the zoom buttons it stands over"
+            zoom < bar,
+            "the sky navigator belongs inside the map-control strip"
         );
-        assert!(EMBEDDED_INDEX.contains("body.overlay-controls-hidden #skynav"));
+        assert!(
+            minus < bar && bar < exit,
+            "the complete sky route follows minus and precedes map-control exit"
+        );
         assert!(EMBEDDED_INDEX.contains("#skynav[hidden] { display: none; }"));
-        assert!(EMBEDDED_INDEX.contains("bottom: calc(100% + 50px)"));
+        assert!(EMBEDDED_INDEX.contains("overflow-x: auto;"));
+        assert!(EMBEDDED_INDEX.contains("#zoomctl > button { flex: 0 0 34px; }"));
+        assert!(!EMBEDDED_INDEX.contains("body.overlay-controls-hidden #skynav"));
+        assert!(!EMBEDDED_INDEX.contains("bottom: calc(100% + 50px)"));
         for part in [
-            "id=\"skyworlds\"",
+            "id=\"skynav-worlds\"",
             "id=\"skynav-scales\"",
             "id=\"skyladder\"",
             "id=\"skyspan\"",
@@ -12000,12 +12117,9 @@ mod tests {
                 "the sky navigator is missing {part}"
             );
         }
-        let compass = dock.find("id=\"compass\"").expect("the north control");
-        let worlds = dock.find("id=\"skyworlds\"").expect("the world controls");
-        let zoom_in = dock.find("id=\"zin\"").expect("the zoom-in control");
         assert!(
-            compass < worlds && worlds < zoom_in,
-            "Earth through Exoplanet should sit between face north and zoom in"
+            !EMBEDDED_INDEX.contains("id=\"skyworlds\""),
+            "the compact icon-only skyworlds strip is gone"
         );
         // Only home takes the bar down, and only while home fills the frame:
         // home is the one world with a board on it. Every other world is
@@ -12092,17 +12206,28 @@ mod tests {
         // no zoom can now reach.
         assert!(EMBEDDED_INDEX.contains("label:\"Solar system\", mark:\"☉\""));
         assert!(EMBEDDED_INDEX.contains("stops.push({id:\"voyage\", label:\"Voyage\""));
-        // Earth through Exoplanet are direct flight controls. The wider scale
-        // shots keep their names in the bar over the map, where they can sit
-        // beside the full-range zoom ladder without crowding the control row.
+        // The complete old route lives in the control row in the order a
+        // journey reads: the local arrivals Earth, Moon, and Mars; the solar
+        // system and Voyage shots; then the destination called Exoplanet. The
+        // destination is still a world flight, even though it follows the
+        // scale shots in the row.
         assert!(EMBEDDED_INDEX.contains(
-            "skyNavWorldRow.replaceChildren(...worlds.map(stop => skyNavButton(\"world\", stop)));"
+            "const local = worlds.filter(stop => stop.id !== \"exo\");"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "skyNavScaleRow.replaceChildren(...scales.map(stop => skyNavButton(\"scale\", stop)));"
+            "const onward = [...scales, ...worlds.filter(stop => stop.id === \"exo\")];"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "document.querySelectorAll(\"#skynav [data-sky-stop], #skyworlds [data-sky-stop]\")"
+            "skyNavWorldRow.replaceChildren(...local.map(stop => skyNavButton(\"world\", stop)));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "skyNavScaleRow.replaceChildren(...onward.map(stop =>"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "skyNavButton(stop.body ? \"world\" : \"scale\", stop)"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.querySelectorAll(\"#skynav [data-sky-stop]\")"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "button.setAttribute(\"aria-label\", kind === \"world\" ?"
