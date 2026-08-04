@@ -9390,6 +9390,27 @@ mod tests {
     }
 
     #[test]
+    fn mountain_and_volcano_tiles_use_dark_shared_ground_with_glowing_lava() {
+        assert!(EMBEDDED_INDEX.contains("const MOUNTAIN_TILE_COLOR = \"#49453e\";"));
+        assert!(EMBEDDED_INDEX.contains("const VOLCANO_TILE_COLOR = \"#292421\";"));
+        assert!(EMBEDDED_INDEX.contains("tile.feature === \"volcano\""));
+        assert!(EMBEDDED_INDEX.contains("tileGroundColor(cell.tile, \"#4b5960\")"));
+        assert!(EMBEDDED_INDEX.contains("const base = tileGroundColor(t);"));
+        assert!(EMBEDDED_INDEX.contains("tileGroundColor(cell.tile, \"#44545a\")"));
+        assert!(EMBEDDED_INDEX.contains("const terrainColor = tileGroundColor(t);"));
+
+        let icon = EMBEDDED_INDEX
+            .split("function drawStrategicMountainIcon")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawFeatureEffects").next())
+            .expect("shared strategic mountain icon renderer");
+        assert!(icon.contains("cx.fillStyle = volcano ? \"#37302d\" : \"#565149\""));
+        assert!(icon.contains("cx.shadowColor = \"#ff4b19\""));
+        assert!(icon.contains("cx.shadowBlur = 9"));
+        assert!(icon.contains("cx.fillStyle = \"#ffb23c\""));
+    }
+
+    #[test]
     fn instance_tagged_spectator_url_routes_to_the_embedded_page() {
         assert_eq!(request_path("/"), "/");
         assert_eq!(request_path("/?instance=9232"), "/");
