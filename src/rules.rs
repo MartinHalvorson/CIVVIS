@@ -400,6 +400,35 @@ pub struct ImprovementSpec {
     /// `RequiresAdjacentBonusOrLuxury` uses both classes for the Mekewap.
     #[serde(default)]
     pub requires_adjacent_resource_classes: Vec<String>,
+    /// Number of traversable land plots that must neighbour this improvement.
+    /// Polders need three reclaimed-land neighbours; Portugal's Feitorias need
+    /// one shore tile beside their water plot.
+    #[serde(default)]
+    pub requires_adjacent_passable_land: usize,
+    /// Requires a neighbouring water tile that contains a resource. Indonesia's
+    /// Kampung is the stock example.
+    #[serde(default)]
+    pub requires_adjacent_water_resource: bool,
+    /// The improvement is placed in another civilization's territory rather
+    /// than the builder owner's. This is deliberately a per-improvement rule:
+    /// ordinary Builder work remains restricted to owned or suzerained land.
+    #[serde(default)]
+    pub requires_foreign_territory: bool,
+    /// Foreign-territory placement additionally needs an Open Borders treaty.
+    #[serde(default)]
+    pub requires_open_borders: bool,
+    /// Features that may not occur on any adjacent tile. Rapa Nui's Moai
+    /// cannot stand beside Woods or Rainforest.
+    #[serde(default)]
+    pub forbids_adjacent_features: Vec<Name>,
+    /// Minimum live tile Appeal required before this improvement is offered.
+    /// Mapuche Chemamulls require a Breathtaking (4+) plot.
+    #[serde(default)]
+    pub min_appeal: Option<i32>,
+    /// Some unique leisure and culture improvements are limited to one copy
+    /// in each city territory, rather than one globally or per empire.
+    #[serde(default)]
+    pub one_per_city: bool,
     /// Firaxis `SameAdjacentValid`; false for improvements such as Sphinxes,
     /// Ski Resorts, City Parks, and Rock-Hewn Churches.
     #[serde(default = "default_true")]
@@ -2791,12 +2820,66 @@ mod tests {
     fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
         // The fingerprint is the Elo ledger's binding. Firaxis-exact unique units,
         // including the Shield Bearer, Oromo Cavalry, Pairidaeza, and Armagh's
-        // Monastery found by live replay, and exact Natural Wonder placement rows
-        // are real simulation changes; older ledgers retain their original fingerprint.
+        // Monastery found by live replay, exact Natural Wonder placement rows, and
+        // the complete terrain-improvement catalogue are real simulation changes;
+        // older ledgers retain their original fingerprint.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:c1bfe7506b078297"
+            "fnv1a64:57eeae0c535f3c7b"
         );
+    }
+
+    #[test]
+    fn every_firaxis_improvement_type_has_a_ruleset_entry_or_named_alias() {
+        // This is the game-data type inventory rather than a hand-picked list
+        // of common Builder actions.  It catches a future addition that works
+        // in one subsystem but is omitted from the shared terrain catalog.
+        let type_names: Vec<String> =
+            serde_json::from_str(include_str!("../data/civ6_type_names.json")).unwrap();
+        let improvement_types: Vec<_> = type_names
+            .iter()
+            .filter(|name| name.starts_with("IMPROVEMENT_"))
+            .collect();
+        assert_eq!(improvement_types.len(), 72, "the audited Firaxis type inventory changed");
+
+        let rules = Rules::embedded();
+        for type_name in improvement_types {
+            let improvement = match type_name.as_str() {
+                // CIVVIS uses the player-facing names for these three aliases.
+                "IMPROVEMENT_BEACH_RESORT" => "seaside_resort".to_string(),
+                "IMPROVEMENT_MOUNTAIN_ROAD" => "qhapaq_nan".to_string(),
+                "IMPROVEMENT_PYRAMID" => "nubian_pyramid".to_string(),
+                _ => type_name
+                    .strip_prefix("IMPROVEMENT_")
+                    .unwrap()
+                    .to_ascii_lowercase(),
+            };
+            assert!(
+                rules.improvements.contains_key(improvement.as_str()),
+                "{type_name} has no CIVVIS improvement entry ({improvement})"
+            );
+        }
+
+        // The scenario and Secret Society markers are real serialized map
+        // objects, but must not leak into the ordinary Builder menu.
+        for improvement in [
+            "ancient_tower_defense",
+            "ancient_trap_defense",
+            "buried_treasure",
+            "floating_treasure",
+            "grieving_gift",
+            "improvised_trap",
+            "modern_tower_defense",
+            "modern_trap_defense",
+            "popped_goody",
+            "supply_drop",
+            "vampire_castle",
+        ] {
+            assert!(
+                rules.improvements[improvement].unbuildable,
+                "scenario-only {improvement} must not become a standard Builder action"
+            );
+        }
     }
 
     #[test]
@@ -3244,6 +3327,8 @@ mod tests {
             ("fighter", "jet_fighter"),
             ("bomber", "jet_bomber"),
             ("legion", "man_at_arms"),
+            ("toa", "man_at_arms"),
+            ("nau", "ironclad"),
             ("kongo_shield_bearer", "man_at_arms"),
             ("hoplite", "pikeman"),
             ("eagle_warrior", "swordsman"),
@@ -3290,11 +3375,11 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 87);
+        assert_eq!(rules.units.len(), 89);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
-        assert_eq!(rules.improvements.len(), 45);
+        assert_eq!(rules.improvements.len(), 76);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
         // 118 civic-unlocked cards plus the seven Dark Age cards, which no
