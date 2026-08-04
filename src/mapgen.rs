@@ -8084,6 +8084,51 @@ mod river_tests {
     }
 
     #[test]
+    fn generated_cliffs_are_mirrored_shore_edges_on_flat_and_planet_maps() {
+        let rules = Rules::embedded();
+        for (index, topology) in [FLAT, GLOBE].into_iter().enumerate() {
+            let mut rng = Rng::new(73_150 + index as u64);
+            let (world, _) = generate_with_script(
+                &rules,
+                42,
+                28,
+                4,
+                5,
+                2,
+                3,
+                MapScript::Continents,
+                topology,
+                POLED,
+                &mut rng,
+            );
+            let mut cliffs = 0;
+            for (a, b) in all_shared_edges(&world) {
+                let there = world.direction_to(a, b).unwrap();
+                let back = world.direction_to(b, a).unwrap();
+                let from_a = world.tiles[&a].cliff_edges[there];
+                let from_b = world.tiles[&b].cliff_edges[back];
+                if !from_a && !from_b {
+                    continue;
+                }
+                cliffs += 1;
+                assert_eq!(
+                    from_a, from_b,
+                    "{topology:?} failed to mirror cliff edge {:?}",
+                    (a, b),
+                );
+                assert_ne!(
+                    rules.is_water(&world.tiles[&a]),
+                    rules.is_water(&world.tiles[&b]),
+                    "{topology:?} put cliff edge {:?} away from a shoreline",
+                    (a, b),
+                );
+                assert!(world.has_cliff_edge(a, b));
+            }
+            assert!(cliffs > 0, "{topology:?} generated no coastal cliffs");
+        }
+    }
+
+    #[test]
     fn generated_floodplains_always_border_a_river() {
         let rules = Rules::embedded();
         for (index, script) in ROLLED_TYPES
