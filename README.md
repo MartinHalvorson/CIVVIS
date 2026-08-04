@@ -1,6 +1,6 @@
 # CIVVIS
 
-Try CIVVIS yourself at [civvis.ai](civvis.ai)!
+Try CIVVIS yourself at [civvis.ai](https://www.civvis.ai)!
 
 I threw some early progress & demo videos up on [YouTube](https://www.youtube.com/@civvis).
 
