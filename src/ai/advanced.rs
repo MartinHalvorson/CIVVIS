@@ -2276,13 +2276,16 @@ impl AdvancedAi {
         // ⚠⚠ AND THE POPULATION THE SCIENCE IS COMPUTED FROM IS CAPPED BY HOUSING.
         // The lane above decides which specialty district a city builds; none of
         // them raises the ceiling on the citizens who work them. Measured over
-        // 6,282 host-exported city-turns in 9 live runs: median headroom 0,
-        // **78.4% of city-turns below the break-even 2**, mean growth multiplier
-        // 0.457 — and at pop >= 8, 94.2% throttled. Over the same corpus the
-        // Aqueduct family took 27 of 1,837 district orders and the Neighborhood
-        // took 2, against 323 for Theatre Square. Science is ~1.16 x population,
-        // so this is the same defect shape as #999 and #1003: a repair the
-        // governor making most of the builds could not reach.
+        // 12,969 host-exported city-turns across every one of the 18 live runs
+        // carrying `GetHousing()`: median headroom 1 — already inside the
+        // half-growth band — **71.2% of city-turns below the break-even 2**,
+        // mean growth multiplier 0.515, and at pop >= 8, 87.9% throttled. Over
+        // the same runs the Aqueduct family took 8 of 485 district orders and
+        // the Neighborhood took none, against 92 Commercial Hubs and 79
+        // Campuses; the Aqueduct's median order turn is 164 against a Campus at
+        // 131. Science is ~1.16 x population, so this is the same defect shape
+        // as #999 and #1003: a repair the governor making most of the builds
+        // could not reach.
         self.enable_housing_districts();
     }
 

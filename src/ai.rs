@@ -1407,27 +1407,32 @@ pub struct BasicAi {
     /// is — roughly 1.16 science per citizen, measured across three live games
     /// at 7/5/6 cities — so the housing ceiling is the science ceiling.
     ///
-    /// Measured over **6,282 host-exported city-turns** (`GetHousing()`, not
-    /// CIVVIS's model) across 9 live runs:
+    /// Measured over **12,969 host-exported city-turns** (`GetHousing()`, not
+    /// CIVVIS's model) across **every one of the 18 live runs that carries the
+    /// export**:
     ///
     /// | headroom | growth | share of city-turns |
     /// |---|---|---|
-    /// | ≥ 2 | 1.00x | 21.6% |
-    /// | 1..2 | **0.50x** | 22.0% |
-    /// | −4..1 | **0.25x** | **52.6%** |
-    /// | ≤ −4 | **0.00x** | 3.9% |
+    /// | ≥ 2 | 1.00x | 28.8% |
+    /// | 1..2 | **0.50x** | 22.5% |
+    /// | −4..1 | **0.25x** | **45.8%** |
+    /// | ≤ −4 | **0.00x** | 2.9% |
     ///
-    /// **78.4% of city-turns are throttled**, the median headroom is exactly
-    /// **0**, and the mean growth multiplier is **0.457** — the empire grows at
-    /// less than half speed for most of its life. At pop ≥ 8 it is 94.2%
-    /// throttled on a mean headroom of −1.01.
+    /// **71.2% of city-turns are throttled**, the median headroom is **1** —
+    /// already inside the half-growth band — and the mean growth multiplier is
+    /// **0.515**. At pop ≥ 8 (n = 6,122) it is **87.9%** throttled on a mean
+    /// headroom of −0.52.
     ///
     /// And the repair is not merely out-ranked, it is barely reached at all.
-    /// Across the same corpus, of **1,837 district orders**: Aqueduct 19, its
-    /// Roman unique Bath 8, Neighborhood **2** — 1.6% together, against 323 for
-    /// Theatre Square alone and 277 for Campus. The empire builds the districts
-    /// that produce science and not the one that raises the population the
-    /// science is computed from.
+    /// Over the same 18 runs, of **485 district orders**: Aqueduct **4**, its
+    /// Roman unique Bath **4**, Neighborhood **0** — **1.65%** together,
+    /// against 92 Commercial Hubs, 79 Campuses and 76 Entertainment Complexes.
+    /// The empire builds the districts that produce science and not the one
+    /// that raises the population the science is computed from.
+    ///
+    /// It is also **late**: the Aqueduct's median order turn is **164** and the
+    /// Bath's **214**, against a Campus at 131 — the repair arrives long after
+    /// the growth it was meant to unlock was needed.
     ///
     /// Off for the frozen native controllers, whose recorded ladders would
     /// otherwise shift underneath them.
