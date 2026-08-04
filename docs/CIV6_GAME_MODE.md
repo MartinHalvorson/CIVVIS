@@ -37,10 +37,11 @@ once it starts.
 
 ## The settings are Civilization VI's, not ours
 
-Selecting the mode re-points the setup panel at the other game's vocabulary,
-because that is the game being configured. Three of the four settings that
-survive the switch are ones Civilization VI and CIVVIS already agree on, which
-is not a coincidence: `src/setup.rs` was built from Civilization VI's own tables.
+When browser verification selects the mode, it re-points the setup panel at the
+other game's vocabulary, because that is the game being configured. Three of
+the four settings that survive the switch are ones Civilization VI and CIVVIS
+already agree on, which is not a coincidence: `src/setup.rs` was built from
+Civilization VI's own tables.
 
 | Lobby setting | Civilization VI | Carried by |
 | --- | --- | --- |
@@ -160,9 +161,9 @@ somebody might close is how you lose a Deity attempt at turn 180.
 starts a real game in the real window; the CIVVIS page it was started from still
 shows whatever world it was showing. Mirroring the board into the CIVVIS viewer
 is a separate line of work — `src/mirror.rs`, PR #683 — and this mode is the
-lobby half of the same feature. When both are in, selecting the mode and
-pressing start gets you the real game on the left and CIVVIS's reading of it on
-the right.
+lobby half of the same feature. When both are in, browser verification can
+select the mode and press start to get the real game on the left and CIVVIS's
+reading of it on the right.
 
 Until then the mode is worth having on its own: it is the difference between a
 ladder attempt being a terminal command somebody has to remember the flags for
