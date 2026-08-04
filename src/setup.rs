@@ -104,9 +104,11 @@ impl Serialize for StartEraSpec {
 /// does. It has no tree behind it yet, so it is offered as a plan rather than a
 /// choice — `era: None` is the whole of that statement.
 ///
-/// Future is deliberately absent from the other end: a game that opens there
-/// has nothing left to research and nowhere to go.
-pub const START_ERAS: [StartEraSpec; 9] = [
+/// Future closes the ladder rather than leaving it: a game can open there with
+/// every earlier era known, while the Future technologies and civics remain to
+/// be played. There is no later era to advance into, which is exactly what a
+/// Future-era opening promises.
+pub const START_ERAS: [StartEraSpec; 10] = [
     StartEraSpec {
         id: "stone_age",
         name: "Stone Age",
@@ -160,6 +162,12 @@ pub const START_ERAS: [StartEraSpec; 9] = [
         name: "Information",
         description: "Begin with everything up to the Atomic era researched: a short, sharp game decided by satellites, robots and points.",
         era: Some(7),
+    },
+    StartEraSpec {
+        id: "future",
+        name: "Future Era",
+        description: "Begin with the Information era behind you: Future technology and civics decide the world, with no later age to wait for.",
+        era: Some(8),
     },
 ];
 
@@ -1043,7 +1051,7 @@ mod tests {
         }
 
         let playable: Vec<_> = playable_start_eras().collect();
-        assert_eq!(playable.len(), crate::rules::ERA_NAMES.len() - 1);
+        assert_eq!(playable.len(), crate::rules::ERA_NAMES.len());
         for (index, spec) in playable.iter().enumerate() {
             assert_eq!(spec.era, Some(index), "{}", spec.id);
             assert_eq!(spec.id, crate::rules::ERA_NAMES[index], "era {index}");
@@ -1052,9 +1060,9 @@ mod tests {
         }
         assert_eq!(stock_start_era_id(), "ancient");
         assert_eq!(last_start_era(), playable.len() - 1);
-        // Future is deliberately not a start, and an era off the end of the
+        // Future is the last playable start, and an era off the end of the
         // ladder names the stock start rather than nothing at all.
-        assert_eq!(start_era_from_id("future"), None);
+        assert_eq!(start_era_from_id("future"), Some(crate::rules::ERA_NAMES.len() - 1));
         assert_eq!(start_era_id(playable.len()), "ancient");
         assert_eq!(start_era_from_id("holocene"), None);
     }
@@ -1159,6 +1167,23 @@ mod tests {
             .collect();
         assert!(!kinds.contains("warrior"), "a Renaissance world still opens on Warriors: {kinds:?}");
         assert!(kinds.contains("settler"), "the Settler is not an upgradeable unit: {kinds:?}");
+
+        // The final rung is a real opening too: it carries every earlier age
+        // forward while leaving the Future tree for the new world to play.
+        let future_era = start_era_from_id("future").unwrap();
+        let future = world_opening_in(future_era);
+        assert_eq!(future.start_era, future_era);
+        assert_eq!(future.world_era, future_era);
+        assert!(future.rules.techs.values().any(|spec| spec.era == future_era));
+        for player in future.players.iter().filter(|player| !player.is_barbarian) {
+            assert!(player.techs.iter().all(|tech| future.rules.techs[tech].era < future_era));
+            assert!(future
+                .rules
+                .techs
+                .iter()
+                .filter(|(_, spec)| spec.era == future_era)
+                .all(|(tech, _)| !player.techs.contains(tech)));
+        }
 
         // The whole setup survives a save, or a reloaded world would quietly
         // fall back to the Ancient era and undo its own floor.
