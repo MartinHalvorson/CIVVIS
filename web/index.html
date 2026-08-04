@@ -4140,7 +4140,7 @@ const MOUNTAIN_TILE_COLOR = "#49453e";
 const VOLCANO_TILE_COLOR = "#292421";
 const TERRAIN = { grassland:"#5e9440", plains:"#ab9e4e", desert:"#d8c184",
                   tundra:"#98a089", snow:"#e8eef2", coast:"#20647e",
-                  ocean:"#0e3752", mountain:MOUNTAIN_TILE_COLOR, lake:"#2b7a86" };
+                  ocean:"#12305c", mountain:MOUNTAIN_TILE_COLOR, lake:"#2b7a86" };
 function tileGroundColor(tile, fallback = "#333") {
   return tile.feature === "volcano"
     ? VOLCANO_TILE_COLOR
@@ -19151,8 +19151,8 @@ function drawPlanetMap() {
     ocean.addColorStop(0, PARCH_LIGHT); ocean.addColorStop(.52, PARCH);
     ocean.addColorStop(.88, "#aa9364"); ocean.addColorStop(1, "#77623f");
   } else if (spectator) {
-    ocean.addColorStop(0, "#477f9b"); ocean.addColorStop(.52, "#163f57");
-    ocean.addColorStop(.88, "#082437"); ocean.addColorStop(1, "#020b13");
+    ocean.addColorStop(0, "#46679f"); ocean.addColorStop(.52, "#14315e");
+    ocean.addColorStop(.88, "#091a3a"); ocean.addColorStop(1, "#020714");
   } else {
     // Under fog the bare sphere is everything this empire has never seen, so
     // it reads as unknown rather than as an ocean nobody needs to explore.
