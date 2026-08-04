@@ -22,7 +22,7 @@ civvis.ai/download   the native binaries, from the latest GitHub release
 **The site is the same viewer twice, from two commits.** `/test` follows
 `main` on a schedule so the newest engine is always playable without anyone
 deciding anything; `/` is whatever the `site-stable` tag names and moves only
-when somebody runs the **promote-site** workflow, because whether a build is
+when somebody runs the **to-prod-manual-only** workflow, because whether a build is
 worth being the front page is a judgement no gate can make. Each lane states
 its commit in its own `build.json`. Both lanes ship in every deployment —
 Pages deployments are immutable snapshots of a whole directory, so there is no
@@ -52,8 +52,8 @@ to be movable.
 | `beta/landing.html` | `civvis.ai/home`. |
 | `beta/download.html` | `civvis.ai/download`. Links `releases/latest/download/<asset>`, so it never needs republishing when a release is cut. |
 | `.github/workflows/release.yml` | Builds those assets for Windows, macOS (both architectures) and Linux on a `v*` tag. |
-| `.github/workflows/publish-site.yml` | Builds both lanes, checks them, and deploys — every six hours and on demand. Without the Cloudflare secrets it degrades to a dry run, so the schedule is safe before the account exists. |
-| `.github/workflows/promote-site.yml` | Moves the `site-stable` tag to a chosen revision, then runs publish-site — the only way `/` changes. |
+| `.github/workflows/to-test-auto-30.yml` | Builds both lanes, checks them, and deploys — half-hourly behind the gate, and on demand. Without the Cloudflare secrets it degrades to a dry run, so the schedule is safe before the account exists. |
+| `.github/workflows/to-prod-manual-only.yml` | Moves the `site-stable` tag to a chosen revision, then runs to-test-auto-30 — the only way `/` changes. |
 | `beta/publish.sh` | Assembles `beta/dist/` from a named revision. |
 | `beta/verify.py` | Opens the assembled bundle in a real browser, watches it play, and walks through the password door. |
 | `beta/worker_test.py` | Calls `_worker.js` directly — the forward, the password, the headers — needing only Chrome. |
@@ -106,7 +106,7 @@ you are guessing about.
 
 ## Publishing
 
-Nobody cuts test builds. `publish-site` fires **every half hour** (and on the
+Nobody cuts test builds. `to-test-auto-30` fires **every half hour** (and on the
 Actions button), and a gate decides in seconds whether a deploy is worth
 twenty minutes of building: if `/test` already serves the current head it
 skips, and scheduled runs pace themselves against **440 of Cloudflare's 500
@@ -123,7 +123,7 @@ day, and an ungoverned half-hour cadence is ~1,440 deployments a month against
 a cap of 500.
 
 **Promoting** is the human act. When `main` is in a state worth being the
-front page: **Actions → promote-site → Run workflow**, ref = the sha you have
+front page: **Actions → to-prod-manual-only → Run workflow**, ref = the sha you have
 been watching on `/test` (or `main`). It moves the tag and runs the same
 publish job the schedule runs — one code path, no drift. The gates prove a
 build is not broken; whether a whole game is worth watching is the judgement
@@ -228,7 +228,7 @@ secrets under **Settings → Secrets and variables → Actions**:
 | `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → Create Token → **Create Custom Token**: one permission, `Account → Cloudflare Pages → Edit`, scoped to the account. (The "Edit Cloudflare Workers" template is the commonly suggested shortcut, but Pages deploys need the Pages permission, not the Workers one.) |
 | `CLOUDFLARE_ACCOUNT_ID` | The right-hand column of the account's overview page in the dashboard. |
 
-The first deploying run of `publish-site` creates the `civvis` Pages project
+The first deploying run of `to-test-auto-30` creates the `civvis` Pages project
 itself if it does not exist, then deploys into it — which gives a working URL
 at `civvis.pages.dev` before the domain is attached. Without the secrets the
 workflow still builds and checks both lanes and keeps the site as an artifact,
