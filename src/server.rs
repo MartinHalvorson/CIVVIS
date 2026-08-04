@@ -7111,27 +7111,35 @@ mod tests {
     /// the same result on both supported map projections.
     #[test]
     fn browser_search_lights_every_matching_visible_tile() {
-        let dock = EMBEDDED_INDEX
-            .split_once("<div id=\"map-controls-dock\">")
-            .expect("map controls dock")
+        let sidebar = EMBEDDED_INDEX
+            .split_once("<div id=\"side\">")
+            .expect("left command deck")
             .1
-            .split_once("<div id=\"map-area-editor\"")
-            .expect("end of map controls dock")
+            .split_once("<div id=\"buildmark\"")
+            .expect("end of left command deck")
             .0;
-        let search_at = dock.find("id=\"map-search\"").expect("map search control");
-        let controls_at = dock.find("id=\"zoomctl\"").expect("map controls");
+        let lenses_at = sidebar
+            .find("id=\"map-lenses\"")
+            .expect("map lens menu in the deck");
+        let search_at = sidebar
+            .find("id=\"map-search\"")
+            .expect("map search control in the deck");
+        let shortcuts_at = sidebar
+            .find("<summary>Keyboard shortcuts</summary>")
+            .expect("keyboard shortcuts");
         assert!(
-            search_at < controls_at,
-            "the search box should stand directly above the lower-left map controls"
+            lenses_at < search_at && search_at < shortcuts_at,
+            "map lenses should sit above visible-tile search, immediately before keyboard shortcuts"
         );
-        assert!(dock.contains("id=\"map-search-input\" type=\"search\""));
-        assert!(dock.contains("aria-live=\"polite\""));
+        assert!(sidebar.contains("id=\"map-search-input\" type=\"search\""));
+        assert!(sidebar.contains("id=\"map-search-civ\""));
+        assert!(sidebar.contains("aria-live=\"polite\""));
         assert!(EMBEDDED_INDEX.contains(
-            "#map-search {\n    position: absolute; z-index: 2; left: 0; bottom: calc(100% + 6px);"
+            "#map-utility-panel {\n    position: relative; z-index: 3; flex: 0 0 auto;"
         ));
 
         let matcher = EMBEDDED_INDEX
-            .split_once("function computeMapSearchMatches(st, query) {")
+            .split_once("function computeMapSearchMatches(st, query, civFilter = mapSearchCivId) {")
             .expect("map search matcher")
             .1
             .split_once("\nfunction mapSearchMatches() {")
@@ -7157,14 +7165,33 @@ mod tests {
             assert!(matcher.contains(field), "map search ignores {field}");
         }
         assert!(matcher.contains("RULES?.districts?.[district]?.replaces"));
+        assert!(matcher.contains("if (selectedCiv && String(owner) !== selectedCiv) return;"));
+        assert!(matcher.contains("if (!needle || mapSearchTextMatches(values, needle)) matches.add(at);"));
+        assert!(EMBEDDED_INDEX.contains("function mapSearchVisibleCivilizations(st)"));
+        assert!(EMBEDDED_INDEX.contains(
+            "player && !player.is_barbarian && player.civ && owners.has(String(player.id))"
+        ));
+        assert!(EMBEDDED_INDEX.contains("if (Array.isArray(pos) && visible.has(key(pos))"));
+        assert!(EMBEDDED_INDEX.contains("syncMapSearchCivilizations(st);"));
         assert!(EMBEDDED_INDEX.contains("drawFlatMapSearchHighlights(tiles);"));
         assert!(EMBEDDED_INDEX.contains("drawPlanetMapSearchHighlights(cells);"));
         assert!(EMBEDDED_INDEX.contains(
-            "TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));\n  syncMapSearchStatus();"
+            "TMAP = new Map(st.map.tiles.map(t => [key(t.pos), t]));\n  syncMapSearchCivilizations(st);\n  syncMapSearchStatus();"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "const message = `${count} visible ${count === 1 ? \"tile\" : \"tiles\"}`;"
+            "const selected = mapSearchCivId && select?.selectedOptions?.[0]?.textContent;"
         ));
+        let lens_setter = EMBEDDED_INDEX
+            .split_once("function setMapLens(next) {")
+            .expect("lens setter")
+            .1
+            .split_once("\nfunction modeline() {")
+            .expect("end of lens setter")
+            .0;
+        assert!(
+            !lens_setter.contains("mapSearch"),
+            "a lens must not clear an active visible-tile search"
+        );
     }
 
     /// Every lobby setting is answered before a game starts: each select
@@ -7866,6 +7893,12 @@ mod tests {
         let keyboard_shortcuts = EMBEDDED_INDEX
             .find("<summary>Keyboard shortcuts</summary>")
             .expect("keyboard shortcuts");
+        let map_lenses = EMBEDDED_INDEX
+            .find("<div id=\"map-lenses\"")
+            .expect("map lens menu");
+        let visible_tile_search = EMBEDDED_INDEX
+            .find("<div id=\"map-search\"")
+            .expect("visible tile search");
         // The controls must be ready before the settings they act on: first
         // the buttons, then the interface controls, then the game setup.
         assert!(title < sidebar && sidebar < simulation_controls);
@@ -7883,9 +7916,11 @@ mod tests {
                 && reasoning_log < war_log
                 && war_log < event_log
                 && event_log < government
-                && government < keyboard_shortcuts,
+                && government < map_lenses
+                && map_lenses < visible_tile_search
+                && visible_tile_search < keyboard_shortcuts,
             "left panel should show controls, interface settings, game setup, strategy, \
-             the three logs, government and then keyboard shortcuts"
+             the three logs, government, map lenses, visible-tile search and then keyboard shortcuts"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Interface Settings</span>"));
         assert!(!EMBEDDED_INDEX.contains("<span>Display settings</span>"));
@@ -7931,23 +7966,28 @@ mod tests {
         );
         assert!(EMBEDDED_INDEX.contains("id=\"map-lens-exit\""));
         assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #map-lenses"));
-        // The lenses scroll sideways inside the bar. Their dismiss control is a
-        // sibling of that scroller, not its last item, so it neither rides away
-        // with the buttons nor comes to rest on top of one.
-        let lens_bar = EMBEDDED_INDEX
-            .split_once("<div id=\"map-lenses\"")
-            .expect("map lens bar")
+        // The menu belongs to the deck's lower utility band, where a dense
+        // two-column grid keeps every manual lens directly reachable. Search
+        // follows it before the keyboard drawer, rather than occupying a map
+        // overlay that would compete with an active lens.
+        let utility = EMBEDDED_INDEX
+            .split_once("<div id=\"map-utility-panel\"")
+            .expect("map utility band")
             .1;
-        let strip = lens_bar.find("<div id=\"map-lens-strip\"").expect("lens scroller");
-        let strip_end = lens_bar.find("</div>").expect("end of lens scroller");
-        let close = lens_bar
+        let lenses = utility.find("<div id=\"map-lenses\"").expect("map lens menu");
+        let search = utility.find("<div id=\"map-search\"").expect("visible tile search");
+        let strip = utility.find("<div id=\"map-lens-strip\"").expect("lens grid");
+        let close = utility
             .find("data-overlay-close=\"lenses\"")
             .expect("lens dismiss control");
         assert!(
-            strip < strip_end && strip_end < close,
-            "the lens bar's close control belongs outside the strip that scrolls"
+            lenses < strip && strip < search && close < strip,
+            "the menu header holds its dismiss control, the lens grid follows it, and search follows the menu"
         );
-        assert!(EMBEDDED_INDEX.contains("#map-lens-strip::-webkit-scrollbar { display: none; }"));
+        assert!(EMBEDDED_INDEX.contains(
+            "#map-lens-strip {\n    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));"
+        ));
+        assert!(utility.contains("id=\"map-search-civ\""));
         assert!(EMBEDDED_INDEX
             .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
         // One instrument, one name. The switch, the title bar it is dragged by
@@ -8008,10 +8048,11 @@ mod tests {
         // The wide-screen default has three exact seams: the player HUD fills
         // from its live clear-left edge through the victory tracker's left
         // edge, the tracker owns ten percent of screen width and reaches the
-        // minimap's top, and the lower-right world minimap measures its frame
-        // diagonal against the screen diagonal. Custom drag layouts still
-        // override these values inline, but an uncustomized viewer always
-        // returns here.
+        // minimap's top, and the lower-right world minimap chooses a wider
+        // flat-chart or a near-square globe frame before measuring that
+        // frame's diagonal against the screen diagonal. Custom drag layouts
+        // still override these values inline, but an uncustomized viewer
+        // always returns here.
         assert!(EMBEDDED_INDEX.contains("--victory-hud-width: 10vw;"));
         assert!(EMBEDDED_INDEX.contains(
             "top: 0; left: var(--player-hud-left, 0px); right: var(--victory-hud-width); width: auto;"
@@ -8025,8 +8066,17 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains("const WORLD_MINIMAP_DIAGONAL_SHARE = .17;"));
         assert!(EMBEDDED_INDEX.contains("Math.hypot(window.innerWidth, window.innerHeight)"));
+        assert!(EMBEDDED_INDEX.contains("const WORLD_MINIMAP_REFERENCE = {"));
+        assert!(EMBEDDED_INDEX.contains("flat: {width:336, height:168},"));
+        assert!(EMBEDDED_INDEX.contains("planet: {width:240, height:216},"));
         assert!(EMBEDDED_INDEX.contains(
-            "Math.hypot(WORLD_MINIMAP_REFERENCE_WIDTH, WORLD_MINIMAP_REFERENCE_HEIGHT)"
+            "HUD_WIDGETS.minimap.element?.classList.toggle(\"minimap-world-planet\", shape === \"planet\");"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            ".minimap-frame.minimap-world-planet { width: 164px; height: 150px; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "position: absolute; z-index: 1; left: 10px; bottom: 9px;"
         ));
         assert!(!EMBEDDED_INDEX.contains("--player-hud-width"));
         // Every path keeps its top three plus the player's own civilization
@@ -11602,17 +11652,18 @@ mod tests {
     }
 
     /// The map controls read left to right in the order a viewer reaches for
-    /// them: collapse the command deck, set the map area, face north, zoom in,
-    /// zoom out, dismiss. Dismissal is last because it is the only one that
-    /// removes the bar, and it hides itself while the deck is collapsed —
-    /// Interface Settings is the only way back and it lives inside the deck.
+    /// them: collapse the command deck, set the map area, face north, choose a
+    /// sky destination when one is available, zoom in, zoom out, dismiss.
+    /// Dismissal is last because it is the only one that removes the bar, and
+    /// it hides itself while the deck is collapsed — Interface Settings is the
+    /// only way back and it lives inside the deck.
     #[test]
     fn the_map_controls_run_from_collapse_to_dismiss() {
         let dock = EMBEDDED_INDEX
-            .split_once("<div id=\"zoomctl\">")
+            .split_once("<div id=\"map-controls-dock\">")
             .expect("the map control dock")
             .1
-            .split_once("</div>")
+            .split_once("<div id=\"map-area-editor\"")
             .expect("the end of the map control dock")
             .0;
         let mut previous = 0usize;
@@ -11621,6 +11672,7 @@ mod tests {
             "id=\"paneltoggle\"",
             "id=\"mapareaset\"",
             "id=\"compass\"",
+            "id=\"skyworlds\"",
             "id=\"zin\"",
             "id=\"zout\"",
             "data-overlay-close=\"controls\"",
@@ -11647,16 +11699,17 @@ mod tests {
     /// not make them navigable. Sixty-five notches is a distance nobody
     /// scrolls, and every one of them has to be aimed over empty space. So the
     /// sky carries its own way about: the four places the gearing already
-    /// calls arrivals, the shots that hold a whole scale, and the zoom laid
-    /// out end to end as a ladder — one bar, standing over the zoom buttons,
-    /// up only while there is a sky to cross.
+    /// calls arrivals in the map controls, the shots that hold a whole scale,
+    /// and the zoom laid out end to end as a ladder — one sky bar standing
+    /// over those controls, up only while there is a sky to cross.
     #[test]
     fn the_sky_carries_its_own_way_about() {
         // It is part of the map controls: the same dock, the same dismissal.
-        // It stands *above* the zoom buttons rather than in the dock's flow,
-        // because the dock's height is ground the framing already reserves and
-        // a second row in the flow would move the world every time the camera
-        // left the globe.
+        // Its scale shots and ladder stand *above* the zoom buttons rather
+        // than in the dock's flow, because the dock's height is ground the
+        // framing already reserves and a second row in the flow would move the
+        // world every time the camera left the globe. The world arrivals are
+        // compact map controls between north and zoom-in.
         let dock = EMBEDDED_INDEX
             .split_once("<div id=\"map-controls-dock\">")
             .expect("the map control dock")
@@ -11669,9 +11722,9 @@ mod tests {
         );
         assert!(EMBEDDED_INDEX.contains("body.overlay-controls-hidden #skynav"));
         assert!(EMBEDDED_INDEX.contains("#skynav[hidden] { display: none; }"));
-        assert!(EMBEDDED_INDEX.contains("bottom: calc(100% + 6px)"));
+        assert!(EMBEDDED_INDEX.contains("bottom: calc(100% + 50px)"));
         for part in [
-            "id=\"skynav-worlds\"",
+            "id=\"skyworlds\"",
             "id=\"skynav-scales\"",
             "id=\"skyladder\"",
             "id=\"skyspan\"",
@@ -11681,6 +11734,13 @@ mod tests {
                 "the sky navigator is missing {part}"
             );
         }
+        let compass = dock.find("id=\"compass\"").expect("the north control");
+        let worlds = dock.find("id=\"skyworlds\"").expect("the world controls");
+        let zoom_in = dock.find("id=\"zin\"").expect("the zoom-in control");
+        assert!(
+            compass < worlds && worlds < zoom_in,
+            "Earth through Exoplanet should sit between face north and zoom in"
+        );
         // Only home takes the bar down, and only while home fills the frame:
         // home is the one world with a board on it. Every other world is
         // somewhere to get back off, and two readings of that rule cost a pass
@@ -11766,18 +11826,20 @@ mod tests {
         // no zoom can now reach.
         assert!(EMBEDDED_INDEX.contains("label:\"Solar system\", mark:\"☉\""));
         assert!(EMBEDDED_INDEX.contains("stops.push({id:\"voyage\", label:\"Voyage\""));
-        // And the bar reads outward in one order — Earth, Moon, Mars, Solar
-        // system, Voyage, Exoplanet. The divider is no longer the difference
-        // between a world and a shot: it falls where the sky stops being
-        // somewhere anyone has stood, so the destination sits with the far
-        // pictures rather than beside the Moon.
-        assert!(EMBEDDED_INDEX
-            .contains("    const near = worlds.filter(stop => stop.id !== \"exo\");"));
+        // Earth through Exoplanet are direct flight controls. The wider scale
+        // shots keep their names in the bar over the map, where they can sit
+        // beside the full-range zoom ladder without crowding the control row.
         assert!(EMBEDDED_INDEX.contains(
-            "                 ...worlds.filter(stop => stop.id === \"exo\").map(stop => [\"world\", stop])];"
+            "skyNavWorldRow.replaceChildren(...worlds.map(stop => skyNavButton(\"world\", stop)));"
         ));
         assert!(EMBEDDED_INDEX.contains(
-            "    skyNavScaleRow.replaceChildren(...far.map(([kind, stop]) => skyNavButton(kind, stop)));"
+            "skyNavScaleRow.replaceChildren(...scales.map(stop => skyNavButton(\"scale\", stop)));"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "document.querySelectorAll(\"#skynav [data-sky-stop], #skyworlds [data-sky-stop]\")"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "button.setAttribute(\"aria-label\", kind === \"world\" ?"
         ));
         // A switch takes three times as long as it first shipped at, both ways.
         // The distances are the content, and at the old pace the crossing was
