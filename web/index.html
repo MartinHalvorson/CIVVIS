@@ -19065,7 +19065,7 @@ function drawPlanetMap() {
   if (!planetReady()) {
     ensurePlanetGeometry();
     cx.setTransform(DPR, 0, 0, DPR, 0, 0);
-    cx.fillStyle = "#050d14";
+    cx.fillStyle = "#000";
     cx.fillRect(0, 0, MAPW, MAPH);
     cx.fillStyle = "#a7cfdf"; cx.textAlign = "center";
     cx.font = "14px system-ui, -apple-system, BlinkMacSystemFont, sans-serif";
@@ -19088,21 +19088,13 @@ function drawPlanetMap() {
   PLANET_HIT_CELLS = [];
 
   cx.setTransform(DPR, 0, 0, DPR, 0, 0);
-  const backdrop = cx.createRadialGradient(centerX, centerY, 0, centerX, centerY,
-                                           Math.max(MAPW, MAPH));
-  backdrop.addColorStop(0, "#132a38");
-  backdrop.addColorStop(.58, "#071018");
-  backdrop.addColorStop(1, "#03070c");
-  cx.fillStyle = backdrop;
+  // Space is a true black field. The globe, stars, and bodies are the only
+  // lights in it, rather than floating over a blue atmospheric wash.
+  cx.fillStyle = "#000";
   cx.fillRect(0, 0, MAPW, MAPH);
-  // Once the globe stops filling the stage, the wash behind it is no longer
-  // the top of an atmosphere — it is the space the rest of the system is in.
+  // Stars emerge as the globe draws back; the black field stays constant.
   const depth = skyDepth(radius);
-  if (depth > 0) {
-    cx.fillStyle = `rgba(2,5,10,${(depth * .78).toFixed(3)})`;
-    cx.fillRect(0, 0, MAPW, MAPH);
-    drawSkyStars(depth, radius);
-  }
+  if (depth > 0) drawSkyStars(depth, radius);
 
   // Standing over Mars, the Earth is a whole screen-width of world sitting
   // several screens off the side of the stage. Every one of its tiles still
@@ -19314,13 +19306,15 @@ function drawPlanetMap() {
   // The air seen edge-on, and the edge it is seen against. Both are the ball
   // itself and neither belongs on a chart.
   if (!camera.chart) {
-    const rim = cx.createRadialGradient(centerX, centerY, radius * .82,
-                                        centerX, centerY, radius * 1.08);
+    // Halve the envelope around the surface, while retaining the same edge
+    // highlight: the former .82…1.08 gradient becomes .91…1.04.
+    const rim = cx.createRadialGradient(centerX, centerY, radius * .91,
+                                        centerX, centerY, radius * 1.04);
     rim.addColorStop(0, "rgba(110,201,255,0)");
     rim.addColorStop(.7, "rgba(110,201,255,.06)");
     rim.addColorStop(.92, "rgba(133,216,255,.42)");
     rim.addColorStop(1, "rgba(133,216,255,0)");
-    cx.fillStyle = rim; cx.beginPath(); cx.arc(centerX, centerY, radius * 1.1, 0, 7); cx.fill();
+    cx.fillStyle = rim; cx.beginPath(); cx.arc(centerX, centerY, radius * 1.05, 0, 7); cx.fill();
     cx.strokeStyle = "rgba(196,235,255,.48)";
     cx.lineWidth = Math.max(.5, Math.min(1.4, radius * .06));
     cx.beginPath(); cx.arc(centerX, centerY, radius, 0, 7); cx.stroke();
