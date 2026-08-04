@@ -2459,7 +2459,7 @@ impl Session {
                         player["ai_plan"] = self.plan_json(&plan);
                     }
                     // What this civilization is actually spending its science
-                    // and culture on, for the Active AI strategy panel. The
+                    // and culture on, for the AI strategy dossier. The
                     // observation only ever carries the *observed* seat's, in
                     // `me`, and above the world there is no observed seat.
                     //
@@ -6380,21 +6380,31 @@ mod tests {
     }
 
     #[test]
-    fn browser_lets_an_observer_narrow_the_reasoning_log() {
-        // The panel is only useful if a reader can ask a narrower question
-        // than "everything every civilization thought": whose reasoning, how
-        // deep into it, and about what.
-        assert!(EMBEDDED_INDEX.contains("<span>AI reasoning log</span>"));
-        assert!(EMBEDDED_INDEX.contains("id=\"reasonplayer\""));
+    fn browser_keeps_ai_strategy_and_its_decision_factors_together() {
+        // One civilization picker anchors the current plan, research, civics,
+        // and the factors behind its decisions. A second, unrelated civ filter
+        // would let a reader inspect a plan for one empire beside another's
+        // evidence, so it is deliberately absent.
+        assert!(EMBEDDED_INDEX.contains("<span>AI strategy</span>"));
+        assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"strategyplayer\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"reasonsec\""));
+        assert!(!EMBEDDED_INDEX.contains("id=\"reasonplayer\""));
         assert!(EMBEDDED_INDEX.contains("id=\"reasonlevel\""));
         assert!(EMBEDDED_INDEX.contains("id=\"reasontopic\""));
-        assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All civilizations</option>"));
-        // Anything the combined log can show, the civ filter can isolate. A
-        // Free City keeps developing the cities it inherited and so keeps
-        // making production decisions; without this it appeared under "All
-        // civilizations" with no way to select it.
-        assert!(EMBEDDED_INDEX.contains("for (const thought of reasoningLog.thoughts) listed.add(thought.player);"));
-        assert!(EMBEDDED_INDEX.contains("function logSeatNote(id)"));
+        assert!(EMBEDDED_INDEX.contains("id=\"reasonmore\""));
+        assert!(EMBEDDED_INDEX.contains("const player = strategyViewSeat();"));
+        assert!(EMBEDDED_INDEX.contains("function showMoreReasoning()"));
+        assert!(EMBEDDED_INDEX.contains("const REASON_KEEP = 6000;"));
+        // The engine reassesses grand strategy more often than it changes it.
+        // Preserve that activity, but call out only an actual doctrine
+        // transition and name the prior doctrine for readers following why a
+        // new decision was made.
+        assert!(EMBEDDED_INDEX.contains("function strategyShiftOrigins(player)"));
+        assert!(EMBEDDED_INDEX.contains("const match = /^Grand strategy:\\s*(.+)$/.exec("));
+        assert!(EMBEDDED_INDEX.contains("strategyShiftFrom"));
+        assert!(EMBEDDED_INDEX.contains("Shift from ${reasonEscape(thought.strategyShiftFrom)}"));
+        assert!(EMBEDDED_INDEX.contains("saved[\"ai-reasoning\"]"));
         assert!(EMBEDDED_INDEX.contains("<option value=\"all\">All topics</option>"));
         // Depth is a floor, not an equality — a decision read without the plan
         // it serves explains nothing — and the three rungs are the ones the
@@ -6423,35 +6433,25 @@ mod tests {
         // a change of world does. `reasoning_json` stops sending a rival's
         // thoughts the moment Watch as is entered, but the page had absorbed
         // them while it was above the world — so without this the redaction is
-        // defeated by having watched first, and the log under the Active
-        // strategy panel names every civilization while the panel names one.
+        // defeated by having watched first.
         assert!(EMBEDDED_INDEX.contains("const viewer = st.view_player ?? null;"));
         assert!(EMBEDDED_INDEX
             .contains("if (newWorld || reasoningLog.viewer !== viewer) {"));
-        // A log that is not the whole story says so.
-        assert!(EMBEDDED_INDEX.contains("Earlier reasoning has been discarded"));
-        // The three logs share the sidebar's spare height. Each floor is
-        // header + padding + border + what the panel holds, and every one of
-        // them now has to cover a filter bar as well as its list — measured in
-        // the page, because a section squeezed under its floor does not clip:
-        // its list paints straight over the panel below it. The reasoning
-        // log's bar is three rows (97px); the war and event logs' are two
-        // (66px), and that bar is the whole difference between these numbers
-        // and the ones that were here before the filters — each list keeps the
-        // height it had.
-        assert!(EMBEDDED_INDEX.contains("#reasonsec[open] { flex: 3 0 0; min-height: 300px; }"));
+        // A factor trail that no longer reaches the first decision says so.
+        assert!(EMBEDDED_INDEX.contains("Earlier decision factors have been discarded"));
+        // The single dossier has the spare height formerly allocated to a
+        // separate reasoning card. Its trail scrolls inside the dossier while
+        // the world chronicles keep their measured floors.
+        assert!(EMBEDDED_INDEX.contains("#strategysec[open] { flex: 3 0 0; min-height: 460px; }"));
         assert!(EMBEDDED_INDEX.contains("#eventsec[open] { flex: 2 0 0; min-height: 302px; }"));
         assert!(EMBEDDED_INDEX.contains("#warsec[open] { flex: 2 0 0; min-height: 266px; }"));
         assert!(EMBEDDED_INDEX.contains(".reason-list { flex: 1 1 auto; min-height: 132px;"));
-        // One filter bar, worn in the same place by every panel that narrows
-        // by civilization — the three logs and the Active AI strategy card above
-        // them. A second copy of this chrome under another name is how four
-        // pickers drift into four shapes.
+        // The compact filter language is shared with the two world chronicles;
+        // only depth and topic remain because civilization is selected once.
         assert!(EMBEDDED_INDEX.contains(".log-filters { flex: 0 0 auto;"));
+        assert!(EMBEDDED_INDEX.contains(".strategy-reason-filters { flex: 0 0 auto;"));
         assert!(!EMBEDDED_INDEX.contains(".reason-filter"));
-        assert!(EMBEDDED_INDEX.contains(
-            "<label class=\"log-filter\"><span>Civ</span>\n            <select id=\"strategyplayer\""
-        ));
+        assert!(EMBEDDED_INDEX.contains("Recorded factors behind ${civ.civ}'s plan and decisions"));
     }
 
     /// The war log and the game event log are narrowed the same way.
@@ -8171,12 +8171,9 @@ mod tests {
         let war_log = EMBEDDED_INDEX
             .find("<span>War log</span>")
             .expect("war log");
-        let reasoning_log = EMBEDDED_INDEX
-            .find("<span>AI reasoning log</span>")
-            .expect("AI reasoning log");
         let strategy = EMBEDDED_INDEX
-            .find("<span>Active AI strategy</span>")
-            .expect("active strategy section");
+            .find("<span>AI strategy</span>")
+            .expect("AI strategy section");
         let government = EMBEDDED_INDEX
             .find("data-section=\"government\"")
             .expect("government section");
@@ -8197,24 +8194,20 @@ mod tests {
         assert!(title < sidebar && sidebar < simulation_controls);
         assert!(simulation_controls < interface_settings && interface_settings < game_settings);
         assert!(game_settings < strategy);
-        // The column runs deepest-cause first — what a civilization is trying
-        // to do now, why it acted, the wars that reasoning started, then the
-        // world's record of what happened — so reading the column downward
-        // reads a turn in the order it was decided. Active AI strategy leads
-        // because it is the standing plan every entry below it is an instance
-        // of: the reasoning log is an account over turns, and this is the
-        // current answer.
+        // The column runs deepest-cause first — a civilization's active plan
+        // and its decision factors, then wars, then the world's record of what
+        // happened — so reading the column downward keeps each answer beside
+        // the reasons that formed it.
         assert!(
-            strategy < reasoning_log
-                && reasoning_log < war_log
+            strategy < war_log
                 && war_log < event_log
                 && event_log < government
                 && government < map_lenses
                 && map_lenses < map_utility
                 && map_lenses < visible_tile_search
                 && visible_tile_search < keyboard_shortcuts,
-            "left panel should show controls, interface settings, game setup, strategy, \
-             the three logs, government, map lenses, visible-tile search and then keyboard shortcuts"
+            "left panel should show controls, interface settings, game setup, the AI strategy dossier, \
+             world logs, government, map lenses, visible-tile search and then keyboard shortcuts"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Interface Settings</span>"));
         assert!(!EMBEDDED_INDEX.contains("<span>Display settings</span>"));
@@ -8655,7 +8648,7 @@ mod tests {
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
                 .count(),
-            8,
+            7,
             "every top-level left-panel section should be collapsible"
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
@@ -8741,7 +8734,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("p.ai_plan"));
         assert!(EMBEDDED_INDEX.contains(".civ-dossier {"));
         assert!(EMBEDDED_INDEX.contains("changed its grand strategy from"));
-        // Active AI strategy speaks for one civilization at a time, and which
+        // The AI strategy dossier speaks for one civilization at a time, and which
         // civilizations it may speak for is the observation's answer, not the
         // panel's: `view_player` names a seat in a played game and in Watch as,
         // and is null only for the view entitled to read every plan.
@@ -9149,7 +9142,7 @@ mod tests {
         assert!(!EMBEDDED_INDEX
             .contains("civilization${summaries.length === 1 ? \"\" : \"s\"} completed"));
         assert!(EMBEDDED_INDEX.contains("id=\"strategysec\""));
-        // Active AI strategy is no longer withheld from the omniscient spectator.
+        // AI strategy is no longer withheld from the omniscient spectator.
         // It was, for as long as the panel could only ever speak for `state.me`
         // and above the world there is no single "me"; it now names the
         // civilization it is speaking for, so the one view that can read every
@@ -10352,7 +10345,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("row(\"Strike package\""));
     }
 
-    /// The Active AI strategy panel reads one civilization's plan beside what it
+    /// The AI strategy dossier reads one civilization's plan beside what it
     /// is actually spending its science and culture on. The observation only
     /// ever carries the *observed* seat's study, in `me`, and above the world
     /// there is no observed seat — so the omniscient view names every major's.
