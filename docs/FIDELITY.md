@@ -634,8 +634,9 @@ resource map placement follows the union rule with hills-only (Sheep,
 Copper, Iron, Coal, Diamonds) and flat-only (grains) forms honored — a
 regression where feature-listed resources became feature-*only* is fixed;
 barbarian camps keep the shipped placement floors (4 from cities, 7 from
-camps); nuclear device stats live in `data/wmds.json` with maintenance
-charged from data; the Cultural Heritage Inspiration now fires via a
+camps), and each new outpost now receives its fortified anti-cavalry guard
+and land/naval recon role; nuclear device stats live in `data/wmds.json`
+with maintenance charged from data; the Cultural Heritage Inspiration now fires via a
 full-museum theming proxy; and Gilgamesh aside, the six map-size profiles
 and the alliance-leveling timeline verified exact.
 
@@ -754,8 +755,9 @@ Known simplifications not yet expressed in data: civic-gated valid terrain
 rows (CIVVIS is the permissive side there), theming (complete: works are
 era-and-creator pieces, museums theme on the shipped rules — three
 artists for art, three origin civilizations for artifacts — with the
-+100% bonus), barbarian camp spawn cadence (the odds/boldness
-model is DLL-side; placement floors and distances are exact), WMD delivery detail
++100% bonus), the DLL-side details of barbarian camp spawn cadence and
+boldness (placement floors, outpost roles, and naval production are modeled),
+and WMD delivery detail
 (the `WmdStrike` action launches on the shipped ranges, radii and fallout;
 and the per-ring unit damage is the one number the database does not carry).
 

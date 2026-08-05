@@ -1026,16 +1026,38 @@ local function upgradeUnit(unit)
 	-- rival 850+ with upgrade_blocked counting Warriors and Trebuchets every
 	-- turn — the COUNT is known, the reason is the decision-relevant part.
 	-- Blocked path only; the accepting path stays one call.
+	-- ⚠⚠ AND SAY WHY THE REASON IS MISSING WHEN IT IS. #1237 wired this helper
+	-- to CIVVIS's own orders and the counts finally moved — 93 attempts and 77
+	-- refusals on the first run — but `upgrade_blocked_why` came back EMPTY on
+	-- every one of them. An empty reason has FOUR distinct causes and they are
+	-- not interchangeable: the global is absent (this sandbox has no `_G`, see
+	-- the `revealed_api` lesson), `CanStartCommand` returned no table, the table
+	-- carried no FAILURE_REASONS, or the list was there and empty.
+	--
+	-- Recording WHICH costs one string per blocked unit and is the difference
+	-- between "the engine declined to answer" and "we never asked properly".
 	try(function()
 		local can, results = UnitManager.CanStartCommand(
 			unit, CMD["UNITCOMMAND_UPGRADE"], true, true);
-		if can ~= true and type(results) == "table"
-				and UnitCommandResults ~= nil then
-			local reasons = results[UnitCommandResults.FAILURE_REASONS];
-			if type(reasons) == "table" and #reasons > 0 then
-				upgradeBlockedWhy[name] = table.concat(reasons, "; ");
-			end
+		if can == true then return; end
+		if UnitCommandResults == nil then
+			upgradeBlockedWhy[name] = "?no UnitCommandResults global";
+			return;
 		end
+		if type(results) ~= "table" then
+			upgradeBlockedWhy[name] = "?no results table (" .. type(results) .. ")";
+			return;
+		end
+		local reasons = results[UnitCommandResults.FAILURE_REASONS];
+		if type(reasons) ~= "table" then
+			upgradeBlockedWhy[name] = "?no FAILURE_REASONS key";
+			return;
+		end
+		if #reasons == 0 then
+			upgradeBlockedWhy[name] = "?FAILURE_REASONS empty";
+			return;
+		end
+		upgradeBlockedWhy[name] = table.concat(reasons, "; ");
 	end);
 	return nil;
 end
@@ -6753,6 +6775,49 @@ local function applyOrder(player, pid, row, turn)
 
 		local slots = try(function() return culture:GetNumPolicySlots(); end, 0) or 0;
 		if #desired > slots then return false, "policy_deck_too_large"; end
+		-- ⚠⚠ NAME THE CARD AND THE SHAPE, because "does not fit" is not a
+		-- diagnosis. `policy_deck_does_not_fit` fires on **601 of 2,068**
+		-- policy-deck orders (29%) across the 08-04/08-05 runs, and every one
+		-- of those refusals recorded nothing but that string — not the deck
+		-- asked for, not the slots available, not which card had nowhere to go.
+		--
+		-- Two hypotheses were checked against recorded data before writing this
+		-- and BOTH came back clean, which is why an instrument is the next step
+		-- rather than a patch:
+		--   * slot COUNT disagreeing with the host — 0 mismatches in 7,563
+		--     turn records, every government
+		--   * card slot TYPE disagreeing — 12 of 123 differ, but all 12 are
+		--     `SLOT_GREAT_PERSON` cards CIVVIS calls `wildcard`, and the
+		--     seating below already falls those back to a Wildcard slot
+		-- So the cause is neither of the obvious two, and guessing a third is
+		-- how #1107 got fixed in the wrong layer.
+		local function deckShape()
+			local want, have = {}, {};
+			for _, c in ipairs(desired) do
+				want[#want + 1] = tostring(c.PolicyType or "?")
+					.. ":" .. tostring(c.GovernmentSlotType or "?");
+			end
+			for i = 0, slots - 1 do
+				have[#have + 1] = tostring(try(function()
+					local slotId = culture:GetSlotType(i);
+					return GameInfo.GovernmentSlots[slotId].GovernmentSlotType;
+				end, "?"));
+			end
+			return table.concat(want, ","), table.concat(have, ",");
+		end
+		local function noFit(card)
+			local want, have = deckShape();
+			emit("policy_deck_refused", {
+				turn = turn,
+				-- The card that had nowhere to go, which is the whole question.
+				card = card ~= nil and tostring(card.PolicyType or "?") or nil,
+				card_slot = card ~= nil and tostring(card.GovernmentSlotType or "?") or nil,
+				wanted = want,
+				slots = have,
+				slot_count = slots,
+			});
+			return false, "policy_deck_does_not_fit";
+		end
 		local slotNames = {};
 		for i = 0, slots - 1 do
 			slotNames[i] = try(function()
@@ -6777,7 +6842,7 @@ local function applyOrder(player, pid, row, turn)
 		for _, card in ipairs(desired) do
 			if card.GovernmentSlotType == "SLOT_WILDCARD" then
 				if not seat(card, "SLOT_WILDCARD") then
-					return false, "policy_deck_does_not_fit";
+					return noFit(card);
 				end
 			else
 				pending[#pending + 1] = card;
@@ -6791,7 +6856,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		for _, card in ipairs(wildcard) do
 			if not seat(card, "SLOT_WILDCARD") then
-				return false, "policy_deck_does_not_fit";
+				return noFit(card);
 			end
 		end
 
@@ -7715,7 +7780,24 @@ local function applyOrder(player, pid, row, turn)
 			return routed, verb;
 		end
 		if verb == "UPGRADE" then
-			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"]), verb;
+			-- ⚠⚠ THROUGH `upgradeUnit`, NOT `commandUnit` DIRECTLY. That helper
+			-- exists precisely to turn a refused upgrade into a NAMED one — it
+			-- asks the engine the two-flag `CanStartCommand` and records
+			-- `FAILURE_REASONS` — and until now only the mod's own automation
+			-- called it. Every upgrade CIVVIS itself ordered went straight to
+			-- `commandUnit` and was counted anonymously.
+			--
+			-- The cost of that gap, measured over the 08-04/08-05 runs:
+			-- `UPGRADE` is 933 refusals, the third-largest category of all, and
+			-- `upgrade_tried` / `upgrade_blocked` both read ZERO on every run
+			-- because the counters were watching a path the orders never took.
+			--
+			-- This is the same defect the comment above `upgradeUnit` was
+			-- written about: "an anonymous count ... naming it made the cause
+			-- fall out immediately and both times the standing hypothesis was
+			-- wrong". The helper was right; it simply was not wired here.
+			local upgraded = upgradeUnit(unit);
+			return upgraded ~= nil, verb;
 		end
 		local promotionName = string.match(tostring(verb), "^PROMOTE:(.+)$");
 		if promotionName ~= nil then
@@ -8008,6 +8090,34 @@ local function applyOrders(player, pid, turn, rows)
 			runOrder(index, row);
 		end
 	end
+	-- ★★★★★ CHANGE GOVERNMENT BEFORE SLOTTING THE DECK THAT FITS IT. Like
+	-- FOUND_CITY above, this is an ACTUATION RULE of Civilization VI and not a
+	-- decision: a government defines the slot SHAPE, so a deck chosen for the
+	-- new government is illegal under the old one and the host refuses the
+	-- whole thing.
+	--
+	-- Caught by the `policy_deck_refused` instrument (#1222) on its first live
+	-- game, turn 183:
+	--
+	--   card with nowhere to go : POLICY_WISSELBANKEN (SLOT_DIPLOMATIC)
+	--   slots the host had      : MILITARY,MILITARY,ECONOMIC,ECONOMIC,
+	--                             DIPLOMATIC,WILDCARD        <- Theocracy
+	--   deck CIVVIS asked for   : ECONOMIC x3, MILITARY x1, DIPLOMATIC x2
+	--                                                        <- Merchant Republic
+	--
+	-- and the export shows the government flipping THEOCRACY -> MERCHANT_REPUBLIC
+	-- on turn 184, one turn later. CIVVIS was right about both; the two orders
+	-- were simply applied in the wrong order.
+	--
+	-- ⚠ Not a CIVVIS-side bug. `policies_fit` and `revise_policy_deck` both seat
+	-- correctly, and `data/governments.json` matches `Government_SlotCounts` for
+	-- all 13 governments — checked before touching anything, because the obvious
+	-- read is that the deck chooser is broken and it is not.
+	for index, row in ipairs(rows) do
+		if not ordered[index] and tostring(row.kind or "") == "government" then
+			runOrder(index, row);
+		end
+	end
 	for index, row in ipairs(rows) do
 		if not ordered[index] then runOrder(index, row); end
 	end
@@ -8176,8 +8286,26 @@ local function reportLostCities(player, pid, turn)
 				-- without inferring either. `-1` for "the accessor is missing"
 				-- rather than `false`, so a broken read can never be mistaken
 				-- for a peaceful game — the `#1184` convention.
+				--
+				-- ⚠⚠ AND THAT CONVENTION IMMEDIATELY EARNED ITS KEEP. This was
+				-- first written as `GetDiplomacy():IsAtWar()`, which does not exist
+				-- on the Diplomacy object, and the field came back `-1` on all SEVEN
+				-- city losses of the first run that carried it. Had the fallback been
+				-- `false`, seven stormings would have been recorded as "lost while at
+				-- peace" — precisely the wrong conclusion, and indistinguishable from
+				-- a real one.
+				--
+				-- The working form is the one this file already uses in four other
+				-- places: `IsAtWarWith(id)` over the alive majors.
 				at_war = try(function()
-					return player:GetDiplomacy():IsAtWar();
+					local diplomacy = player:GetDiplomacy();
+					if diplomacy == nil then return -1; end
+					for _, otherId in ipairs(PlayerManager.GetAliveMajorIDs()) do
+						if otherId ~= pid and diplomacy:IsAtWarWith(otherId) then
+							return true;
+						end
+					end
+					return false;
 				end, -1),
 				turn = turn,
 			};

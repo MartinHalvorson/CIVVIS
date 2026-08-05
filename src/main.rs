@@ -248,6 +248,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the live `civvis_orders` bridge. Engine and Elo trajectories therefore keep
 /// their prior behavior; this is a compatibility re-pin, not a protocol bump.
 ///
+/// #929 retries asynchronous Firaxis governor postings behind
+/// `live_governor_assignment_adapter`. Configured and legacy engine agents keep
+/// it false; only `civvis_orders` enables it. Compatibility re-pin, not an Elo
+/// protocol change.
+///
 /// #911's escorted-settler correction remains behind `settlement_safety`,
 /// which `AdvancedAi::legacy()` disables. The live religious-purchase guard
 /// added afterward is likewise default-off in `BasicAi` and enabled only by
@@ -627,8 +632,43 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// applied at each call site, and a fixed-prefix `ai_eval advanced basic`
 /// comparison produced byte-identical output on clean main and the candidate.
 /// Compatibility re-pin; the Elo protocol does not move.
+///
+/// #1225 reuses the tile appeal computed by one `worthwhile_improvements` call
+/// across that tile's candidate improvements. A fixed-prefix `ai_eval
+/// advanced basic --pairs 10 --players 4 --turns 200 --seed 31337 --jobs 1
+/// --deployment-comparison` comparison produced byte-identical output on
+/// clean main and the candidate (SHA-256
+/// `34c8ccea34d4bf3a8b60ae1b713f82bffbce77a5f1614f07d69db591d6287b24`).
+/// #1227 stops the live religious buyer purchasing a Missionary into a tile that
+/// already holds one of our religious units — the host refuses it outright with
+/// "Too many units of the same class in this location.", 799 times across the
+/// 08-04/08-05 runs. The guard is gated on `live_religious_purchase_guard`, like
+/// the majority-religion check beside it, so the frozen controller is untouched:
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed 31337
+/// --jobs 1 --deployment-comparison` produced BYTE-IDENTICAL output from this
+/// worktree with the change stashed and applied (same base, same build profile).
+/// Compatibility re-pin; the Elo protocol does not move.
+///
+/// #1232 shares the radius-two position disk between settlement growth
+/// forecasting and adjacency scoring inside one visible site valuation. The
+/// legacy controller leaves the settlement-safety path disabled. A fixed-prefix
+/// `ai_eval advanced basic --pairs 10 --players 4 --turns 200 --seed 31337
+/// --jobs 1 --deployment-comparison` comparison produced byte-identical output
+/// on clean main and the candidate (SHA-256
+/// `34c8ccea34d4bf3a8b60ae1b713f82bffbce77a5f1614f07d69db591d6287b24`).
+/// Compatibility re-pin; the Elo protocol does not move.
+///
+/// #1241 moves the friendly-city ownership check ahead of the static movement
+/// predicate in `BasicAi::patrol_tile`. The predicate is unchanged; the new
+/// order rejects the overwhelmingly common unowned map tile before asking the
+/// traversal cache, so the frozen controller's source contract is re-pinned
+/// after the fixed-prefix comparison below.
+/// #1259 guards the special-improver helper at its call site. The guard repeats
+/// the helper's existing eligibility checks, so the advanced_v1 legacy path is
+/// unchanged; the source contract is re-pinned after the fixed-prefix
+/// comparison above.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0f3d_62d2_59f0_9276;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6921_1afb_17d8_bec8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

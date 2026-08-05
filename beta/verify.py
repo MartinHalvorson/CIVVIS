@@ -77,6 +77,86 @@ def find_chrome() -> str:
     return CHROME_CANDIDATES[0]
 
 
+# Every cleanup this file promises happens in a ``finally``, and a ``finally``
+# is a promise the operating system never co-signed: kill the checker — a
+# harness timeout, a task kill, a closed session — and the headless Chrome it
+# spawned keeps pumping animation frames forever. Twenty-six of them were once
+# found on the Windows box sharing fifteen cores between them. A kill-on-close
+# job object makes the OS itself the janitor: the browser's lifetime is tied
+# to ours however we end, teardown code or none.
+_JOBS: list = []  # job handles must outlive us; closing one is the kill
+
+
+def tether(child: subprocess.Popen) -> None:
+    """Make Windows kill *child* and its whole tree the moment we die."""
+    if sys.platform != "win32":
+        return
+    import ctypes
+
+    class Basic(ctypes.Structure):
+        _fields_ = [
+            ("PerProcessUserTimeLimit", ctypes.c_int64),
+            ("PerJobUserTimeLimit", ctypes.c_int64),
+            ("LimitFlags", ctypes.c_uint32),
+            ("MinimumWorkingSetSize", ctypes.c_size_t),
+            ("MaximumWorkingSetSize", ctypes.c_size_t),
+            ("ActiveProcessLimit", ctypes.c_uint32),
+            ("Affinity", ctypes.c_size_t),
+            ("PriorityClass", ctypes.c_uint32),
+            ("SchedulingClass", ctypes.c_uint32),
+        ]
+
+    class Io(ctypes.Structure):
+        _fields_ = [(field, ctypes.c_uint64) for field in (
+            "ReadOperationCount", "WriteOperationCount", "OtherOperationCount",
+            "ReadTransferCount", "WriteTransferCount", "OtherTransferCount",
+        )]
+
+    class Extended(ctypes.Structure):
+        _fields_ = [
+            ("BasicLimitInformation", Basic),
+            ("IoInfo", Io),
+            ("ProcessMemoryLimit", ctypes.c_size_t),
+            ("JobMemoryLimit", ctypes.c_size_t),
+            ("PeakProcessMemoryUsed", ctypes.c_size_t),
+            ("PeakJobMemoryUsed", ctypes.c_size_t),
+        ]
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    job = kernel32.CreateJobObjectW(None, None)
+    if not job:
+        return
+    limits = Extended()
+    limits.BasicLimitInformation.LimitFlags = 0x2000  # KILL_ON_JOB_CLOSE
+    assigned = kernel32.SetInformationJobObject(
+        job, 9, ctypes.byref(limits), ctypes.sizeof(limits)
+    ) and kernel32.AssignProcessToJobObject(job, int(child._handle))
+    if assigned:
+        _JOBS.append(job)
+    else:
+        kernel32.CloseHandle(job)
+
+
+def fresh_profile(prefix: str) -> str:
+    """A throwaway browser profile, minus the wreckage of dead runs.
+
+    The ``shutil.rmtree`` in the ``finally`` has the same blind spot as the
+    ``terminate`` beside it: a hard-killed run leaves its profile behind, a
+    few hundred megabytes each. Anything under this prefix untouched for a
+    day belongs to no live check — with ``tether`` its Chrome is already
+    gone — so each run starts by burying the previous casualties.
+    """
+    temp = pathlib.Path(tempfile.gettempdir())
+    cutoff = time.time() - 24 * 3600
+    for stale in temp.glob(prefix + "*"):
+        try:
+            if stale.is_dir() and stale.stat().st_mtime < cutoff:
+                shutil.rmtree(stale, ignore_errors=True)
+        except OSError:
+            pass
+    return tempfile.mkdtemp(prefix=prefix)
+
+
 # The site carries the same viewer twice: the promoted stable build at the
 # root and the automatic head build under /test. Each lane is checked
 # separately (`--mount root` / `--mount test`) because they are different
@@ -320,6 +400,7 @@ def check_gate(dist: pathlib.Path) -> list[str]:
         ],
         stdout=log, stderr=subprocess.STDOUT,
     )
+    tether(dev)
     try:
         deadline = time.time() + 120
         ready = False
@@ -566,7 +647,7 @@ def main(argv: list[str] | None = None) -> int:
 
     port = free_port()
     httpd = serve(dist, port)
-    profile = tempfile.mkdtemp(prefix="civvis-verify-")
+    profile = fresh_profile("civvis-verify-")
     debug_port = free_port()
     url = f"http://127.0.0.1:{port}/{lane}"
     print(f"==> opening {url} in headless Chrome")
@@ -587,6 +668,7 @@ def main(argv: list[str] | None = None) -> int:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+    tether(chrome)
 
     try:
         target = None

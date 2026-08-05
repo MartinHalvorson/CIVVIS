@@ -9346,7 +9346,18 @@ pub fn rebuild_from_state(
     }
     if let Some(civ6) = &state.government {
         match civvis_node_name(&game.rules.governments, civ6, "GOVERNMENT_") {
-            Some(name) => game.players[0].government = Some(name),
+            Some(name) => {
+                // ⚠⚠ AND DROP CARDS THE NEW CONSTITUTION CANNOT HOLD. A
+                // government defines the slot SHAPE, and `policies_fit` is
+                // enforced only when a card is SLOTTED — so a deck legal under
+                // the old government survived the change and CIVVIS re-sent it
+                // every turn. See `prune_policies_to_government`.
+                let changed = game.players[0].government.as_ref() != Some(&name);
+                game.players[0].government = Some(name);
+                if changed {
+                    game.prune_policies_to_government(0);
+                }
+            }
             None => {
                 if !unmapped.contains(civ6) {
                     unmapped.push(civ6.clone());
@@ -10537,7 +10548,12 @@ impl LiveMirror {
         apply_player_religion(&mut self.game, state, &mut self.unmapped);
         if let Some(civ6) = &state.government {
             if let Some(name) = civvis_node_name(&self.game.rules.governments, civ6, "GOVERNMENT_") {
+                // Same rule on the sync path: see the rebuild path above.
+                let changed = self.game.players[0].government.as_ref() != Some(&name);
                 self.game.players[0].government = Some(name);
+                if changed {
+                    self.game.prune_policies_to_government(0);
+                }
             } else if !self.unmapped.contains(civ6) {
                 self.unmapped.push(civ6.clone());
             }

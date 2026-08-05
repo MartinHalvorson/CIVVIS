@@ -1065,5 +1065,38 @@ Added the fast shipping path.
         )
 
 
+class MachineRegistryTests(unittest.TestCase):
+    def registry_file(self, text: str) -> Path:
+        directory = tempfile.mkdtemp(prefix="civvis-machines-")
+        path = Path(directory) / "MACHINES.md"
+        path.write_text(text, encoding="utf-8")
+        self.addCleanup(lambda: subprocess.run(
+            [sys.executable, "-c",
+             f"import shutil; shutil.rmtree({directory!r}, ignore_errors=True)"]))
+        return path
+
+    def test_collects_every_backticked_id_wherever_it_sits(self):
+        registry = collab.machine_registry(self.registry_file(
+            "| `martin-desktop` | desktop | `old-name` |\n"
+            "- `mbp-martin`\n"
+            "Prose mentioning `mbp-m5-max-128` counts too.\n"
+        ))
+        self.assertEqual(
+            registry,
+            {"martin-desktop", "old-name", "mbp-martin", "mbp-m5-max-128"},
+        )
+
+    def test_rejects_tokens_that_could_never_be_machine_ids(self):
+        registry = collab.machine_registry(self.registry_file(
+            "`martin-desktop` but not `Not-Valid` nor `has_underscore`\n"
+        ))
+        self.assertEqual(registry, {"martin-desktop"})
+
+    def test_a_missing_registry_reads_as_none_not_empty(self):
+        missing = Path(tempfile.mkdtemp(prefix="civvis-machines-")) / "no.md"
+        self.assertIsNone(collab.machine_registry(missing))
+        # None means "stay silent"; an empty set would notice every PR.
+
+
 if __name__ == "__main__":
     unittest.main()

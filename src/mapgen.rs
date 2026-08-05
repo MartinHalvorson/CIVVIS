@@ -1,5 +1,6 @@
 //! Map generation (mirrors civvis/mapgen.py).
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
+use std::sync::Arc;
 
 use crate::fractal::Fractal;
 use crate::leader_roster::{self, TrueStartPoint};
@@ -7,6 +8,7 @@ use crate::name::Name;
 use crate::rng::Rng;
 use crate::rules::{volcanic_soil_valid_terrain, Rules};
 use crate::setup::{MapPoles, MapScript, MapTopology};
+use crate::sphere::trig;
 use crate::world::WorldMap;
 use crate::{hex, Pos};
 
@@ -241,6 +243,7 @@ fn earth_tile_span(wm: &WorldMap) -> (f64, f64) {
 }
 
 /// What Earth puts under one tile.
+#[derive(Clone, Copy)]
 struct EarthTile {
     /// Water of some kind, so not part of the world's land.
     water: bool,
@@ -276,7 +279,7 @@ fn earth_tile(wm: &WorldMap, pos: Pos) -> EarthTile {
     let (longitude, latitude) = wm.lon_lat(pos);
     let (span_longitude, span_latitude) = earth_tile_span(wm);
     let stretch = if wm.sphere().is_some() {
-        1.0 / latitude.to_radians().cos().abs().max(0.02)
+        1.0 / trig::cos(latitude.to_radians()).abs().max(0.02)
     } else {
         1.0
     };
@@ -495,9 +498,9 @@ const EARTH_LAKES: &[(f64, f64, f64)] = &[
 fn earth_direction(longitude: f64, latitude: f64) -> [f64; 3] {
     let (longitude, latitude) = (longitude.to_radians(), latitude.to_radians());
     [
-        latitude.cos() * longitude.cos(),
-        latitude.cos() * longitude.sin(),
-        latitude.sin(),
+        trig::cos(latitude) * trig::cos(longitude),
+        trig::cos(latitude) * trig::sin(longitude),
+        trig::sin(latitude),
     ]
 }
 
@@ -533,12 +536,25 @@ fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
 /// latitudes, which is exactly what a paper world map is: the globe rolled
 /// flat. The two pentagons stay a globe's problem, because a flat map has no
 /// pentagons to begin with.
+fn earth_tile_cache(wm: &WorldMap) -> BTreeMap<Pos, EarthTile> {
+    wm.tiles
+        .keys()
+        .copied()
+        .map(|position| (position, earth_tile(wm, position)))
+        .collect()
+}
+
 fn earth_land(wm: &WorldMap) -> BTreeSet<Pos> {
+    let cache = earth_tile_cache(wm);
+    earth_land_from_cache(wm, &cache)
+}
+
+fn earth_land_from_cache(wm: &WorldMap, cache: &BTreeMap<Pos, EarthTile>) -> BTreeSet<Pos> {
     let mut land: BTreeSet<Pos> = wm
         .tiles
         .keys()
         .copied()
-        .filter(|pos| !earth_tile(wm, *pos).water)
+        .filter(|pos| !cache[pos].water)
         .collect();
     let tile_area = earth_tile_area(wm);
     let mut islands: BTreeSet<Pos> = BTreeSet::new();
@@ -597,8 +613,7 @@ const LAKE_TILE_SHARE: f64 = 2.0;
 /// island from [`EARTH_ISLANDS`] is smaller than the tile that carries it, so
 /// the sea around it wins the vote. The island is still made of something, so
 /// widen the search until a land cell turns up and let that speak for it.
-fn earth_ground(wm: &WorldMap, pos: Pos) -> EarthTile {
-    let sampled = earth_tile(wm, pos);
+fn earth_ground_from_sample(wm: &WorldMap, pos: Pos, sampled: EarthTile) -> EarthTile {
     if !sampled.water {
         return sampled;
     }
@@ -608,8 +623,9 @@ fn earth_ground(wm: &WorldMap, pos: Pos) -> EarthTile {
         for step in 0..(8 * ring) {
             let angle = std::f64::consts::TAU * step as f64 / (8 * ring) as f64;
             let cell = earth_cell(
-                longitude + reach * angle.cos() / latitude.to_radians().cos().abs().max(0.02),
-                (latitude + reach * angle.sin()).clamp(-89.999, 89.999),
+                longitude
+                    + reach * trig::cos(angle) / trig::cos(latitude.to_radians()).abs().max(0.02),
+                (latitude + reach * trig::sin(angle)).clamp(-89.999, 89.999),
             );
             if cell.is_land() {
                 return EarthTile {
@@ -648,11 +664,17 @@ fn paint_earth(
     wm: &mut WorldMap,
     land: &BTreeSet<Pos>,
     poles: MapPoles,
+    earth: Option<&BTreeMap<Pos, EarthTile>>,
     rng: &mut Rng,
 ) -> BTreeMap<Pos, Name> {
     let painted: Vec<(Pos, EarthTile)> = land
         .iter()
-        .map(|pos| (*pos, earth_ground(wm, *pos)))
+        .map(|pos| {
+            let sampled = earth
+                .and_then(|cache| cache.get(pos).copied())
+                .unwrap_or_else(|| earth_tile(wm, *pos));
+            (*pos, earth_ground_from_sample(wm, *pos, sampled))
+        })
         .collect();
     for (pos, earth) in &painted {
         let tile = wm.tiles.get_mut(pos).unwrap();
@@ -910,6 +932,13 @@ fn generate_land(
         return tennis_ball_land(wm, poles);
     }
     if wm.sphere().is_some() {
+        if script == MapScript::Fjords {
+            // Fjords are a coastline-first world on either shape. Reading the
+            // same wrap-aware channel field through longitude and latitude keeps
+            // the globe from falling back to rounded inland seas, which are the
+            // one thing this script should not look like.
+            return fjord_land(wm, poles, rng);
+        }
         return globe_land(wm, script, poles, num_major_spawns, num_minor_spawns, rng);
     }
     flat_land(wm, script, poles, num_major_spawns, num_minor_spawns, rng)
@@ -964,7 +993,7 @@ fn flat_land(
             let center_row = (height - 1) as f64 / 2.0;
             let radius_col = width as f64 * 0.39;
             let radius_row = height as f64 * 0.343;
-            let shore = Fractal::new(rng, width, height, 4);
+            let shore = Fractal::new_without_index(rng, width, height, 4);
             let mut land = BTreeSet::new();
             for row in 1..height - 1 {
                 for col in 0..width {
@@ -1013,13 +1042,13 @@ fn flat_land(
             }
             land
         }
-        MapScript::Fjords => fjord_land(wm, rng),
+        MapScript::Fjords => fjord_land(wm, poles, rng),
         MapScript::InlandSea => {
             let center_col = (width - 1) as f64 / 2.0;
             let center_row = (height - 1) as f64 / 2.0;
             let radius_col = width as f64 * 0.34;
             let radius_row = height as f64 * 0.30;
-            let shore = Fractal::new(rng, width, height, 4);
+            let shore = Fractal::new_without_index(rng, width, height, 4);
             let mut land = BTreeSet::new();
             for row in 0..height {
                 for col in 0..width {
@@ -1122,37 +1151,138 @@ fn flat_land(
 /// mountain. The high ridges of the field are removed as water rather than
 /// grown as isolated lakes, so they make long inlets, shorter cuts, and narrow
 /// passages throughout the map instead of one ocean around a continent.
-fn fjord_land(wm: &WorldMap, rng: &mut Rng) -> BTreeSet<Pos> {
+fn fjord_land(wm: &WorldMap, poles: MapPoles, rng: &mut Rng) -> BTreeSet<Pos> {
     let total = wm.tiles.len();
-    let target = total * MapScript::Fjords.land_percent() as usize / 100;
-    // Flat worlds keep their two polar rows wet. Choose the remaining water
-    // from the reachable interior, so that reservation does not quietly turn
-    // the advertised 40/40/20 mix into a drier map.
-    let interior = offset_region(wm, 0, wm.width, 1, wm.height - 1);
-    let water_inside = interior.len().saturating_sub(target.min(interior.len()));
-    let mut channels = Fractal::new(rng, wm.width, wm.height, 3);
-    // More plates than an ordinary world gives the sea many independent cuts:
-    // some run the length of a continent, some stop at a bay, and their joins
-    // leave the constricted passages the script is named for.
-    channels.build_ridges(rng, 18, 5.0, 5.0);
-    let mut ranked: Vec<(u8, Pos)> = interior
+    // Flat worlds keep their two polar rows wet; a poled globe keeps a small
+    // cap wet for the same climate reason. Pentagons stay wet on a globe so
+    // every surfaced tile retains the six-neighbour contract. Choose the
+    // remaining water from the eligible field, so those reservations do not
+    // quietly turn the advertised 40/40/20 mix into a drier map.
+    let pentagons: BTreeSet<Pos> = wm
+        .sphere()
+        .map(|sphere| sphere.pentagons().into_iter().collect())
+        .unwrap_or_default();
+    let cap = if poles.has_poles() { 0.93 } else { f64::MAX };
+    let interior: BTreeSet<Pos> = if wm.sphere().is_some() {
+        wm.tiles
+            .keys()
+            .copied()
+            .filter(|pos| !pentagons.contains(pos) && wm.polar_fraction(*pos) < cap)
+            .collect()
+    } else {
+        offset_region(wm, 0, wm.width, 1, wm.height - 1)
+    };
+    let reserved_water = total.saturating_sub(interior.len());
+    let water_inside = (total * 40 / 100)
+        .saturating_sub(reserved_water)
+        .min(interior.len());
+    let mut channels = Fractal::new_without_index(rng, wm.width, wm.height, 4);
+    // More, finer plates than an ordinary world gives the sea many independent
+    // cuts: some run the length of a continent, some stop at a bay, and their
+    // joins leave the constricted passages the script is named for. A second
+    // fine field only roughens the banks; the ridge field keeps the channels
+    // long enough to leave stringy land between them.
+    channels.build_ridges_without_index(rng, 24, 6.0, 3.0);
+    let teeth = Fractal::new_without_index(rng, wm.width, wm.height, 5);
+    let mut isthmuses = Fractal::new_without_index(rng, wm.width, wm.height, 3);
+    isthmuses.build_ridges_without_index(rng, 6, 5.0, 5.0);
+    // A few worlds get a long land spine deliberately protected from the
+    // channel cut. Since the spine is another ridged field, it arrives as a
+    // crooked isthmus rather than a straight bridge; the zero-strength roll
+    // leaves other worlds with separated peninsulas instead.
+    let isthmus_weight = match rng.below(4) {
+        0 => 0,
+        1 => 1,
+        _ => 2,
+    };
+    let scores: BTreeMap<Pos, i32> = interior
         .iter()
         .copied()
         .map(|pos| {
             let (col, row) = noise_cell(wm, pos);
-            (channels.at(col, row), pos)
+            (
+                pos,
+                channels.at(col, row) as i32 * 3 + teeth.at(col, row) as i32
+                    - isthmus_weight * isthmuses.at(col, row) as i32,
+            )
         })
         .collect();
-    ranked.sort_unstable_by(|(left_height, left_pos), (right_height, right_pos)| {
-        right_height
-            .cmp(left_height)
-            .then_with(|| left_pos.cmp(right_pos))
-    });
-    let water: BTreeSet<Pos> = ranked
-        .into_iter()
-        .take(water_inside)
-        .map(|(_, pos)| pos)
+
+    // Grow the sea from its existing edge instead of selecting the highest
+    // scores independently. A raw percentile can leave the map with many
+    // disconnected inland pockets; a ranked frontier keeps most of the water
+    // in one navigable system while the ridges still decide where its fingers
+    // run. Choosing among the six best frontier tiles leaves the banks ragged.
+    let mut water: BTreeSet<Pos> = wm
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| !interior.contains(pos))
         .collect();
+    let mut queued = BTreeSet::new();
+    let mut frontier = BinaryHeap::new();
+    for pos in water
+        .iter()
+        .flat_map(|pos| wm.neighbors(*pos))
+        .filter(|pos| interior.contains(pos))
+    {
+        if queued.insert(pos) {
+            frontier.push((scores[&pos], std::cmp::Reverse(pos)));
+        }
+    }
+    let mut carved = 0;
+    while carved < water_inside {
+        if frontier.is_empty() {
+            // This is only reachable on a degenerate tiny map or a globe with
+            // an entirely reserved cap. Starting a new seed is safer than
+            // missing the script's advertised water share.
+            let Some(seed) = scores
+                .keys()
+                .filter(|pos| !water.contains(pos))
+                .max_by_key(|pos| (scores[pos], std::cmp::Reverse(**pos)))
+                .copied()
+            else {
+                break;
+            };
+            water.insert(seed);
+            carved += 1;
+            for pos in wm
+                .neighbors(seed)
+                .into_iter()
+                .filter(|pos| interior.contains(pos) && !water.contains(pos))
+            {
+                if queued.insert(pos) {
+                    frontier.push((scores[&pos], std::cmp::Reverse(pos)));
+                }
+            }
+            continue;
+        }
+        let mut choices = Vec::with_capacity(6);
+        for _ in 0..6 {
+            if let Some(choice) = frontier.pop() {
+                choices.push(choice);
+            } else {
+                break;
+            }
+        }
+        let choice_index = rng.below(choices.len());
+        let (_, std::cmp::Reverse(chosen)) = choices.swap_remove(choice_index);
+        queued.remove(&chosen);
+        frontier.extend(choices);
+        if !water.insert(chosen) {
+            continue;
+        }
+        carved += 1;
+        for pos in wm
+            .neighbors(chosen)
+            .into_iter()
+            .filter(|pos| interior.contains(pos) && !water.contains(pos))
+        {
+            if queued.insert(pos) {
+                frontier.push((scores[&pos], std::cmp::Reverse(pos)));
+            }
+        }
+    }
     interior.difference(&water).copied().collect()
 }
 
@@ -1365,42 +1495,13 @@ fn globe_land(
         // Cut the sea out of a solid world. What is left over — the caps and
         // the pentagons — stays water too, which is why the world never comes
         // out at exactly the share asked for on a poled globe.
-        let reserved_water = tiles.saturating_sub(field.len());
-        let water = if script == MapScript::Fjords {
-            // Fjords promises a composition, not merely a ratio in the part
-            // of a globe that happened not to be its polar cap. Count those
-            // permanently wet cells first, then cut just enough additional
-            // sea to finish its forty percent share.
-            (tiles * 40 / 100).saturating_sub(reserved_water)
-        } else {
-            tiles * (100 - land_share) / 100
-        };
+        let water = tiles * (100 - land_share) / 100;
         let seas = match script {
             MapScript::InlandSea => 1,
             MapScript::Lakes => (tiles / 320).clamp(6, 40),
-            // The water is the script's carving tool: several smaller bodies
-            // distribute inlets round the globe instead of cutting one ocean
-            // out of its middle.
-            // Enough bodies to make a network of inlets, but not so many
-            // that their one-tile buffers consume the field before the forty
-            // percent water target can be reached.
-            MapScript::Fjords => (tiles / 400).clamp(8, 20),
             _ => (tiles / 220).clamp(8, 60),
         };
-        let mut sea = scatter_bodies(wm, &mut field, seas, water, rng);
-        if script == MapScript::Fjords {
-            // The initial scatter deliberately leaves a one-tile buffer around
-            // every inlet. On a globe that can prevent the last small body
-            // from finding a seed, so finish the remaining water as a larger
-            // cut rather than quietly returning a too-dry Fjords world.
-            while sea.len() < water && !field.is_empty() {
-                let extra = scatter_bodies(wm, &mut field, 1, water - sea.len(), rng);
-                if extra.is_empty() {
-                    break;
-                }
-                sea.extend(extra);
-            }
-        }
+        let sea = scatter_bodies(wm, &mut field, seas, water, rng);
         return wm
             .tiles
             .keys()
@@ -1616,7 +1717,7 @@ fn grand_canals(wm: &WorldMap) -> BTreeSet<Pos> {
         .filter(|pos| {
             let point = wm.direction(*pos);
             CANAL_AXES.iter().any(|axis| {
-                let out_of_plane = dot(point, *axis).clamp(-1.0, 1.0).asin();
+                let out_of_plane = trig::asin(dot(point, *axis).clamp(-1.0, 1.0));
                 (out_of_plane - offset).abs() <= half || (out_of_plane + offset).abs() <= half
             })
         })
@@ -1911,7 +2012,7 @@ impl TileFrame {
     /// How many tiles apart two points of the frame stand.
     fn span(&self, from: [f64; 3], to: [f64; 3]) -> f64 {
         match self.arc {
-            Some(arc) => dot(from, to).clamp(-1.0, 1.0).acos() / arc,
+            Some(arc) => trig::acos(dot(from, to).clamp(-1.0, 1.0)) / arc,
             None => {
                 let east = (from[0] - to[0]).abs();
                 let east = east.min(self.wrap - east);
@@ -1958,7 +2059,7 @@ impl TileFrame {
             Some(_) => point,
             None => {
                 let turn = std::f64::consts::TAU * point[0] / self.wrap;
-                [turn.cos(), turn.sin(), point[1]]
+                [trig::cos(turn), trig::sin(turn), point[1]]
             }
         }
     }
@@ -1974,7 +2075,7 @@ impl TileFrame {
                 (length > 1e-9).then(|| [sum[0] / length, sum[1] / length, sum[2] / length])
             }
             None => {
-                let turn = sum[1].atan2(sum[0]).rem_euclid(std::f64::consts::TAU);
+                let turn = trig::atan2(sum[1], sum[0]).rem_euclid(std::f64::consts::TAU);
                 Some([
                     turn / std::f64::consts::TAU * self.wrap,
                     sum[2] / count as f64,
@@ -2492,8 +2593,12 @@ pub fn generate_with_script_and_leader_starts(
     // same geometry every time it is asked.
     let blocks = (script == MapScript::GrandCanalsTwo)
         .then(|| canal_blocks(&wm, poles, rng));
+    let earth = script.is_fixed_geography().then(|| earth_tile_cache(&wm));
     let mut land = match &blocks {
         Some(plan) => plan.land.clone(),
+        None if script.is_fixed_geography() => {
+            earth_land_from_cache(&wm, earth.as_ref().unwrap())
+        }
         None => generate_land(&wm, script, poles, num_major_spawns, num_minor_spawns, rng),
     };
 
@@ -2519,7 +2624,7 @@ pub fn generate_with_script_and_leader_starts(
     // real as its coastlines and are read from the same grid, so there is no
     // fractal to cut and no latitude band to paint.
     let mut mountain_terrain = if script.is_fixed_geography() {
-        paint_earth(&mut wm, &land, poles, rng)
+        paint_earth(&mut wm, &land, poles, earth.as_ref(), rng)
     } else {
         apply_tectonics(&mut wm, &land, script, continental_rifts, rng);
         assign_biomes(&mut wm, &land_list, poles, rng)
@@ -2853,19 +2958,38 @@ pub fn generate_with_script_and_leader_starts(
         .filter(|(_, spec)| spec.natural_wonder)
         .map(|(name, _)| name.as_str())
         .collect();
+    let wonder_masks: Vec<(u32, u32)> = roster
+        .iter()
+        .map(|wonder| {
+            let placement = &rules.features[*wonder].placement;
+            (
+                wonder_terrain_mask(&placement.adjacent_terrain),
+                wonder_terrain_mask(&placement.not_adjacent_terrain),
+            )
+        })
+        .collect();
     // Keep the one-tile ground scan as the anchor pool. The exact silhouette
     // is checked when an anchor is attempted below; separating the cheap
     // roster-wide scan from that geometry preserves the generator's seeded
     // draw while ensuring no invalid footprint can actually be placed.
     let anchors: Vec<Vec<Pos>> = roster
         .iter()
-        .map(|wonder| {
+        .enumerate()
+        .map(|(index, wonder)| {
             let placement = &rules.features[*wonder].placement;
             wm.tiles
                 .iter()
                 .map(|(position, _)| *position)
                 .filter(|position| {
-                    wonder_anchor(&wm, placement, *position, &survey, &mountain_terrain)
+                    wonder_anchor(
+                        &wm,
+                        placement,
+                        *position,
+                        &survey,
+                        &mountain_terrain,
+                        wonder_masks[index].0,
+                        wonder_masks[index].1,
+                    )
                 })
                 .collect()
         })
@@ -2948,7 +3072,15 @@ pub fn generate_with_script_and_leader_starts(
                         if slot >= target - water_here {
                             tile.terrain == "coast" && unclaimed(tile) && tile.resource.is_none()
                         } else if strict {
-                            wonder_anchor(&wm, placement, *position, &survey, &mountain_terrain)
+                            wonder_anchor(
+                                &wm,
+                                placement,
+                                *position,
+                                &survey,
+                                &mountain_terrain,
+                                wonder_masks[index].0,
+                                wonder_masks[index].1,
+                            )
                         } else {
                             is_open(tile)
                         }
@@ -3668,6 +3800,7 @@ fn wonder_terrain_mask(terrains: &[Name]) -> u32 {
 /// per hex rather than once per hex per wonder. Thirty-four rosters' worth of
 /// neighbour walks is the difference between a scan that costs nothing and one
 /// that shows up in a map-generation profile.
+#[derive(Clone, Copy)]
 struct WonderSite {
     /// Bit per neighbouring base terrain, indexed by `WONDER_TERRAIN_BITS`.
     terrains: u32,
@@ -3680,11 +3813,12 @@ struct WonderSite {
 
 /// Read the ring around every hex once, so the roster-wide eligibility scan
 /// below is a handful of integer tests per wonder per hex.
-fn survey_wonder_sites(wm: &WorldMap) -> BTreeMap<Pos, WonderSite> {
+fn survey_wonder_sites(wm: &WorldMap) -> Vec<WonderSite> {
     let water = |terrain: &str| matches!(terrain, "coast" | "ocean");
-    let mut survey: BTreeMap<Pos, WonderSite> = BTreeMap::new();
-    let mut frontier: VecDeque<Pos> = VecDeque::new();
-    for (position, tile) in wm.tiles.iter() {
+    let positions: Vec<Pos> = wm.tiles.keys().copied().collect();
+    let mut survey = Vec::with_capacity(positions.len());
+    let mut frontier: VecDeque<usize> = VecDeque::new();
+    for (index, (position, tile)) in wm.tiles.iter().enumerate() {
         let mut terrains = 0;
         let mut any_feature = false;
         for neighbor in wm.neighbors(*position) {
@@ -3696,29 +3830,26 @@ fn survey_wonder_sites(wm: &WorldMap) -> BTreeMap<Pos, WonderSite> {
         }
         let land = !water(&tile.terrain);
         if land {
-            frontier.push_back(*position);
+            frontier.push_back(index);
         }
-        survey.insert(
-            *position,
-            WonderSite {
-                terrains,
-                any_feature,
-                land_distance: if land { 0 } else { i32::MAX },
-            },
-        );
+        survey.push(WonderSite {
+            terrains,
+            any_feature,
+            land_distance: if land { 0 } else { i32::MAX },
+        });
     }
     // One multi-source breadth-first walk out from the coastline gives every
     // water hex its distance to land, which is what the offshore wonders are
     // placed by: the Great Barrier Reef hugs the shore, the Galapagos do not.
-    while let Some(position) = frontier.pop_front() {
-        let distance = survey[&position].land_distance;
-        for neighbor in wm.neighbors(position) {
-            let Some(site) = survey.get_mut(&neighbor) else {
+    while let Some(index) = frontier.pop_front() {
+        let distance = survey[index].land_distance;
+        for neighbor in wm.neighbors(positions[index]) {
+            let Some(neighbor_index) = wm.tiles.index_of(neighbor) else {
                 continue;
             };
-            if site.land_distance > distance + 1 {
-                site.land_distance = distance + 1;
-                frontier.push_back(neighbor);
+            if survey[neighbor_index].land_distance > distance + 1 {
+                survey[neighbor_index].land_distance = distance + 1;
+                frontier.push_back(neighbor_index);
             }
         }
     }
@@ -3760,21 +3891,24 @@ fn wonder_anchor(
     wm: &WorldMap,
     placement: &crate::rules::FeaturePlacement,
     position: Pos,
-    survey: &BTreeMap<Pos, WonderSite>,
+    survey: &[WonderSite],
     mountain_terrain: &BTreeMap<Pos, Name>,
+    adjacent_terrain_mask: u32,
+    not_adjacent_terrain_mask: u32,
 ) -> bool {
-    let (Some(tile), Some(site)) = (wm.tiles.get(&position), survey.get(&position)) else {
+    let Some(index) = wm.tiles.index_of(position) else {
+        return false;
+    };
+    let (Some(tile), Some(site)) = (wm.tiles.get(&position), survey.get(index)) else {
         return false;
     };
     if !wonder_ground(placement, tile, mountain_terrain.get(&position)) {
         return false;
     }
-    if !placement.adjacent_terrain.is_empty()
-        && site.terrains & wonder_terrain_mask(&placement.adjacent_terrain) == 0
-    {
+    if !placement.adjacent_terrain.is_empty() && site.terrains & adjacent_terrain_mask == 0 {
         return false;
     }
-    if site.terrains & wonder_terrain_mask(&placement.not_adjacent_terrain) != 0 {
+    if site.terrains & not_adjacent_terrain_mask != 0 {
         return false;
     }
     if placement.no_adjacent_features && site.any_feature {
@@ -4027,10 +4161,15 @@ fn tectonic_profile(script: MapScript) -> TectonicProfile {
         // more passable breaks, and mountains that meet its advertised share.
         // Coastal peaks stay: water against a range is the point of a fjord.
         MapScript::Fjords => TectonicProfile {
-            plates: 18,
-            mountain_percentile: 60,
-            foothills_percentile: 78,
-            pass_percentile: 82,
+            // Keep the raw mountain cut close to its final share. The old
+            // profile raised the bottom 40% of the ridged field and then
+            // discarded half of it to reach 20%; that made ranges read as
+            // broad blocks. A higher cut leaves the collision lines narrow
+            // and lets the exact-share pass add only their strongest fringes.
+            plates: 6,
+            mountain_percentile: 72,
+            foothills_percentile: 84,
+            pass_percentile: 88,
             coastal_demote_numerator: 0,
             coastal_demote_denominator: 1,
             exact_mountain_percent: Some(20),
@@ -4108,13 +4247,30 @@ fn apply_tectonics(
 ) {
     let profile = tectonic_profile(script);
     let (width, height) = (wm.width, wm.height);
-    let mut mountains = Fractal::new(rng, width, height, 3);
-    mountains.build_ridges(rng, profile.plates, 5.0, 5.0);
-    let hills = Fractal::new(rng, width, height, 3);
+    let mountain_grain = (script == MapScript::Fjords).then_some(4).unwrap_or(3);
+    let mut mountains = Fractal::new_without_index(rng, width, height, mountain_grain);
+    let (ridge_blend, fractal_blend) = if script == MapScript::Fjords {
+        // Let the collision seams dominate the relief field. The ordinary
+        // half-fractal blend is deliberately broad; Fjords wants the sharp,
+        // tapering edge of a range to meet the water.
+        (9.0, 1.0)
+    } else {
+        (5.0, 5.0)
+    };
+    mountains.build_ridges_without_index(
+        rng,
+        profile.plates,
+        ridge_blend,
+        fractal_blend,
+    );
+    let hills = Fractal::new_without_index(rng, width, height, mountain_grain);
 
     let cells: Vec<(i32, i32)> = land.iter().map(|pos| noise_cell(wm, *pos)).collect();
-    let mountain_threshold =
-        mountains.percentile_within(cells.iter().copied(), profile.mountain_percentile);
+    let mountain_bands = mountains.percentiles_within(
+        &cells,
+        &[profile.mountain_percentile, profile.foothills_percentile],
+    );
+    let mountain_threshold = mountain_bands[0];
     let rift_mountain_threshold = if continental_rifts {
         let rift_cells: Vec<(i32, i32)> = land
             .iter()
@@ -4132,17 +4288,20 @@ fn apply_tectonics(
     } else {
         mountain_threshold
     };
-    let foothills_threshold =
-        mountains.percentile_within(cells.iter().copied(), profile.foothills_percentile);
-    let pass_threshold = hills.percentile_within(cells.iter().copied(), profile.pass_percentile);
-    let low_band = (
-        hills.percentile_within(cells.iter().copied(), (28 - WORLD_AGE) as u32),
-        hills.percentile_within(cells.iter().copied(), (28 + WORLD_AGE) as u32),
+    let foothills_threshold = mountain_bands[1];
+    let hill_bands = hills.percentiles_within(
+        &cells,
+        &[
+            profile.pass_percentile,
+            (28 - WORLD_AGE) as u32,
+            (28 + WORLD_AGE) as u32,
+            (72 - WORLD_AGE) as u32,
+            (72 + WORLD_AGE) as u32,
+        ],
     );
-    let high_band = (
-        hills.percentile_within(cells.iter().copied(), (72 - WORLD_AGE) as u32),
-        hills.percentile_within(cells.iter().copied(), (72 + WORLD_AGE) as u32),
-    );
+    let pass_threshold = hill_bands[0];
+    let low_band = (hill_bands[1], hill_bands[2]);
+    let high_band = (hill_bands[3], hill_bands[4]);
 
     for pos in land {
         let (col, row) = noise_cell(wm, *pos);
@@ -4246,11 +4405,11 @@ fn assign_biomes(
     let (width, height) = (wm.width, wm.height);
     let deserts = Fractal::new(rng, width, height, 3);
     let plains = Fractal::new(rng, width, height, 3);
-    let variation = Fractal::new(rng, width, height, 3);
+    let variation = Fractal::new_without_index(rng, width, height, 3);
     let desert_bottom = deserts.percentile(100 - DESERT_PERCENT);
     let plains_bottom = plains.percentile(100 - PLAINS_PERCENT);
     let thermal = matches!(poles, MapPoles::Randomized)
-        .then(|| Fractal::new(rng, width, height, THERMAL_FRACTAL_GRAIN));
+        .then(|| Fractal::new_without_index(rng, width, height, THERMAL_FRACTAL_GRAIN));
 
     let mut mountain_terrain = BTreeMap::new();
     for pos in land {
@@ -4546,11 +4705,7 @@ fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
 
     let mut nearby_yields = Vec::new();
     let mut workable_land = 0;
-    let mut seen = BTreeSet::new();
     for tile_pos in wm.disk(pos, 3) {
-        if !seen.insert(tile_pos) {
-            continue;
-        }
         let Some(tile) = wm.get(tile_pos) else {
             continue;
         };
@@ -4581,6 +4736,17 @@ fn start_quality(rules: &Rules, wm: &WorldMap, pos: Pos) -> i32 {
         } else {
             0
         }
+}
+
+fn cached_start_quality(
+    cache: &mut BTreeMap<Pos, i32>,
+    rules: &Rules,
+    wm: &WorldMap,
+    pos: Pos,
+) -> i32 {
+    *cache
+        .entry(pos)
+        .or_insert_with(|| start_quality(rules, wm, pos))
 }
 
 /// How well a start site satisfies a civilization's shipped `StartBias*` rows.
@@ -4899,7 +5065,7 @@ enum MapDistanceRow<'a> {
     Flat { from: Pos, width: i32 },
     Planet {
         sphere: &'a crate::sphere::Sphere,
-        row: Box<[u16]>,
+        row: Arc<[u16]>,
     },
 }
 
@@ -4908,8 +5074,27 @@ impl<'a> MapDistanceRow<'a> {
         if let Some(sphere) = wm.sphere() {
             Self::Planet {
                 sphere,
-                row: sphere.distance_row(from),
+                row: sphere.distance_row(from).into(),
             }
+        } else {
+            Self::Flat {
+                from,
+                width: wm.width,
+            }
+        }
+    }
+
+    fn new_cached(
+        wm: &'a WorldMap,
+        from: Pos,
+        cache: &mut BTreeMap<Pos, Arc<[u16]>>,
+    ) -> Self {
+        if let Some(sphere) = wm.sphere() {
+            let row = cache
+                .entry(from)
+                .or_insert_with(|| sphere.distance_row(from).into())
+                .clone();
+            Self::Planet { sphere, row }
         } else {
             Self::Flat {
                 from,
@@ -5000,16 +5185,17 @@ fn divide_into_regions(
     // latter is quadratic in the seat count and made 100-seat Planet maps
     // spend tens of seconds before region assignment even began.
     let mut nearest = vec![i32::MAX; land.len()];
+    let mut distance_cache = BTreeMap::new();
     while centers.len() < count {
         let newest = *centers.last().unwrap();
-        let distances = MapDistanceRow::new(wm, newest);
+        let distances = MapDistanceRow::new_cached(wm, newest, &mut distance_cache);
         for (index, position) in land.iter().enumerate() {
             nearest[index] = nearest[index].min(distances.distance(*position));
         }
         let Some(next) = land
             .iter()
             .enumerate()
-            .filter(|(_, position)| !centers.contains(position))
+            .filter(|(index, _)| nearest[*index] != 0)
             .max_by_key(|(index, position)| (nearest[*index], **position))
             .map(|(_, position)| position)
             .copied()
@@ -5032,7 +5218,7 @@ fn divide_into_regions(
         let distance_rows: Vec<MapDistanceRow<'_>> = centers
             .iter()
             .copied()
-            .map(|center| MapDistanceRow::new(wm, center))
+            .map(|center| MapDistanceRow::new_cached(wm, center, &mut distance_cache))
             .collect();
         let mut reach: Vec<(i32, Pos, usize)> = Vec::with_capacity(land.len() * centers.len());
         for position in land {
@@ -5041,23 +5227,34 @@ fn divide_into_regions(
             }
         }
         reach.sort_unstable();
-        let mut owner: BTreeMap<Pos, usize> = BTreeMap::new();
+        let mut owner = vec![usize::MAX; wm.tiles.len()];
         let mut load = vec![0_i64; centers.len()];
         for (_, position, index) in &reach {
-            if owner.contains_key(position) || load[*index] >= capacity {
+            let tile_index = wm.tiles.index_of(*position).unwrap();
+            if owner[tile_index] != usize::MAX || load[*index] >= capacity {
                 continue;
             }
-            owner.insert(*position, *index);
+            owner[tile_index] = *index;
             load[*index] += fertility.get(position).copied().unwrap_or(1) as i64;
         }
         // Anything whose every region filled up joins its nearest one anyway;
         // `reach` is sorted by distance, so the first entry for a tile is it.
         for (_, position, index) in &reach {
-            owner.entry(*position).or_insert(*index);
+            let tile_index = wm.tiles.index_of(*position).unwrap();
+            if owner[tile_index] == usize::MAX {
+                owner[tile_index] = *index;
+            }
         }
         regions = vec![Vec::new(); centers.len()];
-        for (position, index) in owner {
-            regions[index].push(position);
+        for position in land {
+            let tile_index = wm.tiles.index_of(*position).unwrap();
+            let index = owner[tile_index];
+            if index != usize::MAX {
+                regions[index].push(*position);
+            }
+        }
+        for region in &mut regions {
+            region.sort_unstable();
         }
 
         let moved: Vec<Pos> = regions
@@ -5362,6 +5559,7 @@ fn regional_starts(
                 .collect()
         });
     }
+    let mut quality_cache = BTreeMap::new();
     for (index, region) in regions.iter().enumerate() {
         let Some(center) = region_center(wm, region, fertility) else {
             continue;
@@ -5372,8 +5570,8 @@ fn regional_starts(
             .copied()
             .filter(|position| candidates.contains(position))
             .collect();
-        let worth = |position: &Pos| {
-            start_quality(rules, wm, *position)
+        let mut worth = |position: &Pos| {
+            cached_start_quality(&mut quality_cache, rules, wm, *position)
                 - REGION_CENTRALITY_PULL * center_distances.distance(*position)
         };
         let mut chosen = None;
@@ -5432,65 +5630,68 @@ fn fill_remaining_starts(
     // Re-running a point-to-point search for candidate × start × missing seat
     // made a large archipelago spend minutes here after an otherwise healthy
     // regional layout missed only a handful of city-states.
-    let mut room: BTreeMap<Pos, i32> = wm
-        .tiles
-        .keys()
-        .copied()
-        .map(|position| (position, i32::MAX))
-        .collect();
+    let mut room = vec![i32::MAX; wm.tiles.len()];
+    let mut occupied = vec![false; wm.tiles.len()];
     let mut frontier = VecDeque::new();
     for start in spawns.iter().copied() {
-        if let Some(distance) = room.get_mut(&start) {
-            if *distance != 0 {
-                *distance = 0;
+        if let Some(index) = wm.tiles.index_of(start) {
+            occupied[index] = true;
+            if room[index] != 0 {
+                room[index] = 0;
                 frontier.push_back(start);
             }
         }
     }
     while let Some(position) = frontier.pop_front() {
-        let next = room[&position].saturating_add(1);
+        let position_index = wm.tiles.index_of(position).unwrap();
+        let next = room[position_index].saturating_add(1);
         for neighbor in wm.neighbors(position) {
-            if room.get(&neighbor).is_some_and(|distance| next < *distance) {
-                room.insert(neighbor, next);
+            let neighbor_index = wm.tiles.index_of(neighbor).unwrap();
+            if next < room[neighbor_index] {
+                room[neighbor_index] = next;
                 frontier.push_back(neighbor);
             }
         }
     }
+    let mut quality_cache = BTreeMap::new();
     for _ in 0..count {
-        let pick = |pool: &BTreeSet<Pos>, spawns: &[Pos], floor: i32| {
+        let mut pick = |pool: &BTreeSet<Pos>, floor: i32| {
             pool.iter()
                 .filter(|position| {
-                    !spawns.contains(position) && room.get(*position).copied().unwrap_or(0) >= floor
+                    let index = wm.tiles.index_of(**position).unwrap();
+                    !occupied[index] && room[index] >= floor
                 })
                 .max_by_key(|position| {
+                    let index = wm.tiles.index_of(**position).unwrap();
                     (
-                        room.get(*position).copied().unwrap_or(0),
-                        start_quality(rules, wm, **position),
+                        room[index],
+                        cached_start_quality(&mut quality_cache, rules, wm, **position),
                         **position,
                     )
                 })
                 .copied()
         };
-        let next = pick(candidates, spawns, MIN_START_SEPARATION)
-            .or_else(|| pick(land, spawns, MIN_START_SEPARATION))
-            .or_else(|| pick(candidates, spawns, 0))
-            .or_else(|| pick(land, spawns, 0));
+        let next = pick(candidates, MIN_START_SEPARATION)
+            .or_else(|| pick(land, MIN_START_SEPARATION))
+            .or_else(|| pick(candidates, 0))
+            .or_else(|| pick(land, 0));
         let Some(next) = next else {
             break;
         };
         spawns.push(next);
-        if room.get(&next).copied().unwrap_or(0) != 0 {
-            room.insert(next, 0);
+        let next_index = wm.tiles.index_of(next).unwrap();
+        occupied[next_index] = true;
+        if room[next_index] != 0 {
+            room[next_index] = 0;
             frontier.push_back(next);
         }
         while let Some(position) = frontier.pop_front() {
-            let next_distance = room[&position].saturating_add(1);
+            let position_index = wm.tiles.index_of(position).unwrap();
+            let next_distance = room[position_index].saturating_add(1);
             for neighbor in wm.neighbors(position) {
-                if room
-                    .get(&neighbor)
-                    .is_some_and(|distance| next_distance < *distance)
-                {
-                    room.insert(neighbor, next_distance);
+                let neighbor_index = wm.tiles.index_of(neighbor).unwrap();
+                if next_distance < room[neighbor_index] {
+                    room[neighbor_index] = next_distance;
                     frontier.push_back(neighbor);
                 }
             }
@@ -5536,11 +5737,12 @@ fn balance_territory(
     // per start per tile, which is what lets the walk below run once per seat
     // rather than a fixed handful of times — and at a hundred seats that is the
     // difference between the pass working and the pass being decorative.
-    let survey = |starts: &[Pos]| -> Vec<(i32, usize, i32, usize)> {
+    let mut distance_cache = BTreeMap::new();
+    let mut survey = |starts: &[Pos]| -> Vec<(i32, usize, i32, usize)> {
         let distance_rows: Vec<MapDistanceRow<'_>> = starts
             .iter()
             .copied()
-            .map(|start| MapDistanceRow::new(wm, start))
+            .map(|start| MapDistanceRow::new_cached(wm, start, &mut distance_cache))
             .collect();
         land.iter()
             .map(|tile| {
@@ -5560,6 +5762,7 @@ fn balance_territory(
             .collect()
     };
     let seats = seated.len();
+    let mut quality_cache = BTreeMap::new();
     let tally = |nearest: &[(i32, usize, i32, usize)]| -> Vec<usize> {
         let mut held = vec![0_usize; seats];
         for (_, owner, _, _) in nearest {
@@ -5609,7 +5812,9 @@ fn balance_territory(
             return;
         };
         let current = starts[poorest];
-        let keep = start_quality(rules, wm, current) * (100 - TERRITORY_QUALITY_TOLERANCE) / 100;
+        let keep = cached_start_quality(&mut quality_cache, rules, wm, current)
+            * (100 - TERRITORY_QUALITY_TOLERANCE)
+            / 100;
         let others: Vec<Pos> = starts
             .iter()
             .enumerate()
@@ -5628,7 +5833,7 @@ fn balance_territory(
                     && candidates.contains(position)
                     && wm.distance(*position, current) <= 6
                     && !blocked.contains(position)
-                    && start_quality(rules, wm, *position) >= keep
+                    && cached_start_quality(&mut quality_cache, rules, wm, *position) >= keep
             })
             .collect();
         trials.sort_by_key(|position| (wm.distance(*position, current), *position));
@@ -5672,9 +5877,10 @@ fn equalize_start_quality(
     if seated.len() < 2 {
         return;
     }
+    let mut quality_cache = BTreeMap::new();
     let mut qualities: Vec<i32> = seated
         .iter()
-        .map(|(_, start)| start_quality(rules, wm, *start))
+        .map(|(_, start)| cached_start_quality(&mut quality_cache, rules, wm, *start))
         .collect();
     // The clearance already achieved, which no swap is allowed to spend.
     let mut floor = i32::MAX;
@@ -5733,7 +5939,12 @@ fn equalize_start_quality(
             .copied()
             .filter(|position| candidates.contains(position))
             .filter(|position| !blocked.contains(position))
-            .map(|position| (start_quality(rules, wm, position), position))
+            .map(|position| {
+                (
+                    cached_start_quality(&mut quality_cache, rules, wm, position),
+                    position,
+                )
+            })
             .filter(|(quality, _)| *quality > current)
             .max_by_key(|(quality, position)| {
                 (
@@ -5760,6 +5971,7 @@ fn canonical_river_edge(a: Pos, b: Pos) -> RiverEdge {
     }
 }
 
+#[cfg(test)]
 fn all_shared_edges(wm: &WorldMap) -> BTreeSet<RiverEdge> {
     let mut edges = BTreeSet::new();
     for pos in wm.tiles.keys().copied() {
@@ -5898,9 +6110,9 @@ const RIVER_INLAND_SLOPE: i32 = 3;
 /// * **The jitter is rolled once per tile** rather than once per lookup, so the
 ///   field a river descends is a fixed landscape rather than noise that
 ///   re-rolls underneath it. Terrain does not move while a river crosses it.
-fn river_values(wm: &WorldMap, rng: &mut Rng, inland: &impl Fn(Pos) -> i32) -> BTreeMap<Pos, i32> {
-    let mut values = BTreeMap::new();
-    for pos in wm.tiles.keys().copied() {
+fn river_values(wm: &WorldMap, rng: &mut Rng, inland: &impl Fn(Pos) -> i32) -> Vec<i32> {
+    let mut values = vec![0; wm.tiles.len()];
+    for (index, pos) in wm.tiles.keys().copied().enumerate() {
         let mut sum = plot_elevation(wm, pos) * 20 + inland(pos) * RIVER_INLAND_SLOPE;
         for direction in wm.around(pos) {
             match wm.tiles.get(&direction) {
@@ -5914,7 +6126,7 @@ fn river_values(wm: &WorldMap, rng: &mut Rng, inland: &impl Fn(Pos) -> i32) -> B
             }
         }
         sum += rng.randint(0, 9);
-        values.insert(pos, sum);
+        values[index] = sum;
     }
     values
 }
@@ -5960,7 +6172,7 @@ enum RiverEnding {
 fn trace_river(
     wm: &WorldMap,
     start: RiverCorner,
-    values: &BTreeMap<Pos, i32>,
+    values: &[i32],
     joined: &BTreeSet<RiverCorner>,
     is_water: &impl Fn(Pos) -> bool,
     limit: usize,
@@ -5980,7 +6192,12 @@ fn trace_river(
                 continue;
             }
             let pivot = previous.and_then(|before| shared_tile(before, edge));
-            let mut value = values.get(&revealed).copied().unwrap_or(i32::MAX);
+            let mut value = wm
+                .tiles
+                .index_of(revealed)
+                .and_then(|index| values.get(index))
+                .copied()
+                .unwrap_or(i32::MAX);
             if let (Some(pivot), Some(last)) = (pivot, last_pivot) {
                 if pivot != last {
                     value = value * 11 / 12;
@@ -6082,33 +6299,38 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
     // every tile. Asking each land tile about every water tile was equivalent
     // on a flat map but catastrophic on a globe, where it materialized or
     // searched thousands of unrelated long-distance rows.
-    let mut water_distance: BTreeMap<Pos, i32> = water_tiles
-        .iter()
-        .copied()
-        .map(|position| (position, 0))
-        .collect();
+    let mut water_distance = vec![i32::MAX; wm.tiles.len()];
     let mut water_frontier: VecDeque<Pos> = water_tiles.iter().copied().collect();
+    for position in &water_tiles {
+        water_distance[wm.tiles.index_of(*position).unwrap()] = 0;
+    }
     while let Some(position) = water_frontier.pop_front() {
-        let next_distance = water_distance[&position] + 1;
+        let position_index = wm.tiles.index_of(position).unwrap();
+        let next_distance = water_distance[position_index] + 1;
         for neighbor in wm.neighbors(position) {
-            if let std::collections::btree_map::Entry::Vacant(entry) = water_distance.entry(neighbor)
-            {
-                entry.insert(next_distance);
+            let neighbor_index = wm.tiles.index_of(neighbor).unwrap();
+            if water_distance[neighbor_index] == i32::MAX {
+                water_distance[neighbor_index] = next_distance;
                 water_frontier.push_back(neighbor);
             }
         }
     }
-    let distance_to_sea = |pos: Pos| water_distance.get(&pos).copied().unwrap_or(0);
+    let distance_to_sea = |pos: Pos| {
+        wm.tiles
+            .index_of(pos)
+            .map(|index| water_distance[index])
+            .unwrap_or(0)
+    };
 
     // The landmass a headwater stands on sets that river's budget: Civ VI
     // rations river edges per continent, not per world, so an island does not
     // inherit a mainland's allowance.
     let land_set: BTreeSet<Pos> = land.iter().copied().collect();
     let landmasses = connected_components(wm, &land_set);
-    let mut landmass_of: BTreeMap<Pos, usize> = BTreeMap::new();
+    let mut landmass_of = vec![usize::MAX; wm.tiles.len()];
     for (index, landmass) in landmasses.iter().enumerate() {
         for pos in landmass {
-            landmass_of.insert(*pos, index);
+            landmass_of[wm.tiles.index_of(*pos).unwrap()] = index;
         }
     }
     let budget: Vec<usize> = landmasses
@@ -6128,7 +6350,7 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
 
     let mut rivers: BTreeSet<RiverEdge> = BTreeSet::new();
     let mut confluences: BTreeSet<RiverCorner> = BTreeSet::new();
-    let mut fresh_water: BTreeSet<Pos> = BTreeSet::new();
+    let mut fresh_water = vec![false; wm.tiles.len()];
 
     // Civ VI's four passes of `AddRivers`, in order. The first two seed the
     // highlands and a thin scatter of the deep interior; the last two go back
@@ -6156,7 +6378,7 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
                 continue;
             };
             let highland = tile.terrain == "mountain" || tile.hills;
-            let landmass = landmass_of[&source];
+            let landmass = landmass_of[wm.tiles.index_of(source).unwrap()];
             let allowance = if tributary {
                 budget[landmass]
             } else {
@@ -6193,12 +6415,12 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
             let within_reach = wm
                 .disk(source, reach)
                 .into_iter()
-                .any(|near| fresh_water.contains(&near));
+                .any(|near| fresh_water[wm.tiles.index_of(near).unwrap()]);
             let on_the_bank = tributary
                 && wm
                     .disk(source, RIVER_TRIBUTARY_CLEARANCE)
                     .into_iter()
-                    .any(|near| fresh_water.contains(&near));
+                    .any(|near| fresh_water[wm.tiles.index_of(near).unwrap()]);
             if within_reach != tributary || on_the_bank {
                 continue;
             }
@@ -6224,28 +6446,33 @@ fn generate_rivers(wm: &mut WorldMap, land: &[Pos], rng: &mut Rng) {
             }
             for edge in &course {
                 rivers.insert(*edge);
-                fresh_water.insert(edge.0);
-                fresh_water.insert(edge.1);
+                fresh_water[wm.tiles.index_of(edge.0).unwrap()] = true;
+                fresh_water[wm.tiles.index_of(edge.1).unwrap()] = true;
                 confluences.extend(corners_of_edge(wm, *edge));
             }
             spent[landmass] += course.len();
             // Sink the valley this river just cut, so the next one starting
             // within reach of it runs down into it as a tributary instead of
             // laying a second trunk alongside.
-            let mut basin: BTreeMap<Pos, i32> = BTreeMap::new();
+            let mut basin = vec![0; wm.tiles.len()];
+            let mut basin_tiles = Vec::new();
             for bank in course.iter().flat_map(|edge| [edge.0, edge.1]) {
                 for near in wm.disk(bank, RIVER_VALLEY_REACH) {
                     let fall = RIVER_VALLEY_DEPTH
                         * (RIVER_VALLEY_REACH + 1 - wm.distance(bank, near))
                         / (RIVER_VALLEY_REACH + 1);
-                    let deepest = basin.entry(near).or_insert(0);
-                    *deepest = (*deepest).max(fall);
+                    let index = wm.tiles.index_of(near).unwrap();
+                    if fall > basin[index] {
+                        if basin[index] == 0 {
+                            basin_tiles.push(index);
+                        }
+                        basin[index] = fall;
+                    }
                 }
             }
-            for (pos, fall) in basin {
-                if let Some(value) = values.get_mut(&pos) {
-                    *value -= fall;
-                }
+            for index in basin_tiles {
+                values[index] -= basin[index];
+                basin[index] = 0;
             }
         }
     }
@@ -6270,8 +6497,16 @@ fn remove_water_boundary_rivers(wm: &mut WorldMap) {
             "ocean" | "coast" | "lake"
         )
     };
-    let shoreline: Vec<RiverEdge> = all_shared_edges(wm)
-        .into_iter()
+    let shoreline: Vec<RiverEdge> = wm
+        .tiles
+        .keys()
+        .copied()
+        .flat_map(|position| {
+            wm.neighbors(position)
+                .into_iter()
+                .filter(move |neighbor| position < *neighbor)
+                .map(move |neighbor| (position, neighbor))
+        })
         .filter(|edge| wm.has_river_edge(edge.0, edge.1))
         .filter(|edge| water(edge.0) || water(edge.1))
         .collect();
@@ -6635,6 +6870,88 @@ mod river_tests {
     ];
 
     const FIXED_GEOGRAPHY_TYPES: [MapScript; 2] = [MapScript::Earth, MapScript::TrueStartEarth];
+
+    /// Eight bytes that stand for everything a seed generated, so two builds
+    /// — or two platforms — can be compared without shipping worlds around.
+    /// FNV-1a over the world's save serialization and the spawn list.
+    fn world_digest(world: &WorldMap, spawns: &[Pos]) -> u64 {
+        let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+        let mut eat = |bytes: &[u8]| {
+            for byte in bytes {
+                hash ^= *byte as u64;
+                hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+            }
+        };
+        eat(serde_json::to_string(world).unwrap().as_bytes());
+        for (col, row) in spawns {
+            eat(&col.to_le_bytes());
+            eat(&row.to_le_bytes());
+        }
+        hash
+    }
+
+    /// The digest every platform must agree on, per seed and shape.
+    ///
+    /// This is the regression gate for #1061: the same seed generated a
+    /// different globe on wasm32 than on native, because latitude came out of
+    /// whichever `asin` the platform linked and one ULP moved tiles across
+    /// climate thresholds. The geometry path now calls [`crate::sphere::trig`]
+    /// on every target, so a world is a pure function of its seed again — and
+    /// this test holds every platform to the bits these values were computed
+    /// from. A seed only diverged when some tile sat within a rounding step of
+    /// a boundary, which is a property of the seed, so several seeds are
+    /// pinned rather than one; the globe seeds include ones that demonstrably
+    /// diverged before the fix (1013, 1037, 4242, 31337 in #1061) and the flat
+    /// controls pin that flat generation did not move at all.
+    ///
+    /// If this fails because mapgen changed *on purpose*, recompute: run the
+    /// test, and the assertion message prints every digest the current code
+    /// produces. Paste them in — on one platform only; the others must then
+    /// match without being touched, and a platform that disagrees is exactly
+    /// the bug this test exists to catch.
+    #[test]
+    fn the_same_seed_generates_the_same_world_on_every_platform() {
+        let rules = Rules::embedded();
+        let cases: [(u64, MapTopology, u64); 6] = [
+            (1013, GLOBE, 0x5882_57c1_2847_3376),
+            (1037, GLOBE, 0xea88_b67e_6785_f742),
+            (4242, GLOBE, 0xaffb_235c_3df8_79fe),
+            (31337, GLOBE, 0x1dec_b624_0de4_3098),
+            (777, FLAT, 0x8c54_302a_be4c_7bab),
+            (4242, FLAT, 0xf08d_d844_42a1_ec99),
+        ];
+        let actual: Vec<String> = cases
+            .iter()
+            .map(|(seed, topology, _)| {
+                let mut rng = Rng::new(*seed);
+                let (world, spawns) = generate_with_script(
+                    &rules,
+                    74,
+                    46,
+                    6,
+                    9,
+                    4,
+                    3,
+                    MapScript::Continents,
+                    *topology,
+                    POLED,
+                    &mut rng,
+                );
+                format!("{:016x}", world_digest(&world, &spawns))
+            })
+            .collect();
+        let expected: Vec<String> = cases
+            .iter()
+            .map(|(_, _, digest)| format!("{digest:016x}"))
+            .collect();
+        assert_eq!(
+            actual, expected,
+            "a seed no longer generates the world every platform agreed on \
+             (seeds {:?}); if mapgen changed deliberately, pin the left column \
+             — computed on one platform, verified by the rest",
+            cases.map(|(seed, ..)| seed)
+        );
+    }
 
     /// What share of a generated world is dry land.
     fn land_share(world: &WorldMap, rules: &Rules) -> usize {
@@ -7190,6 +7507,63 @@ mod river_tests {
         }
     }
 
+    #[test]
+    fn fjords_keep_a_sailable_water_network_and_vary_land_connections() {
+        let rules = Rules::embedded();
+        for topology in [FLAT, GLOBE] {
+            let mut smallest_largest_water_share = 100;
+            let mut substantial_land_body_counts = BTreeSet::new();
+            for seed in 0..8u64 {
+                let mut rng = Rng::new(63_000 + seed + 100 * topology.is_globe() as u64);
+                let (world, _) = generate_with_script(
+                    &rules,
+                    60,
+                    38,
+                    4,
+                    6,
+                    3,
+                    2,
+                    MapScript::Fjords,
+                    topology,
+                    POLED,
+                    &mut rng,
+                );
+                let land: BTreeSet<Pos> = world
+                    .tiles
+                    .iter()
+                    .filter(|(_, tile)| !rules.is_water(tile))
+                    .map(|(position, _)| *position)
+                    .collect();
+                let water: BTreeSet<Pos> = world
+                    .tiles
+                    .iter()
+                    .filter(|(_, tile)| rules.is_water(tile))
+                    .map(|(position, _)| *position)
+                    .collect();
+                let land_bodies = connected_components(&world, &land);
+                let water_bodies = connected_components(&world, &water);
+                smallest_largest_water_share = smallest_largest_water_share.min(
+                    water_bodies
+                        .first()
+                        .map_or(0, BTreeSet::len)
+                        * 100
+                        / water.len().max(1),
+                );
+                substantial_land_body_counts.insert(
+                    land_bodies.iter().filter(|body| body.len() >= 20).count(),
+                );
+            }
+            assert!(
+                smallest_largest_water_share >= 50,
+                "{topology:?}: Fjords should leave a dominant navigable water network"
+            );
+            assert!(
+                substantial_land_body_counts.len() >= 2,
+                "{topology:?}: Fjords should vary between joined and separated land spines, got {substantial_land_body_counts:?}"
+            );
+        }
+    }
+
     /// Where a tile stands around one of the world's axes, as a twelfth of a
     /// turn: 0 through 11, counting round the plane square to the axis. A lane
     /// that reaches all twelve has been all the way round the world.
@@ -7199,7 +7573,7 @@ mod river_tests {
         // read straight off them.
         let along = axis.iter().position(|part| *part != 0.0).unwrap();
         let point = world.direction(pos);
-        let angle = point[(along + 2) % 3].atan2(point[(along + 1) % 3]);
+        let angle = trig::atan2(point[(along + 2) % 3], point[(along + 1) % 3]);
         let turns = angle.rem_euclid(std::f64::consts::TAU) / std::f64::consts::TAU;
         ((turns * 12.0) as usize).min(11)
     }
@@ -7279,9 +7653,9 @@ mod river_tests {
                                     world.tiles[pos].feature.as_deref() != Some("ice")
                                 })
                                 .filter(|pos| {
-                                    let out_of_plane = dot(world.direction(*pos), direction)
-                                        .clamp(-1.0, 1.0)
-                                        .asin();
+                                    let out_of_plane = trig::asin(
+                                        dot(world.direction(*pos), direction).clamp(-1.0, 1.0),
+                                    );
                                     (out_of_plane - sign * offset).abs() <= half
                                 })
                                 .collect();
@@ -8655,7 +9029,7 @@ mod river_tests {
     /// both the count and the reason no rotation about the pole fixes it.
     #[test]
     fn earth_keeps_the_three_pentagons_that_land_on_it() {
-        let ring = (0.5f64).atan().to_degrees();
+        let ring = trig::atan(0.5).to_degrees();
         let corners: Vec<(f64, f64)> = (0..5)
             .map(|k| (72.0 * k as f64, ring))
             .chain((0..5).map(|k| (72.0 * k as f64 + 36.0, -ring)))

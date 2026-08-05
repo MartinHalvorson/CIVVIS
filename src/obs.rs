@@ -775,6 +775,25 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
                 "founded_religion_exists": founded_religion_exists,
                 "yields": yields_json(&output),
                 "military": military,
+                // ⚠ WHAT THE HOST SAID, kept apart from what CIVVIS MODELS.
+                // `military` above is `military_power`, which is deliberately
+                // `max(observed, our own strength sum)` — so for our OWN seat,
+                // where we can see every unit, our sum can win the max and the
+                // figure legitimately exceeds the host's. For a RIVAL the sum is
+                // fog-limited, so the host's number wins.
+                //
+                // That makes `military` the wrong thing for `civ6_mirror_check`
+                // to compare: it reported `seat 0 military Civ6=520 CIVVIS=545`
+                // as a DISAGREEMENT when the mapping was perfect and only the
+                // model differed. A check that cries wolf gets ignored.
+                //
+                // This is the mapped value alone, so the checker can verify the
+                // BRIDGE (did the export land?) rather than the MODEL.
+                "observed_military": g
+                    .observed_military_power
+                    .get(&o.id)
+                    .copied()
+                    .map(|value| value.round() as i64),
                 "team": o.team,
                 "teammate": g.same_team(pid, o.id),
                 "at_war_with_me": g.is_at_war(pid, o.id),

@@ -4746,7 +4746,38 @@ impl BasicAi {
                     // mirror this also produced a purchase the host refused
                     // every turn once Rome converted. The live adapter keeps
                     // looking when the first matching city cannot place it.
-                    if !g.cities[cid].districts.contains_key(crate::name!("holy_site"))
+                    // ⚠ AND THE TILE MUST BE FREE OF A RELIGIOUS UNIT. Civilization VI
+                    // refuses a purchase that would place a second unit of the same
+                    // class on one plot, and it says so in as many words — the
+                    // `purchase_refused` instrument recorded the host's own text,
+                    // "Too many units of the same class in this location.", on the
+                    // missionary buy.
+                    //
+                    // That refusal is 799 of the 08-04/08-05 orders, and it was NOT
+                    // affordability: faith balance at the moment of refusal ran a
+                    // median 474 against a median quoted cost of 90. The buyer only
+                    // ever counted missionaries EMPIRE-WIDE (`missionaries < 2`) and
+                    // never asked whether the city it was buying into already had one
+                    // standing on it — which is exactly where a just-purchased
+                    // missionary is still sitting.
+                    //
+                    // ⚠⚠ GATED ON THE LIVE ADAPTER, like the religion check beside it.
+                    // This function is the FROZEN controller's too, and an unconditional
+                    // guard would change the legacy path — which means bumping
+                    // `ELO_PROTOCOL_VERSION` and starting a new ledger for a bug that
+                    // only bites the live bridge. The refusals are all live.
+                    let center = g.cities[cid].pos;
+                    let occupied = self.live_religious_purchase_guard
+                        && g.units_at(center).into_iter().any(|uid| {
+                            let unit = &g.units[&uid];
+                            unit.owner == pid
+                                && g.rules
+                                    .units
+                                    .get(unit.kind.as_str())
+                                    .is_some_and(|spec| spec.class == "religious")
+                        });
+                    if occupied
+                        || !g.cities[cid].districts.contains_key(crate::name!("holy_site"))
                         || (self.live_religious_purchase_guard
                             && g.city_religion(&g.cities[cid]) != Some(religion.as_str()))
                     {
@@ -8550,12 +8581,14 @@ impl BasicAi {
         if sea_unit != water {
             return false;
         }
-        if !g.unit_can_traverse(uid, pos) {
+        let friendly_city = tile
+            .owner_city
+            .and_then(|cid| g.cities.get(&cid))
+            .is_some_and(|city| city.owner == pid);
+        if !friendly_city {
             return false;
         }
-        tile.owner_city
-            .and_then(|cid| g.cities.get(&cid))
-            .is_some_and(|city| city.owner == pid)
+        g.unit_can_traverse(uid, pos)
     }
 
     /// Move an otherwise idle military unit between useful frontier posts.
@@ -8986,8 +9019,16 @@ impl BasicAi {
                 return self.fortify_or_stop(g, pid, uid);
             }
         }
-        if let Some(acted) = self.special_improver_step(g, pid, uid) {
-            return acted;
+        let special_improver = {
+            let unit = &g.units[&uid];
+            unit.owner == pid
+                && unit.charges > 0
+                && !g.rules.units[unit.kind].builds.is_empty()
+        };
+        if special_improver {
+            if let Some(acted) = self.special_improver_step(g, pid, uid) {
+                return acted;
+            }
         }
         // Coming ashore outranks exploring. A Recon unit explores for as long
         // as any unseen tile remains, which on an ocean map is forever, so
@@ -11665,6 +11706,8 @@ mod tests {
         let camps: Vec<Pos> = g.barb_camps.keys().copied().collect();
         for camp in camps {
             g.barb_camps.remove(&camp);
+            g.barb_naval_camps.remove(&camp);
+            g.barb_camp_guards.remove(&camp);
             let tile = g.map.tiles.get_mut(&camp).unwrap();
             if tile.improvement.as_deref() == Some("barbarian_camp") {
                 tile.improvement = None;
@@ -11837,6 +11880,8 @@ mod tests {
             g.remove_unit(unit);
         }
         g.barb_camps.clear();
+        g.barb_naval_camps.clear();
+        g.barb_camp_guards.clear();
         g.barb_scout_homes.clear();
         g.barb_scout_targets.clear();
         g.barb_camp_targets.clear();
@@ -11886,6 +11931,8 @@ mod tests {
         let camps: Vec<Pos> = g.barb_camps.keys().copied().collect();
         for camp in camps {
             g.barb_camps.remove(&camp);
+            g.barb_naval_camps.remove(&camp);
+            g.barb_camp_guards.remove(&camp);
             let tile = g.map.tiles.get_mut(&camp).unwrap();
             if tile.improvement.as_deref() == Some("barbarian_camp") {
                 tile.improvement = None;
