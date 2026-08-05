@@ -10089,6 +10089,10 @@ const WONDER_PAINTER = {
     }
   },
   volcano(x, y, k, art) {
+    // Use the same detailed top-down volcano as ordinary mountain tiles when
+    // the existing environment atlas is available. Ice-capped wonders keep
+    // the compact vector fallback below so their snow remains visible.
+    if (!art.ice && drawStrategicVolcanoAtlas(null, x, y, k)) return;
     // A volcano seen from a map is a caldera, not a side-on cone. Its rim,
     // dark throat, and hot centre all share one centre so it remains a simple
     // round landform at every Natural Wonder footprint size.
@@ -10296,56 +10300,123 @@ function drawStrategicVolcanicSoil(t, x, y) {
   cx.restore();
 }
 
-const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;
-function drawStrategicMountainIcon(x, y, volcano) {
-  const mountainRadius = volcano ? 15 : 15.5;
+// The removed painted/cinematic renderer already shipped transparent, high-
+// detail mountain and volcano cutouts. Strategic had left both atlases loaded
+// but unused, so its "top-down" symbols had fallen back to a dark disk with a
+// few lines. Keep one small atlas painter here so flat and globe use the same
+// material, scale, and deterministic variation.
+const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.08;
+function drawStrategicAtlasCell(atlas, columns, rows, cell, x, y, width, height,
+                                options = {}) {
+  if (!atlas || !atlas.naturalWidth || !atlas.naturalHeight) return false;
+  const cw = atlas.naturalWidth / columns;
+  const ch = atlas.naturalHeight / rows;
+  let sx = cell[0] * cw, sy = cell[1] * ch, sw = cw, sh = ch;
+  // Environment cells reserve a tall transparent margin for smoke. A square
+  // crop preserves the intended plan-view material instead of stretching it
+  // sideways to fill the hex; `squareCrop: false` is retained for the volcano
+  // so the lower plume still has room to read when the tile is large.
+  if (options.squareCrop !== false && ch > cw) {
+    const cropY = Math.max(0, Math.min(1, options.cropY ?? .5));
+    sy += (ch - cw) * cropY;
+    sh = cw;
+  }
+  const targetY = y - (options.lift || 0);
+  cx.save();
+  cx.imageSmoothingEnabled = true;
+  cx.imageSmoothingQuality = "high";
+  cx.globalAlpha = options.alpha === undefined ? .96 : options.alpha;
+  cx.translate(x, targetY);
+  if (options.flip) cx.scale(-1, 1);
+  cx.drawImage(atlas, sx, sy, sw, sh, -width / 2, -height / 2, width, height);
+  cx.restore();
+  return true;
+}
+
+function strategicMountainRockColumn(tile) {
+  const q = tile?.pos?.[0] || 0, r = tile?.pos?.[1] || 0;
+  const polar = !!(state?.map?.height &&
+    (r < state.map.height * .2 || r > state.map.height * .8));
+  const material = hash2(q * 47, r * 53);
+  // Snowy peaks belong at the poles; warm granite is occasional elsewhere,
+  // while the neutral grey cell keeps the range readable on every biome.
+  return polar ? (material > .3 ? 1 : 0) : (material > .62 ? 2 : 0);
+}
+
+function drawStrategicMountainAtlas(tile, x, y, size = 1) {
+  if (!MOUNTAIN_ATLAS_READY) return false;
+  const q = tile?.pos?.[0] || 0, r = tile?.pos?.[1] || 0;
+  const variation = .94 + hash2(q * 7, r * 5) * .1;
+  const k = STRATEGIC_MOUNTAIN_ICON_SCALE * variation * size;
+  const width = S * 2.16 * k, height = S * 1.98 * k;
+  cx.save();
+  cx.fillStyle = "rgba(8,10,11,.28)";
+  cx.beginPath(); cx.ellipse(x + 1.5, y + S * .22, width * .34, S * .17 * k, 0, 0, 7); cx.fill();
+  cx.restore();
+  return drawStrategicAtlasCell(
+    MOUNTAIN_ATLAS, 3, 1, [strategicMountainRockColumn(tile), 0],
+    x, y, width, height,
+    {alpha:.98, lift:-S * .02, flip:hash2(q * 13, r * 17) > .5}
+  );
+}
+
+function drawStrategicVolcanoAtlas(tile, x, y, scale = 1, size = 1) {
+  if (!ENVIRONMENT_FEATURE_ATLAS_READY) return false;
+  const q = tile?.pos?.[0] || 0, r = tile?.pos?.[1] || 0;
+  const stateCode = Number(tile?.volcano_state) || 0;
+  const alpha = stateCode === 2 ? .99 : stateCode === 1 ? .9 : .78;
+  const k = STRATEGIC_MOUNTAIN_ICON_SCALE * scale * size;
+  const width = S * 2.04 * k, height = S * 2.18 * k;
+  cx.save();
+  cx.fillStyle = "rgba(8,7,7,.34)";
+  cx.beginPath(); cx.ellipse(x + 1.5, y + S * .24, width * .34, S * .18 * k, 0, 0, 7); cx.fill();
+  cx.restore();
+  return drawStrategicAtlasCell(
+    ENVIRONMENT_FEATURE_ATLAS, 4, 2, ENVIRONMENT_FEATURE_CELL.volcano,
+    x, y, width, height,
+    {alpha, cropY:.24, squareCrop:false, lift:S * .08 * scale}
+  );
+}
+
+function drawStrategicMountainFallback(x, y, volcano, size = 1) {
+  const k = STRATEGIC_MOUNTAIN_ICON_SCALE * size;
   cx.save();
   cx.translate(x, y);
-  cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE);
+  cx.scale(k, k);
   cx.fillStyle = volcano ? "#37302d" : "#565149";
-  cx.beginPath(); cx.arc(0, 0, mountainRadius, 0, 7); cx.fill();
+  cx.beginPath();
+  const outer = volcano
+    ? [[-14, 1], [-11, -10], [-3, -15], [7, -13], [15, -4], [13, 8], [5, 15], [-6, 14], [-15, 8]]
+    : [[-14, 6], [-10, -7], [-4, -14], [2, -10], [8, -14], [15, -2], [12, 9], [3, 14], [-8, 13]];
+  outer.forEach(([px, py], i) => i ? cx.lineTo(px, py) : cx.moveTo(px, py));
+  cx.closePath(); cx.fill();
   if (volcano) {
-    // A centered caldera keeps this landmark top-down. The warmer northwest
-    // rim and darker southeast rim add just enough depth without changing the
-    // plan-view silhouette into a cone laid on its side.
-    const rimRadius = 10.5, craterRadius = 6.2, lavaRadius = 3.7;
-    cx.strokeStyle = "#705d51"; cx.lineWidth = 2.8;
-    cx.beginPath(); cx.arc(0, 0, rimRadius, 0, 7); cx.stroke();
-    cx.strokeStyle = "#9f8873"; cx.lineWidth = 1.8;
-    cx.beginPath(); cx.arc(0, 0, rimRadius, Math.PI * 1.08, Math.PI * 1.82); cx.stroke();
-    cx.fillStyle = "#171210";
-    cx.beginPath(); cx.arc(0, 0, craterRadius, 0, 7); cx.fill();
-    // Two hot cores over a soft bloom make this read as emitted lava light,
-    // not an orange badge pasted onto the now-round basalt rim.
-    cx.shadowColor = "#ff4b19";
-    cx.shadowBlur = 9;
-    cx.fillStyle = "#f04f1f";
-    cx.beginPath(); cx.arc(0, 0, lavaRadius, 0, 7); cx.fill();
-    cx.shadowBlur = 4;
-    cx.fillStyle = "#ffb23c";
-    cx.beginPath(); cx.arc(-.8, -.8, lavaRadius * .52, 0, 7); cx.fill();
+    cx.strokeStyle = "#9f8873"; cx.lineWidth = 2;
+    cx.beginPath(); cx.ellipse(0, -2, 9, 6, -.12, 0, 7); cx.stroke();
+    cx.fillStyle = "#171210"; cx.beginPath(); cx.ellipse(0, -2, 6, 3.8, -.12, 0, 7); cx.fill();
+    cx.fillStyle = "#f04f1f"; cx.beginPath(); cx.ellipse(0, -2, 3.6, 2, -.12, 0, 7); cx.fill();
+    cx.fillStyle = "#ffb23c"; cx.beginPath(); cx.arc(-.8, -2.6, 1.7, 0, 7); cx.fill();
   } else {
-    // Closed contour bands keep the mountain's footprint on the ground. Four
-    // ridges trace inward to the middle peak, so it reads as elevation rather
-    // than as a sideways triangle hovering over its tile.
-    const peakX = 0, peakY = 0;
-    cx.fillStyle = "#6d675b";
-    cx.beginPath(); cx.arc(peakX, peakY, 10.6, 0, 7); cx.fill();
-    cx.fillStyle = "#817967";
-    cx.beginPath(); cx.arc(peakX, peakY, 5.7, 0, 7); cx.fill();
-    cx.strokeStyle = "#37332e"; cx.lineWidth = 1.25; cx.lineCap = "round";
+    cx.fillStyle = "#7e776b"; cx.beginPath(); cx.arc(0, -1, 9, 0, 7); cx.fill();
+    cx.fillStyle = "#a89c85"; cx.beginPath(); cx.arc(-1.5, -4, 4.6, 0, 7); cx.fill();
+    cx.strokeStyle = "#37332e"; cx.lineWidth = 1.2; cx.lineCap = "round";
     cx.beginPath();
-    cx.moveTo(-12, 7); cx.quadraticCurveTo(-6, 1, peakX, peakY);
-    cx.moveTo(12, 7); cx.quadraticCurveTo(6, 1, peakX, peakY);
-    cx.moveTo(-7, -11); cx.quadraticCurveTo(-3, -5, peakX, peakY);
-    cx.moveTo(7, -11); cx.quadraticCurveTo(3, -5, peakX, peakY);
+    cx.moveTo(-12, 8); cx.quadraticCurveTo(-5, 1, 0, -1);
+    cx.moveTo(12, 7); cx.quadraticCurveTo(5, 1, 0, -1);
+    cx.moveTo(-7, -10); cx.quadraticCurveTo(-3, -5, 0, -1);
+    cx.moveTo(7, -10); cx.quadraticCurveTo(3, -5, 0, -1);
     cx.stroke();
-    cx.strokeStyle = "#a89c85"; cx.lineWidth = 1.2;
-    cx.beginPath(); cx.arc(peakX, peakY, 13.3, Math.PI * 1.15, Math.PI * 1.9); cx.stroke();
-    cx.fillStyle = "#c9bda4";
-    cx.beginPath(); cx.arc(peakX, peakY, 2.25, 0, 7); cx.fill();
   }
   cx.restore();
+}
+
+function drawStrategicMountainIcon(x, y, volcano, tile, size = 1) {
+  if (volcano) {
+    if (drawStrategicVolcanoAtlas(tile, x, y, 1, size)) return;
+  } else if (drawStrategicMountainAtlas(tile, x, y, size)) {
+    return;
+  }
+  drawStrategicMountainFallback(x, y, volcano, size);
 }
 
 function drawFeatureEffects(t, x, y) {
@@ -10625,8 +10696,8 @@ function drawStrategicIceIcon(x, y) {
 }
 
 function drawStrategicTerrainMark(t, x, y) {
-  if (t.feature === "volcano") { drawStrategicMountainIcon(x, y, true); return; }
-  if (t.terrain === "mountain") { drawStrategicMountainIcon(x, y, false); return; }
+  if (t.feature === "volcano") { drawStrategicMountainIcon(x, y, true, t); return; }
+  if (t.terrain === "mountain") { drawStrategicMountainIcon(x, y, false, t); return; }
   if (t.hills) drawStrategicHillIcon(x, y);
   if (["forest", "jungle", "burning_forest", "burnt_forest",
        "burning_jungle", "burnt_jungle"].includes(t.feature)) {
@@ -18330,7 +18401,8 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
   // Volcanic Soil is ground rather than an icon. Like the flat strategic map,
   // it goes on top of its terrain but below territory, the survey grid, and
   // every piece of constructed or natural detail.
-  if (scale > .42) drawPlanetStrategicVolcanicSoil(cells, visible, spectator);
+  if (scale > PLANET_STRATEGIC_DETAIL_SCALE)
+    drawPlanetStrategicVolcanicSoil(cells, visible, spectator);
 
   // Ownership is a transparent command-map layer over finished ground.
   for (const cell of cells) {
@@ -18363,6 +18435,7 @@ function drawPlanetGround(cells, camera, scale, radius, centerX, centerY,
 // chart to the planet. These helpers retain the flat map's authored marks and
 // put them in each projected cell at the equivalent local strategic scale.
 const PLANET_STRATEGIC_INRADIUS = S * SQ3 / 2 * Math.min(1, YS);
+const PLANET_STRATEGIC_DETAIL_SCALE = .30;
 
 function planetStrategicScale(entry) {
   return planetCellInradius(entry) / PLANET_STRATEGIC_INRADIUS;
@@ -18717,12 +18790,12 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
     }
     withPlanetStrategicCell(entry, visible, spectator, () => {
       if (t.feature === "volcano") {
-        drawStrategicMountainIcon(0, 0, true);
+        drawStrategicMountainIcon(0, 0, true, t, .78);
         drawFeatureEffects(t, 0, 0);
         return;
       }
       if (t.terrain === "mountain") {
-        drawStrategicMountainIcon(0, 0, false);
+        drawStrategicMountainIcon(0, 0, false, t, .78);
         return;
       }
       if (t.hills || STRATEGIC_FEATURE_MARKS.has(t.feature))
@@ -19611,7 +19684,8 @@ function drawPlanetMap() {
   // The planet is another projection of the strategic map, not a lower-detail
   // terrain mode. Its rivers, cliffs, landmarks, improvements, deposits and
   // yields therefore use the same authored vocabulary as the flat board.
-  if (scale > .42) drawPlanetStrategicTerrain(cells, turnVisible, spectator);
+  if (scale > PLANET_STRATEGIC_DETAIL_SCALE)
+    drawPlanetStrategicTerrain(cells, turnVisible, spectator);
 
   const highlighted = new Map();
   if (sel) {
