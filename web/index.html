@@ -256,7 +256,7 @@
   body.sidebar-resizing #side { user-select: none; }
   body.sidebar-hidden #side-resize-handle { display: none; }
   .side-head {
-    position: relative; flex: 0 0 auto; min-height: 116px; padding: 19px 16px;
+    position: relative; container-type: inline-size; flex: 0 0 auto; min-height: 116px; padding: 19px 16px;
     border-bottom: 1px solid #415348;
     background:
       radial-gradient(circle at 9% 16%, #d7b66a13, transparent 27%),
@@ -288,11 +288,16 @@
     stroke-linejoin: round;
   }
   .brand-mark .globe-shine { fill: none; stroke: #fff9df; stroke-opacity: .14; stroke-width: 1.1; }
-  .brand-copy { min-width: 0; padding-top: 1px; }
-  .brand-title-row { display: flex; align-items: center; gap: 10px; }
+  /* The social rail is absolutely positioned so it does not make the header
+     taller. Reserve that lane in the copy, however, so a narrower deck lets
+     the title and tagline use less width instead of painting under the links. */
+  .brand-copy { min-width: 0; flex: 1 1 auto; padding: 1px 34px 0 0; }
+  .brand-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
   h1 {
-    width: max-content; color: var(--gold-bright);
+    width: auto; min-width: 0; max-width: 100%; overflow: hidden;
+    color: var(--gold-bright);
     font: 650 36px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-size: clamp(22px, 10cqw, 36px);
     letter-spacing: .08em; text-transform: uppercase;
     background: linear-gradient(100deg, #f6dfaa 8%, #d7b66a 66%, #a9823b);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
@@ -302,7 +307,7 @@
     font-size: .58em; letter-spacing: .025em; text-transform: lowercase;
   }
   /* One narrow column pinned to the corner: GitHub takes the bottom right and
-     YouTube sits directly above it, so the icons cost the title one 24px lane
+     YouTube sits directly above it, so the icons cost the copy one 24px lane
      instead of the 55px a side-by-side row ate. */
   .brand-links {
     position: absolute; right: 10px; bottom: 9px;
@@ -318,7 +323,7 @@
     transform: translateY(-1px);
   }
   .brand-links a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-  .brand-links svg { width: 14px; height: 14px; fill: currentColor; }
+  .brand-links svg { width: 21px; height: 21px; fill: currentColor; }
   .tagline {
     max-width: 225px; margin-top: 9px; color: #dde6e2; font-size: var(--type-body);
     font-weight: 650; letter-spacing: .015em; line-height: 1.36;
@@ -332,7 +337,9 @@
   #side[data-type-size="compact"] .brand { gap: 10px; }
   #side[data-type-size="compact"] .brand-mark { width: 54px; height: 54px; }
   #side[data-type-size="compact"] .brand-mark svg { width: 49px; height: 49px; }
-  #side[data-type-size="compact"] h1 { width: auto; font-size: 28px; letter-spacing: .055em; }
+  #side[data-type-size="compact"] h1 {
+    width: auto; font-size: clamp(20px, 10cqw, 28px); letter-spacing: .055em;
+  }
   #side[data-type-size="compact"] .tagline { max-width: none; margin-top: 6px; font-size: var(--type-small); }
   #side[data-type-size="compact"] .tagline span { white-space: normal; }
   /* The deck is a column: the fixed panels take the height they need and the
@@ -12207,6 +12214,9 @@ const FINE = () => cam.scale >= 0.8;
 // improvement vocabulary. Give its logs and saw enough visual mass to read as
 // a worked woodland tile rather than another small ground prop.
 const LUMBER_MILL_ICON_SCALE = 1.3;
+// Keep the solar-farm silhouette comfortably inside the tile while retaining
+// enough area for its two panel banks to read as panels at normal zoom.
+const SOLAR_FARM_ICON_SCALE = 0.8;
 
 // Improvements are what turn claimed land into worked land, and of the
 // thirty-five kinds all but three were drawing the same 8×5 brown rectangle —
@@ -13095,6 +13105,12 @@ function drawImprovement(t, x, y) {
   // against the tile and needs none.
   const dir = -LITF;                      // improvements are drawn in screen space
   const improvementScale = imp === "lumber_mill" ? LUMBER_MILL_ICON_SCALE : 1;
+  const solarFarmScale = imp === "solar_farm" ? SOLAR_FARM_ICON_SCALE : 1;
+  if (solarFarmScale !== 1) {
+    cx.translate(x, y);
+    cx.scale(solarFarmScale, solarFarmScale);
+    cx.translate(-x, -y);
+  }
   if (!(imp === "farm" || imp === "plantation" || imp === "solar_farm")) {
     contactAO(x, y + 7.6 * improvementScale, 11.5 * improvementScale,
               4 * improvementScale, .28);
@@ -13297,13 +13313,13 @@ function drawImprovement(t, x, y) {
       panel.moveTo(left, bottom); panel.lineTo(left + skew, top);
       panel.lineTo(right + skew, top); panel.lineTo(right, bottom); panel.closePath();
       const glass = cx.createLinearGradient(left, bottom, right + skew, top);
-      glass.addColorStop(0, "#183e68");
-      glass.addColorStop(.52, "#2d78a5");
-      glass.addColorStop(1, "#8ed0df");
+      glass.addColorStop(0, "#25425d");
+      glass.addColorStop(.52, "#3e6f83");
+      glass.addColorStop(1, "#86b1b6");
       cx.fillStyle = glass; cx.fill(panel);
-      cx.strokeStyle = "#0d2338"; cx.lineWidth = 1.4; cx.stroke(panel);
+      cx.strokeStyle = "#172b3a"; cx.lineWidth = 1.4; cx.stroke(panel);
       cx.save(); cx.clip(panel);
-      cx.strokeStyle = "rgba(213,242,246,.58)"; cx.lineWidth = .64;
+      cx.strokeStyle = "rgba(203,224,225,.46)"; cx.lineWidth = .64;
       for (const fraction of [1 / 3, 2 / 3]) {
         const lowerX = left + width * fraction;
         cx.beginPath(); cx.moveTo(lowerX, bottom);
@@ -13315,7 +13331,7 @@ function drawImprovement(t, x, y) {
         cx.beginPath(); cx.moveTo(leftX, lineY); cx.lineTo(rightX, lineY); cx.stroke();
       }
       cx.restore();
-      cx.strokeStyle = "#52616a"; cx.lineWidth = 1.15;
+      cx.strokeStyle = "#5d696e"; cx.lineWidth = 1.15;
       for (const fraction of [.24, .76]) {
         const postX = left + width * fraction;
         cx.beginPath(); cx.moveTo(postX, bottom); cx.lineTo(postX, bottom + 3.4); cx.stroke();
@@ -13324,7 +13340,7 @@ function drawImprovement(t, x, y) {
     contactAO(x + 1, y + 10.6, 21.5, 3.8, .2);
     panelBank(y - 5.7, 33, 9.2);
     panelBank(y + 5.1, 39, 10.2);
-    cx.fillStyle = "#82919a"; cx.strokeStyle = "#293942"; cx.lineWidth = .8;
+    cx.fillStyle = "#788489"; cx.strokeStyle = "#364348"; cx.lineWidth = .8;
     cx.beginPath(); cx.roundRect(x + 17.2, y + 8.4, 4.2, 3.2, .65); cx.fill(); cx.stroke();
   } else if (imp === "fort" || imp === "missile_silo") {
     const bastion = new Path2D();                    // squat bastion
@@ -13421,7 +13437,7 @@ function drawImprovement(t, x, y) {
   }
   cx.restore();
   if (t.pillaged) {   // burned out — and worth spotting the turn it happens
-    const pillageScale = imp === "lumber_mill" ? LUMBER_MILL_ICON_SCALE : 1;
+    const pillageScale = imp === "lumber_mill" ? LUMBER_MILL_ICON_SCALE : solarFarmScale;
     cx.strokeStyle = "#d8443a"; cx.lineWidth = 2.2; cx.lineCap = "round";
     cx.beginPath();
     cx.moveTo(x - 8 * pillageScale, y + 7 * pillageScale);
