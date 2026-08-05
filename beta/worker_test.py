@@ -28,6 +28,7 @@ import functools
 import http.server
 import json
 import pathlib
+import re
 import shutil
 import socketserver
 import subprocess
@@ -153,6 +154,25 @@ def check(problems: list[str], name: str, condition: bool, detail: str = "") -> 
         problems.append(name)
 
 
+def engine_route_drift(here: pathlib.Path) -> list[str]:
+    """Routes the wasm engine answers that the shim would send to the network.
+
+    `src/wasm.rs` and `ENGINE_ROUTES` in `shim.js` describe the same boundary
+    from opposite sides, and nothing at build time ties them together. A route
+    added engine-side only is not a broken button: the published page's request
+    escapes to the real civvis.ai, 404s, and whatever polls it retries for
+    ever — the machine-metrics poll shipped exactly that way. The shim is
+    allowed routes the engine lacks (it answers `/saves` from browser
+    storage), so only the engine-side surplus counts as drift.
+    """
+    wasm = (here.parent / "src" / "wasm.rs").read_text(encoding="utf-8")
+    shim = (here / "shim.js").read_text(encoding="utf-8")
+    engine = set(re.findall(r'\("(?:GET|POST)",\s*"(/[^"]+)"\)', wasm))
+    listed = re.search(r"ENGINE_ROUTES = new Set\(\[(.*?)\]\)", shim, re.DOTALL)
+    shimmed = set(re.findall(r'"(/[^"]+)"', listed.group(1))) if listed else set()
+    return sorted(engine - shimmed)
+
+
 def main(argv: list[str] | None = None) -> int:
     here = pathlib.Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description=__doc__)
@@ -161,6 +181,16 @@ def main(argv: list[str] | None = None) -> int:
     # purely to prove that setting TEST_PASSWORD still closes the door.
     parser.add_argument("--password", default="not-the-real-one")
     args = parser.parse_args(argv)
+
+    print("==> the shim intercepts every route the engine answers")
+    drift = engine_route_drift(here)
+    if drift:
+        print(
+            f"    FAIL shim.js ENGINE_ROUTES is missing {', '.join(drift)}",
+            file=sys.stderr,
+        )
+        return 1
+    print("    ok   ENGINE_ROUTES covers src/wasm.rs")
 
     if not pathlib.Path(args.chrome).exists():
         print(f"no Chrome at {args.chrome}", file=sys.stderr)
@@ -303,10 +333,9 @@ def main(argv: list[str] | None = None) -> int:
                   scrapped["status"] == 404 and not scrapped["location"],
                   f"got {scrapped['status']} {scrapped['location']!r}")
 
-        # The same engine-and-atlas header rules hold in both lanes; a rule
-        # keyed on "/test/" alone would quietly leave the root lane's module
-        # untyped, and instantiateStreaming refuses anything but
-        # application/wasm.
+        # The same cache rules hold in both lanes. Moving entry points and old
+        # unversioned dependency URLs revalidate; generated content-addressed
+        # URLs are immutable because changed bytes always get a different URL.
         for prefix, which in (("", "the stable lane's"), ("/test", "the test lane's")):
             module = hit(path=f"{prefix}/civvis.wasm")
             check(problems, f"{which} module is served as application/wasm",
@@ -314,8 +343,15 @@ def main(argv: list[str] | None = None) -> int:
             check(problems, f"{which} module is revalidated rather than trusted",
                   "must-revalidate" in (module["cacheControl"] or ""), f"got {module['cacheControl']!r}")
             atlas = hit(path=f"{prefix}/assets/feature-atlas.webp")
-            check(problems, f"{which} atlases are cached", "max-age=86400" in (atlas["cacheControl"] or ""),
+            check(problems, f"{which} old atlas URLs are revalidated",
+                  "must-revalidate" in (atlas["cacheControl"] or ""),
                   f"got {atlas['cacheControl']!r}")
+            for filename in ("shim.js", "worker.js", "civvis.wasm", "assets/feature-atlas.webp"):
+                versioned = hit(path=f"{prefix}/{filename}?v=content-hash")
+                check(problems, f"{which} versioned {filename} is immutable",
+                      "max-age=31536000" in (versioned["cacheControl"] or "")
+                      and "immutable" in (versioned["cacheControl"] or ""),
+                      f"got {versioned['cacheControl']!r}")
 
         # The door still exists; it is just not shut unless somebody shuts it.
         # This is checked because an unused capability is one that has quietly

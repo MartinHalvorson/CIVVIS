@@ -14,6 +14,36 @@ path = "src/lib.rs"
 name = "civvis"
 path = "src/main.rs"
 
+[features]
+# Closed experiment executables remain reproducible evidence, but they are not
+# part of the default product or CI target surface.
+closed-experiments = []
+
+[[bin]]
+name = "science_parallelism_eval"
+path = "experiments/closed/science_parallelism_eval.rs"
+required-features = ["closed-experiments"]
+
+[[bin]]
+name = "reactor_conversion_eval"
+path = "experiments/closed/reactor_conversion_eval.rs"
+required-features = ["closed-experiments"]
+
+[[bin]]
+name = "faith_conversion_eval"
+path = "experiments/closed/faith_conversion_eval.rs"
+required-features = ["closed-experiments"]
+
+[[bin]]
+name = "q_override_train"
+path = "experiments/closed/q_override_train.rs"
+required-features = ["closed-experiments"]
+
+[[bin]]
+name = "q_pairwise_calibrate"
+path = "experiments/closed/q_pairwise_calibrate.rs"
+required-features = ["closed-experiments"]
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
