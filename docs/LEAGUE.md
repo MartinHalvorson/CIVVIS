@@ -169,8 +169,9 @@ evidence, not five-player evidence, and removing seat one's pick cannot switch
 seat two back to a different objective.
 
 The spectator HUD lists, per player: **civ, league username + strategy, its
-elo** (exact leader/civ rating after game one, ±RD on hover) **and two win odds**
-in separate Start and Now columns, with their trend between them. The pregame
+elo** (exact leader/civ rating after game one, ±RD on hover), the live **Elo
+position delta** against the living field, **and two win odds** in separate
+Start and Now columns, with their arrow trend between them. The pregame
 forecast uses both the rating midpoint and its RD, so a one-game 1800 does not
 make the same promise as a settled 1800. In a free-for-all with an enabled
 result, the seats share 100%; on permanent teams, every member carries the

@@ -206,9 +206,10 @@ pub(crate) const fn runtime_artifact_kind() -> &'static str {
     }
 }
 
-/// The two host-wide measurements the viewer needs to make its rendering
-/// choices legible.  They deliberately expose percentages only: the display
-/// settings need pressure, not a machine inventory.
+/// Optional host-wide context for the display panel. The viewer's primary
+/// performance readout is measured in the browser; these native-only values
+/// deliberately expose percentages rather than pretending to be an app
+/// memory or CPU inventory.
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 struct MachineMetrics {
     cpu_percent: Option<f64>,
@@ -3453,6 +3454,58 @@ fn strategy_roster(session: &Session) -> Value {
     json!(rows)
 }
 
+/// The ELO choices the custom setup table may name. Ratings are sparse by
+/// design: a combination only appears after an entrant has actually played
+/// that leader and civilization. Keep the strategy identity beside each
+/// number so a later custom-seat protocol can bind the choice to the exact
+/// entrant instead of treating equal-looking ratings as interchangeable.
+fn leader_elo_options(session: &Session) -> Value {
+    let mut combinations: BTreeMap<(String, String), BTreeMap<i64, BTreeSet<String>>> =
+        BTreeMap::new();
+    let Some(roster) = session.roster.as_ref() else {
+        return json!([]);
+    };
+    for strategy in roster
+        .strategies
+        .iter()
+        .filter(|strategy| !strategy.retired && !strategy.human && !strategy.league_only)
+    {
+        let strategy_name = if strategy.username.is_empty() {
+            strategy.name.clone()
+        } else {
+            strategy.username.clone()
+        };
+        for (leader, civs) in &strategy.leader_elo {
+            for (civ, rating) in civs {
+                if rating.games == 0 || !rating.rating.is_finite() {
+                    continue;
+                }
+                combinations
+                    .entry((civ.clone(), leader.clone()))
+                    .or_default()
+                    .entry(rating.rating.round() as i64)
+                    .or_default()
+                    .insert(strategy_name.clone());
+            }
+        }
+    }
+    json!(combinations
+        .into_iter()
+        .map(|((civ, leader), elos)| json!({
+            "civ": civ,
+            "leader": leader,
+            "elos": elos
+                .into_iter()
+                .rev()
+                .map(|(elo, strategies)| json!({
+                    "elo": elo,
+                    "strategies": strategies.into_iter().collect::<Vec<_>>(),
+                }))
+                .collect::<Vec<_>>(),
+        }))
+        .collect::<Vec<_>>())
+}
+
 /// An explicit turn cap is a real configuration value, not a cast through an
 /// arbitrary JSON number. Zero cannot produce a playable game and a number
 /// wider than the engine's `u32` cap used to wrap into a surprising length.
@@ -4327,6 +4380,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     // a different machine's installation.
                     "civ6": civ6::vocabulary(),
                     "strategies": strategy_roster(&session),
+                    "leader_elo_options": leader_elo_options(&session),
                     "seat_strategy": session.seated_strategy_name(0),
                 }),
             );
@@ -6561,6 +6615,8 @@ mod tests {
         // 1500 every player starts from, marked provisional rather than
         // replaced by a dash that would read as "cannot be rated".
         assert!(player_hud.contains("const playerElo = eloKnown ? `${eloValue}` : \"—\";"));
+        assert!(player_hud.contains("const playerEloDelta = signedEloDelta(playerHudEloDeltaValue(p));"));
+        assert!(player_hud.contains("class=\"diplomacy-identity-field diplomacy-elo-delta\""));
         assert!(player_hud.contains("${eloProvisional ? \" provisional\" : \"\"}"));
         assert!(EMBEDDED_INDEX.contains(".diplomacy-elo-value.provisional {"));
 
@@ -7491,7 +7547,7 @@ mod tests {
             );
         }
         assert!(EMBEDDED_INDEX.contains(
-            "const basic = [\"gamemode\", \"mapshape\", \"maptype\","
+            "[\"gamemode\", true], [\"np\", true], [\"mapshape\", true], [\"maptype\", true],"
         ));
     }
 
@@ -7765,6 +7821,7 @@ mod tests {
             "startera",
             "futureera",
             "leaderpool",
+            "leaderselection",
             "leader",
             "difficulty",
             "mapshape",
@@ -7785,12 +7842,16 @@ mod tests {
                 "the {setting} setting still offers a non-answer"
             );
         }
-        for input in ["citystates", "turnlimit", "mapseed"] {
+        for input in ["turnlimit", "mapseed"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("id=\"{input}\" type=\"number\"")),
                 "browser setup is missing the {input} numeric input"
             );
         }
+        assert!(
+            !EMBEDDED_INDEX.contains("id=\"citystates\""),
+            "city-state count should come from the selected map size"
+        );
         for victory in ["science", "culture", "religious", "diplomatic", "domination", "score"] {
             assert!(EMBEDDED_INDEX.contains(&format!(
                 "id=\"victory-{victory}\" checked>"
@@ -7803,7 +7864,10 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("seed: settings.seed ?? Math.floor(Math.random() * 1e9)"));
         assert!(EMBEDDED_INDEX.contains("const changed = human || (activeSimulationSettingsKey"));
         assert!(EMBEDDED_INDEX.contains("spectate: gameMode === \"ai_sim\","));
-        assert!(EMBEDDED_INDEX.contains("num_city_states: cityStates"));
+        assert!(
+            !EMBEDDED_INDEX.contains("num_city_states: cityStates"),
+            "the lobby should not send a custom city-state count"
+        );
         assert!(EMBEDDED_INDEX.contains("max_turns: turnLimit"));
         // None of the machinery that used to stand in for an unmade decision
         // survives anywhere in the client.
@@ -8011,10 +8075,9 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.map_scripts.map(script =>"));
         assert!(EMBEDDED_INDEX.contains("RULES.game_speeds.map(speed =>"));
         assert!(EMBEDDED_INDEX.contains("id=\"gamemode\""));
-        // The ruleset is asked before the mode, because it decides what the
-        // next question means. Both it and the start-era ladder come from the
-        // server, so a new ruleset — or a rung somebody finally builds — never
-        // means editing the markup.
+        // The game mode leads the primary path. The advanced ruleset and the
+        // start-era ladder still come from the server, so a new ruleset — or a
+        // rung somebody finally builds — never means editing the markup.
         assert!(EMBEDDED_INDEX.contains("id=\"baseruleset\""));
         assert!(EMBEDDED_INDEX.contains(">Base game ruleset<"));
         assert!(EMBEDDED_INDEX.contains("RULES.base_rulesets.map(ruleset =>"));
@@ -8023,8 +8086,8 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("RULES.start_eras.map(era =>"));
         assert!(EMBEDDED_INDEX.contains("base_ruleset: baseRuleset, start_era: startEra,"));
         assert!(
-            EMBEDDED_INDEX.find(">Base game ruleset<") < EMBEDDED_INDEX.find(">Game mode<"),
-            "the ruleset must be asked before the game mode"
+            EMBEDDED_INDEX.find(">Game mode<") < EMBEDDED_INDEX.find(">Base game ruleset<"),
+            "the game mode must lead the primary setup path"
         );
         // The eon that used to sit above the era is gone from the lobby, and
         // the ladder it hung off with it.
@@ -8339,32 +8402,18 @@ mod tests {
         assert!(!EMBEDDED_INDEX.contains("RULES.map_sizes.filter"));
 
         // The lobby's reading order. `#newgame-options` is a two-column grid
-        // filled row by row, so document order *is* left-then-right,
-        // top-to-bottom on screen, and each row is a pair that belongs
-        // together: the rules and who plays under them, then who is at the
-        // table and how they are divided, then the world from the outside in —
-        // what shape it is, what is drawn on that shape, how heat is laid out
-        // across it and how big it is — and last the clock, where history
-        // starts and how fast it runs.
-        //
-        // The two seat settings sit between the second and third rows and are
-        // hidden while nobody is at the keyboard, so they take a row of their
-        // own rather than splitting a pair.
+        // filled row by row, so document order is the visible reading path:
+        // mode and size, then geography, era, clock and victories. The rules,
+        // roster, teams, climate and seed stay in the advanced drawer.
         let order = [
-            "baseruleset",
-            "leaderpool",
             "gamemode",
-            "teams",
-            "leader",
-            "difficulty",
+            "np",
             "mapshape",
             "maptype",
-            "mappoles",
-            "np",
-            "citystates",
             "startera",
-            "gamespeed",
             "futureera",
+            "gamespeed",
+            "turnlimit",
         ]
         .map(|setting| {
             EMBEDDED_INDEX
@@ -8373,51 +8422,77 @@ mod tests {
         });
         assert!(
             order.windows(2).all(|pair| pair[0] < pair[1]),
-            "lobby order must read ruleset/pool, mode/teams, seat, shape/map, thermal/size/city-states, eras/speed"
+            "lobby order must read mode/size, shape/map, start/era, speed/cap"
         );
-        let thermal_setting = order[8];
-        // The advanced drawer starts with the global rules, roster, teams and
-        // climate. Shape and both eras are ordinary setup choices, while the
-        // victory switches stay above the drawer with the rest of the game.
+        assert!(EMBEDDED_INDEX.find("id=\"turnlimit\"").unwrap()
+            < EMBEDDED_INDEX.find("id=\"victory-options\"").unwrap());
+        // The advanced drawer starts with the ruleset, team split and leader
+        // roster. The custom table sits under its selection mode, followed by
+        // climate and seed. Human-only leader/difficulty fields remain there
+        // too, so they do not interrupt the primary simulation path.
         for advanced in [
             "class=\"small game-advanced-setting\" data-advanced-order=\"10\">Base game ruleset",
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\">Leader Pool",
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\">Teams",
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\">Thermal distribution",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\">Teams",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\">Leader pool",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\">Leader selection",
+            "class=\"custom-leader-selection game-advanced-setting civ6-hidden\" data-advanced-order=\"45\"",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\">Thermal distribution",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\">Map seed",
         ] {
             assert!(EMBEDDED_INDEX.contains(advanced), "missing advanced setting: {advanced}");
         }
         for normal in [
             "class=\"small civ6-hidden\">World shape",
             "class=\"small civ6-hidden\">Start era",
-            "class=\"small civ6-hidden\">Future Era",
+            "class=\"advanced-settings era-mods-settings civ6-hidden\"",
+            "class=\"small era-future-setting\">Future era",
+            "class=\"small civ6-hidden\">Custom turn cap",
             "class=\"victory-options civ6-hidden\" id=\"victory-options\"",
         ] {
             assert!(EMBEDDED_INDEX.contains(normal), "missing normal setting: {normal}");
         }
         assert!(EMBEDDED_INDEX.contains(
-            "const basic = [\"gamemode\", \"mapshape\", \"maptype\", \"leader\", \"difficulty\", \"np\", \"citystates\","
+            "[\"gamemode\", true], [\"np\", true], [\"mapshape\", true], [\"maptype\", true],"
         ));
-        assert!(EMBEDDED_INDEX.contains("\"startera\", \"gamespeed\", \"futureera\"]"));
+        assert!(EMBEDDED_INDEX.contains(
+            "[\"startera\", true], [\"era-mods-settings\", false], [\"gamespeed\", true],"
+        ));
+        assert!(EMBEDDED_INDEX.contains("[\"turnlimit\", true],"));
         assert!(EMBEDDED_INDEX.contains(
             "basic.push(document.getElementById(\"victory-options\"), document.getElementById(\"saves-group\"));"
         ));
-        // Display Settings keeps its map and spaceflight switches together
-        // at the head of its advanced drawer, before the overlay layout controls.
-        let display_advanced = [
-            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"10\"><span><input type=\"checkbox\" id=\"gridchk\"",
-            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"20\"><span><input type=\"checkbox\" id=\"reschk\"",
-            "class=\"speed-row display-advanced-setting resource-display-setting\" data-advanced-order=\"25\"",
-            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"30\"><span><input type=\"checkbox\" id=\"yieldchk\"",
-            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"40\"><span><input type=\"checkbox\" id=\"artifactchk\"",
-            "class=\"setting-row display-advanced-setting\" data-advanced-order=\"45\"><span><input type=\"checkbox\" id=\"rocketanimchk\" checked> Show rocket &amp; satellite animations",
-            "class=\"overlay-options display-advanced-setting\" data-advanced-order=\"50\"",
+        // Display Settings is a short reading path: observer controls first,
+        // then map controls, overlay visibility, and finally performance.
+        let display_sections = [
+            "<div class=\"observer-settings\" id=\"observer-settings\">",
+            "<details class=\"display-settings-group\" id=\"map-options-settings\"",
+            "<details class=\"display-settings-group\" id=\"map-overlays-settings\"",
+            "<details class=\"display-settings-group\" id=\"performance-options-settings\"",
         ];
         assert!(
-            display_advanced.windows(2).all(|pair| {
+            display_sections.windows(2).all(|pair| {
                 EMBEDDED_INDEX.find(pair[0]).unwrap() < EMBEDDED_INDEX.find(pair[1]).unwrap()
             }),
-            "map and spaceflight switches should lead Display Settings advanced controls"
+            "Display Settings sections should read observer, map, overlays, performance"
+        );
+        for performance_marker in [
+            "id=\"renderresolution\"",
+            "id=\"performance-render-value\"",
+            "id=\"performance-slow-value\"",
+            "id=\"performance-simulation-value\"",
+            "id=\"performance-canvas-value\"",
+            "id=\"performance-workload-value\"",
+            "id=\"performance-recommendation\"",
+        ] {
+            assert!(
+                EMBEDDED_INDEX.contains(performance_marker),
+                "performance display is missing: {performance_marker}"
+            );
+        }
+        assert!(
+            EMBEDDED_INDEX.find("id=\"renderresolution\"").unwrap()
+                < EMBEDDED_INDEX.find("id=\"performance-render-value\"").unwrap(),
+            "render resolution should precede performance stats"
         );
         // Resource names are the default detailed-map treatment, but the
         // existing compact symbol stays an explicit, persisted choice and the
@@ -8428,7 +8503,7 @@ mod tests {
             "<option value=\"symbol\">Symbol</option>",
             ".resource-display-setting { grid-template-columns: minmax(0, 1fr); gap: 4px; }",
             ".resource-display-setting > select { width: 100%; }",
-            ".advanced-settings-body > .resource-display-setting { grid-column: 1 / -1; }",
+            ".display-settings-group-body > .speed-row,",
             "const RESOURCE_DISPLAY_STORAGE_KEY = \"civvis-resource-display\";",
             "let RESOURCE_DISPLAY = localStorage.getItem(RESOURCE_DISPLAY_STORAGE_KEY) === \"symbol\"",
             "function setResourceDisplay(mode) {",
@@ -8455,7 +8530,7 @@ mod tests {
         // and the optional yield overlay is the reader's top-most map layer.
         // Keep both projections in lockstep so switching to the globe does not
         // invert the information hierarchy.
-        let flat_map = EMBEDDED_INDEX.find("function draw() {").unwrap();
+        let flat_map = EMBEDDED_INDEX.find("function drawScene() {").unwrap();
         let flat = &EMBEDDED_INDEX[flat_map..];
         let flat_roads = flat.find("drawFlatStrategicRoads(tiles);").unwrap();
         let flat_borders = flat.find("// --- territory borders:").unwrap();
@@ -8518,11 +8593,19 @@ mod tests {
         // The world size decides which splits exist, so it re-fits them before
         // the panel's own delegated listener stages what is now selected.
         assert!(EMBEDDED_INDEX.contains(
-            "document.getElementById(\"np\").addEventListener(\"change\", () => {\n  syncTeams();\n  syncWorldSetupInputs();\n});"
+            "document.getElementById(\"np\").addEventListener(\"change\", () => {\n  syncTeams();\n  syncWorldSetupInputs();\n  syncCustomLeaderSelection();\n});"
         ));
         // The server is handed the seat-by-seat assignment, never the rule
         // that produced it; a world on screen is read back the other way.
-        assert!(EMBEDDED_INDEX.contains("teams: teamAssignment(np, readSetting(\"teams\")),"));
+        assert!(EMBEDDED_INDEX.contains("teamAssignment(np, readSetting(\"teams\"))"));
+        assert!(EMBEDDED_INDEX.contains("leader_selection: leaderSelection"));
+        assert!(EMBEDDED_INDEX.contains("id=\"custom-leader-selection\""));
+        assert!(EMBEDDED_INDEX.contains("data-custom-team"));
+        assert!(EMBEDDED_INDEX.contains("data-custom-civ"));
+        assert!(EMBEDDED_INDEX.contains("data-custom-elo"));
+        assert!(EMBEDDED_INDEX.contains("RULES?.leader_elo_options"));
+        assert!(EMBEDDED_INDEX.contains("id=\"game-mod-settings\""));
+        assert!(EMBEDDED_INDEX.contains("id=\"game-mod-summary\""));
         assert!(EMBEDDED_INDEX.contains("teamRuleFromArray(st.teams)"));
         assert!(EMBEDDED_INDEX.contains("teamRuleFromArray(settings.teams)"));
         // Heat is a setting about climate, not about whether two ice caps
@@ -8535,6 +8618,7 @@ mod tests {
         // gone from the markup as well as from `MAP_POLES` — the select is
         // rebuilt from that list on load, and the two have to say the same
         // thing or the lobby offers a world the engine will not build.
+        let thermal_setting = EMBEDDED_INDEX.find("id=\"mappoles\"").unwrap();
         let thermal_options = {
             let tail = &EMBEDDED_INDEX[thermal_setting..];
             &tail[..tail.find("</select>").expect("unterminated thermal select")]
@@ -8637,8 +8721,13 @@ mod tests {
         assert!(EMBEDDED_INDEX
             .contains(".overlay-option-grid { display: grid; grid-template-columns: 1fr 1fr;"));
         let switches = EMBEDDED_INDEX
-            .split_once("<div class=\"overlay-option-grid\">")
+            .split_once(
+                "<div class=\"overlay-options\" role=\"group\" aria-labelledby=\"overlay-options-title\">",
+            )
             .expect("map overlay switches")
+            .1
+            .split_once("<div class=\"overlay-option-grid\">")
+            .expect("map overlay switch grid")
             .1
             .split_once("</div>")
             .expect("end of map overlay switches")
@@ -8691,6 +8780,15 @@ mod tests {
             "#map-lens-strip {\n    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));"
         ));
         assert!(utility.contains("id=\"map-search-civ\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "#side > #map-utility-panel #map-search {\n    position: relative; left: auto; right: auto; bottom: auto;"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "#side > .side-scroll { position: relative; z-index: 4; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "#side > #map-utility-panel { z-index: 5; }"
+        ));
         assert!(EMBEDDED_INDEX
             .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
         assert!(EMBEDDED_INDEX.contains("close.closest(\"#maplensessec\")"));
@@ -8824,20 +8922,20 @@ mod tests {
         //
         // Every data column is now a share rather than a pixel count, and each
         // of these two enclosing tracks is the exact *sum* of the columns
-        // inside it — 8 data identity columns totalling 12.087, plus the fixed
+        // inside it — 9 data identity columns totalling 12.937, plus the fixed
         // Watch-as action, against 12 value columns of 1. That identity is not
         // decoration: it is what lets the
         // bar between the two blocks move width across itself, and it is the
         // ratio the table uses at every width. Changing one number here without
         // the other silently re-weights the whole masthead.
         //
-        // The floor is the rank track, 5 label columns, the ELO figure and the
-        // wider odds cell, whose two named numeric tracks flank a narrow trend
-        // track.
+        // The floor is the rank track, 5 label columns, the ELO and ELO-delta
+        // figures, and the wider odds cell, whose two named numeric tracks
+        // flank a narrow trend track.
         assert!(EMBEDDED_INDEX.contains(
             "--hud-identity-column: minmax(\n      \
              calc(var(--hud-rank-min) + var(--hud-ident-min) * 5\n           \
-             + var(--hud-ident-num-min) + var(--hud-ident-odds-min)), 12.087fr);"
+             + var(--hud-ident-num-min) * 2 + var(--hud-ident-odds-min)), 12.937fr);"
         ));
         assert!(EMBEDDED_INDEX.contains(
             "--hud-stats-column: minmax(\n      \
@@ -8873,6 +8971,9 @@ mod tests {
         ));
         assert!(EMBEDDED_INDEX.contains(
             "playerHudSortHead(\"win\", \"NOW\", \"Current win odds\")"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "playerHudSortHead(\"elo_delta\", \"Δ\", \"Live Elo position against the living field\", \"numeric\")"
         ));
         assert_eq!(EMBEDDED_INDEX.matches("--hud-identity-column:").count(), 1,
             "the identity track is written once and then only from the column model");
@@ -8936,8 +9037,8 @@ mod tests {
             .expect("end of player HUD stat headings")
             .0;
         assert_hud_stat_order(stat_headers, "player HUD stat headings");
-        // Player, ELO, the Start/Now pair, AGE and PLAN are drawn inside one button spanning
-        // five of those tracks, so that button divides itself with `subgrid` — the
+        // Player, ELO, ELO delta, the Start/Now pair, AGE and PLAN are drawn inside one
+        // button spanning six of those tracks, so that button divides itself with `subgrid` — the
         // same tracks, not a copy of their ratios. A copy is what shipped
         // before, and it came apart in both directions a copy can: it carried
         // `minmax(0, …)` where the heads carry the 30px label floor and the
@@ -8947,7 +9048,7 @@ mod tests {
         // the head 21px and left the figures where they were.
         assert!(EMBEDDED_INDEX.contains(
             "#playerhud .diplomacy-identity-secondary {\n    grid-template-columns: subgrid;\n  }"
-        ), "the five identity columns inside one button are the parent's own tracks");
+        ), "the six identity columns inside one button are the parent's own tracks");
         assert!(!EMBEDDED_INDEX.contains("minmax(0, .55fr) minmax(0, .55fr)"),
             "a second copy of the identity ratios is exactly what subgrid replaced");
         // The rows carry a 1px border that says at war or defeated, and
@@ -9006,9 +9107,13 @@ mod tests {
         ), "a missing statistic is distinct from a numeric zero when sorting");
         assert!(EMBEDDED_INDEX.contains("if (key === \"win_start\") return oddsValue(player.odds_start);"));
         assert!(EMBEDDED_INDEX.contains("if (key === \"win_delta\") {"));
+        assert!(EMBEDDED_INDEX.contains("return playerHudEloDeltaValue(player);"),
+            "Elo delta sorting should use its numeric model value");
         assert!(EMBEDDED_INDEX.contains("return oddsValue(player.odds_now);"),
             "the NOW Win heading should order by its current estimate");
-        for key in ["rank", "civ", "leader", "player", "elo", "win_start", "win_delta", "win", "age", "plan"] {
+        assert!(EMBEDDED_INDEX.contains("if (delta > .02) return {symbol:\"↗\", direction:\"up\"};"));
+        assert!(EMBEDDED_INDEX.contains("if (delta < -.02) return {symbol:\"↘\", direction:\"down\"};"));
+        for key in ["rank", "civ", "leader", "player", "elo", "elo_delta", "win_start", "win_delta", "win", "age", "plan"] {
             assert!(
                 EMBEDDED_INDEX.contains(&format!("playerHudSortHead(\"{key}\"")),
                 "the {key} heading should be sortable"
@@ -11293,7 +11398,6 @@ mod tests {
         for piece in [
             "id=\"leader\"",
             "id=\"difficulty\"",
-            "id=\"citystates\"",
             "id=\"turnlimit\"",
             "id=\"mapseed\"",
             "id=\"saves-group\"",
@@ -11317,12 +11421,14 @@ mod tests {
         // by that game. Its *difficulty* still travels, because that is the one
         // setting the mode exists for.
         assert!(EMBEDDED_INDEX.contains(
-            "...(gameMode === \"ai_sim\" ? {} : {civs: civ6 || !leader ? [] : [leader], difficulty})"
+            "...(gameMode === \"ai_sim\"\n            ? (leaderSelection === \"custom\" ? {civs: customCivs} : {})"
         ));
-        // City-state count, turn cap and seed are common world settings. They
-        // remain available for both CIVVIS modes, while the leader and
-        // difficulty above remain the single-player additions.
-        assert!(EMBEDDED_INDEX.contains("class=\"small civ6-hidden\">City-states"));
+        assert!(EMBEDDED_INDEX.contains(
+            ": {civs: civ6 || !leader ? [] : [leader], difficulty})"
+        ));
+        // Turn cap and seed are common world settings, while the leader and
+        // difficulty above remain the single-player additions. City-states
+        // follow the selected map-size profile and need no separate control.
         assert!(EMBEDDED_INDEX.contains("function syncWorldSetupInputs()"));
         assert!(EMBEDDED_INDEX.contains("setOptionalWorldNumber(\"mapseed\", st.seed);"));
         // A build without the save endpoints hides the group rather than
@@ -11378,8 +11484,12 @@ mod tests {
         // carries a second class because a third mode hides it for a different
         // reason — see `browser_keeps_the_civilization_vi_mode_available_for_verification`.
         assert!(EMBEDDED_INDEX.contains("body.spectating .human-setting { display: none; }"));
-        assert!(EMBEDDED_INDEX.contains("class=\"small human-setting civ6-hidden\">Leader"));
-        assert!(EMBEDDED_INDEX.contains("class=\"small human-setting\">Difficulty"));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"small game-advanced-setting human-setting civ6-hidden\""
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "class=\"small game-advanced-setting human-setting\""
+        ));
         // Settings staged for the next simulation describe a spectated world,
         // so they may only adopt that mode while one is on screen.
         assert!(EMBEDDED_INDEX
@@ -11409,18 +11519,19 @@ mod tests {
         // Exactly the rows that are not carried, and no others. Difficulty is
         // deliberately absent: it is the setting the mode exists for.
         for row in [
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\"", // leader pool
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // teams
-            "class=\"small human-setting civ6-hidden\">Leader",
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"20\"", // teams
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"30\"", // leader pool
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // leader selection
+            "class=\"custom-leader-selection game-advanced-setting civ6-hidden\"", // custom table
+            "class=\"small game-advanced-setting human-setting civ6-hidden\"",
             "class=\"small civ6-hidden\">World shape",
-            "class=\"small civ6-hidden\">City-states",
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"40\"", // thermal
-            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\"", // turn limit
+            "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"50\"", // thermal
             "class=\"small game-advanced-setting civ6-hidden\" data-advanced-order=\"60\"", // map seed
+            "class=\"small civ6-hidden\">Custom turn cap",
             "class=\"small civ6-hidden\">Start era",
-            "class=\"small civ6-hidden\">Future Era",
+            "class=\"advanced-settings era-mods-settings civ6-hidden\"",
             "class=\"victory-options civ6-hidden\"",
-            "class=\"mod-options game-advanced-setting civ6-hidden\"",
+            "class=\"advanced-settings civ6-hidden\" id=\"game-mod-settings\"",
         ] {
             assert!(EMBEDDED_INDEX.contains(row), "{row} is not hidden in the Civ 6 mode");
         }
@@ -12693,12 +12804,13 @@ mod tests {
         );
     }
 
-    /// The map controls read left to right in the order a viewer reaches for
-    /// them: collapse the command deck, set the map area, face north, zoom in,
-    /// zoom out, choose a sky route when one is available, dismiss.
-    /// Dismissal is last because it is the only one that removes the bar, and
-    /// it hides itself while the deck is collapsed — Display Settings is the
-    /// only way back and it lives inside the deck.
+    /// The primary map controls read left to right in the order a viewer
+    /// reaches for them: collapse the command deck, set the map area, face
+    /// north, zoom in, zoom out, and dismiss. When relevant, the sky route is
+    /// a second row beneath that primary row.
+    /// Dismissal is last in that primary row because it is the only one that
+    /// removes the bar, and it hides itself while the deck is collapsed —
+    /// Display Settings is the only way back and it lives inside the deck.
     #[test]
     fn the_map_controls_run_from_collapse_to_dismiss() {
         let dock = EMBEDDED_INDEX
@@ -12716,8 +12828,8 @@ mod tests {
             "id=\"compass\"",
             "id=\"zin\"",
             "id=\"zout\"",
-            "id=\"skynav\"",
             "data-overlay-close=\"controls\"",
+            "id=\"skynav\"",
         ] {
             let at = dock
                 .find(control)
@@ -12746,10 +12858,10 @@ mod tests {
     /// only while there is a sky to cross.
     #[test]
     fn the_sky_carries_its_own_way_about() {
-        // It is part of the map controls: the same dock, same row, and same
-        // dismissal. The complete labelled route follows zoom-out and precedes
-        // the exit, rather than splitting compact world glyphs by the compass
-        // from the solar-system route above the map.
+        // It is part of the map controls: the same dock and dismissal, in a
+        // second row below the primary controls. The complete labelled route
+        // stays together rather than splitting compact world glyphs by the
+        // compass from the solar-system route above the map.
         let dock = EMBEDDED_INDEX
             .split_once("<div id=\"map-controls-dock\">")
             .expect("the map control dock")
@@ -12765,11 +12877,14 @@ mod tests {
             "the sky navigator belongs inside the map-control strip"
         );
         assert!(
-            minus < bar && bar < exit,
-            "the complete sky route follows minus and precedes map-control exit"
+            minus < exit && exit < bar,
+            "the primary row dismisses before the second-row sky route"
         );
         assert!(EMBEDDED_INDEX.contains("#skynav[hidden] { display: none; }"));
-        assert!(EMBEDDED_INDEX.contains("bottom: calc(100% + var(--panel-gap))"));
+        assert!(EMBEDDED_INDEX.contains("#zoomctl-main"));
+        assert!(EMBEDDED_INDEX.contains("flex-direction: column;"));
+        assert!(EMBEDDED_INDEX.contains("position: static; z-index: auto; align-self: stretch;"));
+        assert!(EMBEDDED_INDEX.contains("syncSkyNavDockGeometry();"));
         for part in [
             "id=\"skynav-worlds\"",
             "id=\"skynav-scales\"",
