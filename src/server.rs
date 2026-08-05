@@ -5979,13 +5979,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("(bytes / 1048576).toFixed(1)} MiB"));
         assert!(EMBEDDED_INDEX.contains("(artifactSize ? ` · Build size ${artifactSize}` : \"\")"));
         assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
+        assert!(EMBEDDED_INDEX.contains("id=\"buildmark-commit\""));
+        assert!(EMBEDDED_INDEX.contains(
+            "https://github.com/MartinHalvorson/CIVVIS/commit/${encodeURIComponent(commit)}"
+        ));
+        assert!(EMBEDDED_INDEX.contains("View commit ${shortCommit} on GitHub"));
         assert!(EMBEDDED_INDEX.contains("return parts.join(\" \") || \"0m\""));
         assert!(EMBEDDED_INDEX.contains("Commit is ${formatBuildAge(commitDate)} old"));
         assert!(EMBEDDED_INDEX.contains("Build is ${formatBuildAge(buildDate)} old"));
         assert!(EMBEDDED_INDEX.contains(
             "#buildmark {\n    /* The authored World minimap owns the lower-right corner at z-index 6."
         ));
-        assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 7;\n    right:"));
+        assert!(EMBEDDED_INDEX.contains("position: fixed; z-index: 16;\n    right:"));
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -8784,14 +8789,15 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains(
             "const diagonalWidth = WORLD_MINIMAP_DIAGONAL_SHARE * Math.hypot(viewportWidth, viewportHeight)"
         ));
-        assert!(EMBEDDED_INDEX.contains(
-            "const viewport = window.visualViewport;"
-        ));
+        assert!(EMBEDDED_INDEX.contains("const viewport = window.visualViewport;"));
         assert!(EMBEDDED_INDEX.contains(
             "HUD_WIDGETS?.minimap?.element?.classList.toggle(\"minimap-world-planet\", shape === \"planet\");"
         ));
         assert!(EMBEDDED_INDEX.contains(
             ".minimap-frame.minimap-world-planet { width: 164px; height: 150px; }"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "position: absolute; z-index: 1; right: 10px; bottom: 9px;"
         ));
         assert!(!EMBEDDED_INDEX.contains("--player-hud-width"));
         // Every path keeps its top three plus the player's own civilization
