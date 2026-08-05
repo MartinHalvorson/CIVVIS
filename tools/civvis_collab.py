@@ -498,6 +498,50 @@ def compare_status_is_current(status: str) -> bool:
     return status in {"ahead", "identical"}
 
 
+# How many commits behind main a ready PR may be before staleness stops being
+# advice and becomes a refusal. At this repository's velocity 150 commits is
+# under a day; at any velocity, 150 unseen changes is 150 chances for the
+# merge to be a combination no CI run has tested.
+STALE_BASE_LIMIT = 150
+
+
+def base_staleness(status: str, behind_by: int) -> Optional[Tuple[str, str]]:
+    """Classify how far a ready PR trails its base: None, advisory, or error.
+
+    An honest account of what enforces freshness here, because a previous
+    comment got it wrong and the wrongness propagated into design decisions:
+    branch protection runs with `strict=false` — deliberately, since at
+    hundreds of merges a day requiring every branch to contain the current
+    tip would re-queue every open PR after every merge — so GitHub refuses
+    nothing on staleness, and the real mitigations are `ship` re-merging main
+    before ready and this check. Mild staleness therefore stays an advisory:
+    main moves again during CI and a red X the author cannot durably clear
+    teaches people to ignore red. Severe staleness is different. A branch
+    hundreds of commits behind merges as a tree nobody's CI has seen, which
+    is one of the doors the 2026-08-05 cross-machine overwrites walked
+    through. The refusal is durably fixable, unlike strict mode: one
+    `git merge origin/main` resets the distance to zero, and main advancing
+    during CI cannot re-cross a STALE_BASE_LIMIT-commit threshold.
+    """
+    if compare_status_is_current(status):
+        return None
+    if behind_by >= STALE_BASE_LIMIT:
+        return (
+            "error",
+            f"this branch is {behind_by} commits behind main — far past the "
+            f"{STALE_BASE_LIMIT}-commit limit at which a merge becomes a "
+            "combination no CI run has tested. Run: git fetch origin main && "
+            "git merge origin/main, resolve, revalidate, push",
+        )
+    return (
+        "advisory",
+        f"main advanced while this PR was open ({behind_by} commits). "
+        "Nothing enforces freshness below the "
+        f"{STALE_BASE_LIMIT}-commit limit — merging main before ship is on "
+        "the author. Run: git fetch origin main && git merge origin/main",
+    )
+
+
 def github_json(path: str, token: str) -> Any:
     url = f"https://api.github.com{path}"
     request = urllib.request.Request(
@@ -619,18 +663,13 @@ def check_pr_action(event_path: Path, token: str, repository: str) -> int:
             comparison = github_json(
                 f"/repos/{repository}/compare/{base_sha}...{head_sha}", token
             )
-            if not compare_status_is_current(str(comparison.get("status") or "")):
-                # Staleness is not a policy violation. GitHub's own branch
-                # protection runs with strict=true, so it already refuses to
-                # merge a branch that is behind main, and `ship` re-merges main
-                # whenever it observes the base moving. Failing here as well
-                # only paints a red X on a PR whose author did nothing wrong and
-                # cannot durably fix, because main moves again during CI.
-                advisories.append(
-                    "main advanced while this PR was open; GitHub will require "
-                    "an update before merging. Run: "
-                    "git fetch origin main && git merge origin/main"
-                )
+            verdict = base_staleness(
+                str(comparison.get("status") or ""),
+                int(comparison.get("behind_by") or 0),
+            )
+            if verdict is not None:
+                kind, message = verdict
+                (errors if kind == "error" else advisories).append(message)
     branch_match = BRANCH_RE.fullmatch(str(current["headRefName"]))
     registry = machine_registry()
     if branch_match and registry is not None:
