@@ -746,12 +746,30 @@
   }
   /* Neither half of a row gives up width, and nothing here ellipsizes: a
      setting is shown whole or the block is drawn a quarter-point smaller. */
-  .turn-setting > span, .turn-setting > b { flex: 0 0 auto; }
+  .turn-setting > span, .turn-setting > b, .turn-setting > .turn-pace-choice { flex: 0 0 auto; }
   /* Tabular figures so a count changing from 10 to 9 moves the row by exactly
      one digit's width instead of an arbitrary one — the block is refitted on
      that width, and a proportional 1 would re-size all four rows mid-game. */
   .turn-setting b {
     color: #dce6e1; font-weight: 900; font-variant-numeric: tabular-nums;
+  }
+  .turn-pace-choice {
+    position: relative; display: inline-flex; align-items: center; max-width: 100%;
+  }
+  .turn-pace-choice select {
+    width: auto; min-width: 0; max-width: 100%; padding: 0 1em 0 0;
+    border: 0; border-radius: 0; color: #dce6e1; background: transparent;
+    font-weight: 900; line-height: inherit; text-align: right; text-align-last: right;
+    cursor: pointer; appearance: none; -webkit-appearance: none;
+  }
+  .turn-pace-choice select:hover { color: #f4d892; }
+  .turn-pace-choice select:focus-visible {
+    outline: 1px solid #d7b66a; outline-offset: 2px; border-radius: 2px;
+  }
+  .turn-pace-choice option { color: #dce6e1; background: #0d1816; }
+  .turn-pace-caret {
+    position: absolute; right: .1em; top: 50%; color: #d7b66a;
+    font-size: .8em; line-height: 1; pointer-events: none; transform: translateY(-38%);
   }
   /* A roster row carries what is left and what it was taken out of. The toll
      rides *inside* the value so the row is still two flex items — one label,
@@ -9466,8 +9484,8 @@ let paceDisagreed = 0;
 let paceChoice = null;   // the pace the viewer picked, null until they pick one
 let paceAsserted = null; // the server pace we have already answered with a push
 function paceHeldOpen() {
-  const select = document.getElementById("specspeed");
-  return !!select && document.activeElement === select;
+  return [document.getElementById("specspeed"), document.querySelector("[data-hud-pace]")]
+    .some(select => select && document.activeElement === select);
 }
 function paceOffered(select, ms) {
   return [...select.options].some(o => +o.value === ms);
@@ -22382,8 +22400,18 @@ function hudTurnPlate() {
   const viewLabel = playerView ? "Player view" : SPEC ? "Observing" : "Your empire";
   const mapName = titleCase(state.map.script || "pangaea");
   const speedName = titleCase(state.game_speed || "standard");
-  const paceOption = document.getElementById("specspeed")?.selectedOptions[0];
+  const paceSelect = document.getElementById("specspeed");
+  const paceOption = paceSelect?.selectedOptions[0];
   const watchPace = SPEC ? paceOption?.textContent.trim() || "Blitz" : "Manual";
+  const watchPaceOptions = SPEC && paceSelect
+    ? [...paceSelect.options].map(option =>
+        `<option value="${escapeAttr(option.value)}"${option.value === paceOption?.value ? " selected" : ""}>` +
+        `${escapeAttr(option.textContent.trim())}</option>`).join("")
+    : "";
+  const watchPaceValue = SPEC
+    ? `<span class="turn-pace-choice"><select data-hud-pace title="Change watch pace" ` +
+      `aria-label="Watch pace">${watchPaceOptions}</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span>`
+    : `<b>${watchPace}</b>`;
   // "Remaining" is a count of who is still playing, so a civilization that has
   // been wiped off the map no longer appears in it. The count it was taken out
   // of is worth as much as the count itself — eight remaining reads very
@@ -22444,7 +22472,7 @@ function hudTurnPlate() {
     `<small class="turn-total">/ ${turnCapLabel()}</small></div></div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
-    `<div class="turn-setting"><span>Watch pace:</span><b>${watchPace}</b></div>` +
+    `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     rosterRow("Civs:", civCount, civsLost) +
     rosterRow("City states:", cityStateCount, cityStatesLost) +
     `</div></section>`;
@@ -23115,6 +23143,10 @@ function runHudAction(target) {
 // swallowed. Act on the press, which always lands on what was under the
 // cursor, and keep click for keyboard activation — which reports no press.
 const hudRibbon = document.getElementById("playerhud");
+hudRibbon.addEventListener("change", ev => {
+  const pace = ev.target.closest?.("[data-hud-pace]");
+  if (pace) chooseWatchPace(pace.value);
+});
 hudRibbon.addEventListener("mousedown", ev => {
   if (ev.button !== 0) return;
   const sort = ev.target.closest?.("[data-hud-sort]");
@@ -29984,11 +30016,16 @@ document.getElementById("paneltoggle").onclick = () => togglePanel();
 bindMapAreaEditor();
 document.getElementById("collapsepause").onclick = toggleSpecPause;
 document.getElementById("specpause").onclick = toggleSpecPause;
-document.getElementById("specspeed").onchange = () => {
-  rememberPace(specPace()); // the pick outranks any state already in flight
+function chooseWatchPace(value) {
+  const select = document.getElementById("specspeed");
+  const ms = Number(value);
+  if (!select || !Number.isFinite(ms) || !paceOffered(select, ms)) return;
+  select.value = String(ms);
+  rememberPace(ms); // the pick outranks any state already in flight
   setPace({ms: paceChoice});
   if (state) drawPlayerHud();
-};
+}
+document.getElementById("specspeed").onchange = event => chooseWatchPace(event.currentTarget.value);
 restorePace();
 document.getElementById("between-game-countdown").onchange = () => {
   const ms = betweenGameCountdownMs();
