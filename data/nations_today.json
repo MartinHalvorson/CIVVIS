@@ -1,6 +1,6 @@
 {
  "_source": "Most significant nations ranking of 2026-08-04, transferred from the operator's Google Sheet (docs.google.com/spreadsheets/d/1GMIp3YdfrvRwU5gJePQ4m-43QEYEwTdZgXVLaSPFwKs, gid 0).",
- "_note": "Today's nation ordering for Earth Today map generation. With N major seats on the chosen map size, ranks 1..N seat as civilizations and ranks N+1..N+1.5*N as city-states; `bias` names the city-state type (the data/city_states.json vocabulary) a nation takes when it falls in the city-state band. Unlike the append-only rosters, rank order IS the content here: a new day's ranking rewrites the file whole.",
+ "_note": "Today's nation ordering for Earth Today map generation. With N major seats on the chosen map size, ranks 1..N seat as civilizations and ranks N+1..N+1.5*N as city-states; `bias` names the city-state type (the data/city_states.json vocabulary) a nation takes when it falls in the city-state band. A nation seated as a city-state copies its bonus at random from the base data/city_states.json bonuses — drawn without repeats while the pool lasts, repeats allowed once it runs out — with the draw made at seating time from the game's seeded RNG, never baked into this file. Unlike the append-only rosters, rank order IS the content here: a new day's ranking rewrites the file whole.",
  "date": "2026-08-04",
  "roster": [
   {
