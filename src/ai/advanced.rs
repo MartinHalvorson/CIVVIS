@@ -8175,7 +8175,7 @@ impl AdvancedAi {
     /// on the brink of victory, where five setup turns can lose the game.
     /// City-states cannot be denounced and therefore remain direct targets.
     fn preferred_war_opening(&self, g: &Game, pid: usize, target: usize) -> Option<Action> {
-        let legal = g.legal_actions_within(pid, ActionFamilies::CORE);
+        let legal = g.legal_actions_within(pid, ActionFamilies::DIPLOMACY);
         let casus_belli = legal
             .iter()
             .filter_map(|action| match action {

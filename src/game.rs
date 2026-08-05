@@ -7446,11 +7446,13 @@ mod action_family_tests {
     use super::*;
     use crate::ai::{AdvancedAi, Ai};
 
-    const FAMILIES: [ActionFamilies; 4] = [
+    const FAMILIES: [ActionFamilies; 6] = [
+        ActionFamilies::CORE,
         ActionFamilies::UNITS,
         ActionFamilies::PURCHASES,
         ActionFamilies::EMPIRE,
         ActionFamilies::DEALS,
+        ActionFamilies::DIPLOMACY,
     ];
     const OPTIONAL_FAMILIES: [ActionFamilies; 3] = [
         ActionFamilies::CORPORATIONS,
@@ -7491,13 +7493,36 @@ mod action_family_tests {
                 let _ = game.apply(pid, &Action::EndTurn);
             }
             let settled = game.turn >= 60 && game.winner.is_none();
+            let deals = game.legal_actions_within(game.current, ActionFamilies::DEALS);
+            let diplomacy =
+                game.legal_actions_within(game.current, ActionFamilies::DIPLOMACY);
             if settled
-                && game
-                    .legal_actions_within(game.current, ActionFamilies::DEALS)
-                    .len()
-                    > game
-                        .legal_actions_within(game.current, ActionFamilies::CHEAP)
-                        .len()
+                && deals.iter().any(|action| {
+                    matches!(
+                        action,
+                        Action::AcceptDeal { .. }
+                            | Action::RejectDeal { .. }
+                            | Action::Trade { .. }
+                            | Action::ChooseDedication { .. }
+                            | Action::CongressVote { .. }
+                    )
+                })
+                && diplomacy.iter().any(|action| {
+                    matches!(
+                        action,
+                        Action::MakePeace { .. }
+                            | Action::DeclareWar { .. }
+                            | Action::DeclareWarWithCasusBelli { .. }
+                            | Action::Denounce { .. }
+                            | Action::SendDelegation { .. }
+                            | Action::SendEmbassy { .. }
+                            | Action::DemandGold { .. }
+                            | Action::RequestPromise { .. }
+                            | Action::ProposeDeal { .. }
+                            | Action::ProposeDefensivePact { .. }
+                            | Action::ProposeJointWar { .. }
+                    )
+                })
             {
                 break;
             }
@@ -7530,7 +7555,7 @@ mod action_family_tests {
             );
         }
 
-        // The cheap core plus the four families cover every action, so no
+        // The cheap core plus the six families cover every action, so no
         // caller can lose one by naming the family it wants.
         let mut covered: BTreeSet<String> =
             labels(&game.legal_actions_within(pid, ActionFamilies::CHEAP))
@@ -7550,7 +7575,7 @@ mod action_family_tests {
         let pid = game.current;
         let all = game.legal_actions(pid);
         type ActionCase = (ActionFamilies, fn(&Action) -> bool);
-        let cases: [ActionCase; 8] = [
+        let cases: [ActionCase; 10] = [
             (ActionFamilies::CHEAP, |action| {
                 matches!(
                     action,
@@ -7558,6 +7583,21 @@ mod action_family_tests {
                         | Action::EncampmentStrike { .. }
                         | Action::DeclareWar { .. }
                         | Action::DeclareWarWithCasusBelli { .. }
+                )
+            }),
+            (ActionFamilies::CORE, |action| {
+                matches!(
+                    action,
+                    Action::UpgradeUnit { .. }
+                        | Action::AssignSpy { .. }
+                        | Action::SpyMission { .. }
+                        | Action::PromoteSpy { .. }
+                        | Action::LevyMilitary { .. }
+                        | Action::Research { .. }
+                        | Action::Civic { .. }
+                        | Action::Fortify { .. }
+                        | Action::CityStrike { .. }
+                        | Action::EncampmentStrike { .. }
                 )
             }),
             (ActionFamilies::UNITS, |action| {
@@ -7588,6 +7628,22 @@ mod action_family_tests {
             }),
             (ActionFamilies::DEALS, |action| {
                 matches!(action, Action::Trade { .. } | Action::CongressVote { .. })
+            }),
+            (ActionFamilies::DIPLOMACY, |action| {
+                matches!(
+                    action,
+                    Action::MakePeace { .. }
+                        | Action::DeclareWar { .. }
+                        | Action::DeclareWarWithCasusBelli { .. }
+                        | Action::Denounce { .. }
+                        | Action::SendDelegation { .. }
+                        | Action::SendEmbassy { .. }
+                        | Action::DemandGold { .. }
+                        | Action::RequestPromise { .. }
+                        | Action::ProposeDeal { .. }
+                        | Action::ProposeDefensivePact { .. }
+                        | Action::ProposeJointWar { .. }
+                )
             }),
             (ActionFamilies::CORPORATIONS, |action| {
                 matches!(action, Action::FoundCorporation { .. })
@@ -16044,46 +16100,48 @@ pub fn seat_civs_randomized(
 
 /// Which families of legal action to enumerate.
 ///
-/// The zero-bit core is always enumerated: unit upgrades, spy missions,
-/// fortifying, levies, research and civic choices, city strikes, and war,
-/// peace and denouncement. The named families are blocks worth skipping when
-/// a caller only wants a different kind. Products, corporations and
-/// formations are individually small in a new game but scale with every city
-/// or pair of units, so repeatedly treating them as free made otherwise
-/// narrowed AI queries quadratic in a developed empire.
+/// Action families are additive. `CORE` is explicit rather than implicit, so
+/// a caller looking only for unit orders or purchases does not also enumerate
+/// every upgrade, spy mission, research choice and city strike. Products,
+/// corporations and formations are individually small in a new game but
+/// scale with every city or pair of units, so repeatedly treating them as
+/// free made otherwise narrowed AI queries quadratic in a developed empire.
 ///
 /// `Buy` and `BuyBuilding` are produced by both `PURCHASES` and `EMPIRE` —
 /// the latter sells Naturalists, Rock Bands and Great Person patronage — so
 /// an agent shopping with a treasury wants both. `BuyPlot` is a city purchase
 /// and lives in `PURCHASES` alone.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct ActionFamilies(u8);
+pub struct ActionFamilies(u16);
 
 impl ActionFamilies {
-    /// The always-enumerated core and no optional family. Useful to a caller
-    /// looking only for strikes or diplomatic declarations.
-    pub const CORE: ActionFamilies = ActionFamilies(0);
+    /// Unit upgrades, spy missions, fortifying, levies, research and civic
+    /// choices, and city strikes.
+    pub const CORE: ActionFamilies = ActionFamilies(1);
     /// Everything a unit can be ordered to do: movement, attacks, promotions,
     /// improvements, religious missions, air operations, settling.
-    pub const UNITS: ActionFamilies = ActionFamilies(1);
+    pub const UNITS: ActionFamilies = ActionFamilies(2);
     /// `Produce`, `Buy`, `BuyBuilding`, `BuyDistrict` and `BuyPlot` in each city.
-    pub const PURCHASES: ActionFamilies = ActionFamilies(2);
+    pub const PURCHASES: ActionFamilies = ActionFamilies(4);
     /// Governments, policies, governors, religion, great people, envoys,
     /// trade routes and WMD strikes — the major-only management block.
-    pub const EMPIRE: ActionFamilies = ActionFamilies(4);
-    /// Incoming deals, offers to make, dedications and congress ballots.
+    pub const EMPIRE: ActionFamilies = ActionFamilies(8);
+    /// Incoming deals, quick offers to make, dedications and congress ballots.
     /// Valuing offers is the single most expensive block of the enumeration.
-    pub const DEALS: ActionFamilies = ActionFamilies(8);
+    pub const DEALS: ActionFamilies = ActionFamilies(16);
     /// Founding an industry-backed corporation on an owned tile.
-    pub const CORPORATIONS: ActionFamilies = ActionFamilies(16);
+    pub const CORPORATIONS: ActionFamilies = ActionFamilies(32);
     /// Moving products between slots in the empire's cities.
-    pub const PRODUCTS: ActionFamilies = ActionFamilies(32);
+    pub const PRODUCTS: ActionFamilies = ActionFamilies(64);
     /// Combining Corps/Armies and forming or releasing support or naval escorts.
-    pub const FORMATIONS: ActionFamilies = ActionFamilies(64);
-    /// The historical "cheap" query: the core plus every small optional
-    /// family, but no unit orders, purchases, empire management or offers.
-    pub const CHEAP: ActionFamilies = ActionFamilies(112);
-    pub const ALL: ActionFamilies = ActionFamilies(127);
+    pub const FORMATIONS: ActionFamilies = ActionFamilies(128);
+    /// Wars, peace treaties, denunciations, missions, demands, promises and
+    /// proposed diplomatic agreements against every known rival.
+    pub const DIPLOMACY: ActionFamilies = ActionFamilies(256);
+    /// The historical "cheap" query: preserve its old core-plus-diplomacy
+    /// result while omitting unit orders, purchases and empire management.
+    pub const CHEAP: ActionFamilies = ActionFamilies(497);
+    pub const ALL: ActionFamilies = ActionFamilies(511);
 
     pub fn has(self, family: ActionFamilies) -> bool {
         self.0 & family.0 == family.0
@@ -39265,11 +39323,13 @@ impl Game {
             }
         }
 
-        let producible = self.producible_items(pid, cid);
-        for item in &producible {
-            let Item::Building { building } = item else {
-                continue;
-            };
+        // A purchase menu does not need the complete production catalog. The
+        // building and unit purchase quotes repeat the same `can_produce`
+        // checks themselves, so walking every wonder, project, repair and
+        // district first only to discard those entries was duplicate work on
+        // every city. District purchases are the one exception: preserve the
+        // stock district-site ordering when a Governor actually enables them.
+        for building in self.rules.buildings.keys() {
             if self
                 .building_gold_purchase_cost(pid, cid, building)
                 .is_some_and(|cost| p.gold + f64::EPSILON >= cost)
@@ -39285,6 +39345,7 @@ impl Game {
         let faith_districts = self.governor_effect(pid, cid, "faith_purchase_districts") > 0.0;
         let gold_districts = self.governor_effect(pid, cid, "gold_purchase_districts") > 0.0;
         if faith_districts || gold_districts {
+            let producible = self.producible_items(pid, cid);
             for item in &producible {
                 let Item::District { district, pos } = item else {
                     continue;
@@ -39400,13 +39461,11 @@ impl Game {
     /// `legal_actions`, skipping the enumeration of families the caller does
     /// not need.
     ///
-    /// Four blocks account for almost all of the cost of a full enumeration:
-    /// unit orders, purchases, empire management, and offers. An agent looking
-    /// for one of them — a Gold purchase, a city strike, a corporation —
-    /// otherwise also pays to value every trade offer against every rival and
-    /// to walk every unit's reachable tiles. See [`ActionFamilies`] for which
-    /// kinds live in which family; everything outside the four is cheap enough
-    /// to enumerate unconditionally.
+    /// The named families let a caller avoid unrelated work: an agent looking
+    /// for purchases no longer also walks every unit, prices every upgrade,
+    /// builds live visibility, or values every diplomatic offer. `EndTurn` is
+    /// retained for every non-capture query; all other returned actions belong
+    /// to a requested family. See [`ActionFamilies`] for the mapping.
     pub fn legal_actions_within(&self, pid: usize, families: ActionFamilies) -> Vec<Action> {
         if self.winner.is_some() || self.current != pid {
             return vec![];
@@ -39421,18 +39480,35 @@ impl Game {
             return capture_actions;
         }
         let p = &self.players[pid];
-        let mut acts = self.legal_unit_upgrade_actions(pid);
-        let current_visibility = self.player_vision_now(pid);
-        let visibility_viewers = self.visibility_viewers(pid);
-        for spy_id in self
-            .spies
-            .values()
-            .filter(|spy| spy.owner == pid)
-            .map(|spy| spy.id)
-        {
-            acts.extend(self.legal_spy_actions(pid, spy_id));
+        let want_core = families.has(ActionFamilies::CORE);
+        let want_units = families.has(ActionFamilies::UNITS);
+        let mut acts = if want_core {
+            self.legal_unit_upgrade_actions(pid)
+        } else {
+            Vec::new()
+        };
+        let needs_visibility = want_core || want_units;
+        let current_visibility = if needs_visibility {
+            self.player_vision_now(pid)
+        } else {
+            TileBits::default()
+        };
+        let visibility_viewers = if needs_visibility {
+            self.visibility_viewers(pid)
+        } else {
+            BTreeSet::new()
+        };
+        if want_core {
+            for spy_id in self
+                .spies
+                .values()
+                .filter(|spy| spy.owner == pid)
+                .map(|spy| spy.id)
+            {
+                acts.extend(self.legal_spy_actions(pid, spy_id));
+            }
         }
-        let unit_order_ids = if families.has(ActionFamilies::UNITS) {
+        let unit_order_ids = if want_units {
             self.player_unit_ids(pid)
         } else {
             Vec::new()
@@ -39971,95 +40047,99 @@ impl Game {
                 }
             }
         }
-        for city_state in self.players.iter().filter(|player| {
-            player.is_minor
-                && !player.is_barbarian
-                && player.alive
-                && self.suzerain_of(player.id) == Some(pid)
-        }) {
-            if self
-                .levy_cost(pid, city_state.id)
-                .is_some_and(|cost| p.gold >= cost)
-            {
-                acts.push(Action::LevyMilitary {
-                    player: city_state.id,
-                });
-            }
-        }
-        if p.research.is_none() {
-            for t in self.available_techs(pid) {
-                acts.push(Action::Research { tech: Name::new(&t) });
-            }
-        }
-        if p.civic.is_none() {
-            for c in self.available_civics(pid) {
-                acts.push(Action::Civic { civic: Name::new(&c) });
-            }
-        }
-        for uid in self.player_unit_ids(pid) {
-            let u = self.units[&uid].clone();
-            if self.unit_can_fortify(&u) && u.moves_left > 0.0 && !u.fortified {
-                acts.push(Action::Fortify { unit: uid });
-            }
-        }
-        for cid in self.player_city_ids(pid) {
-            if self.city_can_strike(&self.cities[&cid]) {
-                let cpos = self.cities[&cid].pos;
-                for pos in self.wdisk(cpos, 2) {
-                    if !self.map.tiles.contains_key(&pos) {
-                        continue;
-                    }
-                    let hit = self.units_at(pos).into_iter().any(|oid| {
-                        let o = &self.units[&oid];
-                        o.owner != pid
-                            && self.is_at_war(pid, o.owner)
-                            && self.rules.units[o.kind].class == "military"
+        if want_core {
+            for city_state in self.players.iter().filter(|player| {
+                player.is_minor
+                    && !player.is_barbarian
+                    && player.alive
+                    && self.suzerain_of(player.id) == Some(pid)
+            }) {
+                if self
+                    .levy_cost(pid, city_state.id)
+                    .is_some_and(|cost| p.gold >= cost)
+                {
+                    acts.push(Action::LevyMilitary {
+                        player: city_state.id,
                     });
-                    if hit
-                        && self.city_at(pos).is_none()
-                        && self.encampment_at(pos).is_none()
-                        && self.combat_target_visible_at(
-                            pid,
-                            pos,
-                            &current_visibility,
-                            &visibility_viewers,
-                        )
-                        && self.has_line_of_sight(cpos, pos, true)
-                    {
-                        acts.push(Action::CityStrike {
-                            city: cid,
-                            target: pos,
-                        });
-                    }
                 }
             }
-            let city = &self.cities[&cid];
-            if self.encampment_can_strike(city) {
-                let Some(source) = self.city_district_family_position(city, crate::name!("encampment")) else {
-                    continue;
-                };
-                for pos in self.wdisk(source, 2) {
-                    let hit = self.units_at(pos).into_iter().any(|id| {
-                        let other = &self.units[&id];
-                        other.owner != pid
-                            && self.is_at_war(pid, other.owner)
-                            && self.rules.units[other.kind].class == "military"
-                    });
-                    if hit
-                        && self.city_at(pos).is_none()
-                        && self.encampment_at(pos).is_none()
-                        && self.combat_target_visible_at(
-                            pid,
-                            pos,
-                            &current_visibility,
-                            &visibility_viewers,
-                        )
-                        && self.has_line_of_sight(source, pos, true)
-                    {
-                        acts.push(Action::EncampmentStrike {
-                            city: cid,
-                            target: pos,
+            if p.research.is_none() {
+                for t in self.available_techs(pid) {
+                    acts.push(Action::Research { tech: Name::new(&t) });
+                }
+            }
+            if p.civic.is_none() {
+                for c in self.available_civics(pid) {
+                    acts.push(Action::Civic { civic: Name::new(&c) });
+                }
+            }
+            for uid in self.player_unit_ids(pid) {
+                let u = self.units[&uid].clone();
+                if self.unit_can_fortify(&u) && u.moves_left > 0.0 && !u.fortified {
+                    acts.push(Action::Fortify { unit: uid });
+                }
+            }
+            for cid in self.player_city_ids(pid) {
+                if self.city_can_strike(&self.cities[&cid]) {
+                    let cpos = self.cities[&cid].pos;
+                    for pos in self.wdisk(cpos, 2) {
+                        if !self.map.tiles.contains_key(&pos) {
+                            continue;
+                        }
+                        let hit = self.units_at(pos).into_iter().any(|oid| {
+                            let o = &self.units[&oid];
+                            o.owner != pid
+                                && self.is_at_war(pid, o.owner)
+                                && self.rules.units[o.kind].class == "military"
                         });
+                        if hit
+                            && self.city_at(pos).is_none()
+                            && self.encampment_at(pos).is_none()
+                            && self.combat_target_visible_at(
+                                pid,
+                                pos,
+                                &current_visibility,
+                                &visibility_viewers,
+                            )
+                            && self.has_line_of_sight(cpos, pos, true)
+                        {
+                            acts.push(Action::CityStrike {
+                                city: cid,
+                                target: pos,
+                            });
+                        }
+                    }
+                }
+                let city = &self.cities[&cid];
+                if self.encampment_can_strike(city) {
+                    let Some(source) = self
+                        .city_district_family_position(city, crate::name!("encampment"))
+                    else {
+                        continue;
+                    };
+                    for pos in self.wdisk(source, 2) {
+                        let hit = self.units_at(pos).into_iter().any(|id| {
+                            let other = &self.units[&id];
+                            other.owner != pid
+                                && self.is_at_war(pid, other.owner)
+                                && self.rules.units[other.kind].class == "military"
+                        });
+                        if hit
+                            && self.city_at(pos).is_none()
+                            && self.encampment_at(pos).is_none()
+                            && self.combat_target_visible_at(
+                                pid,
+                                pos,
+                                &current_visibility,
+                                &visibility_viewers,
+                            )
+                            && self.has_line_of_sight(source, pos, true)
+                        {
+                            acts.push(Action::EncampmentStrike {
+                                city: cid,
+                                target: pos,
+                            });
+                        }
                     }
                 }
             }
@@ -40458,7 +40538,7 @@ impl Game {
                 }
             }
         }
-        if !p.is_barbarian {
+        if families.has(ActionFamilies::DIPLOMACY) && !p.is_barbarian {
             for o in &self.players {
                 // Diplomacy needs a counterpart. Until the two civilizations
                 // have met there is no embassy to send a demand to, no peace
@@ -40609,7 +40689,9 @@ impl Game {
             }
         }
         acts.push(Action::EndTurn);
-        acts.retain(|action| !self.purchase_action_is_blocked(action));
+        if families.has(ActionFamilies::PURCHASES) || families.has(ActionFamilies::EMPIRE) {
+            acts.retain(|action| !self.purchase_action_is_blocked(action));
+        }
         acts
     }
 
