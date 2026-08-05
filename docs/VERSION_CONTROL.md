@@ -453,10 +453,17 @@ one of them:
 | `COMMIT-NOT-ON-GITHUB` | a commit reachable from no remote ref |
 | `MISSING` | a registered worktree whose directory is gone |
 
-`--rescue` pushes each dirty worktree to `refs/heads/wip/<branch>` using a
+`--rescue` pushes each dirty worktree to `refs/civvis/wip/<branch>` using a
 throwaway index and `commit-tree`, so the owning agent's HEAD, index and files
 are never touched — an agent mid-edit cannot be disturbed by it, and its bytes
 reach GitHub anyway.
+
+⚠ The namespace is load-bearing. The `pre-push` hook rejects any `refs/heads/`
+name that is not `agent/<machine>/<agent>/<task>-<UTC>-<nonce>`, so a snapshot
+written to `refs/heads/wip/...` is refused and the rescue silently does nothing
+while still reporting success — worse than no rescue at all. `refs/civvis/` sits
+outside that check, next to the `refs/civvis/recovery/main/` this document
+already specifies.
 
 Two rules this encodes, both learned by getting them wrong:
 
