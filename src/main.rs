@@ -599,7 +599,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// controller remains byte-identical. Compatibility re-pin; the Elo protocol
 /// does not move.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd1fd_2fc7_27cb_1c82;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4d76_27b6_6e2e_bfdc;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
