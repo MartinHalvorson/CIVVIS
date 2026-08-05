@@ -209,6 +209,23 @@ impl Game {
             for (index, neighbor) in candidate_neighbors.iter().copied().enumerate() {
                 neighbor_tiles[index] = self.map.get(neighbor);
             }
+            let gaul = self
+                .map
+                .get(pos)
+                .and_then(|tile| tile.owner_city)
+                .and_then(|city_id| self.cities.get(&city_id))
+                .is_some_and(|city| self.players[city.owner].civ == "Gaul");
+            let district_count = neighbor_tiles
+                .iter()
+                .flatten()
+                .filter(|tile| {
+                    !gaul
+                        && (tile.district.is_some()
+                            || self.city_at(tile.pos).is_some()
+                            || assume.treats_as_city_center(tile.pos)
+                            || (assume.foundations && tile.district_foundation.is_some()))
+                })
+                .count();
             for (district_index, (district, family)) in districts.iter().copied().enumerate() {
                 if !self.plot_fits_placement_with_neighbors(
                     pid,
@@ -219,14 +236,16 @@ impl Game {
                 ) {
                     continue;
                 }
-                let yields = self.district_adjacency_assuming_with_family_and_neighbors(
-                    district,
-                    pos,
-                    Some(&assume),
-                    None,
-                    family,
-                    &neighbor_tiles,
-                );
+                let yields = self
+                    .district_adjacency_assuming_with_family_and_neighbors_and_district_count(
+                        district,
+                        pos,
+                        Some(&assume),
+                        None,
+                        family,
+                        &neighbor_tiles,
+                        district_count,
+                    );
                 if yields.total() > bests[district_index].0 {
                     bests[district_index] = (yields.total(), yields);
                 }

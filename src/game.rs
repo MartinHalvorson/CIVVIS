@@ -33916,9 +33916,45 @@ impl Game {
         dname: Name,
         dpos: Pos,
         assume: Option<&crate::game::adjacency::PlanAssumption>,
+        detail: Option<&mut Vec<AdjacencySource>>,
+        family: Name,
+        neighbors: &[Option<&crate::world::Tile>; 6],
+    ) -> Yields {
+        self.district_adjacency_assuming_with_family_and_neighbors_cached(
+            dname, dpos, assume, detail, family, neighbors, None,
+        )
+    }
+
+    pub(crate) fn district_adjacency_assuming_with_family_and_neighbors_and_district_count(
+        &self,
+        dname: Name,
+        dpos: Pos,
+        assume: Option<&crate::game::adjacency::PlanAssumption>,
+        detail: Option<&mut Vec<AdjacencySource>>,
+        family: Name,
+        neighbors: &[Option<&crate::world::Tile>; 6],
+        district_count: usize,
+    ) -> Yields {
+        self.district_adjacency_assuming_with_family_and_neighbors_cached(
+            dname,
+            dpos,
+            assume,
+            detail,
+            family,
+            neighbors,
+            Some(district_count),
+        )
+    }
+
+    fn district_adjacency_assuming_with_family_and_neighbors_cached(
+        &self,
+        dname: Name,
+        dpos: Pos,
+        assume: Option<&crate::game::adjacency::PlanAssumption>,
         mut detail: Option<&mut Vec<AdjacencySource>>,
         family: Name,
         neighbors: &[Option<&crate::world::Tile>; 6],
+        cached_district_count: Option<usize>,
     ) -> Yields {
         let spec = &self.rules.districts[dname];
         let mut adj = Yields::default();
@@ -33986,20 +34022,22 @@ impl Game {
                         .count(),
                     // City Centers are districts but are represented by the
                     // city index instead of `Tile::district`.
-                    "district" => neighbors
-                        .iter()
-                        .flatten()
-                        .filter(|t| {
-                            !gaul
-                                && (t.district.is_some()
-                                    || self.city_at(t.pos).is_some()
-                                    || assume.is_some_and(|plan| {
-                                        plan.treats_as_city_center(t.pos)
-                                            || (plan.foundations
-                                                && t.district_foundation.is_some())
-                                    }))
-                        })
-                        .count(),
+                    "district" => cached_district_count.unwrap_or_else(|| {
+                        neighbors
+                            .iter()
+                            .flatten()
+                            .filter(|t| {
+                                !gaul
+                                    && (t.district.is_some()
+                                        || self.city_at(t.pos).is_some()
+                                        || assume.is_some_and(|plan| {
+                                            plan.treats_as_city_center(t.pos)
+                                                || (plan.foundations
+                                                    && t.district_foundation.is_some())
+                                        }))
+                            })
+                            .count()
+                    }),
                     "city_center" => neighbors
                         .iter()
                         .flatten()
