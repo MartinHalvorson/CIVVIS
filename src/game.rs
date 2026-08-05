@@ -32558,6 +32558,7 @@ impl Game {
         if cached_step.is_some_and(|next| self.can_enter(uid, start, next)) {
             return cached_step;
         }
+        let traversal_zones = self.routing_zones(self.traversal_class(uid));
 
         // A* keeps known-target routing cheap enough for high-throughput
         // self-play: the zone check above has already rejected disconnected
@@ -32626,7 +32627,10 @@ impl Game {
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n, territory_access.as_slice())
+                    if traversal_zones[index] == 0 {
+                        continue;
+                    }
+                    self.can_path_through_known_traversable(uid, n, territory_access.as_slice())
                 };
                 if !enterable {
                     continue;
@@ -32749,10 +32753,23 @@ impl Game {
         if self.wdist(from, pos) != 1 {
             return false;
         }
-        let unit = &self.units[&uid];
         if !self.unit_can_traverse(uid, pos) {
             return false;
         }
+        self.can_path_through_known_traversable(uid, pos, territory_access)
+    }
+
+    /// The dynamic half of [`Self::can_path_through`]. The route A* already
+    /// has a routing-zone label for every neighbor, so it can skip the static
+    /// terrain/domain predicate on future segments and retain only these
+    /// diplomacy and city gates.
+    fn can_path_through_known_traversable(
+        &self,
+        uid: u32,
+        pos: Pos,
+        territory_access: &[bool],
+    ) -> bool {
+        let unit = &self.units[&uid];
         if self
             .territory_owner_at(pos)
             .is_some_and(|owner| !territory_access[owner])
