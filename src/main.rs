@@ -643,8 +643,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// --jobs 1 --deployment-comparison` produced BYTE-IDENTICAL output from this
 /// worktree with the change stashed and applied (same base, same build profile).
 /// Compatibility re-pin; the Elo protocol does not move.
+///
+/// #1232 shares the radius-two position disk between settlement growth
+/// forecasting and adjacency scoring inside one visible site valuation. The
+/// legacy controller leaves the settlement-safety path disabled. A fixed-prefix
+/// `ai_eval advanced basic --pairs 10 --players 4 --turns 200 --seed 31337
+/// --jobs 1 --deployment-comparison` comparison produced byte-identical output
+/// on clean main and the candidate (SHA-256
+/// `34c8ccea34d4bf3a8b60ae1b713f82bffbce77a5f1614f07d69db591d6287b24`).
+/// Compatibility re-pin; the Elo protocol does not move.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x210e_91ee_acb4_d727;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1877_ea6e_7dfe_cb8c;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
