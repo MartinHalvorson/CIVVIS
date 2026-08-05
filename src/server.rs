@@ -3934,6 +3934,10 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "built_at": runtime_built_at(),
                     "artifact_bytes": runtime_artifact_bytes(),
                     "artifact_kind": runtime_artifact_kind(),
+                    // The setup queue is beside the simulation lock too. The
+                    // supervisor needs the viewer's latest choice even when
+                    // an AI turn is making the full `/state` response wait.
+                    "next_game_settings": sh.staged_next_game_settings(),
                     // The supervisor's only view of a restart used to be
                     // `/state`, which is exactly what a long AI turn makes
                     // unavailable. This probe takes no lock the simulation
@@ -5947,8 +5951,9 @@ mod tests {
         // a restart is asked for and exactly when `/state` cannot be built.
         assert!(runtime["supervisor_request"].is_null());
         assert_eq!(runtime["supervisor_request"], state["supervisor_request"]);
+        assert!(runtime["next_game_settings"].is_null());
         assert!(
-            runtime_body.len() < 256,
+            runtime_body.len() < 320,
             "successor identity should stay tiny, got {} bytes",
             runtime_body.len()
         );
