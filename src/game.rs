@@ -32720,6 +32720,22 @@ impl Game {
                 return None;
             }
         }
+        // Refresh the cheap epoch guard before consulting a retained path.
+        // This lets a cache hit bypass the full connected-region proof while
+        // still dropping paths after a map write, turn change, or city-count
+        // change.
+        self.refresh_routing_cache_stamp();
+        let has_path = {
+            let routing = self.routing.borrow();
+            routing.paths.iter().any(|route| {
+                route.unit == uid && route.target == to && route.range == range
+            })
+        };
+        if has_path {
+            if let Some(cached_step) = self.cached_route_step(unit, start, to, range) {
+                return Some(cached_step);
+            }
+        }
         if !self.zone_connected(uid, to, range) {
             return None; // proven: no chain of traversable tiles links them
         }
@@ -32732,28 +32748,6 @@ impl Game {
             return None;
         }
         let access_key = self.route_access_key(unit, territory_access.as_slice());
-        let cached_step = {
-            let routing = self.routing.borrow();
-            routing
-                .paths
-                .iter()
-                .find(|route| {
-                    route.unit == uid
-                        && route.target == to
-                        && route.range == range
-                        && route.access_key == access_key
-                })
-                .and_then(|route| {
-                    route
-                        .path
-                        .iter()
-                        .position(|position| *position == start)
-                        .and_then(|index| route.path.get(index + 1).copied())
-                })
-        };
-        if cached_step.is_some_and(|next| self.can_enter(uid, start, next)) {
-            return cached_step;
-        }
         let traversal_zones = self.routing_zones(self.traversal_class(uid));
 
         // A* keeps known-target routing cheap enough for high-throughput
@@ -32863,6 +32857,44 @@ impl Game {
             path: std::mem::take(&mut scratch.path),
         });
         Some(step)
+    }
+
+    fn cached_route_step(
+        &self,
+        unit: &Unit,
+        start: Pos,
+        to: Pos,
+        range: i32,
+    ) -> Option<Pos> {
+        let territory_access = self.unit_territory_access(unit);
+        if range == 0
+            && self
+                .territory_owner_at(to)
+                .is_some_and(|owner| !territory_access[owner])
+        {
+            return None;
+        }
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
+        let cached_step = {
+            let routing = self.routing.borrow();
+            routing
+                .paths
+                .iter()
+                .find(|route| {
+                    route.unit == unit.id
+                        && route.target == to
+                        && route.range == range
+                        && route.access_key == access_key
+                })
+                .and_then(|route| {
+                    route
+                        .path
+                        .iter()
+                        .position(|position| *position == start)
+                        .and_then(|index| route.path.get(index + 1).copied())
+                })
+        };
+        cached_step.filter(|next| self.can_enter(unit.id, start, *next))
     }
 
     /// Exact number of hex steps in the deterministic long-range route used by
@@ -33004,9 +33036,9 @@ impl Game {
         }
     }
 
-    /// The region labeling for `class`, rebuilt lazily whenever the world
-    /// stamp moves and shared by every unit of the class until then.
-    fn routing_zones(&self, class: TraversalClass) -> std::sync::Arc<Vec<u32>> {
+    /// Refresh the shared routing epoch and discard derived paths when a
+    /// world write has made their static assumptions stale.
+    fn refresh_routing_cache_stamp(&self) -> u64 {
         // Cities grant naval passage but live beside the map, so fold their
         // count in with the tile epoch; the turn bounds any residual
         // staleness (a found-and-razed pair the same turn) to one turn.
@@ -33015,14 +33047,22 @@ impl Game {
             self.turn as u64,
             self.cities.len() as u64,
         ]);
+        let mut cache = self.routing.borrow_mut();
+        if cache.stamp != stamp {
+            cache.stamp = stamp;
+            cache.zones.clear();
+            cache.paths.clear();
+            cache.city_owner_key = None;
+        }
+        stamp
+    }
+
+    /// The region labeling for `class`, rebuilt lazily whenever the world
+    /// stamp moves and shared by every unit of the class until then.
+    fn routing_zones(&self, class: TraversalClass) -> std::sync::Arc<Vec<u32>> {
+        let stamp = self.refresh_routing_cache_stamp();
         {
-            let mut cache = self.routing.borrow_mut();
-            if cache.stamp != stamp {
-                cache.stamp = stamp;
-                cache.zones.clear();
-                cache.paths.clear();
-                cache.city_owner_key = None;
-            }
+            let cache = self.routing.borrow();
             if let Some((_, zones)) = cache.zones.iter().find(|(c, _)| *c == class) {
                 return zones.clone();
             }
