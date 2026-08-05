@@ -1065,6 +1065,35 @@ Added the fast shipping path.
         )
 
 
+class BaseStalenessTests(unittest.TestCase):
+    def test_a_current_branch_is_left_alone(self):
+        self.assertIsNone(collab.base_staleness("ahead", 0))
+        self.assertIsNone(collab.base_staleness("identical", 0))
+
+    def test_mild_staleness_advises_and_says_nothing_enforces_it(self):
+        kind, message = collab.base_staleness("behind", 3)
+        self.assertEqual(kind, "advisory")
+        self.assertIn("3 commits", message)
+        self.assertIn("Nothing enforces freshness", message)
+
+    def test_severe_staleness_is_refused(self):
+        kind, message = collab.base_staleness(
+            "behind", collab.STALE_BASE_LIMIT)
+        self.assertEqual(kind, "error")
+        self.assertIn("no CI run has tested", message)
+
+    def test_diverged_history_uses_the_same_ladder(self):
+        self.assertEqual(collab.base_staleness("diverged", 1)[0], "advisory")
+        self.assertEqual(
+            collab.base_staleness("diverged", collab.STALE_BASE_LIMIT + 40)[0],
+            "error",
+        )
+
+    def test_one_commit_under_the_limit_still_only_advises(self):
+        kind, _ = collab.base_staleness("behind", collab.STALE_BASE_LIMIT - 1)
+        self.assertEqual(kind, "advisory")
+
+
 class MachineRegistryTests(unittest.TestCase):
     def registry_file(self, text: str) -> Path:
         directory = tempfile.mkdtemp(prefix="civvis-machines-")
