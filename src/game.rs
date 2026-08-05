@@ -33848,6 +33848,7 @@ impl Game {
         let spec = &self.rules.districts[dname];
         let mut adj = Yields::default();
         if !spec.adjacency.is_empty() {
+            let family = self.district_family(dname);
             let tile = &self.map.tiles[&dpos];
             // A plot has at most six in-map neighbors. Keep the tile
             // references inline; this calculator runs once per district/site
@@ -34055,7 +34056,7 @@ impl Game {
                 let mines = count("mine");
                 let minor = (mines as f64 * 0.5).trunc();
                 let mut paid = Yields::default();
-                match self.district_family(Name::new(&dname)).as_str() {
+                match family.as_str() {
                     "campus" => paid.science = minor,
                     "holy_site" => paid.faith = minor,
                     "commercial_hub" | "harbor" => paid.gold = minor,
@@ -34082,7 +34083,7 @@ impl Game {
             }) {
                 let mountains = count("mountain");
                 let mut paid = Yields::default();
-                match self.district_family(Name::new(&dname)).as_str() {
+                match family.as_str() {
                     "commercial_hub" => paid.gold = mountains as f64,
                     "industrial_zone" => paid.production = mountains as f64,
                     "theater_square" => paid.culture = mountains as f64,
@@ -34101,7 +34102,7 @@ impl Game {
                     }
                 }
             }
-            if self.district_is_family(Name::new(&dname), crate::name!("holy_site")) {
+            if family == crate::name!("holy_site") {
                 if let Some(city) = self
                     .map
                     .get(dpos)
@@ -34130,28 +34131,22 @@ impl Game {
             }
             // The six adjacency-card families include unique replacements.
             if let Some(pid) = owner {
-                let mut percent = if self.district_is_family(Name::new(&dname), crate::name!("campus")) {
-                    self.policy_effect(pid, "campus_adjacency_pct")
-                } else if self.district_is_family(Name::new(&dname), crate::name!("holy_site")) {
-                    self.policy_effect(pid, "holy_site_adjacency_pct")
-                } else if self.district_is_family(Name::new(&dname), crate::name!("commercial_hub")) {
-                    self.policy_effect(pid, "commercial_hub_adjacency_pct")
-                } else if self.district_is_family(Name::new(&dname), crate::name!("harbor")) {
-                    self.policy_effect(pid, "harbor_adjacency_pct")
-                } else if self.district_is_family(Name::new(&dname), crate::name!("theater_square")) {
-                    self.policy_effect(pid, "theater_square_adjacency_pct")
-                } else if self.district_is_family(Name::new(&dname), crate::name!("industrial_zone")) {
-                    self.policy_effect(pid, "industrial_zone_adjacency_pct")
-                } else {
-                    0.0
+                let mut percent = match family.as_str() {
+                    "campus" => self.policy_effect(pid, "campus_adjacency_pct"),
+                    "holy_site" => self.policy_effect(pid, "holy_site_adjacency_pct"),
+                    "commercial_hub" => self.policy_effect(pid, "commercial_hub_adjacency_pct"),
+                    "harbor" => self.policy_effect(pid, "harbor_adjacency_pct"),
+                    "theater_square" => self.policy_effect(pid, "theater_square_adjacency_pct"),
+                    "industrial_zone" => self.policy_effect(pid, "industrial_zone_adjacency_pct"),
+                    _ => 0.0,
                 };
-                if matches!(self.district_family(Name::new(&dname)).as_str(), "commercial_hub" | "harbor") {
+                if matches!(family.as_str(), "commercial_hub" | "harbor") {
                     if let Some(city) = owner_city {
                         percent +=
                             self.governor_effect(pid, city.id, "commercial_harbor_adjacency_pct");
                     }
                 }
-                if self.district_is_family(Name::new(&dname), crate::name!("theater_square"))
+                if family == crate::name!("theater_square")
                     && self.grants_city_state_unique_bonus(pid, "Vilnius")
                 {
                     percent += 50.0 * self.highest_active_alliance_level(pid) as f64;
