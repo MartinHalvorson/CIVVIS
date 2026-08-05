@@ -6753,6 +6753,49 @@ local function applyOrder(player, pid, row, turn)
 
 		local slots = try(function() return culture:GetNumPolicySlots(); end, 0) or 0;
 		if #desired > slots then return false, "policy_deck_too_large"; end
+		-- ⚠⚠ NAME THE CARD AND THE SHAPE, because "does not fit" is not a
+		-- diagnosis. `policy_deck_does_not_fit` fires on **601 of 2,068**
+		-- policy-deck orders (29%) across the 08-04/08-05 runs, and every one
+		-- of those refusals recorded nothing but that string — not the deck
+		-- asked for, not the slots available, not which card had nowhere to go.
+		--
+		-- Two hypotheses were checked against recorded data before writing this
+		-- and BOTH came back clean, which is why an instrument is the next step
+		-- rather than a patch:
+		--   * slot COUNT disagreeing with the host — 0 mismatches in 7,563
+		--     turn records, every government
+		--   * card slot TYPE disagreeing — 12 of 123 differ, but all 12 are
+		--     `SLOT_GREAT_PERSON` cards CIVVIS calls `wildcard`, and the
+		--     seating below already falls those back to a Wildcard slot
+		-- So the cause is neither of the obvious two, and guessing a third is
+		-- how #1107 got fixed in the wrong layer.
+		local function deckShape()
+			local want, have = {}, {};
+			for _, c in ipairs(desired) do
+				want[#want + 1] = tostring(c.PolicyType or "?")
+					.. ":" .. tostring(c.GovernmentSlotType or "?");
+			end
+			for i = 0, slots - 1 do
+				have[#have + 1] = tostring(try(function()
+					local slotId = culture:GetSlotType(i);
+					return GameInfo.GovernmentSlots[slotId].GovernmentSlotType;
+				end, "?"));
+			end
+			return table.concat(want, ","), table.concat(have, ",");
+		end
+		local function noFit(card)
+			local want, have = deckShape();
+			emit("policy_deck_refused", {
+				turn = turn,
+				-- The card that had nowhere to go, which is the whole question.
+				card = card ~= nil and tostring(card.PolicyType or "?") or nil,
+				card_slot = card ~= nil and tostring(card.GovernmentSlotType or "?") or nil,
+				wanted = want,
+				slots = have,
+				slot_count = slots,
+			});
+			return false, "policy_deck_does_not_fit";
+		end
 		local slotNames = {};
 		for i = 0, slots - 1 do
 			slotNames[i] = try(function()
@@ -6777,7 +6820,7 @@ local function applyOrder(player, pid, row, turn)
 		for _, card in ipairs(desired) do
 			if card.GovernmentSlotType == "SLOT_WILDCARD" then
 				if not seat(card, "SLOT_WILDCARD") then
-					return false, "policy_deck_does_not_fit";
+					return noFit(card);
 				end
 			else
 				pending[#pending + 1] = card;
@@ -6791,7 +6834,7 @@ local function applyOrder(player, pid, row, turn)
 		end
 		for _, card in ipairs(wildcard) do
 			if not seat(card, "SLOT_WILDCARD") then
-				return false, "policy_deck_does_not_fit";
+				return noFit(card);
 			end
 		end
 
