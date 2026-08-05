@@ -621,8 +621,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// produced byte-identical output from `ai_eval advanced_v1 basic --pairs 10
 /// --players 4 --turns 200 --seed 31337 --jobs 1 --deployment-comparison`.
 /// Compatibility re-pin; the Elo protocol does not move.
+///
+/// #1217 reuses exact raw settlement-site values across the live controller's
+/// local and global radius scans. The radius-specific penalties are still
+/// applied at each call site, and a fixed-prefix `ai_eval advanced basic`
+/// comparison produced byte-identical output on clean main and the candidate.
+/// Compatibility re-pin; the Elo protocol does not move.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x52fd_ae48_64b6_9a76;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0f3d_62d2_59f0_9276;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
