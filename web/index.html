@@ -17890,6 +17890,10 @@ function skyOrbit(player) {
   };
 }
 
+// Raise the orbit height above Earth's surface by seventy percent while
+// keeping the surface itself at one Earth radius.
+const SKY_SATELLITE_ALTITUDE_SCALE = 1.7;
+
 // Orbits are real circles seen at an angle, so a satellite passing behind the
 // world goes behind it. The depth that decides is the same one the projection
 // throws away.
@@ -17916,8 +17920,9 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
     const {inclination, node, phase, pace} = skyOrbit(player);
     // Kept in Earth radii so the ring stands off the limb by the same margin
     // whatever the zoom, the way the old pixel figure did.
-    const ring = 1.38 + Math.min(8, radius * .5) / Math.max(1, radius) +
+    const altitude = .38 + Math.min(8, radius * .5) / Math.max(1, radius) +
       index * Math.max(2, radius * .07) / Math.max(1, radius);
+    const ring = 1 + altitude * SKY_SATELLITE_ALTITUDE_SCALE;
     const cosNode = Math.cos(node), sinNode = Math.sin(node);
     const cosLean = Math.cos(inclination), sinLean = Math.sin(inclination);
     const basis = {ring,
@@ -17927,14 +17932,15 @@ function drawSkySatellites(crew, camera, radius, centerX, centerY, alpha, now) {
     const at = planetProject(site(basis, angle), view, radius, centerX, centerY);
     return {player, basis, x:at.x, y:at.y, behind:at.z < 0};
   });
-  // The track first, and only where there is sky to draw it on: a ring laid
-  // straight over the tiles reads as a scratch on the lens rather than as an
-  // orbit going round the back.
+  // The track belongs in the sky around the limb, not across Earth's face: a
+  // ring laid straight over the tiles reads as a scratch on the lens rather
+  // than as an orbit. The Earth disk is an explicit even-odd hole, so the
+  // satellite itself can still pass over the daylight side below.
   cx.save();
   cx.beginPath();
   cx.rect(0, 0, MAPW, MAPH);
-  cx.arc(centerX, centerY, radius, 0, 7, true);
-  cx.clip();
+  cx.arc(centerX, centerY, radius, 0, 7);
+  cx.clip("evenodd");
   cx.globalAlpha = shown * .3; cx.lineWidth = .8;
   for (const {player, basis} of flight) {
     cx.strokeStyle = pcol(player.id);
