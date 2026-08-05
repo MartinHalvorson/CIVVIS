@@ -13717,18 +13717,30 @@ impl AdvancedAi {
     /// are available immediately; ring two enters only after a short border-growth
     /// delay. Food pays consumption and the engine's exact growth thresholds and
     /// housing bands decide when later jobs begin contributing.
+    #[cfg(test)]
     fn settlement_growth_forecast(
+        &self,
+        g: &Game,
+        pid: usize,
+        pos: Pos,
+    ) -> SettlementGrowthForecast {
+        let positions = g.wdisk(pos, 2);
+        self.settlement_growth_forecast_from_positions(g, pid, pos, &positions)
+    }
+
+    fn settlement_growth_forecast_from_positions(
         &self,
         g: &Game,
         _pid: usize,
         pos: Pos,
+        positions: &[Pos],
     ) -> SettlementGrowthForecast {
         let mut center = g.rules.tile_yields(&g.map.tiles[&pos]);
         center.food = center.food.max(2.0);
         center.production = center.production.max(1.0);
 
         let mut candidates = Vec::new();
-        for work in g.wdisk(pos, 2) {
+        for work in positions.iter().copied() {
             if work == pos {
                 continue;
             }
@@ -13912,7 +13924,21 @@ impl AdvancedAi {
         if !self.adjacency_site_planning {
             return 0.0;
         }
-        let potential = g.settlement_adjacency_summary(pid, pos, 2);
+        let positions = g.wdisk(pos, 2);
+        self.settlement_adjacency_value_from_positions(g, pid, pos, &positions)
+    }
+
+    fn settlement_adjacency_value_from_positions(
+        &self,
+        g: &Game,
+        pid: usize,
+        pos: Pos,
+        positions: &[Pos],
+    ) -> f64 {
+        if !self.adjacency_site_planning {
+            return 0.0;
+        }
+        let potential = g.settlement_adjacency_summary_from_positions(pid, pos, positions);
         ((potential.food * 2.0
             + potential.production * 2.2
             + potential.gold * 0.7
@@ -14031,7 +14057,8 @@ impl AdvancedAi {
     }
 
     fn settle_value_visible(&self, g: &Game, pid: usize, pos: Pos, visible: &TileBits) -> f64 {
-        let forecast = self.settlement_growth_forecast(g, pid, pos);
+        let positions = g.wdisk(pos, 2);
+        let forecast = self.settlement_growth_forecast_from_positions(g, pid, pos, &positions);
         let housing = Self::settlement_base_housing(g, pos);
         let horizon = g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64;
         let growth_readiness = forecast.turns_to_four.map_or_else(
@@ -14052,7 +14079,7 @@ impl AdvancedAi {
             + (housing - 2.0) * 4.0
             + growth_readiness
             + dependable_jobs * 0.75;
-        value += self.settlement_adjacency_value(g, pid, pos);
+        value += self.settlement_adjacency_value_from_positions(g, pid, pos, &positions);
 
         let enemy_distance = g
             .cities
