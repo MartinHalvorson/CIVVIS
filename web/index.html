@@ -18620,9 +18620,9 @@ function drawPlanetStrategicRoads(cells, visible, spectator) {
   cx.restore();
 }
 
-// Paint a small rock face rather than a cartographic border: a shaded wall
-// falls toward water, a pale broken rim catches the light, and a few fissures
-// give the face depth. Every entry points its normal toward water.
+// Paint a substantial rock face rather than a cartographic border: a dark
+// undercut, warm upper plane, broken strata, and a pale crest make the land
+// visibly fall into the sea. Every entry points its normal toward water.
 function drawCliffEscarpments(groups) {
   cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
   for (const group of groups) {
@@ -18630,10 +18630,30 @@ function drawCliffEscarpments(groups) {
     if (!escarpments?.length) continue;
     const scale = group.weight || 1;
     const alpha = group.alpha ?? 1;
-    const depth = 4.3 * scale;
 
-    // The narrow, shaded wall is the cue that this is relief, not a border.
-    cx.fillStyle = "#5d5042"; cx.globalAlpha = alpha * .78;
+    // The old four-pixel ribbon disappeared into the tile texture. A cliff is
+    // a landform with a face, so give it enough depth to survive survey zoom
+    // while retaining the local strategic scale on the globe.
+    const depth = 9.2 * scale;
+    const foot = depth * 1.12;
+
+    // Start with a cool silhouette under the rock. It is deliberately wider
+    // than the face: that thin seawater-side lip is what separates relief
+    // from an outline when a cliff meets deep blue water.
+    cx.fillStyle = "#182a2d"; cx.globalAlpha = alpha * .72;
+    cx.beginPath();
+    for (const [ax, ay, bx, by, nx, ny] of escarpments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+      cx.lineTo(bx + nx * foot, by + ny * foot);
+      cx.lineTo(ax + nx * foot, ay + ny * foot);
+      cx.closePath();
+    }
+    cx.fill();
+
+    // The face has a sunward upper plane and a cooler lower cut. Keeping these
+    // as nested polygons is cheaper than per-edge gradients and remains crisp
+    // on the globe where projected cells are not axis-aligned.
+    cx.fillStyle = "#725c49"; cx.globalAlpha = alpha * .94;
     cx.beginPath();
     for (const [ax, ay, bx, by, nx, ny] of escarpments) {
       cx.moveTo(ax, ay); cx.lineTo(bx, by);
@@ -18643,33 +18663,88 @@ function drawCliffEscarpments(groups) {
     }
     cx.fill();
 
-    // A dark waterline anchors the face; the thin bright crest keeps it
-    // legible on desert, grassland, and snow without turning it into a wall.
-    cx.strokeStyle = "#241d16"; cx.lineWidth = 1.45 * scale;
-    cx.globalAlpha = alpha * .76; cx.beginPath();
+    cx.fillStyle = "#a38764"; cx.globalAlpha = alpha * .42;
+    cx.beginPath();
     for (const [ax, ay, bx, by, nx, ny] of escarpments) {
-      cx.moveTo(ax + nx * depth, ay + ny * depth);
-      cx.lineTo(bx + nx * depth, by + ny * depth);
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+      cx.lineTo(bx + nx * depth * .38, by + ny * depth * .38);
+      cx.lineTo(ax + nx * depth * .38, ay + ny * depth * .38);
+      cx.closePath();
+    }
+    cx.fill();
+
+    cx.fillStyle = "#3b2d27"; cx.globalAlpha = alpha * .54;
+    cx.beginPath();
+    for (const [ax, ay, bx, by, nx, ny] of escarpments) {
+      cx.moveTo(ax + nx * depth * .56, ay + ny * depth * .56);
+      cx.lineTo(bx + nx * depth * .56, by + ny * depth * .56);
+      cx.lineTo(bx + nx * foot, by + ny * foot);
+      cx.lineTo(ax + nx * foot, ay + ny * foot);
+      cx.closePath();
+    }
+    cx.fill();
+
+    // The waterline anchors the foot; a second dark stroke just under the
+    // crest makes the top lip read as a ledge instead of a painted border.
+    cx.strokeStyle = "#101d24"; cx.lineWidth = Math.max(.8, 2.05 * scale);
+    cx.globalAlpha = alpha * .82; cx.beginPath();
+    for (const [ax, ay, bx, by, nx, ny] of escarpments) {
+      cx.moveTo(ax + nx * foot, ay + ny * foot);
+      cx.lineTo(bx + nx * foot, by + ny * foot);
     }
     cx.stroke();
-    cx.strokeStyle = "#d5c7aa"; cx.lineWidth = 1.4 * scale;
-    cx.globalAlpha = alpha * .9; cx.beginPath();
+    cx.strokeStyle = "#30241d"; cx.lineWidth = Math.max(.8, 2.7 * scale);
+    cx.globalAlpha = alpha * .86; cx.beginPath();
+    for (const [ax, ay, bx, by] of escarpments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+    cx.stroke();
+    cx.strokeStyle = "#ead6aa"; cx.lineWidth = Math.max(.65, 2.15 * scale);
+    cx.globalAlpha = alpha * .94; cx.beginPath();
     for (const [ax, ay, bx, by] of escarpments) {
       cx.moveTo(ax, ay); cx.lineTo(bx, by);
     }
     cx.stroke();
 
-    // Three short, slightly offset fractures stop the face reading as a flat
-    // rectangle while staying distinct at the globe's smallest useful scale.
+    // Broken horizontal shelves give the face scale. They are offset from the
+    // edge rather than drawn as a second outline, so a run of cliffs reads as
+    // a continuous geological wall without becoming a fence.
+    for (const [fraction, color, width, opacity] of [
+      [.30, "#c09b70", 1.15, .62],
+      [.56, "#4b382c", 1.25, .78],
+      [.79, "#8e6e52", .95, .68],
+    ]) {
+      cx.strokeStyle = color; cx.lineWidth = Math.max(.42, width * scale);
+      cx.globalAlpha = alpha * opacity; cx.beginPath();
+      for (const [ax, ay, bx, by, nx, ny] of escarpments) {
+        const dx = bx - ax, dy = by - ay;
+        const along = dx * .035, down = dy * .035;
+        cx.moveTo(ax + dx * .06 + along + nx * depth * fraction,
+                  ay + dy * .06 + down + ny * depth * fraction);
+        cx.lineTo(bx - dx * .06 + along + nx * depth * fraction,
+                  by - dy * .06 + down + ny * depth * fraction);
+      }
+      cx.stroke();
+    }
+
+    // Two irregular fractures and a short branch make the wall feel carved by
+    // weather rather than stamped. They stay inside the face so the contrast
+    // remains useful on the coastline, not in the neighbouring water tile.
     cx.strokeStyle = "#352a20"; cx.lineWidth = Math.max(.35, .9 * scale);
-    cx.globalAlpha = alpha * .76; cx.beginPath();
+    cx.globalAlpha = alpha * .74; cx.beginPath();
     for (const [ax, ay, bx, by, nx, ny] of escarpments) {
       const dx = bx - ax, dy = by - ay;
-      for (const [fraction, bend] of [[.2, -.38], [.5, .32], [.8, -.28]]) {
+      for (const [fraction, bend] of [[.24, -.36], [.68, .30]]) {
         const px = ax + dx * fraction, py = ay + dy * fraction;
-        cx.moveTo(px, py);
-        cx.lineTo(px + nx * depth * .68 + dx * bend * scale / 10,
-                  py + ny * depth * .68 + dy * bend * scale / 10);
+        const midX = px + nx * depth * .43 + dx * bend * scale / 8;
+        const midY = py + ny * depth * .43 + dy * bend * scale / 8;
+        cx.moveTo(px + nx * depth * .08, py + ny * depth * .08);
+        cx.lineTo(midX, midY);
+        cx.lineTo(px + nx * depth * .78 + dx * bend * scale / 5,
+                  py + ny * depth * .78 + dy * bend * scale / 5);
+        cx.moveTo(midX, midY);
+        cx.lineTo(midX + nx * depth * .13 - dy * bend * scale / 9,
+                  midY + ny * depth * .13 + dx * bend * scale / 9);
       }
     }
     cx.stroke();
