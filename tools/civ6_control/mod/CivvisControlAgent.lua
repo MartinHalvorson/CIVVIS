@@ -7758,7 +7758,24 @@ local function applyOrder(player, pid, row, turn)
 			return routed, verb;
 		end
 		if verb == "UPGRADE" then
-			return commandUnit(unit, CMD["UNITCOMMAND_UPGRADE"]), verb;
+			-- ⚠⚠ THROUGH `upgradeUnit`, NOT `commandUnit` DIRECTLY. That helper
+			-- exists precisely to turn a refused upgrade into a NAMED one — it
+			-- asks the engine the two-flag `CanStartCommand` and records
+			-- `FAILURE_REASONS` — and until now only the mod's own automation
+			-- called it. Every upgrade CIVVIS itself ordered went straight to
+			-- `commandUnit` and was counted anonymously.
+			--
+			-- The cost of that gap, measured over the 08-04/08-05 runs:
+			-- `UPGRADE` is 933 refusals, the third-largest category of all, and
+			-- `upgrade_tried` / `upgrade_blocked` both read ZERO on every run
+			-- because the counters were watching a path the orders never took.
+			--
+			-- This is the same defect the comment above `upgradeUnit` was
+			-- written about: "an anonymous count ... naming it made the cause
+			-- fall out immediately and both times the standing hypothesis was
+			-- wrong". The helper was right; it simply was not wired here.
+			local upgraded = upgradeUnit(unit);
+			return upgraded ~= nil, verb;
 		end
 		local promotionName = string.match(tostring(verb), "^PROMOTE:(.+)$");
 		if promotionName ~= nil then
