@@ -294,7 +294,7 @@
   .brand-copy { min-width: 0; flex: 1 1 auto; padding: 1px 34px 0 0; }
   .brand-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
   h1 {
-    width: auto; min-width: 0; max-width: 100%; overflow: hidden;
+    width: auto; min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis;
     color: var(--gold-bright);
     font: 650 36px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
     font-size: clamp(22px, 10cqw, 36px);
@@ -331,17 +331,45 @@
   .tagline span { display: block; white-space: nowrap; }
   .tagline span + span { color: #bccac4; }
   /* A split-screen deck cannot afford the landing-page-sized mark and title.
-     The compact band preserves both, but gives the map its working width and
-     lets the copy wrap instead of flowing beyond the deck edge. */
+     The compact band preserves both, but reflows the lockup: the copy column
+     dissolves (display: contents) so the tagline steps out of the mark's
+     shadow and takes the whole band. That is what lets a 220px deck keep a
+     two-line tagline instead of a five-line tower squeezed beside the globe. */
   #side[data-type-size="compact"] .side-head { min-height: 102px; padding: 14px 12px; }
-  #side[data-type-size="compact"] .brand { gap: 10px; }
+  #side[data-type-size="compact"] .brand {
+    display: grid; grid-template-columns: auto minmax(0, 1fr);
+    align-items: center; gap: 7px 10px;
+  }
+  #side[data-type-size="compact"] .brand-copy { display: contents; }
   #side[data-type-size="compact"] .brand-mark { width: 54px; height: 54px; }
   #side[data-type-size="compact"] .brand-mark svg { width: 49px; height: 49px; }
+  /* The social column only climbs the band's bottom half, but the tallest
+     title could still graze it; reserving the lane in the row keeps the
+     wordmark and the buttons apart at every band height. */
+  #side[data-type-size="compact"] .brand-title-row { padding-right: 26px; }
+  /* 10cqw measures the whole band, but the wordmark's real lane is the band
+     minus the 54px mark, its 10px gutter and the 26px link lane — and the
+     CIVVIS.ai run is 4.65em wide (4.85 leaves fallback-font slack). Deriving
+     the size from that lane spends all of a 300px deck on the 28px cap yet
+     still steps down cleanly on a 220px one, where raw 10cqw overflows. */
   #side[data-type-size="compact"] h1 {
-    width: auto; font-size: clamp(20px, 10cqw, 28px); letter-spacing: .055em;
+    width: auto; letter-spacing: .055em;
+    font-size: clamp(15px, calc((100cqw - 90px) / 4.85), 28px);
   }
-  #side[data-type-size="compact"] .tagline { max-width: none; margin-top: 6px; font-size: var(--type-small); }
+  #side[data-type-size="compact"] .tagline {
+    grid-column: 1 / -1; max-width: none; margin-top: 0; padding-right: 28px;
+    font-size: var(--type-small);
+  }
   #side[data-type-size="compact"] .tagline span { white-space: normal; }
+  /* Past the width where the whole sentence fits beside the globe, the
+     stacked two-line lockup reads as leftover narrow-screen furniture. Join
+     the tagline into its single line there; 620px of band leaves ~200px of
+     slack at the shared body size, so the line cannot be what overflows. */
+  @container (min-width: 620px) {
+    .side-head .tagline { max-width: none; }
+    .side-head .tagline span { display: inline; }
+    .side-head .tagline span + span::before { content: " "; }
+  }
   /* The deck is a column: the fixed panels take the height they need and the
      two chronicles share whatever is left, so a tall screen reads more
      history rather than more empty parchment. Below the point where the
@@ -6393,7 +6421,13 @@ if (playerHudPanel) {
 // that keeps both dimensions inside it. Wrapped prose is deliberately absent:
 // it keeps the shared body scale and lets its panel scroll naturally.
 const RESPONSIVE_TEXT_RULES = [
-  {selector:"#side .tagline span", min:12, max:15},
+  // The tagline is fitted only while its two lines are unbreakable: wrapped
+  // prose never overflows its own box, so on the compact band — where the
+  // spans are allowed to wrap — measuring could only ever pin the ceiling.
+  // The compact entry instead writes the band's own size, which also retires
+  // a stale fitted size left behind when the deck crosses the band boundary.
+  {selector:"#side:not([data-type-size=compact]) .tagline span", min:12, max:15},
+  {selector:"#side[data-type-size=compact] .tagline span", min:12, max:12},
   {selector:"#side .section-title > span:last-child", min:10, max:13},
   {selector:"#side .event-scope", min:9, max:12},
   {selector:"#side .sec h2", min:10, max:12},
