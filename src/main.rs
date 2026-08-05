@@ -604,8 +604,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed 31337
 /// --jobs 1 --deployment-comparison`. Compatibility re-pin; the Elo protocol
 /// does not move.
+///
+/// #1206 keeps the live settlement-growth beam's at-most-four selected plots
+/// inline instead of allocating a `Vec` for each candidate branch.
+/// `AdvancedAi::legacy()` keeps `settlement_safety` disabled, so the changed
+/// forecast is outside the frozen controller's path. Clean `origin/main` and
+/// candidate release builds again produced byte-identical output from
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed 31337
+/// --jobs 1 --deployment-comparison`. Compatibility re-pin; the Elo protocol
+/// does not move.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbdfc_3a4d_dfdd_3960;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x8d4b_83e7_b38d_04de;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
