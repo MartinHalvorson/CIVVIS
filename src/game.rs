@@ -13711,6 +13711,8 @@ struct RouteScratch {
     parent: Vec<u32>,
     seen: Vec<bool>,
     distance: Vec<i32>,
+    astar_touched: Vec<usize>,
+    bfs_touched: Vec<usize>,
 }
 
 #[derive(Clone)]
@@ -17172,6 +17174,7 @@ impl Game {
     /// planted. Map generation seats city-states immediately; a mirror needs their
     /// player slots but must not retain their invented cities or borders.
     pub(crate) fn clear_mirror_cities(&mut self) {
+        self.invalidate_routing_paths();
         self.cities.clear();
         self.city_by_pos.clear();
         self.routes.clear();
@@ -17202,8 +17205,15 @@ impl Game {
     /// Reconcile an authoritative external city roster without firing conquest
     /// rewards, grievances, population loss, or any other simulated transition.
     pub(crate) fn mirror_set_city_owner(&mut self, cid: u32, owner: usize) {
+        let changed = self
+            .cities
+            .get(&cid)
+            .is_some_and(|city| city.owner != owner);
         if let Some(city) = self.cities.get_mut(&cid) {
             city.owner = owner;
+        }
+        if changed {
+            self.invalidate_routing_paths();
         }
         *self.query_memo.city_ids.borrow_mut() = None;
     }
@@ -17212,6 +17222,7 @@ impl Game {
     /// A later observed owner can place it again in the same synchronization pass.
     pub(crate) fn mirror_remove_city(&mut self, cid: u32) {
         let Some(city) = self.cities.remove(&cid) else { return };
+        self.invalidate_routing_paths();
         let mut infrastructure: BTreeSet<Pos> = city
             .districts
             .iter()
@@ -32507,13 +32518,18 @@ impl Game {
         if scratch.distance.len() < tile_count {
             scratch.distance.resize(tile_count, UNREACHED);
         }
-        for slot in 0..tile_count {
+        let touched = scratch.astar_touched.len();
+        for index in 0..touched {
+            let slot = scratch.astar_touched[index];
             scratch.parent[slot] = NO_PARENT;
             scratch.distance[slot] = UNREACHED;
         }
+        scratch.astar_touched.clear();
         scratch.astar_frontier.clear();
         scratch.path.clear();
+        scratch.parent[start_index] = NO_PARENT;
         scratch.distance[start_index] = 0;
+        scratch.astar_touched.push(start_index);
         // On equal f-scores, prefer the node furthest along the route. This
         // avoids breadth-first expansion of an entire open plain/ocean before
         // following one of several equally short paths to the destination.
@@ -32552,6 +32568,9 @@ impl Game {
                 };
                 if !enterable {
                     continue;
+                }
+                if scratch.distance[index] == UNREACHED {
+                    scratch.astar_touched.push(index);
                 }
                 scratch.distance[index] = next_distance;
                 scratch.parent[index] = cur_index as u32;
@@ -32632,6 +32651,11 @@ impl Game {
             key = vision_key(&[key, city.id as u64, city.owner as u64]);
         }
         key
+    }
+
+    fn invalidate_routing_paths(&self) {
+        let mut routing = self.routing.borrow_mut();
+        routing.paths.clear();
     }
 
     /// Terrain/domain legality for future route segments. Dynamic unit
@@ -32794,25 +32818,26 @@ impl Game {
         // `unit_can_traverse`, which rejects a position the grid does not
         // hold — so an index always exists for a reachable neighbour.
         const NO_PARENT: u32 = u32::MAX;
-        const UNREACHED: i32 = i32::MAX;
         let tile_count = self.map.tiles.len();
         let mut scratch = self.route_scratch.borrow_mut();
         if scratch.parent.len() < tile_count {
             scratch.parent.resize(tile_count, NO_PARENT);
         }
-        if scratch.distance.len() < tile_count {
-            scratch.distance.resize(tile_count, UNREACHED);
-        }
         if scratch.seen.len() < tile_count {
             scratch.seen.resize(tile_count, false);
         }
-        for slot in 0..tile_count {
+        let touched = scratch.bfs_touched.len();
+        for index in 0..touched {
+            let slot = scratch.bfs_touched[index];
             scratch.parent[slot] = NO_PARENT;
             scratch.seen[slot] = false;
         }
+        scratch.bfs_touched.clear();
         scratch.bfs_frontier.clear();
         let start_index = self.map.tiles.index_of(start)?;
+        scratch.parent[start_index] = NO_PARENT;
         scratch.seen[start_index] = true;
+        scratch.bfs_touched.push(start_index);
         scratch.bfs_frontier.push_back((start, start_index));
 
         let mut goal = None;
@@ -32842,6 +32867,7 @@ impl Game {
                     continue;
                 }
                 scratch.seen[index] = true;
+                scratch.bfs_touched.push(index);
                 scratch.parent[index] = cur_index as u32;
                 if is_goal(n) {
                     goal = Some(index);
@@ -54940,6 +54966,9 @@ impl Game {
                 }
             }
         }
+        if old != new_owner {
+            self.invalidate_routing_paths();
+        }
         for position in self.cities[&cid].owned_tiles.clone() {
             self.map
                 .tiles
@@ -55333,6 +55362,7 @@ impl Game {
             city.wall_hp = 0;
             city.encampment_wall_hp = 0;
         }
+        self.invalidate_routing_paths();
         self.players[original_owner].alive = true;
         self.relieve_liberation_grievances(pid, relief);
         let favor = if self.players[original_owner].is_minor || restored_to_game {
