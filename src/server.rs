@@ -10032,6 +10032,35 @@ mod tests {
     }
 
     #[test]
+    fn browser_minimap_highlights_the_camera_footprint_for_both_map_shapes() {
+        assert!(EMBEDDED_INDEX
+            .contains("function paintMiniViewportFootprint(points, clip = null)"));
+        assert!(EMBEDDED_INDEX
+            .contains("mx2.fillStyle = \"rgba(255, 223, 133, .18)\""));
+
+        let flat = EMBEDDED_INDEX
+            .split("function drawFlatMiniViewportFootprint")
+            .nth(1)
+            .and_then(|tail| tail.split("function miniHexPath").next())
+            .expect("flat minimap viewport footprint");
+        assert!(flat.contains("screenToWorld(sx, sy)"));
+        assert!(flat.contains("miniViewportScreenCorners().map"));
+        assert!(EMBEDDED_INDEX.contains("drawFlatMiniViewportFootprint(layout);"));
+
+        let planet = EMBEDDED_INDEX
+            .split("function drawPlanetMiniViewportFootprint")
+            .nth(1)
+            .and_then(|tail| tail.split("function planetMiniScale").next())
+            .expect("planet minimap viewport footprint");
+        assert!(planet.contains("const mainRadius = mainCamera.radius * cam.scale;"));
+        assert!(planet.contains("planetGroundInputY(sy, mainCenterY)"));
+        assert!(planet.contains("mainCamera.chart ? null : () => mx2.arc"));
+        assert!(EMBEDDED_INDEX.contains(
+            "drawPlanetMiniViewportFootprint(camera, scale, centerX, centerY);"
+        ));
+    }
+
+    #[test]
     fn browser_tile_yields_are_numbered_in_centered_semantic_rows() {
         assert!(EMBEDDED_INDEX.contains(
             "[\"science\", \"culture\", \"faith\"],\n  [\"food\", \"production\", \"gold\"],"

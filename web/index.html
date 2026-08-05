@@ -20825,6 +20825,53 @@ function drawNuclearFlash(now) {
 // what stops the world chart from handing back the ball the map is withholding.
 // A people charting a flat world get a flat chart in the corner too, filling
 // its frame corner to corner with no disc in it, exactly as their map does.
+function miniViewportScreenCorners() {
+  return [[0, 0], [MAPW, 0], [MAPW, MAPH], [0, MAPH]];
+}
+function miniViewportPath(points) {
+  mx2.beginPath();
+  points.forEach(([x, y], index) => index ? mx2.lineTo(x, y) : mx2.moveTo(x, y));
+  mx2.closePath();
+}
+// The footprint is deliberately a translucent surface as well as an outline:
+// a one-pixel frame disappears into a dense empire on a small minimap, while a
+// light wash still says which ground is in the camera without hiding its owners.
+function paintMiniViewportFootprint(points, clip = null) {
+  if (points.length < 3) return;
+  mx2.save();
+  if (clip) {
+    mx2.beginPath(); clip(); mx2.clip();
+  }
+  miniViewportPath(points);
+  mx2.fillStyle = "rgba(255, 223, 133, .18)"; mx2.fill();
+  mx2.lineJoin = "round"; mx2.shadowColor = "rgba(0,0,0,.78)"; mx2.shadowBlur = 2;
+  mx2.strokeStyle = "rgba(8,14,17,.88)"; mx2.lineWidth = 3; mx2.stroke();
+  mx2.shadowBlur = 0; mx2.strokeStyle = "#ffe4a2"; mx2.lineWidth = 1.05; mx2.stroke();
+  mx2.restore();
+}
+// The surface camera and the corner camera share a projection. A point on the
+// map canvas therefore reaches the minimap by the ratio of their radii. For a
+// globe, clipping that projected rectangle to the thumbnail disc is the exact
+// visible spherical cap (including a partial-disc crescent at the edge). The
+// undiscovered chart has no disc, but its ground plane is vertically pitched on
+// the main map, so undo that pitch before carrying the same ground to the mini.
+function drawPlanetMiniViewportFootprint(camera, scale, centerX, centerY) {
+  const mainCamera = planetCamera();
+  const mainRadius = mainCamera.radius * cam.scale;
+  const miniRadius = camera.radius * scale;
+  if (!(mainRadius > 1e-6) || !(miniRadius > 1e-6)) return;
+  const [mainCenterX, mainCenterY] = planetEarthCenter(mainRadius);
+  const ratio = miniRadius / mainRadius;
+  const points = miniViewportScreenCorners().map(([sx, sy]) => {
+    const groundY = mainCamera.chart ? planetGroundInputY(sy, mainCenterY) : sy;
+    return [centerX + (sx - mainCenterX) * ratio,
+            centerY + (groundY - mainCenterY) * ratio];
+  });
+  paintMiniViewportFootprint(
+    points,
+    mainCamera.chart ? null : () => mx2.arc(centerX, centerY, miniRadius, 0, 7)
+  );
+}
 function planetMiniScale(width, height) {
   return knowsGlobe() ? Math.min(width, height) * .44
                       : Math.hypot(width, height) / 2 / CHART_LIMIT;
@@ -20881,6 +20928,7 @@ function drawPlanetMini() {
     }
   }
   drawPlanetMiniNaturalWonderPerimeters(cells);
+  drawPlanetMiniViewportFootprint(camera, scale, centerX, centerY);
   if (!camera.chart) {
     mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
     mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.stroke();
@@ -20985,6 +21033,20 @@ function miniHexCenter(pos, layout) {
   return [layout.originX + SQ3 * layout.size * chartUnrolledU(pos[0] + pos[1] / 2),
           layout.originY + 1.5 * layout.size * pos[1]];
 }
+// `screenToWorld` is the inverse of the flat renderer's scale, pitch, and
+// rotation. Projecting its four screen corners back through the minimap layout
+// gives the real visible quadrilateral instead of a north-up approximation.
+function drawFlatMiniViewportFootprint(layout) {
+  const toMini = (wx, wy) => {
+    const rf = wy / (1.5 * S), qf = wx / (S * SQ3) - rf / 2;
+    return miniHexCenter([qf, rf], layout);
+  };
+  const points = miniViewportScreenCorners().map(([sx, sy]) => {
+    const [wx, wy] = screenToWorld(sx, sy);
+    return toMini(wx, wy);
+  });
+  paintMiniViewportFootprint(points);
+}
 function miniHexPath(x, y, size) {
   mx2.beginPath();
   for (let i = 0; i < 6; i++) {
@@ -21067,6 +21129,7 @@ function drawMini() {
   }
   mx2.globalAlpha = 1;
   drawMiniNaturalWonderPerimeters(tiles, layout);
+  drawFlatMiniViewportFootprint(layout);
   for (const c of state.cities) {
     const [x, y] = miniHexCenter(c.pos, layout);
     const cityState = ownerIsCityState(c.owner);
@@ -21111,22 +21174,6 @@ function drawMini() {
     }
     mx2.globalAlpha = 1;
   }
-  // viewport rect
-  const toMini = (wx, wy) => {
-    const rf = wy / (1.5 * S), qf = wx / (S * SQ3) - rf / 2;
-    return miniHexCenter([qf, rf], layout);
-  };
-  // viewport quad (rotates with the camera)
-  const cs4 = [[0, 0], [MAPW, 0],
-               [MAPW, MAPH], [0, MAPH]];
-  mx2.strokeStyle = "#f0c674"; mx2.lineWidth = 1;
-  mx2.beginPath();
-  cs4.forEach(([sx, sy], i) => {
-    const [wx, wy] = screenToWorld(sx, sy);
-    const [mxp, myp] = toMini(wx, wy);
-    i ? mx2.lineTo(mxp, myp) : mx2.moveTo(mxp, myp);
-  });
-  mx2.closePath(); mx2.stroke();
 }
 mini.addEventListener("click", ev => {
   const r = mini.getBoundingClientRect();
