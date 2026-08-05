@@ -798,6 +798,15 @@ def main() -> int:
     ap.add_argument("--probe-citizens", action="store_true", default=False,
                     help="ask once per batch whether this UI context may assign a "
                          "citizen to a district; read-only, issues no command")
+    # ⚠ OFF BY DEFAULT AND IT MUST STAY OFF until the SIGSEGVs are cleared. This
+    # adds the missing LINK, not the decision to use it: `civ6_play.py` has taken
+    # `--envoys` all along, this loop builds a fixed argument list, and so the
+    # flag could not reach a live game from here at all. That is the same
+    # four-link failure the `--probe-citizens` comment below records for #1098.
+    ap.add_argument("--envoys", action="store_true", default=False,
+                    help="enable the envoy lane (cfg.EnvoyEnabled) for ONE isolated "
+                         "run; OFF by default because chooseEnvoy has an unresolved "
+                         "SIGSEGV history — do not use in a deployment batch")
     ap.add_argument("--difficulty", default="DIFFICULTY_SETTLER")
     # Six players, because the size IS the player count — see `civ6_play.py`.
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
@@ -1102,6 +1111,12 @@ def main() -> int:
             # `CanStartCommand` and emits the verdict without issuing anything.
             + (["--probe-citizens"] if args.probe_citizens else [])
             + (["--campus-specialist"] if args.campus_specialist else [])
+            # The fourth link for the envoy lane. Runs end holding a MEDIAN 42
+            # unspent envoys and `envoys_free` never once decreases across 62
+            # runs, so this is the largest resource the agent never touches —
+            # but the actuation path has three recorded SIGSEGVs, so the flag
+            # stays off and this only makes the experiment RUNNABLE.
+            + (["--envoys"] if args.envoys else [])
             + [
              # ⚠ Popups must not sit on the map. They are closed by the autoclose shim
              # already, but the delay is how long they are VISIBLE, and the operator is
