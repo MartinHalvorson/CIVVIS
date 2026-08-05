@@ -11698,6 +11698,8 @@ mod tests {
         let camps: Vec<Pos> = g.barb_camps.keys().copied().collect();
         for camp in camps {
             g.barb_camps.remove(&camp);
+            g.barb_naval_camps.remove(&camp);
+            g.barb_camp_guards.remove(&camp);
             let tile = g.map.tiles.get_mut(&camp).unwrap();
             if tile.improvement.as_deref() == Some("barbarian_camp") {
                 tile.improvement = None;
@@ -11870,6 +11872,8 @@ mod tests {
             g.remove_unit(unit);
         }
         g.barb_camps.clear();
+        g.barb_naval_camps.clear();
+        g.barb_camp_guards.clear();
         g.barb_scout_homes.clear();
         g.barb_scout_targets.clear();
         g.barb_camp_targets.clear();
@@ -11919,6 +11923,8 @@ mod tests {
         let camps: Vec<Pos> = g.barb_camps.keys().copied().collect();
         for camp in camps {
             g.barb_camps.remove(&camp);
+            g.barb_naval_camps.remove(&camp);
+            g.barb_camp_guards.remove(&camp);
             let tile = g.map.tiles.get_mut(&camp).unwrap();
             if tile.improvement.as_deref() == Some("barbarian_camp") {
                 tile.improvement = None;
