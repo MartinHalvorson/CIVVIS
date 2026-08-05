@@ -12289,7 +12289,7 @@ const LUMBER_MILL_ICON_SCALE = 1.3;
 // a label you have to zoom in to identify.
 // Resource badges are terrain information, not actors, so they sit a step
 // quieter than the unit plates instead of ringing the map in bright white
-// discs of the same weight. The rim carries the resource class, so strategics
+// discs of the same weight. The class colour fills the badge, so strategics
 // and luxuries separate from ordinary bonuses at a glance.
 // Resources now paint once in their terrain pass, beneath units. Their helpers
 // still establish text state locally, and their pictograms save their own
@@ -12675,10 +12675,19 @@ function resourceBadgeClass(t) {
     ? RULES.resources[t.resource].class : "bonus";
 }
 
+// Resource class is the badge's only categorical colour channel: red for
+// strategics, gold for luxuries, and brown for ordinary bonus deposits. The
+// same colour is used as the survey dot and as the symbol plate so a deposit
+// keeps its meaning while the map changes scale.
+const RESOURCE_CLASS_COLORS = {
+  strategic: "#c64d45",
+  luxury: "#d5ad4c",
+  bonus: "#8d6140",
+};
+const RESOURCE_BADGE_KEYLINE = "#12100d";
+
 function resourceBadgeRim(t) {
-  const rc = resourceBadgeClass(t);
-  return rc === "strategic" ? "#ff9d5c"
-    : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
+  return RESOURCE_CLASS_COLORS[resourceBadgeClass(t)] || RESOURCE_CLASS_COLORS.bonus;
 }
 
 // Improvements are reported on the resource's tile.  Ownership is the only
@@ -12722,25 +12731,19 @@ function drawResourceSymbolBadge(t, x, y, rim = resourceBadgeRim(t)) {
   // fish at ordinary map zoom; the farthest survey view stays a class mark.
   const detailedResource = cam.scale >= RES_BADGE_DETAIL_SCALE;
   if (detailedResource) {
-    // A two-step dark plate separates the pictogram from every terrain tone;
-    // the class-coloured rim still reads strategic/luxury/bonus at a glance.
-    cx.fillStyle = "#07110fe0";
-    cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R + 1.2, 0, 7); cx.fill();
-    cx.fillStyle = "#16231ce8";
+    // The resource class is the plate itself. A thin black keyline keeps the
+    // red, gold or brown background distinct from whatever tile it sits on.
+    cx.fillStyle = rim;
     cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R, 0, 7); cx.fill();
-    cx.strokeStyle = rim + "ee"; cx.lineWidth = 1.7 * RES_BADGE_K; cx.stroke();
-    cx.strokeStyle = "rgba(255,250,222,.28)"; cx.lineWidth = .55 * RES_BADGE_K;
-    cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R - 1.3 * RES_BADGE_K, 0, 7); cx.stroke();
+    cx.strokeStyle = RESOURCE_BADGE_KEYLINE; cx.lineWidth = 1.1; cx.stroke();
     drawResourcePictogram(t.resource, rx, ry, RES_BADGE_R * 1.74);
   } else {
     // At the farthest survey scale, an individual material silhouette becomes
     // noise. Keep a deposit prominent with a distinct mark for each class.
     const dot = 4.15 * RES_BADGE_K;
-    cx.fillStyle = "#0b1511d8";
-    cx.beginPath(); cx.arc(rx, ry, dot + 1.05, 0, 7); cx.fill();
     cx.fillStyle = rim;
     cx.beginPath(); cx.arc(rx, ry, dot, 0, 7); cx.fill();
-    cx.strokeStyle = "#101914d8"; cx.lineWidth = 1.1 * RES_BADGE_K; cx.stroke();
+    cx.strokeStyle = RESOURCE_BADGE_KEYLINE; cx.lineWidth = 1.05; cx.stroke();
     cx.fillStyle = "#101914";
     if (rc === "strategic") {
       tri(rx, ry - dot * .52, rx + dot * .52, ry, rx, ry + dot * .52);
@@ -12774,11 +12777,11 @@ function drawResourceWordBadge(t, x, y, rim = resourceBadgeRim(t)) {
   const label = titleCase(t.resource);
   cx.save();
   cx.lineCap = "round"; cx.lineJoin = "round";
-  // A small version of the familiar badge keeps its class rim and material
-  // colour while the word below it remains centred within the tile.
-  cx.fillStyle = "#07110fe8";
+  // The icon uses the same class colour as the survey dot. Its dark keyline
+  // keeps that colour separate from the terrain without hiding the tile.
+  cx.fillStyle = rim;
   cx.beginPath(); cx.arc(rx, iconY, RES_WORD_ICON_SIZE * .54, 0, 7); cx.fill();
-  cx.strokeStyle = rim + "e8"; cx.lineWidth = 1.05; cx.stroke();
+  cx.strokeStyle = RESOURCE_BADGE_KEYLINE; cx.lineWidth = 1; cx.stroke();
   drawResourcePictogram(t.resource, rx, iconY - .1, RES_WORD_ICON_SIZE);
 
   cx.font = `800 ${RES_WORD_FONT_SIZE}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
@@ -17786,13 +17789,12 @@ function drawSkyGlobe(place, alpha) {
 function drawSkyResourceBadge(resource, x, y, size, alpha) {
   const resourceClass = RULES?.resources?.[resource]?.class ||
     (resource === "salt" ? "luxury" : "strategic");
-  const rim = resourceClass === "strategic" ? "#ff9d5c"
-    : resourceClass === "luxury" ? "#d9a0f0" : "#e6ddbd";
+  const rim = RESOURCE_CLASS_COLORS[resourceClass] || RESOURCE_CLASS_COLORS.bonus;
   cx.save();
   cx.globalAlpha = alpha;
-  cx.fillStyle = "#10151ae0";
+  cx.fillStyle = rim;
   cx.beginPath(); cx.arc(x, y, size, 0, 7); cx.fill();
-  cx.strokeStyle = rim; cx.lineWidth = Math.max(.8, size * .13); cx.stroke();
+  cx.strokeStyle = RESOURCE_BADGE_KEYLINE; cx.lineWidth = Math.max(.8, size * .13); cx.stroke();
   drawResourcePictogram(resource, x, y, size * 1.35);
   cx.restore();
 }
