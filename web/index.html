@@ -1729,6 +1729,13 @@
     color: #b9c8c2; font-size: var(--type-secondary); font-weight: 900; letter-spacing: .10em;
     text-transform: uppercase;
   }
+  /* The Peirce chart needs the whole square, not a square with a title row
+     stolen from its north edge. Keep the label as chrome over the chart while
+     retaining its drag target and keyboard affordance. */
+  .minimap-frame.minimap-world-planet .minimap-label {
+    position: absolute; z-index: 2; top: 6px; left: 6px; right: 6px;
+    pointer-events: auto;
+  }
   .minimap-label.widget-drag-handle::before { position: absolute; left: 3px; }
   .minimap-hint {
     position: absolute; z-index: 1; right: 10px; bottom: 9px; padding: 2px 4px;
@@ -3148,7 +3155,6 @@
       left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: auto; bottom: var(--panel-controls-clearance);
       width: var(--compact-minimap-width); height: var(--compact-minimap-height);
     }
-    .minimap-frame.minimap-world-planet { width: 164px; height: 150px; }
     #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
     #victoryhud .victory-ribbon {
       min-height: 0; width: max(100%, var(--victory-min-width, 514px));
@@ -3191,7 +3197,6 @@
     left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: auto; bottom: var(--panel-controls-clearance);
     width: var(--compact-minimap-width); height: var(--compact-minimap-height);
   }
-  #maparea.player-hud-compact .minimap-frame.minimap-world-planet { width: 164px; height: 150px; }
   /* The lower instruments have two compact arrangements. A normal quadrant
      has enough width to place search beside the minimap; a narrow, tall split
      instead puts search in the clear vertical lane above it. JavaScript picks
@@ -5698,7 +5703,7 @@ let responsivePanelGeometry = {
 const WORLD_MINIMAP_DIAGONAL_SHARE = .17;
 const WORLD_MINIMAP_REFERENCE = {
   flat: {width:336, height:168},
-  planet: {width:240, height:216},
+  planet: {width:240, height:240},
 };
 function clampPanelDimension(value, min, max) {
   return Math.max(min, Math.min(max, value));
@@ -5725,16 +5730,20 @@ function syncResponsivePanelGeometry() {
   HUD_WIDGETS?.minimap?.element?.classList.toggle("minimap-world-planet", shape === "planet");
   const compactMinimapWidth = Math.round(clampPanelDimension(width * .22, 130, 190));
   const compactMinimapHeight = Math.round(clampPanelDimension(height * .19, 80, 148));
+  const planetMinimapSide = Math.round(clampPanelDimension(
+    Math.min(compactMinimapWidth, compactMinimapHeight), 130, 148));
+  const compactInstrumentWidth = shape === "planet" ? planetMinimapSide : compactMinimapWidth;
+  const compactInstrumentHeight = shape === "planet" ? planetMinimapSide : compactMinimapHeight;
   // Reserve the complete lower-left instrument stack before sizing the band
   // above it. The smaller of the natural band and the remaining space keeps a
   // common 960x540 quadrant from having the tracker overlap the minimap.
   const compactVictoryRoom = height - edge - playerReserve - gap -
-    compactMinimapHeight - controlClearance - gap;
+    compactInstrumentHeight - controlClearance - gap;
   const compactVictoryHeight = Math.round(clampPanelDimension(
     Math.min(132, Math.max(64, compactVictoryRoom)), 64, 132));
   const sidebarInset = Number.parseFloat(area.style.getPropertyValue("--player-hud-left")) || 0;
   const uncoveredWidth = Math.max(1, width - sidebarInset - edge);
-  const compactSearchRoom = height - controlClearance - compactMinimapHeight -
+  const compactSearchRoom = height - controlClearance - compactInstrumentHeight -
     (edge + playerReserve + gap + compactVictoryHeight);
   // A compact command deck can cover most of a vertical split. Search then
   // either uses the lane above the minimap (when it genuinely fits there) or
@@ -5747,10 +5756,13 @@ function syncResponsivePanelGeometry() {
   const referenceDiagonal = Math.hypot(reference.width, reference.height);
   const diagonalWidth = WORLD_MINIMAP_DIAGONAL_SHARE * Math.hypot(viewportWidth, viewportHeight) /
     referenceDiagonal * reference.width;
+  const wideMinimapMax = shape === "planet" ? 194
+    : Math.min(360, Math.max(180, width * .32));
   const wideMinimapWidth = Math.round(clampPanelDimension(
-    diagonalWidth, 180, Math.min(360, Math.max(180, width * .32))));
+    diagonalWidth, 180, wideMinimapMax));
   const wideMinimapHeight = Math.round(clampPanelDimension(
-    wideMinimapWidth * reference.height / reference.width, 96, 194));
+    shape === "planet" ? wideMinimapWidth
+      : wideMinimapWidth * reference.height / reference.width, 96, 194));
   const victoryWidth = Math.round(clampPanelDimension(width * .15, 156, 280));
   const style = area.style;
   style.setProperty("--panel-edge", `${edge}px`);
@@ -5759,8 +5771,8 @@ function syncResponsivePanelGeometry() {
   style.setProperty("--panel-controls-clearance", `${controlClearance}px`);
   style.setProperty("--player-hud-max-height", `${maxPlayerHeight}px`);
   style.setProperty("--compact-victory-hud-height", `${compactVictoryHeight}px`);
-  style.setProperty("--compact-minimap-width", `${compactMinimapWidth}px`);
-  style.setProperty("--compact-minimap-height", `${compactMinimapHeight}px`);
+  style.setProperty("--compact-minimap-width", `${compactInstrumentWidth}px`);
+  style.setProperty("--compact-minimap-height", `${compactInstrumentHeight}px`);
   style.setProperty("--victory-hud-width", `${victoryWidth}px`);
   style.setProperty("--workspace-inline-inset", `${Math.round(clampPanelDimension(width * .03, 10, 48))}px`);
   style.setProperty("--workspace-block-inset", `${Math.round(clampPanelDimension(height * .04, 10, 48))}px`);
@@ -5770,8 +5782,10 @@ function syncResponsivePanelGeometry() {
   area.dataset.controlsLayout = controlsLayout;
   responsivePanelGeometry = {
     edge, gap, compact,
-    minimapWidth:compact ? compactMinimapWidth : wideMinimapWidth,
-    minimapHeight:compact ? compactMinimapHeight : wideMinimapHeight,
+    minimapWidth:compact ? compactInstrumentWidth
+                         : wideMinimapWidth,
+    minimapHeight:compact ? compactInstrumentHeight
+                          : wideMinimapHeight,
     controlClearance, maxPlayerHeight,
   };
   return responsivePanelGeometry;
@@ -6081,7 +6095,8 @@ const HUD_WIDGETS = {
   players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:PLAYER_HUD_MIN_HEIGHT,
             maxHeight:playerHudMaxContentHeight, maxHeightRatio:.38, avoidsSidebar:true},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88, avoidsSidebar:true},
-  minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96, avoidsSidebar:true},
+  minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96,
+            avoidsSidebar:true, square:true},
 };
 const dossierWidgetName = id => `dossier-${id}`;
 const HUD_RESIZE_EDGES = [
@@ -6890,7 +6905,25 @@ try {
 // with a deliberately widened command deck then behaves like split screen.
 function syncDefaultMinimapGeometry() {
   const geometry = syncResponsivePanelGeometry();
-  if (HUD_LAYOUT.minimap) return;
+  if (HUD_LAYOUT.minimap) {
+    // Saved layouts predate the world shape, so a rectangular custom frame
+    // may be on screen before the first Planet state arrives. Bring that one
+    // stored frame onto the square invariant as soon as the shape is known.
+    const element = HUD_WIDGETS.minimap?.element;
+    if (planetMap() && element?.classList.contains("layout-widget-custom")) {
+      const rect = element.getBoundingClientRect();
+      const side = Math.min(rect.width, rect.height);
+      if (side > 0 && (Math.abs(rect.width - side) > .5 ||
+                       Math.abs(rect.height - side) > .5)) {
+        element.style.width = `${side}px`; element.style.height = `${side}px`;
+        HUD_LAYOUT.minimap.width = Math.round(side);
+        HUD_LAYOUT.minimap.height = Math.round(side);
+        area.style.setProperty("--minimap-height", `${Math.round(side)}px`);
+        saveHudLayout();
+      }
+    }
+    return;
+  }
   area.style.setProperty("--world-minimap-width", `${geometry.minimapWidth}px`);
   area.style.setProperty("--minimap-height", `${geometry.minimapHeight}px`);
 }
@@ -6930,8 +6963,14 @@ function clampHudWidget(config, metrics) {
   const maxHeight = hudWidgetMaxHeight(config, margin);
   const minWidth = Math.min(config.minWidth, maxWidth);
   const minHeight = Math.min(config.minHeight, maxHeight);
-  const width = Math.max(minWidth, Math.min(maxWidth, Number(metrics.width) || minWidth));
-  const height = Math.max(minHeight, Math.min(maxHeight, Number(metrics.height) || minHeight));
+  let width = Math.max(minWidth, Math.min(maxWidth, Number(metrics.width) || minWidth));
+  let height = Math.max(minHeight, Math.min(maxHeight, Number(metrics.height) || minHeight));
+  if (config.square && typeof planetMap === "function" && planetMap()) {
+    const maxSide = Math.max(1, Math.min(maxWidth, maxHeight));
+    const minSide = Math.min(maxSide, Math.max(minWidth, minHeight));
+    const side = Math.max(minSide, Math.min(maxSide, Math.min(width, height)));
+    width = side; height = side;
+  }
   const maxX = Math.max(minX, area.clientWidth - margin - width);
   const maxY = Math.max(margin, area.clientHeight - margin - height);
   return {
@@ -21823,11 +21862,337 @@ function drawNuclearFlash(now) {
 }
 
 // ---------------------------------------------------------------- minimap
-// Keep the globe's minimap in the same projection as the main view so their
-// shapes, visible hemisphere, and click targets always agree — which is also
-// what stops the world chart from handing back the ball the map is withholding.
-// A people charting a flat world get a flat chart in the corner too, filling
-// its frame corner to corner with no disc in it, exactly as their map does.
+// A planet's corner chart is global, even when the main view is a close-up.
+// Peirce's quincuncial projection is the right instrument for that job: the
+// point facing the viewer sits in the centre of a square, while its antipode
+// is identified at all four corners. The map is therefore a complete world,
+// not a smaller copy of whichever hemisphere happened to be on screen.
+//
+// The projection is Guyou's elliptic-function hemisphere-in-a-square followed
+// by the quincuncial fold used by D3 and PROJ. It is kept here rather than
+// pulled in as a library because the browser is one static HTML file. The
+// inverse is used both for the pixel painter and for minimap clicks.
+// The compact elliptic arithmetic below is translated from d3-geo-projection
+// (Copyright 2013-2021 Mike Bostock), under its ISC license:
+// Permission to use, copy, modify, and/or distribute this software for any
+// purpose with or without fee is hereby granted, provided that the copyright
+// notice and this permission notice appear in all copies.
+// THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+// IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+// FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+// AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+// LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+// OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+// THE SOFTWARE.
+const PEIRCE_PI = Math.PI;
+const PEIRCE_HALF_PI = PEIRCE_PI / 2;
+const PEIRCE_QUARTER_PI = PEIRCE_PI / 4;
+const PEIRCE_SQRT1_2 = Math.SQRT1_2;
+const PEIRCE_SQRT2 = Math.SQRT2;
+const PEIRCE_EPSILON = 1e-7;
+function peirceSqrt(value) { return value > 0 ? Math.sqrt(value) : 0; }
+function peirceSign(value) { return value > 0 ? 1 : value < 0 ? -1 : 0; }
+function peirceEllipticF(phi, m) {
+  if (!m) return phi;
+  if (m === 1) return Math.log(Math.tan(phi / 2 + PEIRCE_QUARTER_PI));
+  let a = 1, b = peirceSqrt(1 - m), c = peirceSqrt(m), iterations = 0;
+  while (Math.abs(c) > PEIRCE_EPSILON && iterations < 12) {
+    if (phi % PEIRCE_PI) {
+      let dPhi = Math.atan(b * Math.tan(phi) / a);
+      if (dPhi < 0) dPhi += PEIRCE_PI;
+      phi += dPhi + Math.trunc(phi / PEIRCE_PI) * PEIRCE_PI;
+    } else phi += phi;
+    c = (a + b) / 2;
+    b = peirceSqrt(a * b);
+    c = (a = c) - b;
+    c /= 2;
+    iterations++;
+  }
+  return phi / (Math.pow(2, iterations) * a);
+}
+function peirceEllipticJ(u, m) {
+  if (m < PEIRCE_EPSILON) {
+    const sn = Math.sin(u), cn = Math.cos(u);
+    const correction = m * (u - sn * cn) / 4;
+    return [sn - correction * cn, cn + correction * sn,
+            1 - m * sn * sn / 2, u - correction];
+  }
+  if (m >= 1 - PEIRCE_EPSILON) {
+    const correction = (1 - m) / 4;
+    const cosh = Math.cosh(u), tanh = Math.tanh(u), phi = 1 / cosh;
+    const doubled = cosh * Math.sinh(u);
+    return [tanh + correction * (doubled - u) / (cosh * cosh),
+            phi - correction * tanh * phi * (doubled - u),
+            phi + correction * tanh * phi * (doubled + u),
+            2 * Math.atan(Math.exp(u)) - PEIRCE_HALF_PI +
+              correction * (doubled - u) / cosh];
+  }
+  const a = new Array(9).fill(0), c = new Array(9).fill(0);
+  a[0] = 1; c[0] = peirceSqrt(m);
+  let b = peirceSqrt(1 - m), twon = 1, i = 0;
+  while (Math.abs(c[i] / a[i]) > PEIRCE_EPSILON && i < 8) {
+    const prior = a[i];
+    i++;
+    c[i] = (prior - b) / 2;
+    a[i] = (prior + b) / 2;
+    b = peirceSqrt(prior * b);
+    twon *= 2;
+  }
+  let phi = twon * a[i] * u, t = 0, previous = phi;
+  do {
+    previous = phi;
+    t = c[i] * Math.sin(previous) / a[i];
+    phi = (Math.asin(Math.max(-1, Math.min(1, t))) + previous) / 2;
+  } while (--i);
+  const cn = Math.cos(phi);
+  return [Math.sin(phi), cn, cn / Math.cos(phi - previous), phi];
+}
+function peirceEllipticFi(phi, psi, m) {
+  const r = Math.abs(phi), imaginary = Math.abs(psi);
+  const sinhPsi = Math.sinh(imaginary);
+  if (r) {
+    const cscPhi = 1 / Math.sin(r);
+    const cotPhi2 = 1 / (Math.tan(r) * Math.tan(r));
+    const b = -(cotPhi2 + m * sinhPsi * sinhPsi * cscPhi * cscPhi - 1 + m);
+    const c = (m - 1) * cotPhi2;
+    const cotLambda2 = (-b + peirceSqrt(b * b - 4 * c)) / 2;
+    return [
+      peirceEllipticF(Math.atan(1 / peirceSqrt(cotLambda2)), m) * peirceSign(phi),
+      peirceEllipticF(
+        Math.atan(peirceSqrt((cotLambda2 / cotPhi2 - 1) / m)), 1 - m
+      ) * peirceSign(psi),
+    ];
+  }
+  return [0, peirceEllipticF(Math.atan(sinhPsi), 1 - m) * peirceSign(psi)];
+}
+function peirceEllipticJi(u, v, m) {
+  let a, b, c;
+  if (u === 0) {
+    b = peirceEllipticJ(v, 1 - m);
+    return [[0, b[0] / b[1]], [1 / b[1], 0], [b[2] / b[1], 0]];
+  }
+  a = peirceEllipticJ(u, m);
+  if (v === 0) return [[a[0], 0], [a[1], 0], [a[2], 0]];
+  b = peirceEllipticJ(v, 1 - m);
+  c = b[1] * b[1] + m * a[0] * a[0] * b[0] * b[0];
+  return [
+    [a[0] * b[2] / c, a[1] * a[2] * b[0] * b[1] / c],
+    [a[1] * b[1] / c, -a[0] * a[2] * b[0] * b[2] / c],
+    [a[2] * b[1] * b[2] / c, -m * a[0] * a[1] * b[0] / c],
+  ];
+}
+function peirceComplexAtan(x, y) {
+  const x2 = x * x, y1 = y + 1, t = 1 - x2 - y * y;
+  return [
+    .5 * ((x >= 0 ? PEIRCE_HALF_PI : -PEIRCE_HALF_PI) - Math.atan2(t, 2 * x)),
+    -.25 * Math.log(Math.max(1e-300, t * t + 4 * x2)) +
+      .5 * Math.log(Math.max(1e-300, y1 * y1 + x2)),
+  ];
+}
+function peirceComplexDivide(a, b) {
+  const denominator = b[0] * b[0] + b[1] * b[1];
+  if (denominator < 1e-300) return [0, 0];
+  return [
+    (a[0] * b[0] + a[1] * b[1]) / denominator,
+    (a[1] * b[0] - a[0] * b[1]) / denominator,
+  ];
+}
+const PEIRCE_K_ = (PEIRCE_SQRT2 - 1) / (PEIRCE_SQRT2 + 1);
+const PEIRCE_K = peirceSqrt(1 - PEIRCE_K_ * PEIRCE_K_);
+const PEIRCE_M = PEIRCE_K * PEIRCE_K;
+const PEIRCE_KCOMPLETE = peirceEllipticF(PEIRCE_HALF_PI, PEIRCE_M);
+function peirceGuyouRaw(lambda, phi) {
+  const f = -1;
+  const psi = Math.log(Math.tan(PEIRCE_QUARTER_PI + Math.abs(phi) / 2));
+  const radius = Math.exp(f * psi) / peirceSqrt(PEIRCE_K_);
+  const at = peirceComplexAtan(radius * Math.cos(f * lambda),
+                               radius * Math.sin(f * lambda));
+  const t = peirceEllipticFi(at[0], at[1], PEIRCE_M);
+  return [-t[1], (phi >= 0 ? 1 : -1) * (.5 * PEIRCE_KCOMPLETE - t[0])];
+}
+const PEIRCE_GUYOU_DX = peirceGuyouRaw(PEIRCE_HALF_PI, 0)[0] -
+  peirceGuyouRaw(-PEIRCE_HALF_PI, 0)[0];
+const PEIRCE_SQUARE_HALF = PEIRCE_GUYOU_DX * PEIRCE_SQRT1_2;
+function peirceQuincuncialRaw(lambda, phi) {
+  const inner = Math.abs(lambda) < PEIRCE_HALF_PI;
+  const guyou = peirceGuyouRaw(
+    inner ? lambda : lambda > 0 ? lambda - PEIRCE_PI : lambda + PEIRCE_PI,
+    phi
+  );
+  const x = (guyou[0] - guyou[1]) * PEIRCE_SQRT1_2;
+  const y = (guyou[0] + guyou[1]) * PEIRCE_SQRT1_2;
+  if (inner) return [x, y];
+  const s = (x > 0) !== (y > 0) ? -1 : 1;
+  return [s * x - peirceSign(y) * PEIRCE_SQUARE_HALF,
+          s * y - peirceSign(x) * PEIRCE_SQUARE_HALF];
+}
+function peirceQuincuncialInvert(x0, y0) {
+  // At the four singular corners every approach is the same antipodal point.
+  // The elliptic inverse is intentionally not asked to divide by its zero.
+  if (Math.abs(Math.abs(x0) - PEIRCE_SQUARE_HALF) < 1e-6 &&
+      Math.abs(Math.abs(y0) - PEIRCE_SQUARE_HALF) < 1e-6)
+    return [PEIRCE_PI, 0];
+  let x = (x0 + y0) * PEIRCE_SQRT1_2;
+  let y = (y0 - x0) * PEIRCE_SQRT1_2;
+  const inner = Math.abs(x) < .5 * PEIRCE_GUYOU_DX &&
+                Math.abs(y) < .5 * PEIRCE_GUYOU_DX;
+  if (!inner) {
+    const s = (x > 0) !== (y > 0) ? -1 : 1;
+    const x1 = -s * x0 + (y > 0 ? 1 : -1) * PEIRCE_SQUARE_HALF;
+    const y1 = -s * y0 + (x > 0 ? 1 : -1) * PEIRCE_SQUARE_HALF;
+    x = (-x1 - y1) * PEIRCE_SQRT1_2;
+    y = (x1 - y1) * PEIRCE_SQRT1_2;
+  }
+  const j = peirceEllipticJi(.5 * PEIRCE_KCOMPLETE - y, -x, PEIRCE_M);
+  const tn = peirceComplexDivide(j[0], j[1]);
+  const radius2 = PEIRCE_K_ * (tn[0] * tn[0] + tn[1] * tn[1]);
+  const phi = 2 * Math.atan(Math.exp(.5 / -1 *
+    Math.log(Math.max(1e-300, radius2)))) - PEIRCE_HALF_PI;
+  let lambda = Math.atan2(tn[1], tn[0]) / -1;
+  if (!inner) lambda += x > 0 ? PEIRCE_PI : -PEIRCE_PI;
+  return [lambda, phi];
+}
+
+function peirceMiniProjection(width, height, camera = planetCamera()) {
+  const side = Math.max(1, Math.min(width, height));
+  return {
+    width, height, side, half:side / 2,
+    centerX:width / 2, centerY:height / 2,
+    basis:planetViewBasis(camera),
+  };
+}
+function peirceLocalSphereAt(x0, y0) {
+  const [lambda, phi] = peirceQuincuncialInvert(x0, y0);
+  const cosPhi = Math.cos(phi);
+  return [cosPhi * Math.cos(lambda), cosPhi * Math.sin(lambda), Math.sin(phi)];
+}
+function peirceMiniSphereAt(x, y, projection) {
+  const nx = (x - projection.centerX) / projection.half;
+  const ny = (projection.centerY - y) / projection.half;
+  if (Math.abs(nx) > 1 + 1e-6 || Math.abs(ny) > 1 + 1e-6) return null;
+  const local = peirceLocalSphereAt(nx * PEIRCE_SQUARE_HALF,
+                                    ny * PEIRCE_SQUARE_HALF);
+  return [
+    projection.basis.out[0] * local[0] + projection.basis.right[0] * local[1] + projection.basis.up[0] * local[2],
+    projection.basis.out[1] * local[0] + projection.basis.right[1] * local[1] + projection.basis.up[1] * local[2],
+    projection.basis.out[2] * local[0] + projection.basis.right[2] * local[1] + projection.basis.up[2] * local[2],
+  ];
+}
+function peirceMiniScreenPoint(point, projection) {
+  const local = [dot3(point, projection.basis.out),
+                 dot3(point, projection.basis.right),
+                 dot3(point, projection.basis.up)];
+  if (local[0] < -1 + 1e-8) return null;
+  const projected = peirceQuincuncialRaw(
+    Math.atan2(local[1], local[0]),
+    Math.asin(Math.max(-1, Math.min(1, local[2])))
+  );
+  return [projection.centerX + projected[0] / PEIRCE_SQUARE_HALF * projection.half,
+          projection.centerY - projected[1] / PEIRCE_SQUARE_HALF * projection.half];
+}
+function peirceMiniPointCopies(point, projection) {
+  const localOut = dot3(point, projection.basis.out);
+  if (localOut < -1 + 1e-8) {
+    const x0 = projection.centerX - projection.half, x1 = projection.centerX + projection.half;
+    const y0 = projection.centerY - projection.half, y1 = projection.centerY + projection.half;
+    return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+  }
+  const pointOnMap = peirceMiniScreenPoint(point, projection);
+  return pointOnMap ? [pointOnMap] : [];
+}
+
+// The inverse elliptic function is expensive, but its result in the local
+// projection frame does not depend on which way the current world is facing.
+// Cache one local sphere vector per physical minimap pixel, then only rotate
+// those vectors into the current camera basis during a redraw.
+let PEIRCE_MINI_LOCAL_GRID = null;
+function peirceMiniLocalGrid(projection) {
+  const pixelWidth = Math.max(1, Math.round(projection.width));
+  const pixelHeight = Math.max(1, Math.round(projection.height));
+  const key = `${pixelWidth}x${pixelHeight}`;
+  if (PEIRCE_MINI_LOCAL_GRID?.key === key) return PEIRCE_MINI_LOCAL_GRID;
+  const vectors = new Float32Array(pixelWidth * pixelHeight * 3);
+  const valid = new Uint8Array(pixelWidth * pixelHeight);
+  for (let py = 0; py < pixelHeight; py++) {
+    const y = py + .5;
+    for (let px = 0; px < pixelWidth; px++) {
+      const x = px + .5;
+      const nx = (x - projection.centerX) / projection.half;
+      const ny = (projection.centerY - y) / projection.half;
+      if (Math.abs(nx) > 1 || Math.abs(ny) > 1) continue;
+      const local = peirceLocalSphereAt(nx * PEIRCE_SQUARE_HALF,
+                                         ny * PEIRCE_SQUARE_HALF);
+      const offset = (py * pixelWidth + px) * 3;
+      vectors[offset] = local[0]; vectors[offset + 1] = local[1]; vectors[offset + 2] = local[2];
+      valid[py * pixelWidth + px] = 1;
+    }
+  }
+  return PEIRCE_MINI_LOCAL_GRID = {key, pixelWidth, pixelHeight, vectors, valid};
+}
+
+let PEIRCE_MINI_INDEX = null;
+function peirceMiniCellIndex() {
+  if (PEIRCE_MINI_INDEX?.planet === PLANET) return PEIRCE_MINI_INDEX;
+  const binCount = 48, entries = [], bins = new Map();
+  const binFor = value => Math.max(0, Math.min(binCount - 1,
+    Math.floor((value + 1) * .5 * binCount)));
+  for (const cell of PLANET.cells.values()) {
+    const vertices = cell.ids.map(id => [PLANET.corners[3 * id],
+      PLANET.corners[3 * id + 1], PLANET.corners[3 * id + 2]]);
+    const edges = vertices.map((a, index) => {
+      const normal = cross3(a, vertices[(index + 1) % vertices.length]);
+      return {normal, sign:dot3(normal, cell.center) >= 0 ? 1 : -1};
+    });
+    const entry = {cell, key:key(cell.pos), vertices, edges, tile:null, color:null};
+    entries.push(entry);
+    const bin = `${binFor(cell.center[0])},${binFor(cell.center[1])},${binFor(cell.center[2])}`;
+    let bucket = bins.get(bin);
+    if (!bucket) { bucket = []; bins.set(bin, bucket); }
+    bucket.push(entry);
+  }
+  return PEIRCE_MINI_INDEX = {planet:PLANET, binCount, bins, entries};
+}
+function peircePointInsideCell(point, entry) {
+  for (const edge of entry.edges)
+    if (edge.sign * dot3(edge.normal, point) < -1e-7) return false;
+  return true;
+}
+function peirceMiniCellAt(point, index) {
+  const binCount = index.binCount;
+  const binFor = value => Math.max(0, Math.min(binCount - 1,
+    Math.floor((value + 1) * .5 * binCount)));
+  const bx = binFor(point[0]), by = binFor(point[1]), bz = binFor(point[2]);
+  let best = null, bestDot = -Infinity;
+  for (let dx = -2; dx <= 2; dx++) for (let dy = -2; dy <= 2; dy++)
+    for (let dz = -2; dz <= 2; dz++) {
+      const bucket = index.bins.get(`${bx + dx},${by + dy},${bz + dz}`);
+      if (!bucket) continue;
+      for (const entry of bucket) {
+        if (peircePointInsideCell(point, entry)) return entry;
+        const distance = dot3(point, entry.cell.center);
+        if (distance > bestDot) { bestDot = distance; best = entry; }
+      }
+    }
+  if (best) return best;
+  for (const entry of index.entries) {
+    const distance = dot3(point, entry.cell.center);
+    if (distance > bestDot) { bestDot = distance; best = entry; }
+  }
+  return best;
+}
+function peirceMiniCellColor(tile, visible, spectator) {
+  if (!tile) return rgbOf("#12305c");
+  let color = rgbOf(tileGroundColor(tile, "#44545a"));
+  if (!spectator && !visible.has(key(tile.pos))) color = color.map(channel => channel * .35);
+  if (tile.owner !== null && tile.owner !== undefined) {
+    const owner = rgbOf(cityBannerColor(tile.owner));
+    const alpha = TERRITORY_TINT_SCALE * (ownerIsCityState(tile.owner)
+      ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor);
+    color = color.map((channel, index) => channel * (1 - alpha) + owner[index] * alpha);
+  }
+  return color;
+}
+
 function miniViewportScreenCorners() {
   return [[0, 0], [MAPW, 0], [MAPW, MAPH], [0, MAPH]];
 }
@@ -21852,42 +22217,65 @@ function paintMiniViewportFootprint(points, clip = null) {
   mx2.shadowBlur = 0; mx2.strokeStyle = "#ffe4a2"; mx2.lineWidth = 1.05; mx2.stroke();
   mx2.restore();
 }
-// The surface camera and the corner camera share a projection. A point on the
-// map canvas therefore reaches the minimap by the ratio of their radii. For a
-// globe, clipping that projected rectangle to the thumbnail disc is the exact
-// visible spherical cap (including a partial-disc crescent at the edge). The
-// undiscovered chart has no disc, but its ground plane is vertically pitched on
-// the main map, so undo that pitch before carrying the same ground to the mini.
-function drawPlanetMiniViewportFootprint(camera, scale, centerX, centerY) {
+// Project the four corners of the main map back to the sphere, then through
+// the same Peirce frame as the world raster. This keeps the minimap's gold
+// footprint tied to the actual centre view instead of drawing a decorative
+// rectangle whose meaning changes with zoom.
+function drawPlanetMiniViewportFootprint(projection) {
   const mainCamera = planetCamera();
   const mainRadius = mainCamera.radius * cam.scale;
-  const miniRadius = camera.radius * scale;
-  if (!(mainRadius > 1e-6) || !(miniRadius > 1e-6)) return;
-  const [mainCenterX, mainCenterY] = planetEarthCenter(mainRadius);
-  const ratio = miniRadius / mainRadius;
+  if (!(mainRadius > 1e-6)) return;
+  const basis = planetViewBasis(mainCamera);
   const points = miniViewportScreenCorners().map(([sx, sy]) => {
-    const groundY = mainCamera.chart ? planetGroundInputY(sy, mainCenterY) : sy;
-    return [centerX + (sx - mainCenterX) * ratio,
-            centerY + (groundY - mainCenterY) * ratio];
-  });
-  paintMiniViewportFootprint(
-    points,
-    mainCamera.chart ? null : () => mx2.arc(centerX, centerY, miniRadius, 0, 7)
-  );
+    const dx = (sx - MAPW / 2) / mainRadius;
+    const dy = (sy - MAPH / 2) / mainRadius;
+    const distance = Math.hypot(dx, dy);
+    let point;
+    if (mainCamera.chart) {
+      const angle = distance;
+      if (angle > PEIRCE_PI) return null;
+      const tangent = distance > 1e-9 ? Math.sin(angle) / distance : 1;
+      point = [
+        basis.out[0] * Math.cos(angle) + (basis.right[0] * dx - basis.up[0] * dy) * tangent,
+        basis.out[1] * Math.cos(angle) + (basis.right[1] * dx - basis.up[1] * dy) * tangent,
+        basis.out[2] * Math.cos(angle) + (basis.right[2] * dx - basis.up[2] * dy) * tangent,
+      ];
+    } else {
+      const squared = dx * dx + dy * dy;
+      if (squared >= 1) return null;
+      const toward = Math.sqrt(1 - squared);
+      point = [
+        basis.out[0] * toward + basis.right[0] * dx - basis.up[0] * dy,
+        basis.out[1] * toward + basis.right[1] * dx - basis.up[1] * dy,
+        basis.out[2] * toward + basis.right[2] * dx - basis.up[2] * dy,
+      ];
+    }
+    const length = Math.hypot(...point) || 1;
+    return peirceMiniScreenPoint(point.map(value => value / length), projection);
+  }).filter(Boolean);
+  paintMiniViewportFootprint(points);
 }
 function planetMiniScale(width, height) {
-  return knowsGlobe() ? Math.min(width, height) * .44
-                      : Math.hypot(width, height) / 2 / CHART_LIMIT;
+  return Math.min(width, height) / 2;
 }
-function drawPlanetMiniNaturalWonderPerimeters(cells) {
+function drawPlanetMiniNaturalWonderPerimeters(cells, projection) {
   const segments = [];
-  for (const {tile, cell, points} of cells) {
-    if (!cell || !isNaturalWonder(tile.feature)) continue;
-    for (let side = 0; side < points.length; side++) {
+  for (const {tile, cell} of cells) {
+    if (!cell || !tile || !isNaturalWonder(tile.feature)) continue;
+    for (let side = 0; side < cell.ids.length; side++) {
       const neighbor = TMAP.get(cell.nbrs[side]);
       if (naturalWonderContinues(tile, neighbor)) continue;
-      const a = points[side], b = points[(side + 1) % points.length];
-      segments.push([a.x, a.y, b.x, b.y]);
+      const a = [PLANET.corners[3 * cell.ids[side]],
+                 PLANET.corners[3 * cell.ids[side] + 1],
+                 PLANET.corners[3 * cell.ids[side] + 2]];
+      const next = cell.ids[(side + 1) % cell.ids.length];
+      const b = [PLANET.corners[3 * next], PLANET.corners[3 * next + 1],
+                 PLANET.corners[3 * next + 2]];
+      const first = peirceMiniScreenPoint(a, projection);
+      const second = peirceMiniScreenPoint(b, projection);
+      if (!first || !second || Math.hypot(first[0] - second[0], first[1] - second[1]) > projection.half)
+        continue;
+      segments.push([...first, ...second]);
     }
   }
   if (!segments.length) return;
@@ -21904,50 +22292,70 @@ function drawPlanetMiniNaturalWonderPerimeters(cells) {
 function drawPlanetMini() {
   if (!planetReady()) return planetMap();
   const {width, height} = syncMiniCanvas();
-  const camera = {...planetCamera(), radius:1};
-  const centerX = width / 2, centerY = height / 2;
-  const scale = planetMiniScale(width, height);
-  mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
-  mx2.fillStyle = camera.chart ? "#123b55" : "#03080c";
-  mx2.fillRect(0, 0, width, height);
-  if (!camera.chart) {
-    mx2.fillStyle = "#123b55";
-    mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.fill();
-  }
+  const projection = peirceMiniProjection(width, height);
   const visible = new Set((state.turn_visible || state.visible).map(key));
   const spectator = !Number.isInteger(state.view_player);
-  const reach = Math.hypot(width, height) / 2;
-  const cells = planetCells(camera, scale, centerX, centerY, reach);
-  for (const cell of cells) {
-    planetPath(mx2, cell.points);
-    const base = tileGroundColor(cell.tile, "#44545a");
-    mx2.fillStyle = spectator || visible.has(key(cell.tile.pos)) ? base : shade(base, .35);
-    mx2.fill();
-    if (cell.tile.owner !== null && cell.tile.owner !== undefined) {
-      mx2.globalAlpha = TERRITORY_TINT_SCALE * (ownerIsCityState(cell.tile.owner)
-        ? MAP_CIV_HIERARCHY.minimapCityState : MAP_CIV_HIERARCHY.minimapMajor);
-      mx2.fillStyle = cityBannerColor(cell.tile.owner); mx2.fill();
-      mx2.globalAlpha = 1;
+  const index = peirceMiniCellIndex();
+  for (const entry of index.entries) {
+    entry.tile = TMAP.get(entry.key);
+    entry.color = peirceMiniCellColor(entry.tile, visible, spectator);
+  }
+
+  const grid = peirceMiniLocalGrid(projection);
+  const fallback = rgbOf("#07110f");
+  const mapped = new Array(grid.pixelWidth * grid.pixelHeight);
+  for (let gridY = 0; gridY < grid.pixelHeight; gridY++) {
+    for (let gridX = 0; gridX < grid.pixelWidth; gridX++) {
+      const gridPixel = gridY * grid.pixelWidth + gridX;
+      if (!grid.valid[gridPixel]) continue;
+      const vectorOffset = gridPixel * 3;
+      const local = [grid.vectors[vectorOffset], grid.vectors[vectorOffset + 1],
+                     grid.vectors[vectorOffset + 2]];
+      const point = [
+        projection.basis.out[0] * local[0] + projection.basis.right[0] * local[1] + projection.basis.up[0] * local[2],
+        projection.basis.out[1] * local[0] + projection.basis.right[1] * local[1] + projection.basis.up[1] * local[2],
+        projection.basis.out[2] * local[0] + projection.basis.right[2] * local[1] + projection.basis.up[2] * local[2],
+      ];
+      mapped[gridPixel] = peirceMiniCellAt(point, index);
     }
   }
-  drawPlanetMiniNaturalWonderPerimeters(cells);
-  drawPlanetMiniViewportFootprint(camera, scale, centerX, centerY);
-  if (!camera.chart) {
-    mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
-    mx2.beginPath(); mx2.arc(centerX, centerY, scale, 0, 7); mx2.stroke();
+  const physicalWidth = mini.width, physicalHeight = mini.height;
+  const physical = mx2.createImageData(physicalWidth, physicalHeight);
+  const scaleX = physicalWidth / projection.width, scaleY = physicalHeight / projection.height;
+  for (let py = 0; py < physicalHeight; py++) {
+    const gridY = Math.min(grid.pixelHeight - 1, Math.floor((py + .5) / scaleY));
+    for (let px = 0; px < physicalWidth; px++) {
+      const gridX = Math.min(grid.pixelWidth - 1, Math.floor((px + .5) / scaleX));
+      const pixel = py * physicalWidth + px;
+      const gridPixel = gridY * grid.pixelWidth + gridX;
+      const offset = pixel * 4;
+      let color = fallback;
+      if (mapped[gridPixel]?.color) color = mapped[gridPixel].color;
+      physical.data[offset] = color[0]; physical.data[offset + 1] = color[1];
+      physical.data[offset + 2] = color[2]; physical.data[offset + 3] = 255;
+    }
   }
+  mx2.setTransform(1, 0, 0, 1, 0, 0);
+  mx2.putImageData(physical, 0, 0);
+  mx2.setTransform(DPR, 0, 0, DPR, 0, 0);
+  mx2.strokeStyle = "#b9e3f388"; mx2.lineWidth = 1;
+  mx2.strokeRect(projection.centerX - projection.half + .5,
+                 projection.centerY - projection.half + .5,
+                 projection.side - 1, projection.side - 1);
+  drawPlanetMiniNaturalWonderPerimeters(index.entries, projection);
+  drawPlanetMiniViewportFootprint(projection);
   for (const city of state.cities) {
-    const tile = TMAP.get(key(city.pos));
-    if (!tile) continue;
-    const cell = planetCellGeometry(tile, camera, scale, centerX, centerY);
-    if (!cell || cell.center.z <=
-        (camera.chart ? planetChartHorizon(camera, scale, reach) : 0)) continue;
+    const cell = PLANET.cells.get(key(city.pos));
+    if (!cell) continue;
+    const center = peirceMiniPointCopies(cell.center, projection);
     const cityState = ownerIsCityState(city.owner);
     const cityRadius = cityState ? 1.15 : 2.35;
-    mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
-    drawCityIcon(mx2, cell.center.x, cell.center.y, cityRadius,
-                 cityBannerColor(city.owner), cityState ? "#0b0e13" : "#f8edca",
-                 cityState, Boolean(city.is_capital));
+    for (const [x, y] of center) {
+      mx2.globalAlpha = cityState ? MAP_CIV_HIERARCHY.cityStateMarker : 1;
+      drawCityIcon(mx2, x, y, cityRadius, cityBannerColor(city.owner),
+                   cityState ? "#0b0e13" : "#f8edca", cityState,
+                   Boolean(city.is_capital));
+    }
     mx2.globalAlpha = 1;
   }
   mx2.setTransform(1, 0, 0, 1, 0, 0);
@@ -22182,15 +22590,12 @@ mini.addEventListener("click", ev => {
   const r = mini.getBoundingClientRect();
   if (planetMap()) {
     if (!planetReady()) return;
-    const camera = {...planetCamera(), radius:1};
-    const centerX = r.width / 2, centerY = r.height / 2;
-    const scale = planetMiniScale(r.width, r.height);
+    const projection = peirceMiniProjection(r.width, r.height);
     const x = ev.clientX - r.left, y = ev.clientY - r.top;
-    const target = planetCells(camera, scale, centerX, centerY,
-                               Math.hypot(r.width, r.height) / 2)
-      .filter(cell => pointInsidePlanetCell(x, y, cell.points))
-      .sort((a, b) => b.center.z - a.center.z)[0];
-    if (target) { takeCameraControl(); centerWorld(target.tile.pos); }
+    const point = peirceMiniSphereAt(x, y, projection);
+    const target = point && peirceMiniCellAt(point, peirceMiniCellIndex());
+    const tile = target?.tile || (target && TMAP.get(target.key));
+    if (tile) { takeCameraControl(); centerWorld(tile.pos); }
     return;
   }
   const layout = miniLayout(r.width, r.height);

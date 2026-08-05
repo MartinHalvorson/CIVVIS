@@ -8880,7 +8880,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("const WORLD_MINIMAP_DIAGONAL_SHARE = .17;"));
         assert!(EMBEDDED_INDEX.contains("const WORLD_MINIMAP_REFERENCE = {"));
         assert!(EMBEDDED_INDEX.contains("flat: {width:336, height:168},"));
-        assert!(EMBEDDED_INDEX.contains("planet: {width:240, height:216},"));
+        assert!(EMBEDDED_INDEX.contains("planet: {width:240, height:240},"));
         assert!(EMBEDDED_INDEX.contains(
             "const referenceDiagonal = Math.hypot(reference.width, reference.height);"
         ));
@@ -8892,6 +8892,9 @@ mod tests {
             "HUD_WIDGETS?.minimap?.element?.classList.toggle(\"minimap-world-planet\", shape === \"planet\");"
         ));
         assert!(EMBEDDED_INDEX.contains(
+            "shape === \"planet\" ? wideMinimapWidth"
+        ));
+        assert!(!EMBEDDED_INDEX.contains(
             ".minimap-frame.minimap-world-planet { width: 164px; height: 150px; }"
         ));
         assert!(EMBEDDED_INDEX.contains(
@@ -9972,7 +9975,7 @@ mod tests {
         for call in [
             "drawCityIcon(cx, cell.center.x, cell.center.y, r, bannerColor,",
             "drawCityIcon(cx, x, y + cityIconRadius * .16, cityIconRadius,",
-            "drawCityIcon(mx2, cell.center.x, cell.center.y, cityRadius,",
+            "drawCityIcon(mx2, x, y, cityRadius, cityBannerColor(city.owner),",
             "drawCityIcon(mx2, x, y, citySize * (cityState ? .55 : .62),",
         ] {
             assert!(EMBEDDED_INDEX.contains(call), "missing city icon path: {call}");
@@ -10211,7 +10214,7 @@ mod tests {
         );
         assert_eq!(
             EMBEDDED_INDEX
-                .matches("drawPlanetMiniNaturalWonderPerimeters(cells);")
+                .matches("drawPlanetMiniNaturalWonderPerimeters(index.entries, projection);")
                 .count(),
             1,
             "the planet minimap must paint the landmark perimeter exactly once"
@@ -10240,11 +10243,25 @@ mod tests {
             .and_then(|tail| tail.split("function planetMiniScale").next())
             .expect("planet minimap viewport footprint");
         assert!(planet.contains("const mainRadius = mainCamera.radius * cam.scale;"));
-        assert!(planet.contains("planetGroundInputY(sy, mainCenterY)"));
-        assert!(planet.contains("mainCamera.chart ? null : () => mx2.arc"));
+        assert!(planet.contains("const basis = planetViewBasis(mainCamera);"));
+        assert!(planet.contains("peirceMiniScreenPoint(point.map(value => value / length), projection)"));
         assert!(EMBEDDED_INDEX.contains(
-            "drawPlanetMiniViewportFootprint(camera, scale, centerX, centerY);"
+            "drawPlanetMiniViewportFootprint(projection);"
         ));
+    }
+
+    #[test]
+    fn browser_planet_minimap_uses_a_centered_square_peirce_quincuncial_chart() {
+        assert!(EMBEDDED_INDEX.contains("const PEIRCE_SQUARE_HALF = PEIRCE_GUYOU_DX * PEIRCE_SQRT1_2;"));
+        assert!(EMBEDDED_INDEX.contains("function peirceQuincuncialRaw(lambda, phi)"));
+        assert!(EMBEDDED_INDEX.contains("function peirceQuincuncialInvert(x0, y0)"));
+        assert!(EMBEDDED_INDEX.contains("return [PEIRCE_PI, 0];"));
+        assert!(EMBEDDED_INDEX.contains("function peirceMiniPointCopies(point, projection)"));
+        assert!(EMBEDDED_INDEX.contains("return [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];"));
+        assert!(EMBEDDED_INDEX.contains("const projection = peirceMiniProjection(r.width, r.height);"));
+        assert!(EMBEDDED_INDEX.contains("const point = peirceMiniSphereAt(x, y, projection);"));
+        assert!(EMBEDDED_INDEX.contains("const target = point && peirceMiniCellAt(point, peirceMiniCellIndex());"));
+        assert!(EMBEDDED_INDEX.contains("avoidsSidebar:true, square:true"));
     }
 
     #[test]
@@ -10351,7 +10368,7 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("tile.feature === \"volcano\""));
         assert!(EMBEDDED_INDEX.contains("tileGroundColor(cell.tile, \"#4b5960\")"));
         assert!(EMBEDDED_INDEX.contains("const base = tileGroundColor(t);"));
-        assert!(EMBEDDED_INDEX.contains("tileGroundColor(cell.tile, \"#44545a\")"));
+        assert!(EMBEDDED_INDEX.contains("tileGroundColor(tile, \"#44545a\")"));
         assert!(EMBEDDED_INDEX.contains("const terrainColor = tileGroundColor(t);"));
 
         let icon = EMBEDDED_INDEX
@@ -13268,10 +13285,10 @@ mod tests {
         // Every place a panel or an overlay moves refits a fitted area.
         assert_eq!(
             EMBEDDED_INDEX.matches("refitMapAreaToChrome();").count(),
-            4,
+            5,
             "a fitted map area follows the standings, the overlay switches, and \
-             both HUD layout paths — four call sites; a fifth means a new one \
-             belongs in this count, a third means one was dropped"
+             both HUD layout paths — five call sites; a sixth means a new one \
+             belongs in this count, a fourth means one was dropped"
         );
     }
 
