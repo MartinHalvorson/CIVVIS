@@ -4348,6 +4348,7 @@ const VOLCANO_TILE_COLOR = "#292421";
 const TERRAIN = { grassland:"#5e9440", plains:"#ab9e4e", desert:"#d8c184",
                   tundra:"#98a089", snow:"#e8eef2", coast:"#20647e",
                   ocean:"#12305c", mountain:MOUNTAIN_TILE_COLOR, lake:"#2b7a86" };
+const COASTLINE_INK = "#0b3049";
 function tileGroundColor(tile, fallback = "#333") {
   return tile.feature === "volcano"
     ? VOLCANO_TILE_COLOR
@@ -4360,6 +4361,12 @@ const isWater = tile => tile.terrain === "coast" || tile.terrain === "ocean" ||
 // as well as the serialized mask before drawing it.
 const isCoastalCliffEdge = (tile, neighbor) =>
   !!neighbor && isWater(tile) !== isWater(neighbor);
+// The map stores a cliff bit on both tiles, but all coastline marks are
+// collected from the land side.  Keeping this test land-sided means the flat
+// six-direction board and the globe's pentagonal cells agree without having
+// to infer a reciprocal direction for every projected edge.
+const isLandCliffEdge = (tile, side) =>
+  !isWater(tile) && !!tile?.cliff_edges?.[side];
 const FEATURE_ATLAS = new Image();
 let FEATURE_ATLAS_READY = false;
 FEATURE_ATLAS.onload = () => { FEATURE_ATLAS_READY = true; if (state) draw(); };
@@ -13688,6 +13695,43 @@ function drawFlatStrategicRoads(tiles) {
   }
   cx.restore();
 }
+
+// A normal shore is a seam, not a frontier: keep it as one quiet dark-blue
+// line even when the land tile belongs to an empire.  Coastal cliffs leave
+// this pass for the rock-face painter below, so the impassable edge retains its
+// authored relief instead of acquiring a second cartographic stroke.
+function drawFlatCoastlines(tiles) {
+  const done = new Set();
+  const segments = [];
+  for (const tile of tiles) {
+    if (isWater(tile)) continue;
+    const [x, yy] = hexXY(tile.pos[0], tile.pos[1]);
+    for (let side = 0; side < 6; side++) {
+      const neighbor = nbrTile(tile.pos, DIRS[side]);
+      if (!neighbor || !isWater(neighbor) || isLandCliffEdge(tile, side)) continue;
+      const edgeKey = [key(tile.pos), key(neighbor.pos)].sort().join("|");
+      if (done.has(edgeKey)) continue;
+      done.add(edgeKey);
+      const edgeY = yy - (elev(tile) + elev(neighbor)) / 2;
+      const [first, second] = EDGE_CORNERS[side];
+      const [ax, ay] = corner(x, edgeY, S - .35, first);
+      const [bx, by] = corner(x, edgeY, S - .35, second);
+      segments.push([ax, ay, bx, by]);
+    }
+  }
+  if (!segments.length) return;
+  cx.save();
+  cx.strokeStyle = COASTLINE_INK;
+  cx.globalAlpha = .92;
+  cx.lineWidth = Math.max(.7, 1.25 * UI_K());
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  cx.beginPath();
+  for (const [ax, ay, bx, by] of segments) {
+    cx.moveTo(ax, ay); cx.lineTo(bx, by);
+  }
+  cx.stroke();
+  cx.restore();
+}
 // Strategic's unit *is* its token, so its footprint is stated in hexes instead
 // of in fixed screen pixels. At the flat map's far zoom it can use 90% of the
 // hex's inscribed diameter; at the close zoom it uses 50%. Zoom is
@@ -14773,6 +14817,47 @@ function pointInsidePlanetCell(x, y, points) {
 // of a strategic-view hex at survey zoom, so a globe zoomed to about the same
 // tile size gets about the same border.
 const PLANET_LANE_TILE = 15.6;
+function drawPlanetCoastlines(cells, visible, spectator) {
+  const done = new Set();
+  const groups = new Map();
+  for (const entry of cells) {
+    const {tile, cell, points, center} = entry;
+    if (!cell || isWater(tile)) continue;
+    const inradius = planetCellInradius({points, center});
+    if (!(inradius > PLANET_LANE_TILE / 8)) continue;
+    const weight = Math.min(1, Math.round(4 * inradius / PLANET_LANE_TILE) / 4);
+    const alpha = planetStrategicAlpha(entry, visible, spectator);
+    const groupKey = `${weight}:${alpha}`;
+    let group = groups.get(groupKey);
+    if (!group) {
+      group = {weight, alpha, segments:[]};
+      groups.set(groupKey, group);
+    }
+    for (let side = 0; side < points.length; side++) {
+      const across = TMAP.get(cell.nbrs[side]);
+      if (!across || !isWater(across) || isLandCliffEdge(tile, side)) continue;
+      const first = cell.ids[side], second = cell.ids[(side + 1) % cell.ids.length];
+      const edgeKey = first < second ? `${first}_${second}` : `${second}_${first}`;
+      if (done.has(edgeKey)) continue;
+      done.add(edgeKey);
+      const a = points[side], b = points[(side + 1) % points.length];
+      group.segments.push([a.x, a.y, b.x, b.y]);
+    }
+  }
+  if (!groups.size) return;
+  cx.save(); cx.lineCap = "round"; cx.lineJoin = "round";
+  for (const group of groups.values()) {
+    cx.strokeStyle = COASTLINE_INK;
+    cx.lineWidth = Math.max(.45, 1.35 * group.weight);
+    cx.globalAlpha = .92 * group.alpha;
+    cx.beginPath();
+    for (const [ax, ay, bx, by] of group.segments) {
+      cx.moveTo(ax, ay); cx.lineTo(bx, by);
+    }
+    cx.stroke();
+  }
+  cx.restore();
+}
 function planetFrontierLanes(cells) {
   const lanes = new Map();
   for (const {tile, cell, points, center} of cells) {
@@ -14791,6 +14876,7 @@ function planetFrontierLanes(cells) {
     const weight = Math.min(1, Math.round(4 * inradius / PLANET_LANE_TILE) / 4);
     for (let i = 0; i < sides; i++) {
       const across = TMAP.get(cell.nbrs[i]);
+      if (across && isWater(tile) !== isWater(across)) continue;
       if (across && across.owner === owner) continue;
       const a = points[i], b = points[(i + 1) % sides];
       let ex = b.x - a.x, ey = b.y - a.y;
@@ -20070,6 +20156,7 @@ function drawPlanetMap() {
   // Frontiers go over the finished ground, the way they do on a flat board, and
   // below everything a viewer clicks. Under a coin-sized world a tile is a
   // pixel and its border is a smear, which is the same reason the grid stops.
+  if (radius >= SKY_MARKERS) drawPlanetCoastlines(cells, turnVisible, spectator);
   if (radius >= SKY_MARKERS) drawPlanetFrontiers(cells);
 
   // The planet is another projection of the strategic map, not a lower-detail
@@ -20381,16 +20468,20 @@ function draw() {
   // edge's corners. nbrTile builds a string key, so asking it again per corner
   // would be the most expensive thing in this layer by a wide margin.
   const ourSide = [false, false, false, false, false, false];
+  const neighbors = new Array(6);
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
     for (let i = 0; i < 6; i++) {
       const n = nbrTile(t.pos, DIRS[i]);
+      neighbors[i] = n;
       ourSide[i] = !!n && n.owner === t.owner;
     }
     for (let i = 0; i < 6; i++) {
       if (ourSide[i]) continue;
+      const n = neighbors[i];
+      if (n && isWater(t) !== isWater(n)) continue;
       const [c1, c2] = EDGE_CORNERS[i];
       const [ax, ay] = corner(x, y, S, c1);
       const [bx, by] = corner(x, y, S, c2);
@@ -20451,6 +20542,7 @@ function draw() {
     }
   }
   cx.globalAlpha = 1; cx.lineCap = "butt"; cx.lineJoin = "miter";
+  drawFlatCoastlines(tiles);
   // --- cliffs. They are shoreline escarpments, not generic tile borders. The
   // shared mark is painted once, from the land side, so its rock face always
   // falls into water even if an old state snapshot carried a stale edge bit.
