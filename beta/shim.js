@@ -28,6 +28,7 @@
   const here = new URL(".", document.currentScript.src);
   const WASM_URL = new URL("civvis.wasm", here).href;
   const WORKER_URL = new URL("worker.js", here).href;
+  const BUILD_URL = new URL("build.json", here);
 
   // Everything the engine answers. A path not in here is a real file, such as
   // a strategic map sprite atlas, and goes to the network untouched.
@@ -451,6 +452,7 @@
       answer.autosaved = turn;
     }
     await attachPublishedBuildMetadata(answer);
+    answer = await withPublishedArtifact(answer);
     return json(answer);
   }
 
@@ -465,6 +467,42 @@
   // ------------------------------------------------------- the interception
 
   const networkFetch = window.fetch.bind(window);
+
+  // Publication records the optimized module after `wasm-opt` has finished.
+  // Rust cannot truthfully bake that size into the module itself: changing the
+  // embedded number changes the file, and optimization happens afterwards.
+  // Load the adjacent manifest once and attach its exact byte count only when
+  // it names the same revision as the running module. That prevents a page
+  // caught during a deployment from showing the successor's size.
+  let publishedBuildPromise = null;
+  function loadPublishedBuild() {
+    if (publishedBuildPromise === null) {
+      publishedBuildPromise = networkFetch(BUILD_URL, {cache: "no-store"})
+        .then(response => response.ok ? response.json() : null)
+        .catch(() => null);
+    }
+    return publishedBuildPromise;
+  }
+  async function withPublishedArtifact(answer) {
+    if (!answer || typeof answer !== "object") return answer;
+    const build = await loadPublishedBuild();
+    const bytes = build?.wasm_bytes;
+    const runningCommit = answer.server_commit ?? answer.commit;
+    if (!Number.isSafeInteger(bytes) || bytes <= 0 ||
+        typeof build?.commit !== "string" || build.commit !== runningCommit) {
+      return answer;
+    }
+    if (Object.prototype.hasOwnProperty.call(answer, "server_commit")) {
+      answer.server_artifact_bytes = bytes;
+      answer.server_artifact_kind = "WASM";
+    }
+    if (Object.prototype.hasOwnProperty.call(answer, "commit")) {
+      answer.artifact_bytes = bytes;
+      answer.artifact_kind = "WASM";
+    }
+    report.artifactBytes = bytes;
+    return answer;
+  }
 
   window.fetch = function (input, options) {
     const options_ = options || {};

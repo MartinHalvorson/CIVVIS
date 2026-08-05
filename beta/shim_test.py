@@ -34,8 +34,7 @@ window.Worker = class {
       answer = { commit: new URL(location.href).searchParams.get("build") || "test" };
     } else if (message.path.startsWith("/state")) {
       answer = {
-        seed: 7, turn: 227, winner: 0,
-        server_commit: "test",
+        seed: 7, turn: 227, winner: 0, server_commit: "test",
         between_game_countdown_ms: window.betweenGameCountdownMs,
       };
     } else if (message.path === "/pace") {
@@ -152,12 +151,16 @@ def main() -> int:
         first = dev.evaluate("fetch('/state?have=226').then(r => r.json())")
         assert first["seed"] == 7 and first["restart_in"] == 3, first
         assert first["server_wasm_bytes"] == 7 * 1024 * 1024, first
+        assert first["server_artifact_bytes"] == 7 * 1024 * 1024, first
+        assert first["server_artifact_kind"] == "WASM", first
 
         # Metadata fetches happen throughout a result screen. Advancing fake
         # wall time across one proves they cannot restart the finale clock.
         dev.evaluate("window.fakeNow = 2000")
         runtime = dev.evaluate("fetch('/runtime').then(r => r.json())")
-        assert runtime == {"commit": "test"}, runtime
+        assert runtime["commit"] == "test", runtime
+        assert runtime["artifact_bytes"] == 7 * 1024 * 1024, runtime
+        assert runtime["artifact_kind"] == "WASM", runtime
         dev.evaluate("window.fakeNow = 3100")
         successor = dev.evaluate("fetch('/state?have=227').then(r => r.json())")
         calls = dev.evaluate("window.workerCalls")

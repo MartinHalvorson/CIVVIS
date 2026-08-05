@@ -7837,6 +7837,10 @@ function syncBuildMarkerPosition() {
   marker.style.bottom = `${Math.max(5, Math.round(window.innerHeight - rect.bottom + 5))}px`;
   marker.style.maxWidth = `${available}px`;
 }
+function formatBuildSize(bytes) {
+  if (!Number.isSafeInteger(bytes) || bytes <= 0) return "";
+  return `${(bytes / 1048576).toFixed(1)} MiB`;
+}
 function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
   const commitLink = document.getElementById("buildmark-commit");
@@ -7845,6 +7849,8 @@ function updateBuildMarker(st = state) {
   const commitTime = st?.server_commit_time;
   const builtAt = st?.server_built_at;
   const wasmBytes = Number(st?.server_wasm_bytes);
+  const artifactBytes = st?.server_artifact_bytes;
+  const artifactKind = st?.server_artifact_kind;
   const commitDate = typeof commitTime === "string" ? new Date(commitTime) : null;
   const buildDate = typeof builtAt === "string" ? new Date(builtAt) : null;
   if (!marker || !commitLink || !details ||
@@ -7858,13 +7864,16 @@ function updateBuildMarker(st = state) {
   commitLink.textContent = shortCommit;
   commitLink.href = `https://github.com/MartinHalvorson/CIVVIS/commit/${encodeURIComponent(commit)}`;
   commitLink.setAttribute("aria-label", `View commit ${shortCommit} on GitHub`);
+  const artifactSize = formatBuildSize(artifactBytes);
+  const legacyWasm = Number.isSafeInteger(wasmBytes) && wasmBytes > 0;
   details.textContent = ` · Commit is ${formatBuildAge(commitDate)} old · ` +
     `Build is ${formatBuildAge(buildDate)} old` +
-    (Number.isSafeInteger(wasmBytes) && wasmBytes > 0
-      ? ` · WASM is ${formatBinarySize(wasmBytes)}` : "");
+    (artifactSize ? ` · Build size ${artifactSize}` : "") +
+    (!artifactSize && legacyWasm ? ` · WASM is ${formatBinarySize(wasmBytes)}` : "");
   marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}` +
-    (Number.isSafeInteger(wasmBytes) && wasmBytes > 0
-      ? `\nWASM ${wasmBytes.toLocaleString()} bytes` : "");
+    (artifactSize
+      ? `\n${artifactKind || "Artifact"} ${Math.round(artifactBytes).toLocaleString()} bytes`
+      : legacyWasm ? `\nWASM ${wasmBytes.toLocaleString()} bytes` : "");
   marker.hidden = false;
   syncBuildMarkerPosition();
 }
