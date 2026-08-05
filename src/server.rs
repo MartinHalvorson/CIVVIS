@@ -9750,7 +9750,9 @@ mod tests {
         assert!(renderer.contains("cx.drawImage(official"));
         assert!(EMBEDDED_INDEX.contains("const COMMAND_UNIT_ICON_K = () => 1 + .32"));
         assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(u.type, x, y,"));
-        assert!(!EMBEDDED_INDEX.contains("u.embarked ? \"galley\" : u.type"));
+        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(unit.type, ux, uy,"));
+        assert!(EMBEDDED_INDEX.contains("drawUnitPictogram(d.type, d.x, d.y,"));
+        assert!(!EMBEDDED_INDEX.contains("embarked ? \"galley\""));
         assert!(EMBEDDED_INDEX.contains("rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk"));
     }
 
@@ -9803,6 +9805,19 @@ mod tests {
         ] {
             assert!(EMBEDDED_INDEX.contains(call), "missing city icon path: {call}");
         }
+    }
+
+    #[test]
+    fn empire_city_names_use_the_light_jersey_lane() {
+        assert!(EMBEDDED_INDEX.contains(
+            "function cityNameInk(owner, fallback) {\n  return mapLens === \"empire\" ? jerseyLanes(owner)[1] : fallback;\n}"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "cityNameInk(city.owner, cityState ? \"#d8ddd9\" : \"#fff4d4\")"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "cityNameInk(c.owner, minorPlate ? \"#d8ddd9\" : \"#fff3cf\")"
+        ));
     }
 
     #[test]
