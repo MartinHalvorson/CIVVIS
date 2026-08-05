@@ -18120,6 +18120,70 @@ impl AdvancedAi {
                         *candidate,
                     )
                 });
+            // ⚠⚠ SAY WHY NO ESCORT WAS ATTACHED.
+            //
+            // Fleet data: settlers escorted in their first three turns found a
+            // city 78% of the time against 61% unescorted (n=437), and **31% of
+            // settlers depart alone**. Of those, 98% had a military unit
+            // somewhere and 68% had one within THREE tiles — so the escort is
+            // available and simply not assigned.
+            //
+            // Three candidate causes were eliminated from recorded runs
+            // (`settler_targets` is populated 99% of the time; this step runs
+            // BEFORE `doctrine_action`; the unescorted settlers travel FURTHER,
+            // not less, so `SETTLER_ESCORT_DISTANCE` is not skipping them). The
+            // survivor is `holds_threatened_city`, which rules out every unit
+            // within 3 tiles of the plan's threatened city — and a settler is
+            // born AT a city, which is exactly the one under threat.
+            //
+            // That could not be confirmed because `plan.threatened_city` appears
+            // in no log. This line is how the next live run answers it, rather
+            // than another round of inference. Emitted once per settler by the
+            // NEAREST candidate only, so it costs one line per settler-turn.
+            if designated.is_none() && self.journal().wants(crate::reasoning::Level::Detail) {
+                let nearest_first = g
+                    .player_unit_ids(pid)
+                    .into_iter()
+                    .filter(|c| {
+                        let cu = &g.units[c];
+                        g.rules.units[cu.kind].class == "military"
+                            && !matches!(
+                                g.rules.units[cu.kind].domain.as_deref(),
+                                Some("sea" | "air")
+                            )
+                            && g.wdist(cu.pos, settler_pos) <= SETTLER_ESCORT_SEARCH_RADIUS
+                    })
+                    .min_by_key(|c| (g.wdist(g.units[c].pos, settler_pos), *c));
+                if nearest_first == Some(uid) {
+                    let mut linked = 0;
+                    let mut spent = 0;
+                    let mut guarding = 0;
+                    let mut near = 0;
+                    for candidate in g.player_unit_ids(pid) {
+                        let cu = &g.units[&candidate];
+                        let spec = &g.rules.units[cu.kind];
+                        if spec.class != "military"
+                            || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                            || g.wdist(cu.pos, settler_pos) > SETTLER_ESCORT_SEARCH_RADIUS
+                        {
+                            continue;
+                        }
+                        near += 1;
+                        if cu.linked_to.is_some() {
+                            linked += 1;
+                        } else if cu.moves_left <= 0.0 {
+                            spent += 1;
+                        } else if holds_threatened_city(candidate) {
+                            guarding += 1;
+                        }
+                    }
+                    think!(self.journal(), Expansion, Detail,
+                           "No escort for the settler";
+                           "{near} land unit(s) within {SETTLER_ESCORT_SEARCH_RADIUS}: \
+                            {linked} already linked, {spent} out of movement, \
+                            {guarding} held by a threatened city");
+                }
+            }
             if designated != Some(uid) {
                 continue;
             }

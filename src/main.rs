@@ -586,7 +586,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// improvement actions, so this is deliberately a protocol-v6 change rather
 /// than a compatibility re-pin; the fresh source fingerprint documents that
 /// the new ledger starts from this exact shared controller.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6755_6cf8_962a_4e29;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xaca1_25ff_d78b_4734;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
