@@ -2,6 +2,7 @@
 //! systems, river floods, droughts and volcanic eruptions, and the way a
 //! warming world makes all of them more frequent and more severe.
 use super::{Drought, Game, Pos, Storm, DEFAULT_DISASTER_INTENSITY};
+use crate::name::Name;
 
 fn quiet_game() -> Game {
     // Disasters roll against a per-turn probability derived from `max_turns`,
@@ -29,6 +30,44 @@ fn land_tile(game: &Game) -> Pos {
         .find(|(_, tile)| !game.rules.is_water(tile) && tile.feature.is_none())
         .map(|(position, _)| position)
         .expect("the map has open land")
+}
+
+fn volcano_and_ring(game: &Game) -> (Pos, Vec<Pos>) {
+    game.map
+        .tiles
+        .keys()
+        .find_map(|position| {
+            let ring: Vec<Pos> = game.map.neighbors(*position).into_iter().collect();
+            (ring.len() == 6).then_some((*position, ring))
+        })
+        .expect("the map has an interior tile with a complete ring")
+}
+
+fn arm_certain_eruption(game: &mut Game, volcano: Pos, ring: &[Pos]) {
+    std::sync::Arc::make_mut(&mut game.rules)
+        .disasters
+        .get_mut("volcanic_eruption")
+        .unwrap()
+        .fertility_chance = vec![1.0; 3];
+    {
+        let tile = game.map.tiles.get_mut(&volcano).unwrap();
+        tile.terrain = crate::name!("mountain");
+        tile.hills = false;
+        tile.feature = Some(crate::name!("volcano"));
+        tile.owner_city = None;
+    }
+    for position in ring {
+        let tile = game.map.tiles.get_mut(position).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.hills = false;
+        tile.feature = None;
+        tile.improvement = None;
+        tile.district = None;
+        tile.district_foundation = None;
+        tile.wonder = None;
+        tile.owner_city = None;
+        tile.pillaged = false;
+    }
 }
 
 #[test]
@@ -122,6 +161,65 @@ fn an_eruption_damages_the_ring_and_leaves_volcanic_soil() {
         game.map.tiles[&volcano].feature.as_deref(),
         Some("volcano"),
         "the cone itself is not buried"
+    );
+}
+
+#[test]
+fn an_eruption_keeps_volcanic_soil_off_mountains_and_every_kind_of_water() {
+    let mut game = quiet_game();
+    let (volcano, ring) = volcano_and_ring(&game);
+    arm_certain_eruption(&mut game, volcano, &ring);
+    for (position, terrain) in ring[..4]
+        .iter()
+        .zip(["mountain", "coast", "lake", "ocean"])
+    {
+        game.map.tiles.get_mut(position).unwrap().terrain = Name::new(terrain);
+    }
+    game.map.tiles.get_mut(&ring[5]).unwrap().terrain = crate::name!("snow");
+    game.map.tiles.get_mut(&ring[5]).unwrap().hills = true;
+
+    game.resolve_eruption(volcano, 3);
+
+    for position in &ring[..4] {
+        assert_eq!(
+            game.map.tiles[position].feature, None,
+            "{} cannot carry Volcanic Soil",
+            game.map.tiles[position].terrain
+        );
+    }
+    for position in &ring[4..] {
+        assert_eq!(
+            game.map.tiles[position].feature.as_deref(),
+            Some("volcanic_soil"),
+            "{} land can carry Volcanic Soil",
+            game.map.tiles[position].terrain
+        );
+    }
+}
+
+#[test]
+fn eruption_soil_obeys_replacement_and_built_site_rules() {
+    let mut game = quiet_game();
+    let (volcano, ring) = volcano_and_ring(&game);
+    arm_certain_eruption(&mut game, volcano, &ring);
+    game.map.tiles.get_mut(&ring[0]).unwrap().district = Some(crate::name!("campus"));
+    game.map.tiles.get_mut(&ring[1]).unwrap().wonder = Some(crate::name!("pyramids"));
+    game.map.tiles.get_mut(&ring[2]).unwrap().feature = Some(crate::name!("forest"));
+    game.map.tiles.get_mut(&ring[3]).unwrap().feature = Some(crate::name!("geothermal_fissure"));
+
+    game.resolve_eruption(volcano, 3);
+
+    for position in &ring[..3] {
+        assert_eq!(
+            game.map.tiles[position].feature.as_deref(),
+            Some("volcanic_soil"),
+            "soil is compatible with built sites and replaces ordinary ground cover"
+        );
+    }
+    assert_eq!(
+        game.map.tiles[&ring[3]].feature.as_deref(),
+        Some("geothermal_fissure"),
+        "a feature without ValidForReplacement survives the eruption"
     );
 }
 

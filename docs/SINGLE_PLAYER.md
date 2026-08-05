@@ -118,7 +118,7 @@ the action from the UI without a debugger.
 | World Congress | `congress_vote` | yes — Government panel |
 | Ages | `choose_dedication`, `choose_secret_society` | yes — Government panel |
 | Conquest | `keep_city`, `raze_city`, `liberate_city` | yes — modal |
-| Setup | difficulty, leader choice, save and load | yes — Game setup ▸ Single player, with a leader, a difficulty and the server's saves |
+| Setup | shared world setup, difficulty, leader choice, save and load | yes — Game setup ▸ Single player, with the same world settings as an AI simulation plus a leader, a difficulty and the server's saves |
 | Auto-play | `POST /autoplay` | yes — a league strategy and a turn count under the End Turn button |
 
 Rows marked "no" or "partial" are the remaining work, in roughly that order of
@@ -161,33 +161,42 @@ Great Work slots".
 
 The browser's Game setup panel used to offer one mode — an AI-only
 simulation — with "Single player · later" greyed out beside it. Single player
-is no longer "later", and the modes are listed in the order this project
-values them:
+is no longer "later", and the public modes are listed in the order this
+project values them:
 
 1. **AI-only simulation**, the default. It is what the engine exists for and
    what the exhibition deployment runs, so it is what the panel opens on.
 2. **Single player**, a person in seat 0 against the agents.
-3. **Play Firaxis Civ 6 with computer control** — not a CIVVIS world at all.
-   It starts a real game of Civilization VI on the computer serving the page
-   and hands the human seat to `tools/civ6_play.py`. A mix of the two above,
-   in the operator's framing: single player's stakes, because that game gives
-   its handicap bonuses to human seats and the difficulty you choose is
-   therefore real; a simulation's controls, because nobody is at the keyboard
-   once it starts. Selecting it re-points the panel at the other game's
-   settings, and every row it does not carry is hidden rather than shown and
-   dropped. See [CIV6_GAME_MODE.md](CIV6_GAME_MODE.md).
-4. **Multiplayer · later**, still greyed out.
+3. **Multiplayer · later**, still greyed out.
+
+The bridge to a real Civilization VI game is retained as a hidden `civ6` option
+for browser verification; it is not a public left-panel choice. When
+verification selects it, it starts a game on the computer serving the page and
+hands the human seat to `tools/civ6_play.py`. It re-points the panel at the
+other game's settings, and every row it does not carry is hidden rather than
+shown and dropped. See [CIV6_GAME_MODE.md](CIV6_GAME_MODE.md).
 
 A world already on screen overrides that default: open the page on a running
 `civvis play` and the select reads Single player, because a person playing a
 game should not have to notice that the button beside their empire has quietly
 started offering to replace it with a simulation.
 
-Single player asks the two things a Civ 6 lobby asks that this one could not:
-which leader you are, and how hard the rivals play. Both selects are filled
-from the live ruleset, so a mod that adds a civilization or a difficulty
-appears in them without a client change. Neither is offered for an AI-only
-world, because there is nobody to hand them to.
+Single player starts from the same world setup as an AI-only simulation:
+ruleset, leader pool, teams, world shape and climate, map, size, city-state
+count, start and future eras, speed, optional turn cap, victory conditions and
+an optional reproducible map seed. Leaving city-states or the turn cap blank
+uses the normal value for the selected size or speed; leaving the seed blank
+asks for a fresh map. The running world's seed is shown back in the field, so
+the ordinary Restart action can reproduce it exactly; clearing it deliberately
+asks for a new roll. Those are world facts, so changing mode never drops them.
+They are hidden only for the separate Firaxis-Civ-6 control mode, where that
+game cannot carry them.
+
+On top of those shared choices, single player asks the two things a Civ 6 lobby
+asks that this one could not: which leader you are, and how hard the rivals
+play. Both selects are filled from the live ruleset, so a mod that adds a
+civilization or a difficulty appears in them without a client change. Neither
+is offered for an AI-only world, because there is nobody to hand them to.
 
 One control on screen starts the next world, and which one it is follows the
 world you are looking at rather than the mode you have just picked: the
@@ -354,13 +363,14 @@ error toast when pressed.
   has fallen and the finale says so too.
 
 Both offer the one thing still useful: another game, on the settings currently
-in the setup panel. **Start another game** counts itself down from ten seconds
-and then starts, so a finished game does not sit on its result screen forever
-waiting for a click; the button carries the count. Any click, key press or
-scroll stops the countdown, because somebody who is still deciding has just
-proved they are there — as does choosing one of the ways to keep the world
-below. A spectated finale keeps the supervisor's countdown instead, because
-the supervisor owns that handoff.
+in the setup panel. The observer settings' **Between-game countdown** offers
+**None**, **3s**, **5s**, and **10s** (the default). **Start another game**
+uses that interval, so a finished game does not sit on its result screen
+forever waiting for a click; choosing **None** starts immediately. Any click,
+key press or scroll stops a running human countdown, because somebody who is
+still deciding has just proved they are there — as does choosing one of the
+ways to keep the world below. A spectated finale keeps the supervisor's
+countdown instead, because the supervisor owns that handoff.
 
 ### Continue after victory
 
@@ -388,13 +398,12 @@ All three choices remove the turn cap from the continued world.
   repeat. A genuinely later result can end the next-victory continuation;
   indefinite play suppresses all of them.
 
-The offer is real on the exhibition too. Every result a browser can see is held
-for ten seconds — the same countdown a single-player finale runs, and not
-configurable in either place —
-the countdown is published on the same state that first carries the winner, and
-the supervisor re-reads the world after its cooldown: a continued world is not
-retired. Continuing is not a setup setting, so its uncapped turn rule is never
-carried into the next game.
+The offer is real on the exhibition too. The selected between-game interval is
+published on the same state that first carries the winner, and the supervisor
+re-reads the world after its countdown: a continued world is not retired. The
+browser remembers the selection and reapplies it after a supervised successor
+starts on a fresh process. Continuing is not a setup setting, so its uncapped
+turn rule is never carried into the next game.
 Headless simulation — `civvis sim`, soaks, the league — has no result screen and
 no viewer, and waits for nothing.
 

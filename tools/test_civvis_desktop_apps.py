@@ -56,6 +56,15 @@ class DesktopAppsTests(unittest.TestCase):
             self.assertIn(expected, rendered["wasm"])
         self.assertIn('readonly civvis_port="8785"', rendered["rust"])
         self.assertIn('readonly civvis_port="8790"', rendered["wasm"])
+        self.assertIn(
+            'readonly rating_binary="${contents_dir}/Resources/civvis-rating-${civvis_commit}"',
+            rendered["wasm"],
+        )
+        self.assertIn(
+            'readonly rating_league="${state_dir}/rust-source/league"',
+            rendered["wasm"],
+        )
+        self.assertIn('"${rating_binary}" "${rating_league}"', rendered["wasm"])
         for launcher in rendered.values():
             self.assertIn(
                 'if status_matches_build "${civvis_status}"; then\n'
@@ -346,9 +355,33 @@ class DesktopAppsTests(unittest.TestCase):
                 )
         self.assertEqual(payload["StartInterval"], 60)
         self.assertEqual(desktop.REFRESH_REBUILD_AGE_MINUTES, 10)
+        self.assertEqual(desktop.MAX_BUILD_AGE_MINUTES, 20)
         arguments = payload["ProgramArguments"]
         self.assertIn("refresh", arguments)
         self.assertIn("--no-launch", arguments)
+        self.assertEqual(
+            arguments[arguments.index("--rebuild-age-minutes") + 1], "10"
+        )
+        self.assertEqual(
+            arguments[arguments.index("--max-build-age-minutes") + 1], "20"
+        )
+
+    def test_refresh_rebuild_and_acceptance_ages_are_independent(self):
+        arguments = desktop.parse_args(["refresh"])
+        self.assertEqual(arguments.rebuild_age_minutes, 10)
+        self.assertEqual(arguments.max_build_age_minutes, 20)
+
+        arguments = desktop.parse_args(
+            [
+                "refresh",
+                "--rebuild-age-minutes",
+                "7",
+                "--max-build-age-minutes",
+                "19",
+            ]
+        )
+        self.assertEqual(arguments.rebuild_age_minutes, 7)
+        self.assertEqual(arguments.max_build_age_minutes, 19)
 
     def test_first_cached_build_reuses_the_newest_legacy_cargo_targets(self):
         with tempfile.TemporaryDirectory() as held:

@@ -106,6 +106,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
     let id = match name.as_str() {
         "tagma" => "BYZANTINE_TAGMA",
         "legion" => "ROMAN_LEGION",
+        "nau" => "PORTUGUESE_NAU",
         "hoplite" => "GREEK_HOPLITE",
         "eagle_warrior" => "AZTEC_EAGLE_WARRIOR",
         "war_cart" => "SUMERIAN_WAR_CART",
@@ -115,6 +116,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
         "keshig" => "MONGOLIAN_KESHIG",
         "winged_hussar" => "POLISH_HUSSAR",
         "oromo_cavalry" => "ETHIOPIAN_OROMO_CAVALRY",
+        "toa" => "MAORI_TOA",
         "crouching_tiger" => "CHINESE_CROUCHING_TIGER",
         "anti_air_gun" => "ANTIAIR_GUN",
         other => return format!("UNIT_{}", other.to_ascii_uppercase()),
@@ -125,6 +127,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
 fn civ6_improvement_type(name: &civvis::name::Name) -> String {
     let id = match name.as_str() {
         "seaside_resort" => "BEACH_RESORT",
+        "qhapaq_nan" => "MOUNTAIN_ROAD",
         "nubian_pyramid" => "PYRAMID",
         other => return format!("IMPROVEMENT_{}", other.to_ascii_uppercase()),
     };
@@ -1813,6 +1816,28 @@ fn main() {
         "per_civ": rated.as_ref().map(|c| c.per_civ),
         "lane": rated.as_ref().and_then(|c| c.lane.clone()),
         "victory": victory.clone(),
+        // ⚠⚠ SAY WHAT THIS BINARY ACTUALLY CARRIES, EVERY RUN.
+        //
+        // A stale binary is invisible: `summary.json` records no revision, and
+        // three of thirty-two recent live runs were executing a pre-fix build,
+        // each losing most of a city's production to a defect already fixed on
+        // `main`. They were identifiable only because they emitted a build name
+        // a later commit had corrected — an accident that will not repeat for
+        // the next stale build.
+        //
+        // `LIVE_BRIDGE_TREATMENTS` is the canonical list of what
+        // `enable_live_bridge` turns on, and a test already forces the two to
+        // agree. So a binary that predates a repair emits a SHORTER list, and
+        // the difference names exactly which repairs were missing. That also
+        // gives any A/B the one thing it needs and has never had: which
+        // treatments were actually live in the arm it measured.
+        //
+        // `revision` beside it is the supervisor's label when there is one —
+        // `CIVVIS_COMMIT`, or a promoted `civvis-<sha>` executable name. It is
+        // `null` for an ordinary development build, which is honest: the
+        // treatment list is the identity that always reports.
+        "revision": civvis::server::runtime_commit_or_none(),
+        "treatments": civvis::elo::LIVE_BRIDGE_TREATMENTS,
     }));
 
     // ★★★★ HOLD THE SITE ACROSS A TURN THE SETTLER COULD NOT MOVE.
@@ -1895,6 +1920,178 @@ fn main() {
     //   res  whether the name resolved at all. An unresolved name does not error: the
     //        tile silently keeps whatever `Game::new` generated, which is a wrong
     //        terrain wearing a right one's clothes.
+    // ★★★★★ WHY THERE IS NO SETTLER, ANSWERED FOR A RECORDED RUN.
+    //
+    // The empire-level failure this project keeps measuring is EXPANSION: runs
+    // end with one city while the plan asks for seven or eight. The Strategy
+    // journal says "short of cities with land still open" every turn, and the
+    // Cities journal says "starts heavy chariot" every turn, and NOTHING says
+    // which of the settler gate's five conditions refused.
+    //
+    // Live on `civvis-20260804T041525Z`: one settler in 130 turns (built t9,
+    // lost t28), then 90 consecutive turns of military while `desired_cities`
+    // stood at 7. Reading the code cannot distinguish "the site search found
+    // nothing" from "the branch was never reached", because the gate is a
+    // single `&&` chain with no journal line of its own.
+    //
+    // This evaluates each condition separately on the reconstructed board and
+    // prints them, so the answer is a measurement rather than an inference.
+    if args.iter().any(|a| a == "--explain-settler") {
+        let want_turn: Option<u32> = arg_text(&args, "--turn").and_then(|v| v.parse().ok());
+        let Some((snapshot, state)) = load(want_turn) else {
+            println!("no revealed terrain or no state yet");
+            return;
+        };
+        let (mirror_players, mirror_turns) = mirror_setup(&state, players, max_turns);
+        let live = civvis::mirror::LiveMirror::new(
+            &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
+        );
+        let g = &live.game;
+        // ⚠⚠ THE PROBE MUST PLAY THE GENOME THE LIVE RUN PLAYED.
+        //
+        // The first version of this diagnostic used stock `AdvancedAi::new()`
+        // weights and reported `mil_per_city` 1.0, while the live journal for the
+        // same run printed **1.4**. A probe answering with a different genome than
+        // the deployment cannot be used to say the live decider is wrong — it is a
+        // different agent. `--strategy auto` resolves the league genome exactly as
+        // the live decider does, and the header line below names which one played
+        // so a stock fallback can never be mistaken for the deployment.
+        let mut advanced = civvis::ai::AdvancedAi::new();
+        let chosen = resolve_strategy(&args);
+        if let Some(chosen) = &chosen {
+            advanced.reweight(chosen.weights.clone());
+        }
+        println!(
+            "genome: {}",
+            chosen
+                .as_ref()
+                .map(|c| format!("{} (from {})", c.name, c.source))
+                .unwrap_or_else(|| "stock AdvancedAi::new — NOT the deployment".to_string())
+        );
+        let w = advanced.weights().clone();
+        let ai = civvis::ai::BasicAi::with_weights(w.clone());
+        let pid = 0usize;
+        let n_cities = g.player_city_ids(pid).len();
+        let settlers = g
+            .units
+            .values()
+            .filter(|u| u.owner == pid && u.kind == "settler")
+            .count();
+        let city_pop = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.cities[&cid].pop)
+            .max()
+            .unwrap_or(0);
+        println!("turn {}  cities {n_cities}  settlers {settlers}  best city pop {city_pop}", g.turn);
+        println!("settler gate, condition by condition:");
+        println!(
+            "  (cities+settlers) < city_target      {:>5}   {} < {:.1}",
+            ((n_cities + settlers) as f64) < w.city_target,
+            n_cities + settlers,
+            w.city_target
+        );
+        println!("  settlers == 0                        {:>5}   {settlers}", settlers == 0);
+        println!(
+            "  city_pop >= settler_min_pop          {:>5}   {city_pop} >= {:.1}",
+            (city_pop as f64) >= w.settler_min_pop,
+            w.settler_min_pop
+        );
+        println!(
+            "  turn < settler_stop_turn             {:>5}   {} < {:.0}",
+            (g.turn as f64) < w.settler_stop_turn,
+            g.turn,
+            w.settler_stop_turn
+        );
+        // The military branch sits ABOVE the settler gate in `pick_item` and
+        // returns first when it fires, so the gate passing means nothing on its
+        // own. Recompute its floor from outside: `mil_per_city * cities`, raised
+        // by visible besiegers within 3 of a city, capped at +3.
+        let military = g
+            .units
+            .values()
+            .filter(|u| u.owner == pid && g.rules.units[u.kind].class == "military")
+            .count();
+        let besiegers = {
+            let homes: Vec<_> = g
+                .player_city_ids(pid)
+                .into_iter()
+                .map(|cid| g.cities[&cid].pos)
+                .collect();
+            g.units
+                .values()
+                .filter(|u| u.owner != pid && g.rules.units[u.kind].class == "military")
+                .filter(|u| homes.iter().any(|h| g.wdist(*h, u.pos) <= 3))
+                .count()
+        };
+        let floor = (w.mil_per_city * n_cities as f64).max(if besiegers == 0 {
+            0.0
+        } else {
+            w.mil_per_city * n_cities as f64 + besiegers.min(3) as f64
+        });
+        println!(
+            "military branch: hold {military}, floor {floor:.1} (besiegers within 3: {besiegers}) -> fires {}",
+            (military as f64) < floor
+        );
+        // End the inference: ask the chooser itself.
+        {
+            let cid = g.player_city_ids(pid).into_iter().next();
+            if let Some(cid) = cid {
+                let mut probe = g.clone();
+                let melee = g
+                    .units
+                    .values()
+                    .filter(|u| u.owner == pid && g.rules.units[u.kind].class == "military")
+                    .count();
+                let chosen = ai.pick_item(
+                    &mut probe, pid, cid, n_cities, settlers, 0, 0, 0, military, melee, 0,
+                );
+                println!("pick_item returns: {chosen:?}");
+            }
+        }
+        let practical = ai.has_practical_settle_site(g, pid);
+        println!("  has_practical_settle_site            {practical:>5}");
+        // When the site search refuses, say WHICH rule refused each candidate:
+        // "no site" and "every site too close to a city we already own" are
+        // different defects and only one of them is about the map.
+        if !practical {
+            let mut water = 0;
+            let mut impassable = 0;
+            let mut too_close = 0;
+            let mut foreign = 0;
+            let mut wonder = 0;
+            let mut ok = 0;
+            for (pos, tile) in g.map.tiles.iter() {
+                if g.rules.is_water(tile) {
+                    water += 1;
+                } else if !g.rules.is_passable(tile) {
+                    impassable += 1;
+                } else if g.tile_is_natural_wonder(tile) {
+                    wonder += 1;
+                } else if g
+                    .cities
+                    .values()
+                    .any(|city| (g.wdist(city.pos, *pos) as f64) < w.min_city_dist)
+                {
+                    too_close += 1;
+                } else if tile
+                    .owner_city
+                    .is_some_and(|cid| g.cities[&cid].owner != pid)
+                {
+                    foreign += 1;
+                } else {
+                    ok += 1;
+                }
+            }
+            println!(
+                "  known tiles {}: water {water}, impassable {impassable}, natural wonder {wonder}, within min_city_dist {:.0} of a city {too_close}, foreign-owned {foreign}, VALID {ok}",
+                g.map.tiles.len(),
+                w.min_city_dist
+            );
+            println!("  ⚠ VALID > 0 with practical=false means the site exists but the 8-step walk cannot REACH it");
+        }
+        return;
+    }
     if args.iter().any(|a| a == "--dump-mirror") {
         let want_turn: Option<u32> = arg_text(&args, "--turn").and_then(|v| v.parse().ok());
         let Some((snapshot, state)) = load(want_turn) else {
@@ -3357,6 +3554,12 @@ mod tests {
         let oromo = civvis::game::Item::Unit {
             unit: civvis::name!("oromo_cavalry"),
         };
+        let nau = civvis::game::Item::Unit {
+            unit: civvis::name!("nau"),
+        };
+        let toa = civvis::game::Item::Unit {
+            unit: civvis::name!("toa"),
+        };
         assert_eq!(
             civ6_build_name(&winged_hussar).as_deref(),
             Some("UNIT_POLISH_HUSSAR")
@@ -3370,8 +3573,20 @@ mod tests {
             Some("UNIT_ETHIOPIAN_OROMO_CAVALRY")
         );
         assert_eq!(
+            civ6_build_name(&nau).as_deref(),
+            Some("UNIT_PORTUGUESE_NAU")
+        );
+        assert_eq!(
+            civ6_build_name(&toa).as_deref(),
+            Some("UNIT_MAORI_TOA")
+        );
+        assert_eq!(
             civ6_improvement_type(&civvis::name!("seaside_resort")),
             "IMPROVEMENT_BEACH_RESORT"
+        );
+        assert_eq!(
+            civ6_improvement_type(&civvis::name!("qhapaq_nan")),
+            "IMPROVEMENT_MOUNTAIN_ROAD"
         );
 
         let district = civvis::game::Item::District {

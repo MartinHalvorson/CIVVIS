@@ -290,6 +290,47 @@ impl Snapshot {
 
 #[cfg(test)]
 mod tests {
+
+    /// ⚠ AN ENEMY UNIT CIVVIS CANNOT SEE IS WORSE THAN A COSMETIC GAP.
+    ///
+    /// Civilization VI names uniques by CIVILIZATION. Stripping that qualifier
+    /// from `UNIT_EGYPTIAN_CHARIOT_ARCHER` gives `chariot_archer`, but
+    /// `data/units.json` calls it **maryannu_chariot_archer**, so neither
+    /// spelling matched and the unit vanished from the board. Live on
+    /// `civvis-20260804T233745Z`:
+    ///
+    ///     UNITDATA ⚠ UNIT_EGYPTIAN_CHARIOT_ARCHER@(39, 24) count Civ6=1 CIVVIS=0
+    #[test]
+    fn a_unique_unit_resolves_through_its_noun() {
+        let rules = crate::rules::Rules::embedded();
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_EGYPTIAN_CHARIOT_ARCHER").as_deref(),
+            Some("maryannu_chariot_archer"),
+            "the observed live failure must resolve"
+        );
+        // The ordinary paths must keep working exactly as before.
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_WARRIOR").as_deref(),
+            Some("warrior")
+        );
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_ROMAN_LEGION").as_deref(),
+            Some("legion"),
+            "the civ-qualifier fallback already handled this and must not regress"
+        );
+        // A Great Person is a MODELLING gap, not a naming one — there is no
+        // entry to find and inventing one would be worse than reporting none.
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_GREAT_SCIENTIST").as_deref(),
+            None
+        );
+        // And a name that matches nothing must stay unresolved.
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_NOT_A_REAL_UNIT").as_deref(),
+            None
+        );
+    }
+
     use super::*;
 
     fn plot(x: i32, y: i32, t: &str) -> Plot {
@@ -6073,6 +6114,21 @@ pub struct StateSnapshot {
     pub techs: Vec<String>,
     #[serde(default)]
     pub civics: Vec<String>,
+    /// Civ 6 type names whose **boost is triggered but which are NOT yet
+    /// researched** — the eureka discount waiting to be collected.
+    ///
+    /// ⚠⚠ 62 of 77 technologies carry a boost worth 40-50% of their cost, and
+    /// `AdvancedAi::tech_value` already pays +28 for a boosted tech — but until
+    /// this field existed nothing ever sent the fact, so the live agent's
+    /// `boosted_techs` was whatever its own simulation derived rather than what
+    /// Civilization VI granted. Same class as the Amenity export (#967) and the
+    /// Housing export (#1007): the valuation is right and the input is absent.
+    ///
+    /// `#[serde(default)]` so an older mod that sends neither still parses.
+    #[serde(default)]
+    pub boosted_techs: Vec<String>,
+    #[serde(default)]
+    pub boosted_civics: Vec<String>,
     /// The active Civilization VI technology and the accumulated beakers on it.
     /// Completed technologies alone do not tell the planner whether changing
     /// course discards a nearly finished choice.
@@ -6925,6 +6981,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
 
     const STATE: &[&str] = &[
         "kind", "event", "run", "ctx", "turn", "techs", "civics", "research",
+        "boosted_techs", "boosted_civics",
         "research_progress", "civic", "civic_progress", "government", "pantheon",
         "founded_religion", "founded_religions", "religion_beliefs",
         "taken_religion_beliefs", "prophet_pending",
@@ -7343,8 +7400,41 @@ fn resolved_civvis_unit_name(
     if rules.units.contains_key(&direct) {
         return Some(direct);
     }
-    civvis_unit_name_unqualified(civ6)
-        .filter(|bare| rules.units.contains_key(bare))
+    let bare = civvis_unit_name_unqualified(civ6);
+    if let Some(bare) = bare.as_deref().filter(|bare| rules.units.contains_key(*bare)) {
+        return Some(bare.to_string());
+    }
+    // ⚠ A UNIQUE UNIT WHOSE CIVVIS NAME CARRIES AN EPITHET.
+    //
+    // Civilization VI names uniques by CIVILIZATION — `UNIT_EGYPTIAN_CHARIOT_ARCHER`
+    // — and stripping that qualifier gives `chariot_archer`, which is not what
+    // CIVVIS calls it: `data/units.json` has **maryannu_chariot_archer**. Neither
+    // spelling matches, so the unit resolved to nothing and vanished from the
+    // board. Caught live by `civ6_mirror_check` on run `civvis-20260804T233745Z`:
+    //
+    //     UNITDATA ⚠ UNIT_EGYPTIAN_CHARIOT_ARCHER@(39, 24) count Civ6=1 CIVVIS=0
+    //
+    // An ENEMY unit CIVVIS cannot see is worse than a cosmetic gap: threat
+    // assessment, settler safety and every tactical decision read a board with a
+    // chariot archer missing from it.
+    //
+    // Rather than a hand-written table of host names — which would mean GUESSING
+    // spellings for civilizations never yet observed — resolve by the noun: accept
+    // the modelled unit whose name ENDS WITH the unqualified name. Exactly two
+    // units in `data/units.json` need it (`maryannu_chariot_archer` and
+    // `winged_hussar`), and only the Egyptian one has actually been seen.
+    //
+    // ⚠ Required to be UNAMBIGUOUS. If two modelled units share a suffix the
+    // answer is refused, because a wrong unit on the board is worse than a
+    // missing one — it would carry the wrong strength, movement and abilities.
+    let bare = bare?;
+    let suffix = format!("_{bare}");
+    let mut matches = rules
+        .units
+        .keys()
+        .filter(|name| name.as_str().ends_with(suffix.as_str()));
+    let only = matches.next()?;
+    matches.next().is_none().then(|| only.to_string())
 }
 
 /// The one qualifier measured being mistaken for a civilization.
@@ -9771,6 +9861,12 @@ pub fn rebuild_from_state(
     game.replace_blocked_production(blocked_production);
     let blocked_purchases =
         blocked_production_from(&state.refused_purchases, &city_ids, &game.rules);
+    if std::env::var("CIVVIS_DEBUG_PURCHASE_BLOCK").is_ok() {
+        eprintln!(
+            "[purchase-block] rebuild: refused_purchases={:?} city_ids={:?} -> blocked={:?}",
+            state.refused_purchases, city_ids, blocked_purchases
+        );
+    }
     game.replace_blocked_purchases(blocked_purchases);
     // ⚠ Wired on BOTH the rebuild (here) and the refresh path. `--fresh-board`
     // reconstructs the board every turn and never runs the refresh, so wiring only
@@ -10455,6 +10551,22 @@ impl LiveMirror {
                 self.game.players[0].civics.insert(crate::name::Name::new(&name));
             }
         }
+        // ⚠ REPLACED, not merged. A boost is spent the moment its technology is
+        // researched, and the host reports only the ones still outstanding — so
+        // carrying last turn's set forward would keep paying `tech_value`'s +28
+        // for discounts that no longer exist.
+        self.game.players[0].boosted_techs = state
+            .boosted_techs
+            .iter()
+            .filter_map(|civ6| civvis_node_name(&self.game.rules.techs, civ6, "TECH_"))
+            .map(|name| crate::name::Name::new(&name))
+            .collect();
+        self.game.players[0].boosted_civics = state
+            .boosted_civics
+            .iter()
+            .filter_map(|civ6| civvis_node_name(&self.game.rules.civics, civ6, "CIVIC_"))
+            .map(|name| crate::name::Name::new(&name))
+            .collect();
         self.game.players[0].research = match &state.research {
             Some(civ6) => match civvis_node_name(&self.game.rules.techs, civ6, "TECH_") {
                 Some(name) => Some(name),
@@ -11263,6 +11375,31 @@ mod host_fact_tests {
     /// function of, so it is worth pinning that it parses rather than assuming
     /// it — the last host field I added took every live game down because an
     /// empty value serialised in a shape serde would not read (#983 → #996).
+    /// ⚠ The eureka discount must survive the wire, and an older mod that sends
+    /// neither field must still parse — a hard error here takes the WHOLE
+    /// StateSnapshot down, not just this field (#983 → #996).
+    #[test]
+    fn the_eureka_reaches_the_planner_from_the_host() {
+        let raw = r#"{"turn": 40, "techs": ["TECH_POTTERY"],
+                      "boosted_techs": ["TECH_WRITING", "TECH_MASONRY"],
+                      "boosted_civics": ["CIVIC_CRAFTSMANSHIP"]}"#;
+        let state: StateSnapshot = serde_json::from_str(raw).expect("boosts parse");
+        assert_eq!(state.boosted_techs, ["TECH_WRITING", "TECH_MASONRY"]);
+        assert_eq!(state.boosted_civics, ["CIVIC_CRAFTSMANSHIP"]);
+
+        // An empty list is the ordinary case on turn 1 and must be a SEQUENCE.
+        let empty: StateSnapshot =
+            serde_json::from_str(r#"{"turn": 1, "boosted_techs": [], "boosted_civics": []}"#)
+                .expect("an empty boost list parses");
+        assert!(empty.boosted_techs.is_empty());
+
+        // And an older mod that sends neither field still parses.
+        let absent: StateSnapshot =
+            serde_json::from_str(r#"{"turn": 1}"#).expect("an older mod still parses");
+        assert!(absent.boosted_techs.is_empty());
+        assert!(absent.boosted_civics.is_empty());
+    }
+
     #[test]
     fn housing_reaches_the_planner_from_the_host() {
         let raw = r#"{"id": 1, "x": 3, "y": 4, "pop": 12,

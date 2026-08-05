@@ -1,8 +1,10 @@
 # CIVVIS
 
-Some early demo videos up on [@civvis YouTube channel](https://www.youtube.com/@civvis)
+Try CIVVIS yourself at [civvis.ai](https://www.civvis.ai)!
 
-Mostly vibecoding this out. Still a bit buggy, apologies for any slop. Continues to be a work in progress.
+I threw some early progress & demo videos up on [YouTube](https://www.youtube.com/@civvis).
+
+Mostly vibecoding this out. Continues to be a work in progress, particularly the AI decision-making.
 
 Quick demo:
 

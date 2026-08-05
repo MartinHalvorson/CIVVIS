@@ -509,6 +509,12 @@ def stage_apps(repo: pathlib.Path, artifacts: BuildArtifacts, template_path: pat
             shutil.copytree(artifacts.wasm_site, resources / "site")
             shutil.copy2(artifacts.serve_script, resources / "serve.py")
             (resources / "serve.py").chmod(0o755)
+            # The browser engine has no filesystem. Its local host delegates
+            # terminal evidence to this same-revision native helper so Wasm
+            # games use the exact locked Glicko writer as native games.
+            rating_helper = resources / ("civvis-rating-" + artifacts.revision.commit)
+            shutil.copy2(artifacts.native_binary, rating_helper)
+            rating_helper.chmod(0o755)
 
         run(("/usr/bin/xattr", "-cr", str(app)))
         run(("/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app)))
@@ -680,6 +686,7 @@ def rollback_install(swap: InstalledSwap, relaunch: bool = False) -> None:
 REFRESH_AGENT_LABEL = "ai.civvis.desktop-refresh"
 REFRESH_INTERVAL_SECONDS = 60
 REFRESH_REBUILD_AGE_MINUTES = 10
+MAX_BUILD_AGE_MINUTES = 20
 
 
 def refresh_agent_path() -> pathlib.Path:
@@ -704,6 +711,8 @@ def refresh_agent_payload(
             "--state-dir",
             str(state_dir),
             "--max-build-age-minutes",
+            str(MAX_BUILD_AGE_MINUTES),
+            "--rebuild-age-minutes",
             str(REFRESH_REBUILD_AGE_MINUTES),
             "--no-launch",
         ],
@@ -776,6 +785,7 @@ def verify_refresh_agent(
         "loaded": True,
         "interval_seconds": installed["StartInterval"],
         "rebuild_age_minutes": REFRESH_REBUILD_AGE_MINUTES,
+        "max_build_age_minutes": MAX_BUILD_AGE_MINUTES,
         "path": str(path),
     }
 
@@ -965,6 +975,24 @@ def verify_installed(
             raise DesktopAppError("{} build is {} minutes old".format(mode, age))
 
     wasm_app = desktop / "CIVVIS Wasm.app"
+    rating_helper = (
+        wasm_app
+        / "Contents/Resources"
+        / ("civvis-rating-" + rust["commit"])
+    )
+    if not rating_helper.is_file() or not os.access(rating_helper, os.X_OK):
+        raise DesktopAppError("installed WASM app is missing its native rating helper")
+    native_binary = (
+        desktop
+        / "CIVVIS Rust.app/Contents/Resources"
+        / ("civvis-" + rust["commit"])
+    )
+    if (
+        not native_binary.is_file()
+        or hashlib.sha256(rating_helper.read_bytes()).digest()
+        != hashlib.sha256(native_binary.read_bytes()).digest()
+    ):
+        raise DesktopAppError("WASM rating helper differs from the paired native engine")
     manifest = json.loads(
         (wasm_app / "Contents/Resources/site/beta/build.json").read_text(encoding="utf-8")
     )
@@ -1035,7 +1063,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--no-fetch", action="store_true")
     parser.add_argument("--no-launch", action="store_true")
-    parser.add_argument("--max-build-age-minutes", type=int, default=20)
+    parser.add_argument(
+        "--max-build-age-minutes", type=int, default=MAX_BUILD_AGE_MINUTES
+    )
+    parser.add_argument(
+        "--rebuild-age-minutes", type=int, default=REFRESH_REBUILD_AGE_MINUTES
+    )
     return parser.parse_args(argv)
 
 
@@ -1065,7 +1098,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         with install_lock(state_dir):
             revision = resolve_revision(repo, args.ref, not args.no_fetch)
             if args.action == "refresh" and not installed_pair_needs_refresh(
-                desktop, revision, args.max_build_age_minutes
+                desktop, revision, args.rebuild_age_minutes
             ):
                 print("desktop apps already match {} and are fresh".format(revision.short))
                 return 0

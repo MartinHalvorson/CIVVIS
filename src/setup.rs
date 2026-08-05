@@ -104,9 +104,11 @@ impl Serialize for StartEraSpec {
 /// does. It has no tree behind it yet, so it is offered as a plan rather than a
 /// choice — `era: None` is the whole of that statement.
 ///
-/// Future is deliberately absent from the other end: a game that opens there
-/// has nothing left to research and nowhere to go.
-pub const START_ERAS: [StartEraSpec; 9] = [
+/// Future closes the ladder rather than leaving it: a game can open there with
+/// every earlier era known, while the Future technologies and civics remain to
+/// be played. There is no later era to advance into, which is exactly what a
+/// Future-era opening promises.
+pub const START_ERAS: [StartEraSpec; 10] = [
     StartEraSpec {
         id: "stone_age",
         name: "Stone Age",
@@ -160,6 +162,12 @@ pub const START_ERAS: [StartEraSpec; 9] = [
         name: "Information",
         description: "Begin with everything up to the Atomic era researched: a short, sharp game decided by satellites, robots and points.",
         era: Some(7),
+    },
+    StartEraSpec {
+        id: "future",
+        name: "Future Era",
+        description: "Begin with the Information era behind you: Future technology and civics decide the world, with no later age to wait for.",
+        era: Some(8),
     },
 ];
 
@@ -298,14 +306,13 @@ pub fn last_start_era() -> usize {
         .unwrap_or(0)
 }
 
-/// What the world is made of, ordered from all land to all water.
+/// What the world is made of, in the order the setup menu offers it.
 ///
-/// The list is a spectrum rather than a menu: each entry down it leaves less
-/// land than the one above, and breaks what land is left into more pieces.
-/// Land Only and Water World are its two ends, at 95% of one and 95% of the
-/// other, and the four Civ VI shapes everybody knows fill the middle. True
-/// Start Earth sits outside the ordering because its coastlines are read
-/// rather than rolled — Earth is whatever ratio Earth is.
+/// The ordinary scripts remain grouped from solid land toward open water, but
+/// the two Earth maps sit immediately before Continents so the same coastline
+/// can be chosen with either ordinary or historical starts. Fjords follows
+/// Small Continents because it is a terrain-first coastal world rather than a
+/// point on the land-share dial.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MapScript {
@@ -316,11 +323,13 @@ pub enum MapScript {
     GrandCanalsTwo,
     #[default]
     Pangaea,
+    Earth,
+    TrueStartEarth,
     Continents,
     SmallContinents,
+    Fjords,
     Islands,
     WaterWorld,
-    TrueStartEarth,
 }
 
 impl MapScript {
@@ -332,11 +341,13 @@ impl MapScript {
             Self::GrandCanals => "grand_canals",
             Self::GrandCanalsTwo => "grand_canals_2",
             Self::Pangaea => "pangaea",
+            Self::Earth => "earth",
+            Self::TrueStartEarth => "true_start_earth",
             Self::Continents => "continents",
             Self::SmallContinents => "small_continents",
+            Self::Fjords => "fjords",
             Self::Islands => "islands",
             Self::WaterWorld => "water_world",
-            Self::TrueStartEarth => "true_start_earth",
         }
     }
 
@@ -345,12 +356,20 @@ impl MapScript {
     /// its rivers around but never its coastlines. Fixed geography is still
     /// independent of shape: it can be sampled onto a flat atlas or a globe.
     pub const fn is_fixed_geography(self) -> bool {
+        matches!(self, Self::Earth | Self::TrueStartEarth)
+    }
+
+    /// Whether a fixed Earth map also assigns each civilization its historic
+    /// homeland. [`Self::Earth`] keeps the same coastlines, relief, climate,
+    /// and real-world wonders while using the ordinary balanced start picker.
+    pub const fn is_true_start(self) -> bool {
         matches!(self, Self::TrueStartEarth)
     }
 
-    /// Roughly what share of the world this script leaves as land, as the
-    /// generator aims for it. This is the order the list above is in, and the
-    /// lobby prints it, so the two can never drift apart.
+    /// Roughly what share of the world this script leaves as non-water terrain,
+    /// as the generator aims for it. Fjords includes its mountain terrain in
+    /// this total; its separate relief profile divides that sixty percent into
+    /// forty percent ordinary land and twenty percent mountains.
     pub const fn land_percent(self) -> u32 {
         match self {
             Self::LandOnly => 95,
@@ -367,13 +386,17 @@ impl MapScript {
             // number this one is measured from rather than chosen against.
             Self::GrandCanalsTwo => 44,
             Self::Pangaea => 42,
+            // Both Earth choices sample the same fixed geography. The only
+            // difference is where their civilizations begin.
+            Self::Earth | Self::TrueStartEarth => 29,
             Self::Continents => 42,
             Self::SmallContinents => 36,
+            // Forty percent open water, forty percent ordinary land, and
+            // twenty percent mountains. Mountains are land in the generator,
+            // so this is sixty percent total non-water terrain.
+            Self::Fjords => 60,
             Self::Islands => 22,
             Self::WaterWorld => 5,
-            // Earth's own land share, which is the one number here that was
-            // measured rather than chosen.
-            Self::TrueStartEarth => 29,
         }
     }
 
@@ -551,9 +574,8 @@ pub struct MapScriptSpec {
     pub script: MapScript,
 }
 
-/// The world types in the order [`MapScript`] declares them: all land at the
-/// top, all water at the bottom, Earth on the end.
-pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 11] = [
+/// The world types in the order [`MapScript`] declares them.
+pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 13] = [
     MapScriptSpec {
         id: "land_only",
         name: "Land Only",
@@ -591,6 +613,18 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 11] = [
         script: MapScript::Pangaea,
     },
     MapScriptSpec {
+        id: "earth",
+        name: "Earth",
+        description: "Earth's real coastlines, relief, climates, and wonders, with ordinary balanced starting positions.",
+        script: MapScript::Earth,
+    },
+    MapScriptSpec {
+        id: "true_start_earth",
+        name: "True Start Earth",
+        description: "Earth itself, with every civilization founded in its own historic homeland.",
+        script: MapScript::TrueStartEarth,
+    },
+    MapScriptSpec {
         id: "continents",
         name: "Continents",
         description: "A few large landmasses separated by open water.",
@@ -603,6 +637,12 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 11] = [
         script: MapScript::SmallContinents,
     },
     MapScriptSpec {
+        id: "fjords",
+        name: "Fjords",
+        description: "Forty percent open water, forty percent ordinary land, and twenty percent mountain ranges, with winding sea passages and passable breaks through the ridges.",
+        script: MapScript::Fjords,
+    },
+    MapScriptSpec {
         id: "islands",
         name: "Islands",
         description: "An archipelago: many small islands, none of them a continent, every one of them its own shore.",
@@ -613,12 +653,6 @@ pub const CIV6_MAP_SCRIPTS: [MapScriptSpec; 11] = [
         name: "Water World",
         description: "Almost nothing but ocean — scattered specks of land, and the sea lanes between them are the map.",
         script: MapScript::WaterWorld,
-    },
-    MapScriptSpec {
-        id: "true_start_earth",
-        name: "True Start Earth",
-        description: "Earth itself, with every civilization founded in its own historic homeland.",
-        script: MapScript::TrueStartEarth,
     },
 ];
 
@@ -1043,7 +1077,7 @@ mod tests {
         }
 
         let playable: Vec<_> = playable_start_eras().collect();
-        assert_eq!(playable.len(), crate::rules::ERA_NAMES.len() - 1);
+        assert_eq!(playable.len(), crate::rules::ERA_NAMES.len());
         for (index, spec) in playable.iter().enumerate() {
             assert_eq!(spec.era, Some(index), "{}", spec.id);
             assert_eq!(spec.id, crate::rules::ERA_NAMES[index], "era {index}");
@@ -1052,9 +1086,9 @@ mod tests {
         }
         assert_eq!(stock_start_era_id(), "ancient");
         assert_eq!(last_start_era(), playable.len() - 1);
-        // Future is deliberately not a start, and an era off the end of the
+        // Future is the last playable start, and an era off the end of the
         // ladder names the stock start rather than nothing at all.
-        assert_eq!(start_era_from_id("future"), None);
+        assert_eq!(start_era_from_id("future"), Some(crate::rules::ERA_NAMES.len() - 1));
         assert_eq!(start_era_id(playable.len()), "ancient");
         assert_eq!(start_era_from_id("holocene"), None);
     }
@@ -1160,6 +1194,34 @@ mod tests {
         assert!(!kinds.contains("warrior"), "a Renaissance world still opens on Warriors: {kinds:?}");
         assert!(kinds.contains("settler"), "the Settler is not an upgradeable unit: {kinds:?}");
 
+        // The final rung is a real opening too: it carries every earlier age
+        // forward while leaving the Future tree for the new world to play.
+        let future_era = start_era_from_id("future").unwrap();
+        let future = world_opening_in(future_era);
+        assert_eq!(future.start_era, future_era);
+        assert_eq!(future.world_era, future_era);
+        assert!(future.rules.techs.values().any(|spec| spec.era == future_era));
+        assert!(future.rules.civics.values().any(|spec| spec.era == future_era));
+        for player in future.players.iter().filter(|player| !player.is_barbarian) {
+            assert!(player.techs.iter().all(|tech| future.rules.techs[tech].era < future_era));
+            assert!(player
+                .civics
+                .iter()
+                .all(|civic| future.rules.civics[civic].era < future_era));
+            assert!(future
+                .rules
+                .techs
+                .iter()
+                .filter(|(_, spec)| spec.era == future_era)
+                .all(|(tech, _)| !player.techs.contains(tech)));
+            assert!(future
+                .rules
+                .civics
+                .iter()
+                .filter(|(_, spec)| spec.era == future_era)
+                .all(|(civic, _)| !player.civics.contains(civic)));
+        }
+
         // The whole setup survives a save, or a reloaded world would quietly
         // fall back to the Ancient era and undo its own floor.
         let restored: Game =
@@ -1178,38 +1240,36 @@ mod tests {
         assert_eq!(beyond.world_era, last);
     }
 
-    /// The world types are a spectrum, and the lobby lists them along it: the
-    /// first entry is the one with the most land and the last rolled entry the
-    /// one with the least. Nothing else in the setup screen orders itself, so
-    /// this is the one list whose order is a claim, and the claim is checked
-    /// here rather than trusted to whoever edits the table next.
+    /// The map menu has a deliberate reading order. Earth and True Start Earth
+    /// sit together above Continents; Fjords follows Small Continents even
+    /// though its terrain mix is intentionally not a land-share rung.
     #[test]
-    fn the_world_types_are_listed_from_all_land_to_all_water() {
-        let rolled: Vec<&super::MapScriptSpec> = CIV6_MAP_SCRIPTS
-            .iter()
-            .filter(|spec| !spec.script.is_fixed_geography())
-            .collect();
-        for pair in rolled.windows(2) {
-            let (above, below) = (pair[0], pair[1]);
-            assert!(
-                above.script.land_percent() >= below.script.land_percent(),
-                "{} ({}% land) is listed above {} ({}% land)",
-                above.name,
-                above.script.land_percent(),
-                below.name,
-                below.script.land_percent()
-            );
-        }
-        // The two ends are the ones the ordering is anchored on.
-        assert_eq!(rolled.first().map(|spec| spec.script), Some(MapScript::LandOnly));
-        assert_eq!(rolled.last().map(|spec| spec.script), Some(MapScript::WaterWorld));
+    fn the_world_types_follow_the_requested_menu_order() {
+        assert_eq!(
+            CIV6_MAP_SCRIPTS
+                .iter()
+                .map(|spec| spec.script)
+                .collect::<Vec<_>>(),
+            vec![
+                MapScript::LandOnly,
+                MapScript::Lakes,
+                MapScript::InlandSea,
+                MapScript::GrandCanals,
+                MapScript::GrandCanalsTwo,
+                MapScript::Pangaea,
+                MapScript::Earth,
+                MapScript::TrueStartEarth,
+                MapScript::Continents,
+                MapScript::SmallContinents,
+                MapScript::Fjords,
+                MapScript::Islands,
+                MapScript::WaterWorld,
+            ]
+        );
         assert_eq!(MapScript::LandOnly.land_percent(), 95);
         assert_eq!(MapScript::WaterWorld.land_percent(), 5);
-        // Earth is outside the ordering, and is listed after all of it.
-        assert_eq!(
-            CIV6_MAP_SCRIPTS.last().map(|spec| spec.script),
-            Some(MapScript::TrueStartEarth)
-        );
+        assert_eq!(MapScript::Fjords.land_percent(), 60);
+        assert_eq!(MapScript::Earth.land_percent(), MapScript::TrueStartEarth.land_percent());
         // Every type is reachable by the id the protocol carries, and the list
         // holds each of them exactly once.
         let mut seen = BTreeSet::new();
@@ -1267,11 +1327,18 @@ mod tests {
         assert_eq!(MapPoles::default(), MapPoles::Poles);
         assert_eq!(MapScript::default(), MapScript::Pangaea);
 
-        // Only Earth is the same world every game. That says how its land is
-        // chosen, not which of the independently selected shapes receives it.
+        // Both Earth choices are the same world every game. That says how their
+        // land is chosen, not which of the independently selected shapes
+        // receives it. Only one of them also fixes civilizations to homelands.
         for spec in CIV6_MAP_SCRIPTS {
             assert_eq!(
                 spec.script.is_fixed_geography(),
+                matches!(spec.script, MapScript::Earth | MapScript::TrueStartEarth),
+                "{}",
+                spec.id
+            );
+            assert_eq!(
+                spec.script.is_true_start(),
                 spec.script == MapScript::TrueStartEarth,
                 "{}",
                 spec.id

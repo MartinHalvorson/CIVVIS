@@ -212,6 +212,15 @@ would invalidate the in-flight roster snapshot. Results also append to
 match row retains player, exact leader, civilization, and competition rank,
 including live score ties.
 
+The local desktop WASM channel uses this same writer rather than implementing
+ratings in JavaScript or Python. Its host supplies the current live roster to
+the module, the module seats from it, and a finished game returns every seated
+AI strategy's exact terminal evidence to the native `rate-game` helper. A
+result ID is checkpointed atomically with the Glicko update, so a lost response
+or page reload cannot rate the same game twice. The updated roster is loaded
+back into the module before the successor game begins. The public static
+`/beta/` site remains read-only because it has no trusted persistent host.
+
 A snapshot of a finished league lives in the repo at `data/league/`
 (see its README for provenance) and is compiled into the binary, so any
 build — including the WASM one, which has no filesystem — can show rated,
@@ -285,8 +294,9 @@ across hundreds of rounds even after every non-anchor founder has been replaced.
 
 - `league.json` — the roster: every AI player's strategy kind/genome,
   aggregate rating, leader/civ ratings, RD, volatility, lifetime record,
-  per-table-size win evidence, lineage (`parents`), and status. The single
-  source of truth; delete it to start a fresh league.
+  per-table-size win evidence, lineage (`parents`), status, and idempotency
+  receipts for hosted live games. The single source of truth; delete it to
+  start a fresh league.
 - `.civvis-managed-roster` — present only on the supervisor's mutable
   `--league auto` copy; opts that roster into required builtin admission while
   leaving explicitly constructed comparison pools untouched.
