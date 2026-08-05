@@ -8170,6 +8170,15 @@ local function reportLostCities(player, pid, turn)
 				pop = try(function() return city:GetPopulation(); end, -1),
 				loyalty = loyalty, per_turn = perTurn, falls_to = fallsTo,
 				damage = damage, wall = wallDamage,
+				-- ⭐ Were we at war with ANYONE while we still held it. Damage
+				-- says the city was hit; this says an enemy was entitled to hit
+				-- it, and the pair is what separates a storming from a flip
+				-- without inferring either. `-1` for "the accessor is missing"
+				-- rather than `false`, so a broken read can never be mistaken
+				-- for a peaceful game — the `#1184` convention.
+				at_war = try(function()
+					return player:GetDiplomacy():IsAtWar();
+				end, -1),
 				turn = turn,
 			};
 		end
@@ -8179,13 +8188,32 @@ local function reportLostCities(player, pid, turn)
 	if next(lastRoster) ~= nil then
 		for id, was in pairs(lastRoster) do
 			if now[id] == nil then
-				-- ⭐ `falls_to` is the game telling us outright who the city was
-				-- going to fall to — it drives the banner's own
-				-- "LOC_LOYALTY_CITY_WILL_FALL_TO_TT" warning. Present means the
-				-- loss was LOYALTY and was forecast; absent with damage means it
-				-- was TAKEN. That is the distinction the offline diff could not
-				-- draw, and it is why the military share of city loss has only
-				-- ever been a floor.
+				-- ⛔⛔ `falls_to` DOES NOT DISCRIMINATE, and the comment that
+				-- stood here said it did. It is
+				-- `GetCulturalIdentity():GetPotentialTransferPlayer()` — the
+				-- player a city WOULD transfer to if its loyalty ever reached
+				-- zero, which the engine fills in whenever any neighbour exerts
+				-- pressure. It is not the banner's "will fall to" forecast.
+				--
+				-- Measured over every `city_lost` recorded to date: `falls_to`
+				-- is **62 on all 16 of them**, and the state export carries the
+				-- same 62 for Rome on turn 3 sitting at loyalty 100 gaining
+				-- +21 a turn. It is a constant. Any split computed from it
+				-- reads 100% loyalty by construction.
+				--
+				-- ⭐ The fields that DO discriminate are already in this event:
+				-- `damage_when_held` / `wall_damage_when_held` (a city cannot be
+				-- stormed without being hit) against `loyalty_when_held` and
+				-- `loyalty_rate_when_held` (a loyalty flip runs the loyalty
+				-- DOWN — a negative rate — and needs no damage at all). On the
+				-- 16 recorded losses those two signals separate cleanly:
+				-- loyalty 100 with a +12..+28 rate and 57-166 damage is a
+				-- storming; 1-4 loyalty on a negative rate with zero damage is
+				-- a flip.
+				--
+				-- ⚠ `falls_to_when_held` is still emitted, because removing a
+				-- field silently is worse than recording a known-useless one —
+				-- but do NOT classify with it.
 				emit("city_lost", {
 					turn = turn,
 					city = id,
@@ -8197,6 +8225,7 @@ local function reportLostCities(player, pid, turn)
 					falls_to_when_held = was.falls_to,
 					damage_when_held = was.damage,
 					wall_damage_when_held = was.wall,
+					at_war_when_held = was.at_war,
 				});
 			end
 		end
