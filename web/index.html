@@ -14842,7 +14842,8 @@ function planetFrontierLanes(cells) {
     const weight = Math.min(1, Math.round(4 * inradius / PLANET_LANE_TILE) / 4);
     for (let i = 0; i < sides; i++) {
       const across = TMAP.get(cell.nbrs[i]);
-      if (across && isWater(tile) !== isWater(across)) continue;
+      // Ownership outranks geography: the frontier traces the empire's whole
+      // perimeter, coast edges included, and rides above the coastline seam.
       if (across && across.owner === owner) continue;
       const a = points[i], b = points[(i + 1) % sides];
       let ex = b.x - a.x, ey = b.y - a.y;
@@ -20430,24 +20431,22 @@ function draw() {
     laneAxis.push([ex, ey, nx, ny]);
   }
   const borderSegs = new Map();
-  // One neighbour lookup per side, reused by the edge test and by both of that
-  // edge's corners. nbrTile builds a string key, so asking it again per corner
-  // would be the most expensive thing in this layer by a wide margin.
+  // One neighbour lookup per side, reused by both of that edge's corners.
+  // nbrTile builds a string key, so asking it again per corner would be the
+  // most expensive thing in this layer by a wide margin.
   const ourSide = [false, false, false, false, false, false];
-  const neighbors = new Array(6);
   for (const t of tiles) {
     if (t.owner === null || t.owner === undefined) continue;
     const [x, yy] = hexXY(t.pos[0], t.pos[1]);
     const y = yy - elev(t);
     for (let i = 0; i < 6; i++) {
       const n = nbrTile(t.pos, DIRS[i]);
-      neighbors[i] = n;
       ourSide[i] = !!n && n.owner === t.owner;
     }
     for (let i = 0; i < 6; i++) {
       if (ourSide[i]) continue;
-      const n = neighbors[i];
-      if (n && isWater(t) !== isWater(n)) continue;
+      // Ownership outranks geography: the frontier traces the empire's whole
+      // perimeter, coast edges included, and rides above the coastline seam.
       const [c1, c2] = EDGE_CORNERS[i];
       const [ax, ay] = corner(x, y, S, c1);
       const [bx, by] = corner(x, y, S, c2);
