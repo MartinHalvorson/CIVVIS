@@ -58,6 +58,58 @@ use std::sync::{Arc, OnceLock, RwLock};
 use crate::hex;
 use crate::Pos;
 
+/// The transcendentals world geometry is allowed to call.
+///
+/// IEEE-754 pins `sqrt` and the arithmetic operators to correct rounding, but
+/// only *recommends* it for `sin`, `cos`, `asin`, `acos`, `atan` and `atan2`.
+/// Rust's `f64` methods take whatever the platform links — Apple's libm on
+/// macOS, glibc's on Linux, the UCRT's on Windows, and Rust's own `libm` on
+/// `wasm32-unknown-unknown` — and those implementations differ by an ULP on
+/// some inputs. One ULP of latitude moves a tile across a climate threshold,
+/// which is how the same seed generated a different globe in the browser than
+/// on the desktop (#1061). Flat maps never showed it because flat mapgen
+/// reaches none of this: its coordinates are row-index arithmetic.
+///
+/// Routing every trig call in the geometry path through the `libm` crate gives
+/// all targets the same bits, so a globe world is a pure function of its seed
+/// again, on every platform at once. `sqrt` stays on the std method: it is
+/// correctly rounded by the standard and by wasm's `f64.sqrt` instruction.
+///
+/// Anything that turns a seed into tiles must come through here rather than
+/// call the `f64` methods; see `docs/FLOAT_DETERMINISM.md` for the full
+/// contract and the evidence.
+pub mod trig {
+    #[inline]
+    pub fn sin(x: f64) -> f64 {
+        libm::sin(x)
+    }
+
+    #[inline]
+    pub fn cos(x: f64) -> f64 {
+        libm::cos(x)
+    }
+
+    #[inline]
+    pub fn asin(x: f64) -> f64 {
+        libm::asin(x)
+    }
+
+    #[inline]
+    pub fn acos(x: f64) -> f64 {
+        libm::acos(x)
+    }
+
+    #[inline]
+    pub fn atan(x: f64) -> f64 {
+        libm::atan(x)
+    }
+
+    #[inline]
+    pub fn atan2(y: f64, x: f64) -> f64 {
+        libm::atan2(y, x)
+    }
+}
+
 /// Exact distances are precomputed out to this radius for every tile. It
 /// covers the radii the rules actually ask about — a city's workable tiles,
 /// district adjacency, unit sight — so the common query is a binary search
@@ -254,13 +306,13 @@ impl Sphere {
 
     /// Latitude in radians, negative south of the equator.
     pub fn latitude(&self, pos: Pos) -> f64 {
-        self.cell(pos).map_or(0.0, |cell| cell.center[2].asin())
+        self.cell(pos).map_or(0.0, |cell| trig::asin(cell.center[2]))
     }
 
     /// Longitude in radians, zero on the prime meridian.
     pub fn longitude(&self, pos: Pos) -> f64 {
         self.cell(pos)
-            .map_or(0.0, |cell| cell.center[1].atan2(cell.center[0]))
+            .map_or(0.0, |cell| trig::atan2(cell.center[1], cell.center[0]))
     }
 
     /// Steps along the tile graph between two tiles. Exact: within
@@ -563,19 +615,19 @@ impl Sphere {
 fn icosahedron() -> [[f64; 3]; 12] {
     let mut out = [[0.0; 3]; 12];
     out[0] = [0.0, 0.0, 1.0];
-    let ring = (0.5f64).atan();
+    let ring = trig::atan(0.5);
     for k in 0..5 {
         let upper = (72.0 * k as f64).to_radians();
         out[1 + k] = [
-            ring.cos() * upper.cos(),
-            ring.cos() * upper.sin(),
-            ring.sin(),
+            trig::cos(ring) * trig::cos(upper),
+            trig::cos(ring) * trig::sin(upper),
+            trig::sin(ring),
         ];
         let lower = (72.0 * k as f64 + 36.0).to_radians();
         out[6 + k] = [
-            ring.cos() * lower.cos(),
-            ring.cos() * lower.sin(),
-            -ring.sin(),
+            trig::cos(ring) * trig::cos(lower),
+            trig::cos(ring) * trig::sin(lower),
+            -trig::sin(ring),
         ];
     }
     out[11] = [0.0, 0.0, -1.0];
@@ -788,7 +840,7 @@ fn build(frequency: i32) -> Sphere {
                 ];
                 let x = delta[0] * east[0] + delta[1] * east[1] + delta[2] * east[2];
                 let y = delta[0] * north[0] + delta[1] * north[1] + delta[2] * north[2];
-                (y.atan2(x), rank[*other as usize])
+                (trig::atan2(y, x), rank[*other as usize])
             })
             .collect();
         sorted.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());

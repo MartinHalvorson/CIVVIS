@@ -334,7 +334,19 @@ def public_fact_mismatches(state, board):
     mismatches = []
     for seat, source in expected:
         player = players.get(seat, {})
-        for key, board_key in (("score", "score"), ("military", "military")):
+        # ⚠ COMPARE THE MAPPING, NOT THE MODEL. `military` on the board is
+        # `military_power`, which is deliberately `max(observed, our own strength
+        # sum)`. For our OWN seat we can see every unit, so that sum can win the
+        # max and legitimately exceed the host's figure — this check reported
+        # `seat 0 military Civ6=520 CIVVIS=545` as a DISAGREEMENT when the bridge
+        # was perfect and only CIVVIS's strength model differed.
+        #
+        # Measured before changing it: over 2,713 turn-records the host's figure
+        # wins that max ~90% of the time, so the warning is rare, benign and
+        # exactly the kind that teaches an operator to ignore the whole report.
+        # `observed_military` is the mapped value alone, which is what a BRIDGE
+        # check should verify.
+        for key, board_key in (("score", "score"), ("military", "observed_military")):
             want = source.get(key)
             got = player.get(board_key)
             if isinstance(want, (int, float)) and want >= 0 \

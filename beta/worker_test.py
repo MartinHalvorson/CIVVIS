@@ -39,7 +39,7 @@ import time
 import urllib.request
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
-from verify import Devtools, find_chrome, free_port  # noqa: E402
+from verify import Devtools, find_chrome, free_port, fresh_profile, tether  # noqa: E402
 
 # The page that loads the worker and hands it fabricated requests.
 #
@@ -202,7 +202,7 @@ def main(argv: list[str] | None = None) -> int:
 
     port = free_port()
     httpd = serve(stage, port)
-    profile = tempfile.mkdtemp(prefix="civvis-worker-profile-")
+    profile = fresh_profile("civvis-worker-profile-")
     debug_port = free_port()
     chrome = subprocess.Popen(
         [
@@ -217,6 +217,7 @@ def main(argv: list[str] | None = None) -> int:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+    tether(chrome)
 
     problems: list[str] = []
     try:

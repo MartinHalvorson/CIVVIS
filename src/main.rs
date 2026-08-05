@@ -248,6 +248,11 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// the live `civvis_orders` bridge. Engine and Elo trajectories therefore keep
 /// their prior behavior; this is a compatibility re-pin, not a protocol bump.
 ///
+/// #929 retries asynchronous Firaxis governor postings behind
+/// `live_governor_assignment_adapter`. Configured and legacy engine agents keep
+/// it false; only `civvis_orders` enables it. Compatibility re-pin, not an Elo
+/// protocol change.
+///
 /// #911's escorted-settler correction remains behind `settlement_safety`,
 /// which `AdvancedAi::legacy()` disables. The live religious-purchase guard
 /// added afterward is likewise default-off in `BasicAi` and enabled only by
@@ -659,7 +664,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// traversal cache, so the frozen controller's source contract is re-pinned
 /// after the fixed-prefix comparison below.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xce62_1e34_ff30_2cbf;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0c09_4bef_3068_6e70;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
