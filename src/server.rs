@@ -9858,6 +9858,19 @@ mod tests {
     }
 
     #[test]
+    fn empire_city_names_use_the_light_jersey_lane() {
+        assert!(EMBEDDED_INDEX.contains(
+            "function cityNameInk(owner, fallback) {\n  return mapLens === \"empire\" ? jerseyLanes(owner)[1] : fallback;\n}"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "cityNameInk(city.owner, cityState ? \"#d8ddd9\" : \"#fff4d4\")"
+        ));
+        assert!(EMBEDDED_INDEX.contains(
+            "cityNameInk(c.owner, minorPlate ? \"#d8ddd9\" : \"#fff3cf\")"
+        ));
+    }
+
+    #[test]
     fn undiscovered_ground_is_an_illustrated_fog_safe_chart() {
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.starts_with(b"\x89PNG\r\n\x1a\n"));
         assert!(EMBEDDED_HIDDEN_MAP_MONSTERS.len() > 500_000);

@@ -6901,6 +6901,12 @@ function cityBannerColor(owner) {
     ? (CITY_STATE_TYPE_COLORS[p.cs_type] || CITY_STATE_TYPE_COLORS.trade)
     : pcol(owner);
 }
+// Empire view uses the same light jersey lane for city names that improved
+// resource labels use. The normal map keeps its warm parchment nameplates;
+// only the ownership-focused lens turns the type into an empire marker.
+function cityNameInk(owner, fallback) {
+  return mapLens === "empire" ? jerseyLanes(owner)[1] : fallback;
+}
 function WW() { return state ? S * SQ3 * state.map.width : 1e12; }
 function WH() { return state ? S * 1.5 * state.map.height : 1e12; }
 // The simulation's topology and the flat chart's presentation are separate
@@ -19676,7 +19682,8 @@ function drawPlanetMap() {
       cx.font = `${cityState ? 650 : 800} ${cityState
         ? Math.max(9, Math.min(11, 8 * scale))
         : Math.max(11, Math.min(15, 10.5 * scale))}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
-      cx.textAlign = "center"; cx.fillStyle = cityState ? "#d8ddd9" : "#fff4d4";
+      cx.textAlign = "center";
+      cx.fillStyle = cityNameInk(city.owner, cityState ? "#d8ddd9" : "#fff4d4");
       cx.strokeStyle = "#07100f"; cx.lineWidth = cityState ? 2.4 : 3.5;
       cx.strokeText(city.name, cell.center.x, cell.center.y - r - 5);
       cx.fillText(city.name, cell.center.x, cell.center.y - r - 5);
@@ -20392,7 +20399,7 @@ function draw() {
       cx.fillStyle = "#10151d";
       cx.font = `700 ${minorPlate ? 10 : 12}px Georgia, serif`;
       cx.fillText(c.pop, bx + 2 + popWidth / 2, by + bannerHeight / 2 + .5);
-      cx.fillStyle = minorPlate ? "#d8ddd9" : "#fff3cf";
+      cx.fillStyle = cityNameInk(c.owner, minorPlate ? "#d8ddd9" : "#fff3cf");
       cx.font = `${minorPlate ? 700 : 800} ${minorPlate ? 10 : 12}px Georgia, serif`;
       cx.textAlign = "left";
       cx.fillText(name, bx + popWidth + 7, by + bannerHeight / 2 + .5);
