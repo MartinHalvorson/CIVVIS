@@ -592,6 +592,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// improvement actions, so this is deliberately a protocol-v6 change rather
 /// than a compatibility re-pin; the fresh source fingerprint documents that
 /// the new ledger starts from this exact shared controller.
+/// #1034 pulls the loyalty policy cards when a city is bleeding loyalty, behind
+/// `loyalty_policy_defence` — `false` in `AdvancedAi::new()` and set only by
+/// `enable_live_bridge`. `strategic_policies` reads the flag before it counts a
+/// single city, so with it off the wishlist is byte-for-byte the old one and
+/// every configured, legacy and Elo agent slots exactly the cards it always did.
+/// A compatibility re-pin.
 ///
 /// #1195 bounds only the live controller's global settlement-site search.
 /// `AdvancedAi::legacy()` keeps `settlement_safety` disabled, so it returns
@@ -599,7 +605,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// controller remains byte-identical. Compatibility re-pin; the Elo protocol
 /// does not move.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4d76_27b6_6e2e_bfdc;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0498_e8d1_6884_928d;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

@@ -892,6 +892,11 @@ pub struct AdvancedAi {
     /// `enable_live_bridge`**, because the +50 health is CIVVIS's own model and
     /// Civilization VI's real promotion rule is unverified here. See
     /// [`AdvancedAi::promotion_heal_is_wasted`].
+    /// Pull the loyalty policy cards when a city is bleeding loyalty.
+    ///
+    /// `false` in `AdvancedAi::new()` and set only by `enable_live_bridge`, so every
+    /// configured, legacy and Elo agent slots exactly the cards it always did.
+    pub loyalty_policy_defence: bool,
     pub promote_when_wounded: bool,
     /// Credit a tile for the attack it opens, not only charge it for the
     /// threat it accepts.
@@ -2212,6 +2217,7 @@ impl AdvancedAi {
             solvent_faith_army: false,
             battlefront_frame: None,
             scoped_relief_hold: false,
+            loyalty_policy_defence: false,
             promote_when_wounded: false,
             strike_opening: false,
             ranged_needs_line_of_sight: false,
@@ -2349,6 +2355,14 @@ impl AdvancedAi {
 
     /// Hold a promotion until its healing would land. Native/eval only; the
     /// live bridge does not set this.
+    pub fn enable_loyalty_policy_defence(&mut self) {
+        self.loyalty_policy_defence = true;
+    }
+
+    pub fn disable_loyalty_policy_defence(&mut self) {
+        self.loyalty_policy_defence = false;
+    }
+
     pub fn enable_promote_when_wounded(&mut self) {
         self.promote_when_wounded = true;
     }
@@ -2473,6 +2487,7 @@ impl AdvancedAi {
         // which for a deployed army is always the enemy's cities. The tournament
         // controller stays frozen so its recorded ladders remain comparable.
         self.enable_home_defense();
+        self.enable_loyalty_policy_defence();
         // ⚠ `assess` drops the empire into Recovery whenever it is at war and
         // `my_power * 1.25 < strongest_rival`, and Recovery does not build an army —
         // so the test stays true because of the choice it caused. Measured on run
@@ -7253,6 +7268,58 @@ impl AdvancedAi {
         {
             temporary.push("robber_barons");
         }
+        // ★★★★★ CITIES BLEEDING LOYALTY HAVE ONE LEVER AND FIVE UNUSED ONES.
+        //
+        // `loyalty_emergency` reads the RATE (that is what #981 fixed) but its only
+        // consumer is `reassign_governor_for_loyalty`, so moving a governor is the
+        // entire response and it is capped by how many governors exist.
+        //
+        // Measured over 117 city losses in 91 runs: **47 were revolts**, and they died
+        // at loyalty 0.1-1.9 carrying -13 to -22 a turn. The warning is long and
+        // nothing spends it:
+        //
+        // ```text
+        //   turns loyalty_per_turn was NEGATIVE before the loss   median 13, max 39
+        //   turns from loyalty crossing 50 to the loss            median  8
+        // ```
+        //
+        // Five policy cards carry loyalty effects and every one is already honoured by
+        // `Game::city_loyalty_per_turn`. **Across those 91 runs only COLONIAL_OFFICES
+        // was ever slotted, in 5 of them; the other four never once** — including
+        // `limitanei`, which needs only `early_empire`, an ancient civic reached in
+        // essentially every game, and sits in a MILITARY slot nothing competes for.
+        //
+        // ★ This is also what makes a garrison worth anything. Garrisoning has measured
+        // null as a military mechanism (~2pp, parity), but with Limitanei slotted the
+        // same unit is +2 loyalty a turn in the city it stands in — the same action
+        // priced on the axis that actually loses us cities.
+        //
+        // Ranked ahead of the plan's ordinary cards because a revolt is unrecoverable
+        // and a yield card is not.
+        let bleeding = if !self.loyalty_policy_defence {
+            0
+        } else {
+            g.player_city_ids(pid)
+                .into_iter()
+                .filter(|cid| {
+                    g.cities
+                        .get(cid)
+                        .is_some_and(|city| g.city_loyalty_per_turn(city) < 0.0)
+                })
+                .count()
+        };
+        if bleeding > 0 {
+            let mut loyalty_cards = vec![
+                "limitanei",
+                "praetorium",
+                "colonial_offices",
+                "communications_office",
+                "martial_law",
+            ];
+            loyalty_cards.extend(temporary);
+            temporary = loyalty_cards;
+        }
+
         temporary.extend(desired);
         desired = temporary;
         desired.retain(|card| {
@@ -21796,6 +21863,82 @@ mod tests {
         assert!(
             treated.contains(&crate::name!("rationalism")),
             "a Religion empire holding a Campus must be able to multiply it: {treated:?}"
+        );
+    }
+
+    /// 47 of 117 city losses across 91 runs were revolts, and they died at loyalty
+    /// 0.1-1.9 carrying -13 to -22 a turn after a MEDIAN OF 13 TURNS of negative
+    /// rate. `limitanei` needs only `early_empire` and sits in a military slot, and
+    /// it was slotted ZERO times in all 91 runs.
+    #[test]
+    fn a_city_bleeding_loyalty_pulls_the_loyalty_cards_into_the_deck() {
+        let build = |bleeding: bool| {
+            let mut game = Game::new(2, 32, 24, 5_417, 250, 0);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("starting settler");
+            game.apply(0, &Action::FoundCity { unit: settler })
+                .expect("found city");
+            let city = game.player_city_ids(0)[0];
+            game.players[0].government = Some("oligarchy".to_string());
+            game.players[0].civics.extend([
+                crate::name!("early_empire"),
+                crate::name!("recorded_history"),
+                crate::name!("political_philosophy"),
+            ]);
+            game.players[0].policies.clear();
+            if bleeding {
+                // The same override the live mirror writes from Civilization VI.
+                game.observed_city_loyalty_per_turn.insert(city, -14.0);
+            }
+            let mut ai = AdvancedAi::new();
+            ai.enable_loyalty_policy_defence();
+            ai.refresh_research_weight(&game);
+            ai.strategic_policies(&mut game, 0, GrandStrategy::Expansion);
+            game.players[0].policies.clone()
+        };
+
+        let control = build(false);
+        let treated = build(true);
+        // The flag is what the source contract turns on: with it off, a bleeding
+        // empire must slot exactly what it always did.
+        let legacy = {
+            let mut game = Game::new(2, 32, 24, 5_417, 250, 0);
+            let settler = game
+                .player_unit_ids(0)
+                .into_iter()
+                .find(|unit| game.units[unit].kind == "settler")
+                .expect("starting settler");
+            game.apply(0, &Action::FoundCity { unit: settler })
+                .expect("found city");
+            let city = game.player_city_ids(0)[0];
+            game.players[0].government = Some("oligarchy".to_string());
+            game.players[0].civics.extend([
+                crate::name!("early_empire"),
+                crate::name!("recorded_history"),
+                crate::name!("political_philosophy"),
+            ]);
+            game.players[0].policies.clear();
+            game.observed_city_loyalty_per_turn.insert(city, -14.0);
+            let mut ai = AdvancedAi::new();
+            ai.refresh_research_weight(&game);
+            ai.strategic_policies(&mut game, 0, GrandStrategy::Expansion);
+            game.players[0].policies.clone()
+        };
+        assert!(
+            !legacy.contains(&crate::name!("limitanei")),
+            "with the flag off a bleeding empire keeps its old deck: {legacy:?}"
+        );
+        assert!(
+            !control.contains(&crate::name!("limitanei")),
+            "a stable empire must not spend a military slot on loyalty: {control:?}"
+        );
+        assert!(
+            treated.contains(&crate::name!("limitanei")),
+            "a city losing 14 loyalty a turn has 13 turns of warning and this is the \
+             lever nothing was pulling: {treated:?}"
         );
     }
 
