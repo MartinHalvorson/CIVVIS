@@ -1,0 +1,845 @@
+{
+  "schema": "civvis.leader-roster.v1",
+  "leaders": [
+    {
+      "civ": "Rome",
+      "leader": "Trajan",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 41.9,
+      "longitude": 12.5
+    },
+    {
+      "civ": "Egypt",
+      "leader": "Cleopatra",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 29.85,
+      "longitude": 31.25
+    },
+    {
+      "civ": "Greece",
+      "leader": "Pericles",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 37.98,
+      "longitude": 23.73
+    },
+    {
+      "civ": "China",
+      "leader": "Qin Shi Huang",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 34.34,
+      "longitude": 108.94
+    },
+    {
+      "civ": "Sumeria",
+      "leader": "Gilgamesh",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 31.32,
+      "longitude": 45.64
+    },
+    {
+      "civ": "Aztec",
+      "leader": "Montezuma",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 19.43,
+      "longitude": -99.13
+    },
+    {
+      "civ": "Nubia",
+      "leader": "Amanitore",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 18.53,
+      "longitude": 31.83
+    },
+    {
+      "civ": "Scythia",
+      "leader": "Tomyris",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 47.5,
+      "longitude": 55.0
+    },
+    {
+      "civ": "England",
+      "leader": "Victoria",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 52.5,
+      "longitude": -1.5
+    },
+    {
+      "civ": "Germany",
+      "leader": "Frederick Barbarossa",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 50.78,
+      "longitude": 6.08
+    },
+    {
+      "civ": "Russia",
+      "leader": "Peter",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 55.75,
+      "longitude": 37.62
+    },
+    {
+      "civ": "Korea",
+      "leader": "Seondeok",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 35.83,
+      "longitude": 129.22
+    },
+    {
+      "civ": "Maya",
+      "leader": "Lady Six Sky",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 17.22,
+      "longitude": -89.62
+    },
+    {
+      "civ": "Mali",
+      "leader": "Mansa Musa",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 11.42,
+      "longitude": -8.44
+    },
+    {
+      "civ": "Phoenicia",
+      "leader": "Dido",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 33.27,
+      "longitude": 35.2
+    },
+    {
+      "civ": "Byzantium",
+      "leader": "Basil II",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 41.01,
+      "longitude": 28.98
+    },
+    {
+      "civ": "Zulu",
+      "leader": "Shaka",
+      "pool": "civ6",
+      "available": true,
+      "latitude": -28.31,
+      "longitude": 31.42
+    },
+    {
+      "civ": "Gaul",
+      "leader": "Ambiorix",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 46.92,
+      "longitude": 4.03
+    },
+    {
+      "civ": "Kongo",
+      "leader": "Mvemba a Nzinga",
+      "pool": "civ6",
+      "available": true,
+      "latitude": -6.27,
+      "longitude": 14.25
+    },
+    {
+      "civ": "Vietnam",
+      "leader": "Ba Trieu",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 21.03,
+      "longitude": 105.84
+    },
+    {
+      "civ": "Brazil",
+      "leader": "Pedro II",
+      "pool": "civ6",
+      "available": true,
+      "latitude": -22.91,
+      "longitude": -43.2
+    },
+    {
+      "civ": "France",
+      "leader": "Catherine de Medici",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 48.86,
+      "longitude": 2.35
+    },
+    {
+      "civ": "Spain",
+      "leader": "Philip II",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 40.42,
+      "longitude": -3.7
+    },
+    {
+      "civ": "Portugal",
+      "leader": "João III",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 40.21,
+      "longitude": -8.42
+    },
+    {
+      "civ": "Netherlands",
+      "leader": "Wilhelmina",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 52.37,
+      "longitude": 4.9
+    },
+    {
+      "civ": "Sweden",
+      "leader": "Kristina",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 59.86,
+      "longitude": 17.64
+    },
+    {
+      "civ": "Norway",
+      "leader": "Harald Hardrada",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 59.91,
+      "longitude": 10.75
+    },
+    {
+      "civ": "Denmark",
+      "leader": "Margrete I",
+      "pool": "historical",
+      "available": true,
+      "latitude": 55.76,
+      "longitude": 9.42
+    },
+    {
+      "civ": "Poland",
+      "leader": "Jadwiga",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 52.54,
+      "longitude": 17.6
+    },
+    {
+      "civ": "Hungary",
+      "leader": "Matthias Corvinus",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 47.5,
+      "longitude": 19.04
+    },
+    {
+      "civ": "Austria",
+      "leader": "Maria Theresa",
+      "pool": "historical",
+      "available": true,
+      "latitude": 48.21,
+      "longitude": 16.37
+    },
+    {
+      "civ": "Bohemia",
+      "leader": "Charles IV",
+      "pool": "historical",
+      "available": true,
+      "latitude": 50.09,
+      "longitude": 14.42
+    },
+    {
+      "civ": "Scotland",
+      "leader": "Robert the Bruce",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 56.8,
+      "longitude": -4.25
+    },
+    {
+      "civ": "Ireland",
+      "leader": "Brian Boru",
+      "pool": "historical",
+      "available": false,
+      "latitude": 53.58,
+      "longitude": -6.61
+    },
+    {
+      "civ": "Switzerland",
+      "leader": "Henri Dunant",
+      "pool": "historical",
+      "available": true,
+      "latitude": 46.95,
+      "longitude": 7.45
+    },
+    {
+      "civ": "Venice",
+      "leader": "Enrico Dandolo",
+      "pool": "historical",
+      "available": false,
+      "latitude": 45.44,
+      "longitude": 12.33
+    },
+    {
+      "civ": "Serbia",
+      "leader": "Stefan Dusan",
+      "pool": "historical",
+      "available": false,
+      "latitude": 44.79,
+      "longitude": 20.46
+    },
+    {
+      "civ": "Bulgaria",
+      "leader": "Simeon I",
+      "pool": "historical",
+      "available": false,
+      "latitude": 43.38,
+      "longitude": 27.13
+    },
+    {
+      "civ": "Lithuania",
+      "leader": "Vytautas",
+      "pool": "historical",
+      "available": true,
+      "latitude": 54.69,
+      "longitude": 25.28
+    },
+    {
+      "civ": "Ukraine",
+      "leader": "Bohdan Khmelnytsky",
+      "pool": "historical",
+      "available": false,
+      "latitude": 50.45,
+      "longitude": 30.52
+    },
+    {
+      "civ": "Finland",
+      "leader": "Mannerheim",
+      "pool": "historical",
+      "available": false,
+      "latitude": 60.45,
+      "longitude": 22.27
+    },
+    {
+      "civ": "Romania",
+      "leader": "Vlad III",
+      "pool": "historical",
+      "available": false,
+      "latitude": 44.93,
+      "longitude": 25.46
+    },
+    {
+      "civ": "Novgorod",
+      "leader": "Alexander Nevsky",
+      "pool": "historical",
+      "available": false,
+      "latitude": 58.52,
+      "longitude": 31.28
+    },
+    {
+      "civ": "Prussia",
+      "leader": "Frederick the Great",
+      "pool": "historical",
+      "available": false,
+      "latitude": 54.71,
+      "longitude": 20.51
+    },
+    {
+      "civ": "Catalonia",
+      "leader": "James I",
+      "pool": "historical",
+      "available": false,
+      "latitude": 41.39,
+      "longitude": 2.17
+    },
+    {
+      "civ": "Gujarat",
+      "leader": "Kumarapala",
+      "pool": "historical",
+      "available": true,
+      "latitude": 22.52,
+      "longitude": 72.25
+    },
+    {
+      "civ": "Assyria",
+      "leader": "Ashurbanipal",
+      "pool": "historical",
+      "available": false,
+      "latitude": 36.36,
+      "longitude": 43.15
+    },
+    {
+      "civ": "Persia",
+      "leader": "Cyrus",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 29.94,
+      "longitude": 52.89
+    },
+    {
+      "civ": "Media",
+      "leader": "Cyaxares",
+      "pool": "historical",
+      "available": false,
+      "latitude": 34.8,
+      "longitude": 48.51
+    },
+    {
+      "civ": "Manchuria",
+      "leader": "Nurhaci",
+      "pool": "historical",
+      "available": false,
+      "latitude": 41.8,
+      "longitude": 123.43
+    },
+    {
+      "civ": "Lydia",
+      "leader": "Croesus",
+      "pool": "historical",
+      "available": true,
+      "latitude": 38.49,
+      "longitude": 28.04
+    },
+    {
+      "civ": "Parthia",
+      "leader": "Mithridates I",
+      "pool": "historical",
+      "available": false,
+      "latitude": 37.96,
+      "longitude": 58.2
+    },
+    {
+      "civ": "Sogdiana",
+      "leader": "Spitamenes",
+      "pool": "historical",
+      "available": false,
+      "latitude": 39.65,
+      "longitude": 66.98
+    },
+    {
+      "civ": "Ottomans",
+      "leader": "Suleiman",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 40.19,
+      "longitude": 29.06
+    },
+    {
+      "civ": "Arabia",
+      "leader": "Saladin",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 21.42,
+      "longitude": 39.83
+    },
+    {
+      "civ": "Israel",
+      "leader": "Solomon",
+      "pool": "historical",
+      "available": true,
+      "latitude": 31.78,
+      "longitude": 35.22
+    },
+    {
+      "civ": "Armenia",
+      "leader": "Tigranes",
+      "pool": "historical",
+      "available": false,
+      "latitude": 40.18,
+      "longitude": 44.51
+    },
+    {
+      "civ": "Georgia",
+      "leader": "Tamar",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 41.72,
+      "longitude": 44.79
+    },
+    {
+      "civ": "Timurids",
+      "leader": "Timur",
+      "pool": "historical",
+      "available": false,
+      "latitude": 34.35,
+      "longitude": 62.2
+    },
+    {
+      "civ": "Kazakh",
+      "leader": "Ablai Khan",
+      "pool": "historical",
+      "available": false,
+      "latitude": 43.3,
+      "longitude": 68.25
+    },
+    {
+      "civ": "Bactria",
+      "leader": "Euthydemus",
+      "pool": "historical",
+      "available": false,
+      "latitude": 36.76,
+      "longitude": 66.9
+    },
+    {
+      "civ": "Ethiopia",
+      "leader": "Menelik II",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 12.6,
+      "longitude": 37.47
+    },
+    {
+      "civ": "Axum",
+      "leader": "Ezana",
+      "pool": "historical",
+      "available": true,
+      "latitude": 14.13,
+      "longitude": 38.72
+    },
+    {
+      "civ": "Morocco",
+      "leader": "Ahmad al-Mansur",
+      "pool": "historical",
+      "available": false,
+      "latitude": 34.03,
+      "longitude": -4.99
+    },
+    {
+      "civ": "Numidia",
+      "leader": "Masinissa",
+      "pool": "historical",
+      "available": false,
+      "latitude": 36.36,
+      "longitude": 6.61
+    },
+    {
+      "civ": "Songhai",
+      "leader": "Askia Muhammad",
+      "pool": "historical",
+      "available": false,
+      "latitude": 16.27,
+      "longitude": 0.04
+    },
+    {
+      "civ": "Ghana",
+      "leader": "Tunka Manin",
+      "pool": "historical",
+      "available": true,
+      "latitude": 15.77,
+      "longitude": -7.97
+    },
+    {
+      "civ": "Benin",
+      "leader": "Ewuare",
+      "pool": "historical",
+      "available": false,
+      "latitude": 6.34,
+      "longitude": 5.62
+    },
+    {
+      "civ": "Ashanti",
+      "leader": "Osei Tutu",
+      "pool": "historical",
+      "available": false,
+      "latitude": 6.69,
+      "longitude": -1.62
+    },
+    {
+      "civ": "Swahili",
+      "leader": "Fumo Liyongo",
+      "pool": "historical",
+      "available": true,
+      "latitude": -8.96,
+      "longitude": 39.5
+    },
+    {
+      "civ": "Great Zimbabwe",
+      "leader": "Nyatsimba Mutota",
+      "pool": "historical",
+      "available": false,
+      "latitude": -20.27,
+      "longitude": 30.93
+    },
+    {
+      "civ": "Buganda",
+      "leader": "Mutesa I",
+      "pool": "historical",
+      "available": false,
+      "latitude": 0.32,
+      "longitude": 32.58
+    },
+    {
+      "civ": "Oyo",
+      "leader": "Alaafin Abiodun",
+      "pool": "historical",
+      "available": false,
+      "latitude": 8.89,
+      "longitude": 3.93
+    },
+    {
+      "civ": "Tuareg",
+      "leader": "Tin Hinan",
+      "pool": "historical",
+      "available": true,
+      "latitude": 22.79,
+      "longitude": 5.53
+    },
+    {
+      "civ": "Madagascar",
+      "leader": "Andrianampoinimerina",
+      "pool": "historical",
+      "available": true,
+      "latitude": -18.88,
+      "longitude": 47.52
+    },
+    {
+      "civ": "India",
+      "leader": "Gandhi",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 28.61,
+      "longitude": 77.23
+    },
+    {
+      "civ": "Japan",
+      "leader": "Hojo Tokimune",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 35.01,
+      "longitude": 135.77
+    },
+    {
+      "civ": "Mongolia",
+      "leader": "Genghis Khan",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 47.2,
+      "longitude": 102.83
+    },
+    {
+      "civ": "Tibet",
+      "leader": "Songtsen Gampo",
+      "pool": "historical",
+      "available": true,
+      "latitude": 29.65,
+      "longitude": 91.1
+    },
+    {
+      "civ": "Nepal",
+      "leader": "Prithvi Narayan Shah",
+      "pool": "historical",
+      "available": false,
+      "latitude": 27.71,
+      "longitude": 85.32
+    },
+    {
+      "civ": "Kalinga",
+      "leader": "Kharavela",
+      "pool": "historical",
+      "available": true,
+      "latitude": 20.27,
+      "longitude": 85.83
+    },
+    {
+      "civ": "Chola",
+      "leader": "Rajaraja I",
+      "pool": "historical",
+      "available": false,
+      "latitude": 10.79,
+      "longitude": 79.13
+    },
+    {
+      "civ": "Bengal",
+      "leader": "Shashanka",
+      "pool": "historical",
+      "available": false,
+      "latitude": 24.87,
+      "longitude": 88.13
+    },
+    {
+      "civ": "Maratha",
+      "leader": "Shivaji",
+      "pool": "historical",
+      "available": false,
+      "latitude": 18.52,
+      "longitude": 73.86
+    },
+    {
+      "civ": "Khmer",
+      "leader": "Jayavarman VII",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 13.41,
+      "longitude": 103.87
+    },
+    {
+      "civ": "Siam",
+      "leader": "Ramkhamhaeng",
+      "pool": "historical",
+      "available": true,
+      "latitude": 17.01,
+      "longitude": 99.7
+    },
+    {
+      "civ": "Burma",
+      "leader": "Anawrahta",
+      "pool": "historical",
+      "available": false,
+      "latitude": 21.17,
+      "longitude": 94.86
+    },
+    {
+      "civ": "Majapahit",
+      "leader": "Hayam Wuruk",
+      "pool": "historical",
+      "available": false,
+      "latitude": -7.55,
+      "longitude": 112.38
+    },
+    {
+      "civ": "Champa",
+      "leader": "Che Bong Nga",
+      "pool": "historical",
+      "available": false,
+      "latitude": 13.77,
+      "longitude": 109.05
+    },
+    {
+      "civ": "America",
+      "leader": "Abraham Lincoln",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 38.91,
+      "longitude": -77.04
+    },
+    {
+      "civ": "Canada",
+      "leader": "Wilfrid Laurier",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 45.42,
+      "longitude": -75.7
+    },
+    {
+      "civ": "Pueblo",
+      "leader": "Popay",
+      "pool": "historical",
+      "available": true,
+      "latitude": 36.06,
+      "longitude": -107.96
+    },
+    {
+      "civ": "Comanche",
+      "leader": "Quanah Parker",
+      "pool": "historical",
+      "available": true,
+      "latitude": 34.0,
+      "longitude": -100.0
+    },
+    {
+      "civ": "Sioux",
+      "leader": "Sitting Bull",
+      "pool": "historical",
+      "available": true,
+      "latitude": 43.9,
+      "longitude": -103.75
+    },
+    {
+      "civ": "Inca",
+      "leader": "Pachacuti",
+      "pool": "civ6",
+      "available": true,
+      "latitude": -13.53,
+      "longitude": -71.98
+    },
+    {
+      "civ": "Muisca",
+      "leader": "Nemequene",
+      "pool": "historical",
+      "available": true,
+      "latitude": 4.71,
+      "longitude": -74.07
+    },
+    {
+      "civ": "Mapuche",
+      "leader": "Lautaro",
+      "pool": "civ6",
+      "available": true,
+      "latitude": -37.47,
+      "longitude": -72.6
+    },
+    {
+      "civ": "Argentina",
+      "leader": "Jose de San Martin",
+      "pool": "historical",
+      "available": true,
+      "latitude": -34.6,
+      "longitude": -58.38
+    },
+    {
+      "civ": "Australia",
+      "leader": "John Curtin",
+      "pool": "civ6",
+      "available": true,
+      "latitude": -33.87,
+      "longitude": 151.21
+    },
+    {
+      "civ": "Maori",
+      "leader": "Kupe",
+      "pool": "civ6",
+      "available": true,
+      "latitude": -39.5,
+      "longitude": 175.5
+    },
+    {
+      "civ": "Babylon",
+      "leader": "Hammurabi",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 32.54,
+      "longitude": 44.42
+    },
+    {
+      "civ": "Cree",
+      "leader": "Poundmaker",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 53.5,
+      "longitude": -100.0
+    },
+    {
+      "civ": "Gran Colombia",
+      "leader": "Simón Bolívar",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 10.49,
+      "longitude": -66.9
+    },
+    {
+      "civ": "Indonesia",
+      "leader": "Gitarja",
+      "pool": "civ6",
+      "available": true,
+      "latitude": -6.18,
+      "longitude": 106.83
+    },
+    {
+      "civ": "Macedon",
+      "leader": "Alexander",
+      "pool": "civ6",
+      "available": true,
+      "latitude": 40.76,
+      "longitude": 22.52
+    }
+  ]
+}

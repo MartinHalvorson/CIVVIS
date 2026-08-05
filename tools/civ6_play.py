@@ -21,6 +21,7 @@ import atexit
 import json
 import os
 import subprocess
+import textwrap
 import sys
 import tempfile
 import time
@@ -463,24 +464,52 @@ GAME_VFRACTION = 1.0
 
 
 def desktop_size() -> tuple[int, int] | None:
-    """Logical desktop size in points, or None if it cannot be read.
+    """Logical size of the MAIN display in points, or None if unreadable.
 
-    There is no supported scripting route to the screen size, so this asks
-    Finder for its desktop scroll area and treats a failure as "leave the
-    window alone" — never as a guess. `system_profiler` reports the *physical*
-    resolution (3456x2234 on this Mac) and window geometry is in points
-    (1728x1117), so mixing the two would place the game off-screen.
+    ⚠⚠ NOT the desktop's total area. This asked Finder for its desktop scroll
+    area, which spans EVERY attached display — and on 2026-08-04 an external
+    2560x1440 monitor was plugged in beside the built-in Retina. Finder then
+    reported **3225x2557**, the union. `place_game` halved that, placed Civ 6
+    1612 points wide at y=1333 (below a 1117-point screen), and the setup vision
+    could no longer read the difficulty dropdown:
+
+        [setup] difficulty: current value was not readable (attempt 1)
+        [setup] difficulty: refusing to click an unverified coordinate
+        NO GAME -- could not start a game from the main menu
+
+    Every attempt in the batch failed that way. The old docstring warned that
+    mixing coordinate spaces "would place the game off-screen"; the same hazard
+    arrived through a second display rather than through DPI.
+
+    `NSScreen` answers for one screen, which is the quantity `place_game` needs.
+    The screen at origin (0,0) is the one holding the menu bar; `NSScreen.main`
+    is the fallback and follows the key window, so it is second choice.
     """
-    out = subprocess.run(
-        ["osascript", "-e",
-         'tell application "System Events" to get size of scroll area 1 '
-         'of process "Finder"'],
-        capture_output=True, text=True)
+    swift = textwrap.dedent("""
+        import AppKit
+        if let s = NSScreen.screens.first(where: { $0.frame.origin == .zero })
+                    ?? NSScreen.main {
+            print("\\(Int(s.frame.width)),\\(Int(s.frame.height))")
+        }
+    """)
+    try:
+        out = subprocess.run(["swift", "-"], input=swift,
+                             capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.SubprocessError):
+        return None
     parts = [p.strip() for p in out.stdout.split(",") if p.strip()]
     if len(parts) != 2 or not all(p.isdigit() for p in parts):
         return None
     width, height = (int(p) for p in parts)
-    return (width, height) if width > 800 and height > 600 else None
+    # ⚠ Keep the sanity floor AND add a ceiling, as the last line of defence if
+    # the source ever reports a display UNION again. The bound is principled
+    # rather than arbitrary: the largest Apple display is a Pro Display XDR at
+    # 6016x3384 pixels, which is **3008x1692 POINTS**, and window geometry is in
+    # points. Anything taller than ~1700 points is therefore two screens stacked,
+    # not one screen — the observed union was 3225x2557.
+    if not (800 < width <= 4000 and 600 < height <= 2000):
+        return None
+    return (width, height)
 
 
 def place_game(side: str = "left", fraction: float = 0.5,

@@ -1,9 +1,11 @@
-name: publish-site
+name: to-test-auto-30
 
-# Builds and publishes civvis.ai — both lanes of it, in one deployment.
+# to-test-auto-30 — builds and publishes civvis.ai, both lanes in one deployment:
+# the name says the automatic half — /test refreshes on a half-hourly tick —
+# and to-prod-manual-only says the other half.
 #
 #   /        the STABLE lane: whatever the `site-stable` tag names. It moves
-#            only when somebody runs the promote-site workflow, because
+#            only when somebody runs to-prod-manual-only, because
 #            whether a build is worth being the front page is a judgement,
 #            and no gate can make it.
 #   /test    the HEAD lane: origin/main as of this run, republished on a
@@ -29,7 +31,7 @@ name: publish-site
 #     the cap would block promotions too, which are deployments like any
 #     other. So scheduled runs pace themselves against 440 a month
 #     (~14 a day), pro rata by the day of the month, and the other 60 stay
-#     reserved for promote-site and manual runs, which never wait.
+#     reserved for to-prod-manual-only and manual runs, which never wait.
 #
 # The effect: on a quiet day the test lane is fresh within about half an hour
 # of a commit (GitHub's cron drifts some minutes under load); in a week of
@@ -52,8 +54,8 @@ on:
         description: "Deploy to Cloudflare Pages (otherwise build and check only)"
         type: boolean
         default: true
-  # promote-site runs this same job after moving the site-stable tag, so a
-  # promotion cannot drift from what the schedule does.
+  # to-prod-manual-only runs this same job after moving the site-stable tag,
+  # so a promotion cannot drift from what the schedule does.
   workflow_call:
     inputs:
       deploy:
@@ -65,7 +67,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: publish-site
+  group: to-test-auto-30
   cancel-in-progress: false
 
 jobs:
@@ -106,13 +108,15 @@ jobs:
 
           # Budget: pace scheduled deploys against 440 of Cloudflare's 500
           # per month, pro rata by day, so promotions always have room.
-          # Successful runs of this workflow and promote-site approximate
-          # deployments; dry runs inflate the count, which errs safe.
+          # Successful runs of this workflow and to-prod-manual-only approximate
+          # deployments; dry runs inflate the count, which errs safe. The two
+          # names these workflows carried before 2026-08-04 stay in the sum:
+          # a rename must not amnesty the deployments already spent this month.
           month_start="$(date -u +%Y-%m-01)"
           day="$(date -u +%-d)"
           days_in_month="$(python3 -c 'import calendar,datetime; now=datetime.datetime.utcnow(); print(calendar.monthrange(now.year, now.month)[1])')"
           used=0
-          for wf in publish-site.yml promote-site.yml; do
+          for wf in to-test-auto-30.yml to-prod-manual-only.yml publish-site.yml promote-site.yml; do
             n="$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/${wf}/runs?status=success&created=>=${month_start}&per_page=1" --jq '.total_count' || echo 0)"
             used=$((used + n))
           done

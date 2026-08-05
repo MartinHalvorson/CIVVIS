@@ -1,0 +1,1780 @@
+{
+ "_source": "Most significant nations ranking of 2026-08-04, transferred from the operator's Google Sheet (docs.google.com/spreadsheets/d/1GMIp3YdfrvRwU5gJePQ4m-43QEYEwTdZgXVLaSPFwKs, gid 0).",
+ "_note": "Today's nation ordering for Earth Today map generation. With N major seats on the chosen map size, ranks 1..N seat as civilizations and ranks N+1..N+1.5*N as city-states; `bias` names the city-state type (the data/city_states.json vocabulary) a nation takes when it falls in the city-state band. A nation seated as a city-state copies its bonus at random from the base data/city_states.json bonuses — drawn without repeats while the pool lasts, repeats allowed once it runs out — with the draw made at seating time from the game's seeded RNG, never baked into this file. Unlike the append-only rosters, rank order IS the content here: a new day's ranking rewrites the file whole.",
+ "date": "2026-08-04",
+ "roster": [
+  {
+   "rank": 1,
+   "nation": "United States",
+   "leader": "Donald Trump",
+   "latitude": 38,
+   "longitude": -97,
+   "bias": "cultural",
+   "wonders": 4
+  },
+  {
+   "rank": 2,
+   "nation": "China",
+   "leader": "Xi Jinping",
+   "latitude": 35.8,
+   "longitude": 104.1,
+   "bias": "industrial",
+   "wonders": 3
+  },
+  {
+   "rank": 3,
+   "nation": "Russia",
+   "leader": "Vladimir Putin",
+   "latitude": 61.5,
+   "longitude": 105.3,
+   "bias": "militaristic",
+   "wonders": 3
+  },
+  {
+   "rank": 4,
+   "nation": "India",
+   "leader": "Narendra Modi",
+   "latitude": 20.5,
+   "longitude": 78.9,
+   "bias": "religious",
+   "wonders": 3
+  },
+  {
+   "rank": 5,
+   "nation": "Japan",
+   "leader": "Sanae Takaichi",
+   "latitude": 36.2,
+   "longitude": 138.2,
+   "bias": "scientific",
+   "wonders": 1
+  },
+  {
+   "rank": 6,
+   "nation": "Germany",
+   "leader": "Friedrich Merz",
+   "latitude": 51.1,
+   "longitude": 10.4,
+   "bias": "trade",
+   "wonders": 1
+  },
+  {
+   "rank": 7,
+   "nation": "United Kingdom",
+   "leader": "Andy Burnham",
+   "latitude": 55.3,
+   "longitude": -3.4,
+   "bias": "scientific",
+   "wonders": 3
+  },
+  {
+   "rank": 8,
+   "nation": "France",
+   "leader": "Emmanuel Macron",
+   "latitude": 46.2,
+   "longitude": 2.2,
+   "bias": "cultural",
+   "wonders": 2
+  },
+  {
+   "rank": 9,
+   "nation": "South Korea",
+   "leader": "Lee Jae-myung",
+   "latitude": 35.9,
+   "longitude": 127.7,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 10,
+   "nation": "Saudi Arabia",
+   "leader": "Mohammed bin Salman",
+   "latitude": 23.8,
+   "longitude": 45,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 11,
+   "nation": "Israel",
+   "leader": "Benjamin Netanyahu",
+   "latitude": 31,
+   "longitude": 34.8,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 12,
+   "nation": "Turkey",
+   "leader": "Recep Tayyip Erdoğan",
+   "latitude": 38.9,
+   "longitude": 35.2,
+   "bias": "trade",
+   "wonders": 3
+  },
+  {
+   "rank": 13,
+   "nation": "Taiwan",
+   "leader": "Lai Ching-te",
+   "latitude": 23.6,
+   "longitude": 120.9,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 14,
+   "nation": "Italy",
+   "leader": "Giorgia Meloni",
+   "latitude": 41.8,
+   "longitude": 12.5,
+   "bias": "religious",
+   "wonders": 2
+  },
+  {
+   "rank": 15,
+   "nation": "Brazil",
+   "leader": "Luiz Inácio Lula da Silva",
+   "latitude": -14.2,
+   "longitude": -51.9,
+   "bias": "cultural",
+   "wonders": 2
+  },
+  {
+   "rank": 16,
+   "nation": "Canada",
+   "leader": "Mark Carney",
+   "latitude": 56.1,
+   "longitude": -106.3,
+   "bias": "cultural",
+   "wonders": 1
+  },
+  {
+   "rank": 17,
+   "nation": "Australia",
+   "leader": "Anthony Albanese",
+   "latitude": -25.2,
+   "longitude": 133.7,
+   "bias": "industrial",
+   "wonders": 1
+  },
+  {
+   "rank": 18,
+   "nation": "Netherlands",
+   "leader": "Dick Schoof",
+   "latitude": 52.1,
+   "longitude": 5.2,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 19,
+   "nation": "Iran",
+   "leader": "Mojtaba Khamenei",
+   "latitude": 32.4,
+   "longitude": 53.6,
+   "bias": "militaristic",
+   "wonders": 1
+  },
+  {
+   "rank": 20,
+   "nation": "Indonesia",
+   "leader": "Prabowo Subianto",
+   "latitude": -0.7,
+   "longitude": 113.9,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 21,
+   "nation": "Mexico",
+   "leader": "Claudia Sheinbaum",
+   "latitude": 23.6,
+   "longitude": -102.5,
+   "bias": "trade",
+   "wonders": 2
+  },
+  {
+   "rank": 22,
+   "nation": "Spain",
+   "leader": "Pedro Sánchez",
+   "latitude": 40.4,
+   "longitude": -3.7,
+   "bias": "religious",
+   "wonders": 2
+  },
+  {
+   "rank": 23,
+   "nation": "Poland",
+   "leader": "Donald Tusk",
+   "latitude": 51.9,
+   "longitude": 19.1,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 24,
+   "nation": "Ukraine",
+   "leader": "Volodymyr Zelenskyy",
+   "latitude": 48.3,
+   "longitude": 31.1,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 25,
+   "nation": "United Arab Emirates",
+   "leader": "Mohamed bin Zayed Al Nahyan",
+   "latitude": 23.4,
+   "longitude": 53.8,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 26,
+   "nation": "Pakistan",
+   "leader": "Shehbaz Sharif",
+   "latitude": 30.3,
+   "longitude": 69.3,
+   "bias": "industrial",
+   "wonders": 1
+  },
+  {
+   "rank": 27,
+   "nation": "Singapore",
+   "leader": "Lawrence Wong",
+   "latitude": 1.3,
+   "longitude": 103.8,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 28,
+   "nation": "Switzerland",
+   "leader": "Karin Keller-Sutter",
+   "latitude": 46.8,
+   "longitude": 8.2,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 29,
+   "nation": "Egypt",
+   "leader": "Abdel Fattah el-Sisi",
+   "latitude": 26.8,
+   "longitude": 30.8,
+   "bias": "cultural",
+   "wonders": 3
+  },
+  {
+   "rank": 30,
+   "nation": "Vietnam",
+   "leader": "To Lam",
+   "latitude": 14,
+   "longitude": 108.2,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 31,
+   "nation": "Nigeria",
+   "leader": "Bola Tinubu",
+   "latitude": 9,
+   "longitude": 8.6,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 32,
+   "nation": "North Korea",
+   "leader": "Kim Jong Un",
+   "latitude": 40.3,
+   "longitude": 127.5,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 33,
+   "nation": "Sweden",
+   "leader": "Ulf Kristersson",
+   "latitude": 60.1,
+   "longitude": 18.6,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 34,
+   "nation": "Norway",
+   "leader": "Jonas Gahr Støre",
+   "latitude": 60.4,
+   "longitude": 8.4,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 35,
+   "nation": "Argentina",
+   "leader": "Javier Milei",
+   "latitude": -38.4,
+   "longitude": -63.6,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 36,
+   "nation": "Qatar",
+   "leader": "Tamim bin Hamad Al Thani",
+   "latitude": 25.3,
+   "longitude": 51.1,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 37,
+   "nation": "Thailand",
+   "leader": "Anutin Charnvirakul",
+   "latitude": 15.8,
+   "longitude": 100.9,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 38,
+   "nation": "Belgium",
+   "leader": "Bart De Wever",
+   "latitude": 50.5,
+   "longitude": 4.4,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 39,
+   "nation": "Ireland",
+   "leader": "Simon Harris",
+   "latitude": 53.1,
+   "longitude": -7.6,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 40,
+   "nation": "Bangladesh",
+   "leader": "Tarique Rahman",
+   "latitude": 23.6,
+   "longitude": 90.3,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 41,
+   "nation": "Philippines",
+   "leader": "Bongbong Marcos",
+   "latitude": 12.8,
+   "longitude": 121.7,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 42,
+   "nation": "Malaysia",
+   "leader": "Anwar Ibrahim",
+   "latitude": 4.2,
+   "longitude": 109.6,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 43,
+   "nation": "Kazakhstan",
+   "leader": "Kassym-Jomart Tokayev",
+   "latitude": 48,
+   "longitude": 68.2,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 44,
+   "nation": "South Africa",
+   "leader": "Cyril Ramaphosa",
+   "latitude": -30.5,
+   "longitude": 22.9,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 45,
+   "nation": "Denmark",
+   "leader": "Mette Frederiksen",
+   "latitude": 56.2,
+   "longitude": 9.5,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 46,
+   "nation": "Finland",
+   "leader": "Petteri Orpo",
+   "latitude": 61.9,
+   "longitude": 25.7,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 47,
+   "nation": "Austria",
+   "leader": "Christian Stocker",
+   "latitude": 47.5,
+   "longitude": 14.5,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 48,
+   "nation": "Czechia",
+   "leader": "Andrej Babiš",
+   "latitude": 49.8,
+   "longitude": 15.4,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 49,
+   "nation": "Chile",
+   "leader": "José Antonio Kast",
+   "latitude": -35.6,
+   "longitude": -71.5,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 50,
+   "nation": "Colombia",
+   "leader": "Gustavo Petro",
+   "latitude": 4.5,
+   "longitude": -74.2,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 51,
+   "nation": "Romania",
+   "leader": "Marcel Ciolacu",
+   "latitude": 45.9,
+   "longitude": 24.9,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 52,
+   "nation": "Greece",
+   "leader": "Kyriakos Mitsotakis",
+   "latitude": 39,
+   "longitude": 21.8,
+   "bias": "cultural",
+   "wonders": 3
+  },
+  {
+   "rank": 53,
+   "nation": "Iraq",
+   "leader": "Mohammed Shia' Al Sudani",
+   "latitude": 33.2,
+   "longitude": 43.6,
+   "bias": "scientific",
+   "wonders": 2
+  },
+  {
+   "rank": 54,
+   "nation": "Algeria",
+   "leader": "Abdelmadjid Tebboune",
+   "latitude": 28,
+   "longitude": 1.6,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 55,
+   "nation": "Venezuela",
+   "leader": "Nicolás Maduro",
+   "latitude": 6.4,
+   "longitude": -66.5,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 56,
+   "nation": "Peru",
+   "leader": "Dina Boluarte",
+   "latitude": -9.1,
+   "longitude": -75,
+   "bias": "industrial",
+   "wonders": 1
+  },
+  {
+   "rank": 57,
+   "nation": "Morocco",
+   "leader": "Aziz Akhannouch",
+   "latitude": 31.7,
+   "longitude": -7,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 58,
+   "nation": "Kuwait",
+   "leader": "Ahmad Al-Abdullah Al-Sabah",
+   "latitude": 29.3,
+   "longitude": 47.4,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 59,
+   "nation": "Portugal",
+   "leader": "Luís Montenegro",
+   "latitude": 39.3,
+   "longitude": -8.2,
+   "bias": "scientific",
+   "wonders": 1
+  },
+  {
+   "rank": 60,
+   "nation": "New Zealand",
+   "leader": "Christopher Luxon",
+   "latitude": -40.9,
+   "longitude": 174.8,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 61,
+   "nation": "Democratic Republic of the Congo",
+   "leader": "Judith Suminwa",
+   "latitude": -4,
+   "longitude": 21.7,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 62,
+   "nation": "Yemen",
+   "leader": "Rashad al-Alimi",
+   "latitude": 15.5,
+   "longitude": 48.5,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 63,
+   "nation": "Ethiopia",
+   "leader": "Abiy Ahmed",
+   "latitude": 9.1,
+   "longitude": 40.4,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 64,
+   "nation": "Hungary",
+   "leader": "Viktor Orbán",
+   "latitude": 47.1,
+   "longitude": 19.5,
+   "bias": "religious",
+   "wonders": 1
+  },
+  {
+   "rank": 65,
+   "nation": "Panama",
+   "leader": "José Raúl Mulino",
+   "latitude": 8.5,
+   "longitude": -80.7,
+   "bias": "scientific",
+   "wonders": 1
+  },
+  {
+   "rank": 66,
+   "nation": "Oman",
+   "leader": "Haitham bin Tariq",
+   "latitude": 21.5,
+   "longitude": 55.9,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 67,
+   "nation": "Bahrain",
+   "leader": "Salman bin Hamad Al Khalifa",
+   "latitude": 26,
+   "longitude": 50.5,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 68,
+   "nation": "Uzbekistan",
+   "leader": "Abdulla Aripov",
+   "latitude": 41.3,
+   "longitude": 64.5,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 69,
+   "nation": "Azerbaijan",
+   "leader": "Ilham Aliyev",
+   "latitude": 40.1,
+   "longitude": 47.5,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 70,
+   "nation": "Syria",
+   "leader": "Bashar al-Assad",
+   "latitude": 34.8,
+   "longitude": 38.9,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 71,
+   "nation": "Jordan",
+   "leader": "Bisher Khasawneh",
+   "latitude": 30.5,
+   "longitude": 36.2,
+   "bias": "scientific",
+   "wonders": 1
+  },
+  {
+   "rank": 72,
+   "nation": "Belarus",
+   "leader": "Alexander Lukashenko",
+   "latitude": 53.7,
+   "longitude": 27.9,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 73,
+   "nation": "Serbia",
+   "leader": "Miloš Vučević",
+   "latitude": 44,
+   "longitude": 21,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 74,
+   "nation": "Lithuania",
+   "leader": "Ingrida Šimonytė",
+   "latitude": 55.1,
+   "longitude": 23.8,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 75,
+   "nation": "Estonia",
+   "leader": "Kristen Michal",
+   "latitude": 58.5,
+   "longitude": 25,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 76,
+   "nation": "Latvia",
+   "leader": "Evika Siliņa",
+   "latitude": 56.8,
+   "longitude": 24.6,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 77,
+   "nation": "Slovakia",
+   "leader": "Robert Fico",
+   "latitude": 48.6,
+   "longitude": 19.6,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 78,
+   "nation": "Bulgaria",
+   "leader": "Dimitar Glavchev",
+   "latitude": 42.7,
+   "longitude": 25.4,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 79,
+   "nation": "Croatia",
+   "leader": "Andrej Plenković",
+   "latitude": 45.1,
+   "longitude": 15.2,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 80,
+   "nation": "Slovenia",
+   "leader": "Robert Golob",
+   "latitude": 46.1,
+   "longitude": 14.9,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 81,
+   "nation": "Cuba",
+   "leader": "Manuel Marrero Cruz",
+   "latitude": 21.5,
+   "longitude": -77.7,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 82,
+   "nation": "Ghana",
+   "leader": "Nana Akufo-Addo",
+   "latitude": 7.9,
+   "longitude": -1,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 83,
+   "nation": "Kenya",
+   "leader": "William Ruto",
+   "latitude": 0,
+   "longitude": 37.9,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 84,
+   "nation": "Angola",
+   "leader": "João Lourenço",
+   "latitude": -11.2,
+   "longitude": 17.8,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 85,
+   "nation": "Sri Lanka",
+   "leader": "Harini Amarasuriya",
+   "latitude": 7.8,
+   "longitude": 80.7,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 86,
+   "nation": "Myanmar",
+   "leader": "Min Aung Hlaing",
+   "latitude": 21.9,
+   "longitude": 95.9,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 87,
+   "nation": "Sudan",
+   "leader": "Abdel Fattah al-Burhan",
+   "latitude": 12.8,
+   "longitude": 30.2,
+   "bias": "militaristic",
+   "wonders": 1
+  },
+  {
+   "rank": 88,
+   "nation": "Libya",
+   "leader": "Abdul Hamid Dbeibeh",
+   "latitude": 26.3,
+   "longitude": 17.2,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 89,
+   "nation": "Lebanon",
+   "leader": "Najib Mikati",
+   "latitude": 33.8,
+   "longitude": 35.8,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 90,
+   "nation": "Moldova",
+   "leader": "Dorin Recean",
+   "latitude": 47.4,
+   "longitude": 28.3,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 91,
+   "nation": "Afghanistan",
+   "leader": "Hibatullah Akhundzada",
+   "latitude": 33.9,
+   "longitude": 67.7,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 92,
+   "nation": "Georgia",
+   "leader": "Irakli Kobakhidze",
+   "latitude": 42.3,
+   "longitude": 43.3,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 93,
+   "nation": "Mongolia",
+   "leader": "Luvsannamsrain Oyun-Erdene",
+   "latitude": 46.8,
+   "longitude": 103.8,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 94,
+   "nation": "Djibouti",
+   "leader": "Ismaïl Omar Guelleh",
+   "latitude": 11.8,
+   "longitude": 42.5,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 95,
+   "nation": "Rwanda",
+   "leader": "Édouard Ngirente",
+   "latitude": -1.9,
+   "longitude": 29.8,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 96,
+   "nation": "Vatican City",
+   "leader": "Pope Francis",
+   "latitude": 41.9,
+   "longitude": 12.4,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 97,
+   "nation": "Luxembourg",
+   "leader": "Luc Frieden",
+   "latitude": 49.8,
+   "longitude": 6.1,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 98,
+   "nation": "Cyprus",
+   "leader": "Nikos Christodoulides",
+   "latitude": 35.1,
+   "longitude": 33.4,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 99,
+   "nation": "Iceland",
+   "leader": "Bjarni Benediktsson",
+   "latitude": 64.9,
+   "longitude": -19,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 100,
+   "nation": "Palestine",
+   "leader": "Mohammad Mustafa",
+   "latitude": 31.9,
+   "longitude": 35.2,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 101,
+   "nation": "Guyana",
+   "leader": "Mark Phillips",
+   "latitude": 4.8,
+   "longitude": -58.9,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 102,
+   "nation": "Ecuador",
+   "leader": "Daniel Noboa",
+   "latitude": -1.8,
+   "longitude": -78.1,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 103,
+   "nation": "Uruguay",
+   "leader": "Luis Lacalle Pou",
+   "latitude": -32.5,
+   "longitude": -55.7,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 104,
+   "nation": "Dominican Republic",
+   "leader": "Luis Abinader",
+   "latitude": 18.7,
+   "longitude": -70.1,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 105,
+   "nation": "Côte d'Ivoire",
+   "leader": "Robert Beugré Mambé",
+   "latitude": 7.5,
+   "longitude": -5.5,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 106,
+   "nation": "Senegal",
+   "leader": "Ousmane Sonko",
+   "latitude": 14.4,
+   "longitude": -14.4,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 107,
+   "nation": "Tanzania",
+   "leader": "Kassim Majaliwa",
+   "latitude": -6.3,
+   "longitude": 34.8,
+   "bias": "scientific",
+   "wonders": 1
+  },
+  {
+   "rank": 108,
+   "nation": "Tunisia",
+   "leader": "Kamel Madouri",
+   "latitude": 33.8,
+   "longitude": 9.5,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 109,
+   "nation": "Bolivia",
+   "leader": "Luis Arce",
+   "latitude": -16.2,
+   "longitude": -63.5,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 110,
+   "nation": "Trinidad & Tobago",
+   "leader": "Keith Rowley",
+   "latitude": 10.6,
+   "longitude": -61.2,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 111,
+   "nation": "El Salvador",
+   "leader": "Nayib Bukele",
+   "latitude": 13.7,
+   "longitude": -88.8,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 112,
+   "nation": "Zambia",
+   "leader": "Hakainde Hichilema",
+   "latitude": -13.1,
+   "longitude": 27.8,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 113,
+   "nation": "Uganda",
+   "leader": "Robinah Nabbanja",
+   "latitude": 1.3,
+   "longitude": 32.2,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 114,
+   "nation": "Mozambique",
+   "leader": "Adriano Maleiane",
+   "latitude": -18.6,
+   "longitude": 35.5,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 115,
+   "nation": "Cameroon",
+   "leader": "Joseph Dion Ngute",
+   "latitude": 7.3,
+   "longitude": 12.3,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 116,
+   "nation": "Paraguay",
+   "leader": "Santiago Peña",
+   "latitude": -23.4,
+   "longitude": -58.4,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 117,
+   "nation": "Costa Rica",
+   "leader": "Rodrigo Chaves Robles",
+   "latitude": 9.7,
+   "longitude": -83.7,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 118,
+   "nation": "Guatemala",
+   "leader": "Bernardo Arévalo",
+   "latitude": 15.7,
+   "longitude": -90.2,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 119,
+   "nation": "Nepal",
+   "leader": "KP Sharma Oli",
+   "latitude": 28.3,
+   "longitude": 84.1,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 120,
+   "nation": "Cambodia",
+   "leader": "Hun Manet",
+   "latitude": 12.5,
+   "longitude": 104.9,
+   "bias": "trade",
+   "wonders": 1
+  },
+  {
+   "rank": 121,
+   "nation": "Laos",
+   "leader": "Sonexay Siphandone",
+   "latitude": 19.8,
+   "longitude": 102.4,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 122,
+   "nation": "Turkmenistan",
+   "leader": "Serdar Berdimuhamedow",
+   "latitude": 38.9,
+   "longitude": 59.5,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 123,
+   "nation": "Armenia",
+   "leader": "Nikol Pashinyan",
+   "latitude": 40,
+   "longitude": 45,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 124,
+   "nation": "Botswana",
+   "leader": "Duma Boko",
+   "latitude": -22.3,
+   "longitude": 24.6,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 125,
+   "nation": "Namibia",
+   "leader": "Saara Kuugongelwa",
+   "latitude": -22.9,
+   "longitude": 18.4,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 126,
+   "nation": "Niger",
+   "leader": "Ali Lamine Zeine",
+   "latitude": 17.6,
+   "longitude": 8,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 127,
+   "nation": "Mali",
+   "leader": "Choguel Kokalla Maïga",
+   "latitude": 17.5,
+   "longitude": -3.9,
+   "bias": "cultural",
+   "wonders": 1
+  },
+  {
+   "rank": 128,
+   "nation": "Burkina Faso",
+   "leader": "Apollinaire Joachim Kyélem de Tambèla",
+   "latitude": 12.2,
+   "longitude": -1.5,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 129,
+   "nation": "Guinea",
+   "leader": "Bah Oury",
+   "latitude": 9.9,
+   "longitude": -9.6,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 130,
+   "nation": "Haiti",
+   "leader": "Garry Conille",
+   "latitude": 18.9,
+   "longitude": -72.2,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 131,
+   "nation": "Honduras",
+   "leader": "Xiomara Castro",
+   "latitude": 15.1,
+   "longitude": -86.2,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 132,
+   "nation": "Nicaragua",
+   "leader": "Daniel Ortega",
+   "latitude": 12.8,
+   "longitude": -85.2,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 133,
+   "nation": "Papua New Guinea",
+   "leader": "James Marape",
+   "latitude": -6.3,
+   "longitude": 143.9,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 134,
+   "nation": "Brunei",
+   "leader": "Hassanal Bolkiah",
+   "latitude": 4.5,
+   "longitude": 114.7,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 135,
+   "nation": "Maldives",
+   "leader": "Mohamed Muizzu",
+   "latitude": 3.2,
+   "longitude": 73.2,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 136,
+   "nation": "Malta",
+   "leader": "Robert Abela",
+   "latitude": 35.9,
+   "longitude": 14.3,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 137,
+   "nation": "Albania",
+   "leader": "Edi Rama",
+   "latitude": 41.1,
+   "longitude": 20.1,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 138,
+   "nation": "North Macedonia",
+   "leader": "Hristijan Mickoski",
+   "latitude": 41.6,
+   "longitude": 21.7,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 139,
+   "nation": "Bosnia & Herzegovina",
+   "leader": "Borjana Krišto",
+   "latitude": 43.9,
+   "longitude": 17.6,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 140,
+   "nation": "Montenegro",
+   "leader": "Milojko Spajić",
+   "latitude": 42.7,
+   "longitude": 19.3,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 141,
+   "nation": "Kosovo",
+   "leader": "Albin Kurti",
+   "latitude": 42.6,
+   "longitude": 20.9,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 142,
+   "nation": "Zimbabwe",
+   "leader": "Emmerson Mnangagwa",
+   "latitude": -19,
+   "longitude": 29.1,
+   "bias": "religious",
+   "wonders": 1
+  },
+  {
+   "rank": 143,
+   "nation": "Madagascar",
+   "leader": "Christian Ntsay",
+   "latitude": -18.7,
+   "longitude": 46.8,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 144,
+   "nation": "Mauritius",
+   "leader": "Navin Ramgoolam",
+   "latitude": -20.3,
+   "longitude": 57.5,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 145,
+   "nation": "Chad",
+   "leader": "Allamaye Halina",
+   "latitude": 15.4,
+   "longitude": 18.7,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 146,
+   "nation": "Somalia",
+   "leader": "Hamza Abdi Barre",
+   "latitude": 5.1,
+   "longitude": 46.1,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 147,
+   "nation": "South Sudan",
+   "leader": "Salva Kiir Mayardit",
+   "latitude": 6.8,
+   "longitude": 29.9,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 148,
+   "nation": "Eritrea",
+   "leader": "Isaias Afwerki",
+   "latitude": 15.1,
+   "longitude": 39.7,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 149,
+   "nation": "Benin",
+   "leader": "Patrice Talon",
+   "latitude": 9.3,
+   "longitude": 2.3,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 150,
+   "nation": "Togo",
+   "leader": "Victoire Tomegah Dogbé",
+   "latitude": 8.6,
+   "longitude": 0.8,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 151,
+   "nation": "Sierra Leone",
+   "leader": "David Moinina Sengeh",
+   "latitude": 8.4,
+   "longitude": -11.7,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 152,
+   "nation": "Liberia",
+   "leader": "Joseph Boakai",
+   "latitude": 6.4,
+   "longitude": -9.4,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 153,
+   "nation": "Gambia",
+   "leader": "Adama Barrow",
+   "latitude": 13.4,
+   "longitude": -15.3,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 154,
+   "nation": "Gabon",
+   "leader": "Raymond Ndong Sima",
+   "latitude": -0.8,
+   "longitude": 11.6,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 155,
+   "nation": "Republic of the Congo",
+   "leader": "Anatole Collinet Makosso",
+   "latitude": -0.2,
+   "longitude": 15.8,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 156,
+   "nation": "Equatorial Guinea",
+   "leader": "Manuela Roka Botey",
+   "latitude": 1.6,
+   "longitude": 10.2,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 157,
+   "nation": "Mauritania",
+   "leader": "Mokhtar Ould Djay",
+   "latitude": 21,
+   "longitude": -10.9,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 158,
+   "nation": "Central African Republic",
+   "leader": "Félix Moloua",
+   "latitude": 6.6,
+   "longitude": 20.9,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 159,
+   "nation": "Burundi",
+   "leader": "Gervais Ndirakobuca",
+   "latitude": -3.3,
+   "longitude": 29.9,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 160,
+   "nation": "Malawi",
+   "leader": "Lazarus Chakwera",
+   "latitude": -13.2,
+   "longitude": 34.3,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 161,
+   "nation": "Lesotho",
+   "leader": "Sam Matekane",
+   "latitude": -29.6,
+   "longitude": 28.2,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 162,
+   "nation": "Eswatini",
+   "leader": "Russell Dlamini",
+   "latitude": -26.5,
+   "longitude": 31.4,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 163,
+   "nation": "Guinea-Bissau",
+   "leader": "Rui Duarte de Barros",
+   "latitude": 11.8,
+   "longitude": -15.1,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 164,
+   "nation": "Kyrgyzstan",
+   "leader": "Akylbek Japarov",
+   "latitude": 41.2,
+   "longitude": 74.7,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 165,
+   "nation": "Tajikistan",
+   "leader": "Kokhir Rasulzoda",
+   "latitude": 38.8,
+   "longitude": 71.2,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 166,
+   "nation": "Bhutan",
+   "leader": "Tshering Tobgay",
+   "latitude": 27.5,
+   "longitude": 90.4,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 167,
+   "nation": "Timor-Leste",
+   "leader": "Xanana Gusmão",
+   "latitude": -8.8,
+   "longitude": 125.7,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 168,
+   "nation": "Jamaica",
+   "leader": "Andrew Holness",
+   "latitude": 18.1,
+   "longitude": -77.2,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 169,
+   "nation": "Bahamas",
+   "leader": "Philip Davis",
+   "latitude": 25,
+   "longitude": -77.3,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 170,
+   "nation": "Suriname",
+   "leader": "Chan Santokhi",
+   "latitude": 3.9,
+   "longitude": -56,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 171,
+   "nation": "Barbados",
+   "leader": "Mia Mottley",
+   "latitude": 13.1,
+   "longitude": -59.5,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 172,
+   "nation": "Belize",
+   "leader": "Johnny Briceño",
+   "latitude": 17.1,
+   "longitude": -88.4,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 173,
+   "nation": "Fiji",
+   "leader": "Sitiveni Rabuka",
+   "latitude": -16.5,
+   "longitude": 179.4,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 174,
+   "nation": "Solomon Islands",
+   "leader": "Jeremiah Manele",
+   "latitude": -9.6,
+   "longitude": 160.1,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 175,
+   "nation": "Vanuatu",
+   "leader": "Charlot Salwai",
+   "latitude": -15.3,
+   "longitude": 166.9,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 176,
+   "nation": "Samoa",
+   "leader": "Fiamē Naomi Mataʻafa",
+   "latitude": -13.7,
+   "longitude": -172.1,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 177,
+   "nation": "Tonga",
+   "leader": "Siaosi Sovaleni",
+   "latitude": -21.1,
+   "longitude": -175.1,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 178,
+   "nation": "Cabo Verde",
+   "leader": "Ulisses Correia e Silva",
+   "latitude": 16,
+   "longitude": -24,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 179,
+   "nation": "Seychelles",
+   "leader": "Wavel Ramkalawan",
+   "latitude": -4.6,
+   "longitude": 55.4,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 180,
+   "nation": "Comoros",
+   "leader": "Azali Assoumani",
+   "latitude": -11.8,
+   "longitude": 43.3,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 181,
+   "nation": "São Tomé & Príncipe",
+   "leader": "Patrice Trovoada",
+   "latitude": 0.1,
+   "longitude": 6.6,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 182,
+   "nation": "Marshall Islands",
+   "leader": "Hilda Heine",
+   "latitude": 7.1,
+   "longitude": 171.1,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 183,
+   "nation": "Micronesia",
+   "leader": "Wesley Simina",
+   "latitude": 7.4,
+   "longitude": 150.5,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 184,
+   "nation": "Palau",
+   "leader": "Surangel Whipps Jr.",
+   "latitude": 7.5,
+   "longitude": 134.5,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 185,
+   "nation": "Kiribati",
+   "leader": "Taneti Maamau",
+   "latitude": -3.3,
+   "longitude": -168.7,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 186,
+   "nation": "Monaco",
+   "leader": "Didier Guillaume",
+   "latitude": 43.7,
+   "longitude": 7.4,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 187,
+   "nation": "Liechtenstein",
+   "leader": "Daniel Risch",
+   "latitude": 47.1,
+   "longitude": 9.5,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 188,
+   "nation": "Andorra",
+   "leader": "Xavier Espot Zamora",
+   "latitude": 42.5,
+   "longitude": 1.6,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 189,
+   "nation": "Antigua & Barbuda",
+   "leader": "Gaston Browne",
+   "latitude": 17,
+   "longitude": -61.7,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 190,
+   "nation": "St. Lucia",
+   "leader": "Philip J. Pierre",
+   "latitude": 13.9,
+   "longitude": -60.9,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 191,
+   "nation": "Grenada",
+   "leader": "Dickon Mitchell",
+   "latitude": 12.2,
+   "longitude": -61.6,
+   "bias": "scientific",
+   "wonders": 0
+  },
+  {
+   "rank": 192,
+   "nation": "Dominica",
+   "leader": "Roosevelt Skerrit",
+   "latitude": 15.4,
+   "longitude": -61.3,
+   "bias": "trade",
+   "wonders": 0
+  },
+  {
+   "rank": 193,
+   "nation": "St. Kitts & Nevis",
+   "leader": "Terrance Drew",
+   "latitude": 17.3,
+   "longitude": -62.7,
+   "bias": "cultural",
+   "wonders": 0
+  },
+  {
+   "rank": 194,
+   "nation": "St. Vincent & the Grenadines",
+   "leader": "Ralph Gonsalves",
+   "latitude": 13.2,
+   "longitude": -61.2,
+   "bias": "industrial",
+   "wonders": 0
+  },
+  {
+   "rank": 195,
+   "nation": "San Marino",
+   "leader": "Captains Regent",
+   "latitude": 43.9,
+   "longitude": 12.4,
+   "bias": "militaristic",
+   "wonders": 0
+  },
+  {
+   "rank": 196,
+   "nation": "Nauru",
+   "leader": "David Adeang",
+   "latitude": -0.5,
+   "longitude": 166.9,
+   "bias": "religious",
+   "wonders": 0
+  },
+  {
+   "rank": 197,
+   "nation": "Tuvalu",
+   "leader": "Feleti Teo",
+   "latitude": -7.1,
+   "longitude": 177.6,
+   "bias": "scientific",
+   "wonders": 0
+  }
+ ]
+}

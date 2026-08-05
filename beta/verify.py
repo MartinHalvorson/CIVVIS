@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import base64
 import functools
+import hashlib
 import http.server
 import json
 import os
@@ -459,17 +460,73 @@ def main(argv: list[str] | None = None) -> int:
         if absolute in page:
             print(f"    the published viewer still asks for {absolute}", file=sys.stderr)
             return 1
-    preload = (
-        '<link rel="preload" href="civvis.wasm" as="fetch" '
-        'type="application/wasm" crossorigin fetchpriority="high">'
+    def digest(relative: str) -> str:
+        return hashlib.sha256((dist / lane / relative).read_bytes()).hexdigest()
+
+    def check_version(text: str, pattern: str, expected: str, label: str) -> bool:
+        match = re.search(pattern, text)
+        if not match:
+            print(f"    the published viewer has no content-versioned {label}", file=sys.stderr)
+            return False
+        if match.group(1) != expected:
+            print(
+                f"    the published viewer gives {label} version {match.group(1)}, "
+                f"but its bytes are {expected}",
+                file=sys.stderr,
+            )
+            return False
+        return True
+
+    wasm_version = digest("civvis.wasm")
+    shim_version = digest("shim.js")
+    if not check_version(
+        page,
+        r'<link rel="preload" href="civvis\.wasm\?v=([0-9a-f]{64})" as="fetch" '
+        r'type="application/wasm" crossorigin fetchpriority="high">',
+        wasm_version,
+        "WASM preload",
+    ):
+        return 1
+    if not check_version(
+        page,
+        r'<script src="shim\.js\?v=([0-9a-f]{64})"></script>',
+        shim_version,
+        "shim script",
+    ):
+        return 1
+
+    shim = (dist / lane / "shim.js").read_text(encoding="utf-8")
+    if not check_version(
+        shim,
+        r'new URL\("civvis\.wasm\?v=([0-9a-f]{64})", here\)\.href',
+        wasm_version,
+        "WASM URL in shim.js",
+    ):
+        return 1
+    if not check_version(
+        shim,
+        r'new URL\("worker\.js\?v=([0-9a-f]{64})", here\)\.href',
+        digest("worker.js"),
+        "worker URL in shim.js",
+    ):
+        return 1
+
+    asset_urls = re.findall(r'''["'](assets/[^"']+)["']''', page)
+    if not asset_urls:
+        print("    the published viewer contains no atlas references", file=sys.stderr)
+        return 1
+    for asset_url in asset_urls:
+        match = re.fullmatch(r"(assets/[^?]+)\?v=([0-9a-f]{64})", asset_url)
+        if not match or match.group(2) != digest(match.group(1)):
+            print(
+                f"    the published viewer has an unversioned or mismatched atlas: {asset_url}",
+                file=sys.stderr,
+            )
+            return 1
+
+    print(
+        f"    the viewer is relative-pathed for /{lane}; JS, WASM, and atlases are content-versioned"
     )
-    if preload not in page:
-        print("    the published viewer does not preload the WASM module", file=sys.stderr)
-        return 1
-    if '<script src="shim.js"></script>' not in page:
-        print("    the published viewer does not load the shim", file=sys.stderr)
-        return 1
-    print(f"    the viewer is relative-pathed for /{lane}, preloads WASM, and loads the shim")
 
     # The download page names its binaries; the release workflow builds
     # binaries under names it chooses. Nothing connects the two but agreement,
@@ -606,6 +663,9 @@ def main(argv: list[str] | None = None) -> int:
             "   seen.add(`${d[i]},${d[i+1]},${d[i+2]},${d[i+3]}`);"
             " return seen.size; })()"
         )
+        build_marker = dev.evaluate(
+            "document.getElementById('buildmark')?.textContent || ''"
+        )
 
         dev.call("Page.stopScreencast", wait=False)
         dev.alive = False
@@ -622,6 +682,22 @@ def main(argv: list[str] | None = None) -> int:
             problems.append("the page reported 'CIVVIS boot failed'")
         if isinstance(painted, int) and painted < 8:
             problems.append(f"the map canvas holds only {painted} distinct colours")
+        expected_size = f"Build size {build['wasm_bytes'] / 1048576:.1f} MiB"
+        if expected_size not in build_marker:
+            problems.append(
+                f"the build marker does not show {expected_size!r}: {build_marker!r}"
+            )
+        order = [
+            build_marker.find(build["short"][:7]),
+            build_marker.find("Commit is"),
+            build_marker.find("Build is"),
+            build_marker.find("Build size"),
+        ]
+        if any(position < 0 for position in order) or order != sorted(order):
+            problems.append(
+                f"the build marker order is not commit, commit age, build age, build size: "
+                f"{build_marker!r}"
+            )
         fatal = [
             line
             for line in dev.console
@@ -632,6 +708,7 @@ def main(argv: list[str] | None = None) -> int:
 
         print(f"    build       {build['short']}")
         print(f"    engine      {build['wasm_bytes']:,} bytes")
+        print(f"    marker      {build_marker}")
         print(f"    turns       {report.get('turns', 0)} (reached turn {report.get('lastTurn')})")
         print(f"    repaints    {report.get('paints', 0)}")
         print(f"    canvas      {painted} distinct sampled colours")

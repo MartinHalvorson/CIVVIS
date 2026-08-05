@@ -290,6 +290,47 @@ impl Snapshot {
 
 #[cfg(test)]
 mod tests {
+
+    /// ⚠ AN ENEMY UNIT CIVVIS CANNOT SEE IS WORSE THAN A COSMETIC GAP.
+    ///
+    /// Civilization VI names uniques by CIVILIZATION. Stripping that qualifier
+    /// from `UNIT_EGYPTIAN_CHARIOT_ARCHER` gives `chariot_archer`, but
+    /// `data/units.json` calls it **maryannu_chariot_archer**, so neither
+    /// spelling matched and the unit vanished from the board. Live on
+    /// `civvis-20260804T233745Z`:
+    ///
+    ///     UNITDATA ⚠ UNIT_EGYPTIAN_CHARIOT_ARCHER@(39, 24) count Civ6=1 CIVVIS=0
+    #[test]
+    fn a_unique_unit_resolves_through_its_noun() {
+        let rules = crate::rules::Rules::embedded();
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_EGYPTIAN_CHARIOT_ARCHER").as_deref(),
+            Some("maryannu_chariot_archer"),
+            "the observed live failure must resolve"
+        );
+        // The ordinary paths must keep working exactly as before.
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_WARRIOR").as_deref(),
+            Some("warrior")
+        );
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_ROMAN_LEGION").as_deref(),
+            Some("legion"),
+            "the civ-qualifier fallback already handled this and must not regress"
+        );
+        // A Great Person is a MODELLING gap, not a naming one — there is no
+        // entry to find and inventing one would be worse than reporting none.
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_GREAT_SCIENTIST").as_deref(),
+            None
+        );
+        // And a name that matches nothing must stay unresolved.
+        assert_eq!(
+            resolved_civvis_unit_name(&rules, "UNIT_NOT_A_REAL_UNIT").as_deref(),
+            None
+        );
+    }
+
     use super::*;
 
     fn plot(x: i32, y: i32, t: &str) -> Plot {
@@ -5887,6 +5928,26 @@ pub struct StateRival {
     pub military: f64,
     #[serde(default)]
     pub at_war: bool,
+    /// How many technologies this rival has finished, or `-1` if the host
+    /// could not be asked.
+    ///
+    /// ⚠⚠ THIS IS THE FIELD THAT MAKES THE SCORE GAP READABLE. Over 99
+    /// completed runs CIVVIS leads in NONE: our score is a median 267 against
+    /// the best rival's 1109, a ratio of 0.26. But on empire size we are at
+    /// 0.75-0.80 — 3 cities against 4, population 28 against 35 — and our
+    /// cities are individually LARGER (10.3 pop against 9.4). So most of the
+    /// gap is in components that are neither cities nor population, and until
+    /// now the export could not say which.
+    ///
+    /// ⚠ `#[serde(default = "unknown_metric")]` is load-bearing. A new
+    /// `StateRival` field without a default makes the WHOLE snapshot fail to
+    /// deserialize on any older export, which silently loses the board — the
+    /// failure documented on `map_or_empty_sequence`.
+    #[serde(default = "unknown_metric")]
+    pub techs: f64,
+    /// Civics finished, or `-1` if unavailable. See `techs`.
+    #[serde(default = "unknown_metric")]
+    pub civics: f64,
     #[serde(default)]
     pub cities: Vec<StateCity>,
     #[serde(default)]
@@ -6970,7 +7031,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     ];
     const RIVAL: &[&str] = &[
         "player", "civ", "leader", "can_declare", "score", "military", "at_war",
-        "cities", "units",
+        "techs", "civics", "cities", "units",
     ];
     const MINOR: &[&str] = &[
         "player", "civ", "score", "military", "at_war", "suzerain", "envoys",
@@ -7359,8 +7420,41 @@ fn resolved_civvis_unit_name(
     if rules.units.contains_key(&direct) {
         return Some(direct);
     }
-    civvis_unit_name_unqualified(civ6)
-        .filter(|bare| rules.units.contains_key(bare))
+    let bare = civvis_unit_name_unqualified(civ6);
+    if let Some(bare) = bare.as_deref().filter(|bare| rules.units.contains_key(*bare)) {
+        return Some(bare.to_string());
+    }
+    // ⚠ A UNIQUE UNIT WHOSE CIVVIS NAME CARRIES AN EPITHET.
+    //
+    // Civilization VI names uniques by CIVILIZATION — `UNIT_EGYPTIAN_CHARIOT_ARCHER`
+    // — and stripping that qualifier gives `chariot_archer`, which is not what
+    // CIVVIS calls it: `data/units.json` has **maryannu_chariot_archer**. Neither
+    // spelling matches, so the unit resolved to nothing and vanished from the
+    // board. Caught live by `civ6_mirror_check` on run `civvis-20260804T233745Z`:
+    //
+    //     UNITDATA ⚠ UNIT_EGYPTIAN_CHARIOT_ARCHER@(39, 24) count Civ6=1 CIVVIS=0
+    //
+    // An ENEMY unit CIVVIS cannot see is worse than a cosmetic gap: threat
+    // assessment, settler safety and every tactical decision read a board with a
+    // chariot archer missing from it.
+    //
+    // Rather than a hand-written table of host names — which would mean GUESSING
+    // spellings for civilizations never yet observed — resolve by the noun: accept
+    // the modelled unit whose name ENDS WITH the unqualified name. Exactly two
+    // units in `data/units.json` need it (`maryannu_chariot_archer` and
+    // `winged_hussar`), and only the Egyptian one has actually been seen.
+    //
+    // ⚠ Required to be UNAMBIGUOUS. If two modelled units share a suffix the
+    // answer is refused, because a wrong unit on the board is worse than a
+    // missing one — it would carry the wrong strength, movement and abilities.
+    let bare = bare?;
+    let suffix = format!("_{bare}");
+    let mut matches = rules
+        .units
+        .keys()
+        .filter(|name| name.as_str().ends_with(suffix.as_str()));
+    let only = matches.next()?;
+    matches.next().is_none().then(|| only.to_string())
 }
 
 /// The one qualifier measured being mistaken for a civilization.
