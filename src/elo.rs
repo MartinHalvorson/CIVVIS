@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 106] = [
+pub const EVAL_ONLY_AIS: [&str; 107] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -55,6 +55,7 @@ pub const EVAL_ONLY_AIS: [&str; 106] = [
     "live_without_come_ashore",
     "live_without_suzerain_cards",
     "live_without_blind_objective_strength",
+    "live_without_muster_at_command_radius",
     "live_without_relief_targets_the_siege",
     "live_without_blind_objective_units",
     "live_without_loyalty_rate_alarm",
@@ -166,7 +167,7 @@ pub const EVAL_ONLY_AIS: [&str; 106] = [
 /// trick that will not work for the next one. Emitting this list per run makes
 /// staleness self-describing (an old binary emits a shorter list) and tells any
 /// A/B exactly which repairs were live in the arm it measured.
-pub const LIVE_BRIDGE_TREATMENTS: [&str; 24] = [
+pub const LIVE_BRIDGE_TREATMENTS: [&str; 25] = [
     "live-trader-route",
     "live-religious-purchase",
     "siege-muster",
@@ -187,6 +188,7 @@ pub const LIVE_BRIDGE_TREATMENTS: [&str; 24] = [
     "relief-targets-the-siege",
     "blind-objective-units",
     "suzerain-cards",
+    "muster-at-command-radius",
     "housing-districts",
     "campus-every-city",
     "housing-cards",
@@ -236,6 +238,7 @@ define_arm_kinds! {
     LiveWithoutComeAshore => "live_without_come_ashore",
     LiveWithoutSuzerainCards => "live_without_suzerain_cards",
     LiveWithoutBlindObjectiveStrength => "live_without_blind_objective_strength",
+    LiveWithoutMusterAtCommandRadius => "live_without_muster_at_command_radius",
     LiveWithoutReliefTargetsTheSiege => "live_without_relief_targets_the_siege",
     LiveWithoutBlindObjectiveUnits => "live_without_blind_objective_units",
     LiveWithoutLoyaltyRateAlarm => "live_without_loyalty_rate_alarm",
@@ -2205,6 +2208,12 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.disable_blind_objective_strength();
             Box::new(ai)
         }
+        "live_without_muster_at_command_radius" => {
+            let mut ai = AdvancedAi::new();
+            ai.enable_live_bridge();
+            ai.disable_muster_at_command_radius();
+            Box::new(ai)
+        }
         "live_without_loyalty_rate_alarm" => {
             let mut ai = AdvancedAi::new();
             ai.enable_live_bridge();
@@ -3432,6 +3441,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "live_without_come_ashore" => (Vec::new(), "live_without_come_ashore"),
         "live_without_suzerain_cards" => (Vec::new(), "live_without_suzerain_cards"),
         "live_without_blind_objective_strength" => (Vec::new(), "live_without_blind_objective_strength"),
+        "live_without_muster_at_command_radius" => (Vec::new(), "live_without_muster_at_command_radius"),
         "live_without_relief_targets_the_siege" => (Vec::new(), "live_without_relief_targets_the_siege"),
         "live_without_blind_objective_units" => (Vec::new(), "live_without_blind_objective_units"),
         "live_without_loyalty_rate_alarm" => (Vec::new(), "live_without_loyalty_rate_alarm"),
