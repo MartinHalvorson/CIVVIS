@@ -224,14 +224,52 @@ while read -r kind n b; do
   else
     # No remote branch. Merged-and-deleted is the normal end of a task here, so
     # that is not a fault; a branch GitHub has never seen at all is.
+    #
+    # ⚠ ASK REACHABILITY BEFORE ASKING THE PR LIST. Matching the branch NAME
+    # against PR head names is wrong twice over: a branch can be renamed or
+    # copied locally (`tmp/m977b` held PR #977's exact commits and was reported
+    # as "never opened as a PR"), and a PR head branch that GitHub deleted after
+    # merge keeps its content at refs/pull/N/head forever. What decides whether
+    # anything is at risk is whether the COMMIT is on GitHub, not what it is
+    # called. The pull refs are fetched here because the default refspec does
+    # not bring them down.
+    git -C $REPO -c gc.auto=0 fetch -q origin '+refs/pull/*/head:refs/remotes/pr/*' 2>>$LOG
+    if [[ -n $(git -C $REPO for-each-ref --contains "$b" --count=1 \
+                 --format='%(refname)' refs/remotes 2>/dev/null) ]]; then
+      continue          # the commits are on GitHub under some ref; nothing at risk
+    fi
     [[ $prs_known == 1 ]] || continue
     if ! grep -qF "$b	" /tmp/civvis-sync-prs.$$; then
-      say "NO PR: $b has $n commit(s) and has never been opened as a PR"
+      say "NO PR: $b has $n commit(s) reachable from no GitHub ref at all"
       problems=$((problems+1))
     fi
   fi
 done < /tmp/civvis-sync-branches.$$
 rm -f /tmp/civvis-sync-branches.$$ /tmp/civvis-sync-prs.$$
+
+# --- 3b. the operational scripts that drive the fleet ------------------------
+# ⚠⚠ ELEVEN OF THESE EXISTED ON EXACTLY ONE DISK — 1,794 lines including
+# `civvis-batch-loop.sh`, the 492-line supervisor that runs the whole
+# measurement fleet. `git cat-file -e $(git hash-object …)` missed on every one.
+# They are tracked under tools/ops/ now, and this step is what keeps the two
+# copies from drifting apart again: the home copy is what launchd actually runs,
+# so a silent edit there is a silent fork.
+#
+# Reported, never overwritten. These are live operational scripts and a sweep
+# that rewrites one mid-run is a much worse failure than a stale copy.
+for home in /Users/martin/civvis-*.sh; do
+  [[ -f $home ]] || continue
+  name=${home:t}
+  [[ $name == civvis-sync.sh ]] && continue        # a shim by design; see the header
+  tracked=$REPO/tools/ops/$name
+  if [[ ! -f $tracked ]]; then
+    say "UNTRACKED SCRIPT: $home has no tools/ops/$name -- it exists only on this disk"
+    problems=$((problems+1))
+  elif ! cmp -s "$home" "$tracked"; then
+    say "SCRIPT DRIFT: $home differs from tools/ops/$name -- launchd runs the home copy"
+    problems=$((problems+1))
+  fi
+done
 
 # --- 4. work that exists only in a worktree ----------------------------------
 # The class every other step here is blind to. Steps 1 and 3 reason about
