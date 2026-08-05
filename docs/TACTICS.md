@@ -1,7 +1,7 @@
 # Unit battling: the state of the art, what CIVVIS does, and what changed
 
-2026-07-31. Companion to `src/ai/tactics.rs`, `src/skirmish.rs` and
-`src/bin/battle_bench.rs`.
+2026-07-31. Historical record of the removed tactical-search experiment;
+companion to `src/skirmish.rs` and `src/bin/battle_bench.rs`.
 
 ## 1. What the published state of the art is for this problem
 
@@ -79,11 +79,11 @@ before the next is considered. That commitment rule costs four things:
    depth-to-target, adjacent support and incoming threat; nothing scores it for
    the shot it opens. This is the largest of the four by a wide margin — see §4.
 
-## 3. What was built
+## 3. What was built, then removed
 
-`src/ai/tactics.rs` — a bounded **Portfolio Online Evolution** over the
-engagement, behind `AdvancedAi::joint_tactics`, reachable as the
-`advanced_joint_tactics` entrant.
+The removed experiment was a bounded **Portfolio Online Evolution** over the
+engagement. It was evaluated as an optional entrant and never became part of
+the production controller.
 
 - **Portfolio.** Each engaged unit gets a short list of candidate *lines* — an
   attack from where it stands, a step onto an adjacent tile followed by the
@@ -185,9 +185,9 @@ treatment that never fired says nothing about the game.
 ### Combat, where the change acts
 
 `battle_bench`, 24 turns, 28×20, armies of six, each seed played twice with
-seats swapped. `advanced_joint_tactics` against `advanced`, **2000 seeds a
-cell, on seed blocks fresh to the final configuration** — disjoint from every
-block used to choose the forfeit weight or the search budget.
+seats swapped. The removed experiment was compared against `advanced`, **2000
+seeds a cell, on seed blocks fresh to the final configuration** — disjoint from
+every block used to choose the forfeit weight or the search budget.
 
 | composition | exchange ratio (ours vs theirs) | paired material swing | sign p |
 |---|---|---|---|
@@ -313,10 +313,9 @@ Consistent direction, but wins are what the gate reads.
   bound, which a single null cannot give: turning the tactical dial an order of
   magnitude produced no response at all.
 
-So it ships **off by default**, registered as `advanced_joint_tactics`, with the
-null recorded — the same disposition as `advanced_relief_scoped` and
-`advanced_lane_reachable`. It is there to be re-measured when the constraint
-moves, rather than re-derived from scratch.
+The experiment was removed after the whole-game gate remained inconclusive.
+Its null result remains recorded here so the same unproven search is not
+reintroduced by accident.
 
 **If someone picks this up**, the ranked list is:
 

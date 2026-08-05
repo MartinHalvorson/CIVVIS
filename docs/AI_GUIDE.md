@@ -644,9 +644,9 @@ roster keeps `strategic` as an offline-only anchor.
 - Keep mechanism controls separate. `advanced_policy_live_control`,
   `advanced_envoy_policy`, `advanced_envoy_infrastructure`, and
   `advanced_envoy_economy` decompose policy-deck, influence-card, and production
-  effects. `advanced_strategic_commitment` is the default-off soft-replan
-  treatment. None is production behavior unless a later matrix gate promotes
-  it.
+  effects. The former soft-replan treatment was removed after its deployment
+  result was negative. None of these decomposition arms is production
+  behavior unless a later matrix gate promotes it.
 - Use `ai_eval` to catch regressions hidden by wins (stalled settlers, obsolete
   armies, unfinished queues, or weak science/culture output).
 - Keep `random` in the pool as a sanity floor.

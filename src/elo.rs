@@ -38,7 +38,7 @@ pub const BUILTIN_AIS: [&str; 10] = [
 /// tournament ratings. Keeping them out of `BUILTIN_AIS` prevents a control
 /// factory from being pooled into the same player/leader rating key as
 /// its treatment.
-pub const EVAL_ONLY_AIS: [&str; 106] = [
+pub const EVAL_ONLY_AIS: [&str; 97] = [
     // The deployed Civilization VI agent, and one arm per live-bridge flag
     // held off. Eval-only by construction: they move whenever the bridge
     // moves, which is exactly what a rating anchor must not do.
@@ -69,8 +69,6 @@ pub const EVAL_ONLY_AIS: [&str; 106] = [
     "advanced_envoy_infrastructure",
     "advanced_envoy_priority",
     "advanced_envoy_economy",
-    "advanced_strategic_commitment",
-    "advanced_evolved_commitment",
     "advanced_congress_counter",
     "advanced_congress_votes",
     "advanced_congress_counter_hard",
@@ -109,17 +107,11 @@ pub const EVAL_ONLY_AIS: [&str; 106] = [
     // for every real run; see the constructor arms below.
     "advanced_target_domination",
     "advanced_target_score",
-    "advanced_food_first",
     "advanced_measured_dedication",
-    "advanced_lane_reachable",
     "advanced_garrison_loyalty",
-    "advanced_parallel_settlers",
     "advanced_settler_first",
-    "advanced_prophet_first",
     "advanced_league_top",
     "strategic_cheap",
-    "advanced_relief_scoped",
-    "advanced_joint_tactics",
     "strategic_score",
     "strategic_doctrine",
     "strategic_joint",
@@ -145,7 +137,6 @@ pub const EVAL_ONLY_AIS: [&str; 106] = [
     "policy_wide",
     "policy_wide_frozen",
     "strategic_warm",
-    "strategic_religion_expand",
     "strategic_cold",
     "strategic_noprophet",
     "strategic_deep_adaptive",
@@ -270,22 +261,15 @@ define_arm_kinds! {
     AdvancedEnvoyPriority => "advanced_envoy_priority",
     AdvancedEvolved => "advanced_evolved",
     AdvancedEvolvedBlind => "advanced_evolved_blind",
-    AdvancedEvolvedCommitment => "advanced_evolved_commitment",
     AdvancedExpansionComplete => "advanced_expansion_complete",
     AdvancedExpansionDispatch => "advanced_expansion_dispatch",
     AdvancedExpansionPayback => "advanced_expansion_payback",
-    AdvancedFoodFirst => "advanced_food_first",
-    AdvancedJointTactics => "advanced_joint_tactics",
-    AdvancedLaneReachable => "advanced_lane_reachable",
     AdvancedLateExpansion => "advanced_late_expansion",
     AdvancedLeagueTop => "advanced_league_top",
     AdvancedMeasuredDedication => "advanced_measured_dedication",
-    AdvancedParallelSettlers => "advanced_parallel_settlers",
     AdvancedPlanCityTarget => "advanced_plan_city_target",
     AdvancedPolicyLiveControl => "advanced_policy_live_control",
     AdvancedPolicyEnvoyPriority => "advanced_policy_envoy_priority",
-    AdvancedProphetFirst => "advanced_prophet_first",
-    AdvancedReliefScoped => "advanced_relief_scoped",
     AdvancedRush => "advanced_rush",
     AdvancedRushConnected => "advanced_rush_connected",
     AdvancedGarrisonLoyalty => "advanced_garrison_loyalty",
@@ -296,7 +280,6 @@ define_arm_kinds! {
     AdvancedSettlerFirst => "advanced_settler_first",
     AdvancedTargetDomination => "advanced_target_domination",
     AdvancedTargetScore => "advanced_target_score",
-    AdvancedStrategicCommitment => "advanced_strategic_commitment",
     AdvancedV1 => "advanced_v1",
     AdvancedWideOpening => "advanced_wide_opening",
     Basic => "basic",
@@ -331,7 +314,6 @@ define_arm_kinds! {
     StrategicR10 => "strategic_r10",
     StrategicR20 => "strategic_r20",
     StrategicR20H20 => "strategic_r20h20",
-    StrategicReligionExpand => "strategic_religion_expand",
     StrategicRivals => "strategic_rivals",
     StrategicRot10 => "strategic_rot10",
     StrategicRot20 => "strategic_rot20",
@@ -1512,13 +1494,6 @@ fn artifact_effective_alias_from(
                 ArmKind::StrategicDeep
             }
         }
-        ArmKind::AdvancedEvolvedCommitment => {
-            if champion {
-                ArmKind::AdvancedEvolvedCommitment
-            } else {
-                ArmKind::AdvancedStrategicCommitment
-            }
-        }
         ArmKind::AdvancedEvolvedBlind => {
             if champion {
                 ArmKind::AdvancedEvolvedBlind
@@ -1550,7 +1525,6 @@ fn artifact_effective_alias(kind: ArmKind, dir: &str) -> ArmKind {
             | ArmKind::Policy
             | ArmKind::PolicyWide
             | ArmKind::PolicyWideFrozen
-            | ArmKind::AdvancedEvolvedCommitment
             | ArmKind::AdvancedEvolvedBlind
             | ArmKind::AdvancedBankingDedication
     ) && crate::evolve::load_champion(dir).is_some();
@@ -1627,23 +1601,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.envoy_infrastructure = true;
             Box::new(ai)
         }
-        "advanced_strategic_commitment" => {
-            let mut ai = AdvancedAi::new();
-            ai.strategic_commitment = true;
-            Box::new(ai)
-        }
-        // Composite of the strongest committed compact-profile genome and the
-        // independently causal strategy-stability treatment. Its artifact is
-        // definitional, so evaluators can refuse a silent stock fallback. The
-        // preregistered 20-map matrix rejected transfer: compact was +17, but
-        // deployment was -70 with terminal direction 5-15 (p=0.0414).
-        "advanced_evolved_commitment" => {
-            let mut ai = crate::evolve::load_champion("evolved")
-                .map(AdvancedAi::with_weights)
-                .unwrap_or_default();
-            ai.strategic_commitment = true;
-            Box::new(ai)
-        }
         // Treatment for the lane-reachability axis: identical to `advanced`
         // except that it refuses to route toward a victory lane it cannot
         // finish inside the turn budget. Paired against `advanced` this
@@ -1658,15 +1615,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         // has -- that is mechanics. Paired against `advanced` this bounds what
         // the existing per-civilization code is worth, which is the ceiling
         // any better per-civilization play has to beat. See `docs/OPENINGS.md`.
-        // Treatment for the expansion-tempo axis: identical to `advanced`
-        // except that its governors want food while the empire is short of
-        // its city target. See `docs/OPENINGS.md` §11 for the ceiling that
-        // motivated it and for the production it trades away.
-        "advanced_food_first" => {
-            let mut ai = AdvancedAi::new();
-            ai.food_first = 0.6;
-            Box::new(ai)
-        }
         // Treatment for the settler-commitment axis: identical to `advanced`
         // except that a settler holds its chosen site across a turn it could
         // not move, for up to three such turns. See `docs/OPENINGS.md` §15.
@@ -1805,17 +1753,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.civ_blind = true;
             Box::new(ai)
         }
-        // Treatment for the expansion-rate axis: identical to `advanced`
-        // except that it may hold more than one settler at a time, up to its
-        // shortfall against the city target. Paired against `advanced` this
-        // isolates the empire-wide `counts.settlers == 0` serialization and
-        // nothing else. See `docs/OPENINGS.md` for the measurement that
-        // motivated it and for what would refute it.
-        "advanced_parallel_settlers" => {
-            let mut ai = AdvancedAi::new();
-            ai.parallel_settlers = true;
-            Box::new(ai)
-        }
         // Treatment for the city-decision axis: identical to `advanced`
         // except that it stamps a `CityDirective` on every city each turn, so
         // the citizen governor can see the empire's lane, the city's own role
@@ -1951,15 +1888,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
             ai.plan_city_target = true;
             Box::new(ai)
         }
-        "advanced_lane_reachable" => {
-            let mut ai = AdvancedAi::new();
-            ai.refuse_unreachable_lanes = true;
-            Box::new(ai)
-        }
-        // Treatment for the routing axis: identical to `advanced` except that
-        // the finite Prophet race is tested before the opportunistic war that
-        // currently preempts it on turns 55..120. See
-        // `AdvancedAi::prophet_before_opportunism`.
         // Upper bound for the expansion-valuation axis: a settler outbids every
         // other item whenever the five gates permit one at all. This is not a
         // shippable policy, it is the oracle-ablation question — is there ANY
@@ -2011,34 +1939,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "advanced_league_top" => {
             let weights = shipped_league_top_advanced().unwrap_or_default();
             Box::new(AdvancedAi::with_weights(weights))
-        }
-        "advanced_prophet_first" => {
-            let mut ai = AdvancedAi::new();
-            ai.prophet_before_opportunism = true;
-            Box::new(ai)
-        }
-        // Treatment for the relief-radius axis: identical to `advanced` in
-        // every other respect, holding only the force groups that could
-        // reach a threatened city instead of every group in the empire.
-        // Paired against `advanced` this isolates the scoped hold and
-        // nothing else. Measured no stronger at 120 maps, which is why it is
-        // an entrant rather than the default; kept so the comparison can be
-        // re-run once siege conversion improves.
-        "advanced_relief_scoped" => {
-            let mut ai = AdvancedAi::new();
-            ai.scoped_relief_hold = true;
-            Box::new(ai)
-        }
-        // Treatment for the tactical-commitment axis: identical to `advanced`
-        // in every other respect, deciding the turn's whole engagement as one
-        // joint problem instead of letting units commit greedily one at a time
-        // in a fixed class order. Paired against `advanced` this isolates the
-        // commitment rule and nothing else — the same per-unit evaluator, the
-        // same weights, the same everything above the battlefield.
-        "advanced_joint_tactics" => {
-            let mut ai = AdvancedAi::new();
-            ai.joint_tactics = true;
-            Box::new(ai)
         }
         // The denial ablation on the weights the deployment actually plays.
         // Every other arm in `docs/COUNTERING_LEADERS.md` ran on
@@ -2282,18 +2182,6 @@ fn build_arm(kind: ArmKind, seed: u64) -> Box<dyn Ai> {
         "strategic" => Box::new(crate::strategic::StrategicAi::with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
-        // Treatment for the assigned-Religion expansion bypass: identical to
-        // `strategic` except that a seat committed to Religion asks the same
-        // "can this lane afford to expand first?" question every other assigned
-        // lane asks — on the acting agent and on every projected branch alike.
-        // See `StrategicAi::set_religion_may_expand`.
-        "strategic_religion_expand" => {
-            let mut ai = crate::strategic::StrategicAi::with_weights(
-                crate::evolve::load_champion("evolved").unwrap_or_default(),
-            );
-            ai.set_religion_may_expand(true);
-            Box::new(ai)
-        }
         "strategic_score" => Box::new(crate::strategic::StrategicAi::score_only_with_weights(
             crate::evolve::load_champion("evolved").unwrap_or_default(),
         )),
@@ -2768,7 +2656,6 @@ impl ArmKind {
             | Self::StrategicR10
             | Self::StrategicR20
             | Self::StrategicR20H20
-            | Self::StrategicReligionExpand
             | Self::StrategicRivals
             | Self::StrategicRot10
             | Self::StrategicRot20
@@ -2812,7 +2699,6 @@ impl ArmKind {
             | Self::StrategicR10
             | Self::StrategicR20
             | Self::StrategicR20H20
-            | Self::StrategicReligionExpand
             | Self::StrategicRivals
             | Self::StrategicRot10
             | Self::StrategicRot20
@@ -2820,7 +2706,6 @@ impl ArmKind {
             | Self::StrategicUltra
             | Self::StrategicWarm
             | Self::AdvancedMeasuredDedication
-            | Self::AdvancedEvolvedCommitment
             | Self::AdvancedEvolvedBlind => {
                 if champion {
                     WeightSource::Champion
@@ -2864,7 +2749,6 @@ impl ArmKind {
             | Self::StrategicR10
             | Self::StrategicR20
             | Self::StrategicR20H20
-            | Self::StrategicReligionExpand
             | Self::StrategicRivals
             | Self::StrategicRot10
             | Self::StrategicRot20
@@ -2922,10 +2806,6 @@ impl ArmKind {
             Self::AdvancedEnvoyInfrastructure => &["policy-deck-legacy", "envoy-priority-off"],
             Self::AdvancedEnvoyPriority => &["policy-deck-legacy"],
             Self::AdvancedEnvoyEconomy => &["envoy-influence", "envoy-priority-off"],
-            Self::AdvancedStrategicCommitment | Self::AdvancedEvolvedCommitment => {
-                &["strategy-commitment"]
-            }
-            Self::AdvancedFoodFirst => &["food-first"],
             Self::AdvancedGarrisonLoyalty => &["garrison-loyalty-policy"],
             Self::AdvancedSettlerCommit => &["settler-commitment"],
             // The two arms differ only in the lane they are told to win, which is
@@ -2949,7 +2829,6 @@ impl ArmKind {
             }
             Self::AdvancedEarlyScoreBuild => &["early-score-alarm", "counter-in-lane"],
             Self::AdvancedCivBlind => &["civilization-blind"],
-            Self::AdvancedParallelSettlers => &["parallel-settlers"],
             Self::AdvancedCityStrategy => &["city-directives"],
             Self::AdvancedCityStrategyEmphasis => &["city-directives", "city-emphasis-only"],
             Self::AdvancedCityStrategyRoles => &["city-directives", "city-roles-only"],
@@ -2969,11 +2848,7 @@ impl ArmKind {
             Self::AdvancedExpansionComplete => &["late-expansion", "expansion-dispatch"],
             Self::AdvancedWideOpening => &["city-target-floor"],
             Self::AdvancedPlanCityTarget => &["plan-city-target"],
-            Self::AdvancedLaneReachable => &["lane-reachability"],
             Self::AdvancedSettlerFirst => &["settler-oracle"],
-            Self::AdvancedProphetFirst => &["prophet-priority"],
-            Self::AdvancedReliefScoped => &["scoped-relief"],
-            Self::AdvancedJointTactics => &["joint-tactics"],
             Self::AdvancedMeasuredDedication => &["dedication-measured"],
             Self::StrategicCheap => &["search-cheap"],
             Self::StrategicCold => &["search-cold"],
@@ -3012,7 +2887,6 @@ impl ArmKind {
             Self::StrategicR10 => &["search-cadence-10"],
             Self::StrategicR20 => &["search-cadence-20"],
             Self::StrategicR20H20 => &["search-cadence-20", "search-horizon-20"],
-            Self::StrategicReligionExpand => &["religion-may-expand"],
             Self::StrategicRivals => &["rival-lane-model"],
             Self::StrategicRot10 => &["search-cadence-10", "rotate-lanes"],
             Self::StrategicRot20 => &["search-cadence-20", "rotate-lanes"],
@@ -3365,10 +3239,6 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             vec![genome, value(true)],
             if net { "strategic" } else { "strategic_score" },
         ),
-        "strategic_religion_expand" => (
-            vec![genome, value(false)],
-            "strategic_religion_expand",
-        ),
         "strategic_cold" => (vec![genome, value(false)], "strategic_cold"),
         "strategic_noprophet" => (vec![genome, value(false)], "strategic_noprophet"),
         "strategic_deep_adaptive" => (vec![genome, value(false)], "strategic_deep_adaptive"),
@@ -3449,19 +3319,6 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         "advanced_envoy_infrastructure" => (Vec::new(), "advanced_envoy_infrastructure"),
         "advanced_envoy_priority" => (Vec::new(), "advanced_envoy_priority"),
         "advanced_envoy_economy" => (Vec::new(), "advanced_envoy_economy"),
-        "advanced_strategic_commitment" => (Vec::new(), "advanced_strategic_commitment"),
-        "advanced_evolved_commitment" => (
-            vec![ArtifactStatus {
-                definitional: true,
-                ..genome
-            }],
-            if champion {
-                "advanced_evolved_commitment"
-            } else {
-                "advanced_strategic_commitment"
-            },
-        ),
-        "advanced_lane_reachable" => (Vec::new(), "advanced_lane_reachable"),
         "advanced_wide_opening" => (Vec::new(), "advanced_wide_opening"),
         "advanced_plan_city_target" => (Vec::new(), "advanced_plan_city_target"),
         "advanced_expansion_payback" => (Vec::new(), "advanced_expansion_payback"),
@@ -3485,9 +3342,7 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
             advanced_fallback,
         ),
         "advanced_measured_dedication" => (vec![genome], "advanced_measured_dedication"),
-        "advanced_parallel_settlers" => (Vec::new(), "advanced_parallel_settlers"),
         "advanced_settler_first" => (Vec::new(), "advanced_settler_first"),
-        "advanced_prophet_first" => (Vec::new(), "advanced_prophet_first"),
         "advanced_league_top" => (Vec::new(), "advanced_league_top"),
         "strategic_cheap" => (vec![genome, value(false)], "strategic_cheap"),
         "advanced_blind_to_leaders" => (Vec::new(), "advanced_blind_to_leaders"),
@@ -3522,12 +3377,9 @@ pub fn builtin_provenance(name: &str, dir: &str) -> AgentProvenance {
         }
         "advanced_timing_attack_rapid" => (Vec::new(), "advanced_timing_attack_rapid"),
         "advanced_settler_commit" => (Vec::new(), "advanced_settler_commit"),
-        "advanced_food_first" => (Vec::new(), "advanced_food_first"),
         "advanced_target_domination" => (Vec::new(), "advanced_target_domination"),
         "advanced_target_score" => (Vec::new(), "advanced_target_score"),
         "advanced_v1" => (Vec::new(), "advanced_v1"),
-        "advanced_relief_scoped" => (Vec::new(), "advanced_relief_scoped"),
-        "advanced_joint_tactics" => (Vec::new(), "advanced_joint_tactics"),
         "random" => (Vec::new(), "random"),
         // `builtin_ai` answers every other name with the lightweight agent.
         "basic" => (Vec::new(), "basic"),
@@ -4612,7 +4464,7 @@ mod tests {
             // Anything else reaching that state fell through to the
             // catch-all and is claiming to need nothing while quietly
             // needing a net.
-            const SCRIPTED: [&str; 73] = [
+            const SCRIPTED: [&str; 66] = [
                 "advanced",
                 "advanced_belief_pressure",
                 "advanced_policy_live_control",
@@ -4621,7 +4473,6 @@ mod tests {
                 "advanced_envoy_infrastructure",
                 "advanced_envoy_priority",
                 "advanced_envoy_economy",
-                "advanced_strategic_commitment",
                 "advanced_blind_to_leaders",
                 "advanced_rush",
                 "advanced_rush_connected",
@@ -4653,13 +4504,7 @@ mod tests {
                 "advanced_city_strategy_comparative_only",
                 "advanced_city_strategy_pressure_only",
                 "advanced_civ_blind",
-                "advanced_food_first",
-                "advanced_lane_reachable",
                 "advanced_league_top",
-                "advanced_parallel_settlers",
-                "advanced_prophet_first",
-                "advanced_joint_tactics",
-                "advanced_relief_scoped",
                 "advanced_settler_first",
                 // Built from code, not from a weights artifact: these two differ
                 // from `advanced` only in the victory lane they are handed.
