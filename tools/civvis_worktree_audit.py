@@ -137,7 +137,18 @@ def snapshot(repo: str, tree_path: str, branch: str) -> str | None:
     if not head:
         return None
     with tempfile.TemporaryDirectory() as tmp:
-        env = {"GIT_INDEX_FILE": os.path.join(tmp, "index")}
+        # ⚠ The identity is passed explicitly, never inherited. This runs from
+        # launchd, which has almost no environment: with no user.email git
+        # refuses to write a commit at all, `commit-tree` returns nothing, and
+        # the rescue silently saves nothing while reporting success. CI has the
+        # same empty identity and is what caught it.
+        env = {
+            "GIT_INDEX_FILE": os.path.join(tmp, "index"),
+            "GIT_AUTHOR_NAME": "civvis-worktree-audit",
+            "GIT_AUTHOR_EMAIL": "civvis-worktree-audit@localhost",
+            "GIT_COMMITTER_NAME": "civvis-worktree-audit",
+            "GIT_COMMITTER_EMAIL": "civvis-worktree-audit@localhost",
+        }
         # Seed the scratch index from HEAD so unchanged files are already staged,
         # then add everything the tree currently holds.
         if not git("read-tree", head, repo=tree_path, env=env):
@@ -157,8 +168,13 @@ def snapshot(repo: str, tree_path: str, branch: str) -> str | None:
             return None
     # See the module docstring: refs/heads/wip/* is rejected by the pre-push hook.
     ref = f"refs/civvis/wip/{branch}"
+    # ⚠ `--force`, not `--force-with-lease`. The lease needs a remote-tracking
+    # ref to compare against, and nothing under refs/civvis/ is ever fetched by
+    # the default refspec — so the FIRST rescue succeeds and every later one is
+    # rejected for a lease it cannot know. This ref is a rolling snapshot this
+    # tool alone writes; overwriting our own previous snapshot is the point.
     pushed = subprocess.run(
-        ["git", "-C", tree_path, "-c", "gc.auto=0", "push", "--force-with-lease",
+        ["git", "-C", tree_path, "-c", "gc.auto=0", "push", "--force",
          "origin", f"{commit}:{ref}"],
         capture_output=True, text=True)
     return commit if pushed.returncode == 0 else None
@@ -248,6 +264,17 @@ def selftest() -> int:
         # refused. Assert the namespace, not just that some ref exists.
         heads = git("for-each-ref", "--format=%(refname)", "refs/heads", repo=remote)
         assert "wip" not in heads, f"snapshots must not land under refs/heads: {heads}"
+
+        # ⚠ A rescue must survive being run again — it runs every fifteen
+        # minutes. The first push creates the ref; only the second exercises the
+        # overwrite, which is where --force-with-lease fails for want of a
+        # remote-tracking ref that refs/civvis/ never gets.
+        open(os.path.join(wt, "a.txt"), "w").write("one\ntwo\nthree\n")
+        audit(work, idle_minutes=30, rescue=True)
+        again = subprocess.run(
+            ["git", "-C", remote, "show", "refs/civvis/wip/feat:a.txt"],
+            capture_output=True, text=True).stdout
+        assert "three" in again, f"a repeat rescue must overwrite, got {again!r}"
 
         # A commit that never reached the remote must be named.
         subprocess.run(["git", "-C", wt, "add", "-A"], check=True)
