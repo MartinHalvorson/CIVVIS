@@ -30,10 +30,17 @@ which persists forever even for a closed PR:
     git for-each-ref --contains <sha> --count=1 refs/remotes
 
 `--rescue` closes the third hole by making detection almost beside the point: it
-pushes a snapshot commit of every dirty worktree to `refs/heads/wip/<branch>`
+pushes a snapshot commit of every dirty worktree to `refs/civvis/wip/<branch>`
 WITHOUT touching that worktree's HEAD, index or files (see `snapshot`). An agent
 mid-edit is never disturbed, and its bytes are on GitHub within fifteen minutes
 whether or not it ever gets to commit them.
+
+⚠ THE NAMESPACE IS NOT NEGOTIABLE. The `pre-push` hook rejects any `refs/heads/`
+name that is not `agent/<machine>/<agent>/<task>-<UTC>-<nonce>`, so a snapshot
+pushed to `refs/heads/wip/...` is refused and the rescue silently does nothing —
+which is worse than no rescue, because the audit would report the tree as saved.
+`refs/civvis/` is outside the hook's check and is the namespace
+`docs/VERSION_CONTROL.md` already uses for preserved commits.
 
 Exit 0 = nothing exists only on this disk. Exit 1 = something does.
 """
@@ -118,7 +125,7 @@ def on_github(repo: str, sha: str) -> bool:
 
 
 def snapshot(repo: str, tree_path: str, branch: str) -> str | None:
-    """Push the worktree's current contents to `wip/<branch>` and return the sha.
+    """Push the worktree's contents to `refs/civvis/wip/<branch>`, return the sha.
 
     ⚠⚠ THIS MUST NOT DISTURB A LIVE AGENT, so it never runs `git add`, never
     writes the worktree's index and never moves its HEAD. It stages into a
@@ -148,7 +155,8 @@ def snapshot(repo: str, tree_path: str, branch: str) -> str | None:
                      repo=tree_path, env=env)
         if not commit:
             return None
-    ref = f"refs/heads/wip/{branch}"
+    # See the module docstring: refs/heads/wip/* is rejected by the pre-push hook.
+    ref = f"refs/civvis/wip/{branch}"
     pushed = subprocess.run(
         ["git", "-C", tree_path, "-c", "gc.auto=0", "push", "--force-with-lease",
          "origin", f"{commit}:{ref}"],
@@ -231,11 +239,15 @@ def selftest() -> int:
         assert git("rev-parse", "HEAD", repo=wt) == before, "HEAD must not move"
         assert git("status", "--porcelain", repo=wt) == before_status, \
             "the agent's working tree must be untouched"
-        saved = git("--no-pager", "show", "wip/feat:a.txt",
-                    repo=remote) or subprocess.run(
-            ["git", "-C", remote, "show", "wip/feat:a.txt"],
+        saved = subprocess.run(
+            ["git", "-C", remote, "show", "refs/civvis/wip/feat:a.txt"],
             capture_output=True, text=True).stdout
         assert "two" in saved, f"the snapshot must carry the unstaged bytes, got {saved!r}"
+        # ⚠ The production remote's pre-push hook refuses any refs/heads/ name
+        # that is not an agent branch, so a snapshot written there is silently
+        # refused. Assert the namespace, not just that some ref exists.
+        heads = git("for-each-ref", "--format=%(refname)", "refs/heads", repo=remote)
+        assert "wip" not in heads, f"snapshots must not land under refs/heads: {heads}"
 
         # A commit that never reached the remote must be named.
         subprocess.run(["git", "-C", wt, "add", "-A"], check=True)
