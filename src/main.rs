@@ -627,8 +627,16 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// applied at each call site, and a fixed-prefix `ai_eval advanced basic`
 /// comparison produced byte-identical output on clean main and the candidate.
 /// Compatibility re-pin; the Elo protocol does not move.
+///
+/// #1225 reuses the tile appeal computed by one `worthwhile_improvements` call
+/// across that tile's candidate improvements. A fixed-prefix `ai_eval
+/// advanced basic --pairs 10 --players 4 --turns 200 --seed 31337 --jobs 1
+/// --deployment-comparison` comparison produced byte-identical output on
+/// clean main and the candidate (SHA-256
+/// `34c8ccea34d4bf3a8b60ae1b713f82bffbce77a5f1614f07d69db591d6287b24`).
+/// Compatibility re-pin; the Elo protocol does not move.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0f3d_62d2_59f0_9276;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4e90_0151_2dc9_8556;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
