@@ -184,6 +184,32 @@ def parse_claims(body: str) -> Dict[str, str]:
     return claims
 
 
+MACHINE_REGISTRY = Path("docs/MACHINES.md")
+
+
+def machine_registry(path: Path = MACHINE_REGISTRY) -> Optional[Set[str]]:
+    """Every machine ID `docs/MACHINES.md` knows, canonical or alias.
+
+    The registry exists because one physical laptop introduced itself under
+    four different branch IDs, which made the 2026-08-05 overwrite forensics
+    needlessly hard. The parse is deliberately permissive — any backticked
+    token that would be a valid branch machine ID counts, whether it sits in
+    the canonical table, an alias column, or the unresolved list — because
+    the registry is a ratchet toward stable names, not a gate. Returns None
+    when the file is absent so callers can stay silent rather than nag every
+    checkout that predates it.
+    """
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    return {
+        token
+        for token in re.findall(r"`([a-z0-9][a-z0-9-]{0,31})`", text)
+        if ID_RE.fullmatch(token)
+    }
+
+
 def split_paths(raw: str) -> List[str]:
     return [clean_token(item) for item in raw.split(",") if clean_token(item)]
 
@@ -605,6 +631,18 @@ def check_pr_action(event_path: Path, token: str, repository: str) -> int:
                     "an update before merging. Run: "
                     "git fetch origin main && git merge origin/main"
                 )
+    branch_match = BRANCH_RE.fullmatch(str(current["headRefName"]))
+    registry = machine_registry()
+    if branch_match and registry is not None:
+        machine = branch_match.group("machine")
+        if machine not in registry:
+            advisories.append(
+                f"machine ID '{machine}' is not in docs/MACHINES.md. If this "
+                "is a new computer, add it to the canonical table; if it is "
+                "an existing one under a new name, add the name as an alias. "
+                "One physical machine, one ID — that is what makes ownership "
+                "traceable across the fleet."
+            )
     for advisory in advisories:
         print(f"::notice::{advisory}")
     if errors:
