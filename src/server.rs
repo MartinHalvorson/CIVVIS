@@ -12545,7 +12545,14 @@ mod tests {
             "const TILE_TIP_YIELD_ORDER = [\"food\", \"production\", \"gold\", \"science\", \"culture\", \"faith\"];",
             "class=\"tip-yield-marker\"",
             "style=\"--tip-yield-fill:${YPIP[kind]};--tip-yield-ink:${YINK[kind]}\"",
-            "const capital = owningCity?.is_capital ? \"Capital: \" : \"\";",
+            "function tileBuiltTipLines(t, city)",
+            "function districtTipLines(t)",
+            "Base district yields:",
+            "adjacencyLines(t.adjacency, \"Adjacency yields\", t.district)",
+            "Total district yields:",
+            "function tileResourceTipLine(t)",
+            "★ ${cityName} ★",
+            " · <span class=\"tip-yields\">${yieldMarkers}</span>",
         ] {
             assert!(
                 EMBEDDED_INDEX.contains(piece),
@@ -12561,16 +12568,19 @@ mod tests {
             .expect("the map detail formatter ends before tooltip lifecycle code");
         let details = &EMBEDDED_INDEX[tip_start..tip_end];
 
-        // These are intentionally a stable reading order: unit, owning city,
-        // feature/terrain/continent, improvement/resource, the map's own
-        // numbered yield marks, movement/defense, then appeal.
+        // These are intentionally a stable reading order: unit, the thing built
+        // on the tile and its yield ledger, owning empire/city, the ground and
+        // its total yields, movement, defense, then appeal.
         let ordered = [
             "lines.push(`<span class=\"tip-unit\">${civPossessive(civ)} ${titleCase(unit.type)} - ",
+            "lines.push(...tileBuiltTipLines(t, city));",
             "const owner = tileOwnershipTipLine(t);",
             "lines.push(tileTerrainTipLine(t));",
-            "const development = tileDevelopmentTipLine(t);",
-            "const yieldMarkers = tileYieldMarkers(yields);",
-            "lines.push(`Movement: ${movement} · Defense: ${defenseText}`);",
+            "const resource = tileResourceTipLine(t);",
+            "lines.push(...tileBaseYieldLines(t));",
+            "const yields = tileTotalYields(t);",
+            "lines.push(`Movement: ${movement}`);",
+            "lines.push(`Defense: ${defenseText}`);",
             "lines.push(\"Appeal: \" + (t.appeal > 0 ? \"+\" : \"\") + t.appeal +",
         ];
         let mut previous = 0;
@@ -12591,6 +12601,9 @@ mod tests {
         assert!(details.contains("unitStatus + \"</span>\""));
         assert!(details.contains("? (tileImpassable(t) ? \"Impassable\" : \"Unknown\")"));
         assert!(details.contains("const defenseText = (defense > 0 ? \"+\" : \"\") + defense;"));
+        assert!(!details.contains(" MP"));
+        assert!(!details.contains("Capital: "));
+        assert!(!details.contains("<b>"));
         assert!(
             !details.contains("districtLensLabel("),
             "supplemental lens details use words rather than the old emoji-yield helper"
@@ -12599,9 +12612,9 @@ mod tests {
             .find("function tileTerrainTipLine(t) {")
             .expect("the terrain detail formatter is declared");
         let terrain_end = EMBEDDED_INDEX[terrain_start..]
-            .find("\nfunction tileDevelopmentTipLine")
+            .find("\nfunction tileResourceTipLine")
             .map(|offset| terrain_start + offset)
-            .expect("the terrain detail formatter ends before development");
+            .expect("the terrain detail formatter ends before resources");
         let terrain = &EMBEDDED_INDEX[terrain_start..terrain_end];
         let feature = terrain.find("if (t.feature)").expect("features are included first");
         let ground = terrain.find("geography.push(titleCase(t.terrain)").expect("terrain is included");
@@ -12611,12 +12624,12 @@ mod tests {
         let development_end = EMBEDDED_INDEX[development_start..]
             .find("\nfunction tileTipLines")
             .map(|offset| development_start + offset)
-            .expect("the development formatter ends before details");
+            .expect("the resource formatter ends before details");
         let development = &EMBEDDED_INDEX[development_start..development_end];
         assert!(
-            development.find("if (t.improvement)").expect("improvements are listed")
-                < development.find("if (t.resource)").expect("resources are listed"),
-            "improvements precede resources"
+            development.contains("function tileResourceTipLine(t)")
+                && development.contains("Resource: "),
+            "resources are named after the terrain"
         );
         for emoji in ["●", "🥾", "🛡", "🌸", "👁", "♜", "✦", "⌂", "⬡", "🏗", "🛤", "🏛", "⚑", "⚡"] {
             assert!(
