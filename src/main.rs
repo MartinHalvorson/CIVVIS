@@ -584,7 +584,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// negative, inert, or inconclusive. A fixed-prefix `advanced_v1`/`basic`
 /// comparison remains the compatibility check; this is a deliberate re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xc573_2342_3af9_ffa8;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1fe5_fde1_dd14_df56;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
