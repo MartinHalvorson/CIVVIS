@@ -1643,18 +1643,27 @@
   }
   #buildmark {
     /* The authored World minimap owns the lower-right corner at z-index 6.
-       Keep provenance one layer above it so commit and build age remain
-       visible even before anyone moves or closes the minimap. */
-    position: fixed; z-index: 7;
+       Keep provenance above map chrome so its commit link stays clickable.
+       Let the live minimap geometry put the badge immediately to its left.
+       The declarations here are the
+       fallback when the minimap is hidden or has been moved too far left to
+       leave the badge useful room. */
+    position: fixed; z-index: 16;
     right: max(7px, env(safe-area-inset-right)); bottom: max(5px, env(safe-area-inset-bottom));
     max-width: calc(100vw - 14px); padding: 3px 6px;
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
     color: #9aaca5; background: #07110fbd; border: 1px solid #40534b99;
-    border-radius: 5px; box-shadow: 0 4px 14px #0007; pointer-events: none;
+    border-radius: 5px; box-shadow: 0 4px 14px #0007; pointer-events: auto;
     font: 750 var(--type-micro)/1.35 var(--font-ui); font-variant-numeric: tabular-nums;
     letter-spacing: .035em; backdrop-filter: blur(8px); opacity: .82;
   }
   #buildmark[hidden] { display: none; }
+  #buildmark-commit {
+    color: #c6d9d1; cursor: pointer; pointer-events: auto; text-decoration-color: transparent;
+    text-underline-offset: 2px;
+  }
+  #buildmark-commit:hover { color: #eef8f4; text-decoration-color: currentColor; }
+  #buildmark-commit:focus-visible { outline: 1px solid #b8d8cb; outline-offset: 2px; }
   .tip-primary, .tip-unit {
     display: inline-block; color: #fffaf0; font-size: var(--type-body); font-weight: 400; line-height: 1.45;
   }
@@ -1689,7 +1698,7 @@
   }
   .minimap-label.widget-drag-handle::before { position: absolute; left: 3px; }
   .minimap-hint {
-    position: absolute; z-index: 1; left: 10px; bottom: 9px; padding: 2px 4px;
+    position: absolute; z-index: 1; right: 10px; bottom: 9px; padding: 2px 4px;
     color: #9aac9f; background: #07110fb8; border-radius: 4px; pointer-events: none;
     font-size: var(--type-caption); font-weight: 850; letter-spacing: .05em; text-transform: uppercase;
   }
@@ -4200,7 +4209,9 @@
           aria-label="Resize the command deck from its right edge; use Left and Right Arrow keys or drag"
           title="Drag the command deck's right edge to resize · double-click to reset"></button>
 </div>
-<div id="buildmark" hidden aria-label="CIVVIS build revision"></div>
+<div id="buildmark" hidden>
+  <a id="buildmark-commit" target="_blank" rel="noopener noreferrer"></a><span id="buildmark-details"></span>
+</div>
 <script>
 "use strict";
 const SIDEBAR_SECTION_STATE_KEY = "civvis-sidebar-sections-v1";
@@ -5090,6 +5101,7 @@ function setOverlayVisibility(name, visible) {
   if (checkbox) checkbox.checked = visible;
   try { localStorage.setItem(OVERLAY_STORAGE_KEY, JSON.stringify(OVERLAY_VISIBILITY)); }
   catch (_) {}
+  if (name === "minimap") syncBuildMarkerPosition();
   // An overlay that has just left the map hands its edge back to the world.
   refitMapAreaToChrome();
   reframeCurrentMapFocus(priorFocus);
@@ -6826,7 +6838,10 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   // resize handle that currently owns the pointer gesture.
   if (name === "victory" && state) syncVictoryLeaderCapacity(config.element);
   if (persist) saveHudLayout();
-  if (name === "minimap") refreshMiniForLayout();
+  if (name === "minimap") {
+    refreshMiniForLayout();
+    syncBuildMarkerPosition();
+  }
   refitMapAreaToChrome();
   reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
@@ -6909,7 +6924,10 @@ function resetHudWidget(name, persist = true) {
   if (name === "minimap") syncDefaultMinimapGeometry();
   if ((name === "players" || name === "victory") && state) drawPlayerHud();
   if (persist) saveHudLayout();
-  if (name === "minimap") requestAnimationFrame(refreshMiniForLayout);
+  if (name === "minimap") requestAnimationFrame(() => {
+    refreshMiniForLayout();
+    syncBuildMarkerPosition();
+  });
   refitMapAreaToChrome();
   reframeIfMapFocusBoundsChanged(priorBounds, priorFocus);
 }
@@ -7704,6 +7722,7 @@ function resize() {
   syncResponsivePanelGeometry();
   syncMapViewport();
   syncMiniCanvas();
+  syncBuildMarkerPosition();
   if (watchedEmpireAutoFrame && Number.isInteger(state?.view_player))
     setObservedPlayersView(false);
   draw(); if (state) drawMini();
@@ -8107,35 +8126,78 @@ function formatBuildAge(buildDate) {
   ].filter(Boolean);
   return parts.join(" ") || "0m";
 }
+function formatBinarySize(bytes) {
+  const mib = bytes / (1024 * 1024);
+  return `${mib < 10 ? mib.toFixed(2) : mib.toFixed(1)} MiB`;
+}
+// The revision belongs beside the world overview, not on top of it. Read the
+// live frame because its authored size follows the screen diagonal and a
+// viewer can move or resize it. Compact layouts put the minimap at the left;
+// when there is not useful room on that side, retain the lower-right fallback
+// instead of squeezing the revision into the command deck.
+function syncBuildMarkerPosition() {
+  const marker = document.getElementById("buildmark");
+  const frame = document.querySelector(".minimap-frame");
+  if (!marker || !frame || !mapOverlayVisible("minimap")) {
+    marker?.style.removeProperty("right");
+    marker?.style.removeProperty("bottom");
+    marker?.style.removeProperty("max-width");
+    return;
+  }
+  const rect = frame.getBoundingClientRect();
+  const gap = 6, edge = 7;
+  const areaLeft = document.getElementById("maparea")?.getBoundingClientRect().left || 0;
+  const available = Math.floor(rect.left - gap - Math.max(edge, areaLeft + edge));
+  const useful = Math.min(180, Math.max(1, marker.scrollWidth));
+  if (!rect.width || !rect.height || available < useful) {
+    marker.style.removeProperty("right");
+    marker.style.removeProperty("bottom");
+    marker.style.removeProperty("max-width");
+    return;
+  }
+  marker.style.right = `${Math.round(window.innerWidth - rect.left + gap)}px`;
+  marker.style.bottom = `${Math.max(5, Math.round(window.innerHeight - rect.bottom + 5))}px`;
+  marker.style.maxWidth = `${available}px`;
+}
 function formatBuildSize(bytes) {
   if (!Number.isSafeInteger(bytes) || bytes <= 0) return "";
   return `${(bytes / 1048576).toFixed(1)} MiB`;
 }
 function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
+  const commitLink = document.getElementById("buildmark-commit");
+  const details = document.getElementById("buildmark-details");
   const commit = st?.server_commit;
   const commitTime = st?.server_commit_time;
   const builtAt = st?.server_built_at;
+  const wasmBytes = Number(st?.server_wasm_bytes);
   const artifactBytes = st?.server_artifact_bytes;
   const artifactKind = st?.server_artifact_kind;
   const commitDate = typeof commitTime === "string" ? new Date(commitTime) : null;
   const buildDate = typeof builtAt === "string" ? new Date(builtAt) : null;
-  if (!marker || typeof commit !== "string" || commit === "unknown" ||
+  if (!marker || !commitLink || !details ||
+      typeof commit !== "string" || commit === "unknown" ||
       !commitDate || !Number.isFinite(commitDate.getTime()) ||
       !buildDate || !Number.isFinite(buildDate.getTime())) {
     if (marker) marker.hidden = true;
     return;
   }
+  const shortCommit = commit.slice(0, 7);
+  commitLink.textContent = shortCommit;
+  commitLink.href = `https://github.com/MartinHalvorson/CIVVIS/commit/${encodeURIComponent(commit)}`;
+  commitLink.setAttribute("aria-label", `View commit ${shortCommit} on GitHub`);
   const artifactSize = formatBuildSize(artifactBytes);
-  marker.textContent = `${commit.slice(0, 7)} · ` +
-    `Commit is ${formatBuildAge(commitDate)} old · ` +
+  const legacyWasm = Number.isSafeInteger(wasmBytes) && wasmBytes > 0;
+  details.textContent = ` · Commit is ${formatBuildAge(commitDate)} old · ` +
     `Build is ${formatBuildAge(buildDate)} old` +
-    (artifactSize ? ` · Build size ${artifactSize}` : "");
+    (artifactSize ? ` · Build size ${artifactSize}` : "") +
+    (!artifactSize && legacyWasm ? ` · WASM is ${formatBinarySize(wasmBytes)}` : "");
   marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}` +
     (artifactSize
       ? `\n${artifactKind || "Artifact"} ${Math.round(artifactBytes).toLocaleString()} bytes`
-      : "");
+      : legacyWasm ? `\nWASM ${wasmBytes.toLocaleString()} bytes` : "");
   marker.hidden = false;
+  syncBuildMarkerPosition();
 }
 setInterval(() => updateBuildMarker(), 60_000);
 function servesThisDocumentsCode(commit) {
@@ -26738,6 +26800,15 @@ function uncoveredMapBox(origin, width, height) {
     if (spansWidth) top = Math.max(top, Math.max(0, Math.min(height, victory.bottom)));
     else right = Math.max(0, Math.min(width, victory.left));
   }
+  // The bottom control dock is a frame below the world, not an overlay on its
+  // last row. Measuring the dock itself covers either half independently: if
+  // zoom/search controls or map lenses remain visible, the fitted map ends at
+  // their shared top edge; if both are hidden the zero-height dock reserves
+  // nothing. Against an already-fitted canvas this clamps to `height`, so the
+  // camera does not pay for the same strip twice.
+  const controls = document.getElementById("map-controls-dock")?.getBoundingClientRect();
+  if (controls?.height)
+    bottom = Math.max(0, Math.min(height, controls.top - origin.top));
   // A custom widget layout can put the nominal right edge left of the deck,
   // or the nominal top edge below the screen. There is no uncovered rectangle
   // on that axis, so retain a real on-screen center instead of returning an
