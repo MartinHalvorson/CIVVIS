@@ -842,13 +842,23 @@ fn withhold_live_treatment(
         "come-ashore" => ai.disable_come_ashore(),
         "relief-targets-the-siege" => ai.disable_relief_targets_the_siege(),
         "suzerain-cards" => ai.disable_suzerain_cards_need_a_suzerainty(),
+        // Landed on main while this branch sat unstaged. The invariant below —
+        // a `disable_*` alongside every `enable_*` is picked up here for free —
+        // only holds if the merge actually picks them up.
+        "housing-districts" => ai.disable_housing_districts(),
+        "housing-cards" => ai.disable_housing_cards(),
+        "housing-research" => ai.disable_housing_research(),
+        "campus-every-city" => ai.disable_campus_every_city(),
+        "muster-at-command-radius" => ai.disable_muster_at_command_radius(),
         other => {
             return Err(format!(
                 "unknown --without treatment {other:?}; this binary can withhold: \
                  home-defense, solvent-faith-army, siege-muster, district-coverage, \
                  loyalty-rate-alarm, bounded-recovery, army-target-weighs-enemy, \
                  siege-tracks-wall, blind-objective-strength, blind-objective-units, \
-                 siege-role, come-ashore, relief-targets-the-siege, suzerain-cards"
+                 siege-role, come-ashore, relief-targets-the-siege, suzerain-cards, \
+                 housing-districts, housing-cards, housing-research, campus-every-city, \
+                 muster-at-command-radius"
             ))
         }
     }
