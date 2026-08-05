@@ -1587,7 +1587,7 @@
   }
   #buildmark[hidden] { display: none; }
   .tip-primary, .tip-unit {
-    display: inline-block; color: #fffaf0; font-size: var(--type-body); font-weight: 850; line-height: 1.45;
+    display: inline-block; color: #fffaf0; font-size: var(--type-body); font-weight: 400; line-height: 1.45;
   }
   /* These are the same coloured, numbered yield markers painted on the map.
      A tooltip needs a slightly larger target than a hex, but it deliberately
@@ -1596,11 +1596,12 @@
   .tip-yield-marker {
     width: 18px; height: 18px; display: inline-grid; place-items: center; box-sizing: border-box;
     border: 1px solid #0c1012cc; border-radius: 50%; color: var(--tip-yield-ink); background: var(--tip-yield-fill);
-    font: 800 10px/1 var(--font-ui); font-variant-numeric: tabular-nums;
+    font: 600 10px/1 var(--font-ui); font-variant-numeric: tabular-nums;
   }
-  /* The adjacency ledger is a list under the district line: a heading in the
-     yield's own voice, then one indented row per source that pays. */
-  .tip-adj-head { color: var(--muted); font-size: var(--type-small); font-weight: 850; letter-spacing: .07em; text-transform: uppercase; }
+  /* The yield breakdown reads as an indented explanation under the thing built
+     on the tile. It is deliberately plain text: the labels do the hierarchy. */
+  .tip-breakdown { display: block; padding-left: 10px; color: #c6d6cf; }
+  .tip-adj-head { color: var(--muted); font-size: var(--type-small); font-weight: 400; letter-spacing: .02em; }
   .tip-adj { color: #c6d6cf; }
   .tip-adj-count { display: inline-block; min-width: 20px; color: var(--muted); }
   .tip-adj-part { color: var(--muted); }
@@ -27619,40 +27620,40 @@ function issueSelectedUnitOrder(pos) {
 // tile; these turn it into the lines under the district's name.
 const ADJ_LABEL = {
   self: "the district itself",
-  river: "💧 river",
-  mountain: "⛰ mountain",
-  forest: "🌲 woods",
-  woods: "🌲 woods",
-  rainforest: "🌴 rainforest",
-  jungle: "🌴 rainforest",
-  natural_wonder: "✦ natural wonder",
-  reef: "🐠 reef",
-  great_barrier_reef: "🐠 Great Barrier Reef",
-  geothermal_fissure: "♨ geothermal fissure",
-  pamukkale: "♨ Pamukkale",
-  district: "⬡ district",
-  city_center: "🏛 city center",
-  wonder: "★ wonder",
-  coast_resource: "🐟 sea resource",
-  sea_resource: "🐟 sea resource",
-  strategic_resource: "⚔ strategic resource",
-  luxury_resource: "💎 luxury resource",
-  resource: "● resource",
-  mine: "⛏ mine",
-  quarry: "🪨 quarry",
-  lumber_mill: "🪵 lumber mill",
-  plantation: "🌱 plantation",
-  farm: "🌾 farm",
+  river: "river",
+  mountain: "mountain",
+  forest: "woods",
+  woods: "woods",
+  rainforest: "rainforest",
+  jungle: "rainforest",
+  natural_wonder: "natural wonder",
+  reef: "reef",
+  great_barrier_reef: "Great Barrier Reef",
+  geothermal_fissure: "geothermal fissure",
+  pamukkale: "Pamukkale",
+  district: "district",
+  city_center: "city center",
+  wonder: "wonder",
+  coast_resource: "sea resource",
+  sea_resource: "sea resource",
+  strategic_resource: "strategic resource",
+  luxury_resource: "luxury resource",
+  resource: "resource",
+  mine: "mine",
+  quarry: "quarry",
+  lumber_mill: "lumber mill",
+  plantation: "plantation",
+  farm: "farm",
   // Modifiers the engine reports as sources of their own.
-  gaul_mine: "⛏ mine (Gaul)",
-  wonder_mountain: "⛰ mountain (wonder)",
-  building_woods: "🌲 woods (building)",
+  gaul_mine: "mine (Gaul)",
+  wonder_mountain: "mountain (wonder)",
+  building_woods: "woods (building)",
 };
 function adjLabel(source) {
   if (ADJ_LABEL[source]) return ADJ_LABEL[source];
   // Anything else is a district family — a Campus next to a Government Plaza.
-  if (RULES && RULES.districts && RULES.districts[source]) return "⬡ " + source.replaceAll("_", " ");
-  return source.replaceAll("_", " ");
+  if (RULES && RULES.districts && RULES.districts[source]) return titleCase(source);
+  return titleCase(source);
 }
 // Yields arrive as floats and adjacency deals in halves, so print one decimal
 // but never a trailing ".0".
@@ -27678,48 +27679,71 @@ function hasAdjacency(district) {
   return !!(spec && spec.adjacency && Object.keys(spec.adjacency).length);
 }
 function adjacencyLines(sources, label, district) {
+  if (sources === null || sources === undefined) {
+    return [`<span class="tip-adj-head">${label}: unavailable outside current sight</span>`];
+  }
   if (!sources || !sources.length) {
     return hasAdjacency(district)
-      ? [`<span class="tip-adj-head">${label} <span class="tip-adj-part">nothing adjacent</span></span>`]
+      ? [`<span class="tip-adj-head">${label}: none</span>`]
       : [];
   }
   const sum = {};
   for (const s of sources)
     for (const kk in YICON) sum[kk] = (sum[kk] || 0) + ((s.yields || {})[kk] || 0);
-  const lines = [`<span class="tip-adj-head">${label} ${yieldStr(sum, true) || "none"}</span>`];
+  const lines = [`<span class="tip-adj-head">${label}: ${tileDetailYieldWords(sum, true) || "none"}</span>`];
   for (const s of sources) {
-    const paid = yieldStr(s.yields, true) || "—";
+    const paid = tileDetailYieldWords(s.yields, true) || "none";
     if (s.percent) {
-      lines.push(`<span class="tip-adj"><span class="tip-adj-count">↑</span>` +
-        `+${fmtYield(s.percent)}% adjacency bonus <b>${paid}</b></span>`);
+      lines.push(`<span class="tip-adj"><span class="tip-adj-count">+</span>` +
+        `${fmtYield(s.percent)}% adjacency bonus: ${paid}</span>`);
       continue;
     }
     // A half-point source banks its remainder: three adjacent districts are
     // 1.5 science paid as 1, and the fourth is what turns it into 2. Showing
     // the unrounded figure is what tells a player the next tile is free.
-    const raw = yieldStr(s.raw);
-    const banked = raw && raw !== yieldStr(s.yields) ? ` <span class="tip-adj-part">(${raw})</span>` : "";
-    const count = s.source === "self" ? "•" : s.count + "×";
+    const raw = tileDetailYieldWords(s.raw);
+    const banked = raw && raw !== tileDetailYieldWords(s.yields) ? ` <span class="tip-adj-part">(raw ${raw})</span>` : "";
+    const count = s.source === "self" ? "1 ×" : s.count + " ×";
     lines.push(`<span class="tip-adj"><span class="tip-adj-count">${count}</span>` +
-      `${adjLabel(s.source)} <b>${paid}</b>${banked}</span>`);
+      ` ${adjLabel(s.source)}: ${paid}${banked}</span>`);
   }
   return lines;
 }
 function districtTipLines(t) {
-  const lines = ["🏗 " + titleCase(t.district) + " District"];
+  const spec = ruleSpec("districts", t.district);
+  const lines = ["District: " + titleCase(t.district)];
   // A pillaged district keeps its adjacency on paper and pays none of it, so
   // the figure above is what repairing the tile buys back.
-  if (t.pillaged) lines.push(`<span class="tip-adj-part">🔥 pillaged — yields suspended until repaired</span>`);
-  return lines.concat(adjacencyLines(t.adjacency, "adjacency", t.district));
+  if (t.pillaged) lines.push(`<span class="tip-adj-part">Pillaged — yields suspended until repaired</span>`);
+  lines.push(`<span class="tip-breakdown">Base district yields: ${tileDetailYieldWords(spec?.yields) || "none"}</span>`);
+  lines.push(...adjacencyLines(t.adjacency, "Adjacency yields", t.district));
+  lines.push(`<span class="tip-breakdown">Total district yields: ${tileDetailYieldWords(t.district_yields) || "unavailable"}</span>`);
+  return lines;
 }
 // A district being built is where adjacency actually gets decided, so the site
 // shows what it would pay if it finished today.
 function plannedTipLines(t) {
   const p = t.planned_district;
-  const total = yieldStr(p.yields);
-  const lines = ["⬡ " + titleCase(p.district) + " under construction" +
-    (total ? " — " + total : "")];
-  return lines.concat(adjacencyLines(p.adjacency, "projected adjacency", p.district));
+  const spec = ruleSpec("districts", p.district);
+  const lines = ["District under construction: " + titleCase(p.district)];
+  lines.push(`<span class="tip-breakdown">Base district yields: ${tileDetailYieldWords(spec?.yields) || "none"}</span>`);
+  lines.push(...adjacencyLines(p.adjacency, "Projected adjacency yields", p.district));
+  lines.push(`<span class="tip-breakdown">Projected district yields: ${tileDetailYieldWords(p.yields) || "unavailable"}</span>`);
+  return lines;
+}
+function wonderTipLines(t) {
+  const yields = ruleSpec("wonders", t.wonder)?.yields;
+  return [
+    "Wonder: " + titleCase(t.wonder),
+    `<span class="tip-breakdown">Wonder yields: ${tileDetailYieldWords(yields) || "none"}</span>`,
+  ];
+}
+function improvementTipLines(t) {
+  const yields = ruleSpec("improvements", t.improvement)?.yields;
+  return [
+    "Improvement: " + titleCase(t.improvement),
+    `<span class="tip-breakdown">Improvement yields: ${tileDetailYieldWords(yields) || "none"}</span>`,
+  ];
 }
 
 function civPossessive(civ) { return civ.toLowerCase().endsWith("s") ? civ + "'" : civ + "'s"; }
@@ -27729,8 +27753,10 @@ function tileOwnershipTipLine(t) {
   if (!empire) return null;
   const owningCity = state.cities.find(city => city.id === t.owner_city);
   const cityName = t.owner_city_name || owningCity?.name;
-  const capital = owningCity?.is_capital ? "Capital: " : "";
-  const territory = cityName ? `${capital}${cityName}, ${empire.civ}` : empire.civ;
+  const cityLabel = cityName
+    ? ` (${owningCity?.is_capital ? `★ ${cityName} ★` : cityName})`
+    : "";
+  const territory = empire.civ + cityLabel;
   return `<span class="tip-primary">${territory}</span>`;
 }
 function tileTerrainTipLine(t) {
@@ -27741,14 +27767,68 @@ function tileTerrainTipLine(t) {
     geography.push(CONTINENT_NAMES[t.continent] || "Continent " + (t.continent + 1));
   return geography.join(" · ");
 }
-function tileDevelopmentTipLine(t) {
-  const development = [];
-  if (t.improvement) development.push(titleCase(t.improvement));
-  if (t.resource) development.push(titleCase(t.resource));
-  return development.join(" · ");
+function tileResourceTipLine(t) {
+  if (!t.resource) return "";
+  const resource = ruleSpec("resources", t.resource);
+  return "Resource: " + titleCase(t.resource) +
+    (resource?.class ? " (" + titleCase(resource.class) + ")" : "");
+}
+function emptyTileYields() {
+  return {food: 0, production: 0, gold: 0, science: 0, culture: 0, faith: 0};
+}
+function addTileYields(total, source) {
+  for (const kind of TILE_TIP_YIELD_ORDER) total[kind] += Number(source?.[kind] || 0);
+  return total;
+}
+function tileBaseYields(t) {
+  const total = emptyTileYields();
+  addTileYields(total, ruleSpec("terrains", t.terrain)?.yields);
+  if (t.hills) total.production += 1;
+  addTileYields(total, ruleSpec("features", t.feature)?.yields);
+  addTileYields(total, ruleSpec("resources", t.resource)?.yields);
+  return total;
+}
+function tileBaseYieldLines(t) {
+  const lines = [];
+  const source = (label, yields) => {
+    const words = tileDetailYieldWords(yields);
+    if (words) lines.push(`<span class="tip-breakdown">${label} yields: ${words}</span>`);
+  };
+  source("Terrain", ruleSpec("terrains", t.terrain)?.yields);
+  if (t.hills) lines.push(`<span class="tip-breakdown">Hills yields: +1 production</span>`);
+  source("Feature", ruleSpec("features", t.feature)?.yields);
+  source("Resource", ruleSpec("resources", t.resource)?.yields);
+  const base = tileBaseYields(t);
+  if (tileDetailYieldWords(base)) lines.push("Base tile yields: " + tileDetailYieldWords(base));
+  return lines;
+}
+function tileTotalYields(t) {
+  const total = tileBaseYields(t);
+  if (t.improvement && t.improvement !== "barbarian_camp")
+    addTileYields(total, ruleSpec("improvements", t.improvement)?.yields);
+  if (t.district) {
+    if (!t.district_yields) return null;
+    addTileYields(total, t.district_yields);
+  }
+  if (t.planned_district) {
+    if (!t.planned_district.yields) return null;
+    addTileYields(total, t.planned_district.yields);
+  }
+  if (t.wonder) addTileYields(total, ruleSpec("wonders", t.wonder)?.yields);
+  return total;
+}
+function tileBuiltTipLines(t, city) {
+  const lines = [];
+  if (t.district) lines.push(...districtTipLines(t));
+  else if (t.planned_district) lines.push(...plannedTipLines(t));
+  if (t.wonder) lines.push(...wonderTipLines(t));
+  if (t.improvement) lines.push(...improvementTipLines(t));
+  if (city) lines.push("City Center");
+  return lines;
 }
 function tileTipLines(t, pos, tileKey) {
   const lines = [];
+  const city = state.cities.find(candidate => candidate.pos[0] === pos[0] && candidate.pos[1] === pos[1]);
   // Who is standing here is what a hover over an occupied tile is asking, so
   // the units lead and state their health or capture status in the compact
   // map-detail form: Empire's unit - xx HP/capturable.
@@ -27759,25 +27839,28 @@ function tileTipLines(t, pos, tileKey) {
     lines.push(`<span class="tip-unit">${civPossessive(civ)} ${titleCase(unit.type)} - ` +
       unitStatus + "</span>");
   }
+  lines.push(...tileBuiltTipLines(t, city));
   const owner = tileOwnershipTipLine(t);
   if (owner) lines.push(owner);
   lines.push(tileTerrainTipLine(t));
-  const development = tileDevelopmentTipLine(t);
-  if (development) lines.push(development);
-
-  const yields = t.district ? t.district_yields
-    : t.wonder ? ruleSpec("wonders", t.wonder)?.yields
-    : tileYieldFull(t);
+  const resource = tileResourceTipLine(t);
+  if (resource) lines.push(resource);
+  lines.push(...tileBaseYieldLines(t));
+  const yields = tileTotalYields(t);
   const yieldMarkers = tileYieldMarkers(yields);
-  if (yieldMarkers) lines.push(`Yields: <span class="tip-yields">${yieldMarkers}</span>`);
+  const yieldWords = tileDetailYieldWords(yields);
+  if (yieldWords || yieldMarkers)
+    lines.push(`Total tile yields: ${yieldWords || "unavailable"}` +
+      (yieldMarkers ? ` · <span class="tip-yields">${yieldMarkers}</span>` : ""));
 
   const mp = tileMoveCost(t);
   const movement = mp === null
     ? (tileImpassable(t) ? "Impassable" : "Unknown")
-    : (mp % 1 ? mp.toFixed(1) : mp) + " MP";
+    : (mp % 1 ? mp.toFixed(1) : mp);
   const defense = tileDefense(t);
   const defenseText = (defense > 0 ? "+" : "") + defense;
-  lines.push(`Movement: ${movement} · Defense: ${defenseText}`);
+  lines.push(`Movement: ${movement}`);
+  lines.push(`Defense: ${defenseText}`);
   if (t.appeal !== null && t.appeal !== undefined)
     lines.push("Appeal: " + (t.appeal > 0 ? "+" : "") + t.appeal +
       " · " + appealBand(t.appeal));
@@ -27817,7 +27900,6 @@ function tileTipLines(t, pos, tileKey) {
     }
   }
 
-  const city = state.cities.find(candidate => candidate.pos[0] === pos[0] && candidate.pos[1] === pos[1]);
   if (city) {
     if (mapLens === "religion") {
       const entries = religiousPressureEntries(city);
