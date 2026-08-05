@@ -2823,9 +2823,17 @@ mod tests {
         // Monastery found by live replay, exact Natural Wonder placement rows, and
         // the complete terrain-improvement catalogue are real simulation changes;
         // older ledgers retain their original fingerprint.
+        //
+        // Moved again by four divergences the `civ6_fidelity` audit found against
+        // the shipped database and that were each confirmed by querying it:
+        // `cartography` and `mass_production` carried a `shipbuilding` prerequisite
+        // the game does not have, and Armagh's Monastery (0) and the Inca Terrace
+        // Farm (0.5) both under-counted housing against a DB that stores the figure
+        // DOUBLED — a ratio checked across all 16 housing improvements before either
+        // was touched, since matching the raw column would have doubled every one.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:57eeae0c535f3c7b"
+            "fnv1a64:42b0c451bc2ace55"
         );
     }
 
