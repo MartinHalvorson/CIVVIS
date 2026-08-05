@@ -291,6 +291,24 @@ impl Snapshot {
 #[cfg(test)]
 mod tests {
 
+    /// ⚠ The live failure: a Campus at 88/92 that the model never sees.
+    #[test]
+    fn an_in_progress_district_resolves_to_a_queue_item() {
+        let rules = crate::rules::Rules::embedded();
+        let districts = vec![
+            StateDistrict { kind: "DISTRICT_CITY_CENTER".into(), x: 61, y: 24,
+                            pillaged: false, complete: true, ..Default::default() },
+            StateDistrict { kind: "DISTRICT_CAMPUS".into(), x: 61, y: 23,
+                            pillaged: false, complete: false, ..Default::default() },
+        ];
+        let got = civvis_production_item(&rules, Some("DISTRICT_CAMPUS"), &districts);
+        assert!(got.is_some(),
+                "an in-progress DISTRICT_CAMPUS present in districts[] must resolve; \
+                 returning None leaves the model queue EMPTY and the chooser \
+                 re-decides over a district that is 96% built");
+    }
+
+
     /// ⚠ AN ENEMY UNIT CIVVIS CANNOT SEE IS WORSE THAN A COSMETIC GAP.
     ///
     /// Civilization VI names uniques by CIVILIZATION. Stripping that qualifier

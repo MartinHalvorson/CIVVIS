@@ -4580,6 +4580,40 @@ impl BasicAi {
             }
         }
         for cid in &city_ids {
+            // ⚠⚠ SAY WHAT THE CITY IS ALREADY BUILDING, AND WHAT WE DECIDED ANYWAY.
+            //
+            // Live on `civvis-20260805T050208Z`, Puteoli built a Campus to
+            // **88/92** — one turn from done at 4 production a turn — and was then
+            // handed a fresh order and never returned to it. Fleet-wide that is 119
+            // near-complete abandonments across 41 runs, **44% never resumed**,
+            // ~79 production lost per run. It is the mechanism behind BOTH the
+            // science stall (campuses dropped) and expansion failures (a Settler
+            // dropped at 84/85).
+            //
+            // The guard below is correct and so is every link feeding it — the
+            // export carries `producing` AND the in-progress district with its
+            // plot, `StateDistrict` renames `type`->`kind`, `civvis_production_item`
+            // resolves districts, and `advanced_production` skips committed cities
+            // at the default `preempt_margin` of 1.0. Four links verified, all fine,
+            // and the behaviour is still wrong.
+            //
+            // So print the fact instead of auditing the chain a fifth time: what
+            // the MODEL thinks this city is building, at the moment the decision is
+            // taken. If the queue is empty here while Civilization VI reports a
+            // district at 88/92, the loss is upstream of every gate.
+            if self.journal.wants(crate::reasoning::Level::Detail) {
+                let city = &g.cities[cid];
+                let queued = city
+                    .queue
+                    .first()
+                    .map(|item| Self::item_label(item))
+                    .unwrap_or_else(|| "NOTHING".to_string());
+                think!(self.journal, Cities, Detail,
+                       "{} model queue: {}", city.name, queued;
+                       "banked {:.0} production; the chooser {} this city",
+                       city.production,
+                       if city.queue.is_empty() { "will re-decide" } else { "will skip" });
+            }
             if !g.cities[cid].queue.is_empty() {
                 continue;
             }
