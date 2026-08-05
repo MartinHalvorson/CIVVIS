@@ -203,6 +203,12 @@
 				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
 			</Properties>
 		</ReplaceUIScript>
+		<ReplaceUIScript id="CivvisControlAutoCloseReligion">
+			<Properties>
+				<LuaContext>ReligionScreen</LuaContext>
+				<LuaReplace>CivvisControlAutoClose.lua</LuaReplace>
+			</Properties>
+		</ReplaceUIScript>
 		<ReplaceUIScript id="CivvisControlAutoCloseEraReview">
 			<Properties>
 				<LuaContext>EraReviewPopup</LuaContext>

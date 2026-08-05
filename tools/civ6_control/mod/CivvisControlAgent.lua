@@ -3879,6 +3879,109 @@ local function choosePantheon(player, pid)
 	return nil;
 end
 
+-- ⚠ BE HONEST ABOUT WHAT THIS IS: founding a religion is a DECISION, and CIVVIS
+-- does not make it — there is no religion in the mirror at all. This is the same
+-- class of hand-written stand-in as `choosePantheon` above, and it is here for
+-- the same reason: without it a Great Prophet is unusable, because activating one
+-- opens `ReligionScreen` and that screen had no handler. 64 Prophets sat idle
+-- across 85 recorded runs for exactly that reason.
+--
+-- The operations are the shipped `ReligionScreen.lua`'s own
+-- (`FOUND_RELIGION` + one `ADD_BELIEF` per earned slot, both with
+-- `PARAM_INSERT_MODE = VALUE_EXCLUSIVE`), and the availability filter is copied
+-- from its `PopulateAvailableBeliefs`, so this cannot pick a belief the game
+-- would refuse.
+--
+-- ⚠⚠ WHAT IS *NOT* CLAIMED: the belief CHOICE is unranked — first available per
+-- class, i.e. database order. That is the defect #1044 named for the pantheon,
+-- and it is knowingly repeated here because the measured gap is REACHABILITY (a
+-- religion at all, versus none in 85 runs), not belief quality. Rank it later,
+-- with a measurement; do not assume a ranking would help.
+local function foundReligionAndBeliefs(player, pid, turn)
+	local religion = try(function() return player:GetReligion(); end);
+	local gameReligion = try(function() return Game.GetReligion(); end);
+	if religion == nil or gameReligion == nil then return nil; end
+
+	local earned = try(function() return religion:GetNumBeliefsEarned(); end, 0) or 0;
+	if earned <= 0 then return nil; end
+
+	local created = try(function() return religion:GetReligionTypeCreated(); end, -1);
+	local acted = nil;
+
+	-- 1. No religion yet: found one. Any religion the game has not already handed
+	--    out is legal; `GetReligions()` reports the ones taken.
+	if created == nil or created < 0 then
+		local taken = {};
+		local founded = try(function() return gameReligion:GetReligions(); end, nil);
+		if type(founded) == "table" then
+			for _, entry in ipairs(founded) do
+				local t = entry.Religion or entry.ReligionType or entry;
+				if t ~= nil then taken[tostring(t)] = true; end
+			end
+		end
+		for row in GameInfo.Religions() do
+			if row.ReligionType ~= "RELIGION_PANTHEON" and not taken[tostring(row.Index)]
+				and not taken[tostring(row.ReligionType)] then
+				local params = {};
+				params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
+				params[PlayerOperations.PARAM_RELIGION_TYPE] = row.Hash;
+				-- A custom-name religion with no name supplied is refused, so the
+				-- civ's own name stands in; it is cosmetic and never read back.
+				if row.RequiresCustomName then
+					params[PlayerOperations.PARAM_RELIGION_CUSTOM_NAME] = "Civvis";
+				end
+				local ok = pcall(function()
+					UI.RequestPlayerOperation(pid, PlayerOperations.FOUND_RELIGION, params);
+				end);
+				if ok then
+					acted = row.ReligionType;
+					emit("religion", { turn = turn, action = "founded",
+						religion = row.ReligionType });
+					created = try(function() return religion:GetReligionTypeCreated(); end, -1);
+					break;
+				end
+			end
+		end
+	end
+
+	-- 2. Spend every earned belief slot. Re-reading `GetNumBeliefsEarned` each
+	--    pass would be wrong: it counts slots EARNED, not slots FREE, so the loop
+	--    is bounded by `earned` and stops as soon as the game stops accepting.
+	local classesUsed = {};
+	for _ = 1, earned do
+		local picked = nil;
+		for row in GameInfo.Beliefs() do
+			local cls = tostring(row.BeliefClassType or "");
+			if cls ~= "BELIEF_CLASS_PANTHEON" and not classesUsed[cls] then
+				local inPantheon = try(function()
+					return gameReligion:IsInSomePantheon(row.Index); end, true);
+				local inReligion = try(function()
+					return gameReligion:IsInSomeReligion(row.Index); end, true);
+				local tooMany = try(function()
+					return gameReligion:IsTooManyForReligion(row.Index, created); end, true);
+				if inPantheon == false and inReligion == false and tooMany == false then
+					picked = row;
+					break;
+				end
+			end
+		end
+		if picked == nil then break; end
+		local params = {};
+		params[PlayerOperations.PARAM_INSERT_MODE] = PlayerOperations.VALUE_EXCLUSIVE;
+		params[PlayerOperations.PARAM_BELIEF_TYPE] = picked.Hash;
+		local ok = pcall(function()
+			UI.RequestPlayerOperation(pid, PlayerOperations.ADD_BELIEF, params);
+		end);
+		if not ok then break; end
+		classesUsed[tostring(picked.BeliefClassType or "")] = true;
+		acted = acted or picked.BeliefType;
+		emit("religion", { turn = turn, action = "belief",
+			belief = picked.BeliefType, class = picked.BeliefClassType });
+	end
+
+	return acted;
+end
+
 -- ---------------------------------------------------------------- the turn
 
 -- How many times each expensive pass may run in one turn.
@@ -7810,7 +7913,7 @@ end
 
 -- Drive one Great Person toward being used. Returns "activated" | "moving" |
 -- "idle", or nil when the unit is not a Great Person this code should touch.
-local function orderGreatPerson(unit, id, turn)
+local function orderGreatPerson(unit, id, turn, player, pid)
 	local gp = greatPersonOf(unit);
 	if gp == nil then
 		-- ⚠ Distinguish "not a Great Person" from "the accessor is missing in
@@ -7826,17 +7929,14 @@ local function orderGreatPerson(unit, id, turn)
 		return nil;
 	end
 	local individual, class = gpName(gp);
-	-- ⚠ A Prophet's activation opens the religion chooser, a modal this harness
-	-- does not answer yet — a stalled run loses more than an unspent Prophet.
-	-- Deferred, visibly, until that screen has a handler.
-	if class == "GREAT_PERSON_CLASS_PROPHET" then
-		if gpIdleReported[id] == nil then
-			gpIdleReported[id] = turn;
-			emit("gp", { turn = turn, unit = id, individual = individual,
-				class = class, action = "deferred_prophet" });
-		end
-		return "idle";
-	end
+	local isProphet = (class == "GREAT_PERSON_CLASS_PROPHET");
+	-- ⚠ A Prophet was DEFERRED here until `ReligionScreen` had a handler, because
+	-- activating one opens that modal and a stalled run loses more than an unspent
+	-- Prophet. Both halves of that now exist: the beliefs are answered through the
+	-- engine's own player operations (`foundReligionAndBeliefs`), and the screen is
+	-- registered for auto-close so it cannot wedge a turn if it opens anyway.
+	-- ⚠ Keep BOTH halves. Answering without the auto-close, or auto-closing without
+	-- answering, each reintroduces the failure the deferral was protecting against.
 	-- 1. If the engine will take Activate here and now, press it.
 	if commandUnit(unit, CMD["UNITCOMMAND_ACTIVATE_GREAT_PERSON"]) then
 		gpPending[id] = nil;
@@ -7844,6 +7944,12 @@ local function orderGreatPerson(unit, id, turn)
 			class = class, action = "activated",
 			x = try(function() return unit:GetX(); end, -1),
 			y = try(function() return unit:GetY(); end, -1) });
+		-- A Prophet's activation is what EARNS the belief slots, so the founding
+		-- runs immediately after it and in the same turn — before anything can
+		-- present the chooser to a harness that would rather close it.
+		if isProphet and player ~= nil then
+			pcall(function() foundReligionAndBeliefs(player, pid, turn); end);
+		end
 		return "activated";
 	end
 	-- 2. Otherwise walk toward the nearest plot where activation is legal.
@@ -8021,7 +8127,7 @@ local function applyOrders(player, pid, turn, rows)
 		eachUnit(player, function(unit)
 			local id = try(function() return unit:GetID(); end, -1);
 			if id == -1 then return; end
-			local acted = orderGreatPerson(unit, id, turn);
+			local acted = orderGreatPerson(unit, id, turn, player, pid);
 			if acted == nil then return; end
 			gpHandled[id] = true;
 			if acted == "activated" then gpActivated = gpActivated + 1;
