@@ -459,6 +459,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// flag before it reads a unit, so every configured, legacy and Elo agent
 /// promotes exactly when it always did. A compatibility re-pin.
 ///
+/// #954 says why a settler was held instead of only that it was marching. The
+/// added block is inside `if !moved && self.journal().wants(Detail)` and every
+/// call it makes is a read: `Game::route_step` and `route_step_to_any` take
+/// `&self`, as do `can_move`, `units_at` and `wdist`, and `think!` writes to the
+/// reasoning journal, which is observer-only by contract. No RNG is drawn and no
+/// board state is touched, so the anchor plays the identical game and only its
+/// journal differs. A compatibility re-pin.
 /// #1026 keeps the land army out of the water, behind `come_ashore` — `false`
 /// in both `BasicAi` constructors and set only by `enable_live_bridge`. Every
 /// one of its paths short-circuits on the flag before reading anything:
@@ -586,7 +593,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// than a compatibility re-pin; the fresh source fingerprint documents that
 /// the new ledger starts from this exact shared controller.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5470_814c_a53a_8541;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf83e_4abd_973d_0026;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
