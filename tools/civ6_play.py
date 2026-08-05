@@ -238,6 +238,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # with four candidate `PARAM_MANAGE_CITIZEN` values and emits the verdict
         # WITHOUT acting, so one game settles whether the lane is actuable.
         "ProbeCitizens": args.probe_citizens,
+        # ⭐ The probe answered yes, so this is the lane it opened. A citizen is
+        # moved into a Campus specialist slot only where a Library already
+        # stands, at most one per city, `CanStartCommand` first and the outcome
+        # emitted either way. See `fillCampusSpecialists`.
+        "CampusSpecialist": args.campus_specialist,
         # A SQLite file THIS process owns, offered to the mod's `DB.Query` via
         # ATTACH. If that works it is the live inbound channel the architecture
         # needs, and it is safer than the game's own `DebugGameplay.sqlite`, which
@@ -2353,6 +2358,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--export-state", action="store_true", default=False)
     ap.add_argument("--probe-channels", action="store_true", default=False,
                     help="ask every candidate inbound API what it holds, once a turn")
+    ap.add_argument("--campus-specialist", action="store_true", default=False,
+                    help="move one citizen into a Campus specialist slot in cities that "
+                         "already hold a Library (at most one per city per firing)")
     ap.add_argument("--probe-citizens", action="store_true", default=False,
                     help="ask whether this UI context may assign a citizen to a district "
                          "(read-only; emits civvis_citizen_probe and issues no command)")
