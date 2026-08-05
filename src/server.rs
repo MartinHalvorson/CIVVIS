@@ -66,6 +66,8 @@ static LAUNCHED_COMMIT: OnceLock<Option<String>> = OnceLock::new();
 static LAUNCHED_COMMIT_TIME: OnceLock<Option<String>> = OnceLock::new();
 #[cfg(not(target_arch = "wasm32"))]
 static LAUNCHED_BUILT_AT: OnceLock<Option<String>> = OnceLock::new();
+#[cfg(not(target_arch = "wasm32"))]
+static LAUNCHED_BUILD_SIZE: OnceLock<Option<u64>> = OnceLock::new();
 
 #[cfg(not(target_arch = "wasm32"))]
 fn promoted_binary_commit(name: &str) -> Option<String> {
@@ -98,6 +100,19 @@ fn launched_built_at() -> Option<String> {
     std::env::var("CIVVIS_BUILT_AT")
         .ok()
         .filter(|built_at| !built_at.is_empty())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn launched_build_size() -> Option<u64> {
+    std::env::var("CIVVIS_BUILD_SIZE")
+        .ok()
+        .and_then(|size| size.parse().ok())
+        .filter(|size| *size > 0)
+        .or_else(|| {
+            let executable = std::env::current_exe().ok()?;
+            let size = std::fs::metadata(executable).ok()?.len();
+            (size > 0).then_some(size)
+        })
 }
 
 /// The revision of the code a supervisor selected for this process.
@@ -167,6 +182,25 @@ pub(crate) fn runtime_built_at() -> Option<String> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         LAUNCHED_BUILT_AT.get_or_init(launched_built_at).clone()
+    }
+}
+
+/// The byte size of the exact artifact serving the viewer.
+///
+/// Native launches receive the size from the supervisor's stamped runtime
+/// metadata and fall back to the executable on disk for ordinary development
+/// launches. A published WASM build can bake the same value through its
+/// compile environment; its page also has the manifest as a fallback.
+pub(crate) fn runtime_build_size() -> Option<u64> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        option_env!("CIVVIS_BUILD_SIZE")
+            .and_then(|size| size.parse().ok())
+            .filter(|size| *size > 0)
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        LAUNCHED_BUILD_SIZE.get_or_init(launched_build_size).clone()
     }
 }
 
@@ -2724,6 +2758,7 @@ impl Session {
             o["server_commit"] = json!(runtime_commit("unknown"));
             o["server_commit_time"] = json!(runtime_commit_time());
             o["server_built_at"] = json!(runtime_built_at());
+            o["server_build_size"] = json!(runtime_build_size());
             return o;
         }
         let mut o = observation(&self.game, 0);
@@ -2745,6 +2780,7 @@ impl Session {
         o["server_commit"] = json!(runtime_commit("unknown"));
         o["server_commit_time"] = json!(runtime_commit_time());
         o["server_built_at"] = json!(runtime_built_at());
+        o["server_build_size"] = json!(runtime_build_size());
         o
     }
 
@@ -3901,6 +3937,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "commit": runtime_commit("unknown"),
                     "commit_time": runtime_commit_time(),
                     "built_at": runtime_built_at(),
+                    "build_size": runtime_build_size(),
                     // The setup queue is beside the simulation lock too. The
                     // supervisor needs the viewer's latest choice even when
                     // an AI turn is making the full `/state` response wait.
@@ -4064,6 +4101,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "commit": runtime_commit("unknown"),
                     "commit_time": runtime_commit_time(),
                     "built_at": runtime_built_at(),
+                    "build_size": runtime_build_size(),
                 }),
             );
         }
@@ -5910,6 +5948,7 @@ mod tests {
         assert_eq!(runtime["commit"], state["server_commit"]);
         assert_eq!(runtime["commit_time"], state["server_commit_time"]);
         assert_eq!(runtime["built_at"], state["server_built_at"]);
+        assert_eq!(runtime["build_size"], state["server_build_size"]);
         // The supervisor's whole view of a pending restart. It rides here
         // rather than only on `/state` because a long AI turn is exactly when
         // a restart is asked for and exactly when `/state` cannot be built.
@@ -5933,10 +5972,18 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function updateBuildMarker(st = state)"));
         assert!(EMBEDDED_INDEX.contains("st?.server_commit_time"));
         assert!(EMBEDDED_INDEX.contains("st?.server_built_at"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_build_size"));
         assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
         assert!(EMBEDDED_INDEX.contains("return parts.join(\" \") || \"0m\""));
         assert!(EMBEDDED_INDEX.contains("Commit is ${formatBuildAge(commitDate)} old"));
         assert!(EMBEDDED_INDEX.contains("Build is ${formatBuildAge(buildDate)} old"));
+        assert!(EMBEDDED_INDEX.contains("function formatBuildSize(bytes)"));
+        assert!(EMBEDDED_INDEX.contains("Build size is ${buildSize}"));
+        assert!(EMBEDDED_INDEX.contains(
+            "https://github.com/MartinHalvorson/CIVVIS/commit/${encodeURIComponent(commit)}"
+        ));
+        assert!(EMBEDDED_INDEX.contains("commitLink.target = \"_blank\""));
+        assert!(EMBEDDED_INDEX.contains("commitLink.rel = \"noopener noreferrer\""));
         assert!(EMBEDDED_INDEX.contains(
             "#buildmark {\n    /* The authored World minimap owns the lower-right corner at z-index 6."
         ));

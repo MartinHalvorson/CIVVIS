@@ -500,6 +500,7 @@ def stage_apps(repo: pathlib.Path, artifacts: BuildArtifacts, template_path: pat
                 "dirty": False,
                 "source_snapshot": artifacts.source_snapshot,
                 "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+                "build_size": binary.stat().st_size,
                 "built_at": artifacts.native_built_at,
             }
             (resources / "spectator-build.json").write_text(

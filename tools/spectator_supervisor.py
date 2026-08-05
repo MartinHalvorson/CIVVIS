@@ -414,6 +414,7 @@ def write_runtime_metadata(snapshot: str) -> None:
         "dirty": dirty,
         "source_snapshot": snapshot,
         "binary_sha256": hashlib.sha256(RUNTIME_BINARY.read_bytes()).hexdigest(),
+        "build_size": RUNTIME_BINARY.stat().st_size,
         "built_at": datetime.now(timezone.utc).isoformat(),
     }
     write_runtime_metadata_file(metadata)
@@ -449,6 +450,7 @@ def refresh_runtime_metadata(snapshot: str) -> None:
         "dirty": dirty,
         "source_snapshot": snapshot,
         "binary_sha256": hashlib.sha256(RUNTIME_BINARY.read_bytes()).hexdigest(),
+        "build_size": RUNTIME_BINARY.stat().st_size,
     }
     if all(metadata.get(key) == value for key, value in current_identity.items()):
         return
@@ -1256,8 +1258,11 @@ def start_server(
         ("revision", "CIVVIS_COMMIT"),
         ("commit_time", "CIVVIS_COMMIT_TIME"),
         ("built_at", "CIVVIS_BUILT_AT"),
+        ("build_size", "CIVVIS_BUILD_SIZE"),
     ):
         value = metadata.get(field)
+        if field == "build_size" and isinstance(value, int):
+            value = str(value)
         if isinstance(value, str) and value:
             environment[variable] = value
     process = subprocess.Popen(

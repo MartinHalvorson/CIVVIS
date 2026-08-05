@@ -1586,6 +1586,11 @@
     letter-spacing: .035em; backdrop-filter: blur(8px); opacity: .82;
   }
   #buildmark[hidden] { display: none; }
+  #buildmark a {
+    color: #c8d8d0; text-decoration: underline; text-decoration-color: #70877b;
+    text-underline-offset: 2px; pointer-events: auto;
+  }
+  #buildmark a:hover, #buildmark a:focus-visible { color: #fffaf0; }
   .tip-primary, .tip-unit {
     display: inline-block; color: #fffaf0; font-size: var(--type-body); font-weight: 850; line-height: 1.45;
   }
@@ -7782,11 +7787,40 @@ function formatBuildAge(buildDate) {
   ].filter(Boolean);
   return parts.join(" ") || "0m";
 }
+function formatBuildSize(bytes) {
+  const size = Number(bytes);
+  if (!Number.isFinite(size) || size <= 0) return null;
+  const units = ["B", "KB", "MB", "GB"];
+  let value = size;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  const digits = unit === 0 ? 0 : value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${value.toFixed(digits)} ${units[unit]}`;
+}
+let publishedBuildSize = null;
+async function refreshPublishedBuildSize() {
+  try {
+    const response = await fetch(new URL("build.json", document.baseURI), {cache: "no-store"});
+    if (!response.ok) return;
+    const manifest = await response.json();
+    const size = Number(manifest?.wasm_bytes ?? manifest?.bundle_bytes);
+    if (Number.isFinite(size) && size > 0) {
+      publishedBuildSize = size;
+      updateBuildMarker();
+    }
+  } catch (_) {
+    // Native builds do not serve a manifest; their runtime reports its own size.
+  }
+}
 function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
   const commit = st?.server_commit;
   const commitTime = st?.server_commit_time;
   const builtAt = st?.server_built_at;
+  const buildSize = formatBuildSize(st?.server_build_size ?? publishedBuildSize);
   const commitDate = typeof commitTime === "string" ? new Date(commitTime) : null;
   const buildDate = typeof builtAt === "string" ? new Date(builtAt) : null;
   if (!marker || typeof commit !== "string" || commit === "unknown" ||
@@ -7795,13 +7829,24 @@ function updateBuildMarker(st = state) {
     if (marker) marker.hidden = true;
     return;
   }
-  marker.textContent = `${commit.slice(0, 7)} · ` +
-    `Commit is ${formatBuildAge(commitDate)} old · ` +
-    `Build is ${formatBuildAge(buildDate)} old`;
-  marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}`;
+  const commitLink = document.createElement("a");
+  commitLink.href = `https://github.com/MartinHalvorson/CIVVIS/commit/${encodeURIComponent(commit)}`;
+  commitLink.target = "_blank";
+  commitLink.rel = "noopener noreferrer";
+  commitLink.textContent = commit.slice(0, 7);
+  commitLink.setAttribute("aria-label", `Open commit ${commit} on GitHub`);
+  const details = [
+    `Commit is ${formatBuildAge(commitDate)} old`,
+    `Build is ${formatBuildAge(buildDate)} old`,
+    buildSize ? `Build size is ${buildSize}` : "",
+  ].filter(Boolean);
+  marker.replaceChildren(commitLink, document.createTextNode(` · ${details.join(" · ")}`));
+  marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}` +
+    (buildSize ? `\nBuild size ${buildSize}` : "");
   marker.hidden = false;
 }
 setInterval(() => updateBuildMarker(), 60_000);
+refreshPublishedBuildSize();
 function servesThisDocumentsCode(commit) {
   return documentCommit !== null && typeof commit === "string" &&
     commit !== "unknown" && commit === documentCommit;

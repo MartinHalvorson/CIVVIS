@@ -767,6 +767,7 @@ class SourceSnapshotTests(unittest.TestCase):
             self.assertFalse(refreshed["dirty"])
             self.assertEqual(refreshed["source_snapshot"], "same-source")
             self.assertEqual(refreshed["built_at"], "original-build-time")
+            self.assertEqual(refreshed["build_size"], len(b"verified binary"))
             self.assertEqual(
                 refreshed["binary_sha256"],
                 supervisor.hashlib.sha256(runtime.read_bytes()).hexdigest(),
@@ -1519,6 +1520,7 @@ class RecoveryTests(unittest.TestCase):
                         "revision": "a" * 40,
                         "commit_time": "2026-08-03T20:00:00Z",
                         "built_at": "2026-08-03T20:05:00Z",
+                        "build_size": 987654,
                     }
                 ),
                 encoding="utf-8",
@@ -1538,6 +1540,7 @@ class RecoveryTests(unittest.TestCase):
         self.assertEqual(environment["CIVVIS_COMMIT"], "a" * 40)
         self.assertEqual(environment["CIVVIS_COMMIT_TIME"], "2026-08-03T20:00:00Z")
         self.assertEqual(environment["CIVVIS_BUILT_AT"], "2026-08-03T20:05:00Z")
+        self.assertEqual(environment["CIVVIS_BUILD_SIZE"], "987654")
 
     def test_checkpoint_write_is_atomic_and_finished_saves_are_not_resumed(self):
         class Response:
