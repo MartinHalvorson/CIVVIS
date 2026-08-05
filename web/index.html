@@ -12579,6 +12579,34 @@ function paintImprovementMarker(marker, t, x, y, dir) {
     case "airstrip":
       cx.fillStyle = "#59616a"; cx.fillRect(x - 14, y - 2.2, 28, 5); cx.strokeStyle = "#d8d3ad"; cx.lineWidth = 1; cx.strokeRect(x - 14, y - 2.2, 28, 5);
       cx.strokeStyle = "#f2edc6"; cx.setLineDash([2, 2]); cx.beginPath(); cx.moveTo(x - 12, y + .3); cx.lineTo(x + 12, y + .3); cx.stroke(); cx.setLineDash([]); break;
+    case "feitoria": {
+      // A Feitoria is Portugal's fortified overseas trade post, not an
+      // anonymous inland house. A white watchtower, red pennant and low quay
+      // make its foreign coast and commercial role legible at survey scale.
+      cx.fillStyle = "rgba(82,139,168,.76)";
+      cx.beginPath(); cx.ellipse(x, y + 6.5, 15, 4.7, 0, 0, 7); cx.fill();
+      cx.strokeStyle = "rgba(198,225,231,.72)"; cx.lineWidth = .9;
+      for (const waveY of [5.2, 8.2]) {
+        cx.beginPath(); cx.moveTo(x - 13, y + waveY); cx.quadraticCurveTo(x - 7, y + waveY - 1.5, x - 1, y + waveY);
+        cx.quadraticCurveTo(x + 6, y + waveY + 1.5, x + 13, y + waveY); cx.stroke();
+      }
+      const quay = new Path2D(); quay.roundRect(x - 13, y + 2.7, 26, 4.8, 1.1);
+      outlined(quay, matteMat("#88613f", dir, 13), "rgba(55,37,21,.78)", .9);
+      const tower = new Path2D(); tower.roundRect(x - 5.7, y - 11.5, 11.4, 15.2, 1.1);
+      outlined(tower, matteMat("#e2d3af", dir, 5.7), "rgba(57,45,31,.8)", 1);
+      cx.fillStyle = "#f0e4c8";
+      for (const dx of [-5.1, -1.7, 1.7, 5.1]) cx.fillRect(x + dx - 1.15, y - 13.1, 2.3, 3.1);
+      cx.strokeStyle = "rgba(77,61,43,.72)"; cx.lineWidth = .7;
+      cx.beginPath(); cx.moveTo(x - 5.7, y - 10); cx.lineTo(x + 5.7, y - 10); cx.stroke();
+      cx.fillStyle = "#31546a";
+      cx.beginPath(); cx.arc(x, y + 2.1, 2.45, Math.PI, 0); cx.lineTo(x + 2.45, y + 3.8); cx.lineTo(x - 2.45, y + 3.8); cx.closePath(); cx.fill();
+      cx.strokeStyle = "#5b412d"; cx.lineWidth = 1.2;
+      cx.beginPath(); cx.moveTo(x + dir * 3.3, y - 13); cx.lineTo(x + dir * 3.3, y - 19); cx.stroke();
+      cx.fillStyle = "#ba4039";
+      cx.beginPath(); cx.moveTo(x + dir * 3.3, y - 18.8); cx.lineTo(x + dir * 9.1, y - 16.8); cx.lineTo(x + dir * 3.3, y - 14.8); cx.closePath(); cx.fill();
+      cx.fillStyle = "#e9ca64"; cx.beginPath(); cx.arc(x + dir * 5.1, y - 16.8, .85, 0, 7); cx.fill();
+      break;
+    }
     case "arena":
       cx.fillStyle = "#caa66d"; cx.beginPath(); cx.ellipse(x, y + 3, 13, 7, 0, 0, 7); cx.fill(); cx.strokeStyle = "#61472c"; cx.lineWidth = 1.2; cx.stroke();
       cx.fillStyle = "#805e37"; cx.beginPath(); cx.ellipse(x, y + 3, 7, 3, 0, 0, 7); cx.fill(); break;
