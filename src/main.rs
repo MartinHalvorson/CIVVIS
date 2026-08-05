@@ -1927,7 +1927,7 @@ fn main() {
             });
         }
         "play" => {
-            let players = arg(&args, "--players", 4);
+            let players = arg(&args, "--players", 6);
             // `--mirror <run-dir>`: show the board a Civilization VI seat can
             // actually see, rebuilt as a CIVVIS game, instead of generating one.
             //
