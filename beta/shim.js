@@ -28,6 +28,7 @@
   const here = new URL(".", document.currentScript.src);
   const WASM_URL = new URL("civvis.wasm", here).href;
   const WORKER_URL = new URL("worker.js", here).href;
+  const BUILD_URL = new URL("build.json", here);
 
   // Everything the engine answers. A path not in here is a real file, such as
   // a strategic map sprite atlas, and goes to the network untouched.
@@ -422,6 +423,7 @@
       // not held up by storage.
       answer.autosaved = turn;
     }
+    answer = await withPublishedArtifact(answer);
     return json(answer);
   }
 
@@ -436,6 +438,42 @@
   // ------------------------------------------------------- the interception
 
   const networkFetch = window.fetch.bind(window);
+
+  // Publication records the optimized module after `wasm-opt` has finished.
+  // Rust cannot truthfully bake that size into the module itself: changing the
+  // embedded number changes the file, and optimization happens afterwards.
+  // Load the adjacent manifest once and attach its exact byte count only when
+  // it names the same revision as the running module. That prevents a page
+  // caught during a deployment from showing the successor's size.
+  let publishedBuildPromise = null;
+  function loadPublishedBuild() {
+    if (publishedBuildPromise === null) {
+      publishedBuildPromise = networkFetch(BUILD_URL, {cache: "no-store"})
+        .then(response => response.ok ? response.json() : null)
+        .catch(() => null);
+    }
+    return publishedBuildPromise;
+  }
+  async function withPublishedArtifact(answer) {
+    if (!answer || typeof answer !== "object") return answer;
+    const build = await loadPublishedBuild();
+    const bytes = build?.wasm_bytes;
+    const runningCommit = answer.server_commit ?? answer.commit;
+    if (!Number.isSafeInteger(bytes) || bytes <= 0 ||
+        typeof build?.commit !== "string" || build.commit !== runningCommit) {
+      return answer;
+    }
+    if (Object.prototype.hasOwnProperty.call(answer, "server_commit")) {
+      answer.server_artifact_bytes = bytes;
+      answer.server_artifact_kind = "WASM";
+    }
+    if (Object.prototype.hasOwnProperty.call(answer, "commit")) {
+      answer.artifact_bytes = bytes;
+      answer.artifact_kind = "WASM";
+    }
+    report.artifactBytes = bytes;
+    return answer;
+  }
 
   window.fetch = function (input, options) {
     const options_ = options || {};
@@ -460,13 +498,17 @@
 
   // ----------------------------------------------------------- first impression
 
-  // A megabyte and a half of engine arrives before the page can draw anything.
-  // Say so, rather than showing a blank screen for the download.
+  // The local game can take a moment to prepare on a first visit. Say what is
+  // actually happening in visitor language rather than exposing the engine
+  // implementation or implying that a server is being started.
   const curtain = document.createElement("div");
   curtain.id = "civvis-beta-loading";
+  curtain.setAttribute("role", "status");
+  curtain.setAttribute("aria-live", "polite");
   curtain.innerHTML =
     '<div class="civvis-beta-mark">CIVVIS</div>' +
-    '<div class="civvis-beta-note">loading the engine</div>';
+    '<div class="civvis-beta-note">Starting a new world</div>' +
+    '<div class="civvis-beta-detail">Runs in this browser</div>';
   const style = document.createElement("style");
   style.textContent = `
     #civvis-beta-loading {
@@ -480,14 +522,24 @@
     #civvis-beta-loading.gone { opacity: 0; pointer-events: none; }
     .civvis-beta-mark { font-size: 40px; letter-spacing: 0.34em; text-indent: 0.34em; }
     .civvis-beta-note { font-size: 13px; letter-spacing: 0.18em; color: #6f8279; text-transform: uppercase; }
+    .civvis-beta-detail { font: 12px/1.4 system-ui, sans-serif; color: #9eaea6; }
     @media (prefers-reduced-motion: reduce) { #civvis-beta-loading { transition: none; } }
   `;
+  const LOADING_NOTICE_DELAY_MS = 350;
+  let loadingFinished = false;
+  let loadingNoticeTimer = null;
   const raise = () => {
+    if (loadingFinished || curtain.isConnected) return;
     document.head.appendChild(style);
     document.body.appendChild(curtain);
   };
-  if (document.body) raise();
-  else document.addEventListener("DOMContentLoaded", raise, { once: true });
+  // Fast cached visits should go straight to the game rather than flash a
+  // full-screen status card. First visits still get a clear explanation after
+  // a short grace period, once there is something worth explaining.
+  loadingNoticeTimer = setTimeout(() => {
+    if (document.body) raise();
+    else document.addEventListener("DOMContentLoaded", raise, { once: true });
+  }, LOADING_NOTICE_DELAY_MS);
 
   // The engine is ready when it has answered something. `/runtime` is the
   // cheapest question there is — it builds no observation at all.
@@ -499,6 +551,9 @@
       report.error = String(error.message || error);
     })
     .then(() => {
+      loadingFinished = true;
+      clearTimeout(loadingNoticeTimer);
+      if (!curtain.isConnected) return;
       curtain.classList.add("gone");
       setTimeout(() => curtain.remove(), 450);
     });

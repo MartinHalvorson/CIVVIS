@@ -64,21 +64,21 @@ raw_wasm="$source_tree/target/wasm32-unknown-unknown/release/civvis.wasm"
 [ -f "$raw_wasm" ] || { echo "the wasm build produced nothing at $raw_wasm" >&2; exit 1; }
 
 rm -rf "$out"
-mkdir -p "$out/beta"
+mkdir -p "$out/test"
 
 if command -v wasm-opt >/dev/null; then
   echo "==> shrinking the module"
   # -O3 keeps the optimiser aimed at speed: this module simulates whole games,
   # and -Oz costs more turn time than it saves bytes over the wire.
-  wasm-opt -O3 "$raw_wasm" -o "$out/beta/civvis.wasm"
+  wasm-opt -O3 "$raw_wasm" -o "$out/test/civvis.wasm"
 else
   echo "==> wasm-opt is not installed; publishing the unshrunk module" >&2
-  cp "$raw_wasm" "$out/beta/civvis.wasm"
+  cp "$raw_wasm" "$out/test/civvis.wasm"
 fi
 
 echo "==> assembling the page"
-cp "$repo_root/beta/shim.js" "$repo_root/beta/worker.js" "$out/beta/"
-cp -R "$source_tree/web/assets" "$out/beta/assets"
+cp "$repo_root/beta/shim.js" "$repo_root/beta/worker.js" "$out/test/"
+cp -R "$source_tree/web/assets" "$out/test/assets"
 cp "$repo_root/beta/landing.html" "$out/index.html"
 # `/download/` rather than `/download.html`: the page outlives any one release
 # and gets linked around, so it should have the tidier address.
@@ -87,11 +87,14 @@ cp "$repo_root/beta/download.html" "$out/download/index.html"
 # The gate travels *inside* the deployed directory. See beta/_worker.js for
 # why this is not a `functions/` directory.
 cp "$repo_root/beta/_worker.js" "$out/_worker.js"
+# Its very existence switches Pages from single-page-app fallback (unknown
+# path -> the front page, 200) to honest 404s. See the comment inside it.
+cp "$repo_root/beta/404.html" "$out/404.html"
 
 # The viewer, copied and then made to work one directory down. Each
 # substitution is checked, because a silently unmatched one publishes a page
 # whose strategic map sprites are simply missing.
-python3 - "$source_tree/web/index.html" "$out/beta/index.html" "$out/beta/assets" <<'PY'
+python3 - "$source_tree/web/index.html" "$out/test/index.html" "$out/test/assets" <<'PY'
 import re, sys, pathlib
 
 source, target = pathlib.Path(sys.argv[1]), pathlib.Path(sys.argv[2])
@@ -99,7 +102,7 @@ assets = pathlib.Path(sys.argv[3])
 page = source.read_text(encoding="utf-8")
 
 # The page asks for its assets from the site root, which is where a desktop
-# build serves them. Published under /beta/ they sit beside the page instead.
+# build serves them. Published under /test/ they sit beside the page instead.
 #
 # The check is "none left afterwards", not "exactly N rewritten". An exact
 # count fails the build every time somebody adds a sprite atlas — which is
@@ -161,19 +164,34 @@ missing = sorted(wanted - have)
 if missing:
     raise SystemExit(f"the viewer asks for assets this build does not ship: {', '.join(missing)}")
 
-# The interception has to be installed before the page's own first script runs.
+# Start the largest critical request while the viewer is still parsing. The
+# shim starts the worker immediately afterwards, and its `fetch()` shares this
+# CORS-enabled preload instead of racing the sprite atlases for a connection.
+# The interception still has to be installed before the page's own first script
+# runs.
 head = "<head>"
 if page.count(head) != 1:
     raise SystemExit("the viewer does not have exactly one <head>")
-page = page.replace(head, head + '\n<script src="shim.js"></script>', 1)
+page = page.replace(
+    head,
+    head + '\n<link rel="preload" href="civvis.wasm" as="fetch" '
+    'type="application/wasm" crossorigin fetchpriority="high">'
+    '\n<script src="shim.js"></script>',
+    1,
+)
 
 target.write_text(page, encoding="utf-8")
 print(f"   viewer written to {target} ({len(page):,} bytes)")
 PY
 
-wasm_bytes=$(wc -c < "$out/beta/civvis.wasm" | tr -d ' ')
+# Browser caches cannot be purged by a deployment. Give every JS, WASM, and
+# atlas dependency a URL derived from its actual bytes, so fresh HTML always
+# asks for fresh content while unchanged files remain reusable across builds.
+python3 "$repo_root/beta/cache_bust.py" "$out/test"
+
+wasm_bytes=$(wc -c < "$out/test/civvis.wasm" | tr -d ' ')
 bundle_bytes=$(find "$out" -type f -exec wc -c {} + | tail -1 | awk '{print $1}')
-cat > "$out/beta/build.json" <<JSON
+cat > "$out/test/build.json" <<JSON
 {
   "commit": "$commit",
   "short": "$short",
@@ -188,7 +206,7 @@ echo
 echo "published build $short -> $out"
 echo "  engine      $(printf "%'d" "$wasm_bytes") bytes"
 if command -v brotli >/dev/null; then
-  echo "  over a wire $(printf "%'d" "$(brotli -q 11 -c "$out/beta/civvis.wasm" | wc -c | tr -d ' ')") bytes brotli"
+  echo "  over a wire $(printf "%'d" "$(brotli -q 11 -c "$out/test/civvis.wasm" | wc -c | tr -d ' ')") bytes brotli"
 fi
 echo "  bundle      $(printf "%'d" "$bundle_bytes") bytes on disk"
 

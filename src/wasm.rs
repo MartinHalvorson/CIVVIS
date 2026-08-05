@@ -73,7 +73,8 @@ thread_local! {
 /// the one that needs no decisions from a visitor who has just arrived.
 fn opening_params() -> Params {
     let size = MapSize::for_players(6);
-    let (width, height) = size.dimensions(MapTopology::Flat);
+    let map_topology = MapTopology::Planet;
+    let (width, height) = size.dimensions(map_topology);
     Params {
         num_players: 6,
         width,
@@ -85,7 +86,7 @@ fn opening_params() -> Params {
         // it: the lobby is where a different Future Era is asked for.
         future_era: FutureEra::Classic,
         map_script: MapScript::Continents,
-        map_topology: MapTopology::Flat,
+        map_topology,
         map_poles: MapPoles::Poles,
         game_speed: GameSpeed::Online,
         max_turns: GameSpeed::Online.turn_limit(),
@@ -285,6 +286,11 @@ fn route(method: &str, target: &str, body: &str) -> Value {
             o
         }),
 
+        // A published browser build has no permission to inspect the machine
+        // that hosts it. Keep the response shape, but say that plainly rather
+        // than substituting the tab's own incomplete measurements.
+        ("GET", "/machine-metrics") => machine_metrics_json(),
+
         ("GET", "/status") => with_session(|session| {
             json!({
                 "turn": session.game.turn,
@@ -310,7 +316,9 @@ fn route(method: &str, target: &str, body: &str) -> Value {
                 "wonders": r.wonders,
                 "projects": r.projects,
                 "policies": r.policies, "beliefs": r.beliefs, "civs": r.civs,
+                "city_state_limit": r.city_states.roster.len(),
                 "civ6_leaders": crate::game::CIV6_LEADER_POOL.as_slice(),
+                "leader_pools": crate::leader_roster::browser_pools(),
                 "great_people": r.great_people, "governors": r.governors,
                 "map_sizes": CIV6_MAP_SIZES,
                 "difficulties": r.difficulties, "speeds": r.speeds,
@@ -722,4 +730,22 @@ pub unsafe extern "C" fn civvis_request(ptr: *mut u8, len: usize) -> *mut u8 {
     let answer = serde_json::to_string(&route(&method, &target, &body))
         .unwrap_or_else(|error| format!("{{\"error\":\"cannot serialise the answer: {error}\"}}"));
     sized(answer.into_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::opening_params;
+    use crate::setup::{MapSize, MapTopology};
+
+    #[test]
+    fn opening_exhibition_defaults_to_planet() {
+        let params = opening_params();
+        let size = MapSize::for_players(params.num_players);
+
+        assert_eq!(params.map_topology, MapTopology::Planet);
+        assert_eq!(
+            (params.width, params.height),
+            size.dimensions(MapTopology::Planet)
+        );
+    }
 }

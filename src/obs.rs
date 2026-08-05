@@ -1628,11 +1628,11 @@ mod tests {
 
         const INDEX: &str = include_str!("../web/index.html");
         assert!(INDEX.contains("id=\"map-controls-dock\""));
-        // The strip reads outward from the ground under the cursor: the land
-        // itself, where to settle it, who holds it, what they built on it —
-        // and only then the softer cultural readings of that same territory.
+        // The compact two-column menu pairs related readings: land and borders,
+        // city planning and empire detail, then culture, tile value, and the
+        // two city-pressure lenses.
         let toolbar = INDEX
-            .split_once("<div id=\"map-lenses\"")
+            .split_once("<div id=\"map-lens-strip\"")
             .expect("map lens toolbar")
             .1
             .split_once("</div>")
@@ -1649,8 +1649,8 @@ mod tests {
             lenses,
             [
                 "continent",
-                "settler",
                 "political",
+                "settler",
                 "empire",
                 "religion",
                 "government",
@@ -1680,11 +1680,10 @@ mod tests {
             );
         }
         assert!(INDEX.contains(
-            "{id: \"LoyaltyLens\", key: \"8\", spectator: true, run: () => setMapLens(\"loyalty\")},"
+            "{id: \"SettlerLens\", key: \"2\", spectator: true, run: () => setMapLens(\"settler\")},"
         ));
-        assert!(INDEX.contains(
-            "{id: \"PowerLens\", key: \"0\", spectator: true, run: () => setMapLens(\"power\")},"
-        ));
+        assert!(!INDEX.contains("id: \"LoyaltyLens\""));
+        assert!(!INDEX.contains("id: \"PowerLens\""));
         let start = INDEX
             .find("function tileTipLines(t, pos, tileKey)")
             .expect("the tile hover has one ordered builder");
@@ -1695,16 +1694,15 @@ mod tests {
         let hover = &INDEX[start..end];
         let ordered = [
             "for (const unit of state.units)",
+            "lines.push(...tileBuiltTipLines(t, city));",
             "tileOwnershipTipLine(t)",
-            "lines.push(\"Terrain: \"",
-            "if (t.resource)",
-            "if (t.improvement",
-            "if (yieldText)",
-            "const movement = []",
-            "if (t.road > 0)",
-            "if (t.district)",
-            "if (t.wonder)",
-            "const city = state.cities.find",
+            "lines.push(tileTerrainTipLine(t));",
+            "const resource = tileResourceTipLine(t);",
+            "lines.push(...tileBaseYieldLines(t));",
+            "const yields = tileTotalYields(t);",
+            "const mp = tileMoveCost(t);",
+            "const defense = tileDefense(t);",
+            "if (t.appeal !== null && t.appeal !== undefined)",
         ];
         let mut previous = 0;
         for marker in ordered {
@@ -1718,11 +1716,20 @@ mod tests {
             previous = at;
         }
         assert!(INDEX.contains(".tip-primary, .tip-unit"));
-        assert!(INDEX.contains("font-size: var(--type-body); font-weight: 850"));
-        assert!(INDEX.contains("Rome:\"Roman\""));
-        assert!(INDEX.contains(
-            "<span class=\"tip-unit\">● ${civAdjective(civ)} ${titleCase(unit.type)}"
-        ));
+        assert!(INDEX.contains("function civPossessive(civ)"));
+        assert!(INDEX.contains("function tileTerrainTipLine(t)"));
+        assert!(INDEX.contains("function tileBuiltTipLines(t, city)"));
+        assert!(INDEX.contains("function tileBaseYieldLines(t)"));
+        assert!(INDEX.contains("function tileTotalYields(t)"));
+        assert!(INDEX.contains("function tileYieldMarkers(yields)"));
+        assert!(hover.contains("${civPossessive(civ)} ${titleCase(unit.type)} - "));
+        assert!(hover.contains("Total tile yields: ${yieldWords || \"unavailable\"}"));
+        assert!(hover.contains("Movement: ${movement}"));
+        assert!(hover.contains("Defense: ${defenseText}"));
+        assert!(hover.contains("Appeal: "));
+        assert!(!hover.contains("civAdjective("));
+        assert!(!hover.contains("Capital: "));
+        assert!(!hover.contains("<b>"));
     }
 
     #[test]
@@ -1912,7 +1919,9 @@ mod tests {
             next_column, plan_column,
             "the resizable AGE column belongs immediately before PLAN"
         );
-        assert!(INDEX.contains("title=\"Civilization age\">AGE</span>"));
+        assert!(INDEX.contains(
+            "playerHudSortHead(\"age\", \"AGE\", \"Civilization age\")"
+        ));
         assert!(INDEX.contains("diplomacy-identity-field diplomacy-age"));
     }
 
@@ -2630,6 +2639,9 @@ mod tests {
     #[test]
     fn score_meter_is_the_turn_clock_scaled_by_the_share_of_the_leader() {
         let mut game = Game::new_full(4, 26, 18, 81_006, 100, 1, false);
+        // Give the meter an explicit leader instead of relying on generated
+        // starts to have founded and scored before this observation-only test.
+        game.observed_score.insert(0, 100);
         game.turn = 25;
         let leading = game
             .players
