@@ -595,8 +595,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// through the historical full-search path and the frozen `advanced_v1`
 /// controller remains byte-identical. Compatibility re-pin; the Elo protocol
 /// does not move.
+///
+/// #1204 makes action-family queries skip unrelated enumeration and removes
+/// duplicate production-catalog work from the purchase-only projection.
+/// `AdvancedAi::legacy()` retains the same action ordering and the BasicAI
+/// purchase helper is outside the frozen controller's path. Clean `origin/main`
+/// and candidate release builds produced byte-identical output from
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed 31337
+/// --jobs 1 --deployment-comparison`. Compatibility re-pin; the Elo protocol
+/// does not move.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5baa_c469_5096_36ab;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xbdfc_3a4d_dfdd_3960;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {

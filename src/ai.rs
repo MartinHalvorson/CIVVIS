@@ -5367,7 +5367,7 @@ impl BasicAi {
     fn buy_gold_plot(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
         let bank = g.players[pid].gold;
         let mut best: Option<PlotPurchaseCandidate> = None;
-        for action in g.legal_actions_within(pid, ActionFamilies::PURCHASES) {
+        for action in g.legal_purchase_actions(pid) {
             let Action::BuyPlot { city, pos, cost } = action else {
                 continue;
             };
