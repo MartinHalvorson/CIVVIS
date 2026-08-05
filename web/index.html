@@ -19679,6 +19679,91 @@ function drawPlanetLensGroupLabels(cells) {
   }
   cx.restore();
 }
+
+// City plates are useful while the globe is close enough to read individual
+// settlements. Once they leave the frame, the map still needs a name for the
+// land beneath the viewer's eye. Keep this threshold beside the city pass so
+// the two levels hand off without a gap: small entities up close, empires at
+// survey distance.
+const PLANET_MAJOR_CITY_LABEL_SCALE = .52;
+const PLANET_EMPIRE_LABEL_MIN_RADIUS = 34;
+function drawPlanetEmpireLabels(cells, scale, radius, visible, spectator) {
+  if (scale > PLANET_MAJOR_CITY_LABEL_SCALE) return;
+  const alpha = Math.max(0, Math.min(1,
+    (radius - PLANET_EMPIRE_LABEL_MIN_RADIUS) /
+    (SKY_MARKERS - PLANET_EMPIRE_LABEL_MIN_RADIUS)));
+  if (alpha <= 0) return;
+
+  // Work from the part of the world the viewer can actually see. The sphere's
+  // neighbour links still give us true globe connectivity, while stopping at
+  // the visible edge naturally lets two separated screen sections receive two
+  // labels instead of forcing one name through the limb.
+  const eligible = new Map();
+  for (const entry of cells) {
+    const owner = entry.tile.owner;
+    const player = state.players[owner];
+    if (!player || player.is_minor || player.is_barbarian || player.met === false ||
+        !player.civ || entry.center.z < .12) continue;
+    if (!spectator && !visible.has(key(entry.tile.pos))) continue;
+    eligible.set(key(entry.tile.pos), entry);
+  }
+  if (!eligible.size) return;
+
+  const sections = [], seen = new Set();
+  for (const [startKey, start] of eligible) {
+    if (seen.has(startKey)) continue;
+    const owner = start.tile.owner;
+    const entries = [], pending = [start];
+    seen.add(startKey);
+    while (pending.length) {
+      const entry = pending.pop();
+      entries.push(entry);
+      for (const neighbourKey of entry.cell.nbrs || []) {
+        const neighbour = eligible.get(neighbourKey);
+        if (!neighbour || seen.has(neighbourKey) || neighbour.tile.owner !== owner) continue;
+        seen.add(neighbourKey);
+        pending.push(neighbour);
+      }
+    }
+    if (entries.length < 2) continue;
+    let x = 0, y = 0, area = 0, totalWeight = 0;
+    for (const entry of entries) {
+      const weight = Math.max(1, planetCellInradius(entry));
+      x += entry.center.x * weight;
+      y += entry.center.y * weight;
+      area += weight * weight;
+      totalWeight += weight;
+    }
+    const player = state.players[owner];
+    sections.push({owner, entries, x:x / totalWeight, y:y / totalWeight, area,
+      label:player.civ.toUpperCase()});
+  }
+  if (!sections.length) return;
+
+  const zoomOut = Math.max(0, Math.min(1,
+    (PLANET_MAJOR_CITY_LABEL_SCALE - scale) / .38));
+  const fontSize = 17 + zoomOut * 7;
+  const boxes = [];
+  sections.sort((a, b) => b.area - a.area);
+  cx.save();
+  cx.textAlign = "center"; cx.textBaseline = "middle";
+  cx.font = `900 ${fontSize}px Georgia, serif`;
+  for (const section of sections) {
+    const width = cx.measureText(section.label).width;
+    const box = {left:section.x - width / 2 - 5, right:section.x + width / 2 + 5,
+                 top:section.y - fontSize / 2 - 4, bottom:section.y + fontSize / 2 + 4};
+    if (boxes.some(other => box.left < other.right && box.right > other.left &&
+                           box.top < other.bottom && box.bottom > other.top)) continue;
+    boxes.push(box);
+    const [, light] = jerseyLanes(section.owner);
+    cx.globalAlpha = alpha;
+    cx.strokeStyle = "#07100f"; cx.lineWidth = Math.max(3.5, fontSize * .22);
+    cx.strokeText(section.label, section.x, section.y);
+    cx.fillStyle = light;
+    cx.fillText(section.label, section.x, section.y);
+  }
+  cx.restore();
+}
 function drawThematicLensPlanet(cells) {
   const context = mapLensContext(cells.map(cell => cell.tile));
   for (const cell of cells) {
@@ -20191,6 +20276,11 @@ function drawPlanetMap() {
   drawPlanetMapSearchHighlights(cells);
   if (!spectator && radius >= SKY_MARKERS)
     drawPlanetVisibilityPerimeter(cells, visible);
+  // At the same scale where major-city names leave the globe, replace the
+  // settlement vocabulary with cartographic empire names. This is deliberately
+  // before the city/icon pass so close markers remain readable over the label
+  // if the two levels meet during a zoom animation.
+  drawPlanetEmpireLabels(cells, scale, radius, turnVisible, spectator);
   // Cities and armies are drawn at a floor size so they stay clickable, and a
   // four-pixel dot on a world the size of a coin is no longer a city on it.
   // Past that the globe is one object among several and only reads as one.
@@ -20219,7 +20309,7 @@ function drawPlanetMap() {
       cx.strokeStyle = bannerColor; cx.lineWidth = 1.2;
       cx.beginPath(); cx.arc(cell.center.x, cell.center.y, r + 3, 0, 7); cx.stroke();
     }
-    if (scale > (cityState ? .95 : .52)) {
+    if (scale > (cityState ? .95 : PLANET_MAJOR_CITY_LABEL_SCALE)) {
       cx.font = `${cityState ? 650 : 800} ${cityState
         ? Math.max(9, Math.min(11, 8 * scale))
         : Math.max(11, Math.min(15, 10.5 * scale))}px system-ui, -apple-system, BlinkMacSystemFont, sans-serif`;
