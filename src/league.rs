@@ -190,6 +190,14 @@ pub struct Calibration {
     pub comparisons: u64,
     pub brier_sum: f64,
     pub log_loss_sum: f64,
+    /// Idempotency keys for externally hosted live games.
+    ///
+    /// A browser may retry its terminal-result POST after a reload or a lost
+    /// response. Keeping the receipt in the same authoritative checkpoint as
+    /// the rating update makes that retry atomic: either both the Glicko
+    /// period and its receipt survive, or neither does.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub recorded_live_results: BTreeSet<String>,
 }
 
 /// Outright-win evidence from one table size.
@@ -224,6 +232,7 @@ impl Calibration {
             comparisons: self.comparisons.saturating_sub(earlier.comparisons),
             brier_sum: self.brier_sum - earlier.brier_sum,
             log_loss_sum: self.log_loss_sum - earlier.log_loss_sum,
+            recorded_live_results: BTreeSet::new(),
         }
     }
 }
@@ -2072,6 +2081,27 @@ pub fn shipped_league() -> Option<League> {
     PARSED.get_or_init(|| parse_league(SHIPPED_LEAGUE)).clone()
 }
 
+/// Create a managed live roster from the snapshot compiled into this binary.
+///
+/// Desktop hosts call this before accepting browser results. The league lock
+/// makes a simultaneous native spectator startup harmless, while retaining an
+/// existing roster means neither app can reset ratings earned by the other.
+pub fn initialize_shipped_league(dir: &str) -> Option<League> {
+    let worker = default_worker_id();
+    let _lock = acquire_league_lock(dir, &worker).ok()?;
+    fs::write(
+        Path::new(dir).join(MANAGED_ROSTER_MARKER),
+        "managed by a live CIVVIS host\n",
+    )
+    .ok()?;
+    if let Some(league) = load_league_for_update(dir).ok()? {
+        return Some(league);
+    }
+    let league = shipped_league()?;
+    save_league_checked(dir, &league).ok()?;
+    Some(league)
+}
+
 fn default_leader(civilization: &str) -> String {
     crate::elo::leader_for_civilization(civilization)
 }
@@ -2503,13 +2533,45 @@ pub fn register_player(dir: &str) -> Option<(League, usize)> {
 /// Exact terminal evidence for one rated live seat. `rank` is a competition
 /// rank in finish order (0, 1, 1, 3 for a tie); `won` records the engine's
 /// declared winner separately from score placement.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LiveGameSeat {
     pub strategy: String,
     pub leader: String,
     pub civilization: String,
     pub rank: u32,
     pub won: bool,
+}
+
+/// Exact browser-to-host evidence for one finished game.
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
+pub struct LiveGameReport {
+    pub result_id: String,
+    pub seats: Vec<LiveGameSeat>,
+    pub seed: u64,
+    pub turn: u32,
+    pub victory: String,
+}
+
+/// Whether an idempotent live result moved the table or had already done so.
+#[derive(Clone, Debug, PartialEq)]
+pub enum LiveGameRecord {
+    Recorded(League),
+    Duplicate(League),
+}
+
+impl LiveGameRecord {
+    pub fn league(&self) -> &League {
+        match self {
+            Self::Recorded(league) | Self::Duplicate(league) => league,
+        }
+    }
+
+    pub fn status(&self) -> &'static str {
+        match self {
+            Self::Recorded(_) => "recorded",
+            Self::Duplicate(_) => "duplicate",
+        }
+    }
 }
 
 fn valid_live_game_seats(seats: &[LiveGameSeat]) -> bool {
@@ -2549,12 +2611,52 @@ pub fn record_ranked_game(
     turn: u32,
     victory: &str,
 ) -> Option<League> {
+    match record_ranked_game_inner(dir, seats, seed, turn, victory, None)? {
+        LiveGameRecord::Recorded(league) | LiveGameRecord::Duplicate(league) => Some(league),
+    }
+}
+
+/// Rate browser-hosted terminal evidence exactly once.
+///
+/// `result_id` is stored in `league.json` in the same atomic write as the
+/// updated ratings, so a browser reload cannot double-count the game.
+pub fn record_ranked_game_once(
+    dir: &str,
+    result_id: &str,
+    seats: &[LiveGameSeat],
+    seed: u64,
+    turn: u32,
+    victory: &str,
+) -> Option<LiveGameRecord> {
+    let strategies: BTreeSet<&str> = seats.iter().map(|seat| seat.strategy.as_str()).collect();
+    let valid_id = !result_id.trim().is_empty()
+        && result_id.len() <= 512
+        && result_id
+            .chars()
+            .all(|character| character.is_ascii_graphic());
+    if !valid_id || strategies.len() != seats.len() {
+        return None;
+    }
+    record_ranked_game_inner(dir, seats, seed, turn, victory, Some(result_id))
+}
+
+fn record_ranked_game_inner(
+    dir: &str,
+    seats: &[LiveGameSeat],
+    seed: u64,
+    turn: u32,
+    victory: &str,
+    result_id: Option<&str>,
+) -> Option<LiveGameRecord> {
     if !valid_live_game_seats(seats) {
         return None;
     }
     let worker = default_worker_id();
     let _lock = acquire_league_lock(dir, &worker).ok()?;
     let mut league = load_league_for_update(dir).ok()??;
+    if result_id.is_some_and(|id| league.calibration.recorded_live_results.contains(id)) {
+        return Some(LiveGameRecord::Duplicate(league));
+    }
     // A distributed round snapshots this exact roster and rating period.
     // Mixing an ad-hoc exhibition into it would invalidate already-running
     // jobs, so leave that game unrated and let the batch finish intact.
@@ -2598,6 +2700,12 @@ pub fn record_ranked_game(
     apply_round(&mut league, &[outcome], false);
     let period_calibration = league.calibration.since(&calibration_before);
     league.round += 1;
+    if let Some(id) = result_id {
+        league
+            .calibration
+            .recorded_live_results
+            .insert(id.to_string());
+    }
     // league.json is authoritative. Derived CSV views may lag after a crash,
     // but a crash can never apply the rating period twice.
     save_league_checked(dir, &league).ok()?;
@@ -2632,7 +2740,7 @@ pub fn record_ranked_game(
         &rating_lines,
     );
     append_calibration(dir, league.round, &period_calibration, &league.calibration);
-    Some(league)
+    Some(LiveGameRecord::Recorded(league))
 }
 
 /// Compatibility adapter for callers that only have a strict placement list.
@@ -4174,6 +4282,132 @@ mod tests {
     }
 
     #[test]
+    fn hosted_live_result_rates_every_involved_strategy_exactly_once() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-league-hosted-result-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let dir = dir.to_str().unwrap();
+        let _ = fs::remove_dir_all(dir);
+        let builtin = |ai: &str| StrategyKind::Builtin { ai: ai.into() };
+        save_league(
+            dir,
+            &League {
+                round: 9,
+                strategies: vec![
+                    Strategy::new("winner", builtin("advanced"), 0),
+                    Strategy::new("tie-a", builtin("basic"), 0),
+                    Strategy::new("tie-b", builtin("basic"), 0),
+                    Strategy::new("not-seated", builtin("basic"), 0),
+                ],
+                calibration: Calibration::default(),
+            },
+        );
+        let seats = vec![
+            LiveGameSeat {
+                strategy: "winner".into(),
+                leader: "Trajan".into(),
+                civilization: "Rome".into(),
+                rank: 0,
+                won: true,
+            },
+            LiveGameSeat {
+                strategy: "tie-a".into(),
+                leader: "Cleopatra".into(),
+                civilization: "Egypt".into(),
+                rank: 1,
+                won: false,
+            },
+            LiveGameSeat {
+                strategy: "tie-b".into(),
+                leader: "Pericles".into(),
+                civilization: "Greece".into(),
+                rank: 1,
+                won: false,
+            },
+        ];
+
+        let first = record_ranked_game_once(
+            dir,
+            "wasm:build:game-17",
+            &seats,
+            17,
+            144,
+            "science",
+        )
+        .expect("the first report is valid");
+        assert_eq!(first.status(), "recorded");
+        assert_eq!(first.league().round, 10);
+        for name in ["winner", "tie-a", "tie-b"] {
+            let strategy = first
+                .league()
+                .strategies
+                .iter()
+                .find(|strategy| strategy.name == name)
+                .unwrap();
+            assert_eq!(strategy.games, 1, "{name} did not receive the game");
+        }
+        assert_eq!(first.league().strategies[3].games, 0);
+
+        let retry = record_ranked_game_once(
+            dir,
+            "wasm:build:game-17",
+            &seats,
+            17,
+            144,
+            "science",
+        )
+        .expect("the retry is recognized");
+        assert_eq!(retry.status(), "duplicate");
+        assert_eq!(retry.league().round, 10);
+        assert!(retry
+            .league()
+            .strategies
+            .iter()
+            .all(|strategy| strategy.games <= 1));
+        assert!(retry
+            .league()
+            .calibration
+            .recorded_live_results
+            .contains("wasm:build:game-17"));
+        let mut duplicate_identity = seats;
+        duplicate_identity[1].strategy = "winner".into();
+        assert!(record_ranked_game_once(
+            dir,
+            "wasm:build:bad-duplicate",
+            &duplicate_identity,
+            18,
+            145,
+            "science",
+        )
+        .is_none());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn desktop_host_initializes_the_shipped_roster_without_resetting_it() {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-league-host-init-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let dir = dir.to_str().unwrap();
+        let _ = fs::remove_dir_all(dir);
+
+        let initialized = initialize_shipped_league(dir).expect("the shipped roster initializes");
+        assert!(!initialized.strategies.is_empty());
+        assert!(Path::new(dir).join(MANAGED_ROSTER_MARKER).is_file());
+        let mut changed = initialized;
+        changed.round += 7;
+        save_league(dir, &changed);
+
+        let retained = initialize_shipped_league(dir).expect("the live roster reloads");
+        assert_eq!(retained.round, changed.round, "startup reset earned ratings");
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn older_league_snapshots_begin_with_an_empty_calibration_audit() {
         let old = r#"{"round":7,"strategies":[]}"#;
         let league: League = serde_json::from_str(old).unwrap();
@@ -5678,6 +5912,7 @@ mod searching_anchor_tests {
                 comparisons: 91,
                 brier_sum: 17.25,
                 log_loss_sum: 49.5,
+                recorded_live_results: Default::default(),
             },
         };
         legacy.strategies[1].rating = 1769.5;

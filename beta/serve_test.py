@@ -23,12 +23,12 @@ def hit(port, path):
 def main():
     with tempfile.TemporaryDirectory() as temporary:
         root = pathlib.Path(temporary)
-        beta = root / "beta"
-        beta.mkdir()
+        lane = root / "test"
+        lane.mkdir()
         (root / "index.html").write_text("landing", encoding="utf-8")
-        (beta / "index.html").write_text("wasm viewer", encoding="utf-8")
-        (beta / "build.json").write_text('{"commit":"latest"}', encoding="utf-8")
-        (beta / "civvis.wasm").write_bytes(b"wasm")
+        (lane / "index.html").write_text("wasm viewer", encoding="utf-8")
+        (lane / "build.json").write_text('{"commit":"latest"}', encoding="utf-8")
+        (lane / "civvis.wasm").write_bytes(b"wasm")
 
         handler = functools.partial(Handler, directory=root)
         with Server(("127.0.0.1", 0), handler) as server:

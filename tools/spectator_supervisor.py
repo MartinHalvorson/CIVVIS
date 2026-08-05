@@ -2166,8 +2166,9 @@ def main() -> int:
             if latest_ready:
                 # A commit changes repository identity without changing the
                 # compiled input snapshot. Reconcile metadata so the promoted
-                # binary records the clean synced revision it exactly matches.
-                write_runtime_metadata(snapshot)
+                # binary records the clean synced revision it exactly matches,
+                # while preserving when those binary bytes were actually built.
+                refresh_runtime_metadata(snapshot)
             else:
                 log(
                     "latest source is not prebuilt; starting the verified "

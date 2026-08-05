@@ -1,5 +1,14 @@
 # Converting surplus Faith when Religion cannot win
 
+Status: **development screen stopped; no gameplay integration**.
+
+## Archive status
+
+The evaluator is preserved at `experiments/closed/faith_conversion_eval.rs`
+and is not part of the default Cargo target set. To reproduce an historical
+check, add `--features closed-experiments` to the Cargo command. A new treatment
+needs a new preregistration rather than a retry of this closed screen.
+
 This experiment asks whether `AdvancedAi` leaves a useful currency stranded on
 the exact exhibition ruleset. It is a policy test, not a resource grant: the
 treatment receives no Faith, discount, information, or extra action that the

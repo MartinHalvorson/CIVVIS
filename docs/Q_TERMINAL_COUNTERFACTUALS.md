@@ -1,5 +1,13 @@
 # Terminal counterfactual returns
 
+## Archive status
+
+The closed selective-override trainers live under `experiments/closed/` and are
+not part of the default Cargo target set. They can be reproduced with
+`--features closed-experiments`, but the recorded corpus is not a starting point
+for tuning or promotion. A future Q experiment needs fresh independent data and
+a new preregistration.
+
 `q_counterfactual` is an evaluator-only causal data emitter. It observes an
 actual `AdvancedAi` move, branches the exact pre-action state across the chosen
 move and same-unit siblings, and holds the opponent-doctrine rotation fixed

@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import base64
 import functools
+import hashlib
 import http.server
 import json
 import os
@@ -76,20 +77,33 @@ def find_chrome() -> str:
     return CHROME_CANDIDATES[0]
 
 
+# The site carries the same viewer twice: the promoted stable build at the
+# root and the automatic head build under /test. Each lane is checked
+# separately (`--mount root` / `--mount test`) because they are different
+# engines from different commits, and a deploy that plays in one lane and not
+# the other is exactly the mistake worth catching. The lane-independent pages
+# are asserted both times; that costs nothing and keeps either invocation
+# sufficient to reject a bundle with no landing page.
+#
 # The atlases are republished as WebP when Pillow is available and stay PNG
 # when it is not, so the required-files list asks for a strategic map atlas in
 # whichever form this build actually chose.
-REQUIRED = [
-    "index.html",
-    "download/index.html",
-    "beta/index.html",
-    "beta/civvis.wasm",
-    "beta/shim.js",
-    "beta/worker.js",
-    "beta/build.json",
-    ("beta/assets/feature-atlas.webp", "beta/assets/feature-atlas.png"),
-    "_worker.js",
-]
+def required(mount: str) -> list:
+    lane = "" if mount == "root" else "test/"
+    return [
+        "home/index.html" if mount == "root" else "index.html",
+        "download/index.html",
+        f"{lane}index.html",
+        f"{lane}civvis.wasm",
+        f"{lane}shim.js",
+        f"{lane}worker.js",
+        f"{lane}build.json",
+        (f"{lane}assets/feature-atlas.webp", f"{lane}assets/feature-atlas.png"),
+        "_worker.js",
+        # Its existence is behaviour: without it, Pages answers unknown paths
+        # with the front page instead of a 404.
+        "404.html",
+    ]
 
 
 # --------------------------------------------------------------- the server
@@ -290,7 +304,7 @@ def check_gate(dist: pathlib.Path) -> list[str]:
     uploaded a site with no routing at all. Nothing failed. So the routing is
     asked rather than assumed, against the real runtime under wrangler.
 
-    What it asserts changed when the beta was opened. It used to prove the
+    What it asserts changed when the test lane was opened. It used to prove the
     door was shut; it now proves it is *open*, which is the property that
     matters when a channel is pointing people at it — a stray `BETA_PASSWORD`
     left in the Pages environment would be just as invisible, and just as
@@ -332,48 +346,53 @@ def check_gate(dist: pathlib.Path) -> list[str]:
                 request.add_header("Cookie", cookie)
             return urllib.request.urlopen(request, timeout=15)
 
-        # The domain forwards to the channel. This is the one thing on the
-        # site that only exists as edge logic, so it is checked the same way
-        # the password is: by asking, not by reading `_worker.js` and
-        # believing it.
-        blind = urllib.request.build_opener(NoRedirect)
-        try:
-            blind.open(base + "/", timeout=15)
-            problems.append("/ served a page instead of forwarding to the channel")
-        except urllib.error.HTTPError as forwarded:
-            if forwarded.code not in (301, 302, 303, 307, 308):
-                problems.append(f"/ answered HTTP {forwarded.code} rather than a redirect")
-            elif "youtube.com/@civvis" not in (forwarded.headers.get("Location") or ""):
-                problems.append(f"/ forwards to {forwarded.headers.get('Location')!r}, not the channel")
-            elif forwarded.code == 301:
-                problems.append("/ forwards permanently; a 301 here is cached for ever")
+        # The root is the stable simulator. A `ROOT_REDIRECT` left set in the
+        # Pages environment would quietly turn the product back into a
+        # forward, and nothing else would look wrong.
+        root = get("/").read()
+        if b"shim.js" not in root:
+            problems.append("/ is not serving the stable viewer; is ROOT_REDIRECT set?")
 
-        # The landing page is public, one door in.
-        if b"Watch on YouTube" not in get("/home").read():
+        # The landing page moved to /home when the root became the product.
+        if b"Watch on YouTube" not in get("/home/").read():
             problems.append("the landing page is not being served at /home")
 
         # So is the downloads page.
         if b"releases/latest/download/" not in get("/download/").read():
             problems.append("/download/ is not serving the downloads page")
 
-        # And so is the beta. A `BETA_PASSWORD` left in the Pages environment
+        # And so is the test lane. A `TEST_PASSWORD` left in the Pages environment
         # would put a door back in front of everyone the channel sends here,
         # and would look exactly like a working site from every other angle.
-        beta = get("/beta/").read()
-        if b"Beta build" in beta and b"shim.js" not in beta:
-            problems.append("/beta/ is asking for a password; is BETA_PASSWORD set?")
-        elif b"shim.js" not in beta:
-            problems.append("/beta/ is not serving the viewer")
+        head_lane = get("/test/").read()
+        if b"Test build" in head_lane and b"shim.js" not in head_lane:
+            problems.append("/test/ is asking for a password; is TEST_PASSWORD set?")
+        elif b"shim.js" not in head_lane:
+            problems.append("/test/ is not serving the viewer")
 
-        # The engine reaches the page as a module, not as an HTML apology.
-        module = get("/beta/civvis.wasm")
-        if module.read(4) != b"\x00asm":
-            problems.append("/beta/civvis.wasm is not being served as a WebAssembly module")
-        if module.headers.get("Content-Type") != "application/wasm":
-            problems.append(
-                "/beta/civvis.wasm is served as "
-                f"{module.headers.get('Content-Type')!r}; instantiateStreaming refuses it"
-            )
+        # /beta — the lane's day-one name — is scrapped, and dead paths in
+        # general answer 404. The second probe is what proves 404.html is
+        # doing its job: without it, Pages serves the front page for any
+        # unknown HTML path (its single-page-app fallback), which is how a
+        # "scrapped" URL came back from the dead once already.
+        for dead in ("/beta/", "/no-such-page"):
+            try:
+                get(dead)
+                problems.append(f"{dead} still answers; it is meant to 404")
+            except urllib.error.HTTPError as gone:
+                if gone.code != 404:
+                    problems.append(f"{dead} answers HTTP {gone.code} rather than 404")
+
+        # Both engines reach their pages as modules, not as HTML apologies.
+        for lane in ("/civvis.wasm", "/test/civvis.wasm"):
+            module = get(lane)
+            if module.read(4) != b"\x00asm":
+                problems.append(f"{lane} is not being served as a WebAssembly module")
+            if module.headers.get("Content-Type") != "application/wasm":
+                problems.append(
+                    f"{lane} is served as "
+                    f"{module.headers.get('Content-Type')!r}; instantiateStreaming refuses it"
+                )
         return problems
     finally:
         dev.terminate()
@@ -383,11 +402,6 @@ def check_gate(dist: pathlib.Path) -> list[str]:
             dev.kill()
 
 
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, *args, **kwargs):
-        return None
-
-
 # ------------------------------------------------------------------- checks
 
 
@@ -395,12 +409,21 @@ def main(argv: list[str] | None = None) -> int:
     here = pathlib.Path(__file__).resolve().parent
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dist", default=str(here / "dist"))
+    parser.add_argument(
+        "--mount",
+        choices=("test", "root"),
+        default="test",
+        help="which lane to open in the browser: 'test' (default, and the shape "
+             "publish.sh emits on its own) or 'root' (the promoted stable lane "
+             "of an assembled two-lane site)",
+    )
     parser.add_argument("--seconds", type=float, default=25.0)
     parser.add_argument("--min-turns", type=int, default=3)
     # Deliberately beside the bundle, not inside it: anything written into
     # dist/ is deployed, and a check's own screenshot has no business on
-    # civvis.ai.
-    parser.add_argument("--screenshot", default=str(here / "verify.png"))
+    # civvis.ai. Named per lane so checking both does not overwrite the
+    # evidence of the first.
+    parser.add_argument("--screenshot", default=None)
     parser.add_argument("--chrome", default=find_chrome())
     parser.add_argument(
         "--no-gate",
@@ -409,34 +432,101 @@ def main(argv: list[str] | None = None) -> int:
              "beta/worker_test.py covers the same ground with only Chrome)",
     )
     args = parser.parse_args(argv)
+    lane = "" if args.mount == "root" else "test/"
+    if args.screenshot is None:
+        args.screenshot = str(here / f"verify-{args.mount}.png")
 
     dist = pathlib.Path(args.dist).resolve()
     if not dist.is_dir():
         print(f"no build at {dist} — run ./beta/publish.sh first", file=sys.stderr)
         return 1
 
-    print(f"==> checking the bundle at {dist}")
+    needed = required(args.mount)
+    print(f"==> checking the {args.mount} lane of the bundle at {dist}")
     missing = [
         entry
-        for entry in REQUIRED
+        for entry in needed
         if not any((dist / name).exists() for name in ((entry,) if isinstance(entry, str) else entry))
     ]
     if missing:
         for entry in missing:
             print(f"    MISSING {entry if isinstance(entry, str) else ' or '.join(entry)}", file=sys.stderr)
         return 1
-    build = json.loads((dist / "beta" / "build.json").read_text())
-    print(f"    {len(REQUIRED)} required files present, build {build['short']}")
+    build = json.loads((dist / lane / "build.json").read_text())
+    print(f"    {len(needed)} required files present, build {build['short']}")
 
-    page = (dist / "beta" / "index.html").read_text(encoding="utf-8")
+    page = (dist / lane / "index.html").read_text(encoding="utf-8")
     for absolute in ('"/assets/',):
         if absolute in page:
             print(f"    the published viewer still asks for {absolute}", file=sys.stderr)
             return 1
-    if '<script src="shim.js"></script>' not in page:
-        print("    the published viewer does not load the shim", file=sys.stderr)
+    def digest(relative: str) -> str:
+        return hashlib.sha256((dist / lane / relative).read_bytes()).hexdigest()
+
+    def check_version(text: str, pattern: str, expected: str, label: str) -> bool:
+        match = re.search(pattern, text)
+        if not match:
+            print(f"    the published viewer has no content-versioned {label}", file=sys.stderr)
+            return False
+        if match.group(1) != expected:
+            print(
+                f"    the published viewer gives {label} version {match.group(1)}, "
+                f"but its bytes are {expected}",
+                file=sys.stderr,
+            )
+            return False
+        return True
+
+    wasm_version = digest("civvis.wasm")
+    shim_version = digest("shim.js")
+    if not check_version(
+        page,
+        r'<link rel="preload" href="civvis\.wasm\?v=([0-9a-f]{64})" as="fetch" '
+        r'type="application/wasm" crossorigin fetchpriority="high">',
+        wasm_version,
+        "WASM preload",
+    ):
         return 1
-    print("    the viewer is rewritten for /beta/ and loads the shim")
+    if not check_version(
+        page,
+        r'<script src="shim\.js\?v=([0-9a-f]{64})"></script>',
+        shim_version,
+        "shim script",
+    ):
+        return 1
+
+    shim = (dist / lane / "shim.js").read_text(encoding="utf-8")
+    if not check_version(
+        shim,
+        r'new URL\("civvis\.wasm\?v=([0-9a-f]{64})", here\)\.href',
+        wasm_version,
+        "WASM URL in shim.js",
+    ):
+        return 1
+    if not check_version(
+        shim,
+        r'new URL\("worker\.js\?v=([0-9a-f]{64})", here\)\.href',
+        digest("worker.js"),
+        "worker URL in shim.js",
+    ):
+        return 1
+
+    asset_urls = re.findall(r'''["'](assets/[^"']+)["']''', page)
+    if not asset_urls:
+        print("    the published viewer contains no atlas references", file=sys.stderr)
+        return 1
+    for asset_url in asset_urls:
+        match = re.fullmatch(r"(assets/[^?]+)\?v=([0-9a-f]{64})", asset_url)
+        if not match or match.group(2) != digest(match.group(1)):
+            print(
+                f"    the published viewer has an unversioned or mismatched atlas: {asset_url}",
+                file=sys.stderr,
+            )
+            return 1
+
+    print(
+        f"    the viewer is relative-pathed for /{lane}; JS, WASM, and atlases are content-versioned"
+    )
 
     # The download page names its binaries; the release workflow builds
     # binaries under names it chooses. Nothing connects the two but agreement,
@@ -468,7 +558,7 @@ def main(argv: list[str] | None = None) -> int:
         if gate_problems:
             print("\nFAILED: the site would not route correctly", file=sys.stderr)
             return 1
-        print("    / forwards to the channel; /home, /download and /beta are all open")
+        print("    / is the stable lane; /home, /download and /test all answer")
 
     if not pathlib.Path(args.chrome).exists():
         print(f"    no Chrome at {args.chrome}; skipping the browser check", file=sys.stderr)
@@ -478,7 +568,7 @@ def main(argv: list[str] | None = None) -> int:
     httpd = serve(dist, port)
     profile = tempfile.mkdtemp(prefix="civvis-verify-")
     debug_port = free_port()
-    url = f"http://127.0.0.1:{port}/beta/"
+    url = f"http://127.0.0.1:{port}/{lane}"
     print(f"==> opening {url} in headless Chrome")
 
     chrome = subprocess.Popen(
@@ -573,6 +663,9 @@ def main(argv: list[str] | None = None) -> int:
             "   seen.add(`${d[i]},${d[i+1]},${d[i+2]},${d[i+3]}`);"
             " return seen.size; })()"
         )
+        build_marker = dev.evaluate(
+            "document.getElementById('buildmark')?.textContent || ''"
+        )
 
         dev.call("Page.stopScreencast", wait=False)
         dev.alive = False
@@ -589,6 +682,22 @@ def main(argv: list[str] | None = None) -> int:
             problems.append("the page reported 'CIVVIS boot failed'")
         if isinstance(painted, int) and painted < 8:
             problems.append(f"the map canvas holds only {painted} distinct colours")
+        expected_size = f"Build size {build['wasm_bytes'] / 1048576:.1f} MiB"
+        if expected_size not in build_marker:
+            problems.append(
+                f"the build marker does not show {expected_size!r}: {build_marker!r}"
+            )
+        order = [
+            build_marker.find(build["short"][:7]),
+            build_marker.find("Commit is"),
+            build_marker.find("Build is"),
+            build_marker.find("Build size"),
+        ]
+        if any(position < 0 for position in order) or order != sorted(order):
+            problems.append(
+                f"the build marker order is not commit, commit age, build age, build size: "
+                f"{build_marker!r}"
+            )
         fatal = [
             line
             for line in dev.console
@@ -599,6 +708,7 @@ def main(argv: list[str] | None = None) -> int:
 
         print(f"    build       {build['short']}")
         print(f"    engine      {build['wasm_bytes']:,} bytes")
+        print(f"    marker      {build_marker}")
         print(f"    turns       {report.get('turns', 0)} (reached turn {report.get('lastTurn')})")
         print(f"    repaints    {report.get('paints', 0)}")
         print(f"    canvas      {painted} distinct sampled colours")

@@ -17,6 +17,18 @@ fn default_one_limit() -> Option<usize> {
 
 use crate::world::Tile;
 
+/// Whether Gathering Storm permits Volcanic Soil on this ground.
+///
+/// `Feature_ValidTerrains` names every Grassland, Plains, Desert, Tundra and
+/// Snow flat/hills variant, but no Mountain or water terrain. CIVVIS stores
+/// hills separately, so the five base terrain names are the complete rule.
+pub(crate) fn volcanic_soil_valid_terrain(tile: &Tile) -> bool {
+    matches!(
+        tile.terrain.as_str(),
+        "grassland" | "plains" | "desert" | "tundra" | "snow"
+    )
+}
+
 pub const ERA_NAMES: [&str; 9] = [
     "ancient",
     "classical",
@@ -100,6 +112,30 @@ pub struct TerrainSpec {
     pub defense: f64,
 }
 
+/// The exact multi-hex silhouette a Natural Wonder uses.
+///
+/// `Features.Tiles` only gives the area. Firaxis's default feature placement
+/// uses compact triangles and diamonds, while `CustomPlacement` names the
+/// exceptional straight Zhangye Danxia and Mount Roraima's triangle-and-tail.
+/// Keeping that distinction in the rules prevents four-hex wonders from being
+/// grown as arbitrary paths.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WonderShape {
+    #[default]
+    Single,
+    Adjacent,
+    Triangle,
+    /// A compact four-hex rhombus: two triangles sharing an edge.
+    Diamond,
+    /// Three hexes in one straight line (Zhangye Danxia).
+    Straight,
+    /// A three-hex line with a fourth hex beside its first edge.
+    Roraima,
+    /// Piopiotahi/Lysefjord's triangle with land behind and water in front.
+    CoastalTriangle,
+}
+
 /// Where on the map a Natural Wonder is allowed to appear.
 ///
 /// This is the shipped placement rule, transcribed from the game database:
@@ -113,10 +149,15 @@ pub struct TerrainSpec {
 /// cosmetic hint.
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct FeaturePlacement {
-    /// Base terrains the wonder can stand on. `mountain` covers every coloured
-    /// `TERRAIN_*_MOUNTAIN` variant, which CIVVIS spells as one terrain.
+    /// CIVVIS terrains the wonder can stand on.
     #[serde(default)]
     pub terrain: Vec<Name>,
+    /// Base biomes allowed under `mountain`. Civ VI stores mountains as
+    /// `TERRAIN_GRASS_MOUNTAIN`, `TERRAIN_DESERT_MOUNTAIN`, and so on, while
+    /// CIVVIS renders them all as `mountain`; this retains the placement
+    /// distinction. Empty means every mountain biome is valid.
+    #[serde(default)]
+    pub mountain_terrain: Vec<Name>,
     /// `Some(true)` for the hills-only wonders (the Cliffs of Dover),
     /// `Some(false)` for the flat-only ones (Crater Lake, Pantanal, Yosemite,
     /// the Dead Sea, Lake Retba, the Giant's Causeway), `None` when the shipped
@@ -127,6 +168,9 @@ pub struct FeaturePlacement {
     /// database means one hex.
     #[serde(default = "one_tile")]
     pub tiles: usize,
+    /// The shipped default or `CustomPlacement` footprint for those tiles.
+    #[serde(default)]
+    pub shape: WonderShape,
     /// How many of those hexes are water rather than land. Only the Giant's
     /// Causeway, whose columns step off a headland into the sea, sets this.
     #[serde(default)]
@@ -356,6 +400,35 @@ pub struct ImprovementSpec {
     /// `RequiresAdjacentBonusOrLuxury` uses both classes for the Mekewap.
     #[serde(default)]
     pub requires_adjacent_resource_classes: Vec<String>,
+    /// Number of traversable land plots that must neighbour this improvement.
+    /// Polders need three reclaimed-land neighbours; Portugal's Feitorias need
+    /// one shore tile beside their water plot.
+    #[serde(default)]
+    pub requires_adjacent_passable_land: usize,
+    /// Requires a neighbouring water tile that contains a resource. Indonesia's
+    /// Kampung is the stock example.
+    #[serde(default)]
+    pub requires_adjacent_water_resource: bool,
+    /// The improvement is placed in another civilization's territory rather
+    /// than the builder owner's. This is deliberately a per-improvement rule:
+    /// ordinary Builder work remains restricted to owned or suzerained land.
+    #[serde(default)]
+    pub requires_foreign_territory: bool,
+    /// Foreign-territory placement additionally needs an Open Borders treaty.
+    #[serde(default)]
+    pub requires_open_borders: bool,
+    /// Features that may not occur on any adjacent tile. Rapa Nui's Moai
+    /// cannot stand beside Woods or Rainforest.
+    #[serde(default)]
+    pub forbids_adjacent_features: Vec<Name>,
+    /// Minimum live tile Appeal required before this improvement is offered.
+    /// Mapuche Chemamulls require a Breathtaking (4+) plot.
+    #[serde(default)]
+    pub min_appeal: Option<i32>,
+    /// Some unique leisure and culture improvements are limited to one copy
+    /// in each city territory, rather than one globally or per empire.
+    #[serde(default)]
+    pub one_per_city: bool,
     /// Firaxis `SameAdjacentValid`; false for improvements such as Sphinxes,
     /// Ski Resorts, City Parks, and Rock-Hewn Churches.
     #[serde(default = "default_true")]
@@ -2747,12 +2820,66 @@ mod tests {
     fn shipped_ruleset_fingerprint_tracks_the_audited_firaxis_rows() {
         // The fingerprint is the Elo ledger's binding. Firaxis-exact unique units,
         // including the Shield Bearer, Oromo Cavalry, Pairidaeza, and Armagh's
-        // Monastery found by live replay, are real simulation changes; older ledgers
-        // retain their original fingerprint.
+        // Monastery found by live replay, exact Natural Wonder placement rows, and
+        // the complete terrain-improvement catalogue are real simulation changes;
+        // older ledgers retain their original fingerprint.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:d9602d2bcdabd481"
+            "fnv1a64:57eeae0c535f3c7b"
         );
+    }
+
+    #[test]
+    fn every_firaxis_improvement_type_has_a_ruleset_entry_or_named_alias() {
+        // This is the game-data type inventory rather than a hand-picked list
+        // of common Builder actions.  It catches a future addition that works
+        // in one subsystem but is omitted from the shared terrain catalog.
+        let type_names: Vec<String> =
+            serde_json::from_str(include_str!("../data/civ6_type_names.json")).unwrap();
+        let improvement_types: Vec<_> = type_names
+            .iter()
+            .filter(|name| name.starts_with("IMPROVEMENT_"))
+            .collect();
+        assert_eq!(improvement_types.len(), 72, "the audited Firaxis type inventory changed");
+
+        let rules = Rules::embedded();
+        for type_name in improvement_types {
+            let improvement = match type_name.as_str() {
+                // CIVVIS uses the player-facing names for these three aliases.
+                "IMPROVEMENT_BEACH_RESORT" => "seaside_resort".to_string(),
+                "IMPROVEMENT_MOUNTAIN_ROAD" => "qhapaq_nan".to_string(),
+                "IMPROVEMENT_PYRAMID" => "nubian_pyramid".to_string(),
+                _ => type_name
+                    .strip_prefix("IMPROVEMENT_")
+                    .unwrap()
+                    .to_ascii_lowercase(),
+            };
+            assert!(
+                rules.improvements.contains_key(improvement.as_str()),
+                "{type_name} has no CIVVIS improvement entry ({improvement})"
+            );
+        }
+
+        // The scenario and Secret Society markers are real serialized map
+        // objects, but must not leak into the ordinary Builder menu.
+        for improvement in [
+            "ancient_tower_defense",
+            "ancient_trap_defense",
+            "buried_treasure",
+            "floating_treasure",
+            "grieving_gift",
+            "improvised_trap",
+            "modern_tower_defense",
+            "modern_trap_defense",
+            "popped_goody",
+            "supply_drop",
+            "vampire_castle",
+        ] {
+            assert!(
+                rules.improvements[improvement].unbuildable,
+                "scenario-only {improvement} must not become a standard Builder action"
+            );
+        }
     }
 
     #[test]
@@ -3200,6 +3327,8 @@ mod tests {
             ("fighter", "jet_fighter"),
             ("bomber", "jet_bomber"),
             ("legion", "man_at_arms"),
+            ("toa", "man_at_arms"),
+            ("nau", "ironclad"),
             ("kongo_shield_bearer", "man_at_arms"),
             ("hoplite", "pikeman"),
             ("eagle_warrior", "swordsman"),
@@ -3246,11 +3375,11 @@ mod tests {
         let rules = Rules::embedded();
         assert_eq!(rules.techs.len(), 77);
         assert_eq!(rules.civics.len(), 61);
-        assert_eq!(rules.units.len(), 87);
+        assert_eq!(rules.units.len(), 89);
         assert_eq!(rules.buildings.len(), 85);
         assert_eq!(rules.districts.len(), 35);
         assert_eq!(rules.wonders.len(), 53);
-        assert_eq!(rules.improvements.len(), 45);
+        assert_eq!(rules.improvements.len(), 76);
         assert_eq!(rules.resources.len(), 52);
         assert_eq!(rules.projects.len(), 25);
         // 118 civic-unlocked cards plus the seven Dark Age cards, which no
@@ -3743,6 +3872,214 @@ mod tests {
             passable > 0 && blocked > 0,
             "both halves of the split must be represented"
         );
+    }
+
+    /// Complete transcription of the placement columns in the shipped
+    /// `Features`, `Feature_*Terrains`, and `Feature_*Features` tables, plus
+    /// the layouts in `NaturalWonderGenerator.lua`. This is deliberately an
+    /// inventory test: a partial sample would let an untested wonder silently
+    /// fall back to a connected line again.
+    #[test]
+    fn every_natural_wonder_has_its_shipped_shape_and_constraints() {
+        let rules = Rules::embedded();
+        let expected: BTreeMap<&str, &str> = [
+            ("great_barrier_reef", "tiles=2;shape=adjacent;terrain=coast;mountain=;hills=either;water=0;adjacent=;not_adjacent=;adjacent_feature=;avoid=ice;bare=false;no_river=true;land=1,1"),
+            ("crater_lake", "tiles=1;shape=single;terrain=plains,tundra;mountain=;hills=flat;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("pantanal", "tiles=4;shape=diamond;terrain=grassland,plains;mountain=;hills=flat;water=0;adjacent=;not_adjacent=coast,snow;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("uluru", "tiles=1;shape=single;terrain=desert;mountain=;hills=either;water=0;adjacent=;not_adjacent=coast,grassland,plains,tundra,snow,mountain;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("yosemite", "tiles=2;shape=adjacent;terrain=plains,tundra;mountain=;hills=flat;water=0;adjacent=;not_adjacent=coast,mountain;adjacent_feature=forest;avoid=;bare=false;no_river=true;land="),
+            ("dead_sea", "tiles=2;shape=adjacent;terrain=grassland,desert;mountain=;hills=flat;water=0;adjacent=;not_adjacent=coast,mountain;adjacent_feature=;avoid=;bare=true;no_river=true;land="),
+            ("mount_everest", "tiles=3;shape=triangle;terrain=mountain;mountain=grassland,plains,desert,tundra;hills=either;water=0;adjacent=grassland,plains,desert,snow,tundra;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("pamukkale", "tiles=2;shape=adjacent;terrain=grassland,plains,desert;mountain=;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("torres_del_paine", "tiles=2;shape=adjacent;terrain=grassland,plains,tundra;mountain=;hills=either;water=0;adjacent=;not_adjacent=coast,desert,snow,mountain;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("eye_of_the_sahara", "tiles=3;shape=triangle;terrain=desert;mountain=;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("zhangye_danxia", "tiles=3;shape=straight;terrain=mountain;mountain=grassland,plains,desert,tundra,snow;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("ha_long_bay", "tiles=2;shape=adjacent;terrain=coast;mountain=;hills=either;water=0;adjacent=;not_adjacent=;adjacent_feature=;avoid=ice;bare=false;no_river=false;land=1,1"),
+            ("cliffs_of_dover", "tiles=2;shape=adjacent;terrain=grassland,plains;mountain=;hills=hills;water=0;adjacent=coast;not_adjacent=;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("giants_causeway", "tiles=2;shape=adjacent;terrain=grassland,plains;mountain=;hills=flat;water=1;adjacent=coast;not_adjacent=;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("galapagos_islands", "tiles=2;shape=adjacent;terrain=coast;mountain=;hills=either;water=0;adjacent=;not_adjacent=;adjacent_feature=;avoid=ice;bare=false;no_river=true;land=2,3"),
+            ("matterhorn", "tiles=1;shape=single;terrain=mountain;mountain=grassland,plains;hills=either;water=0;adjacent=grassland,plains,desert,snow,tundra;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("kilimanjaro", "tiles=1;shape=single;terrain=mountain;mountain=grassland,plains,desert,tundra;hills=either;water=0;adjacent=;not_adjacent=coast,mountain;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("piopiotahi", "tiles=3;shape=coastal_triangle;terrain=grassland,plains;mountain=;hills=either;water=0;adjacent=;not_adjacent=;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("ik_kil", "tiles=1;shape=single;terrain=grassland,plains;mountain=;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=jungle;avoid=;bare=false;no_river=true;land="),
+            ("gobustan", "tiles=3;shape=triangle;terrain=plains,mountain;mountain=plains;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("ubsunur_hollow", "tiles=4;shape=diamond;terrain=tundra;mountain=;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("mato_tipila", "tiles=1;shape=single;terrain=grassland,plains,desert,tundra;mountain=;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("delicate_arch", "tiles=1;shape=single;terrain=desert;mountain=;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("chocolate_hills", "tiles=4;shape=diamond;terrain=grassland,plains,mountain;mountain=grassland,plains;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("vesuvius", "tiles=1;shape=single;terrain=mountain;mountain=grassland,plains;hills=either;water=0;adjacent=grassland,plains,desert,snow,tundra;not_adjacent=;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("lake_retba", "tiles=2;shape=adjacent;terrain=grassland,plains;mountain=;hills=flat;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("bermuda_triangle", "tiles=3;shape=triangle;terrain=ocean;mountain=;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=ice;bare=false;no_river=true;land="),
+            ("eyjafjallajokull", "tiles=2;shape=adjacent;terrain=snow,tundra;mountain=;hills=either;water=0;adjacent=snow,tundra;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("fountain_of_youth", "tiles=1;shape=single;terrain=grassland,plains,desert;mountain=;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("lysefjord", "tiles=3;shape=coastal_triangle;terrain=plains,tundra;mountain=;hills=either;water=0;adjacent=;not_adjacent=;adjacent_feature=;avoid=;bare=true;no_river=true;land="),
+            ("paititi", "tiles=3;shape=triangle;terrain=grassland,plains,desert;mountain=;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("mount_roraima", "tiles=4;shape=roraima;terrain=grassland,plains,mountain;mountain=grassland,plains;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("tsingy_de_bemaraha", "tiles=1;shape=single;terrain=grassland,plains,tundra;mountain=;hills=either;water=0;adjacent=;not_adjacent=coast,mountain;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+            ("sahara_el_beyda", "tiles=4;shape=diamond;terrain=desert,mountain;mountain=desert;hills=either;water=0;adjacent=;not_adjacent=coast;adjacent_feature=;avoid=;bare=false;no_river=true;land="),
+        ]
+        .into_iter()
+        .collect();
+        let actual: BTreeMap<&str, String> = rules
+            .features
+            .iter()
+            .filter(|(_, feature)| feature.natural_wonder)
+            .map(|(name, feature)| {
+                let placement = &feature.placement;
+                let names = |values: &[Name]| {
+                    values
+                        .iter()
+                        .map(|name| name.as_str())
+                        .collect::<Vec<_>>()
+                        .join(",")
+                };
+                let shape = serde_json::to_value(placement.shape).unwrap();
+                let hills = match placement.hills {
+                    Some(true) => "hills",
+                    Some(false) => "flat",
+                    None => "either",
+                };
+                let land = placement
+                    .land_distance
+                    .map(|[near, far]| format!("{near},{far}"))
+                    .unwrap_or_default();
+                (
+                    name.as_str(),
+                    format!(
+                        "tiles={};shape={};terrain={};mountain={};hills={};water={};adjacent={};not_adjacent={};adjacent_feature={};avoid={};bare={};no_river={};land={}",
+                        placement.tiles,
+                        shape.as_str().unwrap(),
+                        names(&placement.terrain),
+                        names(&placement.mountain_terrain),
+                        hills,
+                        placement.water_tiles,
+                        names(&placement.adjacent_terrain),
+                        names(&placement.not_adjacent_terrain),
+                        names(&placement.adjacent_feature),
+                        names(&placement.avoid_feature),
+                        placement.no_adjacent_features,
+                        placement.no_river,
+                        land,
+                    ),
+                )
+            })
+            .collect();
+        assert_eq!(actual.len(), 34);
+        assert_eq!(actual.len(), expected.len());
+        for (wonder, signature) in actual {
+            assert_eq!(signature, expected[wonder], "{wonder} placement");
+        }
+    }
+
+    /// Complete placement-only transcription of the shipped `Buildings`,
+    /// `Building_ValidTerrains`, `Building_RequiredFeatures`, and
+    /// `BuildingPrereqs` rows. Effects are tested elsewhere; this oracle keeps
+    /// every constructed wonder's site predicate from drifting.
+    #[test]
+    fn every_world_wonder_has_its_shipped_placement_constraints() {
+        let rules = Rules::embedded();
+        const EXPECTED: &str = r#"
+great_bath|t=;h=either;f=floodplains,grassland_floodplains,plains_floodplains;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+etemenanki|t=;h=either;f=floodplains,grassland_floodplains,plains_floodplains,marsh;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+hanging_gardens|t=;h=either;f=;water=false;coast=false;river=true;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+pyramids|t=desert;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+stonehenge|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=stone;improvement=;requires=;any=;placement=
+temple_artemis|t=;h=either;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=camp;requires=;any=;placement=
+apadana|t=;h=either;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=adjacent_capital
+colosseum|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=entertainment_complex;resource=;improvement=;requires=arena;any=;placement=
+colossus|t=;h=either;f=;water=true;coast=true;river=false;mountain=false;religion=false;district=harbor;resource=;improvement=;requires=;any=;placement=
+great_library|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=campus;resource=;improvement=;requires=library;any=;placement=
+great_lighthouse|t=;h=either;f=;water=true;coast=true;river=false;mountain=false;religion=false;district=harbor;resource=;improvement=;requires=lighthouse;any=;placement=
+jebel_barkal|t=desert;h=hills;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+machu_picchu|t=mountain;h=either;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=mountain
+mahabodhi_temple|t=;h=either;f=forest;water=false;coast=false;river=false;mountain=false;religion=true;district=holy_site;resource=;improvement=;requires=temple;any=;placement=
+mausoleum_at_halicarnassus|t=;h=either;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=harbor;resource=;improvement=;requires=;any=;placement=
+oracle|t=;h=hills;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+petra|t=desert;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+statue_of_zeus|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=encampment;resource=;improvement=;requires=barracks;any=;placement=
+terracotta_army|t=grassland,plains;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=encampment;resource=;improvement=;requires=;any=barracks,stable;placement=
+alhambra|t=;h=hills;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=encampment;resource=;improvement=;requires=;any=;placement=
+angkor_wat|t=;h=either;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=aqueduct;resource=;improvement=;requires=;any=;placement=
+chichen_itza|t=;h=either;f=jungle;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+hagia_sophia|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=true;district=holy_site;resource=;improvement=;requires=;any=;placement=
+huey_teocalli|t=lake;h=either;f=;water=true;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=lake_adjacent_land
+kilwa_kisiwani|t=;h=flat;f=;water=false;coast=true;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+kotoku_in|t=;h=either;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=holy_site;resource=;improvement=;requires=temple;any=;placement=
+meenakshi_temple|t=;h=either;f=;water=false;coast=false;river=false;mountain=false;religion=true;district=holy_site;resource=;improvement=;requires=;any=;placement=
+mont_st_michel|t=;h=either;f=floodplains,grassland_floodplains,plains_floodplains,marsh;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+university_of_sankore|t=desert;h=either;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=campus;resource=;improvement=;requires=university;any=;placement=
+casa_de_contratacion|t=;h=either;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=government_plaza;resource=;improvement=;requires=;any=;placement=
+forbidden_city|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=city_center;resource=;improvement=;requires=;any=;placement=
+great_zimbabwe|t=;h=either;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=commercial_hub;resource=cattle;improvement=;requires=market;any=;placement=
+orszaghaz|t=;h=either;f=;water=false;coast=false;river=true;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+oxford_university|t=grassland,plains;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=campus;resource=;improvement=;requires=university;any=;placement=
+potala_palace|t=;h=hills;f=;water=false;coast=false;river=false;mountain=true;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+st_basils_cathedral|t=;h=either;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=city_center;resource=;improvement=;requires=;any=;placement=
+taj_mahal|t=;h=either;f=;water=false;coast=false;river=true;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+torre_de_belem|t=;h=either;f=;water=true;coast=true;river=false;mountain=false;religion=false;district=harbor;resource=;improvement=;requires=;any=;placement=
+venetian_arsenal|t=;h=either;f=;water=true;coast=true;river=false;mountain=false;religion=false;district=industrial_zone;resource=;improvement=;requires=;any=;placement=
+big_ben|t=;h=either;f=;water=false;coast=false;river=true;mountain=false;religion=false;district=commercial_hub;resource=;improvement=;requires=bank;any=;placement=
+bolshoi_theatre|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=theater_square;resource=;improvement=;requires=;any=;placement=
+hermitage|t=;h=either;f=;water=false;coast=false;river=true;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+ruhr_valley|t=;h=either;f=;water=false;coast=false;river=true;mountain=false;religion=false;district=industrial_zone;resource=;improvement=;requires=factory;any=;placement=
+statue_of_liberty|t=;h=either;f=;water=true;coast=true;river=false;mountain=false;religion=false;district=harbor;resource=;improvement=;requires=;any=;placement=
+biosphere|t=;h=either;f=;water=false;coast=false;river=true;mountain=false;religion=false;district=neighborhood;resource=;improvement=;requires=;any=;placement=
+broadway|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=theater_square;resource=;improvement=;requires=;any=;placement=
+cristo_redentor|t=;h=hills;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=
+eiffel_tower|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=city_center;resource=;improvement=;requires=;any=;placement=
+estadio_do_maracana|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=entertainment_complex;resource=;improvement=;requires=stadium;any=;placement=
+golden_gate_bridge|t=;h=either;f=;water=true;coast=true;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=golden_gate_bridge
+amundsen_scott_research_station|t=snow;h=either;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=campus;resource=;improvement=;requires=research_lab;any=;placement=
+sydney_opera_house|t=;h=either;f=;water=true;coast=true;river=false;mountain=false;religion=false;district=harbor;resource=;improvement=;requires=;any=;placement=
+panama_canal|t=;h=flat;f=;water=false;coast=false;river=false;mountain=false;religion=false;district=;resource=;improvement=;requires=;any=;placement=panama_canal
+"#;
+        let expected: BTreeMap<&str, &str> = EXPECTED
+            .lines()
+            .filter_map(|line| line.split_once('|'))
+            .collect();
+        let names = |values: &[Name]| {
+            values
+                .iter()
+                .map(|name| name.as_str())
+                .collect::<Vec<_>>()
+                .join(",")
+        };
+        let actual: BTreeMap<&str, String> = rules
+            .wonders
+            .iter()
+            .map(|(name, wonder)| {
+                let hills = match wonder.hills {
+                    Some(true) => "hills",
+                    Some(false) => "flat",
+                    None => "either",
+                };
+                (
+                    name.as_str(),
+                    format!(
+                        "t={};h={};f={};water={};coast={};river={};mountain={};religion={};district={};resource={};improvement={};requires={};any={};placement={}",
+                        names(&wonder.terrain),
+                        hills,
+                        names(&wonder.feature),
+                        wonder.water,
+                        wonder.coast,
+                        wonder.river,
+                        wonder.adjacent_mountain,
+                        wonder.founded_religion,
+                        wonder.adjacent_district.map_or("", |name| name.as_str()),
+                        wonder.adjacent_resource.map_or("", |name| name.as_str()),
+                        wonder.adjacent_improvement.map_or("", |name| name.as_str()),
+                        names(&wonder.requires_buildings),
+                        names(&wonder.requires_any_buildings),
+                        wonder.placement,
+                    ),
+                )
+            })
+            .collect();
+        assert_eq!(actual.len(), 53);
+        assert_eq!(actual.len(), expected.len());
+        for (wonder, signature) in actual {
+            assert_eq!(signature, expected[wonder], "{wonder} placement");
+        }
     }
 
     /// The collection paths skip a whole sweep when the index says no spec in
