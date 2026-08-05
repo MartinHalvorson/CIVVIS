@@ -664,7 +664,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// traversal cache, so the frozen controller's source contract is re-pinned
 /// after the fixed-prefix comparison below.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xffb4_d262_6bce_7ce7;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0c09_4bef_3068_6e70;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
