@@ -13757,6 +13757,10 @@ pub struct RoutingCache {
     stamp: u64,
     zones: Vec<(TraversalClass, std::sync::Arc<Vec<u32>>)>,
     paths: Vec<PlannedRoute>,
+    /// Folded city ids and owners used by route access checks. City ownership
+    /// changes invalidate routing paths, so compute this once per routing
+    /// epoch instead of walking every city for every unit route query.
+    city_owner_key: Option<u64>,
 }
 
 #[derive(Clone, Default)]
@@ -32701,12 +32705,25 @@ impl Game {
     /// shared predicate; city owners distinguish a same-turn city transfer
     /// whose tiles retain their existing owner-city ids.
     fn route_access_key(&self, unit: &Unit, territory_access: &[bool]) -> u64 {
-        let mut key = vision_key(&[unit.owner as u64, self.players.len() as u64]);
+        let cached_city_owner_key = self.routing.borrow().city_owner_key;
+        let city_owner_key = match cached_city_owner_key {
+            Some(key) => key,
+            None => {
+                let mut key = vision_key(&[self.cities.len() as u64]);
+                for city in self.cities.values() {
+                    key = vision_key(&[key, city.id as u64, city.owner as u64]);
+                }
+                let mut routing = self.routing.borrow_mut();
+                *routing.city_owner_key.get_or_insert(key)
+            }
+        };
+        let mut key = vision_key(&[
+            unit.owner as u64,
+            self.players.len() as u64,
+            city_owner_key,
+        ]);
         for (owner, access) in territory_access.iter().enumerate() {
             key = vision_key(&[key, owner as u64, *access as u64]);
-        }
-        for city in self.cities.values() {
-            key = vision_key(&[key, city.id as u64, city.owner as u64]);
         }
         key
     }
@@ -32714,6 +32731,7 @@ impl Game {
     fn invalidate_routing_paths(&self) {
         let mut routing = self.routing.borrow_mut();
         routing.paths.clear();
+        routing.city_owner_key = None;
     }
 
     /// Terrain/domain legality for future route segments. Dynamic unit
@@ -32790,6 +32808,7 @@ impl Game {
                 cache.stamp = stamp;
                 cache.zones.clear();
                 cache.paths.clear();
+                cache.city_owner_key = None;
             }
             if let Some((_, zones)) = cache.zones.iter().find(|(c, _)| *c == class) {
                 return zones.clone();
