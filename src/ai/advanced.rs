@@ -927,6 +927,64 @@ pub struct AdvancedAi {
     /// live-regime one. See [`AdvancedAi::remembered_objective_strength`] for
     /// the mechanism and the 294-of-426 measurement behind it.
     pub blind_objective_strength: bool,
+    /// Judge a force's readiness at the radius it was ASSEMBLED at, not at half
+    /// of it.
+    ///
+    /// ★★★★★ TWO RADII THAT MUST AGREE, AND DO NOT. `rebuild_force_groups`
+    /// builds a group as a CLIQUE in which every pair is within
+    /// `command_radius` (6.0). It then computes readiness as the fraction of
+    /// members within `muster_radius` (3.0) of the anchor — and the anchor is
+    /// `force_anchor`, which is the group's MEDOID, i.e. one of the members. A
+    /// perfectly legal diameter-6 clique can therefore have half its units four
+    /// to six hexes from that member and be permanently un-ready. The group is
+    /// admitted at one radius and judged at half of it, so
+    /// `readiness < muster_readiness` holds forever and the posture never leaves
+    /// `Muster` — whose target is the anchor, i.e. wherever the army already is.
+    ///
+    /// ⚠⚠⚠ Measured across SIX live runs, ~2000 land force decisions. Median
+    /// readiness, by force size:
+    ///
+    /// | run | size ≤3 | size ≥8 |
+    /// |---|---|---|
+    /// | `…191900Z` | 100% | 50% |
+    /// | `…200117Z` | 100% | 56% |
+    /// | `…220954Z` | 100% | 56% |
+    /// | `…231038Z` | 100% | 62% |
+    /// | `…235619Z` | 100% | 48% |
+    /// | `…011632Z` | 100% | 60% |
+    ///
+    /// Six runs out of six: a force of one is always ready, and every real army
+    /// sits below the 0.67 gate. The failure is purely positional — decomposing
+    /// 1594 unit-checks over 85 turns with a field force of 8+, **781 failed on
+    /// distance alone and 1 on health alone**.
+    ///
+    /// What it costs: in `…011632Z`, at war with Sumeria at three-to-one with
+    /// seven trebuchets and the objective naming an enemy city on 98% of
+    /// decisions, **816 of 968 combat unit-turns (84%) were closer to OUR city
+    /// than to theirs** — median 3 hexes from home against 8 from the target.
+    /// Across three such wars the siege reached bombard range of a city ONCE in
+    /// 763 unit-turns, and no enemy city has taken a point of damage.
+    ///
+    /// ⭐ The repair is the radius, not the anchor — that was measured too.
+    /// Recomputing readiness over the same 85 turns:
+    ///
+    /// | anchor / radius | mean readiness | turns clearing the gate |
+    /// |---|---|---|
+    /// | medoid r3 (shipped) | 50.9% | 5/85 (6%) |
+    /// | geometric minimax centre r3 | 36.4% | 3/85 — *worse* |
+    /// | centre r4 | 51.2% | 18/85 |
+    /// | **medoid r6 = `command_radius`** | **82.4%** | **81/85 (95%)** |
+    ///
+    /// A geometric centre drifts off the mass and is worse than the medoid. Only
+    /// the radius matters.
+    ///
+    /// ⚠ The known risk, stated because it is not free: a column that advances
+    /// while spread over six hexes can be defeated in detail. The behaviour it
+    /// replaces is one that never advances at all.
+    ///
+    /// **Off by default, live-bridge only**, and it takes the MAXIMUM of the two
+    /// so an evolved genome that deliberately raises `muster_radius` keeps it.
+    pub muster_at_command_radius: bool,
     /// Aim a relief force at what is actually hitting the city, not at whichever
     /// besieger happens to stand nearest the force.
     ///
@@ -2156,6 +2214,7 @@ impl AdvancedAi {
             suzerain_cards_need_a_suzerainty: false,
             siege_tracks_the_wall: false,
             blind_objective_strength: false,
+            muster_at_command_radius: false,
             relief_targets_the_siege: false,
             blind_objective_units: false,
             refuse_unreachable_lanes: false,
@@ -2347,6 +2406,13 @@ impl AdvancedAi {
         self.blind_objective_strength = true;
     }
 
+    /// Judge force readiness at the radius the group was assembled at. Native
+    /// tournament games leave this disabled so their recorded ladders stay
+    /// comparable.
+    pub fn enable_muster_at_command_radius(&mut self) {
+        self.muster_at_command_radius = true;
+    }
+
     /// Send a relief force at the units actually besieging the city rather than
     /// the nearest one to itself. Native tournament games leave this disabled so
     /// their recorded ladders stay comparable.
@@ -2494,6 +2560,7 @@ impl AdvancedAi {
         // into range and cannot fire.
         self.enable_ranged_needs_line_of_sight();
         self.enable_blind_objective_strength();
+        self.enable_muster_at_command_radius();
         self.enable_relief_targets_the_siege();
         self.enable_blind_objective_units();
         // ⚠ Faith buys the soldier; GOLD pays for it every turn forever, and
@@ -2673,6 +2740,10 @@ impl AdvancedAi {
 
     pub fn disable_blind_objective_strength(&mut self) {
         self.blind_objective_strength = false;
+    }
+
+    pub fn disable_muster_at_command_radius(&mut self) {
+        self.muster_at_command_radius = false;
     }
 
     pub fn disable_relief_targets_the_siege(&mut self) {
@@ -16640,7 +16711,21 @@ impl AdvancedAi {
             // never held more than two. A rush that walks past the defenders
             // to stand on the ring is a rush that gets killed on the ring.
             let focus_target = self.force_focus_target(g, pid, &units, &enemies, plan);
-            let muster_radius = self.base.w.muster_radius.round().max(1.0) as i32;
+            // See [`AdvancedAi::muster_at_command_radius`]: the group was built
+            // as a clique at `command_radius`, so judging it inside half that
+            // of its own medoid makes the gate unreachable for any real army.
+            // MAX, not replace, so an evolved genome that raises `muster_radius`
+            // above the command radius keeps its own value.
+            let muster_radius = if self.muster_at_command_radius {
+                self.base
+                    .w
+                    .muster_radius
+                    .max(self.base.w.command_radius)
+                    .round()
+                    .max(1.0) as i32
+            } else {
+                self.base.w.muster_radius.round().max(1.0) as i32
+            };
             let readiness = units
                 .iter()
                 .filter(|uid| {
@@ -32308,6 +32393,128 @@ mod tests {
             believing < 3.0,
             "an enemy this controller has SEEN standing on the objective must still \
              count against it once it goes back into fog; got {believing}"
+        );
+    }
+
+    /// ★★★★★ A FORCE MUST BE JUDGED AT THE RADIUS IT WAS ASSEMBLED AT.
+    ///
+    /// `rebuild_force_groups` builds a group as a clique in which every pair is
+    /// within `command_radius` (6), then computes readiness as the fraction
+    /// within `muster_radius` (3) of the medoid — a member of that clique. A
+    /// legal diameter-6 group can therefore never clear the 0.67 gate, so the
+    /// posture stays `Muster`, whose target is the anchor: wherever the army
+    /// already is.
+    ///
+    /// ⚠⚠⚠ Six live runs, ~2000 land force decisions, median readiness by force
+    /// size — size ≤3: 100% every run; size ≥8: 50 / 56 / 56 / 62 / 48 / 60%,
+    /// all below the gate. Decomposing 1594 unit-checks over 85 turns with a
+    /// field force of 8+, **781 failures were distance alone and 1 was health
+    /// alone**. The cost: in `civvis-20260804T011632Z`, at war at three-to-one
+    /// with the objective naming an enemy city on 98% of decisions, **816 of 968
+    /// combat unit-turns (84%) sat closer to our OWN city than the enemy's**.
+    #[test]
+    fn a_force_is_judged_at_the_radius_it_was_assembled_at() {
+        let mut game = Game::new_full(2, 30, 18, 411_021, 120, 0, false);
+        for unit in game.units.keys().copied().collect::<Vec<_>>() {
+            game.remove_unit(unit);
+        }
+        game.players[0].met.insert(1);
+        game.players[1].met.insert(0);
+        game.apply(0, &Action::DeclareWar { player: 1 })
+            .expect("the seats can go to war");
+
+        let mut land: Vec<Pos> = game
+            .map
+            .tiles
+            .iter()
+            .filter(|(_, tile)| !game.rules.is_water(tile))
+            .map(|(pos, _)| *pos)
+            .collect();
+        land.sort();
+        // A tile with real land around it — `land[0]` is often an isolated
+        // corner, which would make the placement below silently degenerate.
+        let home = *land
+            .iter()
+            .max_by_key(|pos| {
+                (
+                    land.iter().filter(|other| game.wdist(**pos, **other) <= 6).count(),
+                    std::cmp::Reverse(**pos),
+                )
+            })
+            .expect("the map has land");
+
+        // The shape the live data actually shows: a clump with outliers still
+        // inside the command radius. The medoid sits in the clump, so the
+        // outliers are four to six hexes from it — legal by the grouping rule,
+        // and unable to pass a radius-3 readiness test.
+        let clump: Vec<Pos> = land
+            .iter()
+            .copied()
+            .filter(|pos| game.wdist(*pos, home) <= 1)
+            .take(5)
+            .collect();
+        let outliers: Vec<Pos> = land
+            .iter()
+            .copied()
+            .filter(|pos| (5..=6).contains(&game.wdist(*pos, home)))
+            .take(3)
+            .collect();
+        assert!(
+            clump.len() >= 4 && outliers.len() >= 2,
+            "need a clump plus outliers; got {} and {}",
+            clump.len(),
+            outliers.len()
+        );
+        for pos in clump.iter().chain(outliers.iter()) {
+            game.spawn_test_unit("warrior", 0, *pos);
+        }
+
+        let units = game.player_unit_ids(0);
+        let anchor = AdvancedAi::force_anchor(&game, &units);
+        let spread = units
+            .iter()
+            .filter(|uid| game.wdist(game.units[uid].pos, anchor) > 3)
+            .count();
+        assert!(
+            spread > 0,
+            "the column must actually exceed the shipped muster radius, or this \
+             test proves nothing"
+        );
+
+        let readiness = |radius: i32| -> f64 {
+            units
+                .iter()
+                .filter(|uid| game.wdist(game.units[uid].pos, anchor) <= radius)
+                .count() as f64
+                / units.len() as f64
+        };
+
+        let mut ai = AdvancedAi::new();
+        ai.disable_muster_at_command_radius();
+        let shipped = ai.base.w.muster_radius.round().max(1.0) as i32;
+        ai.enable_muster_at_command_radius();
+        let repaired = ai
+            .base
+            .w
+            .muster_radius
+            .max(ai.base.w.command_radius)
+            .round()
+            .max(1.0) as i32;
+
+        assert!(
+            repaired > shipped,
+            "the repair must widen the radius: {shipped} -> {repaired}"
+        );
+        assert!(
+            readiness(shipped) < ai.base.w.muster_readiness,
+            "the shipped radius must fail the gate on a legal column — that is \
+             the defect, measured below the gate on 6 of 6 live runs"
+        );
+        assert!(
+            readiness(repaired) >= ai.base.w.muster_readiness,
+            "and the assembly radius must clear it: {} vs gate {}",
+            readiness(repaired),
+            ai.base.w.muster_readiness
         );
     }
 
