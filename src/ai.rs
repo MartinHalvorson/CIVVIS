@@ -8581,12 +8581,14 @@ impl BasicAi {
         if sea_unit != water {
             return false;
         }
-        if !g.unit_can_traverse(uid, pos) {
+        let friendly_city = tile
+            .owner_city
+            .and_then(|cid| g.cities.get(&cid))
+            .is_some_and(|city| city.owner == pid);
+        if !friendly_city {
             return false;
         }
-        tile.owner_city
-            .and_then(|cid| g.cities.get(&cid))
-            .is_some_and(|city| city.owner == pid)
+        g.unit_can_traverse(uid, pos)
     }
 
     /// Move an otherwise idle military unit between useful frontier posts.
@@ -9017,8 +9019,16 @@ impl BasicAi {
                 return self.fortify_or_stop(g, pid, uid);
             }
         }
-        if let Some(acted) = self.special_improver_step(g, pid, uid) {
-            return acted;
+        let special_improver = {
+            let unit = &g.units[&uid];
+            unit.owner == pid
+                && unit.charges > 0
+                && !g.rules.units[unit.kind].builds.is_empty()
+        };
+        if special_improver {
+            if let Some(acted) = self.special_improver_step(g, pid, uid) {
+                return acted;
+            }
         }
         // Coming ashore outranks exploring. A Recon unit explores for as long
         // as any unseen tile remains, which on an ocean map is forever, so
@@ -11696,6 +11706,8 @@ mod tests {
         let camps: Vec<Pos> = g.barb_camps.keys().copied().collect();
         for camp in camps {
             g.barb_camps.remove(&camp);
+            g.barb_naval_camps.remove(&camp);
+            g.barb_camp_guards.remove(&camp);
             let tile = g.map.tiles.get_mut(&camp).unwrap();
             if tile.improvement.as_deref() == Some("barbarian_camp") {
                 tile.improvement = None;
@@ -11868,6 +11880,8 @@ mod tests {
             g.remove_unit(unit);
         }
         g.barb_camps.clear();
+        g.barb_naval_camps.clear();
+        g.barb_camp_guards.clear();
         g.barb_scout_homes.clear();
         g.barb_scout_targets.clear();
         g.barb_camp_targets.clear();
@@ -11917,6 +11931,8 @@ mod tests {
         let camps: Vec<Pos> = g.barb_camps.keys().copied().collect();
         for camp in camps {
             g.barb_camps.remove(&camp);
+            g.barb_naval_camps.remove(&camp);
+            g.barb_camp_guards.remove(&camp);
             let tile = g.map.tiles.get_mut(&camp).unwrap();
             if tile.improvement.as_deref() == Some("barbarian_camp") {
                 tile.improvement = None;

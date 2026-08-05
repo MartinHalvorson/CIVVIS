@@ -15,7 +15,7 @@ import threading
 import time
 import urllib.request
 
-from verify import Devtools, find_chrome, free_port
+from verify import Devtools, find_chrome, free_port, fresh_profile, tether
 
 
 HARNESS = """<!doctype html><html><head><meta charset="utf-8">
@@ -70,7 +70,7 @@ class Quiet(http.server.SimpleHTTPRequestHandler):
 def main() -> int:
     here = pathlib.Path(__file__).resolve().parent
     stage = pathlib.Path(tempfile.mkdtemp(prefix="civvis-shim-"))
-    profile = tempfile.mkdtemp(prefix="civvis-shim-profile-")
+    profile = fresh_profile("civvis-shim-profile-")
     shutil.copy(here / "shim.js", stage / "shim.js")
     (stage / "index.html").write_text(HARNESS, encoding="utf-8")
     build = stage / "build.json"
@@ -97,6 +97,7 @@ def main() -> int:
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
+    tether(chrome)
 
     try:
         target = None
