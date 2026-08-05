@@ -314,6 +314,31 @@ class SessionSettingsTests(unittest.TestCase):
             self.assertEqual(chosen["map"], "continents")
             self.assertEqual(chosen["players"], 8)
 
+    def test_fixed_desktop_setup_reuses_the_launch_contract(self):
+        defaults = {
+            "players": 6,
+            "width": 74,
+            "height": 46,
+            "city_states": 9,
+            "turns": 250,
+            "map": "continents",
+            "shape": "flat",
+            "poles": "poles",
+            "speed": "online",
+            "victories": [
+                "science", "culture", "religious", "diplomatic", "domination", "score"
+            ],
+        }
+        finished = {
+            "players": [{"is_minor": False}] * 10,
+            "map": {"script": "water_world", "shape": "planet"},
+            "max_turns": 500,
+        }
+        self.assertEqual(
+            supervisor.session_settings(finished, defaults, fixed_setup=True),
+            defaults,
+        )
+
     def test_fogged_state_does_not_shrink_the_next_game(self):
         """A trimmed observation must not become the next game's seat count."""
         fogged = {
@@ -725,6 +750,7 @@ class SourceSnapshotTests(unittest.TestCase):
 
             refreshed = json.loads(metadata_path.read_text(encoding="utf-8"))
             self.assertEqual(refreshed["revision"], "published")
+            self.assertEqual(refreshed["commit_time"], "published")
             self.assertFalse(refreshed["dirty"])
             self.assertEqual(refreshed["source_snapshot"], "same-source")
             self.assertEqual(refreshed["built_at"], "original-build-time")
@@ -1438,9 +1464,11 @@ class RecoveryTests(unittest.TestCase):
         }
         with tempfile.TemporaryDirectory() as directory:
             runtime = Path(directory) / "promoted" / "civvis"
+            runtime_metadata = runtime.parent / "build.json"
             process = SimpleNamespace(pid=123)
             with (
                 patch.object(supervisor, "RUNTIME_BINARY", runtime),
+                patch.object(supervisor, "RUNTIME_METADATA", runtime_metadata),
                 patch.object(
                     supervisor, "server_command", return_value=[str(runtime), "play"]
                 ),
@@ -1454,8 +1482,49 @@ class RecoveryTests(unittest.TestCase):
             [str(runtime), "play"],
             cwd=runtime.parent,
             text=True,
+            env=supervisor.os.environ.copy(),
             **supervisor._NO_WINDOW,
         )
+
+    def test_server_launch_exports_commit_and_build_times_from_promoted_metadata(self):
+        settings = {
+            "players": 6,
+            "width": 74,
+            "height": 46,
+            "city_states": 9,
+            "turns": 250,
+            "map": "continents",
+            "speed": "online",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            runtime = root / "civvis"
+            metadata = root / "build.json"
+            metadata.write_text(
+                json.dumps(
+                    {
+                        "revision": "a" * 40,
+                        "commit_time": "2026-08-03T20:00:00Z",
+                        "built_at": "2026-08-03T20:05:00Z",
+                    }
+                ),
+                encoding="utf-8",
+            )
+            process = SimpleNamespace(pid=123)
+            with (
+                patch.object(supervisor, "RUNTIME_BINARY", runtime),
+                patch.object(supervisor, "RUNTIME_METADATA", metadata),
+                patch.object(
+                    supervisor, "server_command", return_value=[str(runtime), "play"]
+                ),
+                patch.object(supervisor.subprocess, "Popen", return_value=process) as popen,
+            ):
+                supervisor.start_server(8785, settings, False)
+
+        environment = popen.call_args.kwargs["env"]
+        self.assertEqual(environment["CIVVIS_COMMIT"], "a" * 40)
+        self.assertEqual(environment["CIVVIS_COMMIT_TIME"], "2026-08-03T20:00:00Z")
+        self.assertEqual(environment["CIVVIS_BUILT_AT"], "2026-08-03T20:05:00Z")
 
     def test_checkpoint_write_is_atomic_and_finished_saves_are_not_resumed(self):
         class Response:
@@ -1799,6 +1868,67 @@ class RecoveryTests(unittest.TestCase):
         start.assert_called_once()
         self.assertEqual(read.call_count, 5)
         stop_build.assert_called_once_with(worker)
+
+    def test_finished_boundary_preserves_verified_runtime_build_time(self):
+        args = SimpleNamespace(
+            port=8766,
+            players=4,
+            width=60,
+            height=38,
+            city_states=6,
+            turns=500,
+            map="pangaea",
+            speed="standard",
+            cooldown=0.0,
+            poll=0.01,
+            build_retry=0.01,
+            source_check_interval=30.0,
+            unresponsive_timeout=20.0,
+            busy_timeout=0.0,
+            stall_timeout=30.0,
+            checkpoint_interval=5.0,
+            max_resume_attempts=2,
+            live_refresh_grace=1800.0,
+            no_open=True,
+            adopt_pid=321,
+        )
+        active = {"seed": 9, "turn": 42, "current": 2, "winner": None}
+        finished = {
+            **active,
+            "turn": 70,
+            "winner": 1,
+            "victory_type": "science",
+            "players": [],
+        }
+        successor = {"seed": 10, "turn": 1, "current": 0, "winner": None}
+        replacement = SimpleNamespace(pid=654)
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint = Path(directory) / "save.json"
+            with (
+                patch.object(supervisor, "parse_args", return_value=args),
+                patch.object(supervisor, "checkpoint_path", return_value=checkpoint),
+                patch.object(supervisor, "process_alive", return_value=True),
+                patch.object(supervisor, "source_snapshot", return_value="verified"),
+                patch.object(supervisor, "runtime_matches", return_value=True),
+                patch.object(supervisor, "promoted_runtime_id", return_value=None),
+                patch.object(
+                    supervisor,
+                    "read_state",
+                    side_effect=[active, finished, finished, KeyboardInterrupt],
+                ),
+                patch.object(supervisor, "archive_result"),
+                patch.object(supervisor, "refresh_runtime_metadata") as refresh,
+                patch.object(supervisor, "write_runtime_metadata") as rewrite,
+                patch.object(supervisor, "start_server", return_value=replacement),
+                patch.object(supervisor, "wait_for_server", return_value=successor),
+                patch.object(supervisor, "stop_server"),
+                patch.object(supervisor.time, "sleep"),
+            ):
+                self.assertEqual(supervisor.main(), 0)
+
+        refresh.assert_called_once_with("verified")
+        rewrite.assert_not_called()
 
     def test_finished_server_starts_successor_without_waiting_for_a_build(self):
         args = SimpleNamespace(

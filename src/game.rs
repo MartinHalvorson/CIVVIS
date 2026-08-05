@@ -6,18 +6,23 @@ use std::sync::Arc;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashSet, VecDeque};
 
 use crate::name::{AsName, Name};
+use crate::leader_roster;
 use crate::parallel::WorkPool;
 use crate::rng::Rng;
 use crate::rules::{
     building_yield_effect_key, grant_ability_effect_key, unit_purchase_discount_effect_key,
-    AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec, FutureTreeLayout,
-    ResourceIndustryEffects, Rules, SpeedSpec, Yields, ERA_NAMES,
+    volcanic_soil_valid_terrain, AgendaSpec, BuildingSpec, DifficultySpec, DisasterSpec,
+    FutureTreeLayout, ResourceIndustryEffects, Rules, SpeedSpec, Yields, ERA_NAMES,
 };
 use crate::specmap::SpecMap;
 
-use crate::setup::{BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
+use crate::setup::{
+    BaseRuleset, FutureEra, GameSpeed, MapPoles, MapScript, MapSize, MapTopology,
+};
 use crate::world::{DistrictFoundation, RememberedTile, Tile, TileBits, TileMemory, WorldMap};
 use crate::{hex, mapgen, Pos};
+
+pub use crate::leader_roster::LeaderPool;
 
 /// The civilizations this ruleset can seat, in seating order. A stock lobby
 /// seats majors straight down this list, so it must be at least as long as the
@@ -134,44 +139,6 @@ pub const CIV_NAMES: [&str; 105] = [
     "Indonesia",
     "Macedon",
 ];
-
-/// Which modeled leaders can fill seats the lobby leaves random.
-///
-/// `Civ6` is deliberately the default: the broader historical roster is
-/// useful for very large worlds, but it is an explicit expansion of the game
-/// this simulator models. Explicit civilization picks are always honored;
-/// this setting governs only the random fill around them.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum LeaderPool {
-    #[default]
-    Civ6,
-    Expanded,
-}
-
-impl LeaderPool {
-    pub const fn id(self) -> &'static str {
-        match self {
-            Self::Civ6 => "civ6",
-            Self::Expanded => "expanded",
-        }
-    }
-
-    pub fn from_id(id: &str) -> Option<Self> {
-        match id {
-            "civ6" => Some(Self::Civ6),
-            "expanded" => Some(Self::Expanded),
-            _ => None,
-        }
-    }
-
-    pub const fn civilizations(self) -> &'static [&'static str] {
-        match self {
-            Self::Civ6 => &CIV6_LEADER_POOL,
-            Self::Expanded => &CIV_NAMES,
-        }
-    }
-}
 
 /// All fifty civilizations shipped by Civilization VI and its official DLC.
 /// Keep the names in [`CIV_NAMES`] order: deterministic non-random callers
@@ -2508,8 +2475,8 @@ mod city_name_tests {
 mod seating_tests {
     use super::*;
 
-    /// The official pool is the default, while both rosters retain the stable
-    /// seating order established by `CIV_NAMES`.
+    /// The official pool is the default and retains the stable seating order
+    /// established by `CIV_NAMES`.
     #[test]
     fn civ6_seating_is_the_default_and_keeps_the_stable_head() {
         let known: BTreeSet<Name> = Rules::shared().civs.keys().cloned().collect();
@@ -2535,8 +2502,8 @@ mod seating_tests {
     #[test]
     fn each_leader_pool_uses_every_entry_before_it_repeats() {
         let known: BTreeSet<Name> = Rules::shared().civs.keys().cloned().collect();
-        for pool in [LeaderPool::Civ6, LeaderPool::Expanded] {
-            for players in 1..=pool.civilizations().len() {
+        for pool in [LeaderPool::Civ6, LeaderPool::ExpandedHistorical] {
+            for players in 1..=pool.entries().count() {
                 let seated = seat_civs(players, &[], &known, pool);
                 assert_eq!(
                     seated.iter().collect::<BTreeSet<_>>().len(),
@@ -2573,13 +2540,21 @@ mod seating_tests {
         assert_eq!(&two[..2], ["Nubia".to_string(), "Rome".to_string()]);
         assert_eq!(two.iter().collect::<BTreeSet<_>>().len(), 4);
 
-        let expanded_pick = seat_civs(
+        let rejected_historical_pick = seat_civs(
             3,
             &["Denmark".to_string()],
             &known,
             LeaderPool::Civ6,
         );
-        assert_eq!(expanded_pick[0], "Denmark");
+        assert_eq!(rejected_historical_pick[0], CIV6_LEADER_POOL[0]);
+
+        let historical_pick = seat_civs(
+            3,
+            &["Denmark".to_string()],
+            &known,
+            LeaderPool::ExpandedHistorical,
+        );
+        assert_eq!(historical_pick[0], "Denmark");
     }
 
     /// A name from another ruleset seats a stock civilization rather than
@@ -2659,7 +2634,7 @@ mod seating_tests {
     #[test]
     fn each_random_pool_contains_exactly_its_selected_roster() {
         let known: BTreeSet<Name> = Rules::shared().civs.keys().cloned().collect();
-        for pool in [LeaderPool::Civ6, LeaderPool::Expanded] {
+        for pool in [LeaderPool::Civ6, LeaderPool::ExpandedHistorical] {
             let mut seen = BTreeSet::new();
             for seed in 0..1_000 {
                 let mut rng = Rng::new(seed);
@@ -2667,7 +2642,9 @@ mod seating_tests {
             }
             assert_eq!(
                 seen,
-                pool.civilizations().iter().map(|civ| civ.to_string()).collect(),
+                pool.entries()
+                    .map(|entry| entry.civ.clone())
+                    .collect(),
                 "randomized {pool:?} roster differs from its declared pool"
             );
         }
@@ -2678,6 +2655,25 @@ mod seating_tests {
         assert!(CIV6_LEADER_POOL.contains(&"Indonesia"));
         assert!(CIV6_LEADER_POOL.contains(&"Macedon"));
         assert!(!CIV6_LEADER_POOL.contains(&"Denmark"));
+    }
+
+    #[test]
+    fn historical_leaders_are_neutral_even_when_legacy_rules_describe_them() {
+        let legacy = Rules::embedded().civs[&Name::new("Denmark")].clone();
+        let mut options = GameOptions::new(1, 42, 28, 74_101, 40, 0);
+        options.leader_pool = LeaderPool::ExpandedHistorical;
+        options.civs = vec!["Denmark".to_string()];
+        let game = Game::new_with(options);
+
+        assert_eq!(game.players[0].civ, "Denmark");
+        assert!(!game.uses_civ6_content(0));
+        assert!(!game.has_ability(0, &legacy.ability));
+        assert!(legacy
+            .effects
+            .keys()
+            .all(|effect| game.civ_effect(0, effect) == 0.0));
+        assert!(game.rules.civs[&Name::new("Denmark")].unique_unit.is_none());
+        assert!(game.agenda_of(0).is_none());
     }
 }
 
@@ -2888,6 +2884,9 @@ mod city_trade_tests;
 
 #[cfg(test)]
 mod great_person_runtime_tests;
+
+#[cfg(test)]
+mod mass_driver_tests;
 
 #[cfg(test)]
 mod religious_purchase_tests;
@@ -4739,6 +4738,125 @@ mod belief_runtime_tests {
     }
 
     #[test]
+    fn the_pantheon_charges_exactly_what_it_asked_for() {
+        // ⚠⚠ #1044 made the CHECK speed-aware and left the SPEND a bare 25.0, so on
+        // every speed but Standard the engine demanded one price and took another —
+        // Online asks 12.5 and took 25, dropping a founder at 13 faith to -12. That
+        // is worse than both being wrong together, because the check licenses a
+        // purchase the charge then cannot honour.
+        let (mut game, _) = game_with_capitals(91_762);
+        game.game_speed = crate::setup::GameSpeed::Online;
+        game.players[0].pantheon = None;
+        game.players[0].faith = 13.0;
+        let belief = game.rules.beliefs.pantheon.keys().next().unwrap().clone();
+        assert!(game.do_choose_pantheon(0, &belief).is_ok());
+        assert_eq!(
+            game.players[0].faith,
+            0.5,
+            "13 faith minus Online's 12.5 price; a bare 25.0 would leave -12"
+        );
+
+        // Standard still pays 25, so the default speed is untouched.
+        let (mut standard, _) = game_with_capitals(91_762);
+        standard.game_speed = crate::setup::GameSpeed::Standard;
+        standard.players[0].pantheon = None;
+        standard.players[0].faith = 30.0;
+        let belief = standard.rules.beliefs.pantheon.keys().next().unwrap().clone();
+        assert!(standard.do_choose_pantheon(0, &belief).is_ok());
+        assert_eq!(standard.players[0].faith, 5.0);
+    }
+
+    #[test]
+    fn every_pantheon_price_reads_the_same_helper() {
+        // ⚠⚠⚠ ONE TABLE, ONE FORMATTER. This rule had THREE spellings — the
+        // legality gate and the affordability check in this file, and the AI's own
+        // decision gate in `ai.rs` — and #1044 fixed one of them. The two that were
+        // missed are exactly the ones that decide and charge, so the fix looked
+        // merged and changed nothing live: on `civvis-20260803T231038Z` the AI was
+        // still waiting for 25 while Civilization VI charged ~12 and its own
+        // fallback picked the pantheon by database order.
+        //
+        // Asserted on the SOURCE, because a behavioural test can pass while a fourth
+        // spelling is added somewhere it does not reach.
+        for (path, source) in [
+            ("game.rs", include_str!("game.rs")),
+            ("ai.rs", include_str!("ai.rs")),
+        ] {
+            for (n, line) in source.lines().enumerate() {
+                let code = line.split("//").next().unwrap_or("");
+                if !code.contains("pantheon") && !code.contains("Pantheon") {
+                    continue;
+                }
+                // ⚠ An assertion ABOUT the price is not a second spelling OF it —
+                // `assert_eq!(pantheon_faith_cost(), 25.0)` is exactly the check
+                // that pins Standard, and flagging it would make this scan
+                // unsatisfiable. Skip assertions and the constant's own definition.
+                if code.contains("assert") || code.contains("PANTHEON_FAITH_STANDARD")
+                {
+                    continue;
+                }
+                assert!(
+                    !code.contains("25.0"),
+                    "{path}:{} spells the pantheon price as a literal; use                      `pantheon_faith_cost()`: {code}",
+                    n + 1
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_pantheon_price_follows_the_game_speed_like_every_other_cost() {
+        // ⚠⚠⚠ This was a bare `25.0` in the legality gate AND in `do_choose_pantheon`,
+        // while techs, civics and growth beside it all scaled. It cost CIVVIS the
+        // decision outright in live games.
+        //
+        // Measured on live run `civvis-20260803T191900Z` (Online, Rome/Trajan):
+        // Civilization VI raised `ENDTURN_BLOCKING_PANTHEON` on turn 19 at FAITH 11,
+        // and faith went 11 -> 0 when it was taken. CIVVIS wanted 25, so
+        // `ChoosePantheon` never became legal, `civvis_orders` emitted nothing on a
+        // replay of turns 18/19/20, and the mod answered instead by walking
+        // `GameInfo.Beliefs()` and taking the first untaken row — the empire's one
+        // permanent pantheon chosen by database order, in every live game.
+        let (mut game, _) = game_with_capitals(91_762);
+
+        game.game_speed = crate::setup::GameSpeed::Standard;
+        assert_eq!(game.pantheon_faith_cost(), 25.0, "Standard must not move");
+
+        game.game_speed = crate::setup::GameSpeed::Online;
+        assert_eq!(
+            game.pantheon_faith_cost(),
+            12.5,
+            "Online pays half, and 12.5 is the price the host was charging"
+        );
+
+        // The gate and the action must agree, or one of them is decorative.
+        game.players[0].pantheon = None;
+        game.players[0].faith = 13.0;
+        let belief = game.rules.beliefs.pantheon.keys().next().unwrap().clone();
+        assert!(
+            game.legal_actions(0)
+                .iter()
+                .any(|action| matches!(action, Action::ChoosePantheon { .. })),
+            "13 faith on Online is above the real price and must offer the action"
+        );
+        assert!(game.do_choose_pantheon(0, &belief).is_ok());
+
+        // ⚠ And the same faith on Standard must still be refused, or this is not a
+        // scaling fix, it is a discount applied everywhere.
+        let (mut standard, _) = game_with_capitals(91_762);
+        standard.game_speed = crate::setup::GameSpeed::Standard;
+        standard.players[0].pantheon = None;
+        standard.players[0].faith = 13.0;
+        assert!(
+            standard
+                .legal_actions(0)
+                .iter()
+                .all(|action| !matches!(action, Action::ChoosePantheon { .. })),
+            "13 faith is below Standard's 25 and must not offer it"
+        );
+    }
+
+    #[test]
     fn pantheons_spend_faith_grant_units_and_apply_exact_production_gates() {
         for (seed, belief, unit) in [
             (91_760, "fertility_rites", "builder"),
@@ -6059,6 +6177,7 @@ mod governor_runtime_tests {
             tile.hills = false;
             tile.improvement = None;
             tile.pillaged = false;
+            tile.river_edges = [false; 6];
         }
         let faith = |game: &Game, at: Pos| {
             game.player_tile_yields(0, at, &game.map.tiles[&at]).faith
@@ -12878,6 +12997,11 @@ pub fn growth_threshold(pop: i32) -> f64 {
 }
 
 /// Gathering Storm victory thresholds on standard speed.
+/// The seat a live mirror reconstructs. `mirror.rs` addresses it as a bare `0`
+/// throughout — `plant_unit(&mut game, 0, …)`, `is_at_war(0, seat)`,
+/// `player_unit_ids(0)` — and this names it where the engine has to agree.
+pub const MIRRORED_SEAT: usize = 0;
+
 pub const DIPLOMATIC_VICTORY_POINTS: i64 = 20;
 /// The New Frontier game modes CIVVIS models. Each is a lobby checkbox that
 /// is off in a stock Gathering Storm game and in every tournament lobby.
@@ -12972,6 +13096,12 @@ pub struct VictoryRaces {
     pub score_points: i64,
 }
 pub const TOURISM_PER_VISITOR: f64 = 200.0;
+
+/// Faith for a pantheon at STANDARD speed. Read it through
+/// `Game::pantheon_faith_cost`, never directly: the number that matters is this one
+/// scaled by the game's speed, and using the constant raw is the defect that hid
+/// here for the whole project.
+pub const PANTHEON_FAITH_STANDARD: f64 = 25.0;
 const STANDARD_DEAL_TURNS: u32 = 30;
 /// The one-off token costs published for individual diplomatic missions.
 const DELEGATION_GOLD: f64 = 10.0;
@@ -13201,6 +13331,28 @@ impl Game {
         self.game_speed.scale(growth_threshold(population))
     }
 
+    /// Faith needed to found a pantheon, scaled by game speed like every other cost.
+    ///
+    /// ⚠⚠⚠ THIS WAS A BARE `25.0` IN TWO PLACES, AND IT COST CIVVIS THE DECISION
+    /// ENTIRELY IN LIVE GAMES. Every neighbouring cost above already scales — techs,
+    /// civics, growth — and this one did not, so on any speed but Standard CIVVIS
+    /// was asking for a different game's price.
+    ///
+    /// Measured on live run `civvis-20260803T191900Z` (Online speed, Rome/Trajan):
+    /// Civilization VI raised `ENDTURN_BLOCKING_PANTHEON` on **turn 19 at faith 11**,
+    /// and faith went 11 -> 0 when the pantheon was taken. CIVVIS's gate wanted 25,
+    /// so `ChoosePantheon` was never a legal action, `civvis_orders` emitted nothing
+    /// for turns 18/19/20 on replay, and the mod's fallback answered instead — by
+    /// walking `GameInfo.Beliefs()` and taking the FIRST UNTAKEN ROW. The empire's
+    /// one permanent pantheon was chosen by database order, in every live game.
+    ///
+    /// `Online.scale(25.0)` is 12.5, which is the price the host was charging.
+    /// Standard is unchanged at 25.0, so self-play at the default speed is
+    /// untouched; only the speeds that were already wrong move.
+    pub fn pantheon_faith_cost(&self) -> f64 {
+        self.game_speed.scale(PANTHEON_FAITH_STANDARD)
+    }
+
     pub fn standard_duration(&self, turns: u32) -> u32 {
         self.game_speed.scale_turns(turns)
     }
@@ -13358,7 +13510,11 @@ pub struct QueryCache {
     // Ownership-filtered ids are requested throughout AI evaluation. A
     // 100-seat game otherwise rescans every world entity for each request,
     // even when a read-only phase asks for the same empire repeatedly.
-    unit_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
+    unit_ids: std::cell::RefCell<Option<BTreeMap<usize, Arc<Vec<u32>>>>>,
+    // Territory access is a unit-level route predicate. Cache it by unit id
+    // while a route call runs, because the same access gates both local and
+    // cached planning steps.
+    unit_territory_access: std::cell::RefCell<Option<BTreeMap<u32, Arc<Vec<bool>>>>>,
     city_ids: std::cell::RefCell<Option<BTreeMap<usize, Vec<u32>>>>,
     // Three empire-wide derivations that callers reach for one city at a
     // time. Each is keyed by player, because that is the scope it is
@@ -13418,6 +13574,7 @@ impl Drop for QueryMemo<'_> {
             *self.game.query_memo.traversal.borrow_mut() = None;
             *self.game.query_memo.amenities.borrow_mut() = None;
             *self.game.query_memo.unit_ids.borrow_mut() = None;
+            *self.game.query_memo.unit_territory_access.borrow_mut() = None;
             *self.game.query_memo.city_ids.borrow_mut() = None;
             *self.game.query_memo.lux_alloc.borrow_mut() = None;
             *self.game.query_memo.lux_names.borrow_mut() = None;
@@ -13535,6 +13692,16 @@ pub struct RoutingCache {
     stamp: u64,
     zones: Vec<(TraversalClass, std::sync::Arc<Vec<u32>>)>,
     paths: Vec<PlannedRoute>,
+}
+
+#[derive(Clone, Default)]
+struct RouteScratch {
+    astar_frontier: BinaryHeap<Reverse<(i32, Reverse<i32>, Pos)>>,
+    bfs_frontier: VecDeque<(Pos, usize)>,
+    path: Vec<Pos>,
+    parent: Vec<u32>,
+    seen: Vec<bool>,
+    distance: Vec<i32>,
 }
 
 #[derive(Clone)]
@@ -15079,6 +15246,20 @@ pub struct Player {
     /// then; `None` until then, and on a save written before targets existed.
     #[serde(default)]
     pub exoplanet_target: Option<String>,
+    /// Where this civilization's mass drivers put their slugs down: a tile in
+    /// its own territory, standing until it names another. `None` means the
+    /// drivers are built but nothing has been aimed, and nothing falls.
+    #[serde(default)]
+    pub mass_driver_site: Option<Pos>,
+    /// Which of the Moon's ores those drivers are mining. Set with the site,
+    /// by the same order, because a driver aimed at nothing in particular is
+    /// not a state worth having.
+    #[serde(default)]
+    pub mass_driver_ore: Option<Name>,
+    /// Drivers that threw their slug at something this turn instead of
+    /// delivering it. Reset at the start of every turn.
+    #[serde(default)]
+    pub mass_driver_shots: i64,
     #[serde(default)]
     pub envoys: Vec<(usize, i64)>, // (city-state pid, envoys placed)
     #[serde(default)]
@@ -15189,6 +15370,9 @@ impl Player {
             science_projects: BTreeSet::new(),
             exoplanet_distance: 0.0,
             exoplanet_target: None,
+            mass_driver_site: None,
+            mass_driver_ore: None,
+            mass_driver_shots: 0,
             envoys: Vec::new(),
             counters: BTreeMap::new(),
             great_work_pieces: Vec::new(),
@@ -15537,6 +15721,19 @@ pub enum Action {
         target: Pos,
         thermonuclear: bool,
     },
+    /// Point every mass driver on the Moon at one ore and one landing site in
+    /// your own territory. A standing order: it holds until it is given again,
+    /// and until it is given nothing falls.
+    AimMassDriver {
+        site: Pos,
+        ore: Name,
+    },
+    /// Throw one slug at a revealed tile instead of landing it as cargo. It
+    /// costs one unit of the aimed ore out of the stockpile — the slug is the
+    /// metal — and one driver's turn.
+    MassDriverStrike {
+        target: Pos,
+    },
     /// A Military Engineer lays a Railroad on its tile: engineer-built
     /// only, no build charge, 1 Iron and 1 Coal from the stockpile per
     /// tile (Routes_XP2 and Route_ResourceCosts).
@@ -15675,6 +15872,10 @@ pub struct GameOptions {
     /// Advanced Start — the earlier eras are already researched. The rungs of
     /// the ladder this is chosen from live in [`crate::setup::START_ERAS`].
     pub start_era: usize,
+    /// Which rules the far end of the game is played by. The classic era is
+    /// Gathering Storm's own and the default; the modified one puts ore on the
+    /// Moon and a mass driver over it. See [`crate::setup::FUTURE_ERAS`].
+    pub future_era: FutureEra,
     pub map_script: MapScript,
     /// What shape the world is, asked separately from what fills it: every
     /// world type can be laid out flat or closed into a globe.
@@ -15701,8 +15902,10 @@ pub struct GameOptions {
     /// already chosen so no two majors share an identity by accident. Empty
     /// uses that pool's stock order.
     pub civs: Vec<String>,
-    /// Roster from which every unnamed seat is filled. The official Civ VI
-    /// civilizations are the default; the full modeled roster is opt-in.
+    /// Roster from which every unnamed seat is filled. Civilization VI leaders
+    /// are the default and the only tier with modeled leader/civilization
+    /// abilities or unique units; expanded historical and future Today entries
+    /// are neutral identities.
     pub leader_pool: LeaderPool,
     /// Shuffle every civilization seat the lobby did not name. Kept opt-in so
     /// simulations and old saves retain their seed-for-seed stock seating;
@@ -15729,6 +15932,7 @@ impl GameOptions {
             barbarians: true,
             base_ruleset: BaseRuleset::default(),
             start_era: 0,
+            future_era: FutureEra::default(),
             map_script: MapScript::Pangaea,
             map_topology: MapTopology::default(),
             map_poles: MapPoles::default(),
@@ -15754,34 +15958,37 @@ impl GameOptions {
 /// lobby that deliberately names the same civilization twice gets it twice:
 /// a mirror match is a legitimate thing to set up, and the request is
 /// unambiguous in a way an automatic fill never is. Past the end of the
-/// roster — more majors than there are civilizations — the stock fill has
-/// nothing left to hand out and starts again at the top.
+/// selected roster — more majors than there are available leaders — the stock
+/// fill starts again at the top.
 ///
-/// A name the ruleset does not know is ignored rather than fatal: a save or a
-/// client from another ruleset should seat a stock civilization, not panic.
+/// A name outside the selected roster is ignored rather than fatal: a stale
+/// client or a save naming a retired historical figure gets a valid leader in
+/// the current pool instead of taking setup down.
 pub fn seat_civs(
     num_players: usize,
     chosen: &[String],
     known: &BTreeSet<Name>,
     leader_pool: LeaderPool,
 ) -> Vec<String> {
+    let leader_pool = leader_pool.available_or_default();
+    let roster: Vec<&str> = leader_pool.entries().map(|entry| entry.civ.as_str()).collect();
     let mut seats: Vec<Option<String>> = vec![None; num_players];
     let mut taken: BTreeSet<String> = BTreeSet::new();
     for (seat, civ) in chosen.iter().enumerate().take(num_players) {
-        if known.contains(&Name::new(civ)) {
+        if known.contains(&Name::new(civ)) && roster.contains(&civ.as_str()) {
             taken.insert(civ.clone());
             seats[seat] = Some(civ.clone());
         }
     }
-    let mut stock = leader_pool
-        .civilizations()
-        .iter()
-        .filter(|civ| !taken.contains(**civ))
-        .cycle()
-        .copied();
+    let stock: Vec<&str> = roster
+        .into_iter()
+        .filter(|civ| !taken.contains(*civ))
+        .collect();
+    assert!(!stock.is_empty(), "selected leader pool has no known leaders");
+    let mut stock = stock.into_iter().cycle();
     seats
         .into_iter()
-        .map(|seat| seat.unwrap_or_else(|| stock.next().unwrap_or(CIV_NAMES[0]).to_string()))
+        .map(|seat| seat.unwrap_or_else(|| stock.next().unwrap().to_string()))
         .collect()
 }
 
@@ -15795,26 +16002,28 @@ pub fn seat_civs_randomized(
     leader_pool: LeaderPool,
     rng: &mut Rng,
 ) -> Vec<String> {
+    let leader_pool = leader_pool.available_or_default();
+    let roster: Vec<&str> = leader_pool.entries().map(|entry| entry.civ.as_str()).collect();
     let mut seats: Vec<Option<String>> = vec![None; num_players];
     let mut taken: BTreeSet<String> = BTreeSet::new();
     for (seat, civ) in chosen.iter().enumerate().take(num_players) {
-        if known.contains(&Name::new(civ)) {
+        if known.contains(&Name::new(civ)) && roster.contains(&civ.as_str()) {
             taken.insert(civ.clone());
             seats[seat] = Some(civ.clone());
         }
     }
-    let mut stock: Vec<String> = leader_pool
-        .civilizations()
-        .iter()
-        .filter(|civ| known.contains(&Name::new(civ)) && !taken.contains(**civ))
-        .map(|civ| (*civ).to_string())
+    let mut stock: Vec<String> = roster
+        .into_iter()
+        .filter(|civ| known.contains(&Name::new(civ)) && !taken.contains(*civ))
+        .map(str::to_string)
         .collect();
     for i in (1..stock.len()).rev() {
         stock.swap(i, rng.below(i + 1));
     }
-    if stock.is_empty() {
-        stock.push(CIV_NAMES[0].to_string());
-    }
+    // `available_or_default` ensures a usable data pool; this assertion makes
+    // a malformed rules/roster integration fail at its source rather than
+    // silently inventing a civilization identity.
+    assert!(!stock.is_empty(), "selected leader pool has no known leaders");
     let mut stock = stock.into_iter().cycle();
     seats
         .into_iter()
@@ -16025,6 +16234,8 @@ pub struct Game {
     /// rebuilt on demand whenever the world moves under it.
     #[serde(skip)]
     routing: std::cell::RefCell<RoutingCache>,
+    #[serde(skip)]
+    route_scratch: std::cell::RefCell<RouteScratch>,
     /// Memoized read-only answers; see [`QueryCache`]. Never saved, with
     /// short-lived entries cleared by their guard and production catalogs
     /// cleared by a successful action; empty in any clone.
@@ -16076,6 +16287,17 @@ pub struct Game {
     /// setup so a restart offers what was actually played.
     #[serde(default)]
     pub start_era: usize,
+    /// Which rules the far end of this game is played by. Kept on the save
+    /// because it selects the ruleset itself: a match loaded on a later build
+    /// must be rebuilt on the rules it was started under.
+    #[serde(default)]
+    pub future_era: FutureEra,
+    /// The Moon's ore, by resource: one body, one set of piles, shared by
+    /// everybody who gets a mass driver over it. Rolled at setup only when the
+    /// ruleset gives a resource a lunar deposit, so a classic game carries an
+    /// empty map here and never looks at the Moon at all.
+    #[serde(default)]
+    pub moon_deposits: BTreeMap<Name, f64>,
     pub map_script: MapScript,
     /// Random-leader roster chosen when this world was created. It remains on
     /// the save so a restart can faithfully offer the same setup.
@@ -16280,6 +16502,78 @@ pub struct Game {
     /// the feedback is meant to repair. Ordinary CIVVIS games leave this empty.
     #[serde(default)]
     pub blocked_purchases: BTreeMap<u32, BTreeSet<String>>,
+    /// Tiles a HOST says the mirrored seat can see RIGHT NOW, over and above what
+    /// this engine's own sight model derives. Empty in an ordinary CIVVIS game.
+    ///
+    /// ★★★★★ THE EXPORT IS THE HOST'S VISIBILITY ANSWER, AND WE WERE THROWING IT
+    /// AWAY. Civilization VI exports a rival's or a minor's units *only under
+    /// current visibility* — `StateMinor` says so in its own doc — and the bridge
+    /// plants exactly those units on the board. Then
+    /// [`Game::player_vision_now`] RE-DERIVES what the seat can see, from this
+    /// engine's sight radii and height field on a reconstructed map, and the
+    /// tactical layer believes the derivation instead of the export. Every place
+    /// the two disagree, an enemy Civilization VI is showing us is invisible to
+    /// the agent deciding whether to shoot it.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z`, the 49 turns of
+    /// Kongo's war (t203-250) that cost Arpinum and Arretium and ended the game
+    /// at **479 against the winner's 1214**: an enemy was in the export on **49
+    /// of 49 turns**, our units stood **adjacent to one on 95 unit-turns** and
+    /// within range 2 — the range of the Field Cannons and Trebuchets that were
+    /// most of the army — on **197**. Attacks issued: **37**. The army declined
+    /// **81%** of the shots the host was showing it.
+    ///
+    /// `ForcePosture` only reaches `Engage` through
+    /// `g.sees(&visible, enemy.pos) && battlefront_unit_visible(..)`, so with the
+    /// derivation disagreeing it fell through to `Muster` — "still gathering" —
+    /// turn after turn while the cities burned. The same disagreement is what
+    /// `blind_ranged_tiles_charged` counts: 3 to 13 tiles on 45 separate turns.
+    ///
+    /// ⚠ Deliberately a stored set rather than "foreign units imply visibility".
+    /// That inference is only sound for a MIRRORED board, where every foreign unit
+    /// arrived from an export gated on sight. In ordinary self-play the board holds
+    /// the full simulation, and reading it the same way would hand every AI player
+    /// perfect vision of the entire world.
+    #[serde(default)]
+    pub host_observed: BTreeSet<Pos>,
+    /// Ground a HOST holds for somebody else and will not let this seat's units
+    /// enter, for tiles whose owner [`Game::territory_owner_at`] cannot name.
+    ///
+    /// ★★★★★ THE MISSING MEMBER OF THE `blocked_*` FAMILY, AND THE COMMENT ON
+    /// [`Game::blocked_policies`] already says which one it is: policies were
+    /// "third behind **movement** and `no_params`". Movement is the largest
+    /// refusal category in the ledger and it was the only one with no block set.
+    ///
+    /// The ordinary gate in `can_enter` reads `territory_owner_at`, which resolves
+    /// a tile's owner through `owner_city -> cities -> owner`. A rival whose cities
+    /// this seat has never SEEN has no city on the mirrored board, so their border
+    /// resolves to `None` and reads as free ground. That is a closed loop: their
+    /// border is invisible precisely because we cannot get past it to see the city
+    /// that makes it.
+    ///
+    /// ⚠⚠⚠ Measured on live run `civvis-20260803T191900Z` (Rome, SETTLER, small).
+    /// Scout `196608` reached offset (12,24) on **turn 42** and was ordered
+    /// `MOVE_TO (11,24)` — one hex — on **74 separate turns** without ever moving;
+    /// at t91 it was upgraded in place and the Skirmisher kept re-sending the same
+    /// step. (11,24) is exported `o: 4`, Kongo's territory, and we were not at war
+    /// and held no open borders. **81 of 670 `MOVE_TO` orders targeted foreign
+    /// ground, every one of them Kongo's, and all 81 were counted `applied` —
+    /// a blocked move is a silent no-op, not a refusal.**
+    ///
+    /// What it cost, in order: exploration flatlined at **283 of 3404 tiles (8.3%)**
+    /// from turn 42; **zero rival cities were observed in 96 snapshots**; with no
+    /// known enemy city `plan.target_city` stayed `None`, so `campaign` fell through
+    /// to `peacetime_step` and all seven combat units garrisoned within three hexes
+    /// of home; and `strategy=conquest` ran for forty turns with `war_legal=9` and
+    /// **no war ever declared**. Of 35 walkable frontier tiles, 21 were sealed
+    /// behind that border — including all six nearest the scout — while 14 neutral
+    /// ones waited at distance 7, leading east into two thirds of an unseen map.
+    ///
+    /// Written fresh from the export every turn rather than accumulated, and never
+    /// written for an owner this seat has access to, so declaring war opens the
+    /// ground on the following turn instead of sealing our own invasion out.
+    #[serde(default)]
+    pub closed_borders: BTreeSet<Pos>,
     /// The turn each peace treaty runs until, keyed by signatory pair. War
     /// cannot be declared again before it expires — the shipped
     /// `DIPLOMACY_PEACE_MIN_TURNS`.
@@ -16444,6 +16738,14 @@ struct GameSer {
     /// Ancient era, which is exactly what the default is.
     #[serde(default)]
     start_era: usize,
+    /// Absent in saves written before the Future Era was a choice, all of
+    /// which were played on the classic one.
+    #[serde(default)]
+    future_era: FutureEra,
+    /// Absent in every classic save, and in a modified one that has not been
+    /// rolled yet.
+    #[serde(default)]
+    moon_deposits: BTreeMap<Name, f64>,
     #[serde(default)]
     map_script: MapScript,
     #[serde(default)]
@@ -16562,11 +16864,23 @@ impl From<GameSer> for Game {
     fn from(s: GameSer) -> Game {
         let needs_visibility_backfill = s.visibility_memory_version == 0;
         let has_unknown_terrain = s.map.tiles.values().any(|tile| tile.terrain == "unknown");
-        let mut rules = Rules::for_game(s.seed, s.future_tree_layout.as_ref());
+        let seated_identities: Vec<String> = s
+            .players
+            .iter()
+            .filter(|player| !player.is_minor && !player.is_barbarian)
+            .map(|player| player.civ.clone())
+            .collect();
+        let mut rules = Rules::for_game(s.seed, s.future_tree_layout.as_ref(), s.future_era);
         if has_unknown_terrain {
             // Mirror-only terrain is injected after normal ruleset loading so it
             // survives a save round trip without changing the audited fingerprint.
             Arc::make_mut(&mut rules).enable_unknown_terrain();
+        }
+        if seated_identities
+            .iter()
+            .any(|civ| !leader_roster::uses_civ6_mechanics(civ))
+        {
+            leader_roster::install_neutral_identities(Arc::make_mut(&mut rules), &seated_identities);
         }
         // Both speed representations exist for save compatibility. Prefer an
         // explicit ruleset speed, except when loading an older map-script save
@@ -16581,6 +16895,7 @@ impl From<GameSer> for Game {
             rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
+            route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
@@ -16594,8 +16909,10 @@ impl From<GameSer> for Game {
             events: s.events.into(),
             base_ruleset: s.base_ruleset,
             start_era: s.start_era,
+            future_era: s.future_era,
+            moon_deposits: s.moon_deposits,
             map_script: s.map_script,
-            leader_pool: s.leader_pool,
+            leader_pool: s.leader_pool.available_or_default(),
             map_poles: s.map_poles,
             game_speed,
             max_turns: s.max_turns,
@@ -16626,6 +16943,8 @@ impl From<GameSer> for Game {
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: BTreeSet::new(),
+            host_observed: BTreeSet::new(),
+            closed_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
@@ -16772,6 +17091,8 @@ impl From<Game> for GameSer {
             events: g.events.into(),
             base_ruleset: g.base_ruleset,
             start_era: g.start_era,
+            future_era: g.future_era,
+            moon_deposits: g.moon_deposits,
             map_script: g.map_script,
             leader_pool: g.leader_pool,
             map_poles: g.map_poles,
@@ -16984,6 +17305,7 @@ impl Game {
             barbarians,
             base_ruleset,
             start_era,
+            future_era,
             map_script,
             map_topology,
             map_poles,
@@ -17005,16 +17327,43 @@ impl Game {
             teams.is_empty() || teams.len() == num_players,
             "team assignments must be empty or contain one entry per major player"
         );
-        let rules = Rules::for_game(seed, None);
+        let leader_pool = leader_pool.available_or_default();
+        let mut rules = Rules::for_game(seed, None, future_era);
         assert!(
             rules.difficulties.contains_key(&difficulty),
             "unknown difficulty {difficulty}"
         );
         assert!(rules.speeds.contains_key(&speed), "unknown game speed {speed}");
+        let mut known_civs = rules.civs.keys().cloned().collect::<BTreeSet<_>>();
+        known_civs.extend(
+            leader_roster::all()
+                .iter()
+                .filter(|record| record.available)
+                .map(|record| Name::new(&record.civ)),
+        );
+        let seated = if randomize_civs {
+            let mut roster_rng = Rng::new(seed ^ 0x4349_5656_4953_4349);
+            seat_civs_randomized(num_players, &civs, &known_civs, leader_pool, &mut roster_rng)
+        } else {
+            seat_civs(num_players, &civs, &known_civs, leader_pool)
+        };
+        if seated
+            .iter()
+            .any(|civ| !leader_roster::uses_civ6_mechanics(civ))
+        {
+            leader_roster::install_neutral_identities(Arc::make_mut(&mut rules), &seated);
+        }
+        let leader_starts: Vec<_> = seated
+            .iter()
+            .map(|civ| {
+                leader_roster::true_start(civ)
+                    .unwrap_or_else(|| panic!("selected leader {civ:?} has no true-start point"))
+            })
+            .collect();
         let mut rng = Rng::new(seed);
         let map_size = MapSize::from_dimensions(width, height)
             .unwrap_or_else(|| MapSize::for_players(num_players));
-        let (map, spawns) = mapgen::generate_with_script(
+        let (map, spawns) = mapgen::generate_with_script_and_leader_starts(
             &rules,
             width,
             height,
@@ -17025,13 +17374,19 @@ impl Game {
             map_script,
             map_topology,
             map_poles,
+            &leader_starts,
             &mut rng,
         );
+        // After the world, deliberately: a ruleset with nothing on the Moon
+        // draws no numbers here, so a classic game rolls exactly the map it
+        // always did from a given seed.
+        let moon_deposits = Self::roll_moon_deposits(&rules, &mut rng);
         let game_speed = GameSpeed::from_id(&speed).unwrap_or(GameSpeed::Standard);
         let mut g = Game {
             rules,
             vision: std::cell::RefCell::new(VisionCache::default()),
             routing: std::cell::RefCell::new(RoutingCache::default()),
+            route_scratch: std::cell::RefCell::new(RouteScratch::default()),
             query_memo: QueryCache::default(),
             remembered_under: Vec::new(),
             track_fog_memory: true,
@@ -17043,6 +17398,8 @@ impl Game {
             human_seats,
             base_ruleset,
             start_era,
+            future_era,
+            moon_deposits,
             map_script,
             leader_pool,
             map_poles,
@@ -17074,6 +17431,8 @@ impl Game {
             observed_city_strength: BTreeMap::new(),
             observed_city_max_wall_hp: BTreeMap::new(),
             blocked_city_sites: BTreeSet::new(),
+            host_observed: BTreeSet::new(),
+            closed_borders: BTreeSet::new(),
             blocked_improvement_sites: BTreeSet::new(),
             blocked_promotions: BTreeMap::new(),
             blocked_trade_routes: BTreeSet::new(),
@@ -17118,23 +17477,20 @@ impl Game {
             log: crate::actionlog::ActionLog::new(),
             events: EventLog::default(),
         };
-        let known_civs = g.rules.civs.keys().cloned().collect::<BTreeSet<_>>();
-        let seated = if randomize_civs {
-            let mut roster_rng = Rng::new(seed ^ 0x4349_5656_4953_4349);
-            seat_civs_randomized(num_players, &civs, &known_civs, leader_pool, &mut roster_rng)
-        } else {
-            seat_civs(num_players, &civs, &known_civs, leader_pool)
-        };
         // Civilization VI decides *which* start a civilization is given from
         // its shipped StartBias rows. Reorder the major sites to honour them
-        // before any seat is handed one; generation itself is untouched.
+        // before any seat is handed one; True Start Earth is already ordered
+        // by the selected roster’s exact coordinates and must not be moved by
+        // a generic bias afterward.
         let mut spawns = spawns;
-        mapgen::assign_starts_by_bias(
-            &g.rules,
-            &g.map,
-            &mut spawns[..num_players],
-            &seated,
-        );
+        if map_script != MapScript::TrueStartEarth {
+            mapgen::assign_starts_by_bias(
+                &g.rules,
+                &g.map,
+                &mut spawns[..num_players],
+                &seated,
+            );
+        }
         for (i, civ) in seated.iter().take(num_players).enumerate() {
             let mut player = Player::new(i, civ, false);
             player.team = teams.get(i).copied().flatten();
@@ -18510,8 +18866,13 @@ impl Game {
         self.city_by_pos.get(&pos).copied()
     }
 
+    pub fn unit_ids_at(&self, pos: Pos) -> &[u32] {
+        const EMPTY: &[u32] = &[];
+        self.occ.get(&pos).map_or(EMPTY, Vec::as_slice)
+    }
+
     pub fn units_at(&self, pos: Pos) -> Vec<u32> {
-        self.occ.get(&pos).cloned().unwrap_or_default()
+        self.unit_ids_at(pos).to_vec()
     }
 
     pub fn player_unit_ids(&self, pid: usize) -> Vec<u32> {
@@ -18522,18 +18883,46 @@ impl Game {
             .as_ref()
             .and_then(|memo| memo.get(&pid))
         {
-            return ids.clone();
+            return ids.as_ref().clone();
         }
-        let ids: Vec<u32> = self
-            .units
-            .values()
-            .filter(|u| u.owner == pid)
-            .map(|u| u.id)
-            .collect();
+        let ids = Arc::new(
+            self
+                .units
+                .values()
+                .filter(|u| u.owner == pid)
+                .map(|u| u.id)
+                .collect::<Vec<u32>>(),
+        );
+        let owned = ids.as_ref().clone();
         if let Some(memo) = self.query_memo.unit_ids.borrow_mut().as_mut() {
             memo.insert(pid, ids.clone());
         }
-        ids
+        owned
+    }
+
+    fn unit_territory_access(&self, unit: &Unit) -> Arc<Vec<bool>> {
+        if let Some(access) = self
+            .query_memo
+            .unit_territory_access
+            .borrow()
+            .as_ref()
+            .and_then(|memo| memo.get(&unit.id))
+        {
+            return access.clone();
+        }
+        let access: Arc<Vec<bool>> = Arc::new(
+            (0..self.players.len())
+                .map(|owner| self.unit_has_territory_access(unit, owner))
+                .collect(),
+        );
+        if let Some(memo) = self.query_memo
+            .unit_territory_access
+            .borrow_mut()
+            .as_mut()
+        {
+            memo.insert(unit.id, access.clone());
+        }
+        access
     }
 
     pub fn player_city_ids(&self, pid: usize) -> Vec<u32> {
@@ -19925,13 +20314,35 @@ impl Game {
     /// prices are twice the Production difference on top of the base cost.
     pub fn unit_upgrade_price(&self, pid: usize, kind: &str) -> Option<(Name, f64, f64)> {
         let target = self.unit_upgrade_target(pid, Name::new(kind))?;
-        let from = self.rules.units.get(kind)?.cost;
-        let spec = self.rules.units.get(&target)?;
+        self.unit_upgrade_price_to(pid, Name::new(kind), target)
+            .map(|(gold, resources)| (target, gold, resources))
+    }
+
+    /// Quote a direct upgrade before its technology is owned.
+    ///
+    /// A timed campaign must reserve the bill while researching the successor,
+    /// earlier than [`Self::unit_upgrade_target`] can expose it as an action.
+    /// This keeps the game-speed and policy discounts in the engine and checks
+    /// the civilization-specific replacement edge used by the real upgrade.
+    pub fn unit_upgrade_price_to(
+        &self,
+        pid: usize,
+        kind: impl AsName,
+        target: impl AsName,
+    ) -> Option<(f64, f64)> {
+        let kind = kind.as_name();
+        let target = target.as_name();
+        let generic = self.rules.units.get_interned(kind)?.upgrade_to?;
+        if self.player_unit_replacement(pid, generic) != target {
+            return None;
+        }
+        let from = self.rules.units.get_interned(kind)?.cost;
+        let spec = self.rules.units.get_interned(target)?;
         let gold = self
             .game_speed
             .scale((10.0 + 2.0 * (spec.cost - from).max(0.0)).max(15.0));
         let (gold, resources) = self.upgrade_costs(pid, gold, spec.resource_cost);
-        Some((target, gold, resources))
+        Some((gold, resources))
     }
 
     /// Civ VI upgrades happen in friendly territory, before the unit has done
@@ -21075,13 +21486,32 @@ impl Game {
         }
     }
 
+    /// Whether this seat is one of the official Civilization VI identities
+    /// entitled to the ruleset's unique content.  Historical and Today roster
+    /// entries are deliberately neutral even where an older rules row happens
+    /// to share their civilization name.
+    pub fn uses_civ6_content(&self, pid: usize) -> bool {
+        self.players.get(pid).is_some_and(|player| {
+            !player.is_minor
+                && !player.is_barbarian
+                && leader_roster::uses_civ6_mechanics(&player.civ)
+        })
+    }
+
+    /// Whether this player may use content marked unique to `civilization`.
+    #[inline]
+    pub fn owns_civ_unique(&self, pid: usize, civilization: &str) -> bool {
+        self.uses_civ6_content(pid) && self.players[pid].civ == civilization
+    }
+
     /// Leader/civ ability check (data in civs.json, effects keyed by name).
     pub fn has_ability(&self, pid: usize, ability: &str) -> bool {
-        self.rules
-            .civs
-            .get(&self.players[pid].civ)
-            .map(|c| c.ability == ability)
-            .unwrap_or(false)
+        (self.uses_civ6_content(pid)
+            && self
+                .rules
+                .civs
+                .get(&self.players[pid].civ)
+                .is_some_and(|c| c.ability == ability))
             || self.modifier_grants_ability(pid, ability)
     }
 
@@ -21094,6 +21524,9 @@ impl Game {
     /// See `CivSpec::effects` for the vocabulary. Abilities the engine cannot
     /// express as a modifier stay keyed by name in [`Game::has_ability`].
     pub fn civ_effect(&self, pid: usize, effect: &str) -> f64 {
+        if !self.uses_civ6_content(pid) {
+            return 0.0;
+        }
         self.players
             .get(pid)
             .filter(|player| !player.is_minor && !player.is_barbarian)
@@ -21281,6 +21714,27 @@ impl Game {
         let mut yields = self.route_yields(dest, domestic);
         if !domestic {
             yields.gold += city.great_person_foreign_route_gold;
+            // A Feitoria belongs to the foreign destination rather than the
+            // route's origin. Every Portuguese international route arriving
+            // at that city receives its production-and-gold contract bonus.
+            if self.players[owner].civ == "Portugal" {
+                let feitorias = city
+                    .owned_tiles
+                    .iter()
+                    .filter(|position| {
+                        let tile = &self.map.tiles[position];
+                        tile.improvement.as_deref() == Some("feitoria") && !tile.pillaged
+                    })
+                    .count() as f64;
+                let effects = &self.rules.improvements["feitoria"].effects;
+                yields.gold +=
+                    feitorias * effects.get("foreign_route_gold").copied().unwrap_or(0.0);
+                yields.production += feitorias
+                    * effects
+                        .get("foreign_route_production")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
         }
         yields.gold += self.players[owner]
             .counters
@@ -21865,8 +22319,12 @@ impl Game {
         if self.players[pid].pantheon.is_some() {
             return Err("pantheon already chosen".into());
         }
-        if self.players[pid].faith < 25.0 {
-            return Err("needs 25 faith".into());
+        let cost = self.pantheon_faith_cost();
+        if self.players[pid].faith < cost {
+            // ⚠ The price, not a literal. The old message said "needs 25 faith" on
+            // every speed, so a refusal on Online named a number the game was not
+            // charging and read as a CIVVIS bug rather than a scaling one.
+            return Err(format!("needs {cost:.0} faith").into());
         }
         if !self.rules.beliefs.pantheon.contains_key(belief) {
             return Err("no such pantheon belief".into());
@@ -21879,7 +22337,12 @@ impl Game {
             return Err("belief already taken".into());
         }
         self.players[pid].pantheon = Some(belief.to_string());
-        self.players[pid].faith -= 25.0;
+        // ⚠⚠ THE PRICE THE CHECK ASKED FOR, NOT A SECOND LITERAL. #1044 made the
+        // check above speed-aware and left this deduction at a bare 25.0, so on any
+        // speed but Standard the engine charged MORE than it demanded: Online asks
+        // for 12.5 and this took 25, dropping a player who founded at 13 faith to
+        // -12. A check and a charge that disagree is worse than both being wrong.
+        self.players[pid].faith -= cost;
         let capital = self
             .player_city_ids(pid)
             .into_iter()
@@ -23622,14 +24085,16 @@ impl Game {
                     {
                         continue;
                     }
-                    let civilization = self.players[pid].civ.as_str();
                     let building = self
                         .rules
                         .buildings
                         .iter()
                         .find(|(_, candidate)| {
                             candidate.replaces == Some(Name::new(family))
-                                && candidate.unique_to.as_deref() == Some(civilization)
+                                && candidate
+                                    .unique_to
+                                    .as_deref()
+                                    .is_some_and(|owner| self.owns_civ_unique(pid, owner))
                         })
                         .map(|(name, _)| Name::new(name))
                         .unwrap_or_else(|| Name::new(family));
@@ -23781,14 +24246,16 @@ impl Game {
         if self.city_has_building_family(&self.cities[&city_id], Name::new(family)) {
             return;
         }
-        let civilization = self.players[pid].civ.as_str();
         let building = self
             .rules
             .buildings
             .iter()
             .find(|(_, candidate)| {
                 candidate.replaces == Some(Name::new(family))
-                    && candidate.unique_to.as_deref() == Some(civilization)
+                    && candidate
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|owner| self.owns_civ_unique(pid, owner))
             })
             .map(|(name, _)| Name::new(name))
             .unwrap_or_else(|| Name::new(family));
@@ -25294,6 +25761,17 @@ impl Game {
                     &self.rules.improvements["ski_resort"].tech,
                     &self.rules.improvements["ski_resort"].civic,
                 ))
+                // Qhapaq Nan is built by a Builder *on* a mountain. The
+                // ordinary mountain passage comes from the finished route,
+                // but an Incan Builder must be able to reach the first site
+                // when Foreign Trade unlocks it.
+                || (unit.kind == "builder"
+                    && self.players[unit.owner].civ == "Inca"
+                    && self.unlocked(
+                        unit.owner,
+                        &self.rules.improvements["qhapaq_nan"].tech,
+                        &self.rules.improvements["qhapaq_nan"].civic,
+                    ))
                 || (unit.kind == "military_engineer"
                     && self.unlocked(
                         unit.owner,
@@ -25601,8 +26079,11 @@ impl Game {
             .max(self.unit_bombard_strength(u))
     }
 
-    pub fn city_housing(&self, city: &City) -> f64 {
-        // fresh water (river/oasis) = 5, coastal = 3, otherwise 2 (Civ 6)
+    /// Whether the city centre stands on fresh water, and whether it is
+    /// coastal. Both decide the housing floor, and an Aqueduct's whole worth
+    /// is the gap between the two floors — so the test lives in one place and
+    /// `city_housing` and `aqueduct_housing_gain` read it from here.
+    fn city_water(&self, city: &City) -> (bool, bool) {
         let center = &self.map.tiles[&city.pos];
         let fresh = self.grants_city_state_unique_bonus(city.owner, "Mohenjo-Daro")
             || center.has_river()
@@ -25617,8 +26098,18 @@ impl Game {
                 .map(|t| matches!(t.terrain.as_str(), "coast" | "ocean"))
                 .unwrap_or(false)
         });
-        let has_aqueduct = self.city_has_active_district_family(city, crate::name!("aqueduct"));
-        let mut h = if has_aqueduct {
+        (fresh, coastal)
+    }
+
+    /// The housing a city centre carries before any building, improvement or
+    /// district adds to it: fresh water 5, coastal 3, otherwise 2, and an
+    /// Aqueduct raises the floor to 7 on fresh water or 6 without it (Civ 6).
+    ///
+    /// ⚠ Stated ONCE. `aqueduct_housing_gain` is this function's difference
+    /// across `has_aqueduct`, so a governor deciding whether an Aqueduct is
+    /// worth building cannot disagree with the model that pays for it.
+    pub(crate) fn city_housing_floor(fresh: bool, coastal: bool, has_aqueduct: bool) -> f64 {
+        if has_aqueduct {
             if fresh {
                 7.0
             } else {
@@ -25630,7 +26121,37 @@ impl Game {
             3.0
         } else {
             2.0
-        };
+        }
+    }
+
+    /// What an Aqueduct this city does not yet have would add to its housing:
+    /// **+2** on fresh water, **+3** coastal, **+4** on a dry inland centre.
+    /// Zero once one is standing.
+    ///
+    /// This is the largest single housing step available to an early city and
+    /// the district that supplies it is the cheapest in the ruleset (36), which
+    /// is why the chooser is given the number rather than a flat weight — the
+    /// dry city that needs it most gains twice what a river city does.
+    pub fn aqueduct_housing_gain(&self, city: &City) -> f64 {
+        if self.city_has_active_district_family(city, crate::name!("aqueduct")) {
+            return 0.0;
+        }
+        let (fresh, coastal) = self.city_water(city);
+        Self::city_housing_floor(fresh, coastal, true)
+            - Self::city_housing_floor(fresh, coastal, false)
+    }
+
+    /// Housing headroom: what the city may still grow into before
+    /// `housing_growth_mult` starts throttling it. Negative once population
+    /// has overrun the ceiling.
+    pub fn city_housing_headroom(&self, city: &City) -> f64 {
+        self.city_housing(city) - city.pop as f64
+    }
+
+    pub fn city_housing(&self, city: &City) -> f64 {
+        let (fresh, coastal) = self.city_water(city);
+        let has_aqueduct = self.city_has_active_district_family(city, crate::name!("aqueduct"));
+        let mut h = Self::city_housing_floor(fresh, coastal, has_aqueduct);
         if self.city_has_palace(city) {
             h += self.rules.buildings["palace"].housing;
         }
@@ -25665,6 +26186,17 @@ impl Game {
                     h += spec
                         .effects
                         .get("housing_after_civil_service")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                if improvement == "kampung"
+                    && self.players[city.owner]
+                        .civics
+                        .contains(&crate::name!("civil_engineering"))
+                {
+                    h += spec
+                        .effects
+                        .get("housing_after_civil_engineering")
                         .copied()
                         .unwrap_or(0.0);
                 }
@@ -25952,7 +26484,7 @@ impl Game {
         if spec
             .unique_to
             .as_deref()
-            .is_some_and(|civilization| civilization == self.players[pid].civ)
+            .is_some_and(|civilization| self.owns_civ_unique(pid, civilization))
         {
             self.first_historic_moment(
                 pid,
@@ -26032,7 +26564,7 @@ impl Game {
         if spec
             .unique_to
             .as_deref()
-            .is_some_and(|civilization| civilization == self.players[pid].civ)
+            .is_some_and(|civilization| self.owns_civ_unique(pid, civilization))
         {
             self.first_historic_moment(
                 pid,
@@ -26119,7 +26651,7 @@ impl Game {
         if spec
             .unique_to
             .as_deref()
-            .is_some_and(|civilization| civilization == self.players[pid].civ)
+            .is_some_and(|civilization| self.owns_civ_unique(pid, civilization))
         {
             self.first_historic_moment(
                 pid,
@@ -26815,6 +27347,27 @@ impl Game {
             if natural_wonder {
                 continue;
             }
+            // `Features_XP2.ValidForReplacement` is the exact list of ordinary
+            // ground cover an eruption may bury. Fissures and other permanent
+            // features still suffer the blast, but remain what they were.
+            let replaceable_feature = tile.feature.as_deref().is_none_or(|feature| {
+                matches!(
+                    feature,
+                    "forest"
+                        | "jungle"
+                        | "marsh"
+                        | "floodplains"
+                        | "grassland_floodplains"
+                        | "plains_floodplains"
+                        | "oasis"
+                        | "volcanic_soil"
+                        | "burning_forest"
+                        | "burnt_forest"
+                        | "burning_jungle"
+                        | "burnt_jungle"
+                )
+            });
+            let can_leave_soil = volcanic_soil_valid_terrain(tile) && replaceable_feature;
             let immune = self.disaster_immune(position, None);
             self.strike_disaster_tile(position, &spec, severity, None, &mut rng);
             self.disaster_population_loss(position, spec.population_loss(severity));
@@ -26822,11 +27375,12 @@ impl Game {
                 continue;
             }
             // Ash buries whatever was growing and leaves Volcanic Soil.
-            if rng.chance(spec.fertility_chance(severity)) {
+            if can_leave_soil && rng.chance(spec.fertility_chance(severity)) {
                 let tile = self.map.tiles.get_mut(&position).unwrap();
-                if tile.wonder.is_none() && tile.district.is_none() {
-                    tile.feature = Some(crate::name!("volcanic_soil"));
-                }
+                // Volcanic Soil ships both ValidWonderPlacement and
+                // ValidDistrictPlacement, so an eruption may deposit it under
+                // either kind of built site.
+                tile.feature = Some(crate::name!("volcanic_soil"));
             }
         }
         self.note_disaster(volcano, "a volcano erupted".to_string());
@@ -28475,6 +29029,261 @@ impl Game {
         self.process_power(pid);
     }
 
+    // ------------------------------------------------------------- the Moon
+
+    /// Roll what the Moon is made of.
+    ///
+    /// There is one Moon, so this runs once at setup rather than once per
+    /// civilization, and what a mass driver takes out of a pile is gone for
+    /// everybody. A ruleset that puts nothing up there — every classic game —
+    /// rolls nothing and consumes no randomness at all, so a seed still makes
+    /// exactly the world it always made.
+    fn roll_moon_deposits(rules: &Rules, rng: &mut Rng) -> BTreeMap<Name, f64> {
+        rules
+            .resources
+            .iter()
+            .filter_map(|(ore, spec)| spec.lunar.map(|lunar| (*ore, lunar)))
+            .map(|(ore, lunar)| {
+                let low = lunar.min.min(lunar.max).max(0.0);
+                let high = lunar.max.max(lunar.min).max(low);
+                (ore, rng.uniform(low, high).round())
+            })
+            .collect()
+    }
+
+    /// What is left of one of the Moon's piles. Zero for an ore the Moon was
+    /// never rolled with, which is all of them in a classic game.
+    pub fn moon_deposit(&self, ore: impl AsName) -> f64 {
+        self.moon_deposits
+            .get(&ore.as_name())
+            .copied()
+            .unwrap_or(0.0)
+    }
+
+    /// The ores this world's Moon was rolled with, in ruleset order, whether
+    /// or not any of each is left.
+    pub fn moon_ores(&self) -> Vec<Name> {
+        self.moon_deposits.keys().copied().collect()
+    }
+
+    /// How many mass drivers this civilization has standing on the Moon.
+    pub fn mass_drivers(&self, pid: usize) -> i64 {
+        self.players[pid]
+            .counters
+            .get("project_effect:mass_drivers")
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Whose borders a tile is inside, if anybody's.
+    fn tile_owner(&self, position: Pos) -> Option<usize> {
+        self.map
+            .get(position)?
+            .owner_city
+            .and_then(|city| self.cities.get(&city))
+            .map(|city| city.owner)
+    }
+
+    /// Take up to `wanted` units out of one lunar pile and report what the
+    /// Moon actually had. The piles are shared, so this is the single place
+    /// they are drawn down.
+    fn draw_from_moon(&mut self, ore: Name, wanted: f64) -> f64 {
+        let Some(pile) = self.moon_deposits.get_mut(&ore) else {
+            return 0.0;
+        };
+        let drawn = pile.min(wanted).max(0.0).floor();
+        *pile -= drawn;
+        drawn
+    }
+
+    /// Land this turn's cargo.
+    ///
+    /// Every driver throws one unit of the aimed ore down onto the aimed site
+    /// and the Moon is one unit lighter for it — the whole of the mechanic is
+    /// that a pile somewhere else pays for a stockpile here. Nothing is drawn
+    /// that the stockpile has no room to hold: the ore is finite and shared,
+    /// and spilling a rival's share onto a full warehouse is not worth
+    /// modelling.
+    ///
+    /// A driver that fired at something during the previous turn still
+    /// delivers now. Firing already cost a unit of the same ore out of the
+    /// stockpile — the slug *is* the metal — so a strike is a turn's cargo
+    /// spent on a target rather than a separate magazine.
+    fn process_mass_drivers(&mut self, pid: usize) {
+        self.players[pid].mass_driver_shots = 0;
+        let drivers = self.mass_drivers(pid);
+        if drivers <= 0 || self.players[pid].is_barbarian {
+            return;
+        }
+        let (Some(ore), Some(site)) = (
+            self.players[pid].mass_driver_ore,
+            self.players[pid].mass_driver_site,
+        ) else {
+            return;
+        };
+        // Ground that has been taken, or lost with the city that held it,
+        // catches nothing until the drivers are aimed somewhere else.
+        if self.tile_owner(site) != Some(pid) {
+            return;
+        }
+        let room =
+            (self.strategic_stockpile_capacity(pid) - self.strategic_stockpile(pid, ore)).max(0.0);
+        let landed = self.draw_from_moon(ore, (drivers as f64).min(room.floor()));
+        if landed <= 0.0 {
+            return;
+        }
+        let stock = self.strategic_stockpile(pid, ore) + landed;
+        self.players[pid].strategic_resources.insert(ore, stock);
+        *self.players[pid]
+            .counters
+            .entry("mass_driver_landings".to_string())
+            .or_insert(0) += landed as i64;
+    }
+
+    /// Aim every mass driver at one ore and one landing site.
+    ///
+    /// A standing order rather than a shot: it holds until it is given again,
+    /// which is what makes the drivers infrastructure instead of an action to
+    /// repeat every turn. Until one is given, nothing falls.
+    fn do_aim_mass_driver(&mut self, pid: usize, site: Pos, ore: Name) -> Result<(), String> {
+        if self.mass_drivers(pid) <= 0 {
+            return Err("no mass driver on the Moon".into());
+        }
+        if self.moon_deposit(ore) <= 0.0 {
+            return Err("the Moon has none of that ore left".into());
+        }
+        if !self.resource_visible_to(pid, ore.as_str()) {
+            return Err("that resource is not known to this civilization".into());
+        }
+        if self.tile_owner(site) != Some(pid) {
+            return Err("the landing site must be inside your own borders".into());
+        }
+        self.players[pid].mass_driver_site = Some(site);
+        self.players[pid].mass_driver_ore = Some(ore);
+        Ok(())
+    }
+
+    /// Throw a slug at a tile instead of landing it as cargo.
+    ///
+    /// A mass driver on the Moon needs no launcher on the ground and no range
+    /// to speak of — a rock leaving lunar orbit reaches anywhere on the world
+    /// this civilization can see. What bounds it is the number of drivers and
+    /// the ore: one shot per driver per turn, one unit of the aimed ore out of
+    /// the stockpile per shot. It leaves no fallout and it is not a device, so
+    /// unlike a detonation it earns a war's ordinary grievances rather than
+    /// the world's lasting horror.
+    fn do_mass_driver_strike(&mut self, pid: usize, target: Pos) -> Result<(), String> {
+        let drivers = self.mass_drivers(pid);
+        if drivers <= 0 {
+            return Err("no mass driver on the Moon".into());
+        }
+        if self.players[pid].mass_driver_shots >= drivers {
+            return Err("every mass driver has already fired this turn".into());
+        }
+        let ore = self.players[pid]
+            .mass_driver_ore
+            .ok_or_else(|| "the mass drivers are not aimed at an ore".to_string())?;
+        if self.strategic_stockpile(pid, ore) < 1.0 {
+            return Err("no slug in the stockpile to throw".into());
+        }
+        if !self.map.tiles.contains_key(&target) {
+            return Err("no such tile".into());
+        }
+        if !self.players[pid].explored.contains(&target) {
+            return Err("target tile is unrevealed".into());
+        }
+        // Same rule a detonation is held to: whatever is standing under it
+        // decides whether the order is legal, and dropping a rock on somebody
+        // you are at peace with is not.
+        let mut aggrieved = BTreeSet::new();
+        let owners = self
+            .units_at(target)
+            .into_iter()
+            .map(|uid| self.units[&uid].owner)
+            .chain(self.city_at(target).map(|city| self.cities[&city].owner))
+            .chain(
+                self.encampment_at(target)
+                    .map(|city| self.cities[&city].owner),
+            )
+            .chain(self.tile_owner(target));
+        for owner in owners {
+            if owner == pid || self.players[owner].is_barbarian {
+                continue;
+            }
+            if !self.is_at_war(pid, owner) {
+                return Err("cannot strike a civilization you are at peace with".into());
+            }
+            aggrieved.insert(owner);
+        }
+        let struck_city = self
+            .city_at(target)
+            .filter(|city| self.cities[city].owner != pid);
+        let exposed: Vec<u32> = self.units_at(target);
+        for defender in exposed
+            .iter()
+            .filter_map(|uid| self.units.get(uid))
+            .filter(|unit| unit.owner != pid)
+            .cloned()
+            .collect::<Vec<_>>()
+        {
+            self.record_war_unit_participation(&defender, pid);
+        }
+        let spent = self.strategic_stockpile(pid, ore) - 1.0;
+        self.players[pid].strategic_resources.insert(ore, spent);
+        self.players[pid].mass_driver_shots += 1;
+        bump(&mut self.players[pid], "mass_driver_strikes");
+        // One tile, no blast radius: a slug is aimed, not detonated. It hits
+        // as hard as a nuclear ground zero because it arrives with the whole
+        // of a gravity well behind it, and it does it to exactly one hexagon.
+        self.damage_tile_area(target, 100, Some(pid));
+        if let Some(city) = struck_city {
+            let city = self.cities.get_mut(&city).unwrap();
+            city.wall_hp = 0;
+            city.pop = (city.pop - 1).max(1);
+        }
+        let name = struck_city.map(|city| self.cities[&city].name.clone());
+        for owner in aggrieved.iter().copied() {
+            self.add_grievances(owner, pid, 50.0);
+            self.record_war_moment(pid, owner, "mass_driver_strike", name.clone(), Some(target));
+        }
+        let destroyed = exposed
+            .into_iter()
+            .filter(|uid| !self.units.contains_key(uid))
+            .count();
+        let toll = match destroyed {
+            0 => String::new(),
+            1 => " · 1 unit lost".to_string(),
+            count => format!(" · {count} units lost"),
+        };
+        let place = name
+            .clone()
+            .or_else(|| {
+                aggrieved
+                    .iter()
+                    .next()
+                    .map(|owner| format!("{} territory", self.civ_name(*owner)))
+            })
+            .unwrap_or_else(|| "open ground".to_string());
+        self.note_important(
+            pid,
+            "War",
+            format!("dropped a mass driver slug on {place}{toll}"),
+            Some(target),
+        );
+        for owner in aggrieved {
+            self.note_important(
+                owner,
+                "War",
+                format!("{} dropped a slug from the Moon", self.civ_name(pid)),
+                Some(target),
+            );
+        }
+        // Throwing rocks at people from orbit is not free at home either,
+        // though it is nothing like the price of a detonation.
+        self.add_war_weariness(pid, 2.0);
+        Ok(())
+    }
+
     /// Connected native copies before temporary deal imports and exports.
     pub fn connected_resource_count(&self, pid: usize, res: &str) -> i32 {
         if !self.resource_visible_to(pid, res) {
@@ -30096,6 +30905,21 @@ impl Game {
         for viewer in self.visibility_viewers(pid) {
             visible.union_with(&self.base_player_visibility(heights, viewer));
         }
+        // What the HOST says this seat can see, added to what we derive. See
+        // [`Game::host_observed`]: the derivation runs on a reconstructed map and
+        // loses ground the export was explicit about, and the tactical layer reads
+        // this answer to decide whether an enemy may be engaged at all.
+        //
+        // Seat 0 only, because that is the one seat a mirrored game reconstructs
+        // and the only one the set is ever populated for. An ordinary CIVVIS game
+        // leaves it empty, so this loop does not run.
+        if pid == MIRRORED_SEAT && !self.host_observed.is_empty() {
+            for pos in &self.host_observed {
+                if let Some(index) = self.map.tiles.index_of(*pos) {
+                    visible.insert(index);
+                }
+            }
+        }
         visible
     }
 
@@ -31273,11 +32097,26 @@ impl Game {
         {
             return false;
         }
-        if self
-            .territory_owner_at(pos)
-            .is_some_and(|owner| !self.unit_has_territory_access(u, owner))
-        {
-            return false;
+        match self.territory_owner_at(pos) {
+            // The owner is on the board, so ordinary diplomacy is authoritative.
+            Some(owner) => {
+                if !self.unit_has_territory_access(u, owner) {
+                    return false;
+                }
+            }
+            // Nobody on this board holds it — but a live host may still say
+            // somebody does, and a border whose owning city has never been seen
+            // resolves to `None` here. See [`Game::closed_borders`]: without this
+            // arm a scout re-sends the same one-hex step for fifty turns while
+            // the empire goes blind. Empty in an ordinary CIVVIS game.
+            None => {
+                if !self.closed_borders.is_empty()
+                    && self.closed_borders.contains(&pos)
+                    && !self.unit_ignores_closed_borders(u)
+                {
+                    return false;
+                }
+            }
         }
         for oid in self.units_at(pos) {
             let o = &self.units[&oid];
@@ -31546,7 +32385,7 @@ impl Game {
         {
             return None;
         }
-        let access_key = self.route_access_key(unit, &territory_access);
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
         let cached_step = {
             let routing = self.routing.borrow();
             routing
@@ -31584,21 +32423,31 @@ impl Game {
         let _memo = self.query_memo();
         let tile_count = self.map.tiles.len();
         let start_index = self.map.tiles.index_of(start)?;
-        let mut frontier = BinaryHeap::with_capacity(128);
-        let mut distance: Vec<i32> = vec![UNREACHED; tile_count];
-        let mut parent: Vec<u32> = vec![NO_PARENT; tile_count];
-        distance[start_index] = 0;
+        let mut scratch = self.route_scratch.borrow_mut();
+        if scratch.parent.len() < tile_count {
+            scratch.parent.resize(tile_count, NO_PARENT);
+        }
+        if scratch.distance.len() < tile_count {
+            scratch.distance.resize(tile_count, UNREACHED);
+        }
+        for slot in 0..tile_count {
+            scratch.parent[slot] = NO_PARENT;
+            scratch.distance[slot] = UNREACHED;
+        }
+        scratch.astar_frontier.clear();
+        scratch.path.clear();
+        scratch.distance[start_index] = 0;
         // On equal f-scores, prefer the node furthest along the route. This
         // avoids breadth-first expansion of an entire open plain/ocean before
         // following one of several equally short paths to the destination.
-        frontier.push(Reverse((self.wdist(start, to), Reverse(0), start)));
+        scratch.astar_frontier.push(Reverse((self.wdist(start, to), Reverse(0), start)));
 
         let mut goal = None;
-        while let Some(Reverse((_, Reverse(traveled), cur))) = frontier.pop() {
+        while let Some(Reverse((_, Reverse(traveled), cur))) = scratch.astar_frontier.pop() {
             let Some(cur_index) = self.map.tiles.index_of(cur) else {
                 continue;
             };
-            if traveled != distance[cur_index] {
+            if traveled != scratch.distance[cur_index] {
                 continue;
             }
             if self.wdist(cur, to) <= range {
@@ -31616,35 +32465,36 @@ impl Game {
                     continue;
                 };
                 let next_distance = traveled + 1;
-                if next_distance >= distance[index] {
+                if next_distance >= scratch.distance[index] {
                     continue;
                 }
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n, &territory_access)
+                    self.can_path_through(uid, cur, n, territory_access.as_slice())
                 };
                 if !enterable {
                     continue;
                 }
-                distance[index] = next_distance;
-                parent[index] = cur_index as u32;
+                scratch.distance[index] = next_distance;
+                scratch.parent[index] = cur_index as u32;
                 let estimate = next_distance + (self.wdist(n, to) - range).max(0);
-                frontier.push(Reverse((estimate, Reverse(next_distance), n)));
+                scratch.astar_frontier.push(Reverse((estimate, Reverse(next_distance), n)));
             }
         }
         let mut cursor = goal?;
-        let mut reverse_path = vec![self.map.tiles.values().as_slice()[cursor].pos];
+        let map_tiles = self.map.tiles.values().as_slice();
+        scratch.path.push(map_tiles[cursor].pos);
         while cursor != start_index {
-            let previous = parent[cursor];
+            let previous = scratch.parent[cursor];
             if previous == NO_PARENT {
                 return None;
             }
             cursor = previous as usize;
-            reverse_path.push(self.map.tiles.values().as_slice()[cursor].pos);
+            scratch.path.push(map_tiles[cursor].pos);
         }
-        reverse_path.reverse();
-        let step = *reverse_path.get(1)?;
+        scratch.path.reverse();
+        let step = *scratch.path.get(1)?;
         let mut routing = self.routing.borrow_mut();
         routing.paths.retain(|route| route.unit != uid);
         routing.paths.push(PlannedRoute {
@@ -31652,9 +32502,44 @@ impl Game {
             target: to,
             range,
             access_key,
-            path: reverse_path,
+            path: std::mem::take(&mut scratch.path),
         });
         Some(step)
+    }
+
+    /// Exact number of hex steps in the deterministic long-range route used by
+    /// [`Self::route_step`], stopping within `stop_range` of `to`.
+    ///
+    /// Strategic planning needs the whole march length, not merely proof that
+    /// a first step exists. Reuse the router and its cached path so campaign
+    /// feasibility, staging movement, and launch estimates cannot disagree.
+    pub fn route_distance(&self, uid: u32, to: Pos, stop_range: i32) -> Option<usize> {
+        let unit = self.units.get(&uid)?;
+        let start = unit.pos;
+        let range = stop_range.max(0);
+        if self.wdist(start, to) <= range {
+            return Some(0);
+        }
+        self.route_step(uid, to, range)?;
+        let territory_access = self.unit_territory_access(unit);
+        let access_key = self.route_access_key(unit, territory_access.as_slice());
+        self.routing
+            .borrow()
+            .paths
+            .iter()
+            .find(|route| {
+                route.unit == uid
+                    && route.target == to
+                    && route.range == range
+                    && route.access_key == access_key
+            })
+            .and_then(|route| {
+                route
+                    .path
+                    .iter()
+                    .position(|position| *position == start)
+                    .map(|index| route.path.len().saturating_sub(index + 1))
+            })
     }
 
     /// Everything which can change whether this unit may cross a border
@@ -31670,12 +32555,6 @@ impl Game {
             key = vision_key(&[key, city.id as u64, city.owner as u64]);
         }
         key
-    }
-
-    fn unit_territory_access(&self, unit: &Unit) -> Vec<bool> {
-        (0..self.players.len())
-            .map(|owner| self.unit_has_territory_access(unit, owner))
-            .collect()
     }
 
     /// Terrain/domain legality for future route segments. Dynamic unit
@@ -31838,16 +32717,29 @@ impl Game {
         // `unit_can_traverse`, which rejects a position the grid does not
         // hold — so an index always exists for a reachable neighbour.
         const NO_PARENT: u32 = u32::MAX;
+        const UNREACHED: i32 = i32::MAX;
         let tile_count = self.map.tiles.len();
-        let mut parent: Vec<u32> = vec![NO_PARENT; tile_count];
-        let mut seen: Vec<bool> = vec![false; tile_count];
-        let mut queue = VecDeque::new();
+        let mut scratch = self.route_scratch.borrow_mut();
+        if scratch.parent.len() < tile_count {
+            scratch.parent.resize(tile_count, NO_PARENT);
+        }
+        if scratch.distance.len() < tile_count {
+            scratch.distance.resize(tile_count, UNREACHED);
+        }
+        if scratch.seen.len() < tile_count {
+            scratch.seen.resize(tile_count, false);
+        }
+        for slot in 0..tile_count {
+            scratch.parent[slot] = NO_PARENT;
+            scratch.seen[slot] = false;
+        }
+        scratch.bfs_frontier.clear();
         let start_index = self.map.tiles.index_of(start)?;
-        seen[start_index] = true;
-        queue.push_back((start, start_index));
+        scratch.seen[start_index] = true;
+        scratch.bfs_frontier.push_back((start, start_index));
 
         let mut goal = None;
-        'search: while let Some((cur, cur_index)) = queue.pop_front() {
+        'search: while let Some((cur, cur_index)) = scratch.bfs_frontier.pop_front() {
             for n in self.nbrs(cur) {
                 // Settle the cheap disqualifiers before asking whether the
                 // unit may enter. Every interior tile is reached as a
@@ -31861,30 +32753,30 @@ impl Game {
                 let Some(index) = self.map.tiles.index_of(n) else {
                     continue;
                 };
-                if seen[index] {
+                if scratch.seen[index] {
                     continue;
                 }
                 let enterable = if cur == start {
                     self.can_enter(uid, cur, n)
                 } else {
-                    self.can_path_through(uid, cur, n, &territory_access)
+                    self.can_path_through(uid, cur, n, territory_access.as_slice())
                 };
                 if !enterable {
                     continue;
                 }
-                seen[index] = true;
-                parent[index] = cur_index as u32;
+                scratch.seen[index] = true;
+                scratch.parent[index] = cur_index as u32;
                 if is_goal(n) {
                     goal = Some(index);
                     break 'search;
                 }
-                queue.push_back((n, index));
+                scratch.bfs_frontier.push_back((n, index));
             }
         }
 
         let mut step = goal?;
-        while parent[step] != start_index as u32 {
-            let previous = parent[step];
+        while scratch.parent[step] != start_index as u32 {
+            let previous = scratch.parent[step];
             if previous == NO_PARENT {
                 return None;
             }
@@ -32283,7 +33175,11 @@ impl Game {
             .any(|district| self.district_is_family(district, family))
     }
 
-    fn city_specialty_district_count(&self, city: &City) -> usize {
+    /// The districts Civilization VI counts as *specialty* — the ones the
+    /// Insulae and Medina Quarter housing cards key off. `pub(crate)` so the
+    /// policy chooser asks this instead of keeping a second list of district
+    /// families that would drift the first time Firaxis moved one.
+    pub(crate) fn city_specialty_district_count(&self, city: &City) -> usize {
         city.districts
             .keys()
             .filter(|district| self.rules.districts[district].specialty)
@@ -33216,43 +34112,47 @@ impl Game {
 
         // Civilization plans use ability keys rather than seat numbers, so a
         // custom ruleset may reorder civilizations without changing behavior.
-        match self.rules.civs.get(&player.civ).map(|c| c.ability.as_str()) {
-            Some("trajans_column") => {
-                weights.production += 0.30;
-                weights.culture += 0.55;
+        // The roster boundary matters here too: historical identities keep a
+        // neutral plan even where a legacy rules row shares their name.
+        if self.uses_civ6_content(city.owner) {
+            match self.rules.civs.get(&player.civ).map(|c| c.ability.as_str()) {
+                Some("trajans_column") => {
+                    weights.production += 0.30;
+                    weights.culture += 0.55;
+                }
+                Some("iteru") => {
+                    weights.production += if self.map.tiles[&city.pos].has_river() {
+                        1.00
+                    } else {
+                        0.55
+                    };
+                    weights.gold += 0.35;
+                }
+                Some("platos_republic") => weights.culture += 1.35,
+                Some("dynastic_cycle") => {
+                    weights.production += 0.30;
+                    weights.science += 0.75;
+                    weights.culture += 0.75;
+                }
+                Some("epic_quest") => {
+                    weights.production += 0.65;
+                    weights.gold += 0.45;
+                }
+                Some("gifts_for_the_tlatoani") => {
+                    weights.food += 0.20;
+                    weights.production += 0.85;
+                    weights.gold += 0.40;
+                }
+                Some("ta_seti") => {
+                    weights.food += 0.20;
+                    weights.production += 1.25;
+                }
+                Some("killer_of_cyrus") => {
+                    weights.food += 0.35;
+                    weights.production += 1.05;
+                }
+                _ => {}
             }
-            Some("iteru") => {
-                weights.production += if self.map.tiles[&city.pos].has_river() {
-                    1.00
-                } else {
-                    0.55
-                };
-                weights.gold += 0.35;
-            }
-            Some("platos_republic") => weights.culture += 1.35,
-            Some("dynastic_cycle") => {
-                weights.production += 0.30;
-                weights.science += 0.75;
-                weights.culture += 0.75;
-            }
-            Some("epic_quest") => {
-                weights.production += 0.65;
-                weights.gold += 0.45;
-            }
-            Some("gifts_for_the_tlatoani") => {
-                weights.food += 0.20;
-                weights.production += 0.85;
-                weights.gold += 0.40;
-            }
-            Some("ta_seti") => {
-                weights.food += 0.20;
-                weights.production += 1.25;
-            }
-            Some("killer_of_cyrus") => {
-                weights.food += 0.35;
-                weights.production += 1.05;
-            }
-            _ => {}
         }
 
         let at_war = self.players.iter().any(|other| {
@@ -33698,7 +34598,16 @@ impl Game {
         let drought_food_protected = tile
             .owner_city
             .and_then(|city| self.cities.get(&city))
-            .is_some_and(|city| self.city_disaster_protected(city, "drought_protection"));
+            .is_some_and(|city| self.city_disaster_protected(city, "drought_protection"))
+            || (!tile.pillaged
+                && tile.improvement.as_deref().is_some_and(|improvement| {
+                    self.rules.improvements[improvement]
+                        .effects
+                        .get("drought_food_protection")
+                        .copied()
+                        .unwrap_or(0.0)
+                        > 0.0
+                }));
         if tile.drought && !drought_food_protected {
             yields.food = (yields.food - 1.0).max(0.0);
         }
@@ -33712,6 +34621,31 @@ impl Game {
             Some("plantation") => {
                 yields.food += self.tree_effect(pid, "plantation_food");
                 yields.gold += self.tree_effect(pid, "plantation_gold");
+                let hacienda = &self.rules.improvements["hacienda"].effects;
+                let adjacent_haciendas = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("hacienda")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.production += if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("rapid_deployment"))
+                {
+                    adjacent_haciendas
+                        * hacienda
+                            .get("adjacent_hacienda_production_after_rapid_deployment")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_haciendas / 2.0).floor()
+                        * hacienda
+                            .get("adjacent_hacienda_pair_production")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
             }
             Some("camp") => {
                 yields.food += self.tree_effect(pid, "camp_food");
@@ -34056,13 +34990,573 @@ impl Game {
                         .copied()
                         .unwrap_or(0.0);
             }
+            Some("chateau") => {
+                let effects = &self.rules.improvements["chateau"].effects;
+                let wonders = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| self.map.tiles[neighbor].wonder.is_some())
+                    .count() as f64;
+                let wonder_key = if self.players[pid].techs.contains(&crate::name!("flight")) {
+                    "adjacent_wonder_culture_after_flight"
+                } else {
+                    "adjacent_wonder_culture"
+                };
+                yields.culture += wonders * effects.get(wonder_key).copied().unwrap_or(0.0);
+                if tile.has_river() {
+                    yields.gold += effects.get("river_gold").copied().unwrap_or(0.0);
+                }
+            }
+            Some("golf_course") => {
+                let effects = &self.rules.improvements["golf_course"].effects;
+                for neighbor in self.nbrs(pos) {
+                    let adjacent = &self.map.tiles[&neighbor];
+                    if self.city_at(neighbor).is_some() {
+                        yields.culture += effects
+                            .get("adjacent_city_center_culture")
+                            .copied()
+                            .unwrap_or(0.0);
+                    }
+                    if adjacent.district.is_some_and(|district| {
+                        self.district_is_family(
+                            district,
+                            crate::name!("entertainment_complex"),
+                        )
+                    }) {
+                        yields.culture += effects
+                            .get("adjacent_entertainment_complex_culture")
+                            .copied()
+                            .unwrap_or(0.0);
+                    }
+                }
+            }
+            Some("hacienda") => {
+                let effects = &self.rules.improvements["hacienda"].effects;
+                let adjacent_plantations = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("plantation")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.food += if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("replaceable_parts"))
+                {
+                    adjacent_plantations
+                        * effects
+                            .get("adjacent_plantation_food_after_replaceable_parts")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_plantations / 2.0).floor()
+                        * effects
+                            .get("adjacent_plantation_pair_food")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+                let adjacent_haciendas = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("hacienda")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.production += if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("rapid_deployment"))
+                {
+                    adjacent_haciendas
+                        * effects
+                            .get("adjacent_hacienda_production_after_rapid_deployment")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_haciendas / 2.0).floor()
+                        * effects
+                            .get("adjacent_hacienda_pair_production")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+            }
+            Some("ice_hockey_rink") => {
+                let effects = &self.rules.improvements["ice_hockey_rink"].effects;
+                let adjacent_tundra_snow = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        matches!(
+                            self.map.tiles[neighbor].terrain.as_str(),
+                            "tundra" | "snow"
+                        )
+                    })
+                    .count() as f64;
+                yields.culture += adjacent_tundra_snow
+                    * effects
+                        .get("adjacent_tundra_snow_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+                let stadiums = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        let adjacent = &self.map.tiles[neighbor];
+                        adjacent.district.is_some_and(|district| {
+                            self.district_is_family(
+                                district,
+                                crate::name!("entertainment_complex"),
+                            )
+                        }) && adjacent.owner_city.and_then(|city_id| self.cities.get(&city_id))
+                            .is_some_and(|city| {
+                                self.city_has_active_building_family(
+                                    city,
+                                    crate::name!("stadium"),
+                                )
+                            })
+                    })
+                    .count() as f64;
+                yields.culture += stadiums
+                    * effects
+                        .get("adjacent_stadium_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("professional_sports"))
+                {
+                    yields.food += effects
+                        .get("food_after_professional_sports")
+                        .copied()
+                        .unwrap_or(0.0);
+                    yields.production += effects
+                        .get("production_after_professional_sports")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
+            Some("kampung") => {
+                let effects = &self.rules.improvements["kampung"].effects;
+                let boats = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("fishing_boats")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.food += boats
+                    * effects
+                        .get("adjacent_fishing_boats_food")
+                        .copied()
+                        .unwrap_or(0.0);
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("civil_engineering"))
+                {
+                    yields.production += effects
+                        .get("production_after_civil_engineering")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
+            Some("mission") => {
+                let effects = &self.rules.improvements["mission"].effects;
+                if self.on_foreign_continent(pid, pos) {
+                    yields.faith += effects
+                        .get("foreign_continent_faith")
+                        .copied()
+                        .unwrap_or(0.0);
+                    yields.food += effects
+                        .get("foreign_continent_food")
+                        .copied()
+                        .unwrap_or(0.0);
+                    yields.production += effects
+                        .get("foreign_continent_production")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                let adjacent_religious_science = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("campus"))
+                                || self.district_is_family(district, crate::name!("holy_site"))
+                        })
+                    })
+                    .count() as f64;
+                yields.science += adjacent_religious_science
+                    * effects
+                        .get("adjacent_campus_holy_site_science")
+                        .copied()
+                        .unwrap_or(0.0);
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("cultural_heritage"))
+                {
+                    yields.science += effects
+                        .get("science_after_cultural_heritage")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
+            Some("open_air_museum") => {
+                let effects = &self.rules.improvements["open_air_museum"].effects;
+                let terrain_count = tile
+                    .owner_city
+                    .and_then(|city_id| self.cities.get(&city_id))
+                    .map(|city| {
+                        city.owned_tiles
+                            .iter()
+                            .map(|position| self.map.tiles[position].terrain)
+                            .collect::<BTreeSet<_>>()
+                            .len() as f64
+                    })
+                    .unwrap_or(0.0);
+                yields.culture += terrain_count
+                    * effects
+                        .get("city_distinct_terrain_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
+            Some("outback_station") => {
+                let effects = &self.rules.improvements["outback_station"].effects;
+                let adjacent_pastures = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("pasture")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.food += adjacent_pastures
+                    * effects
+                        .get("adjacent_pasture_food")
+                        .copied()
+                        .unwrap_or(0.0);
+                let adjacent_outbacks = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref()
+                            == Some("outback_station")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("steam_power"))
+                {
+                    yields.production += (adjacent_outbacks / 2.0).floor()
+                        * effects
+                            .get("adjacent_outback_pair_production_after_steam_power")
+                            .copied()
+                            .unwrap_or(0.0);
+                }
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("rapid_deployment"))
+                {
+                    yields.food += (adjacent_outbacks / 2.0).floor()
+                        * effects
+                            .get("adjacent_outback_pair_food_after_rapid_deployment")
+                            .copied()
+                            .unwrap_or(0.0);
+                }
+            }
+            Some("polder") => {
+                let effects = &self.rules.improvements["polder"].effects;
+                let adjacent_polders = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("polder")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("replaceable_parts"))
+                {
+                    yields.food += adjacent_polders
+                        * effects
+                            .get("adjacent_polder_food_after_replaceable_parts")
+                            .copied()
+                            .unwrap_or(0.0);
+                    yields.production += adjacent_polders
+                        * effects
+                            .get("adjacent_polder_production_after_replaceable_parts")
+                            .copied()
+                            .unwrap_or(0.0);
+                } else {
+                    yields.food += adjacent_polders
+                        * effects.get("adjacent_polder_food").copied().unwrap_or(0.0);
+                }
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("civil_engineering"))
+                {
+                    yields.gold += effects
+                        .get("gold_after_civil_engineering")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
+            Some("stepwell") => {
+                let effects = &self.rules.improvements["stepwell"].effects;
+                for neighbor in self.nbrs(pos) {
+                    let adjacent = &self.map.tiles[&neighbor];
+                    if adjacent.district.is_some_and(|district| {
+                        self.district_is_family(district, crate::name!("holy_site"))
+                    }) {
+                        yields.faith += effects
+                            .get("adjacent_holy_site_faith")
+                            .copied()
+                            .unwrap_or(0.0);
+                    }
+                    if adjacent.improvement.as_deref() == Some("farm") && !adjacent.pillaged {
+                        yields.food += effects.get("adjacent_farm_food").copied().unwrap_or(0.0);
+                    }
+                }
+                if self.players[pid].civics.contains(&crate::name!("feudalism")) {
+                    yields.faith += effects.get("faith_after_feudalism").copied().unwrap_or(0.0);
+                }
+                if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("professional_sports"))
+                {
+                    yields.food += effects
+                        .get("food_after_professional_sports")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
+            Some("terrace_farm") => {
+                let effects = &self.rules.improvements["terrace_farm"].effects;
+                let adjacent_mountains = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| self.map.tiles[neighbor].terrain == "mountain")
+                    .count() as f64;
+                yields.food += adjacent_mountains
+                    * effects
+                        .get("adjacent_mountain_food")
+                        .copied()
+                        .unwrap_or(0.0);
+                if self.nbrs(pos).iter().any(|neighbor| {
+                    self.map.tiles[neighbor].district.is_some_and(|district| {
+                        self.district_is_family(district, crate::name!("aqueduct"))
+                    })
+                }) {
+                    yields.production += effects
+                        .get("adjacent_aqueduct_production")
+                        .copied()
+                        .unwrap_or(0.0);
+                } else if tile.has_river()
+                    || self.nbrs(pos).iter().any(|neighbor| {
+                        matches!(self.map.tiles[neighbor].terrain.as_str(), "lake")
+                            || self.map.tiles[neighbor].feature.as_deref() == Some("oasis")
+                    })
+                {
+                    yields.production += effects
+                        .get("fresh_water_production")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                let adjacent_farms = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("farm")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.food += if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("replaceable_parts"))
+                {
+                    adjacent_farms
+                        * effects
+                            .get("adjacent_farm_food_after_replaceable_parts")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_farms / 2.0).floor()
+                        * effects
+                            .get("adjacent_farm_pair_food")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+            }
+            Some("colossal_head") => {
+                let effects = &self.rules.improvements["colossal_head"].effects;
+                let adjacent_woods_rainforest = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        matches!(
+                            self.map.tiles[neighbor].feature.as_deref(),
+                            Some("forest" | "jungle")
+                        )
+                    })
+                    .count() as f64;
+                yields.faith += if self.players[pid].civics.contains(&crate::name!("humanism")) {
+                    adjacent_woods_rainforest
+                        * effects
+                            .get("adjacent_woods_rainforest_faith_after_humanism")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_woods_rainforest / 2.0).floor()
+                        * effects
+                            .get("adjacent_woods_rainforest_pair_faith")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+            }
+            Some("mahavihara") => {
+                let effects = &self.rules.improvements["mahavihara"].effects;
+                let campus_count = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("campus"))
+                        })
+                    })
+                    .count() as f64;
+                let holy_site_count = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].district.is_some_and(|district| {
+                            self.district_is_family(district, crate::name!("holy_site"))
+                        })
+                    })
+                    .count() as f64;
+                let campus_key = if self.players[pid]
+                    .techs
+                    .contains(&crate::name!("scientific_theory"))
+                {
+                    "adjacent_campus_science_after_scientific_theory"
+                } else {
+                    "adjacent_campus_science"
+                };
+                yields.science += campus_count * effects.get(campus_key).copied().unwrap_or(0.0);
+                yields.faith += holy_site_count
+                    * effects
+                        .get("adjacent_holy_site_faith")
+                        .copied()
+                        .unwrap_or(0.0);
+            }
+            Some("moai") => {
+                let effects = &self.rules.improvements["moai"].effects;
+                let adjacent_moai = self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.tiles[neighbor].improvement.as_deref() == Some("moai")
+                            && !self.map.tiles[neighbor].pillaged
+                    })
+                    .count() as f64;
+                yields.culture += if self.players[pid]
+                    .civics
+                    .contains(&crate::name!("medieval_faires"))
+                {
+                    adjacent_moai
+                        * effects
+                            .get("adjacent_moai_culture_after_medieval_faires")
+                            .copied()
+                            .unwrap_or(0.0)
+                } else {
+                    (adjacent_moai / 2.0).floor()
+                        * effects
+                            .get("adjacent_moai_pair_culture")
+                            .copied()
+                            .unwrap_or(0.0)
+                };
+                if tile.feature.as_deref() == Some("volcanic_soil")
+                    || self.nbrs(pos).iter().any(|neighbor| {
+                        self.map.tiles[neighbor].feature.as_deref() == Some("volcanic_soil")
+                    })
+                {
+                    yields.culture += effects
+                        .get("volcanic_adjacent_or_on_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                if self.nbrs(pos).iter().any(|neighbor| {
+                    matches!(self.map.tiles[neighbor].terrain.as_str(), "coast" | "lake")
+                }) {
+                    yields.culture += effects
+                        .get("adjacent_coast_lake_culture")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
             _ => {}
+        }
+        // Nazca Lines deliberately have no workable yield of their own. Their
+        // value is the pattern they create around them, so apply every active
+        // neighbouring line to this tile rather than teaching the governor to
+        // work an unworkable geoglyph.
+        if !tile.pillaged {
+            for neighbor in self.nbrs(pos) {
+                let adjacent = &self.map.tiles[&neighbor];
+                if adjacent.improvement.as_deref() != Some("nazca_line")
+                    || adjacent.pillaged
+                    || !adjacent
+                        .owner_city
+                        .and_then(|city_id| self.cities.get(&city_id))
+                        .is_some_and(|city| city.owner == pid)
+                {
+                    continue;
+                }
+                let effects = &self.rules.improvements["nazca_line"].effects;
+                yields.faith += effects.get("adjacent_tile_faith").copied().unwrap_or(0.0);
+                if tile.resource.is_some() {
+                    yields.faith += effects
+                        .get("adjacent_resource_faith")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                if tile.terrain == "desert"
+                    && self.players[pid]
+                        .civics
+                        .contains(&crate::name!("civil_service"))
+                {
+                    yields.food += effects
+                        .get("adjacent_desert_food_after_civil_service")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+                if !self.rules.is_water(tile)
+                    && !tile.hills
+                    && self.players[pid]
+                        .techs
+                        .contains(&crate::name!("mass_production"))
+                {
+                    yields.production += effects
+                        .get("adjacent_flat_production_after_mass_production")
+                        .copied()
+                        .unwrap_or(0.0);
+                }
+            }
         }
         if !tile.pillaged {
             if let Some(improvement) = tile.improvement.as_deref() {
                 yields.science += self.rules.improvements[improvement]
                     .effects
                     .get("appeal_science_percent")
+                    .copied()
+                    .unwrap_or(0.0)
+                    / 100.0
+                    * self.tile_appeal(pos).max(0) as f64;
+                yields.culture += self.rules.improvements[improvement]
+                    .effects
+                    .get("appeal_culture_percent")
                     .copied()
                     .unwrap_or(0.0)
                     / 100.0
@@ -34307,6 +35801,7 @@ impl Game {
             *self.query_memo.traversal.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.amenities.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.unit_ids.borrow_mut() = Some(BTreeMap::new());
+            *self.query_memo.unit_territory_access.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.city_ids.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.lux_alloc.borrow_mut() = Some(BTreeMap::new());
             *self.query_memo.lux_names.borrow_mut() = Some(BTreeMap::new());
@@ -35449,15 +36944,11 @@ impl Game {
             None => return vec![],
         };
         let territory_owner = self.cities[&oc].owner;
-        if !self.builder_may_improve_territory(pid, territory_owner) {
-            return vec![];
-        }
         let visible_resource = t
             .resource
             .as_deref()
             .filter(|resource| self.resource_visible_to(pid, resource));
         let water = self.rules.is_water(t);
-        let civ = self.players[pid].civ.as_str();
         let mut out = Vec::new();
         for (name, spec) in &self.rules.improvements {
             if name == "national_park" {
@@ -35518,6 +37009,47 @@ impl Game {
                                 .any(|class| class == &resource.class)
                         })
                 });
+            let adjacent_passable_land_invalid = spec.requires_adjacent_passable_land > 0
+                && self
+                    .nbrs(pos)
+                    .iter()
+                    .filter(|neighbor| {
+                        self.map.get(**neighbor).is_some_and(|tile| {
+                            !self.rules.is_water(tile) && self.rules.is_passable(tile)
+                        })
+                    })
+                    .count()
+                    < spec.requires_adjacent_passable_land;
+            let adjacent_water_resource_invalid = spec.requires_adjacent_water_resource
+                && !self.nbrs(pos).iter().any(|neighbor| {
+                    self.map.get(*neighbor).is_some_and(|tile| {
+                        self.rules.is_water(tile)
+                            && tile.resource.as_deref().is_some_and(|resource| {
+                                self.resource_visible_to(pid, resource)
+                            })
+                    })
+                });
+            let forbidden_adjacent_feature = !spec.forbids_adjacent_features.is_empty()
+                && self.nbrs(pos).iter().any(|neighbor| {
+                    self.map
+                        .get(*neighbor)
+                        .and_then(|tile| tile.feature)
+                        .is_some_and(|feature| spec.forbids_adjacent_features.contains(&feature))
+                });
+            let insufficient_appeal = spec
+                .min_appeal
+                .is_some_and(|minimum| self.tile_appeal(pos) < minimum);
+            let city_limit_reached = spec.one_per_city
+                && self.cities[&oc].owned_tiles.iter().any(|position| {
+                    self.map.tiles[position].improvement.as_deref() == Some(name.as_str())
+                });
+            let territory_invalid = if spec.requires_foreign_territory {
+                territory_owner == pid
+                    || self.is_at_war(pid, territory_owner)
+                    || (spec.requires_open_borders && !self.has_open_borders(pid, territory_owner))
+            } else {
+                !self.builder_may_improve_territory(pid, territory_owner)
+            };
             // Civ 6 sites an improvement through any one of three routes —
             // a valid terrain, a valid feature, or a valid resource. Farms
             // stand on grassland OR on desert floodplains OR on wheat;
@@ -35550,7 +37082,8 @@ impl Game {
             if spec.unbuildable
                 || !self.unlocked(pid, &spec.tech, &spec.civic)
                 || spec.unique_to.as_deref().is_some_and(|owner| {
-                    owner != civ && !self.grants_city_state_unique_bonus(pid, owner)
+                    !self.owns_civ_unique(pid, owner)
+                        && !self.grants_city_state_unique_bonus(pid, owner)
                 })
                 || water != spec.water
                 || t.improvement.as_deref() == Some(name)
@@ -35571,6 +37104,12 @@ impl Game {
                 || seaside_invalid
                 || same_adjacent_invalid
                 || adjacent_resource_class_invalid
+                || adjacent_passable_land_invalid
+                || adjacent_water_resource_invalid
+                || forbidden_adjacent_feature
+                || insufficient_appeal
+                || city_limit_reached
+                || territory_invalid
             {
                 continue;
             }
@@ -35590,7 +37129,10 @@ impl Game {
             // Unique replacements suppress their base improvement for that civ.
             if self.rules.improvements.values().any(|candidate| {
                 candidate.replaces == Some(*name)
-                    && candidate.unique_to.as_deref() == Some(civ)
+                    && candidate
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|owner| self.owns_civ_unique(pid, owner))
             }) {
                 continue;
             }
@@ -36032,10 +37574,10 @@ impl Game {
                 || tile.wonder.is_some()
                 || tile.improvement.as_deref() == Some("national_park")
                 || (!self.rules.is_passable(tile) && spec.placement != "mountain")
-                || tile
-                    .feature
-                    .as_ref()
-                    .is_some_and(|feature| self.rules.features[feature].natural_wonder)
+                || tile.feature.as_ref().is_some_and(|feature| {
+                    let feature = &self.rules.features[feature];
+                    feature.natural_wonder || feature.impassable
+                })
                 || tile.resource.as_ref().is_some_and(|resource| {
                     // A buried Artifact reserves nothing — see `district_sites`.
                     !matches!(
@@ -36372,10 +37914,13 @@ impl Game {
             && spec
                 .unique_to
                 .as_deref()
-                .is_none_or(|civilization| civilization == self.players[pid].civ)
+                .is_none_or(|civilization| self.owns_civ_unique(pid, civilization))
             && !self.rules.districts.values().any(|candidate| {
                 candidate.replaces == Some(Name::new(district))
-                    && candidate.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
+                    && candidate
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|owner| self.owns_civ_unique(pid, owner))
             })
     }
 
@@ -36679,14 +38224,17 @@ impl Game {
     /// Resolve a generic upgrade target to this civilization's unique
     /// replacement. For example, Nubian Slingers advance to Pitati Archers
     /// instead of creating Archers that Nubia is not allowed to train.
-    fn player_unit_replacement(&self, pid: usize, unit: impl AsName) -> Name {
+    pub fn player_unit_replacement(&self, pid: usize, unit: impl AsName) -> Name {
         let unit = unit.as_name();
         self.rules
             .units
             .iter()
             .find(|(_, spec)| {
                 spec.replaces == Some(unit)
-                    && spec.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
+                    && spec
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|owner| self.owns_civ_unique(pid, owner))
             })
             .map(|(name, _)| *name)
             .unwrap_or(unit)
@@ -36761,8 +38309,8 @@ impl Game {
         }
         if spec
             .unique_to
-            .as_ref()
-            .is_some_and(|civilization| self.players[pid].civ != *civilization)
+            .as_deref()
+            .is_some_and(|civilization| !self.owns_civ_unique(pid, civilization))
         {
             return false;
         }
@@ -36833,7 +38381,16 @@ impl Game {
         self.blocked_purchases = blocked;
     }
 
-    fn purchase_is_blocked(&self, cid: u32, item: &Item) -> bool {
+    /// Whether the host recently refused to let this city BUY this item.
+    ///
+    /// ⚠ `pub(crate)` because the legal-action enumeration is not the only way a
+    /// purchase happens. `buy_gold_infrastructure`, `buy_gold_unit`,
+    /// `buy_gold_military` and the missionary buyer all build an `Action::Buy*`
+    /// themselves and call `apply` directly, so a gate that lives only in the
+    /// enumeration never runs for them — which is exactly how the same Granary
+    /// was re-bought in the same city on turns 114, 117, 121, 122, 123 and 128 of
+    /// live run `civvis-20260804T091315Z`, 8 of that game's 9 purchases refused.
+    pub(crate) fn purchase_is_blocked(&self, cid: u32, item: &Item) -> bool {
         let Some(blocked) = self.blocked_purchases.get(&cid) else {
             return false;
         };
@@ -36980,12 +38537,14 @@ impl Game {
                 }
                 if spec
                     .unique_to
-                    .as_ref()
-                    .is_some_and(|civ| self.players[pid].civ != *civ)
+                    .as_deref()
+                    .is_some_and(|civ| !self.owns_civ_unique(pid, civ))
                     || self.rules.buildings.values().any(|candidate| {
                         candidate.replaces == Some(*building)
-                            && (candidate.unique_to.as_deref()
-                                == Some(self.players[pid].civ.as_str())
+                            && (candidate
+                                .unique_to
+                                .as_deref()
+                                .is_some_and(|owner| self.owns_civ_unique(pid, owner))
                                 || society_for(candidate).is_some_and(|society| {
                                     self.players[pid].secret_society.as_deref() == Some(society)
                                 }))
@@ -37099,12 +38658,14 @@ impl Game {
                     || !spec.buildable
                     || spec
                         .unique_to
-                        .as_ref()
-                        .is_some_and(|civ| self.players[pid].civ != *civ)
+                        .as_deref()
+                        .is_some_and(|civ| !self.owns_civ_unique(pid, civ))
                     || self.rules.districts.values().any(|candidate| {
                         candidate.replaces == Some(*district)
-                            && candidate.unique_to.as_deref()
-                                == Some(self.players[pid].civ.as_str())
+                            && candidate
+                                .unique_to
+                                .as_deref()
+                                .is_some_and(|owner| self.owns_civ_unique(pid, owner))
                     })
                 {
                     return false;
@@ -37346,11 +38907,14 @@ impl Game {
                 || !self.unlocked(pid, &spec.tech, &spec.civic)
                 || spec
                     .unique_to
-                    .as_ref()
-                    .is_some_and(|civ| self.players[pid].civ != *civ)
+                    .as_deref()
+                    .is_some_and(|civ| !self.owns_civ_unique(pid, civ))
                 || self.rules.districts.values().any(|candidate| {
                     candidate.replaces == Some(*name)
-                        && candidate.unique_to.as_deref() == Some(self.players[pid].civ.as_str())
+                        && candidate
+                            .unique_to
+                            .as_deref()
+                            .is_some_and(|owner| self.owns_civ_unique(pid, owner))
                 })
             {
                 continue;
@@ -37916,7 +39480,26 @@ impl Game {
             if u.kind == "settler" && !p.is_minor && self.can_found_city(uid) {
                 acts.push(Action::FoundCity { unit: uid });
             }
-            if (u.kind == "builder" || !spec.builds.is_empty()) && u.charges > 0 {
+            // ⚠ MOVEMENT IS REQUIRED TO BUILD, AND BUILDING SPENDS ALL OF IT.
+            //
+            // Civilization VI refuses `BUILD_IMPROVEMENT` from a unit with no
+            // movement left, and completing one zeroes the unit's movement. So a
+            // builder that has already improved a tile this turn cannot improve
+            // another, and CIVVIS was proposing exactly that.
+            //
+            // Measured on live run `civvis-20260804T091315Z`: **all 19
+            // `improve_refused` events** in the game had the right improvement for
+            // the terrain, on a tile we owned, with the enabling tech researched,
+            // with build charges remaining, and with the builder standing on the
+            // target — and every one had `moves=0` after spending a charge that
+            // same turn. Nothing else distinguished them.
+            //
+            // The project branch four lines below already required `moves_left`;
+            // this one did not, which is what made the omission visible.
+            if (u.kind == "builder" || !spec.builds.is_empty())
+                && u.charges > 0
+                && u.moves_left > 0.0
+            {
                 for imp in self.valid_improvements(pid, u.pos) {
                     if (u.kind == "builder"
                         && !self.rules.improvements[&imp].builder_buildable)
@@ -38513,6 +40096,46 @@ impl Game {
                     }
                 }
             }
+            // The Moon, when the Modified Future Era put ore on it. Aiming is
+            // offered as one order per ore per city center and a strike as one
+            // per enemy city center: a driver can land on or hit any tile at
+            // all, and the arbitrary ones stay legal through `apply`, but a
+            // catalog with every owned hexagon in it several times over is not
+            // a decision anybody — person, agent or search — can read.
+            if self.mass_drivers(pid) > 0 {
+                let ores: Vec<Name> = self
+                    .moon_ores()
+                    .into_iter()
+                    .filter(|ore| {
+                        self.moon_deposit(ore) >= 1.0 && self.resource_visible_to(pid, ore.as_str())
+                    })
+                    .collect();
+                if !ores.is_empty() {
+                    for city in self.cities.values().filter(|city| city.owner == pid) {
+                        for ore in &ores {
+                            if p.mass_driver_site == Some(city.pos)
+                                && p.mass_driver_ore.as_ref() == Some(ore)
+                            {
+                                continue;
+                            }
+                            acts.push(Action::AimMassDriver {
+                                site: city.pos,
+                                ore: *ore,
+                            });
+                        }
+                    }
+                }
+                let armed = p
+                    .mass_driver_ore
+                    .is_some_and(|ore| self.strategic_stockpile(pid, ore) >= 1.0);
+                if armed && p.mass_driver_shots < self.mass_drivers(pid) {
+                    for enemy in self.cities.values() {
+                        if self.is_at_war(pid, enemy.owner) && p.explored.contains(&enemy.pos) {
+                            acts.push(Action::MassDriverStrike { target: enemy.pos });
+                        }
+                    }
+                }
+            }
             let gp_kinds: BTreeSet<String> = self
                 .rules
                 .great_people
@@ -38561,7 +40184,11 @@ impl Game {
                     });
                 }
             }
-            if !p.is_minor && !p.is_barbarian && p.pantheon.is_none() && p.faith >= 25.0 {
+            if !p.is_minor
+                && !p.is_barbarian
+                && p.pantheon.is_none()
+                && p.faith >= self.pantheon_faith_cost()
+            {
                 for b in self.rules.beliefs.pantheon.keys() {
                     if !self
                         .players
@@ -39253,6 +40880,8 @@ impl Game {
                 // WAR_WEARINESS_PER_WMD_LAUNCHED: launching is the single
                 // most expensive thing you can do to your own people.
                 .inspect(|()| self.add_war_weariness(pid, 10.0)),
+            Action::AimMassDriver { site, ore } => self.do_aim_mass_driver(pid, *site, *ore),
+            Action::MassDriverStrike { target } => self.do_mass_driver_strike(pid, *target),
             Action::BuildRailroad { unit } => self.do_build_railroad(pid, *unit),
             Action::EncampmentStrike { city, target } => {
                 self.do_encampment_strike(pid, *city, *target)
@@ -39304,6 +40933,7 @@ impl Game {
                     | Action::ConvertBarbarians { .. }
                     | Action::CityStrike { .. }
                     | Action::WmdStrike { .. }
+                    | Action::MassDriverStrike { .. }
                     | Action::EncampmentStrike { .. }
                     | Action::KeepCity { .. }
                     | Action::RazeCity { .. }
@@ -40904,6 +42534,26 @@ impl Game {
         if !can_build || u.charges <= 0 {
             return Err("unit cannot build that improvement".into());
         }
+        // ⚠⚠ THE ENUMERATION IS NOT THE ONLY WAY AN IMPROVEMENT IS ORDERED.
+        //
+        // #1107 added this rule to `legal_actions_within`, and live testing on
+        // run `civvis-20260804T173018Z` showed it had NOT taken: all three
+        // `improve_refused` events still had `moves == 0`, the exact pattern the
+        // gate was meant to stop. The reason is that `builder_step` computes
+        // `valid_improvements` itself and calls `apply` DIRECTLY, never touching
+        // the enumeration — the same shape as the purchase block in #1105, where
+        // the gold buyers bypassed the layer the gate lived in.
+        //
+        // So the rule belongs HERE, in the one function every path reaches:
+        // `legal_actions_within`, `builder_step`, `naturalist_step`,
+        // `archaeologist_step` and anything added later.
+        //
+        // Civilization VI refuses BUILD_IMPROVEMENT from a unit with no movement,
+        // and completing one spends all of it — which is why a builder that has
+        // already improved a tile this turn cannot improve another.
+        if u.moves_left <= 0.0 {
+            return Err("unit has no movement left to build".into());
+        }
         if !self.valid_improvements(pid, u.pos).iter().any(|i| i == imp) {
             return Err("invalid improvement here".into());
         }
@@ -40913,6 +42563,15 @@ impl Game {
         if imp == "national_park" && national_park.is_none() {
             return Err("no valid four-tile National Park here".into());
         }
+        let first_mahavihara = imp == "mahavihara"
+            && !self
+                .cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .flat_map(|city| city.owned_tiles.iter())
+                .any(|position| {
+                    self.map.tiles[position].improvement.as_deref() == Some("mahavihara")
+                });
         let removes = self.rules.improvements[imp].removes_feature;
         let excavates_artifact = matches!(imp, "archaeological_dig" | "shipwreck_excavation");
         let improvement_position = u.pos;
@@ -40952,6 +42611,22 @@ impl Game {
         mu.moves_left = 0.0;
         mu.acted = true;
         bump(&mut self.players[pid], "improvements");
+        if first_mahavihara {
+            let technologies = self.rules.improvements[imp]
+                .effects
+                .get("first_build_random_tech")
+                .copied()
+                .unwrap_or(0.0) as usize;
+            if technologies > 0 {
+                self.complete_random_nodes(pid, technologies, true);
+                self.note(
+                    pid,
+                    "Science",
+                    "Nalanda's first Mahavihara granted a random technology",
+                    Some(improvement_position),
+                );
+            }
+        }
         if excavates_artifact {
             // A dig raises something from a past era, left by one of the
             // world's peoples - the shipped sites record whose history
@@ -40979,7 +42654,7 @@ impl Game {
             if self.rules.improvements[imp]
                 .unique_to
                 .as_deref()
-                .is_some_and(|civilization| civilization == self.players[pid].civ)
+                .is_some_and(|civilization| self.owns_civ_unique(pid, civilization))
             {
                 self.first_historic_moment(
                     pid,
@@ -43074,6 +44749,17 @@ impl Game {
                 > 0.0
             || !self.can_produce(
                 pid,
+                cid,
+                &Item::Building {
+                    building: Name::new(building),
+                },
+            )
+            // ⚠ `can_produce` reads `blocked_production`; a PURCHASE refusal lands
+            // in `blocked_purchases`, a different set with a different meaning —
+            // "the host will not sell this here right now" rather than "this city
+            // cannot build it". Without this the two never met and a refused
+            // purchase was re-offered every turn.
+            || self.purchase_is_blocked(
                 cid,
                 &Item::Building {
                     building: Name::new(building),
@@ -47829,9 +49515,44 @@ impl Game {
                     } else {
                         0.0
                     }
-            })
+                })
             .sum::<f64>();
         delta += self.city_building_effect(city, "loyalty_per_turn");
+        // Improvement loyalty is city-scoped even when the tile is not being
+        // worked: Sweden's Open-Air Museum stabilizes its host city, and a
+        // Spanish Mission beside an overseas City Center anchors that colony.
+        delta += city
+            .owned_tiles
+            .iter()
+            .filter(|position| !self.map.tiles[position].pillaged)
+            .filter_map(|position| self.map.tiles[position].improvement)
+            .map(|improvement| {
+                self.rules.improvements[improvement]
+                    .effects
+                    .get("city_loyalty")
+                    .copied()
+                    .unwrap_or(0.0)
+            })
+            .sum::<f64>();
+        if self.on_foreign_continent(pid, cpos) {
+            delta += self
+                .nbrs(cpos)
+                .iter()
+                .filter(|position| {
+                    let tile = &self.map.tiles[position];
+                    tile.owner_city == Some(cid)
+                        && !tile.pillaged
+                        && tile.improvement.as_deref() == Some("mission")
+                })
+                .map(|_| {
+                    self.rules.improvements["mission"]
+                        .effects
+                        .get("foreign_continent_city_loyalty")
+                        .copied()
+                        .unwrap_or(0.0)
+                })
+                .sum::<f64>();
+        }
         if self.on_foreign_continent(pid, cpos) {
             delta += self.policy_effect(pid, "foreign_continent_city_loyalty");
         }
@@ -50361,6 +52082,8 @@ impl Game {
                 let mut improvement_tourism = effects.get("tourism").copied().unwrap_or(0.0)
                     + effects.get("appeal_tourism").copied().unwrap_or(0.0) * tourism_appeal as f64;
                 if self.players[pid].techs.contains(&crate::name!("flight")) {
+                    improvement_tourism +=
+                        effects.get("tourism_after_flight").copied().unwrap_or(0.0);
                     let faith_factor = effects
                         .get("faith_tourism_after_flight")
                         .copied()
@@ -50734,6 +52457,10 @@ impl Game {
         }
         self.check_boosts(pid);
         self.process_trade_deals(pid);
+        // Before the ordinary accumulation, so a turn's cargo is subject to
+        // the same stockpile ceiling as a turn's mining rather than sitting
+        // outside it.
+        self.process_mass_drivers(pid);
         self.process_strategic_resources(pid);
         self.process_reactors(pid);
         self.process_diplomacy(pid);
@@ -52691,7 +54418,7 @@ impl Game {
             .filter(|(_, spec)| {
                 spec.unique_to
                     .as_deref()
-                    .is_none_or(|civilization| civilization == self.players[pid].civ)
+                    .is_none_or(|civilization| self.owns_civ_unique(pid, civilization))
             })
             .map(|(name, _)| *name)
             .collect();
@@ -52972,7 +54699,6 @@ impl Game {
             .filter(|(_, spec)| spec.outer_defense > 0)
             .map(|(name, _)| *name)
             .collect();
-        let captor_civ = self.players[new_owner].civ.clone();
         let converted_districts: Vec<(Name, Pos, bool)> =
             self.cities[&cid]
                 .districts
@@ -52984,7 +54710,10 @@ impl Game {
                         .districts
                         .iter()
                         .find(|(_, spec)| {
-                            spec.unique_to.as_deref() == Some(captor_civ.as_str())
+                            spec
+                                .unique_to
+                                .as_deref()
+                                .is_some_and(|owner| self.owns_civ_unique(new_owner, owner))
                                 && spec.replaces == Some(Name::new(family.as_str()))
                         })
                         .map(|(name, _)| *name)
@@ -53015,7 +54744,10 @@ impl Game {
                 .buildings
                 .iter()
                 .find(|(_, spec)| {
-                    spec.unique_to.as_deref() == Some(captor_civ.as_str())
+                    spec
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|owner| self.owns_civ_unique(new_owner, owner))
                         && spec.replaces == Some(family)
                 })
                 .map(|(name, _)| *name)
@@ -53125,7 +54857,7 @@ impl Game {
                 .is_some_and(|spec| {
                     spec.unique_to
                         .as_deref()
-                        .is_none_or(|civilization| civilization == captor_civ)
+                        .is_none_or(|civilization| self.owns_civ_unique(new_owner, civilization))
                         && self.unlocked(new_owner, &spec.tech, &spec.civic)
                 });
             if !retained {
@@ -57153,38 +58885,47 @@ mod combat_scenarios {
             "military and religious units use separate map layers"
         );
 
-        let (mut g, target, ring) = controlled_game(3132);
-        let builder = g.spawn_unit("builder", 1, target);
-        let warrior = g.spawn_unit("warrior", 0, ring[0]);
-        let archer = g.spawn_unit("archer", 0, ring[1]);
-        assert!(
+        // Settlers and Builders have no combat health to wear down: a melee
+        // unit captures either one by walking onto its tile. Neither melee nor
+        // ranged combat can target them.
+        for (seed, civilian_kind) in [(3132, "settler"), (3133, "builder")] {
+            let (mut g, target, ring) = controlled_game(seed);
+            let civilian = g.spawn_unit(civilian_kind, 1, target);
+            let warrior = g.spawn_unit("warrior", 0, ring[0]);
+            let archer = g.spawn_unit("archer", 0, ring[1]);
+            assert!(
+                g.apply(
+                    0,
+                    &Action::Ranged {
+                        unit: archer,
+                        target
+                    }
+                )
+                .is_err(),
+                "ranged attacks cannot target capture-only {civilian_kind}s"
+            );
+            assert!(!g.legal_actions(0).into_iter().any(|action| {
+                matches!(action, Action::Attack { unit, target: to }
+                    if unit == warrior && to == target)
+                    || matches!(action, Action::Ranged { unit, target: to }
+                        if unit == archer && to == target)
+            }));
             g.apply(
                 0,
-                &Action::Ranged {
-                    unit: archer,
-                    target
-                }
+                &Action::Move {
+                    unit: warrior,
+                    to: target,
+                },
             )
-            .is_err(),
-            "ranged attacks cannot target undefended civilians"
-        );
-        assert!(!g.legal_actions(0).into_iter().any(|action| {
-            matches!(action, Action::Attack { unit, target: to }
-                if unit == warrior && to == target)
-                || matches!(action, Action::Ranged { unit, target: to }
-                    if unit == archer && to == target)
-        }));
-        g.apply(
-            0,
-            &Action::Move {
-                unit: warrior,
-                to: target,
-            },
-        )
-        .unwrap();
-        assert_eq!(g.units[&builder].owner, 0);
+            .unwrap();
+            assert_eq!(g.units[&civilian].owner, 0, "{civilian_kind} should be captured");
+            assert!(matches!(
+                g.log.last(),
+                Some((0, Action::Move { unit, to })) if *unit == warrior && *to == target
+            ));
+        }
 
-        let (mut g, city_pos, ring) = controlled_game(3133);
+        let (mut g, city_pos, ring) = controlled_game(3134);
         let cid = g.found_city_for(0, city_pos, None);
         g.cities
             .get_mut(&cid)
@@ -59556,6 +61297,40 @@ mod combat_scenarios {
         assert!(builders
             .iter()
             .any(|builder| builder.charges > g.rules.units["builder"].charges));
+    }
+
+    #[test]
+    fn world_wonders_reject_forbidden_relief_and_unremovable_features() {
+        let (mut g, center, ring) = controlled_game(325);
+        let cid = g.found_city_for(0, center, None);
+        let site = ring[0];
+        g.map.tiles.get_mut(&site).unwrap().owner_city = Some(cid);
+
+        g.players[0].techs.insert(crate::name!("mathematics"));
+        {
+            let tile = g.map.tiles.get_mut(&site).unwrap();
+            tile.terrain = crate::name!("desert");
+            tile.hills = true;
+        }
+        assert!(
+            !g.wonder_sites(cid, "petra").contains(&site),
+            "BUILDING_PETRA only lists flat TERRAIN_DESERT"
+        );
+        g.map.tiles.get_mut(&site).unwrap().hills = false;
+        assert!(g.wonder_sites(cid, "petra").contains(&site));
+
+        g.players[0].techs.insert(crate::name!("engineering"));
+        {
+            let tile = g.map.tiles.get_mut(&site).unwrap();
+            tile.terrain = crate::name!("mountain");
+            tile.feature = Some(crate::name!("volcano"));
+        }
+        assert!(
+            !g.wonder_sites(cid, "machu_picchu").contains(&site),
+            "the mountain exception must not make an impassable Volcano removable"
+        );
+        g.map.tiles.get_mut(&site).unwrap().feature = None;
+        assert!(g.wonder_sites(cid, "machu_picchu").contains(&site));
     }
 
     #[test]
@@ -64679,7 +66454,11 @@ mod district_mechanics {
                 .into_iter()
                 .find(|id| !before.contains(id))
                 .expect("a trained Warrior");
-            game.units[&uid].xp
+            let xp = game.units[&uid].xp;
+            // Reuse the same legal training tile for each alliance tier; the
+            // test is about granted experience, not accumulating a garrison.
+            game.remove_unit(uid);
+            xp
         };
         assert_eq!(trained_xp(&mut game), 0, "no alliance, no promotion");
 

@@ -62,13 +62,43 @@ class MacOSInputTest(unittest.TestCase):
             capture_output=True, text=True, check=False, timeout=20,
         )
 
-    def test_native_scroll_preserves_wheel_direction(self) -> None:
+    def test_scroll_preserves_wheel_direction(self) -> None:
         with patch.object(macos_input.shutil, "which", return_value=None), \
              patch.object(macos_input, "_native_binary", return_value=Path("/tmp/cginput")), \
              patch.object(macos_input.subprocess, "run", side_effect=completed) as run:
             macos_input.scroll(-12, check=True)
 
         run.assert_called_once_with(
-            ["/tmp/cginput", "scroll", "-12"],
+            ["/tmp/cginput", "scroll", "-40", "12"],
             capture_output=True, text=True, check=True, timeout=20,
         )
+
+    def test_scroll_never_uses_cliclick(self) -> None:
+        """⚠⚠ The whole defect in one assertion.
+
+        `cliclick` can only emit LINE-unit scroll events, and Civilization VI
+        ignores those completely — measured against the leader picker with the list
+        open and the game frontmost: `w:-30`, `w:-5` and `w:-1` all moved it zero
+        rows. Preferring cliclick here, as every other verb does, is what made
+        `select_requested_leader` scroll a hundred times without leaving the letter
+        A. Scrolling must take the native helper even when cliclick is installed.
+        """
+        with patch.object(macos_input, "_cliclick", return_value="/usr/local/bin/cliclick"), \
+             patch.object(macos_input, "_native_binary", return_value=Path("/tmp/cginput")), \
+             patch.object(macos_input.subprocess, "run", side_effect=completed) as run:
+            macos_input.scroll(3)
+
+        called = run.call_args[0][0]
+        self.assertNotIn("cliclick", called[0])
+        self.assertEqual(called, ["/tmp/cginput", "scroll", "40", "3"])
+
+    def test_a_zero_scroll_sends_nothing(self) -> None:
+        with patch.object(macos_input, "_native_binary", return_value=Path("/tmp/cginput")), \
+             patch.object(macos_input.subprocess, "run", side_effect=completed) as run:
+            self.assertIsNone(macos_input.scroll(0))
+        run.assert_not_called()
+
+    def test_the_swift_helper_scrolls_in_pixel_units(self) -> None:
+        """The far end of the same wire, asserted on the source that gets compiled."""
+        self.assertIn("units: .pixel", macos_input._SWIFT_SOURCE)
+        self.assertNotIn("units: .line", macos_input._SWIFT_SOURCE)

@@ -1,6 +1,6 @@
 # Local Rust and WASM desktop apps
 
-`Rust CIVVIS.app` and `WASM CIVVIS.app` are two local presentations of one
+`CIVVIS Rust.app` and `CIVVIS Wasm.app` are two local presentations of one
 game. The Rust app runs the optimized native server on port 8785. The WASM app
 serves the optimized browser build on port 8790. Both open a stable channel
 URL, reuse an existing Chrome tab, and carry exact commit and artifact-build
@@ -27,8 +27,33 @@ The command fetches `origin/main`, resolves one exact commit, builds native and
 WASM release artifacts in a detached worktree, creates both app bundles from
 scratch, ad-hoc signs and strictly verifies them, archives the current apps,
 installs the replacements, launches both, and verifies their live metadata and
-routes. A process lock prevents two cooperating installers from racing over the
-Desktop bundles.
+routes. The signed bundles live under the private state directory; the two
+exact Desktop names are stable symbolic links to them. A process lock prevents
+two cooperating installers from racing over the installed pair.
+
+Installation also registers `ai.civvis.desktop-refresh` as a per-user launchd
+agent. It checks GitHub every minute and rebuilds the pinned pair when
+`main` advances or either artifact reaches ten minutes old. That headroom keeps
+a successful build inside the 20-minute freshness contract even while Cargo is
+working. The ten-minute rebuild trigger and 20-minute finished-artifact limit
+are independent, so a valid low-priority build is not rejected merely because
+it took more than ten minutes. The job installs both bundles transactionally without interrupting a
+live game. It swaps only the private bundle targets, avoiding background writes
+to macOS's protected Desktop folder; the stable Desktop links do not change.
+Opening either icon performs the same locked freshness check in the background,
+so a laptop that just woke converges without waiting for the next scheduled
+check.
+
+The native channel runs under the repository spectator supervisor. A promoted
+runtime waits for the next game boundary, then the next default simulation
+starts on it; checkpoints also preserve an active map across crash recovery.
+The browser module checks the installed `build.json` at its result boundary and
+reloads before dealing the next world when a newer WASM bundle is present.
+
+Each app owns a small Chrome-tab watcher. Closing its matching tab (or Chrome)
+stops that channel's supervisor/server within about ten seconds. Double-clicking
+the icon starts it again. A minimized Chrome window is restored before its tab
+is focused.
 
 Build without installing:
 
@@ -36,8 +61,14 @@ Build without installing:
 python3 tools/civvis_desktop_apps.py build --ref <commit>
 ```
 
-Audit installed, live apps against current main and require artifact ages no
-greater than 30 minutes:
+Run the same cheap freshness check used by the launchers:
+
+```bash
+python3 tools/civvis_desktop_apps.py refresh
+```
+
+Audit installed, live apps against current main, require artifact ages no
+greater than 20 minutes, and verify the recurring launchd agent:
 
 ```bash
 python3 tools/civvis_desktop_apps.py verify
@@ -45,7 +76,12 @@ python3 tools/civvis_desktop_apps.py verify
 
 Build records and staged apps remain under
 `~/.local/share/civvis-desktop/build-<short>-<UTC>/`. Replaced bundles move to
-`~/.local/share/civvis-desktop/previous/`; they are not deleted.
+`~/.local/share/civvis-desktop/previous/`, and the live pair resides under
+`~/.local/share/civvis-desktop/installed/`. Reusable Cargo outputs live in the
+adjacent `cargo-cache/`, keeping subsequent native and WASM refreshes well
+inside the freshness window. Because the updater is perpetual, it retains the
+two newest build trees and four newest archived bundles rather than allowing
+timestamped generated artifacts to consume the disk without bound.
 
 ## Shared opening exhibition
 
@@ -60,11 +96,13 @@ native launcher or WASM opening parameters drift from that contract.
 - Native content is available at `/rust/` and the legacy root.
 - WASM content is available at `/wasm/`, locally mapped onto the packaged
   `/beta/` tree with query strings preserved.
-- Both launchers require the listener's commit and `built_at` values to match
-  their own before reusing it. An older matching CIVVIS process is stopped;
-  an unrelated owner of either port is left alone and causes a visible error.
+- The WASM launcher requires the listener's commit and `built_at` values to
+  match its bundle. The Rust launcher also recognizes its owned supervisor
+  while that supervisor is holding a newly promoted runtime for a safe game
+  boundary. An unrelated owner of either port is left alone and causes a
+  visible error.
 - The viewer shows compact commit and build ages in the lower-right provenance
-  marker beneath the World minimap. Exact timestamps remain in its tooltip.
+  marker above the World minimap. Exact timestamps remain in its tooltip.
 
 The public `/rust` and `/wasm` edge routes remain governed by
 `beta/_worker.js`; the desktop WASM app intentionally uses `beta/serve.py`

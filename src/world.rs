@@ -385,6 +385,48 @@ impl TileGrid {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cliff_edges_require_one_land_side_and_one_water_side() {
+        let mut world = WorldMap::new(5, 5);
+        let land = hex::offset_to_axial(2, 2);
+        let neighbors = world.neighbors(land);
+        let water = neighbors[0];
+        let other_land = neighbors[1];
+        world.tiles.get_mut(&land).unwrap().terrain = "plains".into();
+        world.tiles.get_mut(&other_land).unwrap().terrain = "grassland".into();
+
+        assert!(
+            !world.set_cliff_edge(land, other_land, true),
+            "a cliff cannot be placed between two land tiles"
+        );
+        assert!(!world.has_cliff_edge(land, other_land));
+        assert!(
+            !world.set_cliff_edge(water, neighbors[2], true),
+            "a cliff cannot be placed between two water tiles"
+        );
+
+        for terrain in ["coast", "ocean", "lake"] {
+            world.tiles.get_mut(&water).unwrap().terrain = terrain.into();
+            assert!(world.set_cliff_edge(land, water, true), "{terrain} is water");
+            assert!(world.has_cliff_edge(land, water));
+            assert!(world.set_cliff_edge(land, water, false));
+        }
+
+        world.tiles.get_mut(&water).unwrap().terrain = "coast".into();
+        assert!(world.set_cliff_edge(land, water, true));
+        world.tiles.get_mut(&water).unwrap().terrain = "plains".into();
+        assert!(
+            !world.has_cliff_edge(land, water),
+            "a stale serialized edge cannot act as a land-to-land cliff"
+        );
+        assert!(world.set_cliff_edge(land, water, false));
+    }
+}
+
 impl<'a> IntoIterator for &'a TileGrid {
     type Item = (&'a Pos, &'a Tile);
     type IntoIter = std::iter::Map<std::slice::Iter<'a, Tile>, fn(&'a Tile) -> (&'a Pos, &'a Tile)>;
@@ -577,9 +619,9 @@ impl WorldMap {
         let mut out: Vec<Pos> = hex::disk(center, radius)
             .into_iter()
             .map(|pos| hex::canon(pos, self.width))
-            .filter(|pos| self.tiles.contains_key(pos))
+            .filter_map(|pos| self.tiles.index_of(pos).map(|_| pos))
             .collect();
-        out.sort();
+        out.sort_unstable();
         out.dedup();
         out
     }
@@ -602,9 +644,9 @@ impl WorldMap {
         let mut out: Vec<Pos> = hex::ring(center, radius)
             .into_iter()
             .map(|pos| hex::canon(pos, self.width))
-            .filter(|pos| self.tiles.contains_key(pos))
+            .filter_map(|pos| self.tiles.index_of(pos).map(|_| pos))
             .collect();
-        out.sort();
+        out.sort_unstable();
         out.dedup();
         out
     }
@@ -714,11 +756,18 @@ impl WorldMap {
     }
 
     /// Add or remove a coastal cliff on the shared edge between two tiles.
+    ///
+    /// A cliff is a shoreline feature, never a generic elevation boundary:
+    /// setting one is therefore valid only when exactly one side is water.
+    /// Clearing remains allowed for an old save whose terrain later changed.
     pub fn set_cliff_edge(&mut self, a: Pos, b: Pos, present: bool) -> bool {
         let (Some(there), Some(back)) = (self.direction_to(a, b), self.direction_to(b, a)) else {
             return false;
         };
-        if !self.tiles.contains_key(&a) || !self.tiles.contains_key(&b) {
+        let (Some(a_tile), Some(b_tile)) = (self.tiles.get(&a), self.tiles.get(&b)) else {
+            return false;
+        };
+        if present && !Self::is_cliff_shore(a_tile, b_tile) {
             return false;
         }
         self.tiles.get_mut(&a).unwrap().cliff_edges[there] = present;
@@ -726,10 +775,24 @@ impl WorldMap {
         true
     }
 
+    /// Whether the two tiles form the shoreline where a coastal cliff may sit.
+    /// `WorldMap` deliberately does not own the rules database, so this names
+    /// the complete built-in water terrain set directly.
+    fn is_cliff_shore(a: &Tile, b: &Tile) -> bool {
+        let water = |tile: &Tile| matches!(tile.terrain.as_str(), "coast" | "ocean" | "lake");
+        water(a) != water(b)
+    }
+
     pub fn has_cliff_edge(&self, a: Pos, b: Pos) -> bool {
-        self.direction_to(a, b)
-            .and_then(|direction| self.tiles.get(&a).map(|t| t.cliff_edges[direction]))
-            .unwrap_or(false)
+        let (Some(there), Some(back)) = (self.direction_to(a, b), self.direction_to(b, a)) else {
+            return false;
+        };
+        let (Some(a_tile), Some(b_tile)) = (self.tiles.get(&a), self.tiles.get(&b)) else {
+            return false;
+        };
+        Self::is_cliff_shore(a_tile, b_tile)
+            && a_tile.cliff_edges[there]
+            && b_tile.cliff_edges[back]
     }
 
     pub fn clear_rivers(&mut self) {

@@ -17,8 +17,8 @@
 //   * **The clock.** A spectated turn is paced in wall-clock milliseconds. The
 //     module plays the turn; the wait that spaces turns out belongs on a
 //     thread that is allowed to be idle.
-//   * **The finale countdown.** Ten seconds between a result and the next
-//     world, counted where there is a clock to count with.
+//   * **The finale countdown.** The viewer-selected interval between a result
+//     and the next world, counted where there is a clock to count with.
 //   * **Saved games.** There is no disk. `localStorage` holds them, and the
 //     engine only ever sees a save as an uploaded game.
 
@@ -35,12 +35,16 @@
     "/state", "/status", "/runtime", "/rules", "/pedia", "/save", "/saves",
     "/load", "/action", "/step", "/autoplay", "/play-on", "/route", "/view",
     "/spectator-status", "/next-game-settings", "/new", "/supervisor-new",
-    "/pace", "/next-game",
+    "/pace", "/next-game", "/host-league",
   ]);
+  const LOCAL_DESKTOP_HOST = here.pathname.startsWith("/wasm/");
+  const HOST_LEAGUE_URL = new URL("league.json", here);
+  const HOST_RESULT_URL = new URL("league-result", here);
 
-  // Ten seconds of result screen, which is the rule the desktop build counts
-  // down from and the window in which "one more turn" can still be pressed.
-  const FINALE_MS = 10000;
+  // Keep the browser build to the same four choices as the socket server.
+  // It starts at ten seconds until the page posts its persisted preference.
+  const FINALE_OPTIONS_MS = new Set([0, 3000, 5000, 10000]);
+  let betweenGameCountdownMs = 10000;
   // What the server sleeps for while paused, so a paused page asking for the
   // next turn over and over costs a poll every so often instead of one per
   // animation frame.
@@ -115,29 +119,183 @@
 
   const sleep = (ms) => new Promise((done) => setTimeout(done, ms));
 
+  async function installedSuccessorBuild() {
+    try {
+      const [runtime, response] = await Promise.all([
+        ask("GET", "/runtime", ""),
+        networkFetch(new URL(`build.json?fresh=${Date.now()}`, here), {
+          cache: "no-store",
+        }),
+      ]);
+      if (!response.ok) return null;
+      const manifest = await response.json();
+      if (typeof runtime.commit !== "string" || typeof manifest.commit !== "string" ||
+          runtime.commit === manifest.commit) return null;
+      return manifest.commit;
+    } catch (error) {
+      return null;
+    }
+  }
+
+  async function reloadInstalledSuccessor() {
+    const commit = await installedSuccessorBuild();
+    if (commit === null) return false;
+    const target = new URL(window.location.href);
+    // A pinned `game=` is the world that just ended. The newly installed
+    // module starts the next default simulation, not a replay of that seed.
+    target.searchParams.delete("game");
+    target.searchParams.delete("instance");
+    target.searchParams.set("build", commit);
+    report.refreshingTo = commit;
+    window.location.replace(target.href);
+    return true;
+  }
+
+  // --------------------------------------------------------- live rankings
+
+  let hostLeagueReady = null;
+
+  async function refreshHostLeague() {
+    if (!LOCAL_DESKTOP_HOST) return null;
+    const response = await networkFetch(HOST_LEAGUE_URL, { cache: "no-store" });
+    if (!response.ok) throw new Error(`league host returned HTTP ${response.status}`);
+    const league = await response.json();
+    const loaded = await ask("POST", "/host-league", JSON.stringify(league));
+    if (loaded.error) throw new Error(loaded.error);
+    if (!report.buildCommit) {
+      const runtime = await ask("GET", "/runtime", "");
+      report.buildCommit = runtime.commit || "unknown";
+    }
+    report.leagueRound = loaded.round;
+    return loaded;
+  }
+
+  function ensureHostLeague() {
+    if (!LOCAL_DESKTOP_HOST) return Promise.resolve(null);
+    if (hostLeagueReady === null) {
+      hostLeagueReady = refreshHostLeague().catch((error) => {
+        report.leagueError = String(error.message || error);
+        hostLeagueReady = null;
+        return null;
+      });
+    }
+    return hostLeagueReady;
+  }
+
+  function resultFingerprint(value) {
+    let hash = 0xcbf29ce484222325n;
+    for (const byte of new TextEncoder().encode(value)) {
+      hash ^= BigInt(byte);
+      hash = BigInt.asUintN(64, hash * 0x100000001b3n);
+    }
+    return hash.toString(16).padStart(16, "0");
+  }
+
+  function terminalLeagueReport(state) {
+    const players = (state.players || []).filter(
+      (player) => typeof player.ai_player_strategy === "string" &&
+        !player.is_minor && !player.is_barbarian,
+    );
+    if (players.length < 2) return null;
+    const winner = Number(state.winner);
+    players.sort((left, right) => {
+      const leftWon = left.id === winner;
+      const rightWon = right.id === winner;
+      if (leftWon !== rightWon) return leftWon ? -1 : 1;
+      const score = Number(right.score || 0) - Number(left.score || 0);
+      return score || Number(left.id) - Number(right.id);
+    });
+    const seats = players.map((player, place) => {
+      const previous = players[place - 1];
+      const sameRank = previous && previous.id !== winner && player.id !== winner &&
+        Number(previous.score || 0) === Number(player.score || 0);
+      return {
+        strategy: player.ai_player_strategy,
+        leader: String(player.leader || player.civ),
+        civilization: String(player.civ),
+        rank: sameRank ? null : place,
+        won: player.id === winner,
+      };
+    });
+    for (let place = 0; place < seats.length; place++) {
+      if (seats[place].rank === null) seats[place].rank = seats[place - 1].rank;
+    }
+    const evidence = {
+      seed: Number(state.seed),
+      turn: Number(state.victory_turn ?? state.turn),
+      victory: String(state.victory_type || "score"),
+      seats,
+    };
+    const identity = JSON.stringify({ build: report.buildCommit, winner: state.winner, ...evidence });
+    evidence.result_id = `wasm-v1:${evidence.seed}:${resultFingerprint(identity)}`;
+    return evidence;
+  }
+
+  async function recordTerminalResult(state) {
+    if (!LOCAL_DESKTOP_HOST) return null;
+    const evidence = terminalLeagueReport(state);
+    if (evidence === null) return null;
+    const receiptKey = `civvis.league-result.${evidence.result_id}`;
+    const response = await networkFetch(HOST_RESULT_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(evidence),
+      cache: "no-store",
+    });
+    const answer = await response.json();
+    if (!response.ok || answer.error) {
+      throw new Error(answer.error || `league host returned HTTP ${response.status}`);
+    }
+    try { localStorage.setItem(receiptKey, "recorded"); } catch (error) { /* host receipt wins */ }
+    report.leagueRound = answer.round;
+    // Feed the just-updated ratings back into the module before it rolls the
+    // successor world. The next seats and every Elo badge now use this game.
+    await refreshHostLeague();
+    return answer;
+  }
+
   // ------------------------------------------------------- clock and finale
 
   let pace = 0;
   let paused = false;
   let finaleEndsAt = null;
+  let finaleResultId = null;
+  let finaleRating = null;
 
-  // A result holds the screen for ten seconds and then the next world opens.
-  // Reading it off each answer keeps the countdown attached to the state the
-  // page is actually looking at, rather than to a timer running beside it.
+  // A result holds the screen for the selected interval and then the next
+  // world opens. Reading it off each answer keeps the countdown attached to
+  // the state the page is actually looking at, rather than to a timer running
+  // beside it.
   async function withFinale(state) {
     if (!state || typeof state !== "object") return state;
+    const configured = state.between_game_countdown_ms;
+    if (typeof configured === "number" && FINALE_OPTIONS_MS.has(configured))
+      betweenGameCountdownMs = configured;
     const finished = state.winner !== undefined && state.winner !== null;
     if (!finished) {
       finaleEndsAt = null;
+      finaleResultId = null;
+      finaleRating = null;
       return state;
     }
-    if (finaleEndsAt === null) finaleEndsAt = performance.now() + FINALE_MS;
+    const evidence = terminalLeagueReport(state);
+    if (evidence && (finaleResultId !== evidence.result_id || finaleRating === null)) {
+      finaleResultId = evidence.result_id;
+      finaleRating = recordTerminalResult(state).catch((error) => {
+        report.leagueError = String(error.message || error);
+        finaleRating = null;
+        throw error;
+      });
+    }
+    if (finaleRating !== null) await finaleRating;
+    if (finaleEndsAt === null) finaleEndsAt = performance.now() + betweenGameCountdownMs;
     const left = finaleEndsAt - performance.now();
     if (left > 0) {
       state.restart_in = Math.ceil(left / 1000);
       return state;
     }
     finaleEndsAt = null;
+    if (await reloadInstalledSuccessor()) return state;
     return await ask("POST", "/next-game", "{}");
   }
 
@@ -210,6 +368,10 @@
 
     if (method === "POST" && path === "/pace") {
       if (typeof parsed.ms === "number") pace = parsed.ms;
+      if (typeof parsed.between_game_countdown_ms === "number" &&
+          FINALE_OPTIONS_MS.has(parsed.between_game_countdown_ms)) {
+        betweenGameCountdownMs = parsed.between_game_countdown_ms;
+      }
       if (typeof parsed.paused === "boolean") {
         paused = parsed.paused;
         // Pausing voids a running countdown, exactly as it does on a socket.
@@ -243,7 +405,11 @@
       if (owed > 0) await sleep(owed);
     }
 
-    answer = await withFinale(answer);
+    // Only a world-state response is allowed to start, advance, or clear the
+    // finale clock. The viewer asks for metadata such as `/runtime` while the
+    // result is on screen; those answers have no `winner` field and used to
+    // clear the countdown on every poll, leaving the finished world forever.
+    if (path === "/state") answer = await withFinale(answer);
 
     // Civ 6 autosaves at the top of every turn and so does the desktop build.
     // The engine cannot, so it says when one is due and the page keeps it.
@@ -287,20 +453,24 @@
     // The engine is given the request target rather than the URL: several
     // routes read their parameters straight off the query string.
     const relative = target.startsWith("http") ? path + new URL(target).search : target;
-    return serve(method, relative, options_.body || "").catch(
-      (error) => json({ error: String(error.message || error) }),
-    );
+    return ensureHostLeague()
+      .then(() => serve(method, relative, options_.body || ""))
+      .catch((error) => json({ error: String(error.message || error) }));
   };
 
   // ----------------------------------------------------------- first impression
 
-  // A megabyte and a half of engine arrives before the page can draw anything.
-  // Say so, rather than showing a blank screen for the download.
+  // The local game can take a moment to prepare on a first visit. Say what is
+  // actually happening in visitor language rather than exposing the engine
+  // implementation or implying that a server is being started.
   const curtain = document.createElement("div");
   curtain.id = "civvis-beta-loading";
+  curtain.setAttribute("role", "status");
+  curtain.setAttribute("aria-live", "polite");
   curtain.innerHTML =
     '<div class="civvis-beta-mark">CIVVIS</div>' +
-    '<div class="civvis-beta-note">loading the engine</div>';
+    '<div class="civvis-beta-note">Starting a new world</div>' +
+    '<div class="civvis-beta-detail">Runs in this browser</div>';
   const style = document.createElement("style");
   style.textContent = `
     #civvis-beta-loading {
@@ -314,14 +484,24 @@
     #civvis-beta-loading.gone { opacity: 0; pointer-events: none; }
     .civvis-beta-mark { font-size: 40px; letter-spacing: 0.34em; text-indent: 0.34em; }
     .civvis-beta-note { font-size: 13px; letter-spacing: 0.18em; color: #6f8279; text-transform: uppercase; }
+    .civvis-beta-detail { font: 12px/1.4 system-ui, sans-serif; color: #9eaea6; }
     @media (prefers-reduced-motion: reduce) { #civvis-beta-loading { transition: none; } }
   `;
+  const LOADING_NOTICE_DELAY_MS = 350;
+  let loadingFinished = false;
+  let loadingNoticeTimer = null;
   const raise = () => {
+    if (loadingFinished || curtain.isConnected) return;
     document.head.appendChild(style);
     document.body.appendChild(curtain);
   };
-  if (document.body) raise();
-  else document.addEventListener("DOMContentLoaded", raise, { once: true });
+  // Fast cached visits should go straight to the game rather than flash a
+  // full-screen status card. First visits still get a clear explanation after
+  // a short grace period, once there is something worth explaining.
+  loadingNoticeTimer = setTimeout(() => {
+    if (document.body) raise();
+    else document.addEventListener("DOMContentLoaded", raise, { once: true });
+  }, LOADING_NOTICE_DELAY_MS);
 
   // The engine is ready when it has answered something. `/runtime` is the
   // cheapest question there is — it builds no observation at all.
@@ -333,6 +513,9 @@
       report.error = String(error.message || error);
     })
     .then(() => {
+      loadingFinished = true;
+      clearTimeout(loadingNoticeTimer);
+      if (!curtain.isConnected) return;
       curtain.classList.add("gone");
       setTimeout(() => curtain.remove(), 450);
     });

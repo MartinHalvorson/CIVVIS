@@ -188,21 +188,47 @@ def stale_rig_problems(process_lines, rig=RIG_BINARY):
 
     The decider's binary is named on the brain's own command line (`--bin`), so the
     comparison needs no configuration — it asks the running system what it is using.
+
+    ⚠⚠⚠ AND SO IS THE SERVER'S, WHICH THIS USED TO ASSUME INSTEAD OF ASKING. `rig`
+    defaulted to a hardcoded `~/civvis-civ6-mirror/civvis`, so the moment `follow.py`
+    was started from a checkout — its repo copy resolves `BIN` to
+    `<repo>/target/release/civvis` — this compared a file NOBODY WAS RUNNING and
+    reported on it with a straight face. That is the same failure the paragraphs
+    above describe, in a new costume: the answer was about the wrong artefact, and
+    it read exactly like an answer about the right one. The served binary is on
+    `civvis play --mirror`'s command line; take it from there and keep the constant
+    only as the last resort.
     """
-    wanted = None
-    for line in process_lines:
-        if "civ6_brain.py" not in line or "--bin" not in line:
-            continue
-        parts = line.split()
-        if "--bin" in parts:
-            index = parts.index("--bin")
-            if index + 1 < len(parts):
-                wanted = parts[index + 1]
-                break
+    def named(needle, flag):
+        for line in process_lines:
+            if needle not in line or flag not in line:
+                continue
+            parts = line.split()
+            if flag in parts:
+                index = parts.index(flag)
+                if index + 1 < len(parts):
+                    return parts[index + 1]
+        return None
+
+    wanted = named("civ6_brain.py", "--bin")
     if wanted is None:
         return []
+    # `civvis play --mirror <stage>` is how follow.py serves the board; argv[0] is
+    # the binary doing it. ⚠ `nice -n 5 <bin> play --mirror …` prefixes the line, so
+    # find the word before `play` rather than taking the first one.
+    served = None
+    for line in process_lines:
+        if "play" not in line or "--mirror" not in line:
+            continue
+        parts = line.split()
+        if "play" in parts:
+            index = parts.index("play")
+            if index > 0 and "civ6_" not in parts[index - 1]:
+                served = parts[index - 1]
+                break
+    served = served or rig
     try:
-        rig_at = os.path.getmtime(rig)
+        rig_at = os.path.getmtime(served)
         decider_at = os.path.getmtime(wanted)
     except OSError:
         # ⚠ Absent is not stale. A rig that is not there at all is a different
@@ -213,8 +239,12 @@ def stale_rig_problems(process_lines, rig=RIG_BINARY):
     behind = (decider_at - rig_at) / 3600.0
     return [
         f"the served board is built by a rig binary {behind:.1f}h older than the "
-        f"decider's — rebuild it (cargo build --release --bin civvis), then restart "
-        f"follow.py AND the server, because a running one keeps its inode"
+        f"decider's ({served} vs {wanted}) — rebuild it "
+        f"(cargo build --release --bin civvis), then restart follow.py AND the "
+        f"server, because a running one keeps its inode. "
+        f"⚠ mtime is a PROXY for the code: it warns on a fresh copy of identical "
+        f"sources and stays silent on a stale binary someone touched. Confirm with "
+        f"git before rebuilding"
     ]
 
 

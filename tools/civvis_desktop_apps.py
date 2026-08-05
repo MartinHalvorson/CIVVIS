@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Build, install, and verify the local Rust and WASM CIVVIS macOS apps.
+"""Build, refresh, install, and verify local Rust and WASM CIVVIS macOS apps.
 
 Both apps are cut from one pinned Git revision, rendered from one launcher
-template, signed before installation, and swapped under one process lock.  The
-previous bundles are archived instead of overwritten.
+template, signed before installation, and swapped under one process lock. The
+private installed bundles are exposed through stable Desktop links so a
+background launch agent never needs write access to macOS's protected Desktop
+folder. Previous bundles are archived instead of overwritten.
 """
 
 import argparse
@@ -11,6 +13,7 @@ import contextlib
 import dataclasses
 import datetime as dt
 import fcntl
+import hashlib
 import json
 import os
 import pathlib
@@ -27,7 +30,8 @@ from typing import Dict, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 REPOSITORY_URL = "https://github.com/MartinHalvorson/CIVVIS"
 FULL_COMMIT = re.compile(r"^[0-9a-f]{40}$")
-TEMPLATE_TOKENS = ("MODE", "LABEL", "COMMIT", "COMMIT_TIME", "BUILT_AT")
+GENERATED_BUILD_NAME = re.compile(r"^build-[0-9a-f]+-\d{8}T\d{6}Z$")
+TEMPLATE_TOKENS = ("MODE", "LABEL", "COMMIT", "COMMIT_TIME", "BUILT_AT", "REPO")
 DEFAULT_PRESET = (
     "AI simulation; Small 74x46 flat Continents; 6 majors;\n"
     "9 city-states; free for all; Ancient; Online/250 turns; Blitz/1000 ms;\n"
@@ -42,6 +46,7 @@ class AppSpec:
     label: str
     bundle_id: str
     port: int
+    legacy_labels: Tuple[str, ...] = ()
 
     @property
     def bundle_name(self) -> str:
@@ -49,12 +54,16 @@ class AppSpec:
 
     @property
     def executable_name(self) -> str:
-        return self.label + " Launcher"
+        return "CIVVISLauncher"
+
+    @property
+    def launcher_script_name(self) -> str:
+        return "CIVVIS Launcher.zsh"
 
 
 APPS = (
-    AppSpec("rust", "Rust CIVVIS", "ai.civvis.rust.desktop", 8785),
-    AppSpec("wasm", "WASM CIVVIS", "ai.civvis.wasm.desktop", 8790),
+    AppSpec("rust", "CIVVIS Rust", "ai.civvis.rust.desktop", 8785, ("Rust CIVVIS",)),
+    AppSpec("wasm", "CIVVIS Wasm", "ai.civvis.wasm.desktop", 8790, ("WASM CIVVIS",)),
 )
 
 
@@ -77,6 +86,8 @@ class BuildArtifacts:
     wasm_bytes: int
     bundle_bytes: int
     serve_script: pathlib.Path
+    supervisor_script: pathlib.Path
+    source_snapshot: str
     version: str
 
 
@@ -84,6 +95,8 @@ class BuildArtifacts:
 class InstalledSwap:
     archives: Tuple[Tuple[pathlib.Path, pathlib.Path], ...]
     targets: Tuple[pathlib.Path, ...]
+    links: Tuple[Tuple[pathlib.Path, Optional[str]], ...]
+    desktop: pathlib.Path
 
 
 class DesktopAppError(RuntimeError):
@@ -134,7 +147,7 @@ def resolve_revision(repo: pathlib.Path, ref: str, fetch: bool) -> Revision:
         raise DesktopAppError("git did not resolve a full commit for " + ref)
     return Revision(
         commit=commit,
-        short=commit[:7],
+        short=git(repo, "rev-parse", "--short", commit),
         committed_at=git(repo, "show", "-s", "--format=%cI", commit),
         title=git(repo, "show", "-s", "--format=%s", commit),
     )
@@ -156,6 +169,9 @@ def install_lock(state_dir: pathlib.Path) -> Iterator[None]:
         try:
             yield
         finally:
+            held.seek(0)
+            held.truncate()
+            held.flush()
             fcntl.flock(held.fileno(), fcntl.LOCK_UN)
 
 
@@ -180,9 +196,16 @@ def verify_default_contract(source: pathlib.Path, template: pathlib.Path) -> Non
     launcher = template.read_text(encoding="utf-8")
     rust_fragments = (
         "--players 6 --width 74 --height 46 --city-states 9",
-        "--speed online --map continents --shape flat --poles poles",
-        "--start-era ancient --spectate",
+        "--turns 250 --speed online --map continents --shape flat --poles poles",
         "--victories science,culture,religious,diplomatic,domination,score",
+        "--fixed-setup --source-check-interval 1200",
+    )
+    supervisor = (source / "tools/spectator_supervisor.py").read_text(encoding="utf-8")
+    supervisor_fragments = (
+        'SIMULATION_SPEED = "online"',
+        'SIMULATION_START_ERA = "ancient"',
+        '"--spectate",',
+        '"--supervised",',
     )
     wasm = (source / "src/wasm.rs").read_text(encoding="utf-8")
     wasm_fragments = (
@@ -203,9 +226,52 @@ def verify_default_contract(source: pathlib.Path, template: pathlib.Path) -> Non
         "teams: Vec::new(),",
     )
     missing = [fragment for fragment in rust_fragments if fragment not in launcher]
+    missing += [fragment for fragment in supervisor_fragments if fragment not in supervisor]
     missing += [fragment for fragment in wasm_fragments if fragment not in wasm]
     if missing:
         raise DesktopAppError("desktop default contract drifted: " + ", ".join(missing))
+
+
+def runtime_source_snapshot(source: pathlib.Path) -> str:
+    """Hash the inputs the native supervisor uses to validate a promoted build."""
+    files: List[pathlib.Path] = []
+    for relative in ("Cargo.toml", "Cargo.lock", "build.rs", "src", "data", "web"):
+        path = source / relative
+        if path.is_file():
+            files.append(path)
+        elif path.is_dir():
+            files.extend(candidate for candidate in path.rglob("*") if candidate.is_file())
+    digest = hashlib.sha256()
+    for path in sorted(files, key=lambda candidate: candidate.relative_to(source).as_posix()):
+        relative = path.relative_to(source).as_posix().encode()
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def reusable_cargo_targets(state_dir: pathlib.Path) -> Tuple[pathlib.Path, pathlib.Path]:
+    cargo_cache = state_dir / "cargo-cache"
+    cargo_cache.mkdir(parents=True, exist_ok=True)
+    builds = sorted(
+        (
+            path
+            for path in state_dir.iterdir()
+            if path.is_dir() and GENERATED_BUILD_NAME.fullmatch(path.name)
+        ),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    targets = (cargo_cache / "native-target", cargo_cache / "wasm-target")
+    for target in targets:
+        if target.exists():
+            continue
+        for build in builds:
+            legacy = build / target.name
+            if legacy.is_dir():
+                shutil.move(str(legacy), str(target))
+                break
+    return targets
 
 
 def build_artifacts(
@@ -216,8 +282,10 @@ def build_artifacts(
 ) -> BuildArtifacts:
     build_root = state_dir / ("build-" + revision.short + "-" + compact_stamp())
     source = build_root / "source"
-    native_target = build_root / "native-target"
-    wasm_target = build_root / "wasm-target"
+    # Cargo outputs are safe to reuse across pinned detached worktrees and make
+    # the perpetual refresh cadence practical. The immutable artifacts copied
+    # into each app still live under this build's timestamped root.
+    native_target, wasm_target = reusable_cargo_targets(state_dir)
     wasm_site = build_root / "wasm-site"
     build_root.mkdir(parents=True)
     run(("git", "worktree", "add", "--detach", str(source), revision.commit), cwd=repo)
@@ -250,6 +318,8 @@ def build_artifacts(
             raise DesktopAppError("WASM build did not produce civvis.wasm")
         serve_script = build_root / "serve.py"
         shutil.copy2(source / "beta/serve.py", serve_script)
+        supervisor_script = build_root / "spectator_supervisor.py"
+        shutil.copy2(source / "tools/spectator_supervisor.py", supervisor_script)
         cargo_manifest = (source / "Cargo.toml").read_text(encoding="utf-8")
         version_match = re.search(r'^version\s*=\s*"([^"]+)"', cargo_manifest, re.MULTILINE)
         if not version_match:
@@ -274,6 +344,8 @@ def build_artifacts(
             wasm_bytes=int(manifest["wasm_bytes"]),
             bundle_bytes=int(manifest["bundle_bytes"]),
             serve_script=serve_script,
+            supervisor_script=supervisor_script,
+            source_snapshot=runtime_source_snapshot(source),
             version=version_match.group(1),
         )
     finally:
@@ -281,13 +353,20 @@ def build_artifacts(
             run(("git", "worktree", "remove", str(source)), cwd=repo)
 
 
-def render_launcher(template: str, spec: AppSpec, revision: Revision, built_at: str) -> str:
+def render_launcher(
+    template: str,
+    spec: AppSpec,
+    revision: Revision,
+    built_at: str,
+    repo: pathlib.Path,
+) -> str:
     values = {
         "MODE": spec.mode,
         "LABEL": spec.label,
         "COMMIT": revision.commit,
         "COMMIT_TIME": revision.committed_at,
         "BUILT_AT": built_at,
+        "REPO": str(repo),
     }
     rendered = template
     for token in TEMPLATE_TOKENS:
@@ -349,6 +428,12 @@ def stage_apps(repo: pathlib.Path, artifacts: BuildArtifacts, template_path: pat
     apps_root = artifacts.root / "apps"
     apps_root.mkdir()
     template = template_path.read_text(encoding="utf-8")
+    watcher_template = template_path.with_name("CIVVIS Tab Watcher.zsh.in")
+    if not watcher_template.is_file():
+        raise DesktopAppError("desktop tab watcher template is missing")
+    native_launcher_source = template_path.with_name("CIVVIS Launcher.c")
+    if not native_launcher_source.is_file():
+        raise DesktopAppError("native desktop launcher source is missing")
     system_icon = pathlib.Path(
         "/System/Library/CoreServices/CoreTypes.bundle/Contents/Resources/GenericApplicationIcon.icns"
     )
@@ -362,9 +447,32 @@ def stage_apps(repo: pathlib.Path, artifacts: BuildArtifacts, template_path: pat
         macos.mkdir(parents=True)
         resources.mkdir()
         built_at = artifacts.native_built_at if spec.mode == "rust" else artifacts.wasm_built_at
-        launcher = macos / spec.executable_name
-        launcher.write_text(render_launcher(template, spec, artifacts.revision, built_at), encoding="utf-8")
-        launcher.chmod(0o755)
+        launcher_script = resources / spec.launcher_script_name
+        launcher_script.write_text(
+            render_launcher(template, spec, artifacts.revision, built_at, repo),
+            encoding="utf-8",
+        )
+        # The native wrapper passes this resource to /bin/zsh; only the Mach-O
+        # wrapper belongs in Contents/MacOS. Files there are always treated as
+        # nested code, whose script-signature xattrs shutil cannot preserve.
+        launcher_script.chmod(0o644)
+        native_launcher = macos / spec.executable_name
+        run(
+            (
+                "/usr/bin/xcrun",
+                "--sdk",
+                "macosx",
+                "clang",
+                "-Os",
+                "-Wall",
+                "-Wextra",
+                "-Werror",
+                "-mmacosx-version-min=13.0",
+                str(native_launcher_source),
+                "-o",
+                str(native_launcher),
+            )
+        )
         write_info_plist(
             app / "Contents/Info.plist",
             spec,
@@ -376,22 +484,46 @@ def stage_apps(repo: pathlib.Path, artifacts: BuildArtifacts, template_path: pat
         # not part of either app bundle.
         shutil.copyfile(system_icon, resources / "CIVVIS.icns")
         (resources / "BUILD.txt").write_text(build_note(spec, artifacts, built_at), encoding="utf-8")
+        watcher = resources / "CIVVIS Tab Watcher.zsh"
+        shutil.copy2(watcher_template, watcher)
+        watcher.chmod(0o755)
         if spec.mode == "rust":
             binary = resources / ("civvis-" + artifacts.revision.commit)
             shutil.copy2(artifacts.native_binary, binary)
             binary.chmod(0o755)
+            shutil.copy2(artifacts.supervisor_script, resources / "spectator_supervisor.py")
+            (resources / "spectator_supervisor.py").chmod(0o755)
+            runtime = {
+                "revision": artifacts.revision.commit,
+                "embedded_revision": artifacts.revision.short,
+                "commit_time": artifacts.revision.committed_at,
+                "dirty": False,
+                "source_snapshot": artifacts.source_snapshot,
+                "binary_sha256": hashlib.sha256(binary.read_bytes()).hexdigest(),
+                "built_at": artifacts.native_built_at,
+            }
+            (resources / "spectator-build.json").write_text(
+                json.dumps(runtime, indent=2) + "\n", encoding="utf-8"
+            )
         else:
             shutil.copytree(artifacts.wasm_site, resources / "site")
             shutil.copy2(artifacts.serve_script, resources / "serve.py")
             (resources / "serve.py").chmod(0o755)
+            # The browser engine has no filesystem. Its local host delegates
+            # terminal evidence to this same-revision native helper so Wasm
+            # games use the exact locked Glicko writer as native games.
+            rating_helper = resources / ("civvis-rating-" + artifacts.revision.commit)
+            shutil.copy2(artifacts.native_binary, rating_helper)
+            rating_helper.chmod(0o755)
 
         run(("/usr/bin/xattr", "-cr", str(app)))
         run(("/usr/bin/codesign", "--force", "--deep", "--sign", "-", str(app)))
         run(("/usr/bin/codesign", "--verify", "--deep", "--strict", "--verbose=2", str(app)))
-        run(("/bin/zsh", "-n", str(launcher)))
+        run(("/bin/zsh", "-n", str(launcher_script)))
+        run(("/bin/zsh", "-n", str(watcher)))
         run(("/usr/bin/plutil", "-lint", str(app / "Contents/Info.plist")))
 
-    if (apps_root / "WASM CIVVIS.app/Contents/Resources/serve.py").read_bytes() != artifacts.serve_script.read_bytes():
+    if (apps_root / "CIVVIS Wasm.app/Contents/Resources/serve.py").read_bytes() != artifacts.serve_script.read_bytes():
         raise DesktopAppError("the staged WASM server differs from the selected source")
     return apps_root
 
@@ -404,8 +536,8 @@ def commit_from_build_note(app: pathlib.Path) -> str:
     return match.group(1)[:7] if match else "unknown"
 
 
-def unused_archive(previous: pathlib.Path, spec: AppSpec, short: str, stamp: str) -> pathlib.Path:
-    stem = spec.label.replace(" ", "-") + "-" + short + "-" + stamp
+def unused_archive(previous: pathlib.Path, label: str, short: str, stamp: str) -> pathlib.Path:
+    stem = label.replace(" ", "-") + "-" + short + "-" + stamp
     candidate = previous / (stem + ".app")
     suffix = 2
     while candidate.exists():
@@ -414,35 +546,107 @@ def unused_archive(previous: pathlib.Path, spec: AppSpec, short: str, stamp: str
     return candidate
 
 
-def install_apps(apps_root: pathlib.Path, desktop: pathlib.Path, state_dir: pathlib.Path) -> InstalledSwap:
-    desktop.mkdir(parents=True, exist_ok=True)
+def symlink_points_to(link: pathlib.Path, target: pathlib.Path) -> bool:
+    if not link.is_symlink():
+        return False
+    held = pathlib.Path(os.readlink(link))
+    if not held.is_absolute():
+        held = link.parent / held
+    return held.resolve(strict=False) == target.resolve(strict=False)
+
+
+def restore_links(links: Sequence[Tuple[pathlib.Path, Optional[str]]]) -> None:
+    for link, previous_target in reversed(links):
+        if link.is_symlink():
+            link.unlink()
+        if previous_target is not None:
+            link.symlink_to(previous_target, target_is_directory=True)
+
+
+def install_apps(
+    apps_root: pathlib.Path, desktop: pathlib.Path, state_dir: pathlib.Path
+) -> InstalledSwap:
+    if not desktop.is_dir():
+        desktop.mkdir(parents=True)
     previous = state_dir / "previous"
     previous.mkdir(parents=True, exist_ok=True)
+    installed_root = state_dir / "installed"
+    installed_root.mkdir(parents=True, exist_ok=True)
     stamp = compact_stamp()
     incoming: List[Tuple[pathlib.Path, pathlib.Path]] = []
     archived: List[Tuple[pathlib.Path, pathlib.Path]] = []
     installed: List[Tuple[pathlib.Path, pathlib.Path]] = []
+    links: List[Tuple[pathlib.Path, Optional[str]]] = []
     try:
         for spec in APPS:
             staged = apps_root / spec.bundle_name
-            temporary = desktop / ("." + spec.bundle_name + ".incoming-" + str(os.getpid()))
-            if temporary.exists():
+            temporary = installed_root / (
+                "." + spec.bundle_name + ".incoming-" + str(os.getpid())
+            )
+            if temporary.exists() or temporary.is_symlink():
                 raise DesktopAppError("stale incoming bundle exists: " + str(temporary))
             shutil.copytree(staged, temporary, copy_function=shutil.copy2)
             incoming.append((temporary, staged))
 
         for spec in APPS:
-            target = desktop / spec.bundle_name
+            target = installed_root / spec.bundle_name
+            if target.is_symlink():
+                raise DesktopAppError("installed bundle must not be a symlink: " + str(target))
             if target.exists():
-                archive = unused_archive(previous, spec, commit_from_build_note(target), stamp)
+                archive = unused_archive(
+                    previous, spec.label, commit_from_build_note(target), stamp
+                )
                 shutil.move(str(target), str(archive))
                 archived.append((archive, target))
 
         for spec, (temporary, staged) in zip(APPS, incoming):
-            target = desktop / spec.bundle_name
+            target = installed_root / spec.bundle_name
             shutil.move(str(temporary), str(target))
             installed.append((target, staged))
+
+        for spec in APPS:
+            target = desktop / spec.bundle_name
+            installed_target = installed_root / spec.bundle_name
+            if not symlink_points_to(target, installed_target):
+                previous_target = None
+                if target.is_symlink():
+                    previous_target = os.readlink(target)
+                    target.unlink()
+                elif target.exists():
+                    archive = unused_archive(
+                        previous, spec.label, commit_from_build_note(target), stamp
+                    )
+                    shutil.move(str(target), str(archive))
+                    archived.append((archive, target))
+                temporary_link = desktop / (
+                    "." + spec.bundle_name + ".link-" + str(os.getpid())
+                )
+                if temporary_link.exists() or temporary_link.is_symlink():
+                    raise DesktopAppError("stale Desktop link exists: " + str(temporary_link))
+                links.append((target, previous_target))
+                try:
+                    temporary_link.symlink_to(installed_target, target_is_directory=True)
+                    os.replace(temporary_link, target)
+                finally:
+                    if temporary_link.is_symlink():
+                        temporary_link.unlink()
+
+            for legacy_label in spec.legacy_labels:
+                legacy = desktop / (legacy_label + ".app")
+                if legacy.is_symlink():
+                    links.append((legacy, os.readlink(legacy)))
+                    legacy.unlink()
+                elif legacy.exists():
+                    archive = unused_archive(
+                        previous,
+                        legacy_label,
+                        commit_from_build_note(legacy),
+                        stamp,
+                    )
+                    shutil.move(str(legacy), str(archive))
+                    archived.append((archive, legacy))
     except Exception:
+        restore_links(links)
         for target, staged in reversed(installed):
             if target.exists():
                 shutil.rmtree(target)
@@ -456,13 +660,16 @@ def install_apps(apps_root: pathlib.Path, desktop: pathlib.Path, state_dir: path
     return InstalledSwap(
         archives=tuple(archived),
         targets=tuple(target for target, _ in installed),
+        links=tuple(links),
+        desktop=desktop,
     )
 
 
 def rollback_install(swap: InstalledSwap, relaunch: bool = False) -> None:
     # The generated source bundles remain in the build directory, so removing
-    # a failed installed copy loses nothing. Restore every previous bundle to
-    # its original Desktop name before asking it to launch again.
+    # a failed installed copy loses nothing. Restore every previous private or
+    # Desktop bundle before asking the stable links to launch again.
+    restore_links(swap.links)
     for target in reversed(swap.targets):
         if target.exists():
             shutil.rmtree(target)
@@ -471,9 +678,143 @@ def rollback_install(swap: InstalledSwap, relaunch: bool = False) -> None:
             shutil.move(str(archive), str(target))
     if relaunch and swap.targets:
         for spec in APPS:
-            target = swap.targets[0].parent / spec.bundle_name
+            target = swap.desktop / spec.bundle_name
             if target.exists():
                 subprocess.run(("/usr/bin/open", "-n", str(target)), check=False)
+
+
+REFRESH_AGENT_LABEL = "ai.civvis.desktop-refresh"
+REFRESH_INTERVAL_SECONDS = 60
+REFRESH_REBUILD_AGE_MINUTES = 10
+MAX_BUILD_AGE_MINUTES = 20
+
+
+def refresh_agent_path() -> pathlib.Path:
+    return pathlib.Path.home() / "Library/LaunchAgents" / (REFRESH_AGENT_LABEL + ".plist")
+
+
+def refresh_agent_payload(
+    repo: pathlib.Path, desktop: pathlib.Path, state_dir: pathlib.Path
+) -> dict:
+    home = pathlib.Path.home()
+    log = home / "Library/Logs/CIVVIS Desktop Refresh.log"
+    return {
+        "Label": REFRESH_AGENT_LABEL,
+        "ProgramArguments": [
+            "/usr/bin/python3",
+            str(repo / "tools/civvis_desktop_apps.py"),
+            "refresh",
+            "--repo",
+            str(repo),
+            "--desktop",
+            str(desktop),
+            "--state-dir",
+            str(state_dir),
+            "--max-build-age-minutes",
+            str(MAX_BUILD_AGE_MINUTES),
+            "--rebuild-age-minutes",
+            str(REFRESH_REBUILD_AGE_MINUTES),
+            "--no-launch",
+        ],
+        "StartInterval": REFRESH_INTERVAL_SECONDS,
+        "ProcessType": "Background",
+        "LowPriorityIO": True,
+        "Nice": 10,
+        "StandardOutPath": str(log),
+        "StandardErrorPath": str(log),
+        "EnvironmentVariables": {
+            "HOME": str(home),
+            "PATH": ":".join(
+                (
+                    str(home / ".cargo/bin"),
+                    "/opt/homebrew/bin",
+                    "/usr/local/bin",
+                    "/usr/bin",
+                    "/bin",
+                    "/usr/sbin",
+                    "/sbin",
+                )
+            ),
+        },
+    }
+
+
+def install_refresh_agent(
+    repo: pathlib.Path, desktop: pathlib.Path, state_dir: pathlib.Path
+) -> pathlib.Path:
+    path = refresh_agent_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    (pathlib.Path.home() / "Library/Logs").mkdir(parents=True, exist_ok=True)
+    staged = path.with_suffix(".plist.new")
+    with staged.open("wb") as output:
+        plistlib.dump(refresh_agent_payload(repo, desktop, state_dir), output, sort_keys=True)
+    os.replace(staged, path)
+    domain = "gui/{}".format(os.getuid())
+    subprocess.run(
+        ("/bin/launchctl", "bootout", domain + "/" + REFRESH_AGENT_LABEL),
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    run(("/bin/launchctl", "bootstrap", domain, str(path)))
+    return path
+
+
+def verify_refresh_agent(
+    repo: pathlib.Path, desktop: pathlib.Path, state_dir: pathlib.Path
+) -> dict:
+    path = refresh_agent_path()
+    if not path.is_file():
+        raise DesktopAppError("missing recurring refresh agent " + str(path))
+    with path.open("rb") as source:
+        installed = plistlib.load(source)
+    expected = refresh_agent_payload(repo, desktop, state_dir)
+    if installed != expected:
+        raise DesktopAppError("the recurring desktop refresh agent is out of date")
+    domain = "gui/{}/{}".format(os.getuid(), REFRESH_AGENT_LABEL)
+    loaded = subprocess.run(
+        ("/bin/launchctl", "print", domain),
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    if loaded.returncode != 0:
+        raise DesktopAppError("the recurring desktop refresh agent is not loaded")
+    return {
+        "label": REFRESH_AGENT_LABEL,
+        "loaded": True,
+        "interval_seconds": installed["StartInterval"],
+        "rebuild_age_minutes": REFRESH_REBUILD_AGE_MINUTES,
+        "max_build_age_minutes": MAX_BUILD_AGE_MINUTES,
+        "path": str(path),
+    }
+
+
+def prune_generated_state(
+    state_dir: pathlib.Path, keep_builds: int = 2, keep_archives: int = 4
+) -> None:
+    """Bound disk use for an updater designed to run indefinitely."""
+    builds = sorted(
+        (
+            path
+            for path in state_dir.iterdir()
+            if path.is_dir() and GENERATED_BUILD_NAME.fullmatch(path.name)
+        ),
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    previous = state_dir / "previous"
+    archives = (
+        sorted(
+            (path for path in previous.glob("*.app") if path.is_dir()),
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        if previous.is_dir()
+        else []
+    )
+    for path in builds[max(0, keep_builds) :] + archives[max(0, keep_archives) :]:
+        shutil.rmtree(path)
 
 
 def json_url(url: str) -> dict:
@@ -511,8 +852,8 @@ def launch_apps(desktop: pathlib.Path, artifacts: BuildArtifacts) -> None:
     )
 
 
-def launcher_metadata(app: pathlib.Path, executable: str) -> dict:
-    text = (app / "Contents/MacOS" / executable).read_text(encoding="utf-8")
+def launcher_metadata(app: pathlib.Path, launcher_script: str) -> dict:
+    text = (app / "Contents/Resources" / launcher_script).read_text(encoding="utf-8")
     values = {}
     for name in ("mode", "commit", "commit_time", "built_at"):
         match = re.search(r'^readonly civvis_{}="([^"]+)"$'.format(name), text, re.MULTILINE)
@@ -525,6 +866,28 @@ def launcher_metadata(app: pathlib.Path, executable: str) -> dict:
 def age_minutes(timestamp: str) -> int:
     parsed = dt.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
     return int((dt.datetime.now(dt.timezone.utc) - parsed).total_seconds() // 60)
+
+
+def installed_pair_needs_refresh(
+    desktop: pathlib.Path,
+    revision: Revision,
+    max_build_age_minutes: int,
+) -> bool:
+    """Cheaply decide whether a click should rebuild the installed pair."""
+    metadata = []
+    for spec in APPS:
+        app = desktop / spec.bundle_name
+        launcher = app / "Contents/Resources" / spec.launcher_script_name
+        if not launcher.is_file():
+            return True
+        try:
+            held = launcher_metadata(app, spec.launcher_script_name)
+            if age_minutes(held["built_at"]) > max_build_age_minutes:
+                return True
+        except (DesktopAppError, OSError, ValueError):
+            return True
+        metadata.append(held)
+    return any(held["commit"] != revision.commit for held in metadata)
 
 
 def route(url: str) -> Tuple[int, str, str, str]:
@@ -549,6 +912,36 @@ def listener(repo: pathlib.Path, port: int) -> dict:
     return {"pid": int(pid), "ppid": int(parent), "command": command}
 
 
+def wait_for_detached_listeners(repo: pathlib.Path, seconds: int = 30) -> dict:
+    """Wait until both ports belong to the installed long-lived runtimes."""
+    deadline = time.time() + seconds
+    held = {}
+    last_error: Optional[Exception] = None
+    while time.time() < deadline:
+        try:
+            held = {
+                "rust": listener(repo, 8785),
+                "wasm": listener(repo, 8790),
+            }
+            if (
+                "/rust-runtime/target/spectator/civvis play" in held["rust"]["command"]
+                and "/CIVVIS Wasm.app/Contents/Resources/serve.py "
+                in held["wasm"]["command"]
+            ):
+                return held
+        except DesktopAppError as error:
+            last_error = error
+        time.sleep(0.25)
+    if held:
+        detail = ", ".join(
+            "{} pid {} ppid {}".format(mode, process["pid"], process["ppid"])
+            for mode, process in held.items()
+        )
+    else:
+        detail = str(last_error or "listeners unavailable")
+    raise DesktopAppError("desktop listeners did not detach from their launchers: " + detail)
+
+
 def verify_installed(
     repo: pathlib.Path,
     desktop: pathlib.Path,
@@ -563,8 +956,12 @@ def verify_installed(
             raise DesktopAppError("missing " + str(app))
         run(("/usr/bin/codesign", "--verify", "--deep", "--verbose=2", str(app)))
         run(("/usr/bin/plutil", "-lint", str(app / "Contents/Info.plist")))
-        run(("/bin/zsh", "-n", str(app / "Contents/MacOS" / spec.executable_name)))
-        metadata[spec.mode] = launcher_metadata(app, spec.executable_name)
+        native_launcher = app / "Contents/MacOS" / spec.executable_name
+        if not native_launcher.is_file() or not os.access(native_launcher, os.X_OK):
+            raise DesktopAppError("missing native bundle executable " + str(native_launcher))
+        run(("/usr/bin/codesign", "--verify", "--verbose=2", str(native_launcher)))
+        run(("/bin/zsh", "-n", str(app / "Contents/Resources" / spec.launcher_script_name)))
+        metadata[spec.mode] = launcher_metadata(app, spec.launcher_script_name)
 
     rust, wasm = metadata["rust"], metadata["wasm"]
     if rust["commit"] != wasm["commit"] or rust["commit_time"] != wasm["commit_time"]:
@@ -577,15 +974,34 @@ def verify_installed(
         if age > max_build_age_minutes:
             raise DesktopAppError("{} build is {} minutes old".format(mode, age))
 
+    wasm_app = desktop / "CIVVIS Wasm.app"
+    rating_helper = (
+        wasm_app
+        / "Contents/Resources"
+        / ("civvis-rating-" + rust["commit"])
+    )
+    if not rating_helper.is_file() or not os.access(rating_helper, os.X_OK):
+        raise DesktopAppError("installed WASM app is missing its native rating helper")
+    native_binary = (
+        desktop
+        / "CIVVIS Rust.app/Contents/Resources"
+        / ("civvis-" + rust["commit"])
+    )
+    if (
+        not native_binary.is_file()
+        or hashlib.sha256(rating_helper.read_bytes()).digest()
+        != hashlib.sha256(native_binary.read_bytes()).digest()
+    ):
+        raise DesktopAppError("WASM rating helper differs from the paired native engine")
     manifest = json.loads(
-        (desktop / "WASM CIVVIS.app/Contents/Resources/site/beta/build.json").read_text(encoding="utf-8")
+        (wasm_app / "Contents/Resources/site/beta/build.json").read_text(encoding="utf-8")
     )
     if manifest.get("commit") != wasm["commit"] or manifest.get("built_at") != wasm["built_at"]:
         raise DesktopAppError("WASM launcher and manifest provenance differ")
     selected_serve = subprocess.check_output(
         ("git", "show", rust["commit"] + ":beta/serve.py"), cwd=str(repo)
     )
-    if (desktop / "WASM CIVVIS.app/Contents/Resources/serve.py").read_bytes() != selected_serve:
+    if (wasm_app / "Contents/Resources/serve.py").read_bytes() != selected_serve:
         raise DesktopAppError("installed WASM server differs from current source")
 
     report = {"commit": rust["commit"], "rust": rust, "wasm": wasm, "routes": {}}
@@ -621,15 +1037,12 @@ def verify_installed(
             raise DesktopAppError("the local WASM channel lost its query string")
         if any("no-store" not in route_result[3] for route_result in rust_routes + wasm_routes):
             raise DesktopAppError("one or more local channel responses are cacheable")
-        rust_listener = listener(repo, 8785)
-        wasm_listener = listener(repo, 8790)
-        if rust_listener["ppid"] != 1 or wasm_listener["ppid"] != 1:
-            raise DesktopAppError("a desktop listener is still attached to its launcher")
+        listeners = wait_for_detached_listeners(repo)
         report.update(
             {
                 "live_rust": live_rust,
                 "live_wasm": live_wasm,
-                "listeners": {"rust": rust_listener, "wasm": wasm_listener},
+                "listeners": listeners,
                 "routes": {"rust": rust_routes, "wasm": wasm_routes},
             }
         )
@@ -639,7 +1052,7 @@ def verify_installed(
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     script = pathlib.Path(__file__)
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=("build", "install", "verify"))
+    parser.add_argument("action", choices=("build", "install", "refresh", "verify"))
     parser.add_argument("--repo", type=pathlib.Path, default=repository_root(script))
     parser.add_argument("--ref", default="origin/main")
     parser.add_argument("--desktop", type=pathlib.Path, default=pathlib.Path.home() / "Desktop")
@@ -650,7 +1063,12 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument("--no-fetch", action="store_true")
     parser.add_argument("--no-launch", action="store_true")
-    parser.add_argument("--max-build-age-minutes", type=int, default=30)
+    parser.add_argument(
+        "--max-build-age-minutes", type=int, default=MAX_BUILD_AGE_MINUTES
+    )
+    parser.add_argument(
+        "--rebuild-age-minutes", type=int, default=REFRESH_REBUILD_AGE_MINUTES
+    )
     return parser.parse_args(argv)
 
 
@@ -673,11 +1091,17 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 args.max_build_age_minutes,
                 not args.no_launch,
             )
+            report["refresh_agent"] = verify_refresh_agent(repo, desktop, state_dir)
             print(json.dumps(report, indent=2, sort_keys=True))
             return 0
 
         with install_lock(state_dir):
             revision = resolve_revision(repo, args.ref, not args.no_fetch)
+            if args.action == "refresh" and not installed_pair_needs_refresh(
+                desktop, revision, args.rebuild_age_minutes
+            ):
+                print("desktop apps already match {} and are fresh".format(revision.short))
+                return 0
             artifacts = build_artifacts(repo, revision, state_dir, template)
             apps_root = stage_apps(repo, artifacts, template)
             print("staged {} and {} from {} at {}".format(APPS[0].bundle_name, APPS[1].bundle_name, revision.short, apps_root))
@@ -686,20 +1110,31 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
             swap = install_apps(apps_root, desktop, state_dir)
             for path, _ in swap.archives:
                 print("archived", path)
+            should_launch = args.action == "install" and not args.no_launch
             try:
-                if not args.no_launch:
+                if should_launch:
                     launch_apps(desktop, artifacts)
+                if args.action == "install":
+                    install_refresh_agent(repo, desktop, state_dir)
                 report = verify_installed(
                     repo,
                     desktop,
                     revision,
                     args.max_build_age_minutes,
-                    not args.no_launch,
+                    should_launch,
                 )
+                if args.action == "install":
+                    report["refresh_agent"] = verify_refresh_agent(
+                        repo, desktop, state_dir
+                    )
             except Exception:
                 print("new desktop apps failed verification; restoring the archived pair", file=sys.stderr)
-                rollback_install(swap, relaunch=not args.no_launch)
+                rollback_install(swap, relaunch=should_launch)
                 raise
+            try:
+                prune_generated_state(state_dir)
+            except OSError as error:
+                print("warning: could not prune old desktop artifacts:", error, file=sys.stderr)
             print(json.dumps(report, indent=2, sort_keys=True))
             return 0
     except (DesktopAppError, subprocess.CalledProcessError, OSError, ValueError) as error:

@@ -441,6 +441,7 @@
   "Portugal": {
     "leader": "João III",
     "ability": "casa_da_india",
+    "unique_unit": "nau",
     "agenda": "navigators_school",
     "effects": {
       "city_gold": 1,
@@ -1418,6 +1419,7 @@
   "Maori": {
     "leader": "Kupe",
     "ability": "mana",
+    "unique_unit": "toa",
     "agenda": "kaitiakitanga",
     "effects": {
       "city_culture": 1,

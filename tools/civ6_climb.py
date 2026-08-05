@@ -10,9 +10,9 @@ in it says nothing -- "beaten on Emperor" is only a claim about the controller
 if every rung below it was also beaten by the same controller -- so a rung that
 runs out of attempts ends the campaign and says which rung and why.
 
-Each attempt uses a different map seed. Repeating the same seed measures the
-same game over and over, and a controller that cannot beat one particular map
-is a different problem from one that cannot beat the difficulty.
+Each attempt is an independent random real-Civ6 world. The current control
+setup has no working world-generation seed channel, so the ladder deliberately
+does not expose a pretend replay option.
 
 Usage::
 
@@ -42,7 +42,7 @@ def utc_stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
-def run_attempt(difficulty: str, seed: int, args: argparse.Namespace) -> dict | None:
+def run_attempt(difficulty: str, args: argparse.Namespace) -> dict | None:
     tag = f"{difficulty.replace('DIFFICULTY_', '').lower()}-{utc_stamp()}"
     command = [
         sys.executable, "-u", str(PLAY),
@@ -51,7 +51,6 @@ def run_attempt(difficulty: str, seed: int, args: argparse.Namespace) -> dict | 
         "--map", args.map,
         "--map-size", args.map_size,
         "--speed", args.speed,
-        "--seed", str(seed),
         "--max-turns", str(args.max_turns),
         "--timeout", str(args.timeout),
         "--lock-wait", str(args.lock_wait),
@@ -64,7 +63,6 @@ def run_attempt(difficulty: str, seed: int, args: argparse.Namespace) -> dict | 
         *([] if args.make_war else ["--no-war"]),
         "--assault-width", str(args.assault_width),
         "--settlers-in-flight", str(args.settlers_in_flight),
-        "--plan-near-window", str(args.plan_near_window),
         "--strength-weight", str(args.strength_weight),
         "--army-cap", str(args.army_cap),
         "--siege-units", str(args.siege_units),
@@ -73,7 +71,6 @@ def run_attempt(difficulty: str, seed: int, args: argparse.Namespace) -> dict | 
         "--max-empire-distance", str(args.max_empire_distance),
         "--garrison-per-city", str(args.garrison_per_city),
         *(["--export-state"] if args.export_state else []),
-        *(["--settle-plan", args.settle_plan] if args.settle_plan else []),
         # The operator's layout: CIVVIS owns the left half, the real game the
         # upper right, a terminal beneath it. Threaded through because a ladder
         # attempt relaunches Civ 6 and it comes back wherever it last was.
@@ -81,7 +78,7 @@ def run_attempt(difficulty: str, seed: int, args: argparse.Namespace) -> dict | 
         "--window-frac", str(args.window_frac),
         "--window-vfrac", str(args.window_vfrac),
     ]
-    print(f"\n=== {difficulty} seed {seed} -> {tag} ===", flush=True)
+    print(f"\n=== {difficulty} -> {tag} ===", flush=True)
     subprocess.run(command, check=False)
     summary = Path.home() / "civvis-civ6-runs" / "control" / tag / "summary.json"
     if not summary.is_file():
@@ -98,20 +95,7 @@ def climb(args: argparse.Namespace) -> int:
         if difficulty in state["wins"] and not args.only:
             continue
         for attempt in range(1, args.attempts + 1):
-            # ⚠ `--fixed-seed` REPLAYS THE SAME WORLD every attempt, which is what
-            # makes a CIVVIS settle plan meaningful: the plan describes one map, and
-            # the map is a function of the seed. Without it each attempt is a
-            # different world and a plan from the last one is describing terrain
-            # that no longer exists.
-            #
-            # Varying seeds remains the default, because a ladder rung claimed on
-            # one lucky map is not a rung.
-            seed = (
-                args.seed
-                if args.fixed_seed
-                else args.seed + attempt * 1013 + rungs.index(difficulty) * 7919
-            )
-            summary = run_attempt(difficulty, seed, args)
+            summary = run_attempt(difficulty, args)
             if summary and ladder.is_win(summary) and summary.get("configured"):
                 print(f"*** {difficulty} beaten on attempt {attempt} ***", flush=True)
                 break
@@ -144,7 +128,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--no-war", dest="make_war", action="store_false")
     ap.add_argument("--assault-width", type=int, default=2)
     ap.add_argument("--settlers-in-flight", type=int, default=1)
-    ap.add_argument("--plan-near-window", type=int, default=6)
     ap.add_argument("--strength-weight", type=int, default=20)
     ap.add_argument("--army-cap", type=int, default=18)
     ap.add_argument("--siege-units", type=int, default=4)
@@ -153,10 +136,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-empire-distance", type=int, default=6)
     ap.add_argument("--garrison-per-city", type=int, default=2)
     ap.add_argument("--export-state", action="store_true", default=False)
-    ap.add_argument("--settle-plan", default=None)
-    ap.add_argument("--fixed-seed", action="store_true", default=False,
-                    help="replay the same world every attempt, so a CIVVIS settle "
-                         "plan still describes the map it was planned on")
     ap.add_argument("--window-side", default="left")
     ap.add_argument("--window-frac", type=float, default=0.5)
     ap.add_argument("--window-vfrac", type=float, default=1.0)
@@ -166,7 +145,6 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--max-turns", type=int, default=120)
     ap.add_argument("--timeout", type=float, default=7200.0)
     ap.add_argument("--report-every", type=int, default=10)
-    ap.add_argument("--seed", type=int, default=424242)
     ap.add_argument("--between", type=float, default=15.0)
     ap.add_argument("--lock-wait", type=float, default=3600.0,
                     help="seconds each attempt waits for another run to finish")

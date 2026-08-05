@@ -734,6 +734,72 @@ local function stackCensus(player)
 	return worst, piles;
 end
 
+-- Where each unit stood at the end of the last turn we looked, so "has this unit
+-- moved?" can be asked at all. Keyed by unit id, which is stable for the life of
+-- the unit.
+local lastSeenAt = {};
+-- How many consecutive turns a unit has held still while it still had movement.
+local idleTurns = {};
+
+-- ⚠⚠⚠ A SETTLER THAT HAS NOT MOVED IN N TURNS IS NOT "IN FLIGHT". This is the
+-- predicate behind that sentence, lifted out so it can be tested without a
+-- running Civ 6 — everything around it is engine accessors.
+--
+-- `moves > 0` with an UNCHANGED position is the tell. A settler genuinely
+-- blocked by terrain or a unit spends its movement and stops; one that is
+-- stranded is handed full movement every turn and does nothing with it.
+-- Measured on run `civvis-20260803T231038Z`: the settler sat on a COAST tile at
+-- offset (24,36) from t153 to the end of the run, embarked, with two movement
+-- points EVERY turn, one tile from unowned grassland it had itself chosen.
+-- Fleet-wide, 38% of runs park a settler for >=15 consecutive turns at full
+-- movement (median streak 37).
+--
+-- ⚠ Why this matters far more than one wasted unit: the expansion gate is
+-- `counts.settler < SettlersInFlight`, and `SettlersInFlight` is 1. So ONE
+-- stranded settler stops the empire ordering another, forever. That run ordered
+-- no settler between turns 51 and 134 and finished four cities behind.
+local STRANDED_SETTLER_TURNS = 12;
+
+local function settlerIsStranded(idle)
+	return (idle or 0) >= STRANDED_SETTLER_TURNS;
+end
+
+-- Exposed for the offline test only. ⚠ A BARE GLOBAL, never `_G.` — Civ 6's UI
+-- Lua sandbox does not expose `_G` and indexing it raises at chunk load, which
+-- took the whole agent out once already.
+CivvisSettlerIsStranded = settlerIsStranded;
+
+-- Advance every unit's idle streak. ⚠ MUST be called exactly once per turn --
+-- see the note at the call site. A streak advanced from `countUnits` would count
+-- counting passes rather than turns.
+local function trackIdleUnits(player)
+	local seen = {};
+	eachUnit(player, function(unit)
+		local uid = try(function() return unit:GetID(); end, -1);
+		if uid < 0 then return; end
+		seen[uid] = true;
+		local x = try(function() return unit:GetX(); end, -1);
+		local y = try(function() return unit:GetY(); end, -1);
+		local moves = try(function() return unit:GetMovesRemaining(); end, 0) or 0;
+		local was = lastSeenAt[uid];
+		-- Movement left AND the same tile as last turn is the signal. A unit that
+		-- spent its movement is working, however little it achieved; a unit
+		-- handed a full allowance it never spends is stuck.
+		if was ~= nil and was.x == x and was.y == y and moves > 0 then
+			idleTurns[uid] = (idleTurns[uid] or 0) + 1;
+		else
+			idleTurns[uid] = 0;
+		end
+		lastSeenAt[uid] = { x = x, y = y };
+	end);
+	-- Dead units must not keep their streaks: Civilization VI reuses unit ids,
+	-- and inheriting a stranded streak would make a fresh settler read stranded
+	-- the moment it was trained.
+	for uid in pairs(lastSeenAt) do
+		if not seen[uid] then lastSeenAt[uid] = nil; idleTurns[uid] = nil; end
+	end
+end
+
 -- Pure. ⚠ An `upgradeUnit` call had been spliced into the military branch here,
 -- so *counting* the army issued upgrade orders — and its `return better` skipped
 -- the increment, so an upgrading unit was never counted as military. Counting
@@ -741,13 +807,20 @@ end
 -- Upgrading belongs in `orderFor`, which is where it now lives.
 local function countUnits(player)
 	local counts = { settler = 0, builder = 0, military = 0, scout = 0, siege = 0,
-	                 ranged = 0, total = 0 };
+	                 ranged = 0, total = 0, stranded_settler = 0 };
 	eachUnit(player, function(unit)
 		local name = unitTypeName(unit);
 		local row = GameInfo.Units[name];
 		counts.total = counts.total + 1;
 		if name == "UNIT_SETTLER" then
+			-- ⚠ COUNTED, THEN DISCOUNTED. The settler still exists and other
+			-- code needs to know that; what changes is only whether it holds
+			-- the expansion gate shut. See `settlerIsStranded`.
 			counts.settler = counts.settler + 1;
+			local uid = try(function() return unit:GetID(); end, -1);
+			if settlerIsStranded(idleTurns[uid]) then
+				counts.stranded_settler = counts.stranded_settler + 1;
+			end
 		elseif name == "UNIT_BUILDER" then
 			counts.builder = counts.builder + 1;
 		elseif name == "UNIT_SCOUT" then
@@ -1011,213 +1084,16 @@ local committedSite = {};
 local refusedSite = {};
 local findSettleSite;
 
--- CIVVIS's own ranking of where the next city goes, baked in at install time.
---
--- ★ THIS IS CIVVIS PROVIDING THE DECISION, which is the architecture asked for.
--- The route is indirect because it has to be: the mod cannot read a file at
--- runtime (no `io` in this sandbox) and FireTuner does not answer — with a live
--- game and the correct log path, seven plausible framings on ports 4318/4319
--- executed nothing. Config baked at install time is the only inbound channel that
--- works, and it is sufficient here because the world is a function of the SEED:
--- `civvis-advise --plan` reads one run's exported map, ranks the ground with
--- `AdvancedAi::settle_ranking`, and the next run on that same seed follows it.
---
--- Measured reason to bother: on run settler-20260730T034143Z the agent's own
--- choices sat at CIVVIS ranks 25/48, 10/25 and 4/15 — middling ground by CIVVIS's
--- reckoning, on the axis CIVVIS's oracle work calls its biggest lever.
---
--- ⚠ The plan is ADVICE, not an order. A site is taken only if the engine agrees it
--- is legal for this settler right now; anything refused falls through to the
--- hand-rolled search. A plan that disagreed with the live game would otherwise
--- strand settlers exactly the way `committedSite` was built to prevent.
-local settlePlan = nil;
-
--- ★ THE FIRES-CHECK, and it is not optional.
---
--- This project's most expensive mistakes have all been treatments that looked
--- applied and were not: a Settler requested on 83 consecutive turns with
--- `applied = true` and nothing ever built, and a value evaluator that has never
--- once loaded while `docs/EVAL.md` concluded it was "good and inert". A settle plan
--- baked into the config is exactly that shape of change — silent when it works and
--- silent when it does not.
---
--- So the stream says which brain chose each city: `plan` means CIVVIS's ranking
--- picked it, `search` means the hand-rolled Lua score did. An evaluation of
--- CIVVIS-as-decider is meaningless until `plan_sites` is non-zero.
-local planFires = { plan = 0, search = 0, offered = 0 };
 -- Is the loyalty-reach penalty starving the settle search? `capped` counts legal
 -- sites rejected for being out of support range, `in_reach` the ones inside it.
 -- ⚠ A single number could not answer this: `capped` alone rises on a big map with
 -- plenty of near ground, and `in_reach` alone cannot show what was given up.
 local siteCap = { capped = 0, in_reach = 0 };
 
-local function planSite(player, pid, unit)
-	-- ⚠ A PLAN SITE THE ENGINE HAS REFUSED MUST BE SKIPPED, or the plan is a trap.
-	--
-	-- Replacing the old "taken on offer" bookkeeping with board-derived occupancy
-	-- removed the only escape hatch: with ZERO cities nothing is occupied, so the
-	-- top-ranked site is offered every turn forever. If the settler cannot path
-	-- there it walks for the whole game. Run settler-20260730T053416Z reached turn 50
-	-- with **cities = 0** and one settler still trudging — worse than having no plan
-	-- at all.
-	--
-	-- `orderSettler` already records a refusal in `refusedSite[id]` when the engine
-	-- declines the move. Honouring it here is what lets the plan fall down its own
-	-- ranking instead of dying on its first entry.
-	local unitId = try(function() return unit:GetID(); end, -1);
-	local refused = refusedSite[unitId] or {};
-	if settlePlan == nil then
-		settlePlan = {};
-		local raw = cfg.SettlePlan;
-		if type(raw) == "table" then
-			for i = 1, #raw do
-				local entry = raw[i];
-				if type(entry) == "table" and entry.x ~= nil and entry.y ~= nil then
-					settlePlan[#settlePlan + 1] = { x = entry.x, y = entry.y };
-				end
-			end
-		end
-	end
-	if #settlePlan == 0 then return nil; end
-	planFires.offered = planFires.offered + 1;
-	-- ⚠ "USED" MEANS A CITY STANDS THERE, NOT THAT WE ONCE LOOKED AT IT.
-	--
-	-- The first version marked a site taken the moment it was OFFERED. This
-	-- function runs once per settler per turn, so the plan burned through all 24
-	-- sites in a handful of turns: run settler-20260730T045220Z read
-	-- `plan_sites 24` at turn 37 with ONE city. The plan destroyed itself and then
-	-- fell back to the Lua search, which is the opposite of the intent.
-	--
-	-- Occupancy is now derived from the board instead of remembered: a site is used
-	-- if one of our cities is within the spacing rule of it. Stateless, so it cannot
-	-- drift out of step with the game, and a settler that dies on the way leaves its
-	-- target available again.
-	local spacing = cfg.MinCitySpacing or 3;
-	local occupied = {};
-	eachCity(player, function(city)
-		local cx = try(function() return city:GetX(); end, -1);
-		local cy = try(function() return city:GetY(); end, -1);
-		if cx >= 0 then occupied[#occupied + 1] = { x = cx, y = cy }; end
-	end);
-	-- ★★★★★ NEAREST OF THE GOOD ONES, NOT SIMPLY THE BEST ONE.
-	--
-	-- This loop used to return the FIRST unoccupied site in plan order, and the plan
-	-- is CIVVIS's value ranking computed FROM THE CAPITAL (`advise.rs` passes
-	-- `from = capital`). So every settler, wherever it was built, was sent to the
-	-- globally top-ranked plot — often clean across the empire.
-	--
-	-- Measured cost of that, over twelve runs: **484 `move_to_site` orders against 48
-	-- `found_city` orders — about TEN TURNS OF WALKING PER CITY.** With one settler
-	-- in flight that is one city per ~15 turns, and over the ~100-turn horizon a run
-	-- actually gets ([[civvis-civ6-runs-never-finish]]) it caps the empire at 3-4
-	-- cities. The observed median is 3. That arithmetic, not any broken mechanism, is
-	-- what starves the army (`wantArmy = MilitaryPerCity x cities`), which is why war
-	-- is declared in only 19 of 47 runs, which is why no capital is ever taken.
-	--
-	-- ⚠ RAISING `SettlersInFlight` DOES NOT FIX IT AND WAS ALREADY REFUTED: run
-	-- 010409Z ordered SEVENTEEN settlers, walked 166 times and founded 2 cities. More
-	-- settlers walking the same long distances buys walking. The travel time is the
-	-- constraint, so cut the travel.
-	--
-	-- ⚠ CIVVIS STILL DECIDES WHICH GROUND IS GOOD — that is the operator's
-	-- architecture and this must not quietly become a hand-rolled scorer. What
-	-- changes is only the choice AMONG comparably good ground: take the top
-	-- `PlanNearWindow` sites CIVVIS offers, and let the settler that has to do the
-	-- walking pick the closest of them.
-	--
-	-- It also agrees with CIVVIS's own measurement: civilian MOVEMENT was the largest
-	-- single grant on its expansion axis (`expansion_swift`, 59.5%) while settler COST
-	-- measured null. Distance-to-site is that same quantity from the other end.
-	local window = cfg.PlanNearWindow or 6;
-	local ux = try(function() return unit:GetX(); end, -1);
-	local uy = try(function() return unit:GetY(); end, -1);
-	local best, bestKey, bestRank, bestDist = nil, nil, -1, nil;
-	local considered = 0;
-	for i = 1, #settlePlan do
-		local site = settlePlan[i];
-		local key = site.x .. ":" .. site.y;
-		local tooClose = refused[key] == true;
-		for j = 1, #occupied do
-			if plotDistance(occupied[j].x, occupied[j].y, site.x, site.y) < spacing then
-				tooClose = true;
-				break;
-			end
-		end
-		if not tooClose then
-			-- Legality is not asserted here. `orderSettler` already asks the
-			-- engine to FOUND_CITY or MOVE_TO and honours a refusal, and this
-			-- project has been burned repeatedly by gates that answered wrongly
-			-- in exactly the position that mattered. Offer the plot; let the
-			-- engine be the judge.
-			local plot = try(function() return Map.GetPlot(site.x, site.y); end);
-			if plot ~= nil then
-				-- ⚠ Distance from the SETTLER, not from the capital. A settler
-				-- built in the third city is the one that has to walk.
-				local dist = 0;
-				if ux >= 0 then
-					dist = plotDistance(ux, uy, site.x, site.y);
-				end
-				if best == nil or dist < bestDist then
-					best, bestKey, bestRank, bestDist = plot, key, i, dist;
-				end
-				considered = considered + 1;
-				-- The window keeps this a tie-break among CIVVIS's best ground
-				-- rather than a licence to settle anywhere near. Without it the
-				-- nearest legal plot on the whole map wins and the ranking is
-				-- discarded.
-				if considered >= window then break; end
-			end
-		end
-	end
-	if best ~= nil then
-		-- Both numbers, because "a plan site was chosen" reads green whether the
-		-- window saved a walk or changed nothing. `rank` says how far down
-		-- CIVVIS's ranking the choice was; `dist` is the walk it now faces.
-		planFires.near_rank = (planFires.near_rank or 0) + bestRank;
-		planFires.near_dist = (planFires.near_dist or 0) + (bestDist or 0);
-		planFires.near_n = (planFires.near_n or 0) + 1;
-		return best, bestKey, bestRank, bestDist;
-	end
-	return nil;
-end
-
 findSettleSite = function(player, pid, unit, turn)
-	-- CIVVIS first. Its ranking already accounts for ring yields, fresh water,
-	-- spacing against our own cities and distance; the hand-rolled search below is
-	-- the fallback for ground the plan does not cover (a map it never saw, or every
-	-- planned site already used).
-	-- ⚠⚠ THE PLAN MUST NEVER BE ABLE TO STOP US FOUNDING A CITY.
-	--
-	-- It has now broken two runs. Advice that can starve the empire is not advice,
-	-- and a settle plan is a nicety next to having any city at all: run
-	-- settler-20260730T053416Z sat at **cities = 0 through turn 80** with one settler
-	-- walking at a site it could not reach.
-	--
-	-- So the plan is abandoned outright if it has not produced a capital by
-	-- `PlanGiveUpTurn`. CIVVIS keeps the decision when CIVVIS is working; the
-	-- hand-rolled search takes over the moment the plan is demonstrably not.
-	local planUsable = turn < (cfg.PlanGiveUpTurn or 25)
-		or cityCount(player) > 0;
-	local planned, planKey, planRank, planDist = nil, nil, nil, nil;
-	if planUsable then
-		planned, planKey, planRank, planDist = planSite(player, pid, unit);
-	end
-	if planned ~= nil then
-		planFires.plan = planFires.plan + 1;
-		emit("settle_choice", {
-			source = "plan",
-			x = try(function() return planned:GetX(); end, -1),
-			y = try(function() return planned:GetY(); end, -1),
-			-- `rank` is how far down CIVVIS's ranking this choice sat and `dist`
-			-- is the walk it faces. Together they price the near-window: rank
-			-- rising while dist falls is the trade working, rank rising while
-			-- dist does NOT fall means the window is only losing value.
-			rank = planRank,
-			dist = planDist,
-			turn = turn,
-		});
-		return planned;
-	end
+	-- The built-in fallback ranks local legal ground. Per-turn CIVVIS decisions
+	-- arrive through the order database; a saved map from another random world is
+	-- not a valid substitute for either route.
 	local id = try(function() return unit:GetID(); end, -1);
 	if siteMemo.turn ~= turn then siteMemo = { turn = turn, sites = {} }; end
 	local cached = siteMemo.sites[id];
@@ -1316,11 +1192,9 @@ findSettleSite = function(player, pid, unit, turn)
 				-- Nothing charged distance from the EMPIRE. `nearest` was computed
 				-- and then only ever compared against the minimum spacing.
 				--
-					-- ⚠ A PENALTY, NOT A HARD CAP — deliberately, and I wrote it as a cap
-					-- first. A cap is authority, and three regressions this session came
-					-- from a mechanism handed a decision with no recourse when it was wrong:
-					-- the settle plan starved the empire to ZERO cities through turn 90 in
-					-- exactly that way. On a Tiny map shared with three rivals the 3..6 band
+					-- ⚠ A PENALTY, NOT A HARD CAP — deliberately. A cap is authority, and
+					-- a mechanism handed a decision with no recourse can strand a settler.
+					-- On a Tiny map shared with three rivals the 3..6 band
 					-- can hold no legal ground at all, and a cap would then strand the
 					-- settler for the whole game.
 					--
@@ -1404,9 +1278,7 @@ findSettleSite = function(player, pid, unit, turn)
 	siteMemo.sites[id] = best or false;
 	if best ~= nil then
 		committedSite[id] = { x = best:GetX(), y = best:GetY() };
-		-- The other half of the fires-check: a site the hand-rolled search chose.
-		-- `plan` against `search` is what says whether CIVVIS is actually deciding.
-		planFires.search = planFires.search + 1;
+		-- Keep a per-site event for the settler trace and live diagnosis.
 		emit("settle_choice", {
 			source = "search",
 			x = best:GetX(), y = best:GetY(), turn = turn,
@@ -2668,7 +2540,22 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- ⚠ Gated on being OUTMATCHED, not merely at war. A war we are winning is exactly
 	-- when taking more ground is right, and `warPressure` already draws that line.
 	if (nCities + counts.settler) < (cfg.CityTarget or 6)
-			and counts.settler < (cfg.SettlersInFlight or 1)
+			-- ⚠⚠⚠ A STRANDED SETTLER DOES NOT HOLD THIS GATE SHUT. "In flight"
+			-- means walking to a site; a settler that has not moved in twelve
+			-- turns while holding full movement is not walking anywhere, and
+			-- with `SettlersInFlight = 1` its mere existence stops the empire
+			-- ordering another one FOREVER. Run `civvis-20260803T231038Z`
+			-- ordered no settler between turns 51 and 134 for exactly this
+			-- reason and finished four cities behind; fleet-wide 38% of runs
+			-- park a settler for 15+ consecutive turns at full movement.
+			--
+			-- ⚠ This does NOT rescue the stranded settler — see
+			-- `settlerIsStranded`. It stops one stuck unit from also costing
+			-- every future one. The cap still binds on settlers that are
+			-- genuinely walking, which is the failure the cap was written for
+			-- (seventeen settlers, two cities).
+			and (counts.settler - counts.stranded_settler)
+				< (cfg.SettlersInFlight or 1)
 			and defenders >= floorNeeded
 			and not losingWar
 			and turn < (cfg.SettlerStopTurn or 9999) then
@@ -2872,8 +2759,96 @@ local function chooseProduction(city, counts, nCities, turn, refused)
 	-- in the state that matters. The rule has three parts now: never put what you need
 	-- below an open-ended target; check what ELSE is down there; and check the target is
 	-- reachable in the state you actually care about.
-	local DEVELOP = { "DISTRICT_CAMPUS", "BUILDING_LIBRARY",
+	local DEVELOP = { "DISTRICT_CAMPUS",
+	                  -- ⚠⚠ FIFTH APPEARANCE OF THIS CLASS, and this time nothing was
+	                  -- misspelled — the entry was simply never written. This list had
+	                  -- **no `DISTRICT_AQUEDUCT`, no `DISTRICT_NEIGHBORHOOD` and no
+	                  -- `BUILDING_SEWER`**, so the rung that decides more builds than
+	                  -- any other could not raise a city's housing ceiling at all.
+	                  --
+	                  -- Housing is what caps population, and population is what science
+	                  -- IS (~1.16 science per citizen). `Game::housing_growth_mult`
+	                  -- halves growth below headroom 2 and quarters it below 1.
+	                  -- Measured over 12,969 host-exported city-turns across the 18
+	                  -- live runs carrying `GetHousing()`: median headroom **1**,
+	                  -- **71.2% of city-turns below the break-even**, mean growth
+	                  -- multiplier **0.515**, and 87.9% throttled at pop >= 8.
+	                  --
+	                  -- And this rung built ZERO of the repair. Of 3,708 live builds
+	                  -- (`events.jsonl` `kind:build`), by deciding program:
+	                  --
+	                  --   Aqueduct  5 -- civvis 5, ladder **0**
+	                  --   Bath      4 -- civvis 4, ladder **0**
+	                  --   Neighborhood 0 -- nobody, ever
+	                  --   Library  59 -- civvis 5, **develop 54**
+	                  --   University 119 -- civvis 1, **develop 118**
+	                  --
+	                  -- So the science BUILDINGS were almost entirely this rung's while
+	                  -- the housing districts were entirely CIVVIS's, at a 20.8/79.2
+	                  -- split. #1087 repairs CIVVIS's side; this repairs this one.
+	                  --
+	                  -- ⚠⚠ BUT DATE THAT SPLIT BEFORE COSTING ANYTHING FROM IT. Every
+	                  -- figure above comes from runs BEFORE `civvis-20260802T140355Z`.
+	                  -- `kind:build` is emitted only from this file's own production
+	                  -- sweep, and that sweep is skipped when a city already has current
+	                  -- production — so once CIVVIS began applying `produce` through the
+	                  -- orders channel the event went silent. It is **zero in all 60+
+	                  -- runs since**, including all 19 that carry the housing export,
+	                  -- while those runs log 3,658 order-turns at `source: civvis` and
+	                  -- 2,754 applied `produce` orders.
+	                  --
+	                  -- So the CURRENT split is UNMEASURED, and this rung is most likely
+	                  -- a FALLBACK now rather than the majority decider. That does not
+	                  -- make the omission harmless — the fallback still fires whenever
+	                  -- CIVVIS's own choice is unplayable, which those same 19 runs
+	                  -- record **482** times — but this is defence in depth, not the
+	                  -- main lane, and nobody should price it as the main lane until
+	                  -- `kind:build` (or an equivalent) reports again.
+	                  --
+	                  -- ⚠ PLACED AFTER THE CAMPUS, DELIBERATELY. The Campus is the
+	                  -- larger funnel gap — 49 of 100 live end-of-game cities were
+	                  -- never ordered one, at a median pop of 7 — and the ladder takes
+	                  -- the FIRST playable entry, so putting housing above it would
+	                  -- trade one gap for another. It goes above the Library because a
+	                  -- Library's science is a flat bonus while population compounds,
+	                  -- and the Aqueduct is the cheapest entry in this list (36).
+	                  --
+	                  -- ⚠ It cannot preempt an early Campus in any case: the Aqueduct
+	                  -- needs `engineering` and the Campus only `writing`, so before
+	                  -- Engineering `playable` skips this line and the ladder moves on.
+	                  -- That is also why placing it high is low-risk rather than a
+	                  -- re-ranking of the science chain.
+	                  --
+	                  -- ⚠⚠ KNOWN LIMITATION, DECLARED RATHER THAN DISCOVERED LATER:
+	                  -- this list names BASE districts, and a civilization whose unique
+	                  -- REPLACES one cannot build the base type at all — `CanProduce`
+	                  -- says no and the ladder falls through, silently, for that civ.
+	                  -- It affects the entries added here and the ones already present
+	                  -- equally:
+	                  --
+	                  --   Bath (Rome)          replaces Aqueduct
+	                  --   Mbanza (Kongo)       replaces Neighborhood
+	                  --   Seowon (Korea)       replaces Campus
+	                  --   Observatory (Maya)   replaces Campus
+	                  --   Acropolis (Greece)   replaces Theater
+	                  --
+	                  -- So Rome gets no housing from this rung and Korea no Campus,
+	                  -- exactly as before this change. CIVVIS's own side resolves this
+	                  -- with `civ_district`; the ladder has no equivalent and giving it
+	                  -- one is a separate change with its own measurement, because it
+	                  -- moves the Campus and Theater lines too. Fixing it here would
+	                  -- mean re-ranking families this PR is not measuring.
+	                  "DISTRICT_AQUEDUCT",
+	                  "BUILDING_LIBRARY",
 	                  "BUILDING_UNIVERSITY", "BUILDING_RESEARCH_LAB",
+	                  -- The late-game housing pair, below the science chain because
+	                  -- both arrive with civics this agent reaches long after the
+	                  -- Campus is settled. `BUILDING_SEWER` is +2 housing on
+	                  -- `sanitation`; `DISTRICT_NEIGHBORHOOD` is 2-6 on `urbanization`,
+	                  -- scaled by the site's Appeal. Neither has ever been built in a
+	                  -- live run, and a Sewer stands in only 19 of 100 end-of-game
+	                  -- cities.
+	                  "DISTRICT_NEIGHBORHOOD", "BUILDING_SEWER",
 	                  "DISTRICT_THEATER", "BUILDING_AMPHITHEATER",
 	                  -- ⚠⚠ `BUILDING_MUSEUM_ART` / `BUILDING_MUSEUM_ARTIFACT`, NOT
 	                  -- `BUILDING_ART_MUSEUM` / `BUILDING_ARCHAEOLOGICAL_MUSEUM`.
@@ -3957,10 +3932,115 @@ local MIN_ENVOY_TOKENS_SUZERAIN = 3;
 -- placed, suzerainties held, and levies taken, separately.
 local envoyTally = { placed = 0, suzerainties = 0, levies = 0, met_minors = 0 };
 
+-- The spend order, lifted out of `chooseEnvoy` so it can be tested without a
+-- running Civ 6. Everything above it is engine accessors and everything below
+-- it is `UI.RequestPlayerOperation`; this is the only part with an argument.
+--
+-- Takes the surveyed minors and returns them cheapest-flip-first, dropping the
+-- ones we already hold and the ones that cannot legally take a token. Ties go
+-- to the claim we have most invested in, so a part-built claim finishes instead
+-- of a new one starting, and `id` breaks the remaining ties so the order is
+-- deterministic across turns rather than dependent on survey order.
+--
+-- ⚠ Returns the FULL order, not one target. The caller spends `need` on each in
+-- turn against a live token count -- the plan says what to buy, the engine says
+-- what is still affordable.
+-- ⚠⚠⚠ CONCEDE A BIDDING WAR YOU ARE LOSING. `need` is recomputed every turn as
+-- `most + 1 - mine`, so a city-state a rival keeps outbidding us on shows a need
+-- of 1 or 2 FOREVER and therefore looks like the cheapest flip on the board
+-- every single turn. It is a money pit that reads as a bargain.
+--
+-- Measured on the first full run with the lane working
+-- (`envoy-on-20260804T015105Z`, 250 turns): **113 envoys placed and ONE
+-- suzerainty held at the end.** Jakarta took **28** of them and was never ours
+-- (`ours=28, most=30`); Cardiff took 10 against 12; Vatican City 8 against 13.
+-- Three lost auctions consumed 46 envoys — four flips' worth — while La Venta,
+-- the one nobody contested, cost 10 and was held.
+--
+-- So: once we have paid a flip's worth into a claim and are STILL behind, the
+-- rival wants it more than the price says, and the next envoy is better spent
+-- anywhere else. Conceding is the whole point — matching is what lost 46.
+local ENVOY_CONTEST_STAKE = 6;
+local ENVOY_CONTEST_DEFICIT = 3;
+
+local function envoyIsALostAuction(minor)
+	-- Only ever true for ground somebody else is actively holding above us.
+	return (minor.mine or 0) >= ENVOY_CONTEST_STAKE
+		and (minor.need or 0) >= ENVOY_CONTEST_DEFICIT;
+end
+
+-- Exposed for the offline test only. ⚠ A BARE GLOBAL, never `_G.` — the UI Lua
+-- sandbox does not expose `_G` and indexing it raises at chunk load.
+CivvisEnvoyIsALostAuction = envoyIsALostAuction;
+
+local function envoySpendOrder(seen)
+	local order = {};
+	for _, minor in ipairs(seen) do
+		if minor.takes and not minor.ours and not envoyIsALostAuction(minor) then
+			order[#order + 1] = minor;
+		end
+	end
+	table.sort(order, function(a, b)
+		if a.need ~= b.need then return a.need < b.need; end
+		if a.mine ~= b.mine then return a.mine > b.mine; end
+		return a.id < b.id;
+	end);
+	-- Nothing flippable: top up somewhere legal anyway rather than forfeit the
+	-- token. A held envoy expires with the game, so a partial claim beats a
+	-- full purse.
+	--
+	-- ⚠ This is where a conceded auction may legitimately come back: if EVERY
+	-- reachable city-state is one, the choice is between a bad envoy and a dead
+	-- one. Sorted the same way rather than taken in survey order, so the token
+	-- goes to whichever is actually closest to flipping instead of whichever the
+	-- engine happened to list first.
+	if #order == 0 then
+		for _, minor in ipairs(seen) do
+			if minor.takes then order[#order + 1] = minor; end
+		end
+		table.sort(order, function(a, b)
+			if a.need ~= b.need then return a.need < b.need; end
+			if a.mine ~= b.mine then return a.mine > b.mine; end
+			return a.id < b.id;
+		end);
+	end
+	return order;
+end
+
+-- Exposed for the offline test only; nothing in the agent reads it back.
+--
+-- ⚠⚠⚠ A BARE GLOBAL, NEVER `_G.`. This exact line read `_G.CivvisEnvoySpendOrder`
+-- in #1047 and that is what killed the whole lane: **Civilization VI's UI Lua
+-- sandbox does not expose `_G`**, so indexing it raises at CHUNK LOAD and the
+-- agent never loads at all. The symptom is not an error — it is silence. No
+-- `loaded` event, no seat, no orders, `Automation.log` holding nothing but the
+-- autoclose shim's lines, and a game that simply sits there. #1052 reverted the
+-- file on that evidence (3 failed runs against 1 passing, interleaved) without
+-- being able to name the cause.
+--
+-- The cause was already written down twice in this repository:
+-- `CivvisGrounding.lua` — "The UI Lua sandbox does not expose `_G`, so
+-- `rawget(_G, ...)` raises at load, which kills the whole script" — and
+-- `CivvisControlAutoClose.lua`, which ends its warning with "if anybody reaches
+-- for `_G` again". Bare globals are fine and this file already uses them
+-- (`encode`, `findSettleSite`); only `_G` is fatal.
+CivvisEnvoySpendOrder = envoySpendOrder;
+
 local function chooseEnvoy(player, pid, turn)
 	local influence = try(function() return player:GetInfluence(); end);
 	local oneParam = try(function() return PlayerOperations.PARAM_PLAYER_ONE; end);
 	if influence == nil or oneParam == nil then return nil; end
+	-- ⚠⚠ NEVER read or write this handle across a `UI.RequestPlayerOperation`.
+	-- Step 3 below already re-fetches, and the comment there explains why: a
+	-- gameplay sub-object pointer held across operations that rewrite it is the
+	-- best explanation on record for the three delayed EXC_BAD_ACCESS faults
+	-- that took this whole lane out of deployment. But that fix only covered
+	-- step 3. Steps 1 and 2 -- the levy scan and the placement loop, the two
+	-- places that actually ISSUE the operations -- kept reading through the
+	-- handle fetched above, so the defect was still live on the exact path the
+	-- crash was recorded on. `inf()` is the re-fetch, and every read below goes
+	-- through it.
+	local function inf() return try(function() return player:GetInfluence(); end); end
 	local giveOp = try(function() return PlayerOperations.GIVE_INFLUENCE_TOKEN; end);
 	local levyOp = try(function() return PlayerOperations.LEVY_MILITARY; end);
 
@@ -4024,10 +4104,10 @@ local function chooseEnvoy(player, pid, turn)
 		end, 0) or 0;
 		for _, minor in ipairs(seen) do
 			if levied == nil and minor.ours
-				and try(function() return influence:CanLevyMilitary(minor.id); end, false)
+				and try(function() return inf():CanLevyMilitary(minor.id); end, false)
 			then
 				local cost = try(function()
-					return influence:GetLevyMilitaryCost(minor.id);
+					return inf():GetLevyMilitaryCost(minor.id);
 				end, -1) or -1;
 				if cost >= 0 and purse >= cost then
 					local params = {};
@@ -4041,37 +4121,48 @@ local function chooseEnvoy(player, pid, turn)
 		end
 	end
 
-	-- 2. Place every envoy on ONE target: the cheapest city-state to flip that
-	--    we do not already hold. Ties go to the one we have most invested in, so
-	--    a part-built claim finishes instead of a new one starting.
+	-- 2. Buy suzerainties cheapest-first, spending only what each flip COSTS.
+	--
+	-- ⚠⚠ THE OLD LOOP PUT EVERY HELD TOKEN ON ONE CITY-STATE. `for _ = 1, tokens`
+	-- against a single `best` is correct only when the purse is about the size of
+	-- one claim. It is not. A live game (`civvis-20260803T191900Z`, turn 231) sat
+	-- on **56 unspent envoys** against four met city-states needing 14, 13, 7 and
+	-- 7 to flip -- 41 for the whole map, with 15 to spare. The old loop would
+	-- have bought exactly ONE suzerainty and forfeited the other 42 envoys into
+	-- the same minor, which stops paying the moment the lead is safe.
+	--
+	-- "Concentrate, do not spread" is right about not dribbling one envoy into
+	-- six minors. It is not an argument for one target: the unit of value is a
+	-- FLIP, so fill the cheapest claim exactly, then take the next cheapest with
+	-- what is left. Same principle, correct granularity.
 	local placed, target = 0, nil;
 	if giveOp ~= nil and canGive and tokens > 0 and cfg.EnvoyPlace ~= false then
-		local best = nil;
-		for _, minor in ipairs(seen) do
-			if minor.takes and not minor.ours then
-				if best == nil or minor.need < best.need
-					or (minor.need == best.need and minor.mine > best.mine) then
-					best = minor;
+		for _, minor in ipairs(envoySpendOrder(seen)) do
+			-- ⚠ The purse is re-read from a FRESH handle every target, and it is
+			-- the loop bound. `tokens` above was read before the levy and before
+			-- our own gives, so trusting it here would both over-issue and read
+			-- through the stale pointer this function's crash is blamed on.
+			local live = inf();
+			if live == nil then break; end
+			local left = try(function() return live:GetTokensToGive(); end, 0) or 0;
+			if left < 1 then break; end
+			if not try(function() return live:CanGiveInfluence(); end, false) then break; end
+			if try(function() return live:CanGiveTokensToPlayer(minor.id); end, false) then
+				-- Spend the flip price, or everything left when the flip is out
+				-- of reach -- an envoy still held at the end of the game bought
+				-- nothing, so the remainder goes into the cheapest partial claim.
+				local want = minor.need;
+				if want < 1 or want > left then want = left; end
+				for _ = 1, want do
+					local params = {};
+					params[oneParam] = minor.id;
+					local ok = pcall(function()
+						UI.RequestPlayerOperation(pid, giveOp, params);
+					end);
+					if not ok then break; end
+					placed = placed + 1;
+					if target == nil then target = minor.id; end
 				end
-			end
-		end
-		-- Nothing flippable: top up somewhere legal anyway rather than forfeit
-		-- the token. A held envoy expires with the game.
-		if best == nil then
-			for _, minor in ipairs(seen) do
-				if minor.takes and best == nil then best = minor; end
-			end
-		end
-		if best ~= nil then
-			target = best.id;
-			for _ = 1, tokens do
-				local params = {};
-				params[oneParam] = best.id;
-				local ok = pcall(function()
-					UI.RequestPlayerOperation(pid, giveOp, params);
-				end);
-				if not ok then break; end
-				placed = placed + 1;
 			end
 		end
 	end
@@ -4097,9 +4188,9 @@ local function chooseEnvoy(player, pid, turn)
 	-- UI script too, exactly like this one. What differs is holding a pointer to
 	-- a gameplay sub-object across operations that rewrite it. That matches the
 	-- recorded signature far better than a bad immediate call does: three
-	-- EXC_BAD_ACCESS faults in the game core on seed 425255, each **6-9 turns
-	-- AFTER** the single envoy was placed, against 0-for-2 on the same seed with
-	-- no envoy placed. A delayed fault is corrupted bookkeeping.
+	-- EXC_BAD_ACCESS faults in requested-seed-425255 runs, each **6-9 turns
+	-- AFTER** the single envoy was placed, while 0-for-2 no-envoy runs did not
+	-- crash. A delayed fault is corrupted bookkeeping.
 	--
 	-- ⚠ This does NOT re-enable envoys. `cfg.EnvoyEnabled` stays off and this
 	-- whole function is still unreachable in deployment, so shipping this changes
@@ -4196,15 +4287,17 @@ local SOFT_BLOCKERS = {
 	-- legacy heuristic fallback and should stay off in a CIVVIS-decided run.
 	ENDTURN_BLOCKING_GOVERNOR_APPOINTMENT = true,
 	-- ⚠⚠ GIVE_INFLUENCE_TOKEN IS BACK HERE, AND THE REASON MATTERS. Answering it
-	-- with `chooseEnvoy` CRASHES THE GAME CORE. On one fixed seed (425255), same
-	-- flags, same everything:
+	-- with `chooseEnvoy` CRASHES THE GAME CORE. Across repeated requested seed
+	-- 425255 runs with the same flags:
 	--     envoy_events = 0  ->  t92, t106      no crash
 	--     envoy_events = 1  ->  t44, t47, t45  EXC_BAD_ACCESS each time
 	-- Three fresh SIGSEGVs in `GameCore_XP2.dll` on the `Game Core` thread, 6-9
 	-- turns AFTER the single envoy was placed — a delayed fault, so corrupted
 	-- state rather than a bad immediate call. Civ 6 does segfault on its own
 	-- (there is a pre-envoy crash at t25), but 3-for-3 against 0-for-2 on the
-	-- SAME SEED is a controlled comparison, not a coincidence.
+	-- The real-Civ6 seed request does not pin world generation, so this is not a
+	-- same-map control. The 3-for-3 versus 0-for-2 result is still a concrete
+	-- crash-isolation signal; it is not evidence that the seed had any effect.
 	-- ⚠ THE "WRONG CONTEXT" HYPOTHESIS IS DEAD — do not spend another cycle on it.
 	-- The shipped `UI/PartialScreens/CityStates.lua` `Close()` calls
 	-- `SetGivingTokensConsidered(true)` from a UI script, exactly like this agent.
@@ -4217,7 +4310,8 @@ local SOFT_BLOCKERS = {
 	--
 	-- Set `EnvoyEnabled` to re-enable. `EnvoyPlace` and `EnvoyConsider` already
 	-- switch the two mutations independently, so isolating them is a CONFIG
-	-- change, not a code change: place-only, then consider-only, same seed.
+	-- change, not a code change: place-only, then consider-only, across
+	-- independent random-world samples.
 	-- ⚠ Do it on a throwaway batch, never on a running one. Until then the
 	-- known-stable skip stands, and the ten-minute wedge is the lesser failure.
 	--
@@ -5041,6 +5135,42 @@ local function exportState(player, pid, turn)
 				-- city. `GetMilitaryStrength` is what the game's own diplomacy ribbon
 				-- shows a human (`DiplomacyRibbon.lua:159`), copied rather than recalled.
 				military = try(function() return other:GetStats():GetMilitaryStrength(); end, -1),
+				-- ★★★★★ WHY THE SCORE GAP CANNOT BE READ WITHOUT THESE.
+				--
+				-- Measured over 99 completed runs: CIVVIS leads in ZERO of them. Our
+				-- score is a median 267 against the best rival's 1109 — a ratio of
+				-- 0.26. Yet on empire SIZE we sit at 0.75-0.80 (3 cities vs 4, pop 28
+				-- vs 35) and our cities are individually BIGGER (10.3 pop vs 9.4).
+				--
+				-- So roughly three quarters of the score gap is in components that are
+				-- neither cities nor population, and the export could not name which:
+				-- the rival record carried `score`, `cities`, `military` and `units`
+				-- and nothing else. "We score a quarter" could not become "we score a
+				-- quarter BECAUSE X".
+				--
+				-- Counts, not name lists: the question is how far ahead they are, and
+				-- a name list per rival per turn would be tens of kilobytes of export
+				-- for an answer a single integer gives. `-1` on failure, the same
+				-- sentinel every other guarded accessor here uses, so a build without
+				-- these APIs reads as UNKNOWN rather than as zero.
+				techs = try(function()
+					local t = other:GetTechs();
+					if t == nil then return -1; end
+					local n = 0;
+					for row in GameInfo.Technologies() do
+						if t:HasTech(row.Index) then n = n + 1; end
+					end
+					return n;
+				end, -1),
+				civics = try(function()
+					local c = other:GetCulture();
+					if c == nil then return -1; end
+					local n = 0;
+					for row in GameInfo.Civics() do
+						if c:HasCivic(row.Index) then n = n + 1; end
+					end
+					return n;
+				end, -1),
 				cities = theirCities,
 				units = theirUnits,
 			};
@@ -5145,12 +5275,36 @@ local function exportState(player, pid, turn)
 	-- reachable: `CanResearch` would let CIVVIS build from a tree it does not
 	-- have.  The active node and its progress are separate facts, needed so a
 	-- persistent reconstruction does not forget an in-flight choice each turn.
+	-- ⚠⚠ THE EUREKA IS THE LARGEST SCIENCE DISCOUNT IN THE GAME AND NOBODY ASKED
+	-- FOR IT. **62 of 77 technologies carry a boost** worth 40-50% of their cost,
+	-- and `AdvancedAi::tech_value` already pays **+28** for a tech whose boost is
+	-- triggered -- but nothing has ever sent that fact. The state export carried
+	-- `techs`, `research` and `research_progress` and no boost field at all, and
+	-- `mirror.rs` imported none, so in every live game the agent's
+	-- `boosted_techs` is whatever its own simulation happened to derive rather
+	-- than what Civilization VI actually granted.
+	--
+	-- Same class as the Amenity export (#967) and the Housing export (#1007):
+	-- the valuation is right and the input is absent. It matters here because the
+	-- median live empire ends on **30 technologies of 77** -- taking the
+	-- discounted ones first is the cheapest tech-count there is.
+	--
+	-- `HasBoostBeenTriggered` is the shipped predicate: `TechTree.lua` reads it
+	-- as `pPlayerTechs:HasBoostBeenTriggered(iTech)` and `CivicsTree.lua` the same
+	-- for civics. Boosts are reported for technologies the empire does NOT yet
+	-- have -- a triggered boost on a completed tech is spent and says nothing
+	-- about what to research next.
 	local techs, civics = {}, {};
+	local boosted_techs, boosted_civics = {}, {};
 	local ptechs = try(function() return player:GetTechs(); end);
 	if ptechs ~= nil then
 		for row in GameInfo.Technologies() do
 			if try(function() return ptechs:HasTech(row.Index); end, false) then
 				techs[#techs + 1] = row.TechnologyType;
+			elseif try(function()
+				return ptechs:HasBoostBeenTriggered(row.Index);
+			end, false) then
+				boosted_techs[#boosted_techs + 1] = row.TechnologyType;
 			end
 		end
 	end
@@ -5172,6 +5326,10 @@ local function exportState(player, pid, turn)
 		for row in GameInfo.Civics() do
 			if try(function() return pculture:HasCivic(row.Index); end, false) then
 				civics[#civics + 1] = row.CivicType;
+			elseif try(function()
+				return pculture:HasBoostBeenTriggered(row.Index);
+			end, false) then
+				boosted_civics[#boosted_civics + 1] = row.CivicType;
 			end
 		end
 	end
@@ -5439,6 +5597,18 @@ local function exportState(player, pid, turn)
 	emit("state", {
 		turn = turn,
 		techs = techs,
+		-- ⚠ Boosts on technologies and civics the empire does NOT yet hold. A
+		-- triggered boost on something already researched is spent and says
+		-- nothing about what to take next.
+		--
+		-- ⚠ An empty table is CORRECT here and must stay a plain table: `encode`
+		-- emits `[]` whenever `#v == n`, which `{}` satisfies, and the Rust side
+		-- is a `Vec<String>` — so `[]` is exactly what serde wants. That is the
+		-- opposite of the Great-Person-points field below, which is a MAP and
+		-- must return `nil` rather than `{}` precisely because `{}` would go out
+		-- as `[]` and take the whole StateSnapshot down with it.
+		boosted_techs = boosted_techs,
+		boosted_civics = boosted_civics,
 		civics = civics,
 		research = research,
 		research_progress = research_progress,
@@ -5801,6 +5971,124 @@ local function sqlText(fn)
 	end
 	if #parts == 0 then return "rows:0"; end
 	return table.concat(parts, ";");
+end
+
+-- ⚠⚠ CAN THIS CONTEXT ASSIGN A CITIZEN AT ALL? ASK, DO NOT ASSUME.
+--
+-- Specialists are the last untouched science lane and the gap is large.
+-- Measured over the 19 live runs carrying the host export, 100 end-of-game
+-- cities: **53 specialist assignments in total**, of which **45.3% sit on a
+-- Commercial Hub and 26.4% on a Campus**. Of the 50 cities that HAVE a Campus,
+-- 28 have no specialist anywhere and **only 8 have even one ON the Campus**.
+-- Every one of those placements is Civilization VI's own citizen governor,
+-- because this agent READS citizens (`IsPlotWorked`, `GetWorkerCount`) and has
+-- never written one.
+--
+-- The human city panel does it from THIS context. `PlotInfo.lua`'s
+-- `OnClickCitizen`:
+--
+--     tParameters[CityCommandTypes.PARAM_MANAGE_CITIZEN] =
+--         UI.GetInterfaceModeParameter(CityCommandTypes.PARAM_MANAGE_CITIZEN);
+--     tParameters[CityCommandTypes.PARAM_X] = kPlot:GetX();
+--     tParameters[CityCommandTypes.PARAM_Y] = kPlot:GetY();
+--     CityManager.RequestCommand(pCity, CityCommandTypes.MANAGE, tParameters);
+--
+-- ⚠ The open question is `PARAM_MANAGE_CITIZEN`. The shipped UI reads it from
+-- `UI.GetInterfaceModeParameter`, i.e. from being inside
+-- `InterfaceModeTypes.CITY_MANAGEMENT` — which an unattended agent is not.
+-- Whether the command accepts the value passed directly is UNTESTED, and this
+-- project has a ledger full of requests that returned without throwing and
+-- changed nothing: "the request did not throw" is not "the engine took it".
+--
+-- So this ASKS AND DOES NOT ACT. `CanStartCommand` is the same read-only shape
+-- as the `CanProduce(hash, false, true)` predicate that settled the production
+-- channel, and it is tried against several candidate parameter values so the
+-- log names which one — if any — the engine accepts. Nothing here can change a
+-- game: no `RequestCommand` call exists in this function.
+--
+-- Off unless `cfg.ProbeCitizens` is set, like `ProbeChannels` above.
+local function probeCitizenSlots(turn)
+	local pid = Game.GetLocalPlayer();
+	if pid == nil or pid < 0 then return; end
+	local player = Players[pid];
+	if player == nil then return; end
+	-- Candidate values for the parameter the shipped UI reads out of the
+	-- interface mode. `nil` is listed first and deliberately: if the command is
+	-- legal without it, nothing else here matters.
+	local candidates = {
+		{ name = "absent", value = nil },
+		{ name = "true", value = true },
+		{ name = "one", value = 1 },
+		{ name = "zero", value = 0 },
+	};
+	local cities = try(function() return player:GetCities(); end);
+	if cities == nil then return; end
+	local probed = 0;
+	for _, city in cities:Members() do
+		if probed >= (cfg.ProbeCitizenCities or 3) then break; end
+		local cityId = try(function() return city:GetID(); end, -1);
+		-- ⚠ Walk the city's PLOTS, not `GetDistricts()`. This file already
+		-- records why (`exportState`): a plot carries the type and the position
+		-- together, and the collection's per-member accessors vary across this
+		-- build. The export reads `plot:GetDistrictType()` for exactly that
+		-- reason, so the probe reads it the same way.
+		local ownedPlots = try(function()
+			return Map.GetCityPlots():GetPurchasedPlots(city);
+		end);
+		if ownedPlots ~= nil then
+			for _, plotIndex in ipairs(ownedPlots) do
+				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+				local dx = plot ~= nil and try(function() return plot:GetX(); end, -1) or -1;
+				local dy = plot ~= nil and try(function() return plot:GetY(); end, -1) or -1;
+				local dtype = nil;
+				if plot ~= nil then
+					local d = try(function() return plot:GetDistrictType(); end, -1);
+					if d ~= nil and d >= 0 then
+						dtype = try(function() return GameInfo.Districts[d].DistrictType; end);
+					end
+				end
+				-- The City Centre takes no specialist, so it is not evidence
+				-- either way and only adds noise to the log.
+				if dtype ~= nil and dtype ~= "DISTRICT_CITY_CENTER" and dx >= 0 then
+					local workers = try(function() return plot:GetWorkerCount(); end, -1);
+					local verdicts = {};
+					for _, candidate in ipairs(candidates) do
+						-- ⚠⚠ EVERY PART OF BUILDING THE TABLE IS INSIDE THE
+						-- `pcall`, NOT JUST THE CALL. `CityCommandTypes.PARAM_*`
+						-- is a bare index: if this build does not define one of
+						-- these names it is `nil`, and `params[nil] = dx` raises
+						-- "table index is nil" — which is a CHUNK-KILLING error
+						-- outside a protected call, and this file has already
+						-- lost whole runs to a script that stopped loading with
+						-- nothing in any log naming it. A probe must not be able
+						-- to take the agent down.
+						local ok, can = pcall(function()
+							local params = {};
+							params[CityCommandTypes.PARAM_X] = dx;
+							params[CityCommandTypes.PARAM_Y] = dy;
+							if candidate.value ~= nil then
+								params[CityCommandTypes.PARAM_MANAGE_CITIZEN] =
+									candidate.value;
+							end
+							return CityManager.CanStartCommand(
+								city, CityCommandTypes.MANAGE, params, true);
+						end);
+						verdicts[#verdicts + 1] = candidate.name .. "="
+							.. (ok and tostring(can) or "threw");
+					end
+					emit("civvis_citizen_probe", {
+						turn = turn,
+						city = cityId,
+						district = dtype,
+						x = dx, y = dy,
+						workers = workers,
+						verdicts = table.concat(verdicts, ","),
+					});
+				end
+			end
+		end
+		probed = probed + 1;
+	end
 end
 
 local function probeChannels(turn)
@@ -7692,7 +7980,7 @@ local function applyOrders(player, pid, turn, rows)
 	-- this event, so its absence also disabled the stall watchdog's only clock.
 	--
 	-- Leaner than the heuristic path's record on purpose: the fields it omits
-	-- (`war_blocked`, the settle-plan fires) describe built-ins that did not run.
+	-- (`war_blocked`) describe built-ins that did not run.
 	local counts = countUnits(player);
 	local rivalTop, metCount = rivalBest(player, pid);
 	local ourScore = try(function() return player:GetScore(); end, -1);
@@ -7726,6 +8014,37 @@ end
 -- fallback turn would guarantee the next turn falls back too.
 local function beginTurn(player, pid, turn)
 	if cfg.ProbeChannels then probeChannels(turn); end
+	-- Every `ProbeCitizenEvery` turns rather than every turn: the answer cannot
+	-- change within a game, and one line per district per city per turn would
+	-- drown the log the rest of the run has to be read out of.
+	if cfg.ProbeCitizens
+		and (turn % (cfg.ProbeCitizenEvery or 25)) == 0 then
+		probeCitizenSlots(turn);
+	end
+	-- ⚠⚠⚠ ENVOYS ARE SPENT ON THE TURN, NOT ON THE PROMPT. `chooseEnvoy` was
+	-- reachable only from the `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` handler,
+	-- and that blocker is far rarer than the comment above `chooseEnvoy`
+	-- assumes: an isolation run on 2026-08-04 with `EnvoyEnabled` on went **58
+	-- turns without it firing once**, while holding five free envoys with four
+	-- city-states met. Zero `envoy` events, so the lane could not have been
+	-- measured even though it was switched on.
+	--
+	-- That also explains the deployment symptom on its own terms: runs finish
+	-- holding 55, 56 and 69 unspent envoys. Waiting to be asked is not a
+	-- strategy when the question is not reliably asked.
+	--
+	-- ⚠ This does NOT enable the lane. `chooseEnvoy` still returns immediately
+	-- unless `cfg.EnvoyEnabled` is set, which is still off by default because
+	-- the three SIGSEGVs have not been cleared. What it changes is that the
+	-- isolation run can now actually exercise the code it is testing.
+	--
+	-- ⚠ `beginTurn`, not `playTurn`: deployment runs with `--civvis-decides`, so
+	-- `playTurn` never executes. A call added there would have been inert in
+	-- exactly the configuration that matters — the same trap the `come_ashore`
+	-- comment records for the tactical path.
+	if cfg.EnvoyEnabled then
+		pcall(function() chooseEnvoy(player, pid, turn); end);
+	end
 	-- Refreshed here rather than in the fallback so that the export, CIVVIS and the
 	-- built-ins all describe the same war picture.
 	warTarget = findWarTarget(player, pid);
@@ -8020,18 +8339,6 @@ local function playTurn(player, pid, turn)
 		-- Whether the army was allowed to attack this turn, and how big it was.
 		army = armyNow,
 		assaulting = assaultReady,
-		-- Which brain is choosing city sites. `plan_sites` staying at zero while a
-		-- plan is configured means CIVVIS is NOT deciding, whatever the config says.
-		plan_sites = planFires.plan,
-		own_sites = planFires.search,
-		plan_offered = planFires.offered,
-		-- The near-window's price and its payoff, as running totals. Divide by
-		-- `near_n` for the means. ⚠ Both are needed: `near_rank` alone says only
-		-- that value was given up, `near_dist` alone says only that walks are
-		-- short. The trade is good when dist falls faster than rank rises.
-		near_rank = planFires.near_rank or 0,
-		near_dist = planFires.near_dist or 0,
-		near_n = planFires.near_n or 0,
 		actions = lastActions,
 		ticks_seen = ticksSeen, ticks_taken = ticksTaken,
 		blocker = blockerName(currentBlocker(pid)),
@@ -8050,6 +8357,12 @@ local function tick()
 		if turn ~= lastTurnSeen then
 			lastTurnSeen = turn;
 			turnsPlayed = turnsPlayed + 1;
+			-- ⚠ ONCE PER TURN, HERE, NOT IN `countUnits`. Counting runs several
+			-- times a turn -- the comment on `countUnits` says so and an
+			-- `upgradeUnit` spliced into it once issued orders from a counting
+			-- pass. An idle streak incremented there would count passes, not
+			-- turns, and every settler would read stranded within one turn.
+			trackIdleUnits(player);
 			attempts = 0;
 			passes = {};
 			if cfg.CivvisDecides then

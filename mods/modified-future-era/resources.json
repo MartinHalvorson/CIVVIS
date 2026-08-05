@@ -1,0 +1,5 @@
+{
+  "iron": {"lunar": {"min": 140, "max": 240}},
+  "aluminum": {"lunar": {"min": 200, "max": 320}},
+  "uranium": {"lunar": {"min": 50, "max": 90}}
+}
