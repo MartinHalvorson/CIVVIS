@@ -1000,6 +1000,31 @@ def session_settings(
     return settings
 
 
+def settings_at_boundary(
+    state: dict[str, Any],
+    current: dict[str, Any],
+    fixed_setup: bool = False,
+    current_is_authoritative: bool = False,
+) -> dict[str, Any]:
+    """Keep the latest setup until a finished world needs a successor.
+
+    The supervisor polls a live game many times before its next boundary.
+    Calling ``session_settings`` for every one of those polls redraws the
+    unattended exhibition settings and can discard the setup the viewer
+    staged while an AI turn was in flight. A live staged payload is the
+    authority; without one, retain the settings already associated with the
+    current process and only roll a fresh successor once the world is done.
+    A staged value observed through the lock-free runtime probe remains
+    authoritative even if the following full-state read predates that write.
+    """
+    selected = normalized_simulation_settings(state.get("next_game_settings"))
+    if selected is not None:
+        return selected
+    if current_is_authoritative or state.get("winner") is None:
+        return dict(current)
+    return session_settings(state, current, fixed_setup)
+
+
 def normalized_simulation_settings(values: Any) -> dict[str, Any] | None:
     """Validate the server's complete setup handoff for a future process."""
     if not isinstance(values, dict):
@@ -1825,13 +1850,24 @@ def main() -> int:
             log("active runtime is behind the worktree; scheduling a safe live refresh")
 
         while True:
+            runtime_staged = None
             # A restart is asked for by the person watching, and the moment it
             # is most needed is the moment a long AI turn holds the simulation
             # lock — which is exactly when `/state` cannot be built and this
             # loop used to see nothing at all. `/runtime` answers from atomics
             # beside the session, so the request is read while the turn runs.
-            manual_request = manual_new_game_request(read_json(args.port, "/runtime") or {})
+            runtime = read_json(args.port, "/runtime") or {}
+            manual_request = manual_new_game_request(runtime)
             if manual_request is None:
+                # The setup queue is lock-free for the same reason as the
+                # manual restart request. Capture it before asking for the
+                # large state document: the AI may still hold that document's
+                # simulation lock, while the queue already represents the
+                # viewer's current choice for the next boundary.
+                staged = normalized_simulation_settings(runtime.get("next_game_settings"))
+                if staged is not None:
+                    settings = staged
+                    runtime_staged = staged
                 state = read_state(args.port)
             if manual_request is None and state is None:
                 now = time.monotonic()
@@ -1948,8 +1984,14 @@ def main() -> int:
                 source_check_at = time.monotonic() + max(1.0, args.source_check_interval)
                 continue
 
-            settings = session_settings(
-                state, settings, getattr(args, "fixed_setup", False)
+            # Prefer the full observation when both probes saw a staged value,
+            # but retain the lock-free value if `/state` was an older snapshot
+            # taken before the setting write landed.
+            settings = settings_at_boundary(
+                state,
+                settings,
+                getattr(args, "fixed_setup", False),
+                current_is_authoritative=runtime_staged is not None,
             )
             if state.get("winner") is None:
                 finished_key = None
