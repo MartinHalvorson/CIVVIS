@@ -138,6 +138,34 @@
     }
   }
 
+  // The manifest belongs to the module this document loaded. Keep that first
+  // reading even if a deployment replaces build.json underneath a long-lived
+  // game; installedSuccessorBuild deliberately performs its own fresh reads
+  // to notice that separate event. A matching commit is mandatory so a page
+  // caught during publication never assigns the successor's size to the
+  // engine it is still running.
+  let runningBuildManifest = null;
+  function loadRunningBuildManifest() {
+    if (runningBuildManifest === null) {
+      runningBuildManifest = networkFetch(new URL("build.json", here), {
+        cache: "no-store",
+      }).then((response) => response.ok ? response.json() : null)
+        .catch(() => null);
+    }
+    return runningBuildManifest;
+  }
+
+  async function attachPublishedBuildMetadata(answer) {
+    if (!answer || typeof answer !== "object" ||
+        typeof answer.server_commit !== "string") return answer;
+    const manifest = await loadRunningBuildManifest();
+    if (manifest?.commit === answer.server_commit &&
+        Number.isSafeInteger(manifest.wasm_bytes) && manifest.wasm_bytes > 0) {
+      answer.server_wasm_bytes = manifest.wasm_bytes;
+    }
+    return answer;
+  }
+
   async function reloadInstalledSuccessor() {
     const commit = await installedSuccessorBuild();
     if (commit === null) return false;
@@ -423,6 +451,7 @@
       // not held up by storage.
       answer.autosaved = turn;
     }
+    await attachPublishedBuildMetadata(answer);
     answer = await withPublishedArtifact(answer);
     return json(answer);
   }
