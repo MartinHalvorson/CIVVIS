@@ -24,6 +24,7 @@ window.fakeNow = 0;
 Object.defineProperty(performance, "now", { value: () => window.fakeNow });
 window.workerCalls = [];
 window.betweenGameCountdownMs = 10000;
+window.runtimeDelay = new URL(location.href).searchParams.has("slow") ? 600 : 0;
 window.Worker = class {
   constructor() { this.onmessage = null; this.onerror = null; }
   postMessage(message) {
@@ -48,9 +49,9 @@ window.Worker = class {
       answer = {};
     }
     const bytes = new TextEncoder().encode(JSON.stringify(answer));
-    queueMicrotask(() => this.onmessage({
+    setTimeout(() => this.onmessage({
       data: { id: message.id, ok: true, answer: bytes },
-    }));
+    }), message.path === "/runtime" ? window.runtimeDelay : 0);
   }
 };
 </script>
@@ -92,7 +93,7 @@ def main() -> int:
             f"--user-data-dir={profile}",
             "--no-first-run",
             "--disable-gpu",
-            f"http://127.0.0.1:{port}/",
+            f"http://127.0.0.1:{port}/?slow=1",
         ],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
@@ -126,9 +127,23 @@ def main() -> int:
         dev.call("Runtime.enable")
         deadline = time.time() + 10
         while time.time() < deadline and not dev.evaluate(
+            "!!document.getElementById('civvis-beta-loading')"
+        ):
+            time.sleep(0.1)
+        loading_text = dev.evaluate(
+            "document.getElementById('civvis-beta-loading')?.textContent || ''"
+        )
+        assert "Starting a new world" in loading_text, loading_text
+        assert "Runs in this browser" in loading_text, loading_text
+        deadline = time.time() + 10
+        while time.time() < deadline and not dev.evaluate(
             "window.__civvisBeta && window.__civvisBeta.ready"
         ):
             time.sleep(0.1)
+        time.sleep(0.5)
+        assert not dev.evaluate(
+            "!!document.getElementById('civvis-beta-loading')"
+        ), "the startup notice remained after the local game was ready"
 
         selected = dev.evaluate(
             "fetch('/pace', {method:'POST', body:JSON.stringify({between_game_countdown_ms:3000})}).then(r => r.json())"

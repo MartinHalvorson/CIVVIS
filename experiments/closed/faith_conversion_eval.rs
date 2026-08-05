@@ -1,4 +1,4 @@
-//! Matched evaluation of converting surplus Faith into Culture assets.
+//! Archived matched evaluation of converting surplus Faith into Culture assets.
 //!
 //! The treatment changes no income and invents no action.  On a focal
 //! `AdvancedAi` turn whose reported plan is not Culture, it executes at most
