@@ -2611,6 +2611,7 @@ impl AdvancedAi {
         // `live_without_` arm — which is the invariant working, and the reason a
         // gated-off flag here would be dead code of the `culture_focus` kind.
         self.enable_district_coverage();
+        self.enable_slot_kind_tiebreak();
         // ⚠⚠ AND THE POPULATION THE SCIENCE IS COMPUTED FROM IS CAPPED BY HOUSING.
         // The lane above decides which specialty district a city builds; none of
         // them raises the ceiling on the citizens who work them. Measured over
@@ -2681,6 +2682,22 @@ impl AdvancedAi {
 
     pub fn disable_district_coverage(&mut self) {
         self.base.district_coverage = false;
+    }
+
+    /// Break a production cost tie by which great-work slots can be filled.
+    ///
+    /// ⚠ Art and Archaeological Museum are identical in `data/buildings.json` except
+    /// for the slot kind and both cost 290, so `sort()` fell through to `Name::cmp`
+    /// and the letter 'c' decided it. An Artifact slot needs a 400-production
+    /// Archaeologist no live run has ever built; the first run to build a Museum
+    /// (`civvis-20260803T082856Z`) took the Artifact one and ended with 0 great works
+    /// in 6 slots.
+    pub fn enable_slot_kind_tiebreak(&mut self) {
+        self.base.slot_kind_tiebreak = true;
+    }
+
+    pub fn disable_slot_kind_tiebreak(&mut self) {
+        self.base.slot_kind_tiebreak = false;
     }
 
     /// Let the baseline governor raise the housing ceiling. See

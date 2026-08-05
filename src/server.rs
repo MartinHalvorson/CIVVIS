@@ -66,6 +66,8 @@ static LAUNCHED_COMMIT: OnceLock<Option<String>> = OnceLock::new();
 static LAUNCHED_COMMIT_TIME: OnceLock<Option<String>> = OnceLock::new();
 #[cfg(not(target_arch = "wasm32"))]
 static LAUNCHED_BUILT_AT: OnceLock<Option<String>> = OnceLock::new();
+#[cfg(not(target_arch = "wasm32"))]
+static LAUNCHED_ARTIFACT_BYTES: OnceLock<Option<u64>> = OnceLock::new();
 
 #[cfg(not(target_arch = "wasm32"))]
 fn promoted_binary_commit(name: &str) -> Option<String> {
@@ -98,6 +100,15 @@ fn launched_built_at() -> Option<String> {
     std::env::var("CIVVIS_BUILT_AT")
         .ok()
         .filter(|built_at| !built_at.is_empty())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn launched_artifact_bytes() -> Option<u64> {
+    std::env::current_exe()
+        .ok()?
+        .metadata()
+        .ok()
+        .map(|metadata| metadata.len())
 }
 
 /// The revision of the code a supervisor selected for this process.
@@ -167,6 +178,31 @@ pub(crate) fn runtime_built_at() -> Option<String> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         LAUNCHED_BUILT_AT.get_or_init(launched_built_at).clone()
+    }
+}
+
+/// Size of the exact artifact serving this page, in bytes.
+///
+/// A native process can inspect its own executable. The browser WASM module
+/// has no filesystem path, so the published shim supplies its optimized byte
+/// count from the matching lane manifest after publication.
+pub(crate) fn runtime_artifact_bytes() -> Option<u64> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        None
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        *LAUNCHED_ARTIFACT_BYTES.get_or_init(launched_artifact_bytes)
+    }
+}
+
+/// The kind of artifact whose size is reported beside the build ages.
+pub(crate) const fn runtime_artifact_kind() -> &'static str {
+    if cfg!(target_arch = "wasm32") {
+        "WASM"
+    } else {
+        "native"
     }
 }
 
@@ -2724,6 +2760,8 @@ impl Session {
             o["server_commit"] = json!(runtime_commit("unknown"));
             o["server_commit_time"] = json!(runtime_commit_time());
             o["server_built_at"] = json!(runtime_built_at());
+            o["server_artifact_bytes"] = json!(runtime_artifact_bytes());
+            o["server_artifact_kind"] = json!(runtime_artifact_kind());
             return o;
         }
         let mut o = observation(&self.game, 0);
@@ -2745,6 +2783,8 @@ impl Session {
         o["server_commit"] = json!(runtime_commit("unknown"));
         o["server_commit_time"] = json!(runtime_commit_time());
         o["server_built_at"] = json!(runtime_built_at());
+        o["server_artifact_bytes"] = json!(runtime_artifact_bytes());
+        o["server_artifact_kind"] = json!(runtime_artifact_kind());
         o
     }
 
@@ -3901,6 +3941,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "commit": runtime_commit("unknown"),
                     "commit_time": runtime_commit_time(),
                     "built_at": runtime_built_at(),
+                    "artifact_bytes": runtime_artifact_bytes(),
+                    "artifact_kind": runtime_artifact_kind(),
                     // The supervisor's only view of a restart used to be
                     // `/state`, which is exactly what a long AI turn makes
                     // unavailable. This probe takes no lock the simulation
@@ -5906,6 +5948,9 @@ mod tests {
         assert_eq!(runtime["commit"], state["server_commit"]);
         assert_eq!(runtime["commit_time"], state["server_commit_time"]);
         assert_eq!(runtime["built_at"], state["server_built_at"]);
+        assert_eq!(runtime["artifact_bytes"], state["server_artifact_bytes"]);
+        assert_eq!(runtime["artifact_kind"], state["server_artifact_kind"]);
+        assert!(runtime["artifact_bytes"].as_u64().unwrap_or(0) > 0);
         // The supervisor's whole view of a pending restart. It rides here
         // rather than only on `/state` because a long AI turn is exactly when
         // a restart is asked for and exactly when `/state` cannot be built.
@@ -5928,6 +5973,11 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function updateBuildMarker(st = state)"));
         assert!(EMBEDDED_INDEX.contains("st?.server_commit_time"));
         assert!(EMBEDDED_INDEX.contains("st?.server_built_at"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_artifact_bytes"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_artifact_kind"));
+        assert!(EMBEDDED_INDEX.contains("function formatBuildSize(bytes)"));
+        assert!(EMBEDDED_INDEX.contains("(bytes / 1048576).toFixed(1)} MiB"));
+        assert!(EMBEDDED_INDEX.contains("(artifactSize ? ` · Build size ${artifactSize}` : \"\")"));
         assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
         assert!(EMBEDDED_INDEX.contains("return parts.join(\" \") || \"0m\""));
         assert!(EMBEDDED_INDEX.contains("Commit is ${formatBuildAge(commitDate)} old"));
@@ -7598,6 +7648,9 @@ mod tests {
         let lenses_at = sidebar
             .find("id=\"map-lenses\"")
             .expect("map lens menu in the deck");
+        let utility_at = sidebar
+            .find("<div id=\"map-utility-panel\"")
+            .expect("map utility panel");
         let search_at = sidebar
             .find("id=\"map-search\"")
             .expect("map search control in the deck");
@@ -7605,15 +7658,13 @@ mod tests {
             .find("<summary>Keyboard shortcuts</summary>")
             .expect("keyboard shortcuts");
         assert!(
-            lenses_at < search_at && search_at < shortcuts_at,
-            "map lenses should sit above visible-tile search, immediately before keyboard shortcuts"
+            utility_at < lenses_at && lenses_at < search_at && search_at < shortcuts_at,
+            "the fixed map utility panel should hold map lenses above visible-tile search, immediately before keyboard shortcuts"
         );
         assert!(sidebar.contains("id=\"map-search-input\" type=\"search\""));
         assert!(sidebar.contains("id=\"map-search-civ\""));
         assert!(sidebar.contains("aria-live=\"polite\""));
-        assert!(sidebar.contains(
-            "<details class=\"sidebar-section\" id=\"maplensessec\" data-section=\"map-lenses\">"
-        ));
+        assert!(!sidebar.contains("id=\"maplensessec\""));
         assert!(EMBEDDED_INDEX.contains(
             "#map-utility-panel {\n    position: relative; z-index: 3; flex: 0 0 auto;"
         ));
@@ -8529,12 +8580,12 @@ mod tests {
         let keyboard_shortcuts = EMBEDDED_INDEX
             .find("<summary>Keyboard shortcuts</summary>")
             .expect("keyboard shortcuts");
-        let map_lenses = EMBEDDED_INDEX
-            .find("<details class=\"sidebar-section\" id=\"maplensessec\" data-section=\"map-lenses\">")
-            .expect("collapsible map lens section");
         let map_utility = EMBEDDED_INDEX
             .find("<div id=\"map-utility-panel\"")
             .expect("map utility band");
+        let map_lenses = EMBEDDED_INDEX
+            .find("<div id=\"map-lenses\"")
+            .expect("map lens menu in the fixed utility band");
         let visible_tile_search = EMBEDDED_INDEX
             .find("<div id=\"map-search\"")
             .expect("visible tile search");
@@ -8551,12 +8602,13 @@ mod tests {
             strategy < war_log
                 && war_log < event_log
                 && event_log < government
-                && government < map_lenses
-                && map_lenses < map_utility
+                && government < map_utility
+                && map_utility < map_lenses
                 && map_lenses < visible_tile_search
                 && visible_tile_search < keyboard_shortcuts,
             "left panel should show controls, display settings, game setup, the AI strategy dossier, \
-             world logs, government, map lenses, visible-tile search and then keyboard shortcuts"
+             world logs, government, the fixed map utility with map lenses, visible-tile search \
+             and then keyboard shortcuts"
         );
         assert!(EMBEDDED_INDEX.contains("<span>Display Settings</span>"));
         assert!(!EMBEDDED_INDEX.contains("<span>Interface Settings</span>"));
@@ -8601,44 +8653,30 @@ mod tests {
             "the switches read down the rail, then the map dock in the far corner"
         );
         assert!(EMBEDDED_INDEX.contains("id=\"map-lens-exit\""));
-        assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #maplensessec"));
-        // Lenses are a first-class deck section: collapsed by default, saved
-        // with the other disclosures, and expanded only when the viewer wants
-        // to change the map perspective. Search stays in the lower utility
-        // band, so a query remains reachable without opening the lens grid.
-        let lens_section = &EMBEDDED_INDEX[map_lenses..map_utility];
-        let lens_opening = lens_section
-            .split_once('>')
-            .expect("map lens section opening tag")
-            .0;
-        let lenses = lens_section.find("<div id=\"map-lenses\"").expect("map lens menu");
-        let strip = lens_section.find("<div id=\"map-lens-strip\"").expect("lens grid");
-        let close = lens_section
+        assert!(EMBEDDED_INDEX.contains("body.overlay-lenses-hidden #map-lenses"));
+        // The lens grid is a fixed map tool, not a disclosure in the scrolling
+        // command deck. It stays directly above visible-tile search at the
+        // lower edge of the left panel.
+        let utility = &EMBEDDED_INDEX[map_utility..];
+        let lenses = utility.find("<div id=\"map-lenses\"").expect("map lens menu");
+        let strip = utility.find("<div id=\"map-lens-strip\"").expect("lens grid");
+        let search = utility.find("<div id=\"map-search\"").expect("visible tile search");
+        let close = utility
             .find("data-overlay-close=\"lenses\"")
             .expect("lens dismiss control");
         assert!(
-            lenses < strip && close < strip,
-            "the collapsible menu header holds its dismiss control and the lens grid follows it"
+            lenses < strip && close < strip && strip < search,
+            "the fixed map utility holds the lens controls above visible-tile search"
         );
-        assert!(lens_section.contains("<summary class=\"section-label\">"));
-        assert!(lens_section.contains("data-section=\"map-lenses\""));
-        assert!(
-            !lens_opening.contains(" open"),
-            "a fresh profile should start with the map lens section collapsed"
-        );
-        let utility = &EMBEDDED_INDEX[map_utility..];
-        assert!(utility.contains("<div id=\"map-search\""));
-        assert!(
-            !utility.contains("<div id=\"map-lenses\""),
-            "the fixed utility band should not duplicate the collapsible lens section"
-        );
+        assert!(!EMBEDDED_INDEX.contains("id=\"maplensessec\""));
+        assert!(!EMBEDDED_INDEX.contains("data-section=\"map-lenses\""));
         assert!(EMBEDDED_INDEX.contains(
             "#map-lens-strip {\n    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));"
         ));
         assert!(utility.contains("id=\"map-search-civ\""));
         assert!(EMBEDDED_INDEX
             .contains("document.getElementById(\"map-lens-exit\").onclick = () => setMapLens(null);"));
-        assert!(EMBEDDED_INDEX.contains("close.closest(\"#maplensessec\")"));
+        assert!(EMBEDDED_INDEX.contains("close.closest(\"#map-lenses\")"));
         // One instrument, one name. The switch, the title bar it is dragged by
         // and the label that follows it across the map all say "World minimap",
         // so nothing in the interface reads as a second, separate world map —
@@ -9018,25 +9056,13 @@ mod tests {
             EMBEDDED_INDEX
                 .matches("class=\"sidebar-section\"")
                 .count(),
-            7,
-            "every top-level left-panel section should be collapsible"
+            6,
+            "the scrolling left-panel sections should be collapsible; map tools stay fixed below them"
         );
         assert!(EMBEDDED_INDEX.contains("function initSidebarSections()"));
         assert!(EMBEDDED_INDEX.contains("civvis-sidebar-sections-v1"));
-        assert!(EMBEDDED_INDEX.contains("section.id === \"maplensessec\" && section.open"));
-        assert!(EMBEDDED_INDEX.contains("const revealMapLensSection = () => {"));
-        assert!(EMBEDDED_INDEX.contains("const scheduleMapLensSectionReveal = () => {"));
-        assert!(EMBEDDED_INDEX.contains(
-            "section.scrollIntoView({block:\"nearest\", inline:\"nearest\"})"
-        ));
-        assert!(EMBEDDED_INDEX.contains(
-            "for (const delay of [0, 250, 750]) {"
-        ));
-        assert!(EMBEDDED_INDEX.contains("window.setTimeout(revealMapLensSection, delay);"));
-        assert!(EMBEDDED_INDEX.contains("scheduleMapLensSectionReveal();"));
-        assert!(EMBEDDED_INDEX.contains(
-            "window.addEventListener(\"resize\", revealMapLensSection, {passive:true});"
-        ));
+        assert!(!EMBEDDED_INDEX.contains("maplensessec"));
+        assert!(!EMBEDDED_INDEX.contains("revealMapLensSection"));
         // Collapsing the command deck collapses the deck alone. Every map
         // overlay is switched from the deck's Display Settings instead, so the
         // two controls stay independent and the deck's width can be handed to
