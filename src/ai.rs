@@ -9019,8 +9019,16 @@ impl BasicAi {
                 return self.fortify_or_stop(g, pid, uid);
             }
         }
-        if let Some(acted) = self.special_improver_step(g, pid, uid) {
-            return acted;
+        let special_improver = {
+            let unit = &g.units[&uid];
+            unit.owner == pid
+                && unit.charges > 0
+                && !g.rules.units[unit.kind].builds.is_empty()
+        };
+        if special_improver {
+            if let Some(acted) = self.special_improver_step(g, pid, uid) {
+                return acted;
+            }
         }
         // Coming ashore outranks exploring. A Recon unit explores for as long
         // as any unseen tile remains, which on an ocean map is forever, so

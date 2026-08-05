@@ -663,8 +663,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// order rejects the overwhelmingly common unowned map tile before asking the
 /// traversal cache, so the frozen controller's source contract is re-pinned
 /// after the fixed-prefix comparison below.
+/// #1259 guards the special-improver helper at its call site. The guard repeats
+/// the helper's existing eligibility checks, so the advanced_v1 legacy path is
+/// unchanged; the source contract is re-pinned after the fixed-prefix
+/// comparison above.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x0c09_4bef_3068_6e70;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6921_1afb_17d8_bec8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
