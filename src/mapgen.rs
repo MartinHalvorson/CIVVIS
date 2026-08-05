@@ -1,5 +1,5 @@
 //! Map generation (mirrors civvis/mapgen.py).
-use std::collections::{BTreeMap, BTreeSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque};
 use std::sync::Arc;
 
 use crate::fractal::Fractal;
@@ -923,6 +923,13 @@ fn generate_land(
         return canal_blocks(wm, poles, rng).land;
     }
     if wm.sphere().is_some() {
+        if script == MapScript::Fjords {
+            // Fjords are a coastline-first world on either shape. Reading the
+            // same wrap-aware channel field through longitude and latitude keeps
+            // the globe from falling back to rounded inland seas, which are the
+            // one thing this script should not look like.
+            return fjord_land(wm, poles, rng);
+        }
         return globe_land(wm, script, poles, num_major_spawns, num_minor_spawns, rng);
     }
     flat_land(wm, script, poles, num_major_spawns, num_minor_spawns, rng)
@@ -1026,7 +1033,7 @@ fn flat_land(
             }
             land
         }
-        MapScript::Fjords => fjord_land(wm, rng),
+        MapScript::Fjords => fjord_land(wm, poles, rng),
         MapScript::InlandSea => {
             let center_col = (width - 1) as f64 / 2.0;
             let center_row = (height - 1) as f64 / 2.0;
@@ -1134,37 +1141,138 @@ fn flat_land(
 /// mountain. The high ridges of the field are removed as water rather than
 /// grown as isolated lakes, so they make long inlets, shorter cuts, and narrow
 /// passages throughout the map instead of one ocean around a continent.
-fn fjord_land(wm: &WorldMap, rng: &mut Rng) -> BTreeSet<Pos> {
+fn fjord_land(wm: &WorldMap, poles: MapPoles, rng: &mut Rng) -> BTreeSet<Pos> {
     let total = wm.tiles.len();
-    let target = total * MapScript::Fjords.land_percent() as usize / 100;
-    // Flat worlds keep their two polar rows wet. Choose the remaining water
-    // from the reachable interior, so that reservation does not quietly turn
-    // the advertised 40/40/20 mix into a drier map.
-    let interior = offset_region(wm, 0, wm.width, 1, wm.height - 1);
-    let water_inside = interior.len().saturating_sub(target.min(interior.len()));
-    let mut channels = Fractal::new_without_index(rng, wm.width, wm.height, 3);
-    // More plates than an ordinary world gives the sea many independent cuts:
-    // some run the length of a continent, some stop at a bay, and their joins
-    // leave the constricted passages the script is named for.
-    channels.build_ridges_without_index(rng, 18, 5.0, 5.0);
-    let mut ranked: Vec<(u8, Pos)> = interior
+    // Flat worlds keep their two polar rows wet; a poled globe keeps a small
+    // cap wet for the same climate reason. Pentagons stay wet on a globe so
+    // every surfaced tile retains the six-neighbour contract. Choose the
+    // remaining water from the eligible field, so those reservations do not
+    // quietly turn the advertised 40/40/20 mix into a drier map.
+    let pentagons: BTreeSet<Pos> = wm
+        .sphere()
+        .map(|sphere| sphere.pentagons().into_iter().collect())
+        .unwrap_or_default();
+    let cap = if poles.has_poles() { 0.93 } else { f64::MAX };
+    let interior: BTreeSet<Pos> = if wm.sphere().is_some() {
+        wm.tiles
+            .keys()
+            .copied()
+            .filter(|pos| !pentagons.contains(pos) && wm.polar_fraction(*pos) < cap)
+            .collect()
+    } else {
+        offset_region(wm, 0, wm.width, 1, wm.height - 1)
+    };
+    let reserved_water = total.saturating_sub(interior.len());
+    let water_inside = (total * 40 / 100)
+        .saturating_sub(reserved_water)
+        .min(interior.len());
+    let mut channels = Fractal::new_without_index(rng, wm.width, wm.height, 4);
+    // More, finer plates than an ordinary world gives the sea many independent
+    // cuts: some run the length of a continent, some stop at a bay, and their
+    // joins leave the constricted passages the script is named for. A second
+    // fine field only roughens the banks; the ridge field keeps the channels
+    // long enough to leave stringy land between them.
+    channels.build_ridges_without_index(rng, 24, 6.0, 3.0);
+    let teeth = Fractal::new_without_index(rng, wm.width, wm.height, 5);
+    let mut isthmuses = Fractal::new_without_index(rng, wm.width, wm.height, 3);
+    isthmuses.build_ridges_without_index(rng, 6, 5.0, 5.0);
+    // A few worlds get a long land spine deliberately protected from the
+    // channel cut. Since the spine is another ridged field, it arrives as a
+    // crooked isthmus rather than a straight bridge; the zero-strength roll
+    // leaves other worlds with separated peninsulas instead.
+    let isthmus_weight = match rng.below(4) {
+        0 => 0,
+        1 => 1,
+        _ => 2,
+    };
+    let scores: BTreeMap<Pos, i32> = interior
         .iter()
         .copied()
         .map(|pos| {
             let (col, row) = noise_cell(wm, pos);
-            (channels.at(col, row), pos)
+            (
+                pos,
+                channels.at(col, row) as i32 * 3 + teeth.at(col, row) as i32
+                    - isthmus_weight * isthmuses.at(col, row) as i32,
+            )
         })
         .collect();
-    ranked.sort_unstable_by(|(left_height, left_pos), (right_height, right_pos)| {
-        right_height
-            .cmp(left_height)
-            .then_with(|| left_pos.cmp(right_pos))
-    });
-    let water: BTreeSet<Pos> = ranked
-        .into_iter()
-        .take(water_inside)
-        .map(|(_, pos)| pos)
+
+    // Grow the sea from its existing edge instead of selecting the highest
+    // scores independently. A raw percentile can leave the map with many
+    // disconnected inland pockets; a ranked frontier keeps most of the water
+    // in one navigable system while the ridges still decide where its fingers
+    // run. Choosing among the six best frontier tiles leaves the banks ragged.
+    let mut water: BTreeSet<Pos> = wm
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| !interior.contains(pos))
         .collect();
+    let mut queued = BTreeSet::new();
+    let mut frontier = BinaryHeap::new();
+    for pos in water
+        .iter()
+        .flat_map(|pos| wm.neighbors(*pos))
+        .filter(|pos| interior.contains(pos))
+    {
+        if queued.insert(pos) {
+            frontier.push((scores[&pos], std::cmp::Reverse(pos)));
+        }
+    }
+    let mut carved = 0;
+    while carved < water_inside {
+        if frontier.is_empty() {
+            // This is only reachable on a degenerate tiny map or a globe with
+            // an entirely reserved cap. Starting a new seed is safer than
+            // missing the script's advertised water share.
+            let Some(seed) = scores
+                .keys()
+                .filter(|pos| !water.contains(pos))
+                .max_by_key(|pos| (scores[pos], std::cmp::Reverse(**pos)))
+                .copied()
+            else {
+                break;
+            };
+            water.insert(seed);
+            carved += 1;
+            for pos in wm
+                .neighbors(seed)
+                .into_iter()
+                .filter(|pos| interior.contains(pos) && !water.contains(pos))
+            {
+                if queued.insert(pos) {
+                    frontier.push((scores[&pos], std::cmp::Reverse(pos)));
+                }
+            }
+            continue;
+        }
+        let mut choices = Vec::with_capacity(6);
+        for _ in 0..6 {
+            if let Some(choice) = frontier.pop() {
+                choices.push(choice);
+            } else {
+                break;
+            }
+        }
+        let choice_index = rng.below(choices.len());
+        let (_, std::cmp::Reverse(chosen)) = choices.swap_remove(choice_index);
+        queued.remove(&chosen);
+        frontier.extend(choices);
+        if !water.insert(chosen) {
+            continue;
+        }
+        carved += 1;
+        for pos in wm
+            .neighbors(chosen)
+            .into_iter()
+            .filter(|pos| interior.contains(pos) && !water.contains(pos))
+        {
+            if queued.insert(pos) {
+                frontier.push((scores[&pos], std::cmp::Reverse(pos)));
+            }
+        }
+    }
     interior.difference(&water).copied().collect()
 }
 
@@ -1377,42 +1485,13 @@ fn globe_land(
         // Cut the sea out of a solid world. What is left over — the caps and
         // the pentagons — stays water too, which is why the world never comes
         // out at exactly the share asked for on a poled globe.
-        let reserved_water = tiles.saturating_sub(field.len());
-        let water = if script == MapScript::Fjords {
-            // Fjords promises a composition, not merely a ratio in the part
-            // of a globe that happened not to be its polar cap. Count those
-            // permanently wet cells first, then cut just enough additional
-            // sea to finish its forty percent share.
-            (tiles * 40 / 100).saturating_sub(reserved_water)
-        } else {
-            tiles * (100 - land_share) / 100
-        };
+        let water = tiles * (100 - land_share) / 100;
         let seas = match script {
             MapScript::InlandSea => 1,
             MapScript::Lakes => (tiles / 320).clamp(6, 40),
-            // The water is the script's carving tool: several smaller bodies
-            // distribute inlets round the globe instead of cutting one ocean
-            // out of its middle.
-            // Enough bodies to make a network of inlets, but not so many
-            // that their one-tile buffers consume the field before the forty
-            // percent water target can be reached.
-            MapScript::Fjords => (tiles / 400).clamp(8, 20),
             _ => (tiles / 220).clamp(8, 60),
         };
-        let mut sea = scatter_bodies(wm, &mut field, seas, water, rng);
-        if script == MapScript::Fjords {
-            // The initial scatter deliberately leaves a one-tile buffer around
-            // every inlet. On a globe that can prevent the last small body
-            // from finding a seed, so finish the remaining water as a larger
-            // cut rather than quietly returning a too-dry Fjords world.
-            while sea.len() < water && !field.is_empty() {
-                let extra = scatter_bodies(wm, &mut field, 1, water - sea.len(), rng);
-                if extra.is_empty() {
-                    break;
-                }
-                sea.extend(extra);
-            }
-        }
+        let sea = scatter_bodies(wm, &mut field, seas, water, rng);
         return wm
             .tiles
             .keys()
@@ -3965,10 +4044,15 @@ fn tectonic_profile(script: MapScript) -> TectonicProfile {
         // more passable breaks, and mountains that meet its advertised share.
         // Coastal peaks stay: water against a range is the point of a fjord.
         MapScript::Fjords => TectonicProfile {
-            plates: 18,
-            mountain_percentile: 60,
-            foothills_percentile: 78,
-            pass_percentile: 82,
+            // Keep the raw mountain cut close to its final share. The old
+            // profile raised the bottom 40% of the ridged field and then
+            // discarded half of it to reach 20%; that made ranges read as
+            // broad blocks. A higher cut leaves the collision lines narrow
+            // and lets the exact-share pass add only their strongest fringes.
+            plates: 6,
+            mountain_percentile: 72,
+            foothills_percentile: 84,
+            pass_percentile: 88,
             coastal_demote_numerator: 0,
             coastal_demote_denominator: 1,
             exact_mountain_percent: Some(20),
@@ -4046,9 +4130,23 @@ fn apply_tectonics(
 ) {
     let profile = tectonic_profile(script);
     let (width, height) = (wm.width, wm.height);
-    let mut mountains = Fractal::new_without_index(rng, width, height, 3);
-    mountains.build_ridges_without_index(rng, profile.plates, 5.0, 5.0);
-    let hills = Fractal::new_without_index(rng, width, height, 3);
+    let mountain_grain = (script == MapScript::Fjords).then_some(4).unwrap_or(3);
+    let mut mountains = Fractal::new_without_index(rng, width, height, mountain_grain);
+    let (ridge_blend, fractal_blend) = if script == MapScript::Fjords {
+        // Let the collision seams dominate the relief field. The ordinary
+        // half-fractal blend is deliberately broad; Fjords wants the sharp,
+        // tapering edge of a range to meet the water.
+        (9.0, 1.0)
+    } else {
+        (5.0, 5.0)
+    };
+    mountains.build_ridges_without_index(
+        rng,
+        profile.plates,
+        ridge_blend,
+        fractal_blend,
+    );
+    let hills = Fractal::new_without_index(rng, width, height, mountain_grain);
 
     let cells: Vec<(i32, i32)> = land.iter().map(|pos| noise_cell(wm, *pos)).collect();
     let mountain_bands = mountains.percentiles_within(
@@ -7206,6 +7304,63 @@ mod river_tests {
                     "{topology:?} seed {seed}: fjord ranges have too few passable breaks ({passages})"
                 );
             }
+        }
+    }
+
+    #[test]
+    fn fjords_keep_a_sailable_water_network_and_vary_land_connections() {
+        let rules = Rules::embedded();
+        for topology in [FLAT, GLOBE] {
+            let mut smallest_largest_water_share = 100;
+            let mut substantial_land_body_counts = BTreeSet::new();
+            for seed in 0..8u64 {
+                let mut rng = Rng::new(63_000 + seed + 100 * topology.is_globe() as u64);
+                let (world, _) = generate_with_script(
+                    &rules,
+                    60,
+                    38,
+                    4,
+                    6,
+                    3,
+                    2,
+                    MapScript::Fjords,
+                    topology,
+                    POLED,
+                    &mut rng,
+                );
+                let land: BTreeSet<Pos> = world
+                    .tiles
+                    .iter()
+                    .filter(|(_, tile)| !rules.is_water(tile))
+                    .map(|(position, _)| *position)
+                    .collect();
+                let water: BTreeSet<Pos> = world
+                    .tiles
+                    .iter()
+                    .filter(|(_, tile)| rules.is_water(tile))
+                    .map(|(position, _)| *position)
+                    .collect();
+                let land_bodies = connected_components(&world, &land);
+                let water_bodies = connected_components(&world, &water);
+                smallest_largest_water_share = smallest_largest_water_share.min(
+                    water_bodies
+                        .first()
+                        .map_or(0, BTreeSet::len)
+                        * 100
+                        / water.len().max(1),
+                );
+                substantial_land_body_counts.insert(
+                    land_bodies.iter().filter(|body| body.len() >= 20).count(),
+                );
+            }
+            assert!(
+                smallest_largest_water_share >= 50,
+                "{topology:?}: Fjords should leave a dominant navigable water network"
+            );
+            assert!(
+                substantial_land_body_counts.len() >= 2,
+                "{topology:?}: Fjords should vary between joined and separated land spines, got {substantial_land_body_counts:?}"
+            );
         }
     }
 
