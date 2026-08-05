@@ -495,9 +495,26 @@
     background: linear-gradient(145deg, #172723fa, #0b1714fc);
     box-shadow: 0 -12px 32px #0008;
   }
-  /* Search is a compact, always-available map tool at the deck's lower edge.
-     Lenses live with the other collapsible command-deck sections above it, so
-     a viewer can reclaim the grid until they want to change perspective. */
+  /* The deck's fixed lower-left stack: map lenses, visible-tile search, and
+     keyboard shortcuts, docked in that order at the bottom of the screen so
+     the map-reading tools never scroll away with the command sections. */
+  #maplensessec {
+    position: relative; z-index: 3; flex: 0 0 auto; margin: 0;
+    border-top: 1px solid #355047; background: linear-gradient(180deg, #101d1a, #091310);
+    box-shadow: 0 -10px 28px #0005;
+  }
+  #maplensessec > summary {
+    min-height: 40px; padding: 11px 14px;
+    color: var(--muted); cursor: pointer; list-style: none;
+    font-size: var(--type-small); font-weight: 800; letter-spacing: .11em; text-transform: uppercase;
+  }
+  #maplensessec > summary::-webkit-details-marker { display: none; }
+  #maplensessec > summary::after { content: "+"; float: right; color: var(--gold); font-size: var(--type-body); line-height: 1; }
+  #maplensessec[open] > summary::after { content: "−"; }
+  /* The open grid shares the deck's height with the scroller above it, so it
+     caps itself and scrolls inside rather than swallowing the whole column. */
+  .lens-dock-body { padding: 0 10px 10px; }
+  #maplensessec[open] .lens-dock-body { max-height: min(430px, 46vh); overflow-y: auto; scrollbar-width: thin; }
   #map-utility-panel {
     position: relative; z-index: 3; flex: 0 0 auto; padding: 8px 10px 10px;
     border-top: 1px solid #355047; background: linear-gradient(180deg, #101d1a, #091310);
@@ -507,11 +524,8 @@
     min-width: 0;
   }
   .map-lens-head {
-    display: flex; align-items: center; gap: 5px; min-height: 22px; margin-bottom: 6px;
-  }
-  .map-lens-title {
-    min-width: 0; flex: 1; color: #b9c8c2; font-size: var(--type-caption); font-weight: 900;
-    letter-spacing: .10em; text-transform: uppercase;
+    display: flex; align-items: center; justify-content: flex-end;
+    gap: 5px; min-height: 22px; margin-bottom: 6px;
   }
   #map-lenses button {
     position: relative; min-width: 0; height: 31px;
@@ -1090,44 +1104,17 @@
   #zoomctl button { width: 34px; height: 34px; margin: 0; padding: 0; border: 0; background: transparent; font-size: 16px; }
   #zoomctl > button { flex: 0 0 34px; }
   #zoomctl button + button { border-left: 1px solid #ffffff0c; border-radius: 0; }
-  /* Search belongs to the map, not the command deck: keep it immediately
-     above the lower-left instruments where it remains available whether the
-     deck is open or collapsed. The exact result count is part of the control
-     so a search with matches beyond the current camera still answers clearly. */
-  #map-search {
-    position: absolute; z-index: 2; left: 0; bottom: calc(100% + var(--panel-gap));
-    width: min(310px, calc(100vw - 2 * var(--panel-edge))); min-height: 38px;
-    display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; align-items: center;
-    gap: 5px; padding: 4px 7px; border: 1px solid #3c554c; border-radius: 13px;
-    background: #0a1512df; box-shadow: 0 12px 26px #0006;
-    backdrop-filter: blur(12px); pointer-events: auto;
-  }
-  #map-search:focus-within {
-    border-color: #d7b66aa8; box-shadow: 0 12px 26px #0007, 0 0 0 2px #d7b66a24;
-  }
-  #map-search.no-match { border-color: #a6545080; }
-  #map-search-icon { color: #e6c978; font-size: 16px; text-align: center; }
-  #map-search-input {
-    min-width: 0; width: 100%; height: 28px; padding: 0 2px; border: 0; outline: 0;
-    background: transparent; color: #eef4f1; font: 750 var(--type-control)/1.2 system-ui, sans-serif;
-  }
-  #map-search-input::placeholder { color: #8fa39b; font-weight: 650; opacity: 1; }
-  #map-search-status {
-    min-width: 22px; padding: 2px 6px; border: 1px solid #d7b66a45; border-radius: 999px;
-    background: #d7b66a18; color: #ffe7a6; font-size: var(--type-caption);
-    font-weight: 900; font-variant-numeric: tabular-nums; text-align: center;
-  }
-  #map-search-status[hidden] { display: none; }
-  /* The sky bar rides above the lower-left search and zoom instruments and is
+  /* The visible-tile search lives in the command deck's lower-left stack
+     (lenses, search, shortcuts) — its panel styles sit with the deck rules.
+     Only the sky bar floats here. It rides above the zoom instruments and is
      taken out of the dock's flow to get there: the dock is the map's bottom
-     strip and its height is a reservation the framing already pays for, so a
-     second row in the flow would have moved the world every time the camera
-     left the globe. Standing over the map instead costs nothing, and the sky
-     keeps its captions clear of the bar the same way it does of every other
-     widget. */
+     strip, so a second row in the flow would have moved the world every time
+     the camera left the globe. Standing over the map instead costs nothing,
+     and the sky keeps its captions clear of the bar the same way it does of
+     every other widget. */
   #skynav {
     position: absolute; z-index: 1; left: 0;
-    bottom: calc(100% + var(--panel-control-height) + var(--panel-gap));
+    bottom: calc(100% + var(--panel-gap));
     max-width: 100%; display: flex; flex-wrap: wrap; align-items: center;
     gap: 4px; padding: 5px; border-radius: 13px;
     background: #0a1512d8; border: 1px solid #3c554c;
@@ -3069,39 +3056,25 @@
   }
   #maparea.player-hud-compact .minimap-frame.minimap-world-planet { width: 164px; height: 150px; }
   /* The lower instruments have two compact arrangements. A normal quadrant
-     has enough width to place search beside the minimap; a narrow, tall split
-     instead puts search in the clear vertical lane above it. JavaScript picks
+     has enough width to place the sky bar beside the minimap; a narrow, tall
+     split instead puts it in the clear vertical lane above. JavaScript picks
      the mode from the *uncovered* map width and the real space between the
      victory band and minimap, so neither control floats over the world map. */
-  #maparea.player-hud-compact[data-controls-layout="inline"] #map-search {
-    left: calc(var(--compact-minimap-width) + var(--panel-gap)); right: auto;
-    width: min(310px, calc(100% - var(--compact-minimap-width) - var(--panel-gap)));
-  }
   #maparea.player-hud-compact[data-controls-layout="inline"] #skynav {
     left: calc(var(--compact-minimap-width) + var(--panel-gap));
     max-width: calc(100% - var(--compact-minimap-width) - var(--panel-gap));
   }
-  #maparea.player-hud-compact[data-controls-layout="stacked"] #map-search {
-    left: 0; right: 0; width: auto;
-    bottom: calc(100% + var(--compact-minimap-height) + 2 * var(--panel-gap));
-  }
   #maparea.player-hud-compact[data-controls-layout="stacked"] #skynav {
     left: 0; max-width: 100%;
-    bottom: calc(100% + var(--compact-minimap-height) + 2 * var(--panel-gap) + var(--panel-control-height));
+    bottom: calc(100% + var(--compact-minimap-height) + 2 * var(--panel-gap));
   }
-  /* If the viewer dismisses the minimap, return its former share to search
-     regardless of which compact mode the last resize selected. */
-  body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="inline"] #map-search {
-    left: 0; width: min(310px, 100%);
-  }
+  /* If the viewer dismisses the minimap, return its former share to the sky
+     bar regardless of which compact mode the last resize selected. */
   body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="inline"] #skynav {
     left: 0; max-width: 100%;
   }
-  body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="stacked"] #map-search {
-    bottom: calc(100% + var(--panel-gap));
-  }
   body.overlay-minimap-hidden #maparea.player-hud-compact[data-controls-layout="stacked"] #skynav {
-    bottom: calc(100% + var(--panel-control-height) + var(--panel-gap));
+    bottom: calc(100% + var(--panel-gap));
   }
   #maparea.player-hud-compact #victoryhud .hud-rail { overflow-x: auto; overflow-y: hidden; }
   #maparea.player-hud-compact #victoryhud .victory-ribbon {
@@ -4106,87 +4079,86 @@
       <div class="sec"><div id="gov"></div></div>
     </details>
 
-    <details class="sidebar-section" id="maplensessec" data-section="map-lenses">
-      <summary class="section-label">
-        <span class="section-title"><span class="section-icon" aria-hidden="true">◐</span><span>Map lenses</span></span>
-        <span class="section-meta"><span class="rule"></span><span class="section-chevron" aria-hidden="true"></span></span>
-      </summary>
-      <div class="sec">
-        <div id="map-lenses" role="toolbar" aria-label="Map lenses">
-          <div class="map-lens-head">
-            <span class="map-lens-title">Map lenses</span>
-            <button id="map-lens-exit" type="button" hidden
-              title="Exit the active map lens" aria-label="Exit the active map lens">
-              <span class="map-lens-icon" aria-hidden="true">⊘</span>
-              <span class="map-lens-label">Clear</span>
-            </button>
-            <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Display Settings" title="Hide map lenses · restore in Display Settings">✕</button>
-          </div>
-          <div id="map-lens-strip" role="none">
-            <button type="button" data-map-lens="continent" aria-pressed="false"
-              title="Continent lens — geographic continent regions">
-              <span class="map-lens-icon" aria-hidden="true">◒</span>
-              <span class="map-lens-label">Continent</span>
-            </button>
-            <button type="button" data-map-lens="political" aria-pressed="false"
-              title="Political lens — territory grouped by civilization">
-              <span class="map-lens-icon" aria-hidden="true">◩</span>
-              <span class="map-lens-label">Political</span>
-            </button>
-            <button type="button" data-map-lens="settler" aria-pressed="false"
-              title="Settler map — legal sites, quality, and water access (2)">
-              <span class="map-lens-icon" aria-hidden="true">⌂</span>
-              <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
-            </button>
-            <button type="button" data-map-lens="empire" aria-pressed="false"
-              title="Empire lens — city borders, districts, adjacency, and wonders">
-              <span class="map-lens-icon" aria-hidden="true">◈</span>
-              <span class="map-lens-label">Empire</span>
-            </button>
-            <button type="button" data-map-lens="religion" aria-pressed="false"
-              title="Religion lens — majority faith and religious pressure">
-              <span class="map-lens-icon" aria-hidden="true">✦</span>
-              <span class="map-lens-label">Religion</span>
-            </button>
-            <button type="button" data-map-lens="government" aria-pressed="false"
-              title="Government lens — territory grouped by form of government">
-              <span class="map-lens-icon" aria-hidden="true">♜</span>
-              <span class="map-lens-label">Government</span>
-            </button>
-            <button type="button" data-map-lens="appeal" aria-pressed="false"
-              title="Appeal lens — Breathtaking through Disgusting tiles">
-              <span class="map-lens-icon" aria-hidden="true">❀</span>
-              <span class="map-lens-label">Appeal</span>
-            </button>
-            <button type="button" data-map-lens="tourism" aria-pressed="false"
-              title="Tourism lens — exact Tourism generated by each tile">
-              <span class="map-lens-icon" aria-hidden="true">♪</span>
-              <span class="map-lens-label">Tourism</span>
-            </button>
-            <button type="button" data-map-lens="loyalty" aria-pressed="false"
-              title="Loyalty lens — population pressure and city loyalty">
-              <span class="map-lens-icon" aria-hidden="true">⚑</span>
-              <span class="map-lens-label">Loyalty</span>
-            </button>
-            <button type="button" data-map-lens="power" aria-pressed="false"
-              title="Power lens — city generation, demand, and status">
-              <span class="map-lens-icon" aria-hidden="true">⚡</span>
-              <span class="map-lens-label">Power</span>
-            </button>
-            <details id="district-lens-section">
-              <summary title="District adjacency lenses">
-                <span class="map-lens-icon" aria-hidden="true">⬡</span>
-                <span class="map-lens-label">District adjacency</span>
-                <span class="district-lens-caret" aria-hidden="true">›</span>
-              </summary>
-              <div id="district-lens-list" role="group" aria-label="District adjacency lenses"></div>
-            </details>
-          </div>
+  </div>
+  <!-- The deck's fixed lower-left stack, in reading order: map lenses, then
+       the visible-tile search, then keyboard shortcuts. The lenses are docked
+       here rather than scrolled with the command sections so changing the
+       map's perspective is always one click from the bottom of the screen. -->
+  <details id="maplensessec" data-section="map-lenses">
+    <summary>Map lenses</summary>
+    <div class="lens-dock-body">
+      <div id="map-lenses" role="toolbar" aria-label="Map lenses">
+        <div class="map-lens-head">
+          <button id="map-lens-exit" type="button" hidden
+            title="Exit the active map lens" aria-label="Exit the active map lens">
+            <span class="map-lens-icon" aria-hidden="true">⊘</span>
+            <span class="map-lens-label">Clear</span>
+          </button>
+          <button class="overlay-close" type="button" data-overlay-close="lenses" aria-label="Hide map lenses; restore them in Display Settings" title="Hide map lenses · restore in Display Settings">✕</button>
+        </div>
+        <div id="map-lens-strip" role="none">
+          <button type="button" data-map-lens="continent" aria-pressed="false"
+            title="Continent lens — geographic continent regions">
+            <span class="map-lens-icon" aria-hidden="true">◒</span>
+            <span class="map-lens-label">Continent</span>
+          </button>
+          <button type="button" data-map-lens="political" aria-pressed="false"
+            title="Political lens — territory grouped by civilization">
+            <span class="map-lens-icon" aria-hidden="true">◩</span>
+            <span class="map-lens-label">Political</span>
+          </button>
+          <button type="button" data-map-lens="settler" aria-pressed="false"
+            title="Settler map — legal sites, quality, and water access (2)">
+            <span class="map-lens-icon" aria-hidden="true">⌂</span>
+            <span class="map-lens-label">Settler</span><kbd aria-hidden="true">2</kbd>
+          </button>
+          <button type="button" data-map-lens="empire" aria-pressed="false"
+            title="Empire lens — city borders, districts, adjacency, and wonders">
+            <span class="map-lens-icon" aria-hidden="true">◈</span>
+            <span class="map-lens-label">Empire</span>
+          </button>
+          <button type="button" data-map-lens="religion" aria-pressed="false"
+            title="Religion lens — majority faith and religious pressure">
+            <span class="map-lens-icon" aria-hidden="true">✦</span>
+            <span class="map-lens-label">Religion</span>
+          </button>
+          <button type="button" data-map-lens="government" aria-pressed="false"
+            title="Government lens — territory grouped by form of government">
+            <span class="map-lens-icon" aria-hidden="true">♜</span>
+            <span class="map-lens-label">Government</span>
+          </button>
+          <button type="button" data-map-lens="appeal" aria-pressed="false"
+            title="Appeal lens — Breathtaking through Disgusting tiles">
+            <span class="map-lens-icon" aria-hidden="true">❀</span>
+            <span class="map-lens-label">Appeal</span>
+          </button>
+          <button type="button" data-map-lens="tourism" aria-pressed="false"
+            title="Tourism lens — exact Tourism generated by each tile">
+            <span class="map-lens-icon" aria-hidden="true">♪</span>
+            <span class="map-lens-label">Tourism</span>
+          </button>
+          <button type="button" data-map-lens="loyalty" aria-pressed="false"
+            title="Loyalty lens — population pressure and city loyalty">
+            <span class="map-lens-icon" aria-hidden="true">⚑</span>
+            <span class="map-lens-label">Loyalty</span>
+          </button>
+          <button type="button" data-map-lens="power" aria-pressed="false"
+            title="Power lens — city generation, demand, and status">
+            <span class="map-lens-icon" aria-hidden="true">⚡</span>
+            <span class="map-lens-label">Power</span>
+          </button>
+          <details id="district-lens-section">
+            <summary title="District adjacency lenses">
+              <span class="map-lens-icon" aria-hidden="true">⬡</span>
+              <span class="map-lens-label">District adjacency</span>
+              <span class="district-lens-caret" aria-hidden="true">›</span>
+            </summary>
+            <div id="district-lens-list" role="group" aria-label="District adjacency lenses"></div>
+          </details>
         </div>
       </div>
-    </details>
-
-  </div>
+    </div>
+  </details>
   <div id="map-utility-panel" aria-label="Map tools">
     <div id="map-search" role="search" aria-label="Search visible map tiles">
       <div class="map-search-entry">
@@ -4230,20 +4202,10 @@ function initSidebarSections() {
   let saved = {};
   try { saved = JSON.parse(localStorage.getItem(SIDEBAR_SECTION_STATE_KEY) || "{}"); }
   catch (_) { saved = {}; }
-  const revealMapLensSection = () => {
-    const section = document.getElementById("maplensessec");
-    if (!section?.open) return;
-    requestAnimationFrame(() => section.scrollIntoView({block:"nearest", inline:"nearest"}));
-  };
-  const scheduleMapLensSectionReveal = () => {
-    // Browsers can restore a <details> disclosure after this script's first
-    // layout pass. These bounded retries see that late open state; a closed
-    // fresh profile is a no-op because revealMapLensSection returns first.
-    for (const delay of [0, 250, 750]) {
-      window.setTimeout(revealMapLensSection, delay);
-    }
-  };
-  for (const section of document.querySelectorAll("#side details.sidebar-section[data-section]")) {
+  // The lens dock is a fixed panel at the deck's lower edge now, so it needs
+  // no scroll-into-view choreography — only the same saved disclosure state
+  // as the scrolling sections above it.
+  for (const section of document.querySelectorAll("#side details[data-section]")) {
     const key = section.dataset.section;
     if (Object.prototype.hasOwnProperty.call(saved, key)) {
       section.open = !!saved[key];
@@ -4257,20 +4219,8 @@ function initSidebarSections() {
     section.addEventListener("toggle", () => {
       saved[key] = section.open;
       localStorage.setItem(SIDEBAR_SECTION_STATE_KEY, JSON.stringify(saved));
-      // The lens grid is intentionally taller than a closed deck row. It sits
-      // at the bottom of the scrolling command sections, so reveal it in that
-      // scroll container when opened instead of leaving its controls behind
-      // the fixed search and keyboard drawers below.
-      if (section.id === "maplensessec" && section.open) {
-        revealMapLensSection();
-      }
     });
   }
-  // A saved disclosure is applied before its toggle listener is attached. It
-  // needs the same reveal as an interactive opening, otherwise a persisted
-  // lower-deck lens grid can reload just beneath the scroll viewport.
-  scheduleMapLensSectionReveal();
-  window.addEventListener("resize", revealMapLensSection, {passive:true});
 }
 initSidebarSections();
 function initAdvancedSettings() {
@@ -5577,13 +5527,13 @@ function syncResponsivePanelGeometry() {
     Math.min(132, Math.max(64, compactVictoryRoom)), 64, 132));
   const sidebarInset = Number.parseFloat(area.style.getPropertyValue("--player-hud-left")) || 0;
   const uncoveredWidth = Math.max(1, width - sidebarInset - edge);
-  const compactSearchRoom = height - controlClearance - compactMinimapHeight -
+  const compactSkyRoom = height - controlClearance - compactMinimapHeight -
     (edge + playerReserve + gap + compactVictoryHeight);
-  // A compact command deck can cover most of a vertical split. Search then
-  // either uses the lane above the minimap (when it genuinely fits there) or
-  // stays beside it; it never gets to obscure the travel map below.
+  // A compact command deck can cover most of a vertical split. The sky bar
+  // then either uses the lane above the minimap (when it genuinely fits
+  // there) or stays beside it; it never gets to obscure the travel map below.
   const controlsLayout = compact && uncoveredWidth < 440 &&
-    compactSearchRoom >= controlHeight + gap * 2 ? "stacked" : "inline";
+    compactSkyRoom >= controlHeight + gap * 2 ? "stacked" : "inline";
   const viewport = window.visualViewport;
   const viewportWidth = Math.max(1, viewport?.width || window.innerWidth || width);
   const viewportHeight = Math.max(1, viewport?.height || window.innerHeight || height);
@@ -25952,12 +25902,28 @@ function districtLensDistrict(lens = mapLens) {
   return district || null;
 }
 function districtLensId(district) { return DISTRICT_LENS_PREFIX + district; }
+// The omniscient spectator has no seat: `state.player` merely follows the
+// acting major, so anything derived from it changes every simulated turn.
+// Every lens read below branches on this instead, so the lens holds still
+// while the world runs and shows the whole world's information at once.
+function districtLensOmniscient() {
+  return !!state?.spectate && !Number.isInteger(state?.view_player);
+}
 function districtLensViewer() {
   if (!state) return null;
   if (Number.isInteger(state.view_player)) return state.view_player;
   return Number.isInteger(state.player) ? state.player : null;
 }
 function districtLensChoices() {
+  if (districtLensOmniscient()) {
+    // Above the world there is no single civilization to filter by. Offer
+    // the stable base families; each empire's tiles answer with the unique
+    // replacement that civilization actually builds for the family.
+    return Object.keys(RULES?.districts || {})
+      .filter(district => RULES.districts[district]?.buildable !== false)
+      .filter(district => !RULES.districts[district]?.unique_to)
+      .sort((left, right) => titleCase(left).localeCompare(titleCase(right)));
+  }
   const viewer = districtLensViewer();
   const civ = state?.players?.[viewer]?.civ;
   return Object.keys(RULES?.districts || {})
@@ -25972,6 +25938,15 @@ function districtLensChoices() {
     .filter(district => !Object.values(RULES.districts).some(spec =>
       spec.replaces === district && spec.unique_to === civ))
     .sort((left, right) => titleCase(left).localeCompare(titleCase(right)));
+}
+// The district `civ` actually builds for `family` — the civilization's unique
+// replacement where one exists (Korea's seowon for campus), otherwise the
+// family itself. Mirrors the engine's `civ_district_variant`.
+function districtLensCivVariant(family, civ) {
+  if (!civ) return family;
+  return Object.keys(RULES?.districts || {}).find(district =>
+    RULES.districts[district]?.unique_to === civ &&
+    districtLensFamily(district) === family) || family;
 }
 function districtLensFamily(district) {
   let family = district;
@@ -26043,7 +26018,13 @@ function districtLensWorldDistance(a, b) {
   return Math.min(...columns.map(column =>
     hexDist(a, [bColumn + column - Math.floor(b[1] / 2), b[1]])));
 }
-function districtLensKnownTechs() { return new Set(state?.me?.techs || []); }
+// The one observed seat's technologies. Above the world there is no observed
+// seat — `state.me` follows the acting major there, so the omniscient lens
+// reads null and skips tech gates entirely rather than flickering through a
+// different empire's laboratory every simulated turn.
+function districtLensKnownTechs() {
+  return districtLensOmniscient() ? null : new Set(state?.me?.techs || []);
+}
 function districtLensPlacementIsVisible(tile, spec, neighbors, cityCenters, city, owner) {
   if (!tile || !spec || tile.flooded || tile.submerged || tile.district || tile.planned_district ||
       tile.wonder || cityCenters.has(key(tile.pos)) || tile.improvement === "national_park" ||
@@ -26054,11 +26035,11 @@ function districtLensPlacementIsVisible(tile, spec, neighbors, cityCenters, city
   const vietnamSpecialty = civ === "Vietnam" && spec.specialty !== false;
   const removalTech = {forest:"mining", jungle:"bronze_working", marsh:"irrigation"}[tile.feature];
   if (vietnamSpecialty && !["forest", "jungle", "marsh"].includes(tile.feature)) return false;
-  if (!vietnamSpecialty && removalTech && !knownTechs.has(removalTech)) return false;
+  if (!vietnamSpecialty && removalTech && knownTechs && !knownTechs.has(removalTech)) return false;
   const resource = ruleSpec("resources", tile.resource);
   if (resource && !["bonus", "artifact"].includes(resource.class)) return false;
   const resourceImprovement = ruleSpec("improvements", resource?.improvement);
-  if (resourceImprovement?.tech && !knownTechs.has(resourceImprovement.tech)) return false;
+  if (resourceImprovement?.tech && knownTechs && !knownTechs.has(resourceImprovement.tech)) return false;
 
   const water = isWater(tile);
   const placement = spec.placement || (spec.water ? "water" : "land");
@@ -26159,8 +26140,10 @@ function districtLensPolicyPercent(district, owner) {
   // Policies are private. The focused player's cards are the one set the
   // observation legitimately carries, so only use them for that player's
   // prospective and existing districts; foreign sites stay at their visible
-  // map-derived amount.
-  if (owner !== districtLensViewer()) return 0;
+  // map-derived amount. The omniscient view has no focused player — `me`
+  // follows the acting major — so every empire stays at the map-derived
+  // figure there rather than one empire's total flickering by turn.
+  if (districtLensOmniscient() || owner !== districtLensViewer()) return 0;
   const family = districtLensFamily(district);
   const effect = `${family}_adjacency_pct`;
   let percent = 0;
@@ -26228,13 +26211,20 @@ function districtLensData() {
       districtLensCache.district === district && districtLensCache.planet === planet)
     return districtLensCache.data;
 
+  const omniscient = districtLensOmniscient();
   const visible = new Set((state.visible || []).map(key));
   const cityCenters = new Set((state.cities || [])
     .filter(city => Array.isArray(city.pos) && visible.has(key(city.pos)))
     .map(city => key(city.pos)));
   const viewer = districtLensViewer();
-  const ownCities = new Map((state.cities || [])
-    .filter(city => city.owner === viewer && visible.has(key(city.pos)))
+  // Whose prospective sites this lens forecasts: the observed seat's cities,
+  // or every empire's at once above the world — the omniscient spectator is
+  // entitled to all information, and tying candidates to the acting player
+  // made the lens flash a different empire's plots every simulated turn.
+  const planCities = new Map((state.cities || [])
+    .filter(city => (omniscient
+      ? city.owner !== null && city.owner !== undefined
+      : city.owner === viewer) && Array.isArray(city.pos) && visible.has(key(city.pos)))
     .map(city => [city.id, city]));
   const cityBuildable = new Map();
   const values = new Map();
@@ -26246,26 +26236,34 @@ function districtLensData() {
     // looks at the same ground, but it can never disclose fogged information.
     if (!visible.has(tileKey)) continue;
     const owner = tile.owner;
-    const foreign = owner !== null && owner !== undefined && owner !== viewer;
     const neighbors = districtLensNeighbors(tile).filter(neighbor => visible.has(key(neighbor.pos)));
     if (tile.district) {
-      if (tile.district !== district) continue;
-      const yields = districtLensYields(district, tile, neighbors, cityCenters, owner);
+      // Any member of the selected family lights up — a rival's seowon under
+      // the campus lens — and is priced by its own rules, not the lens's.
+      if (!districtLensIsFamily(tile.district, district)) continue;
+      const yields = districtLensYields(tile.district, tile, neighbors, cityCenters, owner);
       // Existing districts in another empire are the one exception to the
-      // no-foreign-planning rule: show only their selected district and only
-      // when visible surroundings give it a bonus.
-      if (!districtLensHasBonus(yields)) continue;
+      // no-foreign-planning rule for a seated viewer: show only when visible
+      // surroundings give it a bonus. The omniscient spectator instead sees
+      // every standing member of the family, +0 included.
+      if (!omniscient && !districtLensHasBonus(yields)) continue;
       values.set(tileKey, {kind:"existing", yields});
       high = Math.max(high, Math.abs(districtLensTotal(yields)));
       continue;
     }
-    const city = ownCities.get(tile.owner_city);
-    if (foreign || owner !== viewer || !city || districtLensWorldDistance(tile.pos, city.pos) > 3) continue;
+    const city = planCities.get(tile.owner_city);
+    if (!city || owner !== city.owner || districtLensWorldDistance(tile.pos, city.pos) > 3) continue;
+    // Each empire plans with the district its civilization actually builds:
+    // the campus family lens prices a seowon on Korean ground.
+    const variant = omniscient
+      ? districtLensCivVariant(district, state.players?.[city.owner]?.civ)
+      : district;
+    if (!RULES.districts[variant]) continue;
     if (!cityBuildable.has(city.id))
-      cityBuildable.set(city.id, districtLensCityCanBuild(district, city, visible));
+      cityBuildable.set(city.id, districtLensCityCanBuild(variant, city, visible));
     if (!cityBuildable.get(city.id) || !districtLensPlacementIsVisible(
-      tile, RULES.districts[district], neighbors, cityCenters, city, viewer)) continue;
-    const yields = districtLensYields(district, tile, neighbors, cityCenters, viewer, true);
+      tile, RULES.districts[variant], neighbors, cityCenters, city, city.owner)) continue;
+    const yields = districtLensYields(variant, tile, neighbors, cityCenters, city.owner, true);
     values.set(tileKey, {kind:"candidate", yields});
     high = Math.max(high, Math.abs(districtLensTotal(yields)));
   }
@@ -26273,11 +26271,25 @@ function districtLensData() {
   districtLensCache = {state, rules:RULES, district, planet, data};
   return data;
 }
+// Whether anything in this district's family ever pays adjacency. Aerodromes,
+// Encampments, Spaceports and friends legitimately have none — exactly as in
+// Civilization VI — so their lenses show legal sites and say so, rather than
+// looking broken.
+function districtLensFamilyHasAdjacency(district) {
+  const family = districtLensFamily(district);
+  return Object.keys(RULES?.districts || {}).some(name =>
+    districtLensFamily(name) === family &&
+    Object.keys(RULES.districts[name]?.adjacency || {}).length > 0);
+}
 function districtLensInfo(district) {
+  const none = districtLensFamilyHasAdjacency(district)
+    ? "" : " · no adjacency bonuses in Civ VI — showing legal sites";
+  if (districtLensOmniscient())
+    return `${titleCase(district)} ADJACENCY — every empire, omniscient view${none}`;
   const viewer = districtLensViewer();
   const civ = state?.players?.[viewer]?.civ;
   return `${titleCase(district)} ADJACENCY — visible map information only` +
-    (civ ? ` · ${civ} perspective` : "");
+    (civ ? ` · ${civ} perspective` : "") + none;
 }
 const SETTLE_DISK = [];
 for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++)
@@ -26560,7 +26572,12 @@ function syncDistrictLensList() {
   const section = document.getElementById("district-lens-section");
   if (!list || !section) return;
   const viewer = districtLensViewer();
-  const civ = state?.players?.[viewer]?.civ || "";
+  // The omniscient list must not carry the acting player's civilization:
+  // `state.player` rotates every simulated turn, and a signature that
+  // rotates with it rebuilt this list — and reset the active lens — while
+  // the world ran. One stable name keeps the lens where the viewer put it.
+  const civ = districtLensOmniscient()
+    ? "omniscient" : state?.players?.[viewer]?.civ || "";
   const choices = districtLensChoices();
   const signature = `${civ}|${choices.join("|")}`;
   if (districtLensListKey?.rules === RULES && districtLensListKey.signature === signature) return;
@@ -26829,15 +26846,10 @@ function uncoveredMapBox(origin, width, height) {
     if (spansWidth) top = Math.max(top, Math.max(0, Math.min(height, victory.bottom)));
     else right = Math.max(0, Math.min(width, victory.left));
   }
-  // The bottom control dock is a frame below the world, not an overlay on its
-  // last row. Measuring the dock itself covers either half independently: if
-  // zoom/search controls or map lenses remain visible, the fitted map ends at
-  // their shared top edge; if both are hidden the zero-height dock reserves
-  // nothing. Against an already-fitted canvas this clamps to `height`, so the
-  // camera does not pay for the same strip twice.
-  const controls = document.getElementById("map-controls-dock")?.getBoundingClientRect();
-  if (controls?.height)
-    bottom = Math.max(0, Math.min(height, controls.top - origin.top));
+  // The bottom control dock floats over the world like every other lower
+  // instrument: the fitted map deliberately runs to the bottom of the screen
+  // rather than reserving a strip for the zoom cluster, so the world reads as
+  // the whole stage and the dock as a control resting on it.
   // A custom widget layout can put the nominal right edge left of the deck,
   // or the nominal top edge below the screen. There is no uncovered rectangle
   // on that axis, so retain a real on-screen center instead of returning an
