@@ -29,6 +29,14 @@ Pages deployments are immutable snapshots of a whole directory, so there is no
 such thing as updating half a site; a promotion is nothing but moving the tag
 and deploying again.
 
+Repeat visitors cannot be left on an earlier deployment. Each lane's HTML is a
+moving pointer and revalidates on every visit. The publisher gives `shim.js`,
+`worker.js`, `civvis.wasm`, and every referenced atlas a query version derived
+from that file's bytes. A changed file therefore has a new URL and is fetched
+after the fresh page arrives; an unchanged file keeps its URL and can be reused
+from cache. Legacy unversioned URLs also revalidate. An already-open tab keeps
+running its loaded build until it is reloaded.
+
 `/rust` and `/wasm` are the stable build channels. They use uncached temporary
 redirects to `/download/` and `/test/`, respectively, so those short addresses
 keep following each newly published artifact without trapping a past visitor

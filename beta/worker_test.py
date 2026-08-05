@@ -303,10 +303,9 @@ def main(argv: list[str] | None = None) -> int:
                   scrapped["status"] == 404 and not scrapped["location"],
                   f"got {scrapped['status']} {scrapped['location']!r}")
 
-        # The same engine-and-atlas header rules hold in both lanes; a rule
-        # keyed on "/test/" alone would quietly leave the root lane's module
-        # untyped, and instantiateStreaming refuses anything but
-        # application/wasm.
+        # The same cache rules hold in both lanes. Moving entry points and old
+        # unversioned dependency URLs revalidate; generated content-addressed
+        # URLs are immutable because changed bytes always get a different URL.
         for prefix, which in (("", "the stable lane's"), ("/test", "the test lane's")):
             module = hit(path=f"{prefix}/civvis.wasm")
             check(problems, f"{which} module is served as application/wasm",
@@ -314,8 +313,15 @@ def main(argv: list[str] | None = None) -> int:
             check(problems, f"{which} module is revalidated rather than trusted",
                   "must-revalidate" in (module["cacheControl"] or ""), f"got {module['cacheControl']!r}")
             atlas = hit(path=f"{prefix}/assets/feature-atlas.webp")
-            check(problems, f"{which} atlases are cached", "max-age=86400" in (atlas["cacheControl"] or ""),
+            check(problems, f"{which} old atlas URLs are revalidated",
+                  "must-revalidate" in (atlas["cacheControl"] or ""),
                   f"got {atlas['cacheControl']!r}")
+            for filename in ("shim.js", "worker.js", "civvis.wasm", "assets/feature-atlas.webp"):
+                versioned = hit(path=f"{prefix}/{filename}?v=content-hash")
+                check(problems, f"{which} versioned {filename} is immutable",
+                      "max-age=31536000" in (versioned["cacheControl"] or "")
+                      and "immutable" in (versioned["cacheControl"] or ""),
+                      f"got {versioned['cacheControl']!r}")
 
         # The door still exists; it is just not shut unless somebody shuts it.
         # This is checked because an unused capability is one that has quietly
