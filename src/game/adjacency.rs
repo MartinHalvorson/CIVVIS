@@ -183,6 +183,7 @@ impl Game {
         let candidates = self.settlement_candidates(center, radius);
         let mut summary = Yields::default();
         for district in self.plannable_districts(pid, true) {
+            let family = self.district_family(district);
             let mut best = 0.0;
             let mut best_yields = Yields::default();
             for pos in candidates
@@ -190,7 +191,13 @@ impl Game {
                 .copied()
                 .filter(|pos| self.plot_fits_placement(pid, district, *pos, center))
             {
-                let yields = self.district_adjacency_assuming(district, pos, Some(&assume), None);
+                let yields = self.district_adjacency_assuming_with_family(
+                    district,
+                    pos,
+                    Some(&assume),
+                    None,
+                    family,
+                );
                 if yields.total() > best {
                     best = yields.total();
                     best_yields = yields;

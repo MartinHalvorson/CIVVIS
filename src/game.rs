@@ -33842,13 +33842,28 @@ impl Game {
         dname: impl AsName,
         dpos: Pos,
         assume: Option<&crate::game::adjacency::PlanAssumption>,
-        mut detail: Option<&mut Vec<AdjacencySource>>,
+        detail: Option<&mut Vec<AdjacencySource>>,
     ) -> Yields {
         let dname = dname.as_name();
         let spec = &self.rules.districts[dname];
+        if spec.adjacency.is_empty() {
+            return Yields::default();
+        }
+        let family = self.district_family(dname);
+        self.district_adjacency_assuming_with_family(dname, dpos, assume, detail, family)
+    }
+
+    pub(crate) fn district_adjacency_assuming_with_family(
+        &self,
+        dname: Name,
+        dpos: Pos,
+        assume: Option<&crate::game::adjacency::PlanAssumption>,
+        mut detail: Option<&mut Vec<AdjacencySource>>,
+        family: Name,
+    ) -> Yields {
+        let spec = &self.rules.districts[dname];
         let mut adj = Yields::default();
         if !spec.adjacency.is_empty() {
-            let family = self.district_family(dname);
             let tile = &self.map.tiles[&dpos];
             // A plot has at most six in-map neighbors. Keep the tile
             // references inline; this calculator runs once per district/site
