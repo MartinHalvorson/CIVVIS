@@ -914,8 +914,7 @@
   "feature": [
    "floodplains",
    "grassland_floodplains",
-   "plains_floodplains",
-   "volcanic_soil"
+   "plains_floodplains"
   ],
   "requires_adjacent_resource_classes": [
    "bonus",
@@ -942,12 +941,6 @@
    "plains",
    "snow",
    "tundra"
-  ],
-  "feature": [
-   "floodplains",
-   "grassland_floodplains",
-   "plains_floodplains",
-   "volcanic_soil"
   ],
   "min_appeal": 4,
   "effects": {
@@ -1032,9 +1025,6 @@
   "civic": "colonialism",
   "unique_to": "Canada",
   "one_per_city": true,
-  "yields": {
-   "culture": 1
-  },
   "terrain": [
    "snow",
    "tundra"
@@ -1084,12 +1074,6 @@
    "plains",
    "snow",
    "tundra"
-  ],
-  "feature": [
-   "floodplains",
-   "grassland_floodplains",
-   "plains_floodplains",
-   "volcanic_soil"
   ],
   "effects": {
    "foreign_continent_faith": 2,
@@ -1230,12 +1214,6 @@
    "snow",
    "tundra"
   ],
-  "feature": [
-   "floodplains",
-   "grassland_floodplains",
-   "plains_floodplains",
-   "volcanic_soil"
-  ],
   "yields": {
    "food": 1
   },
@@ -1257,6 +1235,9 @@
    "desert",
    "grassland",
    "plains"
+  ],
+  "feature": [
+   "volcanic_soil"
   ],
   "yields": {
    "food": 1
@@ -1282,6 +1263,9 @@
    "grassland",
    "plains",
    "tundra"
+  ],
+  "feature": [
+   "volcanic_soil"
   ],
   "effects": {
    "adjacent_woods_rainforest_pair_faith": 1,
