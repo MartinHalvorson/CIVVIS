@@ -13475,22 +13475,25 @@ pub struct VisionCache {
 
 /// The player-independent half of a monopoly answer.
 ///
-/// Borrowed from the game it was built against, so it cannot outlive the
-/// state it summarises and there is nothing to invalidate: a caller builds
-/// one, asks its question of as many seats as it likes, and drops it.
-struct MonopolyContext<'a> {
-    world_counts: BTreeMap<&'a str, i32>,
+/// This owns interned resource names so a context can be retained across the
+/// many ordinary unit actions in one turn. The context is derived state, not
+/// game state: `QueryCache` drops it before a mutation that can change a
+/// resource's world count, connected ownership, or city-state patronage.
+#[derive(Clone)]
+struct MonopolyContext {
+    world_counts: BTreeMap<Name, i32>,
     /// Each player's suzerained city-states, whose holdings count as theirs.
     minors: Vec<Vec<usize>>,
     /// Each player's connected holdings, by resource.
-    connected: Vec<BTreeMap<&'a str, i32>>,
+    connected: Vec<BTreeMap<Name, i32>>,
 }
 
 /// Memoized answers to expensive read-only queries.
 ///
 /// Most entries live only while a [`QueryMemo`] guard is held. The production
-/// catalog is deliberately retained between those short read-only scopes and
-/// is instead invalidated by a successful action.
+/// catalog and monopoly census are deliberately retained between those short
+/// read-only scopes and are invalidated at their respective mutation
+/// boundaries.
 ///
 /// For the guard-scoped entries, the guard borrows the game immutably, so the
 /// borrow checker — not a hand-written stamp over the citizen plan, worked
@@ -13536,6 +13539,12 @@ pub struct QueryCache {
     // yields and its Amenities are read through it, so a single valuation of
     // one city walks the whole empire's buildings twice.
     regional: std::cell::RefCell<Option<BTreeMap<u32, (Yields, f64)>>>,
+    // `note_first_monopoly_moments` runs after successful actions. Its answer
+    // is player-independent until a connected resource, city owner, world
+    // resource, or suzerainty changes, so retain the expensive census across
+    // ordinary movement/combat-free actions instead of walking a Ludicrous
+    // map once per action.
+    monopoly_context: std::cell::RefCell<Option<Arc<MonopolyContext>>>,
     // A city production menu walks every unit, building, wonder, project and
     // district in the ruleset. Several city governors ask for that same menu
     // more than once before they commit an action (repairs, products, and
@@ -16237,8 +16246,9 @@ pub struct Game {
     #[serde(skip)]
     route_scratch: std::cell::RefCell<RouteScratch>,
     /// Memoized read-only answers; see [`QueryCache`]. Never saved, with
-    /// short-lived entries cleared by their guard and production catalogs
-    /// cleared by a successful action; empty in any clone.
+    /// short-lived entries cleared by their guard, production catalogs cleared
+    /// by a successful action, and the monopoly census cleared by actions that
+    /// can change its inputs; empty in any clone.
     #[serde(skip)]
     query_memo: QueryCache,
     /// The state of the world each seat's remembered map was last taken
@@ -29315,6 +29325,26 @@ impl Game {
         counts
     }
 
+    /// The interned-name form used by the retained monopoly context. Keeping
+    /// this separate preserves the borrowed census API used by luxury and
+    /// strategic-resource callers while letting the long-lived cache own its
+    /// keys safely.
+    fn connected_resource_census_owned(&self, pid: usize) -> BTreeMap<Name, i32> {
+        let mut counts: BTreeMap<Name, i32> = BTreeMap::new();
+        for city in self.cities.values().filter(|city| city.owner == pid) {
+            for position in &city.owned_tiles {
+                let tile = &self.map.tiles[position];
+                let Some(resource) = tile.resource else {
+                    continue;
+                };
+                if self.tile_connects_resource(tile, resource, *position == city.pos) {
+                    *counts.entry(resource).or_insert(0) += 1;
+                }
+            }
+        }
+        counts
+    }
+
     fn connected_resource_count_unchecked(&self, pid: usize, res: &str) -> i32 {
         if self.rules.resources.get(res).is_none() {
             return 0;
@@ -29372,13 +29402,13 @@ impl Game {
     }
 
     /// How many copies of every resource the world holds, in one pass.
-    fn world_resource_counts(&self) -> BTreeMap<&str, i32> {
-        let mut counts: BTreeMap<&str, i32> = BTreeMap::new();
+    fn world_resource_counts(&self) -> BTreeMap<Name, i32> {
+        let mut counts: BTreeMap<Name, i32> = BTreeMap::new();
         for tile in self.map.tiles.values() {
             if tile.submerged {
                 continue;
             }
-            if let Some(resource) = tile.resource.as_deref() {
+            if let Some(resource) = tile.resource {
                 *counts.entry(resource).or_default() += 1;
             }
         }
@@ -29495,7 +29525,22 @@ impl Game {
     /// Monopolies. The percentage follows Civ VI's 1% per controlled copy and
     /// foreign non-controller, or 3% after establishing an Industry/Corporation.
     pub fn monopoly_bonuses(&self, pid: usize) -> (f64, f64) {
-        self.monopoly_bonuses_with(&self.monopoly_context(), pid)
+        // A standalone query must remain a faithful snapshot even for
+        // callers that assemble a test/scenario board by editing fields
+        // directly. The retained form is populated by the action boundary;
+        // without one, build a one-shot context and do not retain it.
+        let cached = self
+            .query_memo
+            .monopoly_context
+            .borrow()
+            .as_ref()
+            .filter(|context| {
+                context.connected.len() == self.players.len()
+                    && context.minors.len() == self.players.len()
+            })
+            .cloned();
+        let context = cached.unwrap_or_else(|| Arc::new(self.build_monopoly_context()));
+        self.monopoly_bonuses_with(&context, pid)
     }
 
     /// The three world-wide derivations a monopoly answer reads.
@@ -29506,9 +29551,30 @@ impl Game {
     /// game. Separating them lets a caller that asks about several players
     /// pay once — `note_first_monopoly_moments` asks about every seat after
     /// most actions, which made that scan quadratic in the number of seats.
-    fn monopoly_context(&self) -> MonopolyContext<'_> {
-        let world_counts = self.world_resource_counts();
+    fn monopoly_context(&self) -> Arc<MonopolyContext> {
+        if let Some(context) = self
+            .query_memo
+            .monopoly_context
+            .borrow()
+            .as_ref()
+            .filter(|context| {
+                context.connected.len() == self.players.len()
+                    && context.minors.len() == self.players.len()
+            })
+        {
+            return context.clone();
+        }
+        let context = Arc::new(self.build_monopoly_context());
+        *self.query_memo.monopoly_context.borrow_mut() = Some(context.clone());
+        context
+    }
+
+    fn build_monopoly_context(&self) -> MonopolyContext {
         let mut minors: Vec<Vec<usize>> = vec![Vec::new(); self.players.len()];
+        // The suzerain memo is guard-scoped, while this context is retained
+        // across calls. Open one scope for the complete build so every
+        // city-state patron is resolved once even on a cache miss.
+        let _memo = self.query_memo();
         for minor in self
             .players
             .iter()
@@ -29520,36 +29586,36 @@ impl Game {
                 }
             }
         }
-        // Resource control is queried for every luxury below.  Build each
+        // Resource control is queried for every luxury below. Build each
         // player's connected holdings once rather than walking all of their
         // city tiles again for every resource and every foreign player.
-        let connected: Vec<BTreeMap<&str, i32>> = (0..self.players.len())
-            .map(|player| self.connected_resource_census(player))
+        let connected: Vec<BTreeMap<Name, i32>> = (0..self.players.len())
+            .map(|player| self.connected_resource_census_owned(player))
             .collect();
         MonopolyContext {
-            world_counts,
+            world_counts: self.world_resource_counts(),
             minors,
             connected,
         }
     }
 
-    fn monopoly_bonuses_with(&self, context: &MonopolyContext<'_>, pid: usize) -> (f64, f64) {
+    fn monopoly_bonuses_with(&self, context: &MonopolyContext, pid: usize) -> (f64, f64) {
         let mut gold = 0.0;
         let mut tourism_percent = 0.0;
         let mut monopolies = 0usize;
         let world_counts = &context.world_counts;
         let minors = &context.minors;
         let connected = &context.connected;
-        let controlled = |player: usize, resource: &str| {
-            if !self.resource_visible_to(player, resource) {
+        let controlled = |player: usize, resource: Name| {
+            if !self.resource_visible_to(player, resource.as_str()) {
                 return 0;
             }
-            connected[player].get(resource).copied().unwrap_or_default()
+            connected[player].get(&resource).copied().unwrap_or_default()
                 + minors[player]
                     .iter()
                     .map(|minor| {
                         connected[*minor]
-                            .get(resource)
+                            .get(&resource)
                             .copied()
                             .unwrap_or_default()
                     })
@@ -29560,10 +29626,10 @@ impl Game {
                 continue;
             }
             let total = world_counts
-                .get(resource.as_str())
+                .get(resource)
                 .copied()
                 .unwrap_or_default();
-            let player_controlled = controlled(pid, resource);
+            let player_controlled = controlled(pid, *resource);
             if total <= 0 || player_controlled * 100 < total * 60 {
                 continue;
             }
@@ -29583,14 +29649,14 @@ impl Game {
                         && player.alive
                         && !player.is_minor
                         && !player.is_barbarian
-                        && controlled(player.id, resource) == 0
+                        && controlled(player.id, *resource) == 0
                 })
                 .count() as f64;
             let developed = self.cities.values().any(|city| {
                 city.owner == pid
                     && city.owned_tiles.iter().any(|position| {
                         let tile = &self.map.tiles[position];
-                        tile.resource.as_deref() == Some(resource.as_str())
+                        tile.resource == Some(*resource)
                             && matches!(
                                 tile.improvement.as_deref(),
                                 Some("industry" | "corporation")
@@ -29623,6 +29689,17 @@ impl Game {
     /// transfer, trade, or Suzerain changes. Running this one transition
     /// detector after each successful action covers every such mutation.
     fn note_first_monopoly_moments(&mut self) {
+        if !self.players.iter().any(|player| {
+            player.alive
+                && !player.is_minor
+                && !player.is_barbarian
+                && !player.is_free_city
+                && !player
+                    .counters
+                    .contains_key("historic_moment:first_luxury_monopoly")
+        }) {
+            return;
+        }
         // One context for the whole sweep. Asking each seat separately made
         // this walk the map and every city's tiles once per seat.
         let context = self.monopoly_context();
@@ -40670,6 +40747,43 @@ impl Game {
             }
             _ => true,
         };
+        // The first-monopoly detector still runs after actions that can alter
+        // research visibility, but its expensive census only needs rebuilding
+        // when the connected/world holdings or suzerainty can change. In a
+        // long game most successful actions are ordinary unit orders.
+        let monopoly_context_may_change = match action {
+            Action::Move { .. }
+            | Action::MoveTo { .. }
+            | Action::Ranged { .. }
+            | Action::AirRebase { .. }
+            | Action::AirStrike { .. }
+            | Action::AirPatrol { .. }
+            | Action::ContributeProject { .. }
+            | Action::PerformConcert { .. }
+            | Action::UpgradeUnit { .. }
+            | Action::Fortify { .. }
+            | Action::Promote { .. }
+            | Action::Upgrade { .. }
+            | Action::CombineUnits { .. }
+            | Action::LinkUnits { .. }
+            | Action::UnlinkUnits { .. }
+            | Action::TradeRoute { .. }
+            | Action::BuildRailroad { .. }
+            | Action::Spread { .. }
+            | Action::TheologicalAttack { .. }
+            | Action::CondemnHeretic { .. }
+            | Action::HealReligious { .. }
+            | Action::RemoveHeresy { .. }
+            | Action::LaunchInquisition { .. }
+            | Action::EvangelizeBelief { .. }
+            | Action::ConvertBarbarians { .. }
+            | Action::CityStrike { .. }
+            | Action::EncampmentStrike { .. } => false,
+            _ => true,
+        };
+        if monopoly_context_may_change {
+            self.query_memo.monopoly_context.borrow_mut().take();
+        }
         let blocked_unit = match action {
             Action::Move { unit, .. }
             | Action::MoveTo { unit, .. }
