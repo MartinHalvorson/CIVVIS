@@ -682,21 +682,47 @@ def main(argv: list[str] | None = None) -> int:
             problems.append("the page reported 'CIVVIS boot failed'")
         if isinstance(painted, int) and painted < 8:
             problems.append(f"the map canvas holds only {painted} distinct colours")
-        expected_size = f"Build size {build['wasm_bytes'] / 1048576:.1f} MiB"
-        if expected_size not in build_marker:
-            problems.append(
-                f"the build marker does not show {expected_size!r}: {build_marker!r}"
+        # The test lane is built from current main, but the root lane is
+        # intentionally pinned to the last promoted revision.  publish.sh
+        # supplies the current manifest to both lanes, so an old pinned
+        # viewer can have ``wasm_bytes`` in build.json without knowing how to
+        # render the new marker field.  Gate the new assertion on the viewer
+        # contract, rather than on the publisher's manifest alone.
+        wasm_bytes = build.get("wasm_bytes")
+        marker_has_build_size = all(
+            token in page
+            for token in ("formatBuildSize", "server_artifact_bytes", "Build size")
+        )
+        if marker_has_build_size:
+            if not isinstance(wasm_bytes, int) or isinstance(wasm_bytes, bool) or wasm_bytes <= 0:
+                problems.append(
+                    f"the build manifest has no positive integer wasm_bytes for its new marker: "
+                    f"{wasm_bytes!r}"
+                )
+            else:
+                expected_size = f"Build size {wasm_bytes / 1048576:.1f} MiB"
+                if expected_size not in build_marker:
+                    problems.append(
+                        f"the build marker does not show {expected_size!r}: {build_marker!r}"
+                    )
+        else:
+            print(
+                "    pinned legacy viewer has no build-size marker; "
+                "accepting its commit/age contract"
             )
         order = [
             build_marker.find(build["short"][:7]),
             build_marker.find("Commit is"),
             build_marker.find("Build is"),
-            build_marker.find("Build size"),
         ]
+        if marker_has_build_size:
+            order.append(build_marker.find("Build size"))
+        order_contract = "commit, commit age, build age"
+        if marker_has_build_size:
+            order_contract += ", build size"
         if any(position < 0 for position in order) or order != sorted(order):
             problems.append(
-                f"the build marker order is not commit, commit age, build age, build size: "
-                f"{build_marker!r}"
+                f"the build marker order is not {order_contract}: {build_marker!r}"
             )
         fatal = [
             line
@@ -707,7 +733,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"    console: {line[:180]}")
 
         print(f"    build       {build['short']}")
-        print(f"    engine      {build['wasm_bytes']:,} bytes")
+        if isinstance(wasm_bytes, int) and not isinstance(wasm_bytes, bool):
+            print(f"    engine      {wasm_bytes:,} bytes")
+        else:
+            print("    engine      size not recorded")
         print(f"    marker      {build_marker}")
         print(f"    turns       {report.get('turns', 0)} (reached turn {report.get('lastTurn')})")
         print(f"    repaints    {report.get('paints', 0)}")
