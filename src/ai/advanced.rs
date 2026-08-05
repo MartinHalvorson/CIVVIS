@@ -225,7 +225,11 @@ struct SettlementGrowthForecast {
 
 #[derive(Clone, Debug)]
 struct SettlementForecastState {
-    selected: Vec<usize>,
+    // A new city works at most four non-center plots in this forecast. Keep
+    // the acquisition order inline so beam expansion does not allocate and
+    // clone a Vec for every candidate branch.
+    selected: [usize; SETTLEMENT_FORECAST_POPULATION],
+    selected_len: usize,
     total: Yields,
     elapsed: f64,
     accumulated: f64,
@@ -13774,7 +13778,8 @@ impl AdvancedAi {
         let ring_two_at = g.standard_duration(SETTLEMENT_SECOND_RING_DELAY) as f64;
         let housing = Self::settlement_base_housing(g, pos);
         let mut beam = vec![SettlementForecastState {
-            selected: Vec::new(),
+            selected: [0; SETTLEMENT_FORECAST_POPULATION],
+            selected_len: 0,
             total: center,
             elapsed: 0.0,
             accumulated: 0.0,
@@ -13791,13 +13796,14 @@ impl AdvancedAi {
                     continue;
                 }
                 for (index, tile) in candidates.iter().enumerate() {
-                    if state.selected.contains(&index)
+                    if state.selected[..state.selected_len].contains(&index)
                         || (tile.ring == 2 && state.elapsed + 1e-9 < ring_two_at)
                     {
                         continue;
                     }
                     let mut branch = state.clone();
-                    branch.selected.push(index);
+                    branch.selected[branch.selected_len] = index;
+                    branch.selected_len += 1;
                     branch.total.add(tile.yields);
                     branch.reached_population = population;
                     let output = Self::settlement_output_value(branch.total, population);
@@ -13832,7 +13838,10 @@ impl AdvancedAi {
             next.sort_by(|left, right| {
                 Self::settlement_forecast_rank(right, horizon)
                     .total_cmp(&Self::settlement_forecast_rank(left, horizon))
-                    .then_with(|| left.selected.cmp(&right.selected))
+                    .then_with(|| {
+                        left.selected[..left.selected_len]
+                            .cmp(&right.selected[..right.selected_len])
+                    })
             });
             next.truncate(SETTLEMENT_FORECAST_BEAM);
             beam = next;
@@ -13850,13 +13859,17 @@ impl AdvancedAi {
         let Some(best) = terminal.into_iter().max_by(|left, right| {
             left.accumulated
                 .total_cmp(&right.accumulated)
-                .then_with(|| right.selected.cmp(&left.selected))
+                .then_with(|| {
+                    right.selected[..right.selected_len]
+                        .cmp(&left.selected[..left.selected_len])
+                })
         }) else {
             return SettlementGrowthForecast::default();
         };
         let worked = best
             .selected
             .iter()
+            .take(best.selected_len)
             .map(|index| candidates[*index])
             .collect::<Vec<_>>();
         let resource_value = worked
