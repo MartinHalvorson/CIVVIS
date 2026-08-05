@@ -8581,12 +8581,14 @@ impl BasicAi {
         if sea_unit != water {
             return false;
         }
-        if !g.unit_can_traverse(uid, pos) {
+        let friendly_city = tile
+            .owner_city
+            .and_then(|cid| g.cities.get(&cid))
+            .is_some_and(|city| city.owner == pid);
+        if !friendly_city {
             return false;
         }
-        tile.owner_city
-            .and_then(|cid| g.cities.get(&cid))
-            .is_some_and(|city| city.owner == pid)
+        g.unit_can_traverse(uid, pos)
     }
 
     /// Move an otherwise idle military unit between useful frontier posts.
