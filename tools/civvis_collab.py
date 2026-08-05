@@ -293,6 +293,56 @@ def colliding_paths(
     )
 
 
+#: The one line every PR touching `src/ai.rs` or `src/ai/advanced.rs` must
+#: rewrite. `ADVANCED_V1_SOURCE_CONTRACT_FNV` is a fingerprint over the whole of
+#: both files, so any two such PRs collide on it by construction — and every
+#: merge invalidates the value on every other open PR, which must then re-merge
+#: and recompute. On 2026-08-03, 18 of the 41 commits that reached `main`
+#: touched it, and the resulting "coordinate with #N" bookkeeping never
+#: converged because the colliding set changed on every merge.
+#:
+#: The collision is real to git and meaningless to a reviewer. Exempt it, but
+#: only when the PR's edit to that file is *nothing but* the re-pin and its
+#: explanatory doc paragraph — a PR that also changes real code in `main.rs`
+#: still collides normally.
+SOURCE_CONTRACT_PIN = "ADVANCED_V1_SOURCE_CONTRACT_FNV"
+SOURCE_CONTRACT_FILE = "src/main.rs"
+
+
+def is_pin_only_edit(added: Sequence[str]) -> bool:
+    """True when every added line is the contract pin or its doc paragraph."""
+    meaningful = [line for line in added if line.strip()]
+    if not meaningful:
+        return False
+    saw_pin = False
+    for line in meaningful:
+        stripped = line.strip()
+        if SOURCE_CONTRACT_PIN in stripped:
+            saw_pin = True
+            continue
+        if stripped.startswith("///") or stripped.startswith("#[cfg(test)]"):
+            continue
+        return False
+    return saw_pin
+
+
+def drop_pin_only_collisions(
+    collisions: Sequence[str],
+    added_lines: Optional[Dict[str, Sequence[str]]],
+) -> List[str]:
+    """Remove the source-contract pin from a collision list. See SOURCE_CONTRACT_PIN."""
+    if not added_lines:
+        return list(collisions)
+    return [
+        path
+        for path in collisions
+        if not (
+            path == SOURCE_CONTRACT_FILE
+            and is_pin_only_edit(added_lines.get(path) or [])
+        )
+    ]
+
+
 def as_range_map(
     files: Iterable[str],
     ranges: Optional[Dict[str, Optional[List[Tuple[int, int]]]]],
@@ -310,6 +360,7 @@ def validate_pr(
     other_files: Optional[Dict[int, Set[str]]] = None,
     ranges: Optional[Dict[str, Optional[List[Tuple[int, int]]]]] = None,
     other_ranges: Optional[Dict[int, Dict[str, Optional[List[Tuple[int, int]]]]]] = None,
+    other_coordination: Optional[Dict[int, Set[int]]] = None,
     advisories: Optional[List[str]] = None,
     added_lines: Optional[Dict[str, Sequence[str]]] = None,
 ) -> List[str]:
@@ -368,7 +419,9 @@ def validate_pr(
         shared = sorted(set(mine) & set(theirs))
         if not shared:
             continue
-        collisions = colliding_paths(mine, theirs)
+        collisions = drop_pin_only_collisions(
+            colliding_paths(mine, theirs), added_lines
+        )
         if not collisions:
             # Same file, disjoint regions. Git merges this cleanly, so it is
             # information for the author, never a gate.
@@ -377,12 +430,23 @@ def validate_pr(
                 f"no action needed: {', '.join(shared[:5])}"
             )
             continue
-        if other_number in coordinated:
-            continue
         preview = ", ".join(collisions[:5])
         detail = (
             f"edits collide with PR #{other_number} on the same lines of {preview}"
         )
+        if other_number in coordinated:
+            continue
+        # A newly started task records its existing neighbours automatically.
+        # Its older neighbour cannot have known that future PR number when it
+        # first became ready, so accept that explicit reverse declaration too.
+        # This keeps a harmless CI re-run or main refresh from blocking the
+        # older PR solely because its body predates the newer task.
+        if number in (other_coordination or {}).get(other_number, set()):
+            notes.append(
+                f"{detail} — PR #{other_number} already declares coordination "
+                f"with PR #{number}"
+            )
+            continue
         if draft:
             notes.append(
                 f"{detail} — resolve before marking ready, or add '#{other_number}' "
@@ -499,6 +563,7 @@ def check_pr_action(event_path: Path, token: str, repository: str) -> int:
     # Only PRs that share at least one path can collide, so fetch patches for
     # those alone instead of every open PR on the repository.
     other_ranges: Dict[int, Dict[str, Optional[List[Tuple[int, int]]]]] = {}
+    other_coordination: Dict[int, Set[int]] = {}
     for other in open_prs:
         other_number = int(other["number"])
         if other_number == number:
@@ -506,6 +571,10 @@ def check_pr_action(event_path: Path, token: str, repository: str) -> int:
         shared = set(pr_files(repository, other_number, token)) & set(files)
         if shared:
             other_ranges[other_number] = pr_file_ranges(repository, other_number, token)
+            other_claims = parse_claims(str(other.get("body") or ""))
+            other_coordination[other_number] = split_coordination(
+                other_claims.get("coordinated", "")
+            )
     advisories: List[str] = []
     errors = validate_pr(
         current,
@@ -513,6 +582,7 @@ def check_pr_action(event_path: Path, token: str, repository: str) -> int:
         commit_subjects=subjects,
         ranges=ranges,
         other_ranges=other_ranges,
+        other_coordination=other_coordination,
         advisories=advisories,
         added_lines=pr_added_lines(repository, number, token),
     )
@@ -2168,12 +2238,21 @@ def audit_repo(root: Path) -> Dict[str, List[str]]:
                 for key, value in pr_ranges.items()
                 if key != number and set(value) & set(pr_ranges[number])
             }
+            other_coordination = {
+                key: split_coordination(
+                    parse_claims(str(pr_views[key].get("body") or "")).get(
+                        "coordinated", ""
+                    )
+                )
+                for key in others
+            }
             violations = validate_pr(
                 view,
                 files=files,
                 commit_subjects=subjects,
                 ranges=pr_ranges[number],
                 other_ranges=others,
+                other_coordination=other_coordination,
             )
             for violation in violations:
                 errors.append(f"PR #{number}: {violation}")

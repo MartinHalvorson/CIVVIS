@@ -1288,7 +1288,7 @@ impl StrategicAi {
         // Scoped to the projection, not to play: this changes what the search
         // *believes* a lane is worth, leaving the agent that acts untouched.
         inner.assigned_religion_may_expand = self.branch_religion_may_expand;
-        if inner.weights().to_vec() != weights.to_vec() {
+        if inner.weights() != weights {
             inner.reweight(weights.clone());
         }
         match target {

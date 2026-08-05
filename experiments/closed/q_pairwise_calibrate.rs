@@ -1,4 +1,4 @@
-//! Calibrate a frozen replica-aware move ranker on independent games.
+//! Archived calibration of a frozen replica-aware move ranker on independent games.
 //!
 //! The pairwise destination ranker can order counterfactual moves while its raw
 //! logistic margin remains much too compressed for a probability gate. This

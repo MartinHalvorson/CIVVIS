@@ -1,20 +1,13 @@
 //! Ask CIVVIS where it would have settled, and compare that to what the Lua
 //! agent actually did.
 //!
-//! # Why this exists before the integration
+//! # Why this remains useful
 //!
-//! The operator's architecture is "CIVVIS is the logic engine and the harness
-//! actuates its decisions". The obstacle is that the control mod has **no inbound
-//! channel** — no `io`, and its config is baked in at install time — so a
-//! per-turn CIVVIS decision can only reach the game through the harness driving
-//! the UI. That is a large job.
-//!
-//! Before building it, the question worth answering is whether it would change
-//! anything. The Lua agent carries a hand-rolled settle score written to resemble
-//! CIVVIS's, and nobody has ever checked whether the two agree. If they agree,
-//! the approximation is fine and the real gap is elsewhere; if they disagree
-//! systematically, that is a measured defect with a direction, and it is the case
-//! for doing the actuation work.
+//! CIVVIS now reaches the control mod through per-turn database orders. This
+//! command remains an offline diagnostic: it compares the old built-in siting
+//! fallback with the same `AdvancedAi` ranking used by CIVVIS. Agreement says the
+//! fallback tracks the controller on the observed board; disagreement identifies a
+//! concrete boundary to inspect in the live order path.
 //!
 //! # What it is honest about
 //!
@@ -57,20 +50,17 @@ fn arg_text(args: &[String], flag: &str) -> Option<String> {
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
+    if args.iter().any(|arg| arg == "--plan") {
+        eprintln!(
+            "civvis-advise no longer writes static settle plans: real-Civ6 worlds are \
+             not reproducible. Use this command only to audit an observed mirror."
+        );
+        std::process::exit(2);
+    }
     let Some(dir) = arg_text(&args, "--mirror") else {
         eprintln!("usage: civvis-advise --mirror <run-dir> [--radius N]");
         std::process::exit(2);
     };
-    // `--plan <file>`: write CIVVIS's ranking as JSON for the installer to bake
-    // into the mod's config.
-    //
-    // ⚠ THIS IS THE ONLY INBOUND CHANNEL THAT EXISTS. The mod cannot read a file
-    // at runtime (no `io`) and FireTuner does not answer: with a live game and the
-    // correct log path, seven plausible framings on ports 4318/4319 executed
-    // nothing. Config baked at install time is what is left, and it works because
-    // the world is a function of the seed — plan a map once, replay it with the
-    // same seed, and the plan still describes that map.
-    let plan_out = arg_text(&args, "--plan");
     let radius: i32 = arg_text(&args, "--radius")
         .and_then(|value| value.parse().ok())
         .unwrap_or(8);
@@ -173,44 +163,13 @@ fn main() {
         println!(
             "{}",
             if mean <= 3.0 {
-                "→ they broadly AGREE. Settle siting is not where wiring CIVVIS in \
-                 would pay; the gap is elsewhere."
+                "→ they broadly AGREE. The built-in siting fallback tracks CIVVIS on \
+                 this observed board."
             } else {
-                "→ they DISAGREE, and the direction is now measured rather than \
-                 assumed. This is the case for actuating CIVVIS's choice."
+                "→ they DISAGREE. Inspect the fallback boundary and the live order \
+                 path rather than assuming the two make the same choice."
             }
         );
-    }
-    if let Some(path) = plan_out {
-        // Plan from the empire as it stands, which is what the next founding faces.
-        let (game, _) = mirror::rebuild_with_empire(&snapshot, &founded, 4, 1);
-        let from = capital.unwrap_or((snapshot.width / 2, snapshot.height / 2));
-        // Written back in Civ 6 OFFSET coordinates, because the mod reads them and
-        // the operator reads them on screen.
-        let sites: Vec<serde_json::Value> = ai
-            .settle_ranking(&game, 0, to_axial(from), radius)
-            .into_iter()
-            .map(|(pos, score)| (to_offset(pos), score))
-            .filter(|(pos, _)| snapshot.is_revealed(*pos))
-            .take(24)
-            .map(|((x, y), score)| {
-                serde_json::json!({ "x": x, "y": y, "score": score })
-            })
-            .collect();
-        let doc = serde_json::json!({
-            "seed_world": format!("{}x{}", snapshot.width, snapshot.height),
-            "from_turn": snapshot.turn,
-            "revealed": snapshot.revealed_count(),
-            "origin": [from.0, from.1],
-            "sites": sites,
-        });
-        std::fs::write(&path, serde_json::to_string_pretty(&doc).unwrap())
-            .unwrap_or_else(|error| {
-                eprintln!("cannot write {path}: {error}");
-                std::process::exit(2);
-            });
-        println!("wrote {} CIVVIS-ranked sites to {path}", doc["sites"].as_array().unwrap().len());
-        println!();
     }
     println!();
     println!("⚠ Read with care: the mirror carries the map and the seat's cities, not");

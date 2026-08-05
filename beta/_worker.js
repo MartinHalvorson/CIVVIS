@@ -1,47 +1,34 @@
-// The door on /beta, and the whole site's request handler.
+// The whole site's request handler.
 //
-// A published build is not finished work and is not meant to be found by
-// everyone; this asks for a password before serving anything under /beta,
-// the engine included. It is a soft gate by design — one shared password, no
-// accounts — but a real one: the password is checked at Cloudflare's edge and
-// is never part of anything the browser downloads.
+// The site is two builds of the same program plus the pages around them:
 //
-// Set BETA_PASSWORD in the Pages project's environment variables to change it
-// without a deploy.
+//   /        the STABLE lane — the promoted build, deliberately chosen
+//   /test    the HEAD lane — republished automatically from the latest main
+//   /home    the landing page (a real file at home/index.html)
+//   /download, /rust, /wasm — the native binaries and the moving pointers
+//
+// Both lanes are the same viewer with relative asset paths, so each works at
+// its mount point without rewrites; they differ only in which commit their
+// engine was compiled from, and each states its commit in its own build.json.
 //
 // **This is a `_worker.js`, deliberately, and it must stay one.** Cloudflare
 // Pages also supports a `functions/` directory, and that is the obvious way to
 // write this — but `functions/` is resolved relative to the *working
 // directory* wrangler is invoked from, not the directory being deployed. Run
 // the deploy from anywhere but the project root and the gate is silently left
-// behind: the upload succeeds, the site works, and the beta is wide open with
+// behind: the upload succeeds, the site works, and the test lane is wide open with
 // nothing to show that anything went wrong. It happened once here already,
-// which is why `verify.py` now proves the gate challenges rather than assuming
+// which is why `verify.py` now proves the routing answers rather than assuming
 // it is there. A `_worker.js` sits *inside* the deployed directory and cannot
 // be separated from it.
 
-const COOKIE = "civvis_beta";
+const COOKIE = "civvis_test";
 const WEEK = 60 * 60 * 24 * 7;
-
-/// Where `civvis.ai` itself sends people.
-///
-/// The domain's job is to be the channel's address: somebody who types
-/// `civvis.ai` wants the videos, not a page about them. So `/` forwards, and
-/// the landing page — which is still the only thing linking `/beta` and
-/// `/download` — lives at `/home`.
-///
-/// The forward is a **302**, not a 301. A permanent redirect is cached by
-/// browsers effectively for ever, so a 301 here would strand every past
-/// visitor on YouTube on the day this becomes a real front page. Set
-/// `ROOT_REDIRECT` in the Pages environment to another URL to send `/`
-/// somewhere else, or to `off` to serve the landing page at `/` instead —
-/// either way without a deploy.
-const CHANNEL = "https://www.youtube.com/@civvis";
 
 /// Give a build channel a stable address without teaching browsers that its
 /// current destination can never change. Both destinations are themselves
 /// moving pointers: `/download/` links GitHub's latest native Rust release,
-/// while `/beta/` is replaced whenever the WASM site is published.
+/// while `/test/` is replaced whenever the WASM site is published.
 function buildChannel(url, path) {
   return new Response(null, {
     status: 302,
@@ -56,7 +43,7 @@ function buildChannel(url, path) {
 async function token(password) {
   const digest = await crypto.subtle.digest(
     "SHA-256",
-    new TextEncoder().encode(`civvis.ai/beta:${password}`),
+    new TextEncoder().encode(`civvis.ai/test:${password}`),
   );
   return [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
@@ -83,7 +70,7 @@ function askForIt(wrong) {
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
-<title>CIVVIS — beta</title>
+<title>CIVVIS — test build</title>
 <style>
   :root { color-scheme: dark; }
   * { box-sizing: border-box; }
@@ -112,7 +99,7 @@ function askForIt(wrong) {
 <body>
   <form method="POST">
     <h1>CIVVIS</h1>
-    <p>Beta build</p>
+    <p>Test build</p>
     <input name="password" type="password" autofocus autocomplete="current-password"
            aria-label="Password" placeholder="password">
     <button type="submit">Enter</button>
@@ -134,7 +121,8 @@ function askForIt(wrong) {
 async function asset(request, env, gated) {
   const response = await env.ASSETS.fetch(request);
   const headers = new Headers(response.headers);
-  const path = new URL(request.url).pathname;
+  const url = new URL(request.url);
+  const path = url.pathname;
 
   headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -144,61 +132,70 @@ async function asset(request, env, gated) {
     // `WebAssembly.instantiateStreaming` refuses anything else.
     headers.set("Content-Type", "application/wasm");
   }
-  if (path.startsWith("/beta/assets/")) {
-    // Sprite atlases are content and change rarely.
-    headers.set("Cache-Control", "public, max-age=86400");
-  } else if (path.startsWith("/beta/")) {
-    // The engine keeps its name across builds, so it must be revalidated
-    // rather than trusted: a cached module from the last published build
-    // beside a freshly published page is a mismatch nobody can see. One small
-    // conditional request; the 6MB body only moves when the build changed.
+  const versionedBuildFile = url.searchParams.has("v") && (
+    path.endsWith(".js") || path.endsWith(".wasm") || path.includes("/assets/")
+  );
+  if (versionedBuildFile) {
+    // publish.sh derives `v` from these exact bytes. They may therefore live
+    // in a browser cache indefinitely: changed content always has a new URL.
+    headers.set("Cache-Control", "public, max-age=31536000, immutable");
+  } else {
+    // HTML and legacy/unversioned URLs are moving pointers. Revalidate them on
+    // every visit so an old page or hand-written URL cannot pin a past build.
     headers.set("Cache-Control", "public, max-age=0, must-revalidate");
   }
   return new Response(response.body, { status: response.status, headers });
-}
-
-/// Serve one of the site's own files under a different path.
-///
-/// `ASSETS.fetch` keys off the URL it is handed, so the landing page can be
-/// deployed once as `index.html` and still answer at `/home` — no second copy
-/// to keep in step with the first.
-function assetAt(request, path) {
-  const url = new URL(request.url);
-  url.pathname = path;
-  return new Request(url, request);
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
 
+    // `/` is the stable simulator. `ROOT_REDIRECT` in the Pages environment
+    // sends the root somewhere else without a deploy — a **302**, never a 301,
+    // because browsers cache a permanent redirect effectively for ever and
+    // this pointer exists to be movable. (It once defaulted to the YouTube
+    // channel, before the root became the product; the landing page and the
+    // viewer's own header still link the channel.)
     if (url.pathname === "/" || url.pathname === "/index.html") {
-      const destination = env.ROOT_REDIRECT || CHANNEL;
-      if (destination !== "off") {
+      const destination = env.ROOT_REDIRECT;
+      if (destination && destination !== "off") {
         return new Response(null, {
           status: 302,
           headers: { Location: destination, "Cache-Control": "no-store" },
         });
       }
     }
-    if (url.pathname === "/home" || url.pathname === "/home/") {
-      return asset(assetAt(request, "/index.html"), env, false);
-    }
+    // `/home` needs no case here: the landing page is a real file at
+    // home/index.html, and Pages resolves the directory index on its own.
     if (url.pathname === "/rust" || url.pathname === "/rust/") {
       return buildChannel(url, "/download/");
     }
     if (url.pathname === "/wasm" || url.pathname === "/wasm/") {
-      return buildChannel(url, "/beta/");
+      return buildChannel(url, "/test/");
     }
 
-    if (!url.pathname.startsWith("/beta")) return asset(request, env, false);
+    // /beta — the lane's name for its first day — is scrapped. Answered with
+    // an explicit 404 rather than left to fall through, because falling
+    // through does not do what it looks like it does: for an unknown HTML
+    // path Pages serves the root index.html (its single-page-app fallback),
+    // which would quietly resurrect the old name as a second copy of the
+    // front page. The CI routing gate caught exactly that.
+    if (url.pathname === "/beta" || url.pathname.startsWith("/beta/")) {
+      return new Response("Not found", {
+        status: 404,
+        headers: { "Cache-Control": "no-store", "X-Robots-Tag": "noindex" },
+      });
+    }
 
-    // The beta is open.
+    if (!url.pathname.startsWith("/test")) return asset(request, env, false);
+
+    // The test lane is open.
     //
     // It was behind a shared password while it was a thing not meant to be
-    // found. It is now the thing the channel points people at, so the door is
-    // only there if somebody puts it there: set `BETA_PASSWORD` in the Pages
-    // environment and it closes again, with no deploy.
+    // found. It is now where anyone watches the next build being judged, so
+    // the door is only there if somebody puts it there: set `TEST_PASSWORD`
+    // in the Pages environment and it closes again, with no deploy.
     //
     // There is deliberately **no fallback password**. The old one was a
     // literal in this file, in a public repository, which is not a password —
@@ -206,9 +203,9 @@ export default {
     // names a secret or there is no gate, and both of those are honest.
     //
     // What stays either way is `X-Robots-Tag: noindex` on everything under
-    // /beta: open to anyone following a link is not the same as wanting an
+    // /test: open to anyone following a link is not the same as wanting an
     // unfinished build to be the first search result for the project's name.
-    const password = env.BETA_PASSWORD;
+    const password = env.TEST_PASSWORD;
     if (!password) return asset(request, env, true);
 
     const expected = await token(password);
@@ -225,7 +222,7 @@ export default {
           headers: {
             Location: url.pathname,
             "Set-Cookie":
-              `${COOKIE}=${expected}; Path=/beta; Max-Age=${WEEK}; ` +
+              `${COOKIE}=${expected}; Path=/test; Max-Age=${WEEK}; ` +
               "HttpOnly; Secure; SameSite=Lax",
             "Cache-Control": "no-store",
           },

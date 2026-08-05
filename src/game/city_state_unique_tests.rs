@@ -1,3 +1,4 @@
+use crate::ai::{AdvancedAi, BasicAi, GrandStrategy};
 use crate::name::Name;
 use super::*;
 
@@ -75,6 +76,367 @@ fn assert_close(actual: f64, expected: f64) {
         (actual - expected).abs() < 1e-9,
         "expected {expected}, got {actual}"
     );
+}
+
+fn owned_non_center_site(game: &Game, city: u32) -> Pos {
+    let center = game.cities[&city].pos;
+    game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .find(|position| *position != center && game.map.tiles.contains_key(position))
+        .expect("a founded capital owns a non-center tile")
+}
+
+fn prepare_improvement_site(game: &mut Game, position: Pos, terrain: &str, hills: bool) {
+    let tile = game.map.tiles.get_mut(&position).unwrap();
+    tile.terrain = Name::new(terrain);
+    tile.hills = hills;
+    tile.feature = None;
+    tile.resource = None;
+    tile.improvement = None;
+    tile.pillaged = false;
+    tile.flooded = false;
+    tile.district = None;
+    tile.district_foundation = None;
+    tile.wonder = None;
+}
+
+#[test]
+fn rapa_nui_moai_are_suzerain_actions_with_real_adjacency_yields() {
+    let (mut game, cities) = game_with_capitals(1, 89_101);
+    let city = cities[0];
+    let target = owned_non_center_site(&game, city);
+    prepare_improvement_site(&mut game, target, "plains", false);
+    for neighbor in game.nbrs(target) {
+        if let Some(tile) = game.map.tiles.get_mut(&neighbor) {
+            tile.feature = None;
+        }
+    }
+
+    let rapa_nui = add_city_state(&mut game, "Rapa Nui");
+    assert!(
+        !game
+            .valid_improvements(0, target)
+            .contains(&crate::name!("moai")),
+        "a normal civilization cannot place Rapa Nui's unique improvement"
+    );
+    make_suzerain(&mut game, 0, rapa_nui);
+    assert!(game
+        .valid_improvements(0, target)
+        .contains(&crate::name!("moai")));
+
+    let blocked_neighbor = game.nbrs(target)[0];
+    game.map.tiles.get_mut(&blocked_neighbor).unwrap().feature = Some(crate::name!("forest"));
+    assert!(
+        !game
+            .valid_improvements(0, target)
+            .contains(&crate::name!("moai")),
+        "Moai next to Woods must be refused"
+    );
+    game.map.tiles.get_mut(&blocked_neighbor).unwrap().feature = None;
+
+    let builder = game.spawn_test_unit("builder", 0, target);
+    let action = Action::Improve {
+        unit: builder,
+        improvement: crate::name!("moai"),
+    };
+    assert!(game.legal_actions(0).contains(&action));
+    game.apply(0, &action).unwrap();
+
+    let neighbor = game
+        .nbrs(target)
+        .into_iter()
+        .find(|position| {
+            game.cities[&city].owned_tiles.contains(position)
+                && *position != game.cities[&city].pos
+        })
+        .expect("the capital ring contains adjacent owned sites");
+    prepare_improvement_site(&mut game, neighbor, "plains", false);
+    game.map.tiles.get_mut(&neighbor).unwrap().improvement = Some(crate::name!("moai"));
+    let before = game.player_tile_yields(0, target, &game.map.tiles[&target]);
+    game.players[0]
+        .civics
+        .insert(crate::name!("medieval_faires"));
+    let after = game.player_tile_yields(0, target, &game.map.tiles[&target]);
+    assert_close(after.culture, before.culture + 1.0);
+}
+
+#[test]
+fn portugal_nau_builds_feitorias_only_with_foreign_open_borders_and_pays_routes() {
+    let (mut game, cities) = game_with_capitals(2, 89_102);
+    let foreign_city = cities[1];
+    let target = owned_non_center_site(&game, foreign_city);
+    prepare_improvement_site(&mut game, target, "coast", false);
+    let shore = game
+        .nbrs(target)
+        .into_iter()
+        .find(|position| *position != game.cities[&foreign_city].pos)
+        .expect("a map tile has a neighbouring shore site");
+    prepare_improvement_site(&mut game, shore, "grassland", false);
+    game.map.tiles.get_mut(&shore).unwrap().resource = Some(crate::name!("wheat"));
+    game.players[0].civ = "Portugal".to_string();
+    game.players[0].techs.insert(crate::name!("cartography"));
+    game.players[1].civics.insert(crate::name!("early_empire"));
+
+    assert!(
+        !game
+            .valid_improvements(0, target)
+            .contains(&crate::name!("feitoria")),
+        "foreign coast remains closed until its owner grants Open Borders"
+    );
+    game.players[1]
+        .open_borders_until
+        .insert(0, game.turn + 30);
+    assert!(game
+        .valid_improvements(0, target)
+        .contains(&crate::name!("feitoria")));
+
+    let nau = game.spawn_test_unit("nau", 0, target);
+    let action = Action::Improve {
+        unit: nau,
+        improvement: crate::name!("feitoria"),
+    };
+    assert!(game.legal_actions(0).contains(&action));
+    let before = game.trade_route_yields(0, foreign_city);
+    game.apply(0, &action).unwrap();
+    let after = game.trade_route_yields(0, foreign_city);
+    assert_close(after.gold, before.gold + 4.0);
+    assert_close(after.production, before.production + 1.0);
+}
+
+#[test]
+fn special_improver_units_and_incan_mountain_roads_are_actionable() {
+    let (mut game, cities) = game_with_capitals(1, 89_103);
+    let city = cities[0];
+    let center = game.cities[&city].pos;
+    let sites: Vec<Pos> = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|position| *position != center)
+        .take(3)
+        .collect();
+    assert_eq!(sites.len(), 3, "the capital needs three improvement sites");
+
+    game.players[0].civ = "Maori".to_string();
+    prepare_improvement_site(&mut game, sites[0], "plains", true);
+    let toa = game.spawn_test_unit("toa", 0, sites[0]);
+    let pa = Action::Improve {
+        unit: toa,
+        improvement: crate::name!("maori_pa"),
+    };
+    assert!(game.legal_actions(0).contains(&pa));
+    game.apply(0, &pa).unwrap();
+    assert_eq!(game.map.tiles[&sites[0]].improvement.as_deref(), Some("maori_pa"));
+
+    game.players[0].civ = "Rome".to_string();
+    prepare_improvement_site(&mut game, sites[1], "grassland", false);
+    let legion = game.spawn_test_unit("legion", 0, sites[1]);
+    let fort = Action::Improve {
+        unit: legion,
+        improvement: crate::name!("roman_fort"),
+    };
+    assert!(game.legal_actions(0).contains(&fort));
+    game.apply(0, &fort).unwrap();
+    assert_eq!(game.map.tiles[&sites[1]].improvement.as_deref(), Some("roman_fort"));
+
+    game.players[0].civ = "Inca".to_string();
+    game.players[0].civics.insert(crate::name!("foreign_trade"));
+    prepare_improvement_site(&mut game, sites[2], "mountain", false);
+    let approach = game.spawn_test_unit("builder", 0, center);
+    assert!(
+        game.can_enter(approach, center, sites[2]),
+        "Foreign Trade lets Incan Builders reach a Qhapaq Nan site"
+    );
+    let builder = game.spawn_test_unit("builder", 0, sites[2]);
+    let road = Action::Improve {
+        unit: builder,
+        improvement: crate::name!("qhapaq_nan"),
+    };
+    assert!(game.legal_actions(0).contains(&road));
+    game.apply(0, &road).unwrap();
+    assert_eq!(game.map.tiles[&sites[2]].improvement.as_deref(), Some("qhapaq_nan"));
+}
+
+#[test]
+fn basic_ai_spends_toa_and_legion_charges_on_their_unique_improvements() {
+    let (mut game, cities) = game_with_capitals(1, 89_104);
+    let city = cities[0];
+    let sites: Vec<Pos> = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|position| *position != game.cities[&city].pos)
+        .take(2)
+        .collect();
+    assert_eq!(sites.len(), 2, "the capital needs two usable sites");
+
+    game.players[0].civ = "Maori".to_string();
+    prepare_improvement_site(&mut game, sites[0], "plains", true);
+    let toa = game.spawn_test_unit("toa", 0, sites[0]);
+    assert_eq!(
+        BasicAi::new().special_improver_step(&mut game, 0, toa),
+        Some(true)
+    );
+    assert_eq!(game.map.tiles[&sites[0]].improvement.as_deref(), Some("maori_pa"));
+
+    game.players[0].civ = "Rome".to_string();
+    prepare_improvement_site(&mut game, sites[1], "grassland", false);
+    let legion = game.spawn_test_unit("legion", 0, sites[1]);
+    assert_eq!(
+        BasicAi::new().special_improver_step(&mut game, 0, legion),
+        Some(true)
+    );
+    assert_eq!(
+        game.map.tiles[&sites[1]].improvement.as_deref(),
+        Some("roman_fort")
+    );
+}
+
+#[test]
+fn basic_ai_routes_a_charged_toa_to_its_only_legal_pa_site() {
+    let (mut game, cities) = game_with_capitals(1, 89_106);
+    let city = cities[0];
+    let center = game.cities[&city].pos;
+    let sites: Vec<Pos> = game.cities[&city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|position| *position != center)
+        .collect();
+    let target = sites
+        .iter()
+        .copied()
+        .find(|position| {
+            game.nbrs(*position)
+                .into_iter()
+                .any(|neighbor| neighbor != center && sites.contains(&neighbor))
+        })
+        .expect("the capital ring contains adjacent non-center sites");
+    let start = game
+        .nbrs(target)
+        .into_iter()
+        .find(|position| *position != center && sites.contains(position))
+        .expect("the Pa site has an adjacent owned approach");
+    for position in &sites {
+        prepare_improvement_site(&mut game, *position, "grassland", false);
+    }
+    prepare_improvement_site(&mut game, target, "plains", true);
+    game.players[0].civ = "Maori".to_string();
+    let toa = game.spawn_test_unit("toa", 0, start);
+
+    assert_eq!(
+        BasicAi::new().special_improver_step(&mut game, 0, toa),
+        Some(true)
+    );
+    assert_eq!(game.units[&toa].pos, target);
+    assert!(
+        game.map.tiles[&target].improvement.is_none(),
+        "the first action should route the Toa; a later action spends the charge"
+    );
+}
+
+#[test]
+fn advanced_ai_spends_nau_charge_only_on_an_open_foreign_feitoria_site() {
+    let (mut game, cities) = game_with_capitals(2, 89_105);
+    let foreign_city = cities[1];
+    let target = owned_non_center_site(&game, foreign_city);
+    prepare_improvement_site(&mut game, target, "coast", false);
+    let shore = game
+        .nbrs(target)
+        .into_iter()
+        .find(|position| *position != game.cities[&foreign_city].pos)
+        .expect("the foreign coast needs an adjacent land resource");
+    prepare_improvement_site(&mut game, shore, "grassland", false);
+    game.map.tiles.get_mut(&shore).unwrap().resource = Some(crate::name!("wheat"));
+    game.players[0].civ = "Portugal".to_string();
+    game.players[0].techs.insert(crate::name!("cartography"));
+    game.players[1].civics.insert(crate::name!("early_empire"));
+    let nau = game.spawn_test_unit("nau", 0, target);
+    let mut ai = AdvancedAi::new();
+
+    assert_eq!(
+        ai.advanced_special_improver_step(&mut game, 0, nau, GrandStrategy::Diplomacy),
+        None,
+        "without Open Borders the Nau must keep its charge and fall back to military behavior"
+    );
+    assert!(game.map.tiles[&target].improvement.is_none());
+
+    game.players[1]
+        .open_borders_until
+        .insert(0, game.turn + 30);
+    assert_eq!(
+        ai.advanced_special_improver_step(&mut game, 0, nau, GrandStrategy::Diplomacy),
+        Some(true)
+    );
+    assert_eq!(game.map.tiles[&target].improvement.as_deref(), Some("feitoria"));
+}
+
+#[test]
+fn advanced_ai_routes_a_nau_to_the_best_reachable_feitoria_site() {
+    let (mut game, cities) = game_with_capitals(2, 89_107);
+    let foreign_city = cities[1];
+    let center = game.cities[&foreign_city].pos;
+    let sites: Vec<Pos> = game.cities[&foreign_city]
+        .owned_tiles
+        .iter()
+        .copied()
+        .filter(|position| *position != center)
+        .collect();
+    let (target, start, shore) = sites
+        .iter()
+        .copied()
+        .find_map(|target| {
+            sites
+                .iter()
+                .copied()
+                .filter(|start| game.nbrs(target).contains(start))
+                .find_map(|start| {
+                    game.nbrs(target)
+                        .into_iter()
+                        .find(|shore| {
+                            *shore != center
+                                && *shore != start
+                                && !game.nbrs(start).contains(shore)
+                        })
+                        .map(|shore| (target, start, shore))
+                })
+        })
+        .expect("the capital ring needs a coast, approach, and exclusive shore");
+    for position in &sites {
+        prepare_improvement_site(&mut game, *position, "grassland", false);
+    }
+    for position in game.nbrs(target) {
+        prepare_improvement_site(&mut game, position, "grassland", false);
+    }
+    prepare_improvement_site(&mut game, target, "coast", false);
+    prepare_improvement_site(&mut game, start, "coast", false);
+    game.map.tiles.get_mut(&shore).unwrap().resource = Some(crate::name!("wheat"));
+    game.players[0].civ = "Portugal".to_string();
+    game.players[0].techs.insert(crate::name!("cartography"));
+    game.players[1].civics.insert(crate::name!("early_empire"));
+    game.players[1]
+        .open_borders_until
+        .insert(0, game.turn + 30);
+    let nau = game.spawn_test_unit("nau", 0, start);
+    let mut ai = AdvancedAi::new();
+
+    assert!(
+        !game
+            .valid_improvements(0, start)
+            .contains(&crate::name!("feitoria")),
+        "the approach is water but lacks the required adjacent resource"
+    );
+    assert!(game
+        .valid_improvements(0, target)
+        .contains(&crate::name!("feitoria")));
+    assert_eq!(
+        ai.advanced_special_improver_step(&mut game, 0, nau, GrandStrategy::Diplomacy),
+        Some(true)
+    );
+    assert_eq!(game.units[&nau].pos, target);
+    assert!(game.map.tiles[&target].improvement.is_none());
 }
 
 #[test]

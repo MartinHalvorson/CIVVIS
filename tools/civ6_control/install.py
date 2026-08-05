@@ -108,10 +108,10 @@ def _write_mod(target: Path, config: dict) -> None:
             if error:
                 raise SystemExit(f"{src.name} does not parse: {error}")
         elif src.name == "CivvisControlConfig.xml":
-            # The setup DEFAULTS, applied through the one FrontEnd hook shipped
-            # content actually uses (`UpdateDatabase`). ⚠ The seed must be a real
-            # integer: a literal 0 reads as "unset" and silently restores random
-            # maps, which is the failure this whole file exists to end.
+            # The setup defaults are applied through the one FrontEnd hook shipped
+            # content actually uses (`UpdateDatabase`). This seed branch is only
+            # for an explicit diagnostic probe: a literal 0 reads as unset, so
+            # omit both rows unless the probe supplied a positive request.
             seed = int(config.get("MapSeed") or 0)
             text_xml = src.read_text()
             if seed > 0:
