@@ -13835,15 +13835,27 @@ impl AdvancedAi {
                     }
                 }
             }
-            next.sort_by(|left, right| {
+            let mut forecast_order = |left: &SettlementForecastState,
+                                      right: &SettlementForecastState| {
                 Self::settlement_forecast_rank(right, horizon)
                     .total_cmp(&Self::settlement_forecast_rank(left, horizon))
                     .then_with(|| {
                         left.selected[..left.selected_len]
                             .cmp(&right.selected[..right.selected_len])
                     })
-            });
-            next.truncate(SETTLEMENT_FORECAST_BEAM);
+            };
+            // Only the best beam-width states survive. Partition first so a
+            // large branch layer does not pay a full sort for discarded
+            // states; sort the retained prefix with the same total ordering
+            // to preserve deterministic tie-breaking.
+            if next.len() > SETTLEMENT_FORECAST_BEAM {
+                next.select_nth_unstable_by(
+                    SETTLEMENT_FORECAST_BEAM - 1,
+                    &mut forecast_order,
+                );
+                next.truncate(SETTLEMENT_FORECAST_BEAM);
+            }
+            next.sort_by(&mut forecast_order);
             beam = next;
             if beam.is_empty() {
                 break;
