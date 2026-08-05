@@ -5156,6 +5156,42 @@ local function exportState(player, pid, turn)
 				-- city. `GetMilitaryStrength` is what the game's own diplomacy ribbon
 				-- shows a human (`DiplomacyRibbon.lua:159`), copied rather than recalled.
 				military = try(function() return other:GetStats():GetMilitaryStrength(); end, -1),
+				-- ★★★★★ WHY THE SCORE GAP CANNOT BE READ WITHOUT THESE.
+				--
+				-- Measured over 99 completed runs: CIVVIS leads in ZERO of them. Our
+				-- score is a median 267 against the best rival's 1109 — a ratio of
+				-- 0.26. Yet on empire SIZE we sit at 0.75-0.80 (3 cities vs 4, pop 28
+				-- vs 35) and our cities are individually BIGGER (10.3 pop vs 9.4).
+				--
+				-- So roughly three quarters of the score gap is in components that are
+				-- neither cities nor population, and the export could not name which:
+				-- the rival record carried `score`, `cities`, `military` and `units`
+				-- and nothing else. "We score a quarter" could not become "we score a
+				-- quarter BECAUSE X".
+				--
+				-- Counts, not name lists: the question is how far ahead they are, and
+				-- a name list per rival per turn would be tens of kilobytes of export
+				-- for an answer a single integer gives. `-1` on failure, the same
+				-- sentinel every other guarded accessor here uses, so a build without
+				-- these APIs reads as UNKNOWN rather than as zero.
+				techs = try(function()
+					local t = other:GetTechs();
+					if t == nil then return -1; end
+					local n = 0;
+					for row in GameInfo.Technologies() do
+						if t:HasTech(row.Index) then n = n + 1; end
+					end
+					return n;
+				end, -1),
+				civics = try(function()
+					local c = other:GetCulture();
+					if c == nil then return -1; end
+					local n = 0;
+					for row in GameInfo.Civics() do
+						if c:HasCivic(row.Index) then n = n + 1; end
+					end
+					return n;
+				end, -1),
 				cities = theirCities,
 				units = theirUnits,
 			};

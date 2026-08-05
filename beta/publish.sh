@@ -184,6 +184,11 @@ target.write_text(page, encoding="utf-8")
 print(f"   viewer written to {target} ({len(page):,} bytes)")
 PY
 
+# Browser caches cannot be purged by a deployment. Give every JS, WASM, and
+# atlas dependency a URL derived from its actual bytes, so fresh HTML always
+# asks for fresh content while unchanged files remain reusable across builds.
+python3 "$repo_root/beta/cache_bust.py" "$out/test"
+
 wasm_bytes=$(wc -c < "$out/test/civvis.wasm" | tr -d ' ')
 bundle_bytes=$(find "$out" -type f -exec wc -c {} + | tail -1 | awk '{print $1}')
 cat > "$out/test/build.json" <<JSON

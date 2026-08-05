@@ -7,6 +7,7 @@ use civvis::game::{
     default_difficulty, default_speed, Game, GameOptions, LeaderPool, VictoryConditions,
     WarRecord, DEFAULT_DISASTER_INTENSITY, GAME_MODES,
 };
+use civvis::leader_roster;
 use civvis::rules::Rules;
 use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, MapTopology};
 
@@ -458,6 +459,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// flag before it reads a unit, so every configured, legacy and Elo agent
 /// promotes exactly when it always did. A compatibility re-pin.
 ///
+/// #954 says why a settler was held instead of only that it was marching. The
+/// added block is inside `if !moved && self.journal().wants(Detail)` and every
+/// call it makes is a read: `Game::route_step` and `route_step_to_any` take
+/// `&self`, as do `can_move`, `units_at` and `wdist`, and `think!` writes to the
+/// reasoning journal, which is observer-only by contract. No RNG is drawn and no
+/// board state is touched, so the anchor plays the identical game and only its
+/// journal differs. A compatibility re-pin.
 /// #1026 keeps the land army out of the water, behind `come_ashore` — `false`
 /// in both `BasicAi` constructors and set only by `enable_live_bridge`. Every
 /// one of its paths short-circuits on the flag before reading anything:
@@ -536,7 +544,6 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// every objective any legacy or Elo entrant receives, is bit-for-bit what it was.
 /// A compatibility re-pin.
 ///
-#[cfg(test)]
 /// ⚠ And again for the pantheon price, which now reads `Game::pantheon_faith_cost()`
 /// instead of a bare `25.0` in the `ai.rs` gate. `pantheon_faith_cost` is
 /// `game_speed.scale(PANTHEON_FAITH_STANDARD)`, and `GameSpeed::default()` is
@@ -574,7 +581,19 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// ⚠ Re-pinned for test-only seeded-map fixture hardening after Natural
 /// Wonder silhouettes changed. Both edits are inside `#[cfg(test)]` modules;
 /// no controller path is compiled into an Elo game.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x74e1_449b_5bb7_e189;
+/// ⚠ Re-pinned for production unit-objective memory. The full objective,
+/// danger, and retreat path is behind `BasicAi::unit_objective_memory`, which
+/// initializes false in Basic and `AdvancedAi::legacy()` and true only in the
+/// production Advanced constructor. The focused regression test asserts that
+/// split and the production assignment; the frozen anchor never takes either
+/// new movement branch.
+/// ⚠ #1162 routes the charged Toa, Legion, and Nau through shared improvement
+/// planning. `AdvancedAi::legacy()` and `BasicAi` can now select real new
+/// improvement actions, so this is deliberately a protocol-v6 change rather
+/// than a compatibility re-pin; the fresh source fingerprint documents that
+/// the new ledger starts from this exact shared controller.
+#[cfg(test)]
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf83e_4abd_973d_0026;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
@@ -865,6 +884,18 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
         }
         teams
     };
+    let leader_pool = {
+        let id = arg_text(args, "--leader-pool", LeaderPool::default().id());
+        let pool = LeaderPool::from_id(&id).unwrap_or_else(|| {
+            eprintln!("unknown leader pool {id:?}; choose civ6, historical, or today");
+            std::process::exit(2);
+        });
+        if !pool.is_available() {
+            eprintln!("leader pool {id:?} has no supplied roster data yet");
+            std::process::exit(2);
+        }
+        pool
+    };
     GameOptions {
         base_ruleset: base_ruleset(args),
         start_era: start_era(args),
@@ -882,17 +913,11 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
             .filter_map(|seat| seat.trim().parse().ok())
             .collect(),
         teams,
-        leader_pool: {
-            let id = arg_text(args, "--leader-pool", LeaderPool::default().id());
-            LeaderPool::from_id(&id).unwrap_or_else(|| {
-                eprintln!("unknown leader pool {id:?}; choose civ6 or expanded");
-                std::process::exit(2);
-            })
-        },
+        leader_pool,
         // Who the player is. `--civ Egypt` seats Egypt at seat 0; `--civs
         // Egypt,Rome` names the leading seats in order. Anything unnamed
-        // falls back to the stock roster, and a name the ruleset does not
-        // know is refused here rather than silently ignored downstream.
+        // falls back to the selected stock roster, and a name outside that
+        // roster is refused here rather than silently ignored downstream.
         civs: {
             let named = arg_text(args, "--civs", &arg_text(args, "--civ", ""));
             let chosen: Vec<String> = named
@@ -901,10 +926,18 @@ fn game_options(args: &[String], players: i64, seed: u64) -> GameOptions {
                 .filter(|civ| !civ.is_empty())
                 .collect();
             for civ in &chosen {
-                if !rules.civs.contains_key(civ) {
-                    let mut known: Vec<&str> = rules.civs.keys().map(|name| name.as_str()).collect();
+                if !leader_roster::entry(civ).is_some_and(|entry| {
+                    entry.available && entry.pool == leader_pool
+                }) {
+                    let mut known: Vec<&str> = leader_pool
+                        .entries()
+                        .map(|entry| entry.civ.as_str())
+                        .collect();
                     known.sort_unstable();
-                    eprintln!("unknown civilization {civ:?}; choose one of {known:?}");
+                    eprintln!(
+                        "civilization {civ:?} is not available in {}: choose one of {known:?}",
+                        leader_pool.name()
+                    );
                     std::process::exit(2);
                 }
             }
@@ -2186,13 +2219,13 @@ fn main() {
                 "usage: civvis <simulate|soak|benchmark|tournament|league|league-init|rate-game|rating|play|evolve|validate|pedia> \
                       [--players N] [--seed N] [--turns N] [--width N] [--height N] \
                       [--city-states N] [--games N] [--ais [identity=]controller,...] [--anchor identity|none] [--ratings path] [--standings] [--port N] [--no-open] \
-                      [--map land_only|lakes|inland_sea|grand_canals|grand_canals_2|pangaea|continents|small_continents|islands|water_world|true_start_earth] \
+                      [--map land_only|lakes|inland_sea|grand_canals|grand_canals_2|pangaea|earth|true_start_earth|continents|small_continents|fjords|islands|water_world] \
                       [--shape flat|planet] [--poles poles|randomized] \
                       [--difficulty settler|chieftain|warlord|prince|king|emperor|immortal|deity] \
                       [--speed online|quick|standard|epic|marathon] \
                       [--disasters 0|1|2|3|4] [--barbarians on|off] \
                       [--game-modes apocalypse,secret_societies] \
-                      [--leader-pool civ6|expanded] \
+                      [--leader-pool civ6|historical|today] \
                       [--human-seats 0,1] [--teams 0,0,1,1] [--mods path/to/mod,path/to/other] \
                       [--victories science,culture,religious,diplomatic,domination,score] \
                       [--spectate] [--supervised] [--force-strategy NAME] [--resume checkpoint.json] [--strict] \
