@@ -593,7 +593,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// than a compatibility re-pin; the fresh source fingerprint documents that
 /// the new ledger starts from this exact shared controller.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9775_d53a_c3f6_ff15;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf83e_4abd_973d_0026;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
