@@ -634,9 +634,17 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// --deployment-comparison` comparison produced byte-identical output on
 /// clean main and the candidate (SHA-256
 /// `34c8ccea34d4bf3a8b60ae1b713f82bffbce77a5f1614f07d69db591d6287b24`).
+/// #1227 stops the live religious buyer purchasing a Missionary into a tile that
+/// already holds one of our religious units — the host refuses it outright with
+/// "Too many units of the same class in this location.", 799 times across the
+/// 08-04/08-05 runs. The guard is gated on `live_religious_purchase_guard`, like
+/// the majority-religion check beside it, so the frozen controller is untouched:
+/// `ai_eval advanced_v1 basic --pairs 10 --players 4 --turns 200 --seed 31337
+/// --jobs 1 --deployment-comparison` produced BYTE-IDENTICAL output from this
+/// worktree with the change stashed and applied (same base, same build profile).
 /// Compatibility re-pin; the Elo protocol does not move.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x4e90_0151_2dc9_8556;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x210e_91ee_acb4_d727;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
