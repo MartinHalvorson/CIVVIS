@@ -590,7 +590,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// every configured, legacy and Elo agent slots exactly the cards it always did.
 /// A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6714_132a_18dc_5d39;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xae41_d5e2_8939_ed3b;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
