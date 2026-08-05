@@ -66,6 +66,8 @@ static LAUNCHED_COMMIT: OnceLock<Option<String>> = OnceLock::new();
 static LAUNCHED_COMMIT_TIME: OnceLock<Option<String>> = OnceLock::new();
 #[cfg(not(target_arch = "wasm32"))]
 static LAUNCHED_BUILT_AT: OnceLock<Option<String>> = OnceLock::new();
+#[cfg(not(target_arch = "wasm32"))]
+static LAUNCHED_ARTIFACT_BYTES: OnceLock<Option<u64>> = OnceLock::new();
 
 #[cfg(not(target_arch = "wasm32"))]
 fn promoted_binary_commit(name: &str) -> Option<String> {
@@ -98,6 +100,15 @@ fn launched_built_at() -> Option<String> {
     std::env::var("CIVVIS_BUILT_AT")
         .ok()
         .filter(|built_at| !built_at.is_empty())
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn launched_artifact_bytes() -> Option<u64> {
+    std::env::current_exe()
+        .ok()?
+        .metadata()
+        .ok()
+        .map(|metadata| metadata.len())
 }
 
 /// The revision of the code a supervisor selected for this process.
@@ -167,6 +178,31 @@ pub(crate) fn runtime_built_at() -> Option<String> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         LAUNCHED_BUILT_AT.get_or_init(launched_built_at).clone()
+    }
+}
+
+/// Size of the exact artifact serving this page, in bytes.
+///
+/// A native process can inspect its own executable. The browser WASM module
+/// has no filesystem path, so the published shim supplies its optimized byte
+/// count from the matching lane manifest after publication.
+pub(crate) fn runtime_artifact_bytes() -> Option<u64> {
+    #[cfg(target_arch = "wasm32")]
+    {
+        None
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        *LAUNCHED_ARTIFACT_BYTES.get_or_init(launched_artifact_bytes)
+    }
+}
+
+/// The kind of artifact whose size is reported beside the build ages.
+pub(crate) const fn runtime_artifact_kind() -> &'static str {
+    if cfg!(target_arch = "wasm32") {
+        "WASM"
+    } else {
+        "native"
     }
 }
 
@@ -2724,6 +2760,8 @@ impl Session {
             o["server_commit"] = json!(runtime_commit("unknown"));
             o["server_commit_time"] = json!(runtime_commit_time());
             o["server_built_at"] = json!(runtime_built_at());
+            o["server_artifact_bytes"] = json!(runtime_artifact_bytes());
+            o["server_artifact_kind"] = json!(runtime_artifact_kind());
             return o;
         }
         let mut o = observation(&self.game, 0);
@@ -2745,6 +2783,8 @@ impl Session {
         o["server_commit"] = json!(runtime_commit("unknown"));
         o["server_commit_time"] = json!(runtime_commit_time());
         o["server_built_at"] = json!(runtime_built_at());
+        o["server_artifact_bytes"] = json!(runtime_artifact_bytes());
+        o["server_artifact_kind"] = json!(runtime_artifact_kind());
         o
     }
 
@@ -3901,6 +3941,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     "commit": runtime_commit("unknown"),
                     "commit_time": runtime_commit_time(),
                     "built_at": runtime_built_at(),
+                    "artifact_bytes": runtime_artifact_bytes(),
+                    "artifact_kind": runtime_artifact_kind(),
                     // The supervisor's only view of a restart used to be
                     // `/state`, which is exactly what a long AI turn makes
                     // unavailable. This probe takes no lock the simulation
@@ -5906,6 +5948,9 @@ mod tests {
         assert_eq!(runtime["commit"], state["server_commit"]);
         assert_eq!(runtime["commit_time"], state["server_commit_time"]);
         assert_eq!(runtime["built_at"], state["server_built_at"]);
+        assert_eq!(runtime["artifact_bytes"], state["server_artifact_bytes"]);
+        assert_eq!(runtime["artifact_kind"], state["server_artifact_kind"]);
+        assert!(runtime["artifact_bytes"].as_u64().unwrap_or(0) > 0);
         // The supervisor's whole view of a pending restart. It rides here
         // rather than only on `/state` because a long AI turn is exactly when
         // a restart is asked for and exactly when `/state` cannot be built.
@@ -5928,6 +5973,11 @@ mod tests {
         assert!(EMBEDDED_INDEX.contains("function updateBuildMarker(st = state)"));
         assert!(EMBEDDED_INDEX.contains("st?.server_commit_time"));
         assert!(EMBEDDED_INDEX.contains("st?.server_built_at"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_artifact_bytes"));
+        assert!(EMBEDDED_INDEX.contains("st?.server_artifact_kind"));
+        assert!(EMBEDDED_INDEX.contains("function formatBuildSize(bytes)"));
+        assert!(EMBEDDED_INDEX.contains("(bytes / 1048576).toFixed(1)} MiB"));
+        assert!(EMBEDDED_INDEX.contains("(artifactSize ? ` · Build size ${artifactSize}` : \"\")"));
         assert!(EMBEDDED_INDEX.contains("commit.slice(0, 7)"));
         assert!(EMBEDDED_INDEX.contains("return parts.join(\" \") || \"0m\""));
         assert!(EMBEDDED_INDEX.contains("Commit is ${formatBuildAge(commitDate)} old"));

@@ -7778,11 +7778,17 @@ function formatBuildAge(buildDate) {
   ].filter(Boolean);
   return parts.join(" ") || "0m";
 }
+function formatBuildSize(bytes) {
+  if (!Number.isSafeInteger(bytes) || bytes <= 0) return "";
+  return `${(bytes / 1048576).toFixed(1)} MiB`;
+}
 function updateBuildMarker(st = state) {
   const marker = document.getElementById("buildmark");
   const commit = st?.server_commit;
   const commitTime = st?.server_commit_time;
   const builtAt = st?.server_built_at;
+  const artifactBytes = st?.server_artifact_bytes;
+  const artifactKind = st?.server_artifact_kind;
   const commitDate = typeof commitTime === "string" ? new Date(commitTime) : null;
   const buildDate = typeof builtAt === "string" ? new Date(builtAt) : null;
   if (!marker || typeof commit !== "string" || commit === "unknown" ||
@@ -7791,10 +7797,15 @@ function updateBuildMarker(st = state) {
     if (marker) marker.hidden = true;
     return;
   }
+  const artifactSize = formatBuildSize(artifactBytes);
   marker.textContent = `${commit.slice(0, 7)} · ` +
     `Commit is ${formatBuildAge(commitDate)} old · ` +
-    `Build is ${formatBuildAge(buildDate)} old`;
-  marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}`;
+    `Build is ${formatBuildAge(buildDate)} old` +
+    (artifactSize ? ` · Build size ${artifactSize}` : "");
+  marker.title = `${commit}\nCommitted ${commitTime}\nBuilt ${builtAt}` +
+    (artifactSize
+      ? `\n${artifactKind || "Artifact"} ${Math.round(artifactBytes).toLocaleString()} bytes`
+      : "");
   marker.hidden = false;
 }
 setInterval(() => updateBuildMarker(), 60_000);
