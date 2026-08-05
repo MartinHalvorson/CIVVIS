@@ -592,8 +592,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// improvement actions, so this is deliberately a protocol-v6 change rather
 /// than a compatibility re-pin; the fresh source fingerprint documents that
 /// the new ledger starts from this exact shared controller.
+///
+/// #1195 bounds only the live controller's global settlement-site search.
+/// `AdvancedAi::legacy()` keeps `settlement_safety` disabled, so it returns
+/// through the historical full-search path and the frozen `advanced_v1`
+/// controller remains byte-identical. Compatibility re-pin; the Elo protocol
+/// does not move.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xf83e_4abd_973d_0026;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xd1fd_2fc7_27cb_1c82;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
