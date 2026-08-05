@@ -8045,7 +8045,13 @@ mod tests {
         // instead of continuing to consume the world below it.
         assert!(EMBEDDED_INDEX.contains("--player-hud-max-height: min(38vh, 280px);"));
         assert!(EMBEDDED_INDEX.contains("maxHeightRatio:.38"));
-        assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(154, 50 + rows * 28);"));
+        assert!(EMBEDDED_INDEX.contains("const requestedHeight = Math.max(160, 27 + rows * 28);"));
+        assert!(EMBEDDED_INDEX.contains(
+            "const turnCountClasses = [\"turn-count\", compactTurn && \"turn-count-long\","
+        ));
+        assert!(EMBEDDED_INDEX.contains("font: 700 40px/1.1"));
+        assert!(EMBEDDED_INDEX.contains("player-standings-drag widget-drag-handle"));
+        assert!(!EMBEDDED_INDEX.contains("id=\"player-stats-title\""));
         assert!(EMBEDDED_INDEX.contains(
             "const playerScroll = hud.querySelector(\".diplomacy-ribbon\")?.scrollTop || 0;"
         ));

@@ -640,21 +640,29 @@
   }
   .turn-label { font-size: var(--type-control); }
   .turn-count {
-    min-width: 0; display: grid; place-content: center; gap: 1px; margin: 4px 0 5px;
+    min-width: 0; display: flex; flex-wrap: nowrap; align-items: baseline; justify-content: center;
+    column-gap: 5px; row-gap: 2px; margin: 3px 0 5px;
   }
-  .turn-heading, .turn-progress {
-    min-width: 0; display: flex; align-items: baseline; justify-content: center;
+  .turn-count.turn-count-playing-on { flex-wrap: wrap; }
+  .turn-progress {
+    flex: 1 1 auto; min-width: 0; width: auto;
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline;
+    column-gap: 4px; white-space: nowrap;
   }
-  .turn-heading { gap: 5px; }
-  .turn-progress { gap: 4px; white-space: nowrap; }
+  /* Late-game four-digit turns keep the same one-line reading by spending a
+     little less space on its supporting labels, not by wrapping the number. */
+  .turn-count.turn-count-long { column-gap: 3px; }
+  .turn-count.turn-count-long .turn-progress { column-gap: 2px; }
+  .turn-count.turn-count-long .turn-label { letter-spacing: .04em; }
   .turn-era {
     min-width: 0; overflow: hidden; color: #e1e8e4;
     font-size: clamp(14px, 1vw, 15px); font-weight: 850; letter-spacing: -.01em;
     line-height: 1.05; text-overflow: ellipsis; white-space: nowrap;
   }
   .victory-turn strong {
-    color: #f4d892; font: 700 28px/.9 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
-    font-variant-numeric: tabular-nums; text-shadow: 0 2px 10px #0009;
+    min-width: 0; display: block; color: #f4d892;
+    font: 700 40px/1.1 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-variant-numeric: tabular-nums; text-align: right; text-shadow: 0 2px 10px #0009;
   }
   .victory-turn .turn-total {
     color: #8fa29a; font-size: var(--type-control); font-weight: 800; font-variant-numeric: tabular-nums;
@@ -710,8 +718,8 @@
   /* Borrowed turns. It sits under the turn cap because that cap is the thing
      it explains: the number went up because somebody asked it to. */
   .turn-playon {
-    color: #f0d99c; font-size: var(--type-caption); font-weight: 900; letter-spacing: .05em;
-    line-height: 1; text-transform: uppercase; white-space: nowrap;
+    flex: 0 0 100%; color: #f0d99c; font-size: var(--type-caption); font-weight: 900;
+    letter-spacing: .05em; line-height: 1; text-align: center; text-transform: uppercase; white-space: nowrap;
   }
   .victory-meter { overflow: hidden; background: #020706b3; box-shadow: inset 0 1px 2px #000b; }
   .victory-meter b { display: block; height: 100%; border-radius: inherit; background: currentColor; }
@@ -2290,16 +2298,9 @@
      expanded dossier still hangs off #playerhud itself. */
   #playerhud > .player-standings {
     grid-column: 2; grid-row: 1; min-width: 0; min-height: 0;
-    display: flex; flex-direction: column; gap: 3px;
+    display: flex; flex-direction: column;
   }
-  .ribbon-heading {
-    position: relative; min-height: 20px; display: flex; align-items: center;
-    justify-content: center; padding: 0 4px; overflow: hidden; color: #c7d3ce;
-    font-size: var(--type-secondary); font-weight: 900; letter-spacing: .10em; line-height: 1;
-    text-transform: uppercase; white-space: nowrap; text-shadow: 0 2px 5px #000;
-  }
-  .ribbon-heading.widget-drag-handle::before { position: absolute; left: 4px; }
-  /* The heading is the positioning context for the column bars laid over it.
+  /* The column heads are the positioning context for the bars laid over them.
 
      The transparent border is not decoration: a row below carries a real 1px
      border that says whether that civilization is allied, at war or defeated,
@@ -2316,6 +2317,14 @@
     align-items: stretch; gap: var(--hud-column-gap); padding: 0 4px 0 3px;
     border: 1px solid transparent;
   }
+  /* The title bar used to spend a whole row saying "Player stats". The empty
+     lock column already leads every table row, so its compact grip keeps the
+     movable-panel affordance without pushing the data below the turn plate. */
+  #playerhud .player-standings-drag {
+    grid-column: 1; grid-row: 1; z-index: 3; min-width: 0; min-height: 0;
+    display: grid; place-items: center; padding: 0; color: #d7b66aa6;
+  }
+  #playerhud .player-standings-drag::before { font-size: var(--type-control); }
   .diplomacy-identity-head {
     min-width: 0; display: grid; grid-column: 2 / 4;
     grid-template-columns: var(--hud-identity-tracks); overflow: hidden;
@@ -2625,8 +2634,7 @@
     font-size: var(--type-control); font-weight: 700; line-height: 1;
   }
   .overlay-close:hover { color: #fff; border-color: #9b6c66; background: #35201e; }
-  #playerhud .player-standings > .ribbon-heading, #victoryhud > .hud-section-heading,
-  .minimap-frame > .minimap-label { padding-right: 25px; }
+  #victoryhud > .hud-section-heading, .minimap-frame > .minimap-label { padding-right: 25px; }
   #zoomctl .overlay-close {
     position: static; order: 20; width: 28px; height: 34px; flex: 0 0 28px;
     border: 0; border-left: 1px solid #ffffff0c; border-radius: 0;
@@ -2665,9 +2673,7 @@
     min-width: 0; display: flex; align-items: center; gap: 4px; overflow: hidden;
     color: inherit; cursor: grab; touch-action: none; user-select: none;
   }
-  .hud-section-heading.widget-drag-handle,
-  .ribbon-heading.widget-drag-handle,
-  .minimap-label.widget-drag-handle { width: 100%; }
+  .hud-section-heading.widget-drag-handle, .minimap-label.widget-drag-handle { width: 100%; }
   .widget-drag-handle:active { cursor: grabbing; }
   .widget-drag-handle::before {
     content: "\22ee"; flex: 0 0 auto; color: #d7b66aa6; font-size: var(--type-control);
@@ -2813,7 +2819,6 @@
        own head at one end of the table and two pixels right of it at the
        other. */
     #playerhud .diplomacy-card, #playerhud .ribbon-stat-heading { padding-inline: 2px; }
-    .ribbon-heading { padding-inline: 2px; }
     .diplomacy-stat-head { font-size: var(--type-micro); }
   }
   /* A wide browser can still leave a narrow map after the viewer opens the
@@ -2845,7 +2850,6 @@
   #maparea.player-hud-compact .victory-track:first-child { border-left-color: transparent; }
   #maparea.player-hud-compact #playerhud .diplomacy-card,
   #maparea.player-hud-compact #playerhud .ribbon-stat-heading { padding-inline: 2px; }
-  #maparea.player-hud-compact .ribbon-heading { padding-inline: 2px; }
   #maparea.player-hud-compact .diplomacy-stat-head { font-size: var(--type-micro); }
   #maparea.player-hud-narrow #playerhud {
     --hud-watch-column: 68px; --hud-ident-min: 21px; --hud-stat-min: 30px; --hud-stat-gap: 2px;
@@ -3113,8 +3117,7 @@
     background: linear-gradient(195deg, #090b0ded, #111417e8 54%, #080a0ced);
   }
   .hud-region { background: #07090a7d; }
-  .hud-section-heading, .ribbon-heading,
-  #victoryhud > .hud-section-heading { color: #c4c9c6; }
+  .hud-section-heading, #victoryhud > .hud-section-heading { color: #c4c9c6; }
   .diplomacy-card, #playerhud .diplomacy-card.pinned {
     background: linear-gradient(105deg, #0b0d0ff5, #171a1cee);
   }
@@ -4215,8 +4218,11 @@ const RESOURCE_PICTOGRAM = {
 // a 16px disc on a hex 62 across: legible only if you already knew what you
 // were looking for. Disc, rim, survey dot and pictogram share one scale, so the
 // badge remains one coherent annotation rather than independently sized parts.
-const RES_BADGE_K = 1.5;
+// 1.72 keeps the material silhouette legible at the ordinary command-map scale
+// while the derived seat still leaves its outer rim inside the owning hex.
+const RES_BADGE_K = 1.72;
 const RES_BADGE_R = 8.2 * RES_BADGE_K;
+const RES_BADGE_DETAIL_SCALE = 0.58;
 // How far out along the bottom-corner ray the badge is seated, as a fraction
 // of S. Derived rather than tuned: a seat `d` out along a corner ray stands
 // (S - d) * SQ3/2 from either of the two edges that meet at that corner, and
@@ -5409,7 +5415,7 @@ const HUD_WIDGETS = {
   // very little of its height. They are capped below two-fifths of that height
   // however they are sized — by the player count, by a dragged edge, or by a
   // layout saved earlier — so a large table never swallows the world.
-  players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:154,
+  players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:160,
             maxHeightRatio:.38, avoidsSidebar:true},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96},
@@ -5832,7 +5838,6 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#specpause", min:11, max:15},
   {selector:"#restart-sim .lbl", min:10, max:14},
   {selector:"#restart-sim .sub", min:9, max:11},
-  {selector:"#playerhud .ribbon-heading > span", min:10, max:14},
   {selector:"#playerhud .diplomacy-identity-head span", min:8.5, max:11},
   {selector:"#playerhud .spectator-view-link", min:9, max:10},
   // 8.5px floor, not 9: WNDR and SCORE are the two longest heads and at a
@@ -5861,8 +5866,14 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .watch-as-link", min:9, max:12, slack:6},
   {selector:"#playerhud .turn-era", min:12, max:17},
   {selector:"#playerhud .turn-label", min:11, max:14},
-  {selector:"#playerhud .victory-turn strong", min:24, max:34},
+  {selector:"#playerhud .victory-turn strong", min:24, max:40},
   {selector:"#playerhud .turn-total", min:10, max:14},
+  // A four-digit current turn needs its whole reading to remain together in
+  // the narrow plate. It is still fitted independently from the ordinary,
+  // deliberately large early-game turn number above.
+  {selector:"#playerhud .turn-count.turn-count-long .turn-label", min:10, max:11},
+  {selector:"#playerhud .turn-count.turn-count-long strong", min:14, max:26},
+  {selector:"#playerhud .turn-count.turn-count-long .turn-total", min:9, max:10},
   // The settings block is fitted as one piece, not cell by cell. Its single
   // grid track holds the widest whole row, so the block's own overflow is the
   // exact amount it is too big by — and one size for every row is what keeps
@@ -9832,12 +9843,13 @@ function drawFeatureEffects(t, x, y) {
   }
 }
 
-// Strategic terrain marks are tiny map symbols, not reduced illustrations.
-// Marsh uses a shallow inverse-hill silhouette: a broad, very low W that reads
-// as wet ground without competing with units, yields, or improvements. Keep
-// its vertical profile at one third of the original 15 px design.
+// Strategic terrain marks are map symbols rather than reduced illustrations.
+// They are deliberately large enough to remain visible around a unit token,
+// but the tile pass clips them to their owning hex before they touch the map.
+// Marsh keeps its low, broad inverse-hill silhouette so it still reads as wet
+// ground rather than a fourth kind of tree.
 function drawStrategicMarsh(x, y) {
-  const h = 1 / 3;
+  const h = .6;
   cx.save();
   cx.lineCap = "round"; cx.lineJoin = "round";
   cx.fillStyle = "#86cddd";
@@ -9891,6 +9903,205 @@ function drawStrategicFloodplains(t, x, y) {
       cx.stroke();
     }
   }
+  cx.restore();
+}
+
+// Feature landmarks share an enlarged footprint. A strategic unit can fill
+// most of its cell at survey zoom, so a centre-sized forest or reef disappears
+// completely underneath it. Scaling feature art from the tile centre gives it
+// a visible rim around that token; `drawFlatStrategicTerrainMark` below clips
+// the enlarged silhouette back to this exact hex. Planet cells already supply
+// their own projected-face clip through `withPlanetStrategicCell`.
+const STRATEGIC_FEATURE_ICON_SCALE = 1.42;
+const STRATEGIC_FEATURE_MARKS = new Set([
+  "forest", "jungle", "burning_forest", "burnt_forest",
+  "burning_jungle", "burnt_jungle", "marsh", "oasis", "reef",
+  "geothermal_fissure", "ice", "impact_zone"
+]);
+
+function drawStrategicHillIcon(x, y) {
+  // Keep the 20%-wider footprint and fixed lower-corner baseline, but draw
+  // the lobes twice as tall so the landform reads clearly at survey zoom.
+  const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
+  // Seat the base on the horizontal through the hex's two lower outside
+  // corners. Deriving it from the projected hex keeps the glyph aligned if
+  // tile size or Strategic's pitch ever changes.
+  const hillBaseY = y + S * YS / 2;
+  cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
+  cx.beginPath();
+  cx.ellipse(x - 7 * hillWidth, hillBaseY,
+             6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
+  cx.ellipse(x + 6 * hillWidth, hillBaseY,
+             6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
+  cx.stroke();
+}
+
+function drawStrategicWoodlandIcon(t, x, y) {
+  const jungle = t.feature.includes("jungle");
+  // On a hill the stand rides up onto the crest instead of sinking into it.
+  const lift = t.hills ? -7 : 0;
+  cx.save();
+  cx.translate(x, y);
+  cx.scale(STRATEGIC_FEATURE_ICON_SCALE, STRATEGIC_FEATURE_ICON_SCALE);
+  cx.translate(-x, -y);
+  if (jungle) {
+    // Rainforest still sweeps down and right: broad, horizontal crowns make a
+    // humid canopy, rather than a row of conifers.
+    for (const [dx, dy, height, spread] of [[-10, -3, 12, 7.5],
+                                              [1, 3, 15, 8.5],
+                                              [10, 7, 11, 6.8]]) {
+      const tx = x + dx, base = y + dy + 4 + lift;
+      cx.strokeStyle = "#4a3a24"; cx.lineWidth = 1.9;
+      cx.beginPath(); cx.moveTo(tx, base); cx.lineTo(tx, base - height); cx.stroke();
+      cx.fillStyle = "#174c2c";
+      cx.beginPath(); cx.ellipse(tx, base - height - 1, spread, 3.8, 0, 0, 7); cx.fill();
+      cx.fillStyle = "#2a7040";
+      cx.beginPath(); cx.ellipse(tx - 1.2, base - height - 2.5,
+                                 spread * .72, 2.35, -.12, 0, 7); cx.fill();
+    }
+  } else {
+    // Woods climb from the lower right toward the upper left. That reversed
+    // diagonal is intentional: it keeps the pointed fir stand distinct from
+    // rainforest's broad canopy even when a unit covers their centres.
+    for (const [dx, dy, height, spread] of [[10, 9, 13, 6.5],
+                                              [0, 1, 16, 7.5],
+                                              [-10, -7, 18, 8.5]]) {
+      const tx = x + dx, base = y + dy + 4 + lift;
+      cx.strokeStyle = "#142d1b"; cx.lineWidth = 1.15;
+      cx.beginPath(); cx.moveTo(tx, base + 1); cx.lineTo(tx, base - height * .28); cx.stroke();
+      cx.fillStyle = "#183f23";
+      tri(tx - spread, base, tx, base - height, tx + spread, base);
+      cx.fillStyle = "#2a6634";
+      tri(tx - spread * .68, base - height * .24,
+          tx, base - height * .84, tx + spread * .68, base - height * .24);
+    }
+  }
+  cx.restore();
+}
+
+function drawStrategicReefIcon(x, y) {
+  cx.save();
+  cx.lineCap = "round"; cx.lineJoin = "round";
+  // A dark-edged lagoon makes this a feature of the water, not three loose
+  // turquoise dots. Warm coral heads on top remain recognizable at a glance.
+  cx.fillStyle = "#1e6f8a"; cx.strokeStyle = "#0d4054"; cx.lineWidth = 1.45;
+  cx.beginPath(); cx.ellipse(x, y + 4, 17, 8.2, 0, 0, 7); cx.fill(); cx.stroke();
+  cx.fillStyle = "rgba(136,224,214,.58)";
+  cx.beginPath(); cx.ellipse(x - 2, y + 2.5, 12.5, 4.5, -.08, 0, 7); cx.fill();
+
+  const coralHead = (px, py, size, fill, edge) => {
+    cx.save(); cx.translate(px, py); cx.scale(size, size);
+    cx.fillStyle = fill; cx.strokeStyle = edge; cx.lineWidth = 1.15;
+    cx.beginPath();
+    cx.moveTo(-5, 5); cx.lineTo(-5, 1);
+    cx.quadraticCurveTo(-7, -1, -5, -3);
+    cx.lineTo(-3, 0); cx.lineTo(-3, -6);
+    cx.quadraticCurveTo(-1, -8, 1, -6);
+    cx.lineTo(1, -1); cx.lineTo(4, -5);
+    cx.quadraticCurveTo(7, -4, 5, 0);
+    cx.lineTo(5, 5); cx.closePath(); cx.fill(); cx.stroke();
+    cx.strokeStyle = "rgba(255,244,205,.55)"; cx.lineWidth = .7;
+    cx.beginPath(); cx.moveTo(-2, 3); cx.lineTo(-2, -3); cx.moveTo(2, 3); cx.lineTo(2, -1); cx.stroke();
+    cx.restore();
+  };
+  coralHead(x - 9, y + 4, .85, "#e17c65", "#693d36");
+  coralHead(x, y + 1.5, 1.15, "#eab15e", "#704f31");
+  coralHead(x + 9, y + 5, .72, "#b975a9", "#583a61");
+  cx.strokeStyle = "rgba(220,255,247,.74)"; cx.lineWidth = 1.05;
+  cx.beginPath();
+  cx.arc(x - 12, y + 1, 4.8, .25, 2.55);
+  cx.arc(x + 12, y + 6, 4, 3.45, 5.85);
+  cx.stroke();
+  cx.restore();
+}
+
+function drawStrategicOasisIcon(x, y) {
+  // Preserve the visual centre of the pond-and-palm group as it grows.
+  cx.save();
+  cx.translate(x, y); cx.scale(2, 2); cx.translate(-2.5, 1.5);
+  cx.fillStyle = "#3d7aa6"; cx.beginPath();
+  cx.ellipse(0, 3, 8.5, 5.5, 0, 0, 7); cx.fill();
+  cx.font = "13px sans-serif"; cx.fillText("🌴", 7, -5);
+  cx.restore();
+}
+
+function drawStrategicGeothermalFissureIcon(x, y) {
+  // Lift the whole landmark clear of the hills beneath it. The pools keep
+  // their heights but are exactly 30% wider, so they read at survey zoom
+  // without making the fissure taller or pushing it farther down the tile.
+  const gy = y - 4;
+  cx.fillStyle = "#66b6b3"; cx.strokeStyle = "#286f72"; cx.lineWidth = 1.1;
+  for (const [dx, dy, rx, ry] of [[-7, 5, 7.8, 2.8], [7, 7, 6.5, 2.3]]) {
+    cx.beginPath(); cx.ellipse(x + dx, gy + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
+  }
+  cx.fillStyle = "#dcece8";
+  cx.strokeStyle = "#8fbfc4"; cx.lineWidth = .9;
+  cx.beginPath(); cx.moveTo(x - 2.2, gy + 3);
+  cx.bezierCurveTo(x - 1.4, gy - 3, x - 1.1, gy - 10, x, gy - 16);
+  cx.bezierCurveTo(x + 1.2, gy - 10, x + 1.6, gy - 3, x + 2.2, gy + 3);
+  cx.closePath(); cx.fill(); cx.stroke();
+  cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.5;
+  cx.beginPath();
+  cx.arc(x, gy - 14, 4.5, 3.55, 5.9);
+  cx.moveTo(x - 1, gy - 12); cx.lineTo(x - 4, gy - 8);
+  cx.moveTo(x + 1, gy - 12); cx.lineTo(x + 4, gy - 8);
+  cx.stroke();
+}
+
+function drawStrategicIceIcon(x, y) {
+  cx.fillStyle = "#dfeff3"; cx.strokeStyle = "#7db3c5"; cx.lineWidth = 1.4;
+  cx.beginPath(); cx.moveTo(x - 15, y - 3); cx.lineTo(x - 5, y - 12);
+  cx.lineTo(x + 13, y - 8); cx.lineTo(x + 16, y + 7); cx.lineTo(x, y + 11);
+  cx.lineTo(x - 13, y + 6); cx.closePath(); cx.fill(); cx.stroke();
+}
+
+function drawStrategicTerrainMark(t, x, y) {
+  if (t.feature === "volcano") { drawStrategicMountainIcon(x, y, true); return; }
+  if (t.terrain === "mountain") { drawStrategicMountainIcon(x, y, false); return; }
+  if (t.hills) drawStrategicHillIcon(x, y);
+  if (!STRATEGIC_FEATURE_MARKS.has(t.feature)) return;
+
+  cx.save();
+  cx.translate(x, y);
+  cx.scale(STRATEGIC_FEATURE_ICON_SCALE, STRATEGIC_FEATURE_ICON_SCALE);
+  cx.translate(-x, -y);
+  if (["forest", "jungle", "burning_forest", "burnt_forest",
+       "burning_jungle", "burnt_jungle"].includes(t.feature)) {
+    // Woodland owns its scale so the individual crowns retain a coherent
+    // internal proportion; cancel the shared transform before it applies one.
+    cx.restore();
+    drawStrategicWoodlandIcon(t, x, y);
+    return;
+  } else if (t.feature === "marsh") {
+    drawStrategicMarsh(x, y);
+  } else if (t.feature === "oasis") {
+    drawStrategicOasisIcon(x, y);
+  } else if (t.feature === "reef") {
+    drawStrategicReefIcon(x, y);
+  } else if (t.feature === "geothermal_fissure") {
+    drawStrategicGeothermalFissureIcon(x, y);
+  } else if (t.feature === "ice") {
+    drawStrategicIceIcon(x, y);
+  } else if (t.feature === "impact_zone") {
+    cx.fillStyle = "#292523"; cx.strokeStyle = "#d16a2f"; cx.lineWidth = 2;
+    cx.beginPath(); cx.arc(x, y, 11, 0, 7); cx.fill(); cx.stroke();
+  }
+  cx.restore();
+}
+
+function drawFlatStrategicTerrainMark(t, x, y) {
+  cx.save();
+  // Unlike a unit, a terrain mark represents the ground itself; it may fill
+  // the tile but may not paint across a neighbour's edge.
+  hexPath(x, y, S - .55); cx.clip();
+  drawStrategicTerrainMark(t, x, y);
+  cx.restore();
+}
+
+function drawFlatStrategicFloodplains(t, x, y) {
+  cx.save();
+  hexPath(x, y, S - .55); cx.clip();
+  drawStrategicFloodplains(t, x, y);
   cx.restore();
 }
 
@@ -10595,21 +10806,48 @@ function drawResourceBadge(t, x, y) {
   const rim = rc === "strategic" ? "#ff9d5c"
     : rc === "luxury" ? "#d9a0f0" : "#e6ddbd";
   const [rx, ry] = resourceBadgeSlot(x, y, S * RES_BADGE_SEAT);
-  const detailedResource = FINE();
+  // Resource art is useful before the rest of the fine pass is. At this
+  // larger size a material silhouette still has enough pixels to distinguish
+  // wheat from iron or fish at ordinary map zoom, while the farthest survey
+  // view stays a lightweight class mark.
+  const detailedResource = cam.scale >= RES_BADGE_DETAIL_SCALE;
   if (detailedResource) {
-    cx.fillStyle = "#161c14cc";
+    // A two-step dark plate separates the pictogram from every terrain tone,
+    // then the class-coloured rim tells strategic/luxury/bonus at a glance.
+    cx.fillStyle = "#07110fe0";
+    cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R + 1.2, 0, 7); cx.fill();
+    cx.fillStyle = "#16231ce8";
     cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R, 0, 7); cx.fill();
-    cx.strokeStyle = rim + "dd"; cx.lineWidth = 1.5 * RES_BADGE_K; cx.stroke();
-    drawResourcePictogram(t.resource, rx, ry, RES_BADGE_R * 1.55);
+    cx.strokeStyle = rim + "ee"; cx.lineWidth = 1.7 * RES_BADGE_K; cx.stroke();
+    cx.strokeStyle = "rgba(255,250,222,.28)"; cx.lineWidth = .55 * RES_BADGE_K;
+    cx.beginPath(); cx.arc(rx, ry, RES_BADGE_R - 1.3 * RES_BADGE_K, 0, 7); cx.stroke();
+    drawResourcePictogram(t.resource, rx, ry, RES_BADGE_R * 1.74);
   } else {
-    // Zoomed out to survey the map, the icon inside the badge is under a pixel
-    // and unreadable, and a few hundred dark discs read as the map being
-    // spotted with holes. What is still worth knowing at that range is that a
-    // deposit is there and what class it is — so it becomes a legible dot in
-    // the class color instead of an illegible badge.
+    // At the very far survey scale, an individual material silhouette becomes
+    // noise. Keep the deposit prominent with an intentionally different
+    // centre mark for each resource class instead of a field of anonymous dots.
+    const dot = 4.15 * RES_BADGE_K;
+    cx.fillStyle = "#0b1511d8";
+    cx.beginPath(); cx.arc(rx, ry, dot + 1.05, 0, 7); cx.fill();
     cx.fillStyle = rim;
-    cx.beginPath(); cx.arc(rx, ry, 3.6 * RES_BADGE_K, 0, 7); cx.fill();
-    cx.strokeStyle = "#161c14bb"; cx.lineWidth = 1.2 * RES_BADGE_K; cx.stroke();
+    cx.beginPath(); cx.arc(rx, ry, dot, 0, 7); cx.fill();
+    cx.strokeStyle = "#101914d8"; cx.lineWidth = 1.1 * RES_BADGE_K; cx.stroke();
+    cx.fillStyle = "#101914";
+    if (rc === "strategic") {
+      tri(rx, ry - dot * .52, rx + dot * .52, ry, rx, ry + dot * .52);
+      tri(rx, ry - dot * .52, rx - dot * .52, ry, rx, ry + dot * .52);
+    } else if (rc === "luxury") {
+      cx.beginPath();
+      for (let point = 0; point < 8; point++) {
+        const angle = -Math.PI / 2 + point * Math.PI / 4;
+        const radius = point % 2 ? dot * .32 : dot * .63;
+        const px = rx + Math.cos(angle) * radius, py = ry + Math.sin(angle) * radius;
+        point ? cx.lineTo(px, py) : cx.moveTo(px, py);
+      }
+      cx.closePath(); cx.fill();
+    } else {
+      cx.beginPath(); cx.arc(rx, ry, dot * .4, 0, 7); cx.fill();
+    }
   }
 }
 
@@ -10792,20 +11030,56 @@ function drawImprovement(t, x, y) {
       cx.beginPath(); cx.ellipse(x + bx + 4, y + by + 1.2, 3.4, 1.1, 0, 0, 7); cx.fill();
     }
   } else if (imp === "mine") {
-    const heapSun = new Path2D();                   // spoil heap, two slopes
-    heapSun.moveTo(x - 2, y - 4); heapSun.lineTo(x - 2 + dir * 9, y + 8);
-    heapSun.lineTo(x - 2, y + 8); heapSun.closePath();
-    const heapShade = new Path2D();
-    heapShade.moveTo(x - 2, y - 4); heapShade.lineTo(x - 2 - dir * 9, y + 8);
-    heapShade.lineTo(x - 2, y + 8); heapShade.closePath();
-    cx.fillStyle = tone("#6b6f77", 1.22); cx.fill(heapSun);
-    cx.fillStyle = tone("#6b6f77", .6); cx.fill(heapShade);
-    cx.fillStyle = "#12161c";                       // adit mouth
-    cx.beginPath(); cx.arc(x - 2, y + 8, 3.6, Math.PI, 0); cx.fill();
-    cx.fillStyle = "rgba(210,226,240,.2)";          // lintel catching the sky
-    cx.beginPath(); cx.arc(x - 2, y + 8, 3.6, Math.PI, Math.PI * 1.35); cx.fill();
-    shaft(x + 6, y + 8, x + 10, y - 3, 1.6, dir, "#a8813f");
-    shaft(x + 10, y - 3, x + 4.5, y - 1.5, 1.2, dir, "#8e6c33");
+    // A mine needs a dark portal and timber headframe — the previous tiny
+    // spoil triangle read as a quarry or just another grey rock. The broader
+    // hillside gives the entrance a place to go; the wheel and A-frame make
+    // the work unmistakable even after the unit plate sits over its centre.
+    const spoil = new Path2D();
+    spoil.moveTo(x - 14, y + 8); spoil.quadraticCurveTo(x - 10, y - 2, x - 3, y - 8);
+    spoil.quadraticCurveTo(x + 5, y - 6, x + 13, y + 8);
+    spoil.lineTo(x - 14, y + 8); spoil.closePath();
+    cx.fillStyle = matteMat("#66707a", dir, 13); cx.fill(spoil);
+    cx.strokeStyle = "rgba(25,31,35,.78)"; cx.lineWidth = 1.1; cx.stroke(spoil);
+    cx.fillStyle = "rgba(198,211,218,.24)";
+    cx.beginPath(); cx.moveTo(x - 11, y + 6); cx.quadraticCurveTo(x - 7, y - 1, x - 2, y - 5);
+    cx.lineTo(x - 2, y + 7); cx.closePath(); cx.fill();
+    cx.strokeStyle = "rgba(38,43,45,.68)"; cx.lineWidth = .95;
+    cx.beginPath();
+    cx.moveTo(x - 12, y + 6); cx.lineTo(x - 5, y + 2);
+    cx.moveTo(x + 2, y - 4); cx.lineTo(x + 9, y + 6);
+    cx.stroke();
+
+    // Timbered adit: the light posts put a readable doorway around the black
+    // opening, unlike a bare half-circle that merges into dark terrain.
+    const adit = new Path2D();
+    adit.moveTo(x - 9, y + 8); adit.lineTo(x - 9, y + 2.5);
+    adit.quadraticCurveTo(x - 9, y - 3, x - 4, y - 3);
+    adit.quadraticCurveTo(x + 1, y - 3, x + 1, y + 2.5);
+    adit.lineTo(x + 1, y + 8); adit.closePath();
+    cx.fillStyle = "#0b1215"; cx.fill(adit);
+    cx.strokeStyle = "#bd8d4d"; cx.lineWidth = 2.05;
+    cx.beginPath();
+    cx.moveTo(x - 8, y + 8); cx.lineTo(x - 8, y + 2.5);
+    cx.quadraticCurveTo(x - 8, y - 1.8, x - 4, y - 1.8);
+    cx.quadraticCurveTo(x, y - 1.8, x, y + 2.5);
+    cx.lineTo(x, y + 8); cx.stroke();
+    cx.strokeStyle = "rgba(255,220,150,.46)"; cx.lineWidth = .7;
+    cx.beginPath(); cx.moveTo(x - 6.7, y + 7); cx.lineTo(x - 6.7, y + 1.5); cx.stroke();
+
+    // Compact A-frame and pulley. It rises above the spoil mound so its
+    // silhouette survives dense terrain and says "mine" before fine detail.
+    cx.strokeStyle = "#9d713a"; cx.lineWidth = 1.65;
+    cx.beginPath();
+    cx.moveTo(x + 4, y + 8); cx.lineTo(x + 8, y - 11); cx.lineTo(x + 13, y + 8);
+    cx.moveTo(x + 5.8, y + 1); cx.lineTo(x + 11.3, y + 1);
+    cx.moveTo(x + 6.8, y - 5); cx.lineTo(x + 9.8, y - 5);
+    cx.stroke();
+    cx.fillStyle = "#e1bd63"; cx.strokeStyle = "#2b261d"; cx.lineWidth = 1;
+    cx.beginPath(); cx.arc(x + 8.3, y - 5, 2.45, 0, 7); cx.fill(); cx.stroke();
+    cx.strokeStyle = "#4d3822"; cx.lineWidth = .9;
+    cx.beginPath(); cx.moveTo(x + 8.3, y - 2.5); cx.lineTo(x + 8.3, y + 5.4); cx.stroke();
+    cx.fillStyle = "#4d5960";
+    cx.beginPath(); cx.roundRect(x + 5.8, y + 4.6, 5, 3.1, .7); cx.fill();
   } else if (imp === "lumber_mill") {
     for (const [lx, ly] of [[-8, 4], [-1, 4], [-4.5, -1.5]]) {
       ball(x + lx, y + ly, 3.4, "#8a6033", dir, "rgba(40,28,14,.7)", .9);
@@ -16343,70 +16617,8 @@ function drawPlanetStrategicTerrain(cells, visible, spectator) {
         drawStrategicMountainIcon(0, 0, false);
         return;
       }
-      if (t.hills) {
-        const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
-        const hillBaseY = S * YS / 2;
-        cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
-        cx.beginPath();
-        cx.ellipse(-7 * hillWidth, hillBaseY, 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
-        cx.ellipse(6 * hillWidth, hillBaseY, 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
-        cx.stroke();
-      }
-      if (["forest", "jungle", "burning_forest", "burnt_forest",
-           "burning_jungle", "burnt_jungle"].includes(t.feature)) {
-        const jungle = t.feature.includes("jungle"), lift = t.hills ? -7 : 0;
-        for (const [dx, dy] of [[-9, -2], [1, 2], [9, 5]]) {
-          const tx = dx, ty = dy + 4 + lift;
-          if (jungle) {
-            cx.strokeStyle = "#4a3a24"; cx.lineWidth = 1.8;
-            cx.beginPath(); cx.moveTo(tx, ty); cx.lineTo(tx, ty - 12); cx.stroke();
-            cx.fillStyle = "#1d5c33";
-            cx.beginPath(); cx.ellipse(tx, ty - 13, 7.5, 3.4, 0, 0, 7); cx.fill();
-          } else {
-            cx.fillStyle = "#1e4d24";
-            tri(tx - 7, ty, tx, ty - 14, tx + 7, ty);
-          }
-        }
-      } else if (t.feature === "marsh") {
-        drawStrategicMarsh(0, 0);
-      } else if (t.feature === "oasis") {
-        cx.save();
-        cx.scale(2, 2); cx.translate(-2.5, 1.5);
-        cx.fillStyle = "#3d7aa6"; cx.beginPath();
-        cx.ellipse(0, 3, 8.5, 5.5, 0, 0, 7); cx.fill();
-        cx.font = "13px sans-serif"; cx.fillText("🌴", 7, -5);
-        cx.restore();
-      } else if (t.feature === "reef") {
-        cx.fillStyle = "#72d3c2";
-        for (const [dx, dy, radius] of [[-7, 2, 4], [1, -3, 5], [8, 5, 3]]) {
-          cx.beginPath(); cx.arc(dx, dy, radius, 0, 7); cx.fill();
-        }
-      } else if (t.feature === "geothermal_fissure") {
-        const gy = -4;
-        cx.fillStyle = "#66b6b3"; cx.strokeStyle = "#286f72"; cx.lineWidth = 1.1;
-        for (const [dx, dy, rx, ry] of [[-7, 5, 7.8, 2.8], [7, 7, 6.5, 2.3]]) {
-          cx.beginPath(); cx.ellipse(dx, gy + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
-        }
-        cx.fillStyle = "#dcece8"; cx.strokeStyle = "#8fbfc4"; cx.lineWidth = .9;
-        cx.beginPath(); cx.moveTo(-2.2, gy + 3);
-        cx.bezierCurveTo(-1.4, gy - 3, -1.1, gy - 10, 0, gy - 16);
-        cx.bezierCurveTo(1.2, gy - 10, 1.6, gy - 3, 2.2, gy + 3);
-        cx.closePath(); cx.fill(); cx.stroke();
-        cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.5;
-        cx.beginPath();
-        cx.arc(0, gy - 14, 4.5, 3.55, 5.9);
-        cx.moveTo(-1, gy - 12); cx.lineTo(-4, gy - 8);
-        cx.moveTo(1, gy - 12); cx.lineTo(4, gy - 8);
-        cx.stroke();
-      } else if (t.feature === "ice") {
-        cx.fillStyle = "#dfeff3"; cx.strokeStyle = "#7db3c5"; cx.lineWidth = 1.4;
-        cx.beginPath(); cx.moveTo(-15, -3); cx.lineTo(-5, -12);
-        cx.lineTo(13, -8); cx.lineTo(16, 7); cx.lineTo(0, 11);
-        cx.lineTo(-13, 6); cx.closePath(); cx.fill(); cx.stroke();
-      } else if (t.feature === "impact_zone") {
-        cx.fillStyle = "#292523"; cx.strokeStyle = "#d16a2f"; cx.lineWidth = 2;
-        cx.beginPath(); cx.arc(0, 0, 11, 0, 7); cx.fill(); cx.stroke();
-      }
+      if (t.hills || STRATEGIC_FEATURE_MARKS.has(t.feature))
+        drawStrategicTerrainMark(t, 0, 0);
       drawFeatureEffects(t, 0, 0);
       if (t.improvement === "barbarian_camp" || campSet.has(tileKey)) {
         drawBarbarianCamp(0, 0);
@@ -17783,99 +17995,18 @@ function draw() {
       continue;
     }
     if (t.feature === "volcano") {
-      drawStrategicMountainIcon(x, y, true);
+      drawFlatStrategicTerrainMark(t, x, y);
       drawFeatureEffects(t, x, y);
       continue;
     }
     if (t.terrain === "mountain") {
-      drawStrategicMountainIcon(x, y, false);
+      drawFlatStrategicTerrainMark(t, x, y);
       continue;
     }
-    if (t.hills) {
-      // Keep the 20%-wider footprint and fixed lower-corner baseline, but draw
-      // the lobes twice as tall so the landform reads clearly at survey zoom.
-      const hillWidth = 1.2, hillHeight = 2.6 * 1.4 * 2;
-      // Seat the base on the horizontal through the hex's two lower outside
-      // corners. Deriving it from the projected hex keeps the glyph aligned if
-      // tile size or Strategic's pitch ever changes.
-      const hillBaseY = y + S * YS / 2;
-      cx.strokeStyle = "#00000080"; cx.lineWidth = 2.4;
-      cx.beginPath();
-      cx.ellipse(x - 7 * hillWidth, hillBaseY,
-                 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
-      cx.ellipse(x + 6 * hillWidth, hillBaseY,
-                 6.5 * hillWidth, hillHeight, 0, Math.PI, 0);
-      cx.stroke();
-    }
-    if (["forest", "jungle", "burning_forest", "burnt_forest",
-                "burning_jungle", "burnt_jungle"].includes(t.feature)) {
-      const jungle = t.feature.includes("jungle");
-      // On a hill the stand rides up onto the crest instead of sinking into it.
-      const lift = t.hills ? -7 : 0;
-      // Same stand, drawn as a glyph: firs for woods, a bare trunk under a
-      // spread canopy for rainforest, so the two never read as each other.
-      for (const [dx, dy] of [[-9, -2], [1, 2], [9, 5]]) {
-        const tx = x + dx, ty = y + dy + 4 + lift;
-        if (jungle) {
-          cx.strokeStyle = "#4a3a24"; cx.lineWidth = 1.8;
-          cx.beginPath(); cx.moveTo(tx, ty); cx.lineTo(tx, ty - 12); cx.stroke();
-          cx.fillStyle = "#1d5c33";
-          cx.beginPath(); cx.ellipse(tx, ty - 13, 7.5, 3.4, 0, 0, 7); cx.fill();
-        } else {
-          cx.fillStyle = "#1e4d24";
-          tri(tx - 7, ty, tx, ty - 14, tx + 7, ty);
-        }
-      }
-    } else if (t.feature === "marsh") {
-      drawStrategicMarsh(x, y);
-    } else if (t.feature === "oasis") {
-      // The original 17 x 11 pond and 13 px palm form a roughly 22 x 20 mark
-      // whose visual midpoint is (2.5, -1.5) from the hex centre. A 2.0 scale
-      // is 20% smaller than 2.5; subtract the original midpoint before scaling
-      // so the resized oasis remains centred in its owning tile.
-      cx.save();
-      cx.translate(x, y); cx.scale(2, 2); cx.translate(-2.5, 1.5);
-      cx.fillStyle = "#3d7aa6"; cx.beginPath();
-      cx.ellipse(0, 3, 8.5, 5.5, 0, 0, 7); cx.fill();
-      cx.font = "13px sans-serif"; cx.fillText("🌴", 7, -5);
-      cx.restore();
-    } else if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(t.feature)) {
-      drawStrategicFloodplains(t, x, y);
-    } else if (t.feature === "reef") {
-      cx.fillStyle = "#72d3c2";
-      for (const [dx,dy,r] of [[-7,2,4],[1,-3,5],[8,5,3]]) {
-        cx.beginPath(); cx.arc(x + dx, y + dy, r, 0, 7); cx.fill();
-      }
-    } else if (t.feature === "geothermal_fissure") {
-      // Lift the whole landmark clear of the hills beneath it. The pools keep
-      // their heights but are exactly 30% wider, so they read at survey zoom
-      // without making the fissure taller or pushing it farther down the tile.
-      const gy = y - 4;
-      cx.fillStyle = "#66b6b3"; cx.strokeStyle = "#286f72"; cx.lineWidth = 1.1;
-      for (const [dx, dy, rx, ry] of [[-7, 5, 7.8, 2.8], [7, 7, 6.5, 2.3]]) {
-        cx.beginPath(); cx.ellipse(x + dx, gy + dy, rx, ry, 0, 0, 7); cx.fill(); cx.stroke();
-      }
-      cx.fillStyle = "#dcece8";
-      cx.strokeStyle = "#8fbfc4"; cx.lineWidth = .9;
-      cx.beginPath(); cx.moveTo(x - 2.2, gy + 3);
-      cx.bezierCurveTo(x - 1.4, gy - 3, x - 1.1, gy - 10, x, gy - 16);
-      cx.bezierCurveTo(x + 1.2, gy - 10, x + 1.6, gy - 3, x + 2.2, gy + 3);
-      cx.closePath(); cx.fill(); cx.stroke();
-      cx.strokeStyle = "#dcece8"; cx.lineWidth = 1.5;
-      cx.beginPath();
-      cx.arc(x, gy - 14, 4.5, 3.55, 5.9);
-      cx.moveTo(x - 1, gy - 12); cx.lineTo(x - 4, gy - 8);
-      cx.moveTo(x + 1, gy - 12); cx.lineTo(x + 4, gy - 8);
-      cx.stroke();
-    } else if (t.feature === "ice") {
-      cx.fillStyle = "#dfeff3"; cx.strokeStyle = "#7db3c5"; cx.lineWidth = 1.4;
-      cx.beginPath(); cx.moveTo(x - 15, y - 3); cx.lineTo(x - 5, y - 12);
-      cx.lineTo(x + 13, y - 8); cx.lineTo(x + 16, y + 7); cx.lineTo(x, y + 11);
-      cx.lineTo(x - 13, y + 6); cx.closePath(); cx.fill(); cx.stroke();
-    } else if (t.feature === "impact_zone") {
-      cx.fillStyle = "#292523"; cx.strokeStyle = "#d16a2f"; cx.lineWidth = 2;
-      cx.beginPath(); cx.arc(x, y, 11, 0, 7); cx.fill(); cx.stroke();
-    }
+    if (t.hills || STRATEGIC_FEATURE_MARKS.has(t.feature))
+      drawFlatStrategicTerrainMark(t, x, y);
+    if (["floodplains", "grassland_floodplains", "plains_floodplains"].includes(t.feature))
+      drawFlatStrategicFloodplains(t, x, y);
     drawFeatureEffects(t, x, y);
     if (t.improvement === "barbarian_camp" || campSet.has(k)) {
       drawBarbarianCamp(x, y);
@@ -19162,12 +19293,17 @@ function hudTurnPlate() {
   // Name the selected stopping rule so "Playing on" never conceals whether a
   // later victory will finish it.
   const decided = state.decided;
+  const turn = reportedTurn();
+  const turnCap = turnCapLabel();
+  const compactTurn = String(turn).length >= 4;
+  const turnCountClasses = ["turn-count", compactTurn && "turn-count-long",
+    decided && "turn-count-playing-on"].filter(Boolean).join(" ");
   const playOnLabel = decided
     ? `Playing on past ${decided.civ || "the winner"}'s ${titleCase(decided.victory_type || "score")} victory on turn ${decided.turn}` +
       (decided.mode === "indefinite" ? " indefinitely" : " until the next victory")
     : "";
   const context = identityContext + (playOnLabel ? ` · ${playOnLabel}` : "");
-  const plateLabel = `${context}; ${ageLabel}; turn ${reportedTurn()} of ${turnCapLabel()}; ` +
+  const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     `game speed ${speedName}; watch pace ${watchPace}; ` +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
     `${cityStateCount} city states remaining, ${cityStatesLost} eliminated`;
@@ -19182,10 +19318,11 @@ function hudTurnPlate() {
     `<b>${alive}<small class="turn-toll">(${lost} eliminated)</small></b></div>`;
   return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     `<span class="turn-era">${ageLabel}</span>` +
-    `<div class="turn-count"><div class="turn-heading"><span class="turn-label">Turn</span>` +
+    `<div class="${turnCountClasses}"><span class="turn-label">Turn</span>` +
+    `<div class="turn-progress"><strong>${turn}</strong>` +
+    `<small class="turn-total">${compactTurn ? "/" : "/ "}${turnCap}</small></div>` +
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
-    `</div><div class="turn-progress"><strong>${reportedTurn()}</strong>` +
-    `<small class="turn-total">/ ${turnCapLabel()}</small></div></div>` +
+    `</div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
     `<div class="turn-setting"><span>Watch pace:</span><b>${watchPace}</b></div>` +
@@ -19474,12 +19611,12 @@ function drawPlayerHud() {
   const lockedKeys = lockedSeats();
   // One line per row across the masthead — who this is and their twelve values
   // side by side — so a row is only as tall as its medallion: 26px, plus the
-  // 2px gap under it. The fixed 50px is the heading, the column heads, the
-  // gaps and the panel's padding; the floor keeps the turn plate's age, count,
-  // and two settings groups legible at a two-player table. Anything past the
-  // ceiling scrolls, so this is what the panel would *like* rather than what
-  // it is allowed to take.
-  const requestedHeight = Math.max(154, 50 + rows * 28);
+  // 2px gap under it. With the redundant Player stats title gone, the fixed
+  // 27px is just the column heads, their border, and the panel's padding. The
+  // floor keeps the turn plate's age, enlarged turn count, and settings groups
+  // legible at a two-player table. Anything past the ceiling scrolls, so this
+  // is what the panel would *like* rather than what it is allowed to take.
+  const requestedHeight = Math.max(160, 27 + rows * 28);
   const mapArea = document.getElementById("maparea");
   if (!HUD_LAYOUT.players) {
     mapArea.style.setProperty("--player-hud-height", `${requestedHeight}px`);
@@ -19497,10 +19634,9 @@ function drawPlayerHud() {
     `<button class="overlay-close" type="button" data-overlay-close="players" aria-label="Hide player standings; restore them in Interface Settings" title="Hide player standings · restore in Interface Settings">✕</button>` +
     hudTurnPlate() +
     `<div class="player-standings" tabindex="0" aria-label="Player statistics; scroll horizontally for every column">` +
-    `<div class="ribbon-heading widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
-    `aria-label="Move player stats; use arrow keys or drag" title="Drag to move · arrow keys also move" id="player-stats-title">` +
-    `<span>Player stats</span></div>` +
     `<div class="ribbon-stat-heading">` +
+    `<span class="player-standings-drag widget-drag-handle" data-widget-drag tabindex="0" role="button" ` +
+    `aria-label="Move player standings; use arrow keys or drag" title="Drag to move · arrow keys also move"></span>` +
     `<span class="diplomacy-identity-head">` +
     // The two win estimates are two named categories on matching inner tracks;
     // Δ owns the narrow middle track used by each row's trend glyph. The outer
@@ -19531,7 +19667,7 @@ function drawPlayerHud() {
     // The bars stand on the seams of the heading they are laid over, and are
     // rebuilt with it so that a repaint can never orphan one.
     playerHudColumnGrips() + `</div>` +
-    `<div class="diplomacy-ribbon" role="list" aria-labelledby="player-stats-title" ` +
+    `<div class="diplomacy-ribbon" role="list" aria-label="Player statistics" ` +
     `style="--hud-rows:${rows}">` + majors.map(p => {
       const color = pcol(p.id);
       const leader = p.leader || "Unknown leader";
