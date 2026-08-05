@@ -803,3 +803,57 @@ class IdleSettlerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             states = [{"kind": "state", "turn": t, "units": []} for t in range(1, 5)]
             self.assertEqual(self._run(states, tmp), 0)
+
+
+class PassThroughFlagsReachTheGame(unittest.TestCase):
+    """Every boolean flag this loop defines must actually be FORWARDED.
+
+    ⚠⚠ THE CHAIN IS FOUR LINKS AND THE FOURTH IS THE ONE THAT BREAKS. The mod
+    reads a `cfg` key, `civ6_play.py` sets it from a flag, and this loop builds a
+    FIXED argument list — so a flag can exist at every other layer and still be
+    unreachable from a live game. `#1098` shipped exactly that way, and the
+    envoy lane sat behind the same gap: `civ6_play.py` has taken `--envoys` all
+    along and nothing could pass it.
+
+    This is a source-level assertion rather than a behavioural one because the
+    argument list is built inside the attempt loop, and a test that had to reach
+    it would be testing the harness rather than the chain. The failure it exists
+    to catch is textual: a flag declared and never forwarded.
+    """
+
+    SOURCE = (Path(__file__).resolve().parent / "civ6_civvis_climb.py").read_text()
+    PLAY = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+
+    def test_every_flag_civ6_play_also_accepts_is_actually_forwarded(self) -> None:
+        """A flag both layers know about, that this loop never passes on, is #1098."""
+        import re
+
+        declared = set(
+            re.findall(r'ap\.add_argument\("--([a-z0-9-]+)", action="store_true"', self.SOURCE)
+        )
+        self.assertIn("envoys", declared)
+
+        missing = []
+        for flag in sorted(declared):
+            # Only flags the FAR END understands can be forwarded at all; the
+            # rest are this loop's own business.
+            if f'"--{flag}"' not in self.PLAY:
+                continue
+            if f'(["--{flag}"] if args.{flag.replace("-", "_")} else [])' not in self.SOURCE:
+                missing.append(flag)
+        self.assertEqual(
+            [], missing,
+            f"declared here and understood by civ6_play, but never forwarded: {missing}",
+        )
+
+    def test_envoys_is_forwarded_and_civ6_play_accepts_it(self) -> None:
+        self.assertIn('(["--envoys"] if args.envoys else [])', self.SOURCE)
+        # The far end of the link must exist, or forwarding it is a crash.
+        self.assertIn('"--envoys"', self.PLAY)
+
+    def test_envoys_defaults_off_because_the_lane_can_segfault(self) -> None:
+        self.assertIn(
+            'ap.add_argument("--envoys", action="store_true", default=False',
+            self.SOURCE,
+            "the envoy lane must stay opt-in while chooseEnvoy has a SIGSEGV history",
+        )
