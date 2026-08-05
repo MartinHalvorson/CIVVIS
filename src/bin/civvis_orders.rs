@@ -795,12 +795,70 @@ fn self_tile_move_key(mirror_state: &civvis::mirror::LiveMirror, unit: u32) -> S
         .unwrap_or_else(|| "self_tile_move".to_string())
 }
 
+/// Turn one live-bridge treatment back off, by the same kebab name the Elo
+/// registry uses for its `live_without_*` arms.
+///
+/// ★★★★★ THE LIVE BRIDGE HAS NEVER BEEN MEASURED, AND THIS IS WHY. Every repair
+/// in `AdvancedAi::enable_live_bridge` is registered in `src/elo.rs` with a
+/// matching `live_without_<flag>` arm, so `ai_eval` can isolate it — but
+/// `ai_eval` plays headless CIVVIS, where several of those mechanisms cannot act
+/// at all. `closed_borders` and `host_observed` are populated only by
+/// `mirror.rs` and are empty by construction in self-play; the whole 20-axis
+/// composite scores **+9 Elo (CI −53..+71)** against plain `advanced`, and
+/// individual arms come back at ±0 with 40 of 40 paired maps neutral because the
+/// branch under test fires roughly **18 times per 10,000** tactical steps there.
+///
+/// Meanwhile the LIVE harness had no way to hold a treatment off at all:
+/// `civ6_play.py` starts `civvis_orders --serve` and takes whatever the binary
+/// does. So the one regime where these mechanisms actually fire was also the one
+/// regime in which no control arm could be run. Every live claim in this lane is
+/// therefore an instrumented mechanism check — foreign-tile move orders
+/// 115/432 → 0/349, embarkation leaving the refusal census — and never a paired
+/// outcome.
+///
+/// `--without <treatment>` closes that. Repeat it to hold several off. An
+/// unknown name is a hard error rather than a warning: a typo that silently
+/// produced a control identical to the treatment would report a null and look
+/// exactly like a real one.
+fn withhold_live_treatment(
+    ai: &mut civvis::ai::AdvancedAi,
+    treatment: &str,
+) -> Result<(), String> {
+    match treatment {
+        "home-defense" => ai.disable_home_defense(),
+        "solvent-faith-army" => ai.disable_solvent_faith_army(),
+        "siege-muster" => ai.disable_siege_muster(),
+        "district-coverage" => ai.disable_district_coverage(),
+        "loyalty-rate-alarm" => ai.disable_loyalty_rate_alarm(),
+        "bounded-recovery" => ai.disable_bounded_recovery(),
+        "army-target-weighs-enemy" => ai.disable_army_target_weighs_the_enemy(),
+        "siege-tracks-wall" => ai.disable_siege_tracks_the_wall(),
+        "blind-objective-strength" => ai.disable_blind_objective_strength(),
+        "blind-objective-units" => ai.disable_blind_objective_units(),
+        "siege-role" => ai.disable_siege_role(),
+        "come-ashore" => ai.disable_come_ashore(),
+        "relief-targets-the-siege" => ai.disable_relief_targets_the_siege(),
+        "suzerain-cards" => ai.disable_suzerain_cards_need_a_suzerainty(),
+        other => {
+            return Err(format!(
+                "unknown --without treatment {other:?}; this binary can withhold: \
+                 home-defense, solvent-faith-army, siege-muster, district-coverage, \
+                 loyalty-rate-alarm, bounded-recovery, army-target-weighs-enemy, \
+                 siege-tracks-wall, blind-objective-strength, blind-objective-units, \
+                 siege-role, come-ashore, relief-targets-the-siege, suzerain-cards"
+            ))
+        }
+    }
+    Ok(())
+}
+
 fn decide(
     mirror_state: &mut civvis::mirror::LiveMirror,
     ai: &mut civvis::ai::AdvancedAi,
     snapshot: &civvis::mirror::Snapshot,
     state: &civvis::mirror::StateSnapshot,
     war_from_plan: bool,
+    withheld: &[String],
     ours: &mut std::collections::BTreeMap<i64, String>,
 ) -> String {
     // Only the live bridge has Firaxis's non-walking Trader representation and
@@ -810,6 +868,14 @@ fn decide(
     // measurement arms can play the SAME controller the bridge deploys.
     // See `AdvancedAi::enable_live_bridge`.
     ai.enable_live_bridge();
+    // Held off AFTER the composite is applied, so `--without` names exactly one
+    // mechanism against the deployed configuration. See `withhold_live_treatment`.
+    for treatment in withheld {
+        if let Err(why) = withhold_live_treatment(ai, treatment) {
+            eprintln!("civvis-orders: {why}");
+            std::process::exit(2);
+        }
+    }
     // `Ai::take_turn` is a full CIVVIS turn simulation: it changes queues, spends
     // resources, ends the turn, and can complete a queued unit.  None of those
     // mutations happened in Firaxis merely because we asked for a recommendation.
@@ -912,6 +978,11 @@ fn decide(
         }
     }
     let mut policy_changed = false;
+    if !withheld.is_empty() {
+        // ⚠ A control arm that does not say so in its own run log is a control
+        // arm nobody can trust afterwards. Wall-clock is not provenance.
+        note_bits.push(format!("withheld=[{}]", withheld.join(",")));
+    }
     if !pre_traders.is_empty() {
         note_bits.push(format!(
             "traders capacity={} active={} [{}]",
@@ -1855,6 +1926,24 @@ fn main() {
     };
     let fresh_ai = args.iter().any(|a| a == "--fresh-ai");
     let war_from_plan = args.iter().any(|a| a == "--war-from-plan");
+    // Repeatable: `--without come-ashore --without home-defense`.
+    let withheld: Vec<String> = args
+        .windows(2)
+        .filter(|pair| pair[0] == "--without")
+        .map(|pair| pair[1].clone())
+        .collect();
+    // Validate before a single turn is driven. Discovering a typo on turn 1 of a
+    // four-hour live run is discovering it too late.
+    {
+        let mut probe = civvis::ai::AdvancedAi::new();
+        probe.enable_live_bridge();
+        for treatment in &withheld {
+            if let Err(why) = withhold_live_treatment(&mut probe, treatment) {
+                eprintln!("civvis-orders: {why}");
+                std::process::exit(2);
+            }
+        }
+    }
     let fresh_board = args.iter().any(|a| a == "--fresh-board");
 
     // Read the board fresh each time: the mod appends to this file every turn.
@@ -2096,7 +2185,7 @@ fn main() {
         // One-shot: there is no next turn to be self-limiting against, so this starts
         // empty and every foreign choice is released once.
         let mut ours = std::collections::BTreeMap::new();
-        let reply = decide(&mut live, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
+        let reply = decide(&mut live, &mut ai, &snapshot, &state, war_from_plan, &withheld, &mut ours);
         // ⚠ `--explain` USED TO WORK ONLY UNDER `--serve`, which is the mode you cannot
         // debug in. Replaying one recorded turn is the fast loop — seconds, no game,
         // no lock — and it was the one path that could not say why it chose anything.
@@ -2199,7 +2288,7 @@ fn main() {
                         None => ai.forget_unit_memory(),
                     }
                     board.carry_treasury_baseline(carried_treasury);
-                    let reply = decide(&mut board, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
+                    let reply = decide(&mut board, &mut ai, &snapshot, &state, war_from_plan, &withheld, &mut ours);
                     live = Some(board);
                     reply
                 } else {
@@ -2208,7 +2297,7 @@ fn main() {
                         let mut fresh = civvis::mirror::LiveMirror::new(
                             &snapshot, &state, mirror_players, 1, mirror_turns, frontier,
                         );
-                        let reply = decide(&mut fresh, &mut ai, &snapshot, &state, war_from_plan, &mut ours);
+                        let reply = decide(&mut fresh, &mut ai, &snapshot, &state, war_from_plan, &withheld, &mut ours);
                         live = Some(fresh);
                         reply
                     }
@@ -2229,9 +2318,9 @@ fn main() {
                                 _ => civvis::ai::AdvancedAi::targeting(
                                     civvis::ai::VictoryTarget::Domination),
                             };
-                            decide(existing, &mut throwaway, &snapshot, &state, war_from_plan, &mut ours)
+                            decide(existing, &mut throwaway, &snapshot, &state, war_from_plan, &withheld, &mut ours)
                         } else {
-                            decide(existing, &mut ai, &snapshot, &state, war_from_plan, &mut ours)
+                            decide(existing, &mut ai, &snapshot, &state, war_from_plan, &withheld, &mut ours)
                         }
                     }
                 }
@@ -2334,6 +2423,53 @@ fn action_label(action: &Action) -> &'static str {
 
 #[cfg(test)]
 mod tests {
+    /// ★★★★★ A CONTROL ARM THE LIVE HARNESS CAN ACTUALLY RUN.
+    ///
+    /// Every live-bridge repair has a `live_without_*` arm in `src/elo.rs`, but
+    /// `ai_eval` plays headless CIVVIS where several of them cannot act at all —
+    /// `closed_borders` and `host_observed` are populated only by `mirror.rs`,
+    /// and the 20-axis composite measures +9 Elo (CI −53..+71) against plain
+    /// `advanced`. The live harness, meanwhile, had no way to hold a treatment
+    /// off: `civ6_play.py` starts `--serve` and takes whatever the binary does.
+    /// So the one regime where these mechanisms fire had no control arm.
+    ///
+    /// ⚠ The unknown-name case is asserted deliberately. A typo that silently
+    /// produced a control identical to the treatment would report a null that
+    /// looks exactly like a real one.
+    #[test]
+    fn a_live_treatment_can_be_withheld_by_name() {
+        let mut ai = civvis::ai::AdvancedAi::new();
+        ai.enable_live_bridge();
+        assert!(
+            ai.blind_objective_strength,
+            "the composite must set the flag before we can meaningfully hold it off"
+        );
+
+        withhold_live_treatment(&mut ai, "blind-objective-strength")
+            .expect("a registered treatment can be withheld");
+        assert!(
+            !ai.blind_objective_strength,
+            "--without must actually clear the flag, or the control arm is the treatment"
+        );
+
+        // Holding one off must not disturb its neighbours.
+        assert!(
+            ai.blind_objective_units,
+            "withholding one treatment must leave the rest of the composite intact"
+        );
+
+        let bad = withhold_live_treatment(&mut ai, "no-such-treatment");
+        assert!(
+            bad.is_err(),
+            "an unknown name must be a hard error; a silent no-op would report a \
+             null that is indistinguishable from a real one"
+        );
+        assert!(
+            bad.unwrap_err().contains("come-ashore"),
+            "the error must name what this binary can actually withhold"
+        );
+    }
+
     use super::*;
     use civvis::mirror::{
         Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateGreatPerson,
@@ -2603,6 +2739,7 @@ mod tests {
             &snapshot,
             &state,
             false,
+            &[],
             &mut ours,
         ))
         .unwrap();
@@ -3321,6 +3458,7 @@ mod tests {
             &snapshot,
             &state,
             false,
+            &[],
             &mut Default::default(),
         ))
         .expect("the decision is JSON");
@@ -3478,7 +3616,7 @@ mod tests {
         let before = serde_json::to_value(&mirror.game).expect("mirror game serializes");
         let mut ai = civvis::ai::AdvancedAi::new();
 
-        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &mut Default::default());
+        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &[], &mut Default::default());
 
         assert!(reply.contains("\"turn\":4"));
         assert_eq!(
@@ -3549,6 +3687,7 @@ mod tests {
             &snapshot,
             &state,
             false,
+            &[],
             &mut Default::default(),
         ))
         .expect("the decision is JSON");
@@ -3615,7 +3754,7 @@ mod tests {
         }));
 
         let mut ai = civvis::ai::AdvancedAi::new();
-        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &mut Default::default());
+        let reply = decide(&mut mirror, &mut ai, &snapshot, &state, false, &[], &mut Default::default());
 
         assert!(
             reply.contains("\"verb\":\"TRADE_ROUTE\"") && reply.contains("\"subject\":42"),
