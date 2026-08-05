@@ -422,6 +422,36 @@ const EARTH_ISLANDS: &[(f64, f64, f64)] = &[
     (-134.5, 57.0, 36.3),     // the Alexander Archipelago
 ];
 
+/// Sovereign atolls whose physical land is too small for the half-degree
+/// source grid to retain, even on the largest playable Earth.  They are only
+/// promoted to a tile where that tile represents at most 9,000 square
+/// kilometres — the Ludicrous 100-civilization world and any finer successor.
+///
+/// This is deliberately a physical-map supplement, not a claim about a
+/// country's borders or affiliation.  It gives a modern-world map a real
+/// place to seat the atoll rather than silently moving it hundreds of miles to
+/// another country's coast.  Smaller worlds omit them because turning every
+/// atoll into a Duel-sized hex would be less accurate than leaving it below
+/// that world's resolution.
+const EARTH_MICROSTATE_ISLANDS: &[(f64, f64)] = &[
+    (73.2, 3.2),      // Maldives
+    (-175.1, -21.1),  // Tonga
+    (55.4, -4.6),     // Seychelles
+    (171.1, 7.1),     // Marshall Islands
+    (150.5, 7.4),     // Micronesia
+    (134.5, 7.5),     // Palau
+    (-168.7, -3.3),   // Kiribati
+    (-61.7, 17.0),    // Antigua and Barbuda
+    (-62.7, 17.3),    // Saint Kitts and Nevis
+    (166.9, -0.5),    // Nauru
+    (177.6, -7.1),    // Tuvalu
+];
+
+/// The highest stock map density is 8.8 thousand square kilometres per tile.
+/// At that scale an atoll earns one strategic tile; at lower densities it
+/// would become a visibly fictional landmass.
+const MICROSTATE_ISLAND_MAX_TILE_AREA: f64 = 9.0;
+
 /// The inland waters a tile-wide vote would drain, each with its area in
 /// thousands of square kilometres.
 ///
@@ -519,6 +549,14 @@ fn earth_land(wm: &WorldMap) -> BTreeSet<Pos> {
         if let Some(pos) = nearest_tile(wm, *longitude, *latitude) {
             land.insert(pos);
             islands.insert(pos);
+        }
+    }
+    if tile_area <= MICROSTATE_ISLAND_MAX_TILE_AREA {
+        for (longitude, latitude) in EARTH_MICROSTATE_ISLANDS {
+            if let Some(pos) = nearest_tile(wm, *longitude, *latitude) {
+                land.insert(pos);
+                islands.insert(pos);
+            }
         }
     }
     // And the same guarantee in reverse. A lake narrower than a tile is
@@ -703,6 +741,28 @@ fn nearest_tile(wm: &WorldMap, longitude: f64, latitude: f64) -> Option<Pos> {
                 .partial_cmp(&dot(wm.direction(*b), target))
                 .unwrap_or(std::cmp::Ordering::Equal)
         })
+}
+
+/// The physical Earth tile nearest a WGS84 point, restricted to sampled land.
+///
+/// A country-level coordinate is not necessarily a capital coordinate: an
+/// archipelagic or geographically split country can reasonably be represented
+/// by a centroid in the sea between its land areas.  Scenario builders must
+/// therefore resolve the coordinate through the physical map rather than put
+/// a city on the raw nearest tile.
+#[cfg(test)]
+fn nearest_earth_land(
+    wm: &WorldMap,
+    land: &BTreeSet<Pos>,
+    longitude: f64,
+    latitude: f64,
+) -> Option<Pos> {
+    let target = earth_direction(longitude, latitude);
+    land.iter().copied().max_by(|a, b| {
+        dot(wm.direction(*a), target)
+            .partial_cmp(&dot(wm.direction(*b), target))
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })
 }
 
 /// Seat each civilization on the viable tile closest to its homeland.
@@ -8095,6 +8155,66 @@ mod river_tests {
                 world.distance(nearest_land, spawn)
             );
         }
+    }
+
+    /// The modern-nation roster brings its own WGS84 points.  Before a public
+    /// Today scenario can seat its prebuilt countries or city-states, the
+    /// physical Earth beneath every selected country has to survive sampling
+    /// at the chosen globe size.  That is deliberately distinct from the
+    /// generic True Start settler placer: a future-era country-state is
+    /// eventually seeded as a prebuilt state, while a normal new game must
+    /// preserve its four-hex founding clearance even where real countries are
+    /// closer together.
+    ///
+    /// This catches the map failure a broad continent probe cannot: a real
+    /// country's point can be swallowed by a coarse coastline or a small
+    /// island even while the continent around it still looks correct.
+    #[test]
+    fn ranked_today_nations_keep_a_physical_earth_anchor_at_every_stock_size() {
+        #[derive(serde::Deserialize)]
+        struct Ranking {
+            roster: Vec<Nation>,
+        }
+
+        #[derive(serde::Deserialize)]
+        struct Nation {
+            nation: String,
+            latitude: f64,
+            longitude: f64,
+        }
+
+        let ranking: Ranking = serde_json::from_str(include_str!("../data/nations_today.json"))
+            .expect("nations_today.json is a valid modern-nation ranking");
+        let mut missing = Vec::new();
+        for size in CIV6_MAP_SIZES {
+            let seats = (size.default_players + size.default_city_states)
+                .min(ranking.roster.len());
+            let nations = &ranking.roster[..seats];
+            let world = WorldMap::globe(size.globe_frequency);
+            let land = earth_land(&world);
+            let where_ = format!("{} ({})", size.name, size.id);
+            for nation in nations {
+                let nearest_map_tile = nearest_tile(&world, nation.longitude, nation.latitude)
+                    .expect("Earth has tiles");
+                let nearest_land = nearest_earth_land(
+                    &world,
+                    &land,
+                    nation.longitude,
+                    nation.latitude,
+                )
+                .expect("Earth has land");
+                let drift = world.distance(nearest_map_tile, nearest_land);
+                if drift > 3 {
+                    let (longitude, latitude) = world.lon_lat(nearest_land);
+                    missing.push(format!(
+                        "{where_}: {} has no Earth land within three tiles of its modern \
+                         coordinate; nearest is {latitude:.1}N, {longitude:.1}E ({drift} tiles)",
+                        nation.nation,
+                    ));
+                }
+            }
+        }
+        assert!(missing.is_empty(), "{}", missing.join("; "));
     }
 
     /// Every one of the 105 civilizations opens on its own homeland, all at
