@@ -8051,6 +8051,34 @@ local function applyOrders(player, pid, turn, rows)
 			runOrder(index, row);
 		end
 	end
+	-- ★★★★★ CHANGE GOVERNMENT BEFORE SLOTTING THE DECK THAT FITS IT. Like
+	-- FOUND_CITY above, this is an ACTUATION RULE of Civilization VI and not a
+	-- decision: a government defines the slot SHAPE, so a deck chosen for the
+	-- new government is illegal under the old one and the host refuses the
+	-- whole thing.
+	--
+	-- Caught by the `policy_deck_refused` instrument (#1222) on its first live
+	-- game, turn 183:
+	--
+	--   card with nowhere to go : POLICY_WISSELBANKEN (SLOT_DIPLOMATIC)
+	--   slots the host had      : MILITARY,MILITARY,ECONOMIC,ECONOMIC,
+	--                             DIPLOMATIC,WILDCARD        <- Theocracy
+	--   deck CIVVIS asked for   : ECONOMIC x3, MILITARY x1, DIPLOMATIC x2
+	--                                                        <- Merchant Republic
+	--
+	-- and the export shows the government flipping THEOCRACY -> MERCHANT_REPUBLIC
+	-- on turn 184, one turn later. CIVVIS was right about both; the two orders
+	-- were simply applied in the wrong order.
+	--
+	-- ⚠ Not a CIVVIS-side bug. `policies_fit` and `revise_policy_deck` both seat
+	-- correctly, and `data/governments.json` matches `Government_SlotCounts` for
+	-- all 13 governments — checked before touching anything, because the obvious
+	-- read is that the deck chooser is broken and it is not.
+	for index, row in ipairs(rows) do
+		if not ordered[index] and tostring(row.kind or "") == "government" then
+			runOrder(index, row);
+		end
+	end
 	for index, row in ipairs(rows) do
 		if not ordered[index] then runOrder(index, row); end
 	end
@@ -8219,8 +8247,26 @@ local function reportLostCities(player, pid, turn)
 				-- without inferring either. `-1` for "the accessor is missing"
 				-- rather than `false`, so a broken read can never be mistaken
 				-- for a peaceful game — the `#1184` convention.
+				--
+				-- ⚠⚠ AND THAT CONVENTION IMMEDIATELY EARNED ITS KEEP. This was
+				-- first written as `GetDiplomacy():IsAtWar()`, which does not exist
+				-- on the Diplomacy object, and the field came back `-1` on all SEVEN
+				-- city losses of the first run that carried it. Had the fallback been
+				-- `false`, seven stormings would have been recorded as "lost while at
+				-- peace" — precisely the wrong conclusion, and indistinguishable from
+				-- a real one.
+				--
+				-- The working form is the one this file already uses in four other
+				-- places: `IsAtWarWith(id)` over the alive majors.
 				at_war = try(function()
-					return player:GetDiplomacy():IsAtWar();
+					local diplomacy = player:GetDiplomacy();
+					if diplomacy == nil then return -1; end
+					for _, otherId in ipairs(PlayerManager.GetAliveMajorIDs()) do
+						if otherId ~= pid and diplomacy:IsAtWarWith(otherId) then
+							return true;
+						end
+					end
+					return false;
 				end, -1),
 				turn = turn,
 			};
