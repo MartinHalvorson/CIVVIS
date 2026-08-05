@@ -8247,8 +8247,26 @@ local function reportLostCities(player, pid, turn)
 				-- without inferring either. `-1` for "the accessor is missing"
 				-- rather than `false`, so a broken read can never be mistaken
 				-- for a peaceful game — the `#1184` convention.
+				--
+				-- ⚠⚠ AND THAT CONVENTION IMMEDIATELY EARNED ITS KEEP. This was
+				-- first written as `GetDiplomacy():IsAtWar()`, which does not exist
+				-- on the Diplomacy object, and the field came back `-1` on all SEVEN
+				-- city losses of the first run that carried it. Had the fallback been
+				-- `false`, seven stormings would have been recorded as "lost while at
+				-- peace" — precisely the wrong conclusion, and indistinguishable from
+				-- a real one.
+				--
+				-- The working form is the one this file already uses in four other
+				-- places: `IsAtWarWith(id)` over the alive majors.
 				at_war = try(function()
-					return player:GetDiplomacy():IsAtWar();
+					local diplomacy = player:GetDiplomacy();
+					if diplomacy == nil then return -1; end
+					for _, otherId in ipairs(PlayerManager.GetAliveMajorIDs()) do
+						if otherId ~= pid and diplomacy:IsAtWarWith(otherId) then
+							return true;
+						end
+					end
+					return false;
 				end, -1),
 				turn = turn,
 			};
