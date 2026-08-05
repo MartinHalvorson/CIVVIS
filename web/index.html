@@ -19718,7 +19718,7 @@ function drawPlanetMap() {
     if (commandTokenClip) { cx.save(); planetPath(cx, cell.points); cx.clip(); }
     strategicUnitTokenPath(civilian, ux, uy, r);
     cx.fill(); cx.stroke();
-    drawUnitPictogram(unit.embarked ? "galley" : unit.type, ux, uy,
+    drawUnitPictogram(unit.type, ux, uy,
                       r * 1.48, tokenInk);
     if (unitHasHealth(unit)) drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
     if (commandTokenClip) cx.restore();
@@ -20640,7 +20640,7 @@ function draw() {
     cx.lineWidth = 1.6;
     strategicUnitTokenPath(civilian, d.x, d.y, r);
     cx.fill(); cx.stroke();
-    drawUnitPictogram(d.embarked ? "galley" : d.type, d.x, d.y,
+    drawUnitPictogram(d.type, d.x, d.y,
                       r * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
     cx.restore();
     cx.globalAlpha = 1;
