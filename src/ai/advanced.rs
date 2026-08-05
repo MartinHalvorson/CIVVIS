@@ -14643,6 +14643,18 @@ impl AdvancedAi {
         radius: i32,
         prefilter_limit: Option<usize>,
     ) -> Vec<(Pos, f64)> {
+        self.settle_sites_with_limit_cached(g, pid, from, radius, prefilter_limit, None)
+    }
+
+    fn settle_sites_with_limit_cached(
+        &self,
+        g: &Game,
+        pid: usize,
+        from: Pos,
+        radius: i32,
+        prefilter_limit: Option<usize>,
+        mut score_cache: Option<&mut BTreeMap<Pos, f64>>,
+    ) -> Vec<(Pos, f64)> {
         let mut sites = Vec::new();
         let mut emergency_sites = Vec::new();
         let visible = self.battlefront_visibility(g, pid);
@@ -14707,11 +14719,27 @@ impl AdvancedAi {
                 overflow = candidates.split_off(limit);
             }
         }
-        let score_site = |pos| {
-            let site_value = if self.settlement_safety {
-                self.settle_value_visible(g, pid, pos, &visible)
+        let mut score_site = |pos| {
+            // The local and global radius passes in `best_settler_target` can
+            // contain the same plot. Their distance penalties differ, but
+            // the expensive site value does not, so share just that exact
+            // value within the immutable decision. The cache never crosses
+            // an action or a turn.
+            let site_value = if let Some(value) = score_cache
+                .as_deref_mut()
+                .and_then(|cache| cache.get(&pos).copied())
+            {
+                value
             } else {
-                self.legacy_settle_value(g, pid, pos)
+                let value = if self.settlement_safety {
+                    self.settle_value_visible(g, pid, pos, &visible)
+                } else {
+                    self.legacy_settle_value(g, pid, pos)
+                };
+                if let Some(cache) = score_cache.as_deref_mut() {
+                    cache.insert(pos, value);
+                }
+                value
             };
             let distance = g.wdist(from, pos);
             let overreach = if self.settlement_safety {
@@ -14773,15 +14801,36 @@ impl AdvancedAi {
         radius: i32,
         avoid: Option<Pos>,
     ) -> Option<(Pos, f64)> {
+        let mut score_cache = BTreeMap::new();
+        self.best_reachable_settle_site_except_cached(
+            g,
+            pid,
+            uid,
+            radius,
+            avoid,
+            &mut score_cache,
+        )
+    }
+
+    fn best_reachable_settle_site_except_cached(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        radius: i32,
+        avoid: Option<Pos>,
+        score_cache: &mut BTreeMap<Pos, f64>,
+    ) -> Option<(Pos, f64)> {
         let from = g.units[&uid].pos;
         let candidates = self
-            .settle_sites_with_limit(
+            .settle_sites_with_limit_cached(
                 g,
                 pid,
                 from,
                 radius,
                 (self.settlement_safety && radius > 12)
                     .then_some(SETTLEMENT_GLOBAL_PREFILTER_LIMIT),
+                Some(score_cache),
             )
             .into_iter()
             .filter(|(position, _)| Some(*position) != avoid)
@@ -14819,14 +14868,23 @@ impl AdvancedAi {
         local_radius: i32,
         avoid: Option<Pos>,
     ) -> Option<(Pos, f64)> {
-        let local = self.best_reachable_settle_site_except(g, pid, uid, local_radius, avoid);
+        let mut score_cache = BTreeMap::new();
+        let local = self.best_reachable_settle_site_except_cached(
+            g,
+            pid,
+            uid,
+            local_radius,
+            avoid,
+            &mut score_cache,
+        );
         if !self.settlement_safety {
-            let global = self.best_reachable_settle_site_except(
+            let global = self.best_reachable_settle_site_except_cached(
                 g,
                 pid,
                 uid,
                 g.map.width + g.map.height,
                 avoid,
+                &mut score_cache,
             );
             return match (local, global) {
                 (Some(local), Some(global)) if global.1 > local.1 + 5.0 => Some(global),
@@ -14842,7 +14900,14 @@ impl AdvancedAi {
         if global_radius <= local_radius {
             return local;
         }
-        let global = self.best_reachable_settle_site_except(g, pid, uid, global_radius, avoid);
+        let global = self.best_reachable_settle_site_except_cached(
+            g,
+            pid,
+            uid,
+            global_radius,
+            avoid,
+            &mut score_cache,
+        );
         match (local, global) {
             (Some(local), Some(global)) if global.0 != local.0 => {
                 let from = g.units[&uid].pos;
