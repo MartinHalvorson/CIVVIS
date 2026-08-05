@@ -459,6 +459,13 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// flag before it reads a unit, so every configured, legacy and Elo agent
 /// promotes exactly when it always did. A compatibility re-pin.
 ///
+/// #954 says why a settler was held instead of only that it was marching. The
+/// added block is inside `if !moved && self.journal().wants(Detail)` and every
+/// call it makes is a read: `Game::route_step` and `route_step_to_any` take
+/// `&self`, as do `can_move`, `units_at` and `wdist`, and `think!` writes to the
+/// reasoning journal, which is observer-only by contract. No RNG is drawn and no
+/// board state is touched, so the anchor plays the identical game and only its
+/// journal differs. A compatibility re-pin.
 /// #1026 keeps the land army out of the water, behind `come_ashore` — `false`
 /// in both `BasicAi` constructors and set only by `enable_live_bridge`. Every
 /// one of its paths short-circuits on the flag before reading anything:
@@ -537,7 +544,6 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// every objective any legacy or Elo entrant receives, is bit-for-bit what it was.
 /// A compatibility re-pin.
 ///
-#[cfg(test)]
 /// ⚠ And again for the pantheon price, which now reads `Game::pantheon_faith_cost()`
 /// instead of a bare `25.0` in the `ai.rs` gate. `pantheon_faith_cost` is
 /// `game_speed.scale(PANTHEON_FAITH_STANDARD)`, and `GameSpeed::default()` is
@@ -586,7 +592,8 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// improvement actions, so this is deliberately a protocol-v6 change rather
 /// than a compatibility re-pin; the fresh source fingerprint documents that
 /// the new ledger starts from this exact shared controller.
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0xaca1_25ff_d78b_4734;
+#[cfg(test)]
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x9775_d53a_c3f6_ff15;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
