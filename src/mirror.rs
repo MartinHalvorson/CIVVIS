@@ -9445,9 +9445,16 @@ pub fn rebuild_from_state(
                 // from scratch each turn with no knowledge of work in progress —
                 // which is what a run alternating Builder / Monument / Campus every
                 // second turn looks like from the inside.
-                if let Some(item) =
-                    civvis_production_item(&game_rules, city.producing.as_deref(), &city.districts)
-                {
+                let seeded = civvis_production_item(&game_rules, city.producing.as_deref(), &city.districts);
+                if std::env::var("CIVVIS_DEBUG_QUEUE_SEED").is_ok() {
+                    eprintln!(
+                        "[queue-seed] {} producing={:?} districts={} -> item={:?} queue_before={}",
+                        city.name, city.producing, city.districts.len(),
+                        seeded.as_ref().map(|i| crate::game::Game::production_block_key(i)),
+                        built.queue.len()
+                    );
+                }
+                if let Some(item) = seeded {
                     if built.queue.is_empty() {
                         built.queue.push(item);
                     }
