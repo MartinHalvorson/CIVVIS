@@ -33849,11 +33849,14 @@ impl Game {
         let mut adj = Yields::default();
         if !spec.adjacency.is_empty() {
             let tile = &self.map.tiles[&dpos];
-            let neighbors: Vec<&crate::world::Tile> = self
-                .nbrs(dpos)
-                .into_iter()
-                .filter_map(|pos| self.map.get(pos))
-                .collect();
+            // A plot has at most six in-map neighbors. Keep the tile
+            // references inline; this calculator runs once per district/site
+            // candidate in settlement scoring, so a Vec here becomes a large
+            // allocator tax on Ludicrous maps.
+            let mut neighbors = [None; 6];
+            for (index, pos) in self.nbrs(dpos).into_iter().enumerate() {
+                neighbors[index] = self.map.get(pos);
+            }
             let owner_city = self
                 .map
                 .get(dpos)
@@ -33865,17 +33868,24 @@ impl Game {
                 match key {
                     "self" => 1,
                     "river" => usize::from(tile.has_river()),
-                    "mountain" => neighbors.iter().filter(|t| t.terrain == "mountain").count(),
+                    "mountain" => neighbors
+                        .iter()
+                        .flatten()
+                        .filter(|t| t.terrain == "mountain")
+                        .count(),
                     "forest" | "woods" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| t.feature.as_deref() == Some("forest"))
                         .count(),
                     "rainforest" | "jungle" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| t.feature.as_deref() == Some("jungle"))
                         .count(),
                     "natural_wonder" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| {
                             t.feature.as_ref().is_some_and(|feature| {
                                 self.rules
@@ -33887,26 +33897,31 @@ impl Game {
                         .count(),
                     "reef" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| {
                             matches!(t.feature.as_deref(), Some("reef" | "great_barrier_reef"))
                         })
                         .count(),
                     "great_barrier_reef" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| t.feature.as_deref() == Some("great_barrier_reef"))
                         .count(),
                     "geothermal_fissure" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| t.feature.as_deref() == Some("geothermal_fissure"))
                         .count(),
                     "pamukkale" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| t.feature.as_deref() == Some("pamukkale"))
                         .count(),
                     // City Centers are districts but are represented by the
                     // city index instead of `Tile::district`.
                     "district" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| {
                             !gaul
                                 && (t.district.is_some()
@@ -33920,6 +33935,7 @@ impl Game {
                         .count(),
                     "city_center" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| {
                             t.owner_city
                                 .and_then(|cid| self.cities.get(&cid))
@@ -33928,13 +33944,19 @@ impl Game {
                                     .is_some_and(|plan| plan.treats_as_city_center(t.pos))
                         })
                         .count(),
-                    "wonder" => neighbors.iter().filter(|t| t.wonder.is_some()).count(),
+                    "wonder" => neighbors
+                        .iter()
+                        .flatten()
+                        .filter(|t| t.wonder.is_some())
+                        .count(),
                     "coast_resource" | "sea_resource" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| self.rules.is_water(t) && t.resource.is_some())
                         .count(),
                     "strategic_resource" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| {
                             t.resource.as_ref().is_some_and(|resource| {
                                 self.rules
@@ -33946,6 +33968,7 @@ impl Game {
                         .count(),
                     "luxury_resource" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| {
                             t.resource.as_ref().is_some_and(|resource| {
                                 self.rules
@@ -33955,14 +33978,20 @@ impl Game {
                             })
                         })
                         .count(),
-                    "resource" => neighbors.iter().filter(|t| t.resource.is_some()).count(),
+                    "resource" => neighbors
+                        .iter()
+                        .flatten()
+                        .filter(|t| t.resource.is_some())
+                        .count(),
                     "mine" | "quarry" | "lumber_mill" | "plantation" | "farm" => neighbors
                         .iter()
+                        .flatten()
                         .filter(|t| t.improvement.as_deref() == Some(key))
                         .count(),
                     district_family if self.rules.districts.contains_key(district_family) => {
                         neighbors
                             .iter()
+                            .flatten()
                             .filter(|t| {
                                 t.district.is_some_and(|district| {
                                     self.district_is_family(district, Name::new(district_family))
