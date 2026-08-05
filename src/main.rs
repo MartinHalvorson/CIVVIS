@@ -589,8 +589,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// single city, so with it off the wishlist is byte-for-byte the old one and
 /// every configured, legacy and Elo agent slots exactly the cards it always did.
 /// A compatibility re-pin.
+///
+/// #1195 bounds only the live controller's global settlement-site search.
+/// `AdvancedAi::legacy()` keeps `settlement_safety` disabled, so it returns
+/// through the historical full-search path and the frozen `advanced_v1`
+/// controller remains byte-identical. Compatibility re-pin; the Elo protocol
+/// does not move.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6714_132a_18dc_5d39;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x5baa_c469_5096_36ab;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
