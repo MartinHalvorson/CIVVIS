@@ -5928,6 +5928,26 @@ pub struct StateRival {
     pub military: f64,
     #[serde(default)]
     pub at_war: bool,
+    /// How many technologies this rival has finished, or `-1` if the host
+    /// could not be asked.
+    ///
+    /// ⚠⚠ THIS IS THE FIELD THAT MAKES THE SCORE GAP READABLE. Over 99
+    /// completed runs CIVVIS leads in NONE: our score is a median 267 against
+    /// the best rival's 1109, a ratio of 0.26. But on empire size we are at
+    /// 0.75-0.80 — 3 cities against 4, population 28 against 35 — and our
+    /// cities are individually LARGER (10.3 pop against 9.4). So most of the
+    /// gap is in components that are neither cities nor population, and until
+    /// now the export could not say which.
+    ///
+    /// ⚠ `#[serde(default = "unknown_metric")]` is load-bearing. A new
+    /// `StateRival` field without a default makes the WHOLE snapshot fail to
+    /// deserialize on any older export, which silently loses the board — the
+    /// failure documented on `map_or_empty_sequence`.
+    #[serde(default = "unknown_metric")]
+    pub techs: f64,
+    /// Civics finished, or `-1` if unavailable. See `techs`.
+    #[serde(default = "unknown_metric")]
+    pub civics: f64,
     #[serde(default)]
     pub cities: Vec<StateCity>,
     #[serde(default)]
@@ -7011,7 +7031,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
     ];
     const RIVAL: &[&str] = &[
         "player", "civ", "leader", "can_declare", "score", "military", "at_war",
-        "cities", "units",
+        "techs", "civics", "cities", "units",
     ];
     const MINOR: &[&str] = &[
         "player", "civ", "score", "military", "at_war", "suzerain", "envoys",
