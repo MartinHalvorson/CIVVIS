@@ -256,7 +256,7 @@
   body.sidebar-resizing #side { user-select: none; }
   body.sidebar-hidden #side-resize-handle { display: none; }
   .side-head {
-    position: relative; flex: 0 0 auto; min-height: 116px; padding: 19px 16px;
+    position: relative; container-type: inline-size; flex: 0 0 auto; min-height: 116px; padding: 19px 16px;
     border-bottom: 1px solid #415348;
     background:
       radial-gradient(circle at 9% 16%, #d7b66a13, transparent 27%),
@@ -288,11 +288,16 @@
     stroke-linejoin: round;
   }
   .brand-mark .globe-shine { fill: none; stroke: #fff9df; stroke-opacity: .14; stroke-width: 1.1; }
-  .brand-copy { min-width: 0; padding-top: 1px; }
-  .brand-title-row { display: flex; align-items: center; gap: 10px; }
+  /* The social rail is absolutely positioned so it does not make the header
+     taller. Reserve that lane in the copy, however, so a narrower deck lets
+     the title and tagline use less width instead of painting under the links. */
+  .brand-copy { min-width: 0; flex: 1 1 auto; padding: 1px 34px 0 0; }
+  .brand-title-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
   h1 {
-    width: max-content; color: var(--gold-bright);
+    width: auto; min-width: 0; max-width: 100%; overflow: hidden;
+    color: var(--gold-bright);
     font: 650 36px/.95 "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-size: clamp(22px, 10cqw, 36px);
     letter-spacing: .08em; text-transform: uppercase;
     background: linear-gradient(100deg, #f6dfaa 8%, #d7b66a 66%, #a9823b);
     -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
@@ -302,7 +307,7 @@
     font-size: .58em; letter-spacing: .025em; text-transform: lowercase;
   }
   /* One narrow column pinned to the corner: GitHub takes the bottom right and
-     YouTube sits directly above it, so the icons cost the title one 24px lane
+     YouTube sits directly above it, so the icons cost the copy one 24px lane
      instead of the 55px a side-by-side row ate. */
   .brand-links {
     position: absolute; right: 10px; bottom: 9px;
@@ -318,7 +323,7 @@
     transform: translateY(-1px);
   }
   .brand-links a:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
-  .brand-links svg { width: 14px; height: 14px; fill: currentColor; }
+  .brand-links svg { width: 21px; height: 21px; fill: currentColor; }
   .tagline {
     max-width: 225px; margin-top: 9px; color: #dde6e2; font-size: var(--type-body);
     font-weight: 650; letter-spacing: .015em; line-height: 1.36;
@@ -332,7 +337,9 @@
   #side[data-type-size="compact"] .brand { gap: 10px; }
   #side[data-type-size="compact"] .brand-mark { width: 54px; height: 54px; }
   #side[data-type-size="compact"] .brand-mark svg { width: 49px; height: 49px; }
-  #side[data-type-size="compact"] h1 { width: auto; font-size: 28px; letter-spacing: .055em; }
+  #side[data-type-size="compact"] h1 {
+    width: auto; font-size: clamp(20px, 10cqw, 28px); letter-spacing: .055em;
+  }
   #side[data-type-size="compact"] .tagline { max-width: none; margin-top: 6px; font-size: var(--type-small); }
   #side[data-type-size="compact"] .tagline span { white-space: normal; }
   /* The deck is a column: the fixed panels take the height they need and the
