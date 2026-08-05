@@ -439,6 +439,38 @@ The spectator supervisor already follows the right shape: it builds canonical
 `origin/main` in a private worktree and preserves active developer checkouts.
 Keep runtime files and generated outputs ignored and local.
 
+### The worktree audit
+
+`tools/civvis_worktree_audit.py` is the one automated service that exists to
+protect work rather than to consume it. Every fifteen minutes
+`tools/civvis_sync.sh` runs it with `--rescue`; it reports two things and fixes
+one of them:
+
+| finding | meaning |
+|---|---|
+| `DIRTY-ABANDONED` | uncommitted files in a worktree nobody has edited recently |
+| `DIRTY-ACTIVE` | uncommitted files in a worktree an agent is still editing |
+| `COMMIT-NOT-ON-GITHUB` | a commit reachable from no remote ref |
+| `MISSING` | a registered worktree whose directory is gone |
+
+`--rescue` pushes each dirty worktree to `refs/heads/wip/<branch>` using a
+throwaway index and `commit-tree`, so the owning agent's HEAD, index and files
+are never touched — an agent mid-edit cannot be disturbed by it, and its bytes
+reach GitHub anyway.
+
+Two rules this encodes, both learned by getting them wrong:
+
+- **Fetch `+refs/pull/*/head` before judging anything.** A closed PR keeps its
+  content at `refs/pull/N/head` forever, so a worktree whose PR was closed is
+  not stranded. Without those refs the audit condemns work that is safe.
+- **Reachability, not merge status.** Squash merge gives landed content a new
+  commit and a new patch-id, so `git branch --merged` and `git cherry` both
+  report long-landed branches as unlanded — measured at 98 false alarms across
+  110 worktrees. `git for-each-ref --contains <sha> refs/remotes` is the test.
+
+A `wip/` ref is a rescue, not a contribution. Nothing merges from one; the
+owning agent commits its own work properly or the branch is discarded.
+
 ## Hotspots and conflict reduction
 
 Several files aggregate many responsibilities and therefore need explicit PR
