@@ -33012,6 +33012,18 @@ impl Game {
     /// deterministic, though only label *equality* ever matters.
     fn build_routing_zones(&self, class: TraversalClass) -> Vec<u32> {
         let mut zones = vec![0u32; self.map.tiles.len()];
+        // The flood visits a tile once as a seed or neighbor and may inspect
+        // it many more times from adjacent frontier tiles. Evaluate the
+        // static terrain/domain predicate once per tile, then let the BFS
+        // read the dense result. This preserves map-order labels while
+        // avoiding repeated ruleset and city-passage lookups on Ludicrous
+        // maps.
+        let traversable: Vec<u8> = self
+            .map
+            .tiles
+            .values()
+            .map(|tile| self.class_can_traverse(class, tile) as u8)
+            .collect();
         let mut label = 0u32;
         let mut queue = VecDeque::new();
         for index in 0..self.map.tiles.len() {
@@ -33019,7 +33031,7 @@ impl Game {
                 continue;
             }
             let seed = self.map.tiles.values().as_slice()[index].pos;
-            if !self.class_can_traverse(class, &self.map.tiles[&seed]) {
+            if traversable[index] == 0 {
                 continue;
             }
             label += 1;
@@ -33030,7 +33042,7 @@ impl Game {
                     let Some(slot) = self.map.tiles.index_of(n) else {
                         continue;
                     };
-                    if zones[slot] == 0 && self.class_can_traverse(class, &self.map.tiles[&n]) {
+                    if zones[slot] == 0 && traversable[slot] != 0 {
                         zones[slot] = label;
                         queue.push_back(n);
                     }
