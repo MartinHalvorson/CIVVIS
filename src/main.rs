@@ -583,8 +583,14 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// ⚠ 2026-08-04 prunes default-off experiments whose measured effects were
 /// negative, inert, or inconclusive. A fixed-prefix `advanced_v1`/`basic`
 /// comparison remains the compatibility check; this is a deliberate re-pin.
+/// #1034 pulls the loyalty policy cards when a city is bleeding loyalty, behind
+/// `loyalty_policy_defence` — `false` in `AdvancedAi::new()` and set only by
+/// `enable_live_bridge`. `strategic_policies` reads the flag before it counts a
+/// single city, so with it off the wishlist is byte-for-byte the old one and
+/// every configured, legacy and Elo agent slots exactly the cards it always did.
+/// A compatibility re-pin.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x1fe5_fde1_dd14_df56;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x6714_132a_18dc_5d39;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
