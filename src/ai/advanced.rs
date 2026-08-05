@@ -806,6 +806,11 @@ const SETTLER_STEP_RISK_LIMIT: f64 = 30.0;
 /// city outrank a good nearby one.
 const SETTLEMENT_EMERGENCY_SITE_MIN: f64 = 8.0;
 
+/// Full settlement scoring is the expensive part of a global scan. Keep a
+/// generous deterministic shortlist from a cheap center/ring-one estimate;
+/// local searches still score every legal site exactly as before.
+const SETTLEMENT_GLOBAL_PREFILTER_LIMIT: usize = 512;
+
 #[derive(Clone)]
 pub struct AdvancedAi {
     base: BasicAi,
@@ -14217,6 +14222,43 @@ impl AdvancedAi {
             .min(24.0)
     }
 
+    /// Order a global candidate scan before invoking the full growth,
+    /// adjacency, and safety model. This deliberately uses only local yields
+    /// and resources, so it is cheap and cannot observe hidden state.
+    fn settlement_prefilter_score(g: &Game, pos: Pos) -> f64 {
+        let value_of = |tile: &crate::world::Tile, weight: f64| {
+            let yields = g.rules.tile_yields(tile);
+            let resource = tile.resource.as_ref().map_or(0.0, |resource| {
+                match g.rules.resources[resource].class.as_str() {
+                    "luxury" => 5.0,
+                    "strategic" => 4.0,
+                    _ => 1.5,
+                }
+            });
+            weight
+                * (yields.food * 2.0
+                    + yields.production * 2.2
+                    + yields.gold * 0.7
+                    + yields.science * 1.2
+                    + yields.culture * 1.2
+                    + yields.faith * 0.4
+                    + resource)
+        };
+        let tile = &g.map.tiles[&pos];
+        let mut value = value_of(tile, 1.5);
+        let mut fresh = tile.has_river();
+        let mut coastal = false;
+        for neighbor in g.nbrs(pos) {
+            let Some(tile) = g.map.get(neighbor) else {
+                continue;
+            };
+            fresh |= tile.terrain == "lake" || tile.feature.as_deref() == Some("oasis");
+            coastal |= matches!(tile.terrain.as_str(), "coast" | "ocean");
+            value += value_of(tile, 1.0);
+        }
+        value + if fresh { 14.0 } else if coastal { 6.0 } else { -5.0 }
+    }
+
     /// The historical score retained for the frozen Advanced control and for
     /// the old `defensible_sites` experiment. Keeping this branch explicit
     /// prevents the new default from silently rewriting the control arm.
@@ -14889,6 +14931,17 @@ impl AdvancedAi {
     }
 
     fn settle_sites(&self, g: &Game, pid: usize, from: Pos, radius: i32) -> Vec<(Pos, f64)> {
+        self.settle_sites_with_limit(g, pid, from, radius, None)
+    }
+
+    fn settle_sites_with_limit(
+        &self,
+        g: &Game,
+        pid: usize,
+        from: Pos,
+        radius: i32,
+        prefilter_limit: Option<usize>,
+    ) -> Vec<(Pos, f64)> {
         let mut sites = Vec::new();
         let mut emergency_sites = Vec::new();
         let visible = self.battlefront_visibility(g, pid);
@@ -14899,21 +14952,61 @@ impl AdvancedAi {
         } else {
             SETTLE_DISTANCE_PENALTY
         };
-        for pos in g.wdisk(from, radius) {
-            let Some(tile) = g.map.get(pos) else { continue };
-            // A site the HOST engine refused is not settleable however good it looks;
-            // see `Game::blocked_city_sites`, which is empty in an ordinary game.
-            if g.blocked_city_sites.contains(&pos)
-                || g.rules.is_water(tile)
-                || !g.rules.is_passable(tile)
-                || g.tile_is_natural_wonder(tile)
-                || g.cities.values().any(|c| g.wdist(c.pos, pos) < 4)
-                || tile
-                    .owner_city
-                    .is_some_and(|cid| g.cities[&cid].owner != pid)
-            {
-                continue;
+        // The old candidate loop asked every city whether it was within the
+        // four-tile founding exclusion radius. Global searches can visit the
+        // whole Ludicrous map, so materialize that small union once instead
+        // of repeating a city scan for every tile.
+        let city_exclusion = (radius > 12)
+            .then(|| {
+                g.cities
+                    .values()
+                    .flat_map(|city| g.wdisk(city.pos, 3))
+                    .collect::<BTreeSet<_>>()
+            })
+            .unwrap_or_default();
+        let mut candidates = g
+            .wdisk(from, radius)
+            .into_iter()
+            .filter_map(|pos| {
+                let Some(tile) = g.map.get(pos) else {
+                    return None;
+                };
+                // A site the HOST engine refused is not settleable however good it looks;
+                // see `Game::blocked_city_sites`, which is empty in an ordinary game.
+                if g.blocked_city_sites.contains(&pos)
+                    || g.rules.is_water(tile)
+                    || !g.rules.is_passable(tile)
+                    || g.tile_is_natural_wonder(tile)
+                    || if radius > 12 {
+                        city_exclusion.contains(&pos)
+                    } else {
+                        g.cities.values().any(|c| g.wdist(c.pos, pos) < 4)
+                    }
+                    || tile
+                        .owner_city
+                        .is_some_and(|cid| g.cities[&cid].owner != pid)
+                {
+                    return None;
+                }
+                let prefilter_score = prefilter_limit
+                    .map(|_| Self::settlement_prefilter_score(g, pos))
+                    .unwrap_or(0.0);
+                Some((pos, prefilter_score))
+            })
+            .collect::<Vec<_>>();
+        let mut overflow = Vec::new();
+        if let Some(limit) = prefilter_limit {
+            candidates.sort_by(|left, right| {
+                right
+                    .1
+                    .total_cmp(&left.1)
+                    .then(left.0.cmp(&right.0))
+            });
+            if candidates.len() > limit {
+                overflow = candidates.split_off(limit);
             }
+        }
+        let score_site = |pos| {
             let site_value = if self.settlement_safety {
                 self.settle_value_visible(g, pid, pos, &visible)
             } else {
@@ -14927,12 +15020,37 @@ impl AdvancedAi {
             };
             let value = site_value - distance as f64 * distance_penalty - overreach;
             if value >= 12.0 {
-                sites.push((pos, value));
+                Some((pos, value, true))
             } else if self.settlement_safety
                 && radius > 12
                 && value >= SETTLEMENT_EMERGENCY_SITE_MIN
             {
-                emergency_sites.push((pos, value));
+                Some((pos, value, false))
+            } else {
+                None
+            }
+        };
+        for (pos, _) in candidates {
+            if let Some((pos, value, normal)) = score_site(pos) {
+                if normal {
+                    sites.push((pos, value));
+                } else {
+                    emergency_sites.push((pos, value));
+                }
+            }
+        }
+        // A cheap local estimate can miss every worthwhile site on a sparse
+        // map. Pay the full scan only in that failure case, preserving the
+        // existing fallback behavior without taxing ordinary global searches.
+        if sites.is_empty() {
+            for (pos, _) in overflow {
+                if let Some((pos, value, normal)) = score_site(pos) {
+                    if normal {
+                        sites.push((pos, value));
+                    } else {
+                        emergency_sites.push((pos, value));
+                    }
+                }
             }
         }
         if sites.is_empty() {
@@ -14956,7 +15074,14 @@ impl AdvancedAi {
     ) -> Option<(Pos, f64)> {
         let from = g.units[&uid].pos;
         let candidates = self
-            .settle_sites(g, pid, from, radius)
+            .settle_sites_with_limit(
+                g,
+                pid,
+                from,
+                radius,
+                (self.settlement_safety && radius > 12)
+                    .then_some(SETTLEMENT_GLOBAL_PREFILTER_LIMIT),
+            )
             .into_iter()
             .filter(|(position, _)| Some(*position) != avoid)
             .collect::<Vec<_>>();
