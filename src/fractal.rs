@@ -26,23 +26,46 @@ pub struct Fractal {
     values: Vec<f64>,
     width: i32,
     height: i32,
-    /// Every map cell's height, sorted, so a percentile is a lookup.
-    sorted: Vec<u8>,
+    /// A histogram of every map cell's height. Heights are bytes, so selecting
+    /// an order statistic from the histogram is exact and avoids sorting a
+    /// map-sized allocation for every field.
+    histogram: [usize; 256],
+    indexed_len: usize,
 }
 
 impl Fractal {
     /// Build a field whose coarsest detail is `grain` subdivisions across the
     /// map: lower grain means fewer, larger regions.
     pub fn new(rng: &mut Rng, width: i32, height: i32, grain: u32) -> Self {
+        Self::new_inner(rng, width, height, grain, true)
+    }
+
+    /// Build a field for point samples only. Terrain and relief fields often
+    /// cut a percentile over a selected land set, which is indexed by
+    /// [`percentile_within`] and does not need a second map-wide index.
+    pub fn new_without_index(rng: &mut Rng, width: i32, height: i32, grain: u32) -> Self {
+        Self::new_inner(rng, width, height, grain, false)
+    }
+
+    fn new_inner(
+        rng: &mut Rng,
+        width: i32,
+        height: i32,
+        grain: u32,
+        index: bool,
+    ) -> Self {
         let mut fractal = Fractal {
             values: vec![0.0; LATTICE * (LATTICE + 1)],
             width,
             height,
-            sorted: Vec::new(),
+            histogram: [0; 256],
+            indexed_len: 0,
         };
         fractal.midpoint_displacement(rng, grain);
         fractal.normalize();
-        fractal.index_heights();
+        if index {
+            fractal.index_heights();
+        }
         fractal
     }
 
@@ -55,6 +78,28 @@ impl Fractal {
         plates: usize,
         blend_ridge: f64,
         blend_fract: f64,
+    ) {
+        self.build_ridges_inner(rng, plates, blend_ridge, blend_fract, true);
+    }
+
+    /// The point-sampling counterpart to [`build_ridges`].
+    pub fn build_ridges_without_index(
+        &mut self,
+        rng: &mut Rng,
+        plates: usize,
+        blend_ridge: f64,
+        blend_fract: f64,
+    ) {
+        self.build_ridges_inner(rng, plates, blend_ridge, blend_fract, false);
+    }
+
+    fn build_ridges_inner(
+        &mut self,
+        rng: &mut Rng,
+        plates: usize,
+        blend_ridge: f64,
+        blend_fract: f64,
+        index: bool,
     ) {
         if plates == 0 {
             return;
@@ -128,7 +173,9 @@ impl Fractal {
             }
         }
         self.normalize();
-        self.index_heights();
+        if index {
+            self.index_heights();
+        }
     }
 
     /// The field's height under a map tile, bilinearly interpolated.
@@ -153,11 +200,7 @@ impl Fractal {
     /// `GetHeight(percent)`, which is how a band like "the driest quarter of
     /// the world" is expressed independently of the field's own distribution.
     pub fn percentile(&self, percent: u32) -> u8 {
-        if self.sorted.is_empty() {
-            return 0;
-        }
-        let index = (percent.min(100) as usize * (self.sorted.len() - 1)) / 100;
-        self.sorted[index]
+        Self::select_percentile(&self.histogram, self.indexed_len, percent)
     }
 
     /// The same percentile, measured over a chosen subset of the map. The
@@ -171,15 +214,35 @@ impl Fractal {
         cells: impl IntoIterator<Item = (i32, i32)>,
         percent: u32,
     ) -> u8 {
-        let mut heights: Vec<u8> = cells
-            .into_iter()
-            .map(|(col, row)| self.at(col, row))
-            .collect();
-        if heights.is_empty() {
-            return self.percentile(percent);
+        let mut histogram = [0; 256];
+        let mut len = 0;
+        for (col, row) in cells {
+            histogram[self.at(col, row) as usize] += 1;
+            len += 1;
         }
-        heights.sort_unstable();
-        heights[(percent.min(100) as usize * (heights.len() - 1)) / 100]
+        if len == 0 {
+            self.percentile(percent)
+        } else {
+            Self::select_percentile(&histogram, len, percent)
+        }
+    }
+
+    /// Select several percentiles from one chosen cell set. Tectonic bands
+    /// ask for multiple cuts of the same land field; one histogram pass keeps
+    /// those cuts linear in the land size rather than sorting it repeatedly.
+    pub fn percentiles_within(&self, cells: &[(i32, i32)], percents: &[u32]) -> Vec<u8> {
+        let mut histogram = [0; 256];
+        for (col, row) in cells {
+            histogram[self.at(*col, *row) as usize] += 1;
+        }
+        let len = cells.len();
+        if len == 0 {
+            return percents.iter().map(|percent| self.percentile(*percent)).collect();
+        }
+        percents
+            .iter()
+            .map(|percent| Self::select_percentile(&histogram, len, *percent))
+            .collect()
     }
 
     fn get(&self, col: usize, row: usize) -> f64 {
@@ -249,14 +312,28 @@ impl Fractal {
     }
 
     fn index_heights(&mut self) {
-        let mut heights = Vec::with_capacity((self.width * self.height).max(0) as usize);
+        self.histogram = [0; 256];
         for row in 0..self.height {
             for col in 0..self.width {
-                heights.push(self.at(col, row));
+                self.histogram[self.at(col, row) as usize] += 1;
             }
         }
-        heights.sort_unstable();
-        self.sorted = heights;
+        self.indexed_len = (self.width * self.height).max(0) as usize;
+    }
+
+    fn select_percentile(histogram: &[usize; 256], len: usize, percent: u32) -> u8 {
+        if len == 0 {
+            return 0;
+        }
+        let target = (percent.min(100) as usize * (len - 1)) / 100;
+        let mut seen = 0;
+        for (height, count) in histogram.iter().enumerate() {
+            seen += count;
+            if seen > target {
+                return height as u8;
+            }
+        }
+        255
     }
 }
 
