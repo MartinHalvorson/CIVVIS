@@ -161,6 +161,7 @@
   "plunder_type": "faith",
   "plunder_amount": 25,
   "unique_to": "Armagh",
+  "housing": 1,
   "same_adjacent_valid": false,
   "yields": {
    "faith": 2
@@ -1260,7 +1261,7 @@
   "yields": {
    "food": 1
   },
-  "housing": 0.5,
+  "housing": 1,
   "effects": {
    "adjacent_mountain_food": 1,
    "adjacent_aqueduct_production": 2,
