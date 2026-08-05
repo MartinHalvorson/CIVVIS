@@ -50,6 +50,16 @@ jobs:
       # slowest step in the merge path.
       - run: cargo test --profile ci --locked
 
+      # ⚠ The worktree audit is the only guard against a whole class of loss
+      # that is invisible to every other gate here: finished work left unstaged
+      # in an agent worktree, which lives on exactly one disk and has already
+      # cost this project four PRs. CI has no fleet to inspect, so the audit
+      # builds a throwaway repo with a real remote, a real worktree and a real
+      # unstaged edit, and asserts it catches it — and that `--rescue` moves the
+      # bytes to the remote without touching the tree an agent may be editing.
+      - name: The worktree audit still catches unstaged work
+        run: python3 tools/civvis_worktree_audit.py --selftest
+
   # The published build at civvis.ai/beta compiles this same crate for the
   # browser (`src/wasm.rs`, gated to wasm32). `cargo test` never builds that
   # target, so a perfectly ordinary change to `Params` or to `server.rs` breaks
