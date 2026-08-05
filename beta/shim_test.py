@@ -74,7 +74,9 @@ def main() -> int:
     shutil.copy(here / "shim.js", stage / "shim.js")
     (stage / "index.html").write_text(HARNESS, encoding="utf-8")
     build = stage / "build.json"
-    build.write_text('{"commit":"test","wasm_bytes":7340032}\n', encoding="utf-8")
+    build.write_text(
+        '{"commit":"test","wasm_bytes":7340032}\n', encoding="utf-8"
+    )
 
     port = free_port()
     server = socketserver.TCPServer(
@@ -148,6 +150,7 @@ def main() -> int:
         assert selected["between_game_countdown_ms"] == 3000, selected
         first = dev.evaluate("fetch('/state?have=226').then(r => r.json())")
         assert first["seed"] == 7 and first["restart_in"] == 3, first
+        assert first["server_wasm_bytes"] == 7 * 1024 * 1024, first
         assert first["server_artifact_bytes"] == 7 * 1024 * 1024, first
         assert first["server_artifact_kind"] == "WASM", first
 
