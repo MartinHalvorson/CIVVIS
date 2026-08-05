@@ -33894,21 +33894,36 @@ impl Game {
         dname: Name,
         dpos: Pos,
         assume: Option<&crate::game::adjacency::PlanAssumption>,
+        detail: Option<&mut Vec<AdjacencySource>>,
+        family: Name,
+    ) -> Yields {
+        let mut neighbors = [None; 6];
+        for (index, pos) in self.nbrs(dpos).into_iter().enumerate() {
+            neighbors[index] = self.map.get(pos);
+        }
+        self.district_adjacency_assuming_with_family_and_neighbors(
+            dname,
+            dpos,
+            assume,
+            detail,
+            family,
+            &neighbors,
+        )
+    }
+
+    pub(crate) fn district_adjacency_assuming_with_family_and_neighbors(
+        &self,
+        dname: Name,
+        dpos: Pos,
+        assume: Option<&crate::game::adjacency::PlanAssumption>,
         mut detail: Option<&mut Vec<AdjacencySource>>,
         family: Name,
+        neighbors: &[Option<&crate::world::Tile>; 6],
     ) -> Yields {
         let spec = &self.rules.districts[dname];
         let mut adj = Yields::default();
         if !spec.adjacency.is_empty() {
             let tile = &self.map.tiles[&dpos];
-            // A plot has at most six in-map neighbors. Keep the tile
-            // references inline; this calculator runs once per district/site
-            // candidate in settlement scoring, so a Vec here becomes a large
-            // allocator tax on Ludicrous maps.
-            let mut neighbors = [None; 6];
-            for (index, pos) in self.nbrs(dpos).into_iter().enumerate() {
-                neighbors[index] = self.map.get(pos);
-            }
             let owner_city = self
                 .map
                 .get(dpos)
