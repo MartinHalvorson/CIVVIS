@@ -15255,9 +15255,20 @@ impl AdvancedAi {
         improvement: &str,
         strategy: GrandStrategy,
     ) -> f64 {
+        let appeal = g.tile_appeal(pos).max(0) as f64;
+        self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
+    }
+
+    fn improvement_value_with_appeal(
+        &self,
+        g: &Game,
+        pos: Pos,
+        improvement: &str,
+        strategy: GrandStrategy,
+        appeal: f64,
+    ) -> f64 {
         let tile = &g.map.tiles[&pos];
         let spec = &g.rules.improvements[improvement];
-        let appeal = g.tile_appeal(pos).max(0) as f64;
         let mut yields = spec.yields;
         yields.gold += spec.effects.get("appeal_gold").copied().unwrap_or(0.0) * appeal;
         let mut value = self.yield_value(yields, strategy);
@@ -15475,10 +15486,13 @@ impl AdvancedAi {
         pos: Pos,
         strategy: GrandStrategy,
     ) -> Vec<Name> {
+        let appeal = g.tile_appeal(pos).max(0) as f64;
         let current_value = g.map.tiles[&pos]
             .improvement
             .as_deref()
-            .map(|improvement| self.improvement_value(g, pos, improvement, strategy))
+            .map(|improvement| {
+                self.improvement_value_with_appeal(g, pos, improvement, strategy, appeal)
+            })
             .unwrap_or(0.0);
         // Score each candidate once and sort the scores. The comparator used
         // to re-derive both sides of every comparison, so ranking eight
@@ -15489,7 +15503,8 @@ impl AdvancedAi {
             .into_iter()
             .filter(|improvement| g.rules.improvements[improvement].builder_buildable)
             .map(|improvement| {
-                let value = self.improvement_value(g, pos, &improvement, strategy);
+                let value =
+                    self.improvement_value_with_appeal(g, pos, &improvement, strategy, appeal);
                 (value, improvement)
             })
             .filter(|(value, _)| *value > current_value + 0.5)

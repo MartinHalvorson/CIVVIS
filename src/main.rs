@@ -628,6 +628,12 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// comparison produced byte-identical output on clean main and the candidate.
 /// Compatibility re-pin; the Elo protocol does not move.
 ///
+/// #1225 reuses the tile appeal computed by one `worthwhile_improvements` call
+/// across that tile's candidate improvements. A fixed-prefix `ai_eval
+/// advanced basic --pairs 10 --players 4 --turns 200 --seed 31337 --jobs 1
+/// --deployment-comparison` comparison produced byte-identical output on
+/// clean main and the candidate (SHA-256
+/// `34c8ccea34d4bf3a8b60ae1b713f82bffbce77a5f1614f07d69db591d6287b24`).
 /// #1227 stops the live religious buyer purchasing a Missionary into a tile that
 /// already holds one of our religious units — the host refuses it outright with
 /// "Too many units of the same class in this location.", 799 times across the
@@ -638,7 +644,7 @@ const DEFAULT_TOURNAMENT_ENTRANTS: &str =
 /// worktree with the change stashed and applied (same base, same build profile).
 /// Compatibility re-pin; the Elo protocol does not move.
 #[cfg(test)]
-const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x3a20_cd20_5b2d_2ba1;
+const ADVANCED_V1_SOURCE_CONTRACT_FNV: u64 = 0x210e_91ee_acb4_d727;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct TournamentEntrant {
