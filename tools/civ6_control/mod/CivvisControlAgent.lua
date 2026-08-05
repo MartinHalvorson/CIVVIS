@@ -59,6 +59,27 @@ local civvisBuild = {};
 -- deliberately turn-scoped: a strategic resource or prerequisite can change later,
 -- but retrying the same impossible choice in every blocker pass cannot help.
 local refusedByCity = {};
+-- ⚠⚠ CITY LOSS IS NOT AN EVENT, AND IT IS THE CONSTRAINT ON EVERYTHING.
+--
+-- 36% of live runs reaching turn 150 end with ONE city, and **96% of those
+-- founded cities and lost them** — peaks of 3, 4, 5, 6, even 7. Median peak is
+-- 4 and median final is 2; 61% of runs lose at least one city and **32% of all
+-- cities ever founded are lost**. Score is 194 at one city against 603 at seven.
+-- Population is what science is, so this is the science ceiling.
+--
+-- And nothing reports it. There is no `kind` in `events.jsonl` for a city
+-- changing hands, so the only way to study it has been to diff the periodic
+-- state exports and read each city's LAST SEEN condition. That inference put
+-- military capture at 41% and loyalty at 43% over 181 lost cities — but the
+-- military share is a FLOOR, not a number, because a city taken BETWEEN two
+-- exports is never observed damaged and lands in the wrong bucket.
+--
+-- This remembers the roster every turn instead, so a loss is caught at turn
+-- resolution with the city's condition on the turn before it went. That is the
+-- difference between a 181-row inference and a census, and it is the cheap
+-- prerequisite to pricing either half of the holding problem — both of which
+-- have already absorbed many attempts and measured null.
+local lastRoster = {};
 -- Emitted once: a defeat is not a per-turn condition.
 local defeatReported = false;
 
@@ -6091,6 +6112,111 @@ local function probeCitizenSlots(turn)
 	end
 end
 
+-- ⭐ PUT ONE CITIZEN IN THE CAMPUS, WHERE THE MULTIPLIER ALREADY STANDS.
+--
+-- The probe answered the open question. Live run `civvis-20260804T173018Z`,
+-- turn 50, for every district asked:
+--
+--     verdicts: absent=false, true=true, one=true, zero=true
+--
+-- `CanStartCommand(city, MANAGE, {PARAM_MANAGE_CITIZEN=<any non-nil>, X, Y})`
+-- returns TRUE, and returns FALSE only when the parameter is ABSENT. The
+-- interface mode was never the gate — `UI.GetInterfaceModeParameter` merely
+-- supplies a value the command needs to be PRESENT, and any non-nil value does.
+--
+-- The gap this closes: across 100 live end-of-game cities there are 53
+-- specialist assignments in total, **45.3% of them on Commercial Hubs and only
+-- 26.4% on Campuses**, and of the 50 cities holding a Campus only **8** carry a
+-- specialist on it. Every one of those placements is Civilization VI's own
+-- citizen governor, because this agent has never issued a citizen order.
+-- Specialists are also the widest-spread metric in the corpus: the top science
+-- quartile of live runs holds **9** and the bottom holds **0**.
+--
+-- ⚠⚠ THIS IS A REALLOCATION, NOT FREE YIELD. A citizen moved into a specialist
+-- slot stops working a tile. So it is deliberately narrow:
+--
+--   * only a CAMPUS, and only one whose plot currently has ZERO workers;
+--   * only in a city that already holds a LIBRARY, so the science the
+--     specialist makes is actually multiplied — a Campus specialist in a city
+--     with no Library is the weakest version of this trade;
+--   * at most ONE citizen per city per turn, so a bad trade cannot compound;
+--   * `CanStartCommand` is asked BEFORE `RequestCommand`, and the outcome of
+--     both is emitted, because "the request did not throw" is not "the engine
+--     took it" and this project keeps a ledger of exactly that mistake.
+--
+-- Off unless `cfg.CampusSpecialist` is set.
+local function fillCampusSpecialists(turn)
+	local pid = Game.GetLocalPlayer();
+	if pid == nil or pid < 0 then return; end
+	local player = Players[pid];
+	if player == nil then return; end
+	local cities = try(function() return player:GetCities(); end);
+	if cities == nil then return; end
+	local libraryIndex = try(function() return GameInfo.Buildings["BUILDING_LIBRARY"].Index; end);
+	if libraryIndex == nil then return; end
+	for _, city in cities:Members() do
+		local cityId = try(function() return city:GetID(); end, -1);
+		-- The multiplier gate. Without a Library the specialist's beakers are
+		-- not multiplied by anything and the tile it left may well be worth more.
+		local blds = try(function() return city:GetBuildings(); end);
+		local hasLibrary = blds ~= nil
+			and try(function() return blds:HasBuilding(libraryIndex); end, false);
+		if hasLibrary then
+			local ownedPlots = try(function()
+				return Map.GetCityPlots():GetPurchasedPlots(city);
+			end);
+			for _, plotIndex in ipairs(ownedPlots or {}) do
+				local plot = try(function() return Map.GetPlotByIndex(plotIndex); end);
+				local dtype = nil;
+				if plot ~= nil then
+					local d = try(function() return plot:GetDistrictType(); end, -1);
+					if d ~= nil and d >= 0 then
+						dtype = try(function() return GameInfo.Districts[d].DistrictType; end);
+					end
+				end
+				-- `DISTRICT_CAMPUS` and nothing else. The civilization uniques
+				-- that REPLACE a Campus (Seowon, Observatory) carry their own
+				-- type and are deliberately left for a follow-up rather than
+				-- guessed at here.
+				if dtype == "DISTRICT_CAMPUS"
+					and try(function() return plot:GetWorkerCount(); end, -1) == 0 then
+					local px = try(function() return plot:GetX(); end, -1);
+					local py = try(function() return plot:GetY(); end, -1);
+					local ok, can = pcall(function()
+						local params = {};
+						params[CityCommandTypes.PARAM_X] = px;
+						params[CityCommandTypes.PARAM_Y] = py;
+						params[CityCommandTypes.PARAM_MANAGE_CITIZEN] = true;
+						return CityManager.CanStartCommand(
+							city, CityCommandTypes.MANAGE, params, true);
+					end);
+					local applied = false;
+					if ok and can == true then
+						applied = pcall(function()
+							local params = {};
+							params[CityCommandTypes.PARAM_X] = px;
+							params[CityCommandTypes.PARAM_Y] = py;
+							params[CityCommandTypes.PARAM_MANAGE_CITIZEN] = true;
+							CityManager.RequestCommand(
+								city, CityCommandTypes.MANAGE, params);
+						end);
+					end
+					emit("civvis_campus_specialist", {
+						turn = turn,
+						city = cityId,
+						x = px, y = py,
+						can = (ok and tostring(can) or "threw"),
+						applied = applied,
+					});
+					-- One per city per turn, whatever happened. A refusal is
+					-- information; a retry loop is a stall.
+					break;
+				end
+			end
+		end
+	end
+end
+
 local function probeChannels(turn)
 	local report = { turn = turn };
 	-- Bare globals, not `_G[name]`: each Civ 6 UI context runs in its own
@@ -8012,7 +8138,75 @@ end
 -- Split out of `playTurn` because the export must happen whether or not CIVVIS
 -- replies: it is the only thing the brain has to read, so skipping it on a
 -- fallback turn would guarantee the next turn falls back too.
+-- Emit a `city_lost` for every city that was ours last turn and is not now,
+-- carrying the condition it was in when we last held it.
+--
+-- ⚠ Deliberately compares against the PREVIOUS TURN's roster rather than a
+-- periodic export. A city taken between two exports is invisible to the diff
+-- that was being used before; at turn resolution it cannot be.
+--
+-- ⚠ `loyalty` and `damage` are the condition ONE TURN BEFORE the loss, which is
+-- the honest thing to report: the turn it fell we no longer own it and cannot
+-- read it. A city at loyalty 100 and undamaged the turn before it went was
+-- almost certainly taken by force — half of all losses look like that.
+local function reportLostCities(player, pid, turn)
+	local cities = try(function() return player:GetCities(); end);
+	if cities == nil then return; end
+	local now = {};
+	for _, city in cities:Members() do
+		local id = try(function() return city:GetID(); end);
+		if id ~= nil then
+			local x = try(function() return city:GetX(); end, -1);
+			local y = try(function() return city:GetY(); end, -1);
+			-- The file's own accessors, not recalled ones. `cityLoyalty` returns
+			-- nil on a Vanilla ruleset with no `GetCulturalIdentity`, and
+			-- `cityDefence` reads damage off the DISTRICT at the plot — a city
+			-- has no `GetDamage`, and calling one that does not exist is how
+			-- every wall was once exported as pristine.
+			local loyalty, perTurn, fallsTo = cityLoyalty(city);
+			local _, damage, _, wallDamage = cityDefence(x, y);
+			now[id] = {
+				name = try(function() return Locale.Lookup(city:GetName()); end, "?"),
+				pop = try(function() return city:GetPopulation(); end, -1),
+				loyalty = loyalty, per_turn = perTurn, falls_to = fallsTo,
+				damage = damage, wall = wallDamage,
+				turn = turn,
+			};
+		end
+	end
+	-- Only report once a roster has been recorded, or turn 1 announces the loss
+	-- of every city we never had.
+	if next(lastRoster) ~= nil then
+		for id, was in pairs(lastRoster) do
+			if now[id] == nil then
+				-- ⭐ `falls_to` is the game telling us outright who the city was
+				-- going to fall to — it drives the banner's own
+				-- "LOC_LOYALTY_CITY_WILL_FALL_TO_TT" warning. Present means the
+				-- loss was LOYALTY and was forecast; absent with damage means it
+				-- was TAKEN. That is the distinction the offline diff could not
+				-- draw, and it is why the military share of city loss has only
+				-- ever been a floor.
+				emit("city_lost", {
+					turn = turn,
+					city = id,
+					name = was.name,
+					held_until = was.turn,
+					pop_when_held = was.pop,
+					loyalty_when_held = was.loyalty,
+					loyalty_rate_when_held = was.per_turn,
+					falls_to_when_held = was.falls_to,
+					damage_when_held = was.damage,
+					wall_damage_when_held = was.wall,
+				});
+			end
+		end
+	end
+	lastRoster = now;
+end
+
 local function beginTurn(player, pid, turn)
+	-- First, before anything else this turn can change the roster.
+	pcall(function() reportLostCities(player, pid, turn); end);
 	if cfg.ProbeChannels then probeChannels(turn); end
 	-- Every `ProbeCitizenEvery` turns rather than every turn: the answer cannot
 	-- change within a game, and one line per district per city per turn would
@@ -8020,6 +8214,13 @@ local function beginTurn(player, pid, turn)
 	if cfg.ProbeCitizens
 		and (turn % (cfg.ProbeCitizenEvery or 25)) == 0 then
 		probeCitizenSlots(turn);
+	end
+	-- Every `CampusSpecialistEvery` turns rather than every turn: a citizen the
+	-- game's own governor moves back is not worth fighting over each turn, and
+	-- the emit would drown the log the rest of the run is read out of.
+	if cfg.CampusSpecialist
+		and (turn % (cfg.CampusSpecialistEvery or 10)) == 0 then
+		fillCampusSpecialists(turn);
 	end
 	-- ⚠⚠⚠ ENVOYS ARE SPENT ON THE TURN, NOT ON THE PROMPT. `chooseEnvoy` was
 	-- reachable only from the `ENDTURN_BLOCKING_GIVE_INFLUENCE_TOKEN` handler,

@@ -792,6 +792,9 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
+    ap.add_argument("--campus-specialist", action="store_true", default=False,
+                    help="move one citizen into a Campus specialist slot where a Library "
+                         "already stands; read the outcome from civvis_campus_specialist")
     ap.add_argument("--probe-citizens", action="store_true", default=False,
                     help="ask once per batch whether this UI context may assign a "
                          "citizen to a district; read-only, issues no command")
@@ -1098,6 +1101,7 @@ def main() -> int:
             # issued a citizen order. The probe is read-only -- it asks
             # `CanStartCommand` and emits the verdict without issuing anything.
             + (["--probe-citizens"] if args.probe_citizens else [])
+            + (["--campus-specialist"] if args.campus_specialist else [])
             + [
              # ⚠ Popups must not sit on the map. They are closed by the autoclose shim
              # already, but the delay is how long they are VISIBLE, and the operator is
