@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::ops::{Deref, DerefMut};
 
 use crate::name::Name;
+use crate::sphere::trig;
 use crate::{hex, Pos};
 
 /// A district site that has been placed but has not finished construction.
@@ -701,9 +702,9 @@ impl WorldMap {
         let (longitude, latitude) = self.lon_lat(pos);
         let (longitude, latitude) = (longitude.to_radians(), latitude.to_radians());
         [
-            latitude.cos() * longitude.cos(),
-            latitude.cos() * longitude.sin(),
-            latitude.sin(),
+            trig::cos(latitude) * trig::cos(longitude),
+            trig::cos(latitude) * trig::sin(longitude),
+            trig::sin(latitude),
         ]
     }
 
