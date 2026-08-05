@@ -4,7 +4,8 @@
 //! is documented in `docs/AI_GAPS.md`: the evaluator could not see the
 //! decision it was ranking, so no amount of training could rank it. The
 //! second is the same error one level up — the change addressed a constraint
-//! that was not binding. `advanced_relief_scoped` is the worked example: it
+//! that was not binding. The former scoped-relief experiment is the worked
+//! example: it
 //! cut the force groups frozen far from an emergency from 19.0% of
 //! force-group turns to 10.4%, exactly as designed, and measured
 //! Elo-equivalent -6 over 120 mirrored maps.

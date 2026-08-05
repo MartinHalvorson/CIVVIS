@@ -1428,12 +1428,10 @@ three or more eras stale and converts a spent garrison into a capture 22% of
 the time. Freeing 9% of force-group turns to advance moves nothing while
 what they advance *into* is unchanged.
 
-So the behaviour stays behind `AdvancedAi::scoped_relief_hold`, off by
-default, reachable as the `advanced_relief_scoped` entrant. It is worth
-re-running, unchanged, once siege conversion moves — which is the point of
-keeping it rather than reverting it. The census attribution fix lands
-regardless: it was reporting 61% where the truth is 34%, and that number is
-what made this look like the biggest available lever in the first place.
+The experiment is now removed from `AdvancedAi`; its null remains recorded here
+and should not be reintroduced without a new gate. The census attribution fix
+lands regardless: it was reporting 61% where the truth is 34%, and that number
+is what made this look like the biggest available lever in the first place.
 
 ## 2026-07-26 — three free military superpowers, all worth nothing
 
@@ -3435,7 +3433,7 @@ behaviour, with the fires-check recorded and no evaluation spent.
 ## 2026-07-28 — routing the opportunistic war behind the Prophet race: mechanism fires, wins do not move
 
 Pre-registered at `/Users/martin/civvis-prophet-first-preregistration.md`.
-`advanced_prophet_first` tests `religious_opening_viable` **before** the arm that
+The former `advanced_prophet_first` tested `religious_opening_viable` **before** the arm that
 fires Conquest on a bare power ratio, instead of after. `at_war` keeps its
 priority, so only the *opportunity* to start a war is deferred, never a war
 already running.
@@ -3468,8 +3466,8 @@ right summary: wins favour the treatment while terminal score favours the
 control, which separates victory routing from development rather than
 contradicting itself.
 
-**Recorded as a null and the flag ships off**, on the `advanced_lane_reachable`
-precedent and on the pre-registered rule. No seed re-roll.
+**Recorded as a null; the flag was removed** under the pre-registered rule. No
+seed re-roll.
 
 ### What this does and does not license
 
@@ -5819,12 +5817,12 @@ the eval default, where `map_capacity = (2 + land / 55)` caps the target first:
 work to evaporate when confirmed on a seed it was not found on, after a +23 and
 a +20 earlier in the same session. The confirmation has better win resolution
 (64 maps against 28) and its terminal-score direction is 116–117, which is as
-flat as that statistic gets. Left off by default as a recorded entrant.
+flat as that statistic gets. Left as a historical null; the entrant was removed.
 
 ### The follow-up was fires-checked and declined without an evaluation
 
-The remaining untested cell was `city_target_floor = 6` together with
-`parallel_settlers`. `advanced_parallel_settlers` measured near-inert on its own,
+The remaining untested cell was `city_target_floor = 6` together with the
+former `parallel_settlers` treatment. `advanced_parallel_settlers` measured near-inert on its own,
 and its doc explains why — the clause beside it already caps cities-plus-settlers
 at `desired_cities`, so a seat wanting three cities never wants a second settler.
 With the target raised and room on the map, that reasoning no longer applies, and

@@ -5,7 +5,7 @@
 //! 14 — thirty points, against a fixed policy rather than an oracle. The churn
 //! measurement (`plan_churn`, `docs/EVAL.md` 2026-07-28) found the adaptive
 //! agent switching lane 14.2 times a game and spending 34.9% of it on lanes
-//! that won nothing. But `refuse_unreachable_lanes` — the filter built to stop
+//! that won nothing. But the former unreachable-lane filter — built to stop
 //! exactly that — measured null at 120 maps, and its note says why: **103 of
 //! 120 `advanced` wins were religious anyway.**
 //!
@@ -78,11 +78,7 @@ struct Cell {
     /// fires-check rather than trusting that `retarget` was reached.
     committed: bool,
     end_turn: u32,
-    /// Cities the focal seat finished with. `assess()` sends a Religion-targeted
-    /// seat that has no religion yet straight to `GrandStrategy::Religion`,
-    /// bypassing the "the assigned lane can still afford to expand first" arm
-    /// that every other target reaches. If that is what an early commitment
-    /// costs, it shows up here and nowhere else.
+    /// Cities the focal seat finished with, for interpreting commitment cost.
     cities: usize,
 }
 
@@ -100,13 +96,9 @@ fn play(
     lane: VictoryTarget,
     commit: Option<u32>,
     genome: &Weights,
-    may_expand: bool,
 ) -> Cell {
     let mut game = Game::new(players, width, height, seed, turns, city_states);
     let mut fleet: Vec<AdvancedAi> = AdvancedAi::fleet_weighted(&game, genome);
-    // Only the focal seat is ever targeted, and the flag reads only inside the
-    // targeted arm, so setting it here is the whole treatment.
-    fleet[focal].assigned_religion_may_expand = may_expand;
     let mut committed = false;
     if commit == Some(0) {
         fleet[focal].retarget(lane);
@@ -203,11 +195,6 @@ fn main() {
     );
     println!("focal seat rotates with the map index so no seat position is privileged\n");
 
-    let may_expand = args.iter().any(|arg| arg == "--may-expand");
-    if may_expand {
-        println!("treatment: assigned_religion_may_expand ON for the focal seat");
-    }
-
     let conditions = commits.len() + 1;
     let commits_for_map = commits.clone();
     let rows = parallel::map(maps, jobs, move |index| {
@@ -216,13 +203,30 @@ fn main() {
         let mut cells: Vec<Cell> = Vec::with_capacity(conditions);
         for at in &commits_for_map {
             cells.push(play(
-                players, width, height, seed, turns, city_states, focal, lane, Some(*at),
-                &genome, may_expand,
+                players,
+                width,
+                height,
+                seed,
+                turns,
+                city_states,
+                focal,
+                lane,
+                Some(*at),
+                &genome,
             ));
         }
         // The control is adaptive, never targeted, so the flag cannot reach it.
         cells.push(play(
-            players, width, height, seed, turns, city_states, focal, lane, None, &genome, false,
+            players,
+            width,
+            height,
+            seed,
+            turns,
+            city_states,
+            focal,
+            lane,
+            None,
+            &genome,
         ));
         cells
     });

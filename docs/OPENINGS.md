@@ -239,7 +239,8 @@ clause, and the other half needs its own diagnosis.
 
 ## 7. ⚠ The serialization story is wrong — the fires-check killed it
 
-§6's attribution was tested and does not survive. `advanced_parallel_settlers`
+§6's attribution was tested and does not survive. The former
+`advanced_parallel_settlers`
 lifts `counts.settlers == 0` to the shortfall against the target. Over the same
 60 maps at 4 players on 32×22:
 
@@ -277,8 +278,8 @@ question is no longer "why won't the AI queue a second settler" but **"why is
 the capital not growing fast enough to afford one"**, which is a food, tile-
 improvement and district-timing question, not a build-order one.
 
-The entrant is kept with its null recorded, on the `advanced_lane_reachable`
-precedent, so the axis can be re-measured if the settler economy ever changes.
+The entrant was removed with its null recorded; the axis can be re-measured if
+the settler economy ever changes.
 
 ### ⚠ The obvious objection, and why it does not land
 
@@ -564,7 +565,7 @@ real headroom rather than a hypothesis.
 
 ## 12. ⚠ Growing the capital does not speed expansion — §8's attribution retracted
 
-§11 found real headroom, so §12 spent it. `advanced_food_first` gives an
+§11 found real headroom, so §12 spent it. The former `advanced_food_first` gave an
 empire's governors an extra food appetite while it is short of its city target,
 and withdraws it once the target is met. The bias is a number, so the response
 curve is measurable rather than a single guess.
@@ -607,12 +608,11 @@ interaction with `citizen_strategy`'s existing `expansion` focus, which already
 adds +0.55 food and +1.15 production when a settler is queued — is carrying
 most of it. That is a further measurement, not a conclusion.
 
-**Not taken to an `ai_eval`.** The treatment is worse on the metric it was
+**Not taken to an `ai_eval`.** The treatment was worse on the metric it was
 designed to move, in a clean monotone dose-response over 240 seats a point.
 Spending forty minutes of paired evaluation to discover its win rate is also
-worse is not a good use of the gate. The entrant ships at bias 0.6 with this
-result recorded, on the `advanced_lane_reachable` precedent, so the axis can be
-re-measured rather than re-derived.
+worse is not a good use of the gate. The treatment was removed with this result
+recorded, so the axis can be re-measured rather than re-derived.
 
 ### Where that leaves the ledger
 
