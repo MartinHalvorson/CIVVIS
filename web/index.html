@@ -4356,12 +4356,19 @@ const RES_WORD_MAX_WIDTH = S * SQ3 * .72;
 // small; at this size it decides whether the badge leans into the next hex.
 const RES_BADGE_SEAT = 1 - (RES_BADGE_R + 1.2) / (S * SQ3 / 2);
 const ARTIFACT_RESOURCES = new Set(["antiquity_site", "shipwreck"]);
-// Units that cannot fight — captured rather than killed, and the things an
-// empire has to escort. They carry their own plate shape so a glance separates
-// an army from what it is protecting.
+// Civilian-layer units carry their own plate shape so a glance separates an
+// army from what it is protecting. Religious civilians still use theological
+// health; the two capture-only civilian types are named separately below.
 const CIVILIAN_UNITS = new Set(["settler", "builder", "trader", "naturalist",
   "archaeologist", "rock_band", "spy", "missionary", "apostle", "guru",
   "inquisitor"]);
+// A hostile melee unit captures these by entering their tile. They never take
+// combat damage, so presenting an HP total would imply a fight that cannot
+// occur.
+const CAPTURE_ONLY_CIVILIAN_UNITS = new Set(["settler", "builder"]);
+function unitHasHealth(unit) {
+  return !!unit && !CAPTURE_ONLY_CIVILIAN_UNITS.has(unit.type) && Number.isFinite(unit.hp);
+}
 // The command map uses Civilization VI's own unit glyphs. Their order is the
 // order of the cells in civ6-unit-flags.png and is kept beside the renderer so
 // a missing ruleset unit cannot silently borrow another unit's picture.
@@ -5165,7 +5172,7 @@ function animateDiff(prev, next) {
                                 t0: now, dur:unitMoveDuration(nu.id, steps) });
       }
     }
-    if (nu.hp < pu.hp) {
+    if (unitHasHealth(nu) && unitHasHealth(pu) && nu.hp < pu.hp) {
       const dmg = pu.hp - nu.hp;
       const [x, y] = worldXY(nu.pos);
       anim.floats.push({ x, y: y - 16, txt: "-" + dmg, col: "#ff6252", t0: now });
@@ -5176,7 +5183,7 @@ function animateDiff(prev, next) {
     if (nextU.has(pu.id)) continue;
     // Low-HP disappearance is the fog-safe signal that this was a casualty,
     // rather than a unit simply leaving the observer's current sight.
-    if (pu.hp <= 55) {
+    if (unitHasHealth(pu) && pu.hp <= 55) {
       const [x, y] = worldXY(pu.pos);
       const deathAt = now;
       anim.deaths.push({ x, y, owner: pu.owner, type: pu.type,
@@ -13442,7 +13449,8 @@ function strategicUnitTokenPath(civilian, x, y, r) {
 // label. Its largest corner is still inside the token's enclosing circle, so
 // the same inradius calculation that contains the unit contains its health.
 function drawStrategicUnitHealth(x, y, r, hp, now) {
-  const health = Math.max(0, Math.min(100, Math.round(hp ?? 100)));
+  if (!Number.isFinite(hp)) return;
+  const health = Math.max(0, Math.min(100, Math.round(hp)));
   if (!(r > 0) || health >= 100) return;
   cx.save();
   const frac = health / 100;
@@ -19621,7 +19629,7 @@ function drawPlanetMap() {
     cx.fill(); cx.stroke();
     drawUnitPictogram(unit.embarked ? "galley" : unit.type, ux, uy,
                       r * 1.48, tokenInk);
-    drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
+    if (unitHasHealth(unit)) drawStrategicUnitHealth(ux, uy, r, unit.hp, now);
     if (commandTokenClip) cx.restore();
     cx.restore();
   }
@@ -20486,7 +20494,7 @@ function draw() {
     cx.stroke();
     drawUnitPictogram(u.type, x, y, rr * 1.45 * COMMAND_UNIT_ICON_K(), tokenInk);
     cx.globalAlpha = unitAlpha;
-    drawStrategicUnitHealth(x, y, rr, u.hp, now);
+    if (unitHasHealth(u)) drawStrategicUnitHealth(x, y, rr, u.hp, now);
     if (u.level > 1) {
       const count = u.level - 1;
       const pipRadius = Math.min(2, rr * .12);
@@ -23382,7 +23390,8 @@ function drawUbar() {
   const linked = u.linked_to !== null && u.linked_to !== undefined;
   const escortPeer = linked && state.units.find(candidate => candidate.id === u.linked_to);
   const escortName = escortPeer ? titleCase(escortPeer.type) : null;
-  let h = `<b>${u.type}</b> <span class="small">hp ${u.hp} · mp ${u.moves_left}` +
+  const status = unitHasHealth(u) ? `hp ${u.hp}` : "capturable";
+  let h = `<b>${u.type}</b> <span class="small">${status} · mp ${u.moves_left}` +
     (u.level > 1 ? ` · lvl ${u.level}` : "") + (u.fortified ? " · ⛨ fortified" : "") +
     (u.formation ? ` · ${formationName(u.type, u.formation)}` : "") +
     (linked ? ` · escort with ${escortName || `#${u.linked_to}`}` : "") +
@@ -27519,13 +27528,14 @@ function tileDevelopmentTipLine(t) {
 function tileTipLines(t, pos, tileKey) {
   const lines = [];
   // Who is standing here is what a hover over an occupied tile is asking, so
-  // the units lead and state their remaining health in the compact map-detail
-  // form: Empire's unit - xx HP.
+  // the units lead and state their health or capture status in the compact
+  // map-detail form: Empire's unit - xx HP/capturable.
   for (const unit of state.units) {
     if (key(unit.pos) !== tileKey) continue;
     const civ = state.players[unit.owner]?.civ || `Player ${unit.owner}`;
+    const unitStatus = unitHasHealth(unit) ? `${fmtYield(unit.hp)} HP` : "capturable";
     lines.push(`<span class="tip-unit">${civPossessive(civ)} ${titleCase(unit.type)} - ` +
-      fmtYield(unit.hp) + " HP</span>");
+      unitStatus + "</span>");
   }
   const owner = tileOwnershipTipLine(t);
   if (owner) lines.push(owner);
