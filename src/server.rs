@@ -8428,7 +8428,7 @@ mod tests {
             .find("if (radius >= SKY_MARKERS) drawPlanetFrontiers(cells);")
             .unwrap();
         let globe_terrain = globe
-            .find("if (scale > .42) drawPlanetStrategicTerrain(cells, turnVisible, spectator);")
+            .find("drawPlanetStrategicTerrain(cells, turnVisible, spectator);")
             .unwrap();
         let globe_units = globe.find("const visibleUnits").unwrap();
         let globe_yields = globe
@@ -10106,33 +10106,34 @@ mod tests {
     }
 
     #[test]
-    fn strategic_mountains_and_volcanoes_are_centered_top_down_landforms() {
+    fn strategic_mountains_and_volcanoes_use_shared_top_down_atlases() {
         let icon = EMBEDDED_INDEX
-            .split("const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.5;")
+            .split("function drawStrategicMountainIcon")
             .nth(1)
             .and_then(|tail| tail.split("function drawFeatureEffects").next())
             .expect("shared strategic mountain icon renderer");
-        assert!(icon.contains(
-            "cx.scale(STRATEGIC_MOUNTAIN_ICON_SCALE, STRATEGIC_MOUNTAIN_ICON_SCALE)"
-        ));
-        assert!(icon.contains("const mountainRadius = volcano ? 15 : 15.5;"));
-        assert!(icon.contains("cx.arc(0, 0, mountainRadius, 0, 7);"));
-        assert!(icon.contains(
-            "const rimRadius = 10.5, craterRadius = 6.2, lavaRadius = 3.7;"
-        ));
-        assert!(icon.contains("cx.arc(0, 0, craterRadius, 0, 7);"));
-        assert!(icon.contains("const peakX = 0, peakY = 0;"));
-        assert!(icon.contains("cx.quadraticCurveTo(-6, 1, peakX, peakY);"));
-        assert!(!icon.contains("const rimY = -7"));
-        assert!(!icon.contains("tri(-14, 10, 0, -14, 14, 10)"));
-        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true)"));
-        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false)"));
+        assert!(icon.contains("drawStrategicVolcanoAtlas(tile, x, y, 1, size)"));
+        assert!(icon.contains("drawStrategicMountainAtlas(tile, x, y, size)"));
+        assert!(icon.contains("drawStrategicMountainFallback(x, y, volcano, size)"));
+        let atlas = EMBEDDED_INDEX
+            .split("function drawStrategicAtlasCell")
+            .nth(1)
+            .and_then(|tail| tail.split("function strategicMountainRockColumn").next())
+            .expect("shared strategic atlas painter");
+        assert!(EMBEDDED_INDEX.contains("const STRATEGIC_MOUNTAIN_ICON_SCALE = 1.08;"));
+        assert!(atlas.contains("cx.imageSmoothingQuality = \"high\""));
+        assert!(atlas.contains("cx.drawImage(atlas, sx, sy, sw, sh"));
+        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, true, t)"));
+        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(x, y, false, t)"));
+        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(0, 0, true, t, .78)"));
+        assert!(EMBEDDED_INDEX.contains("drawStrategicMountainIcon(0, 0, false, t, .78)"));
 
         let wonder = EMBEDDED_INDEX
             .split("  volcano(x, y, k, art) {")
             .nth(1)
             .and_then(|tail| tail.split("  ruins(x, y, k, art) {").next())
             .expect("top-down Natural Wonder volcano renderer");
+        assert!(wonder.contains("drawStrategicVolcanoAtlas(null, x, y, k)"));
         assert!(wonder.contains("const calderaRadius = 14 * k;"));
         assert!(wonder.contains("cx.arc(x, y, calderaRadius, 0, 7);"));
         assert!(!wonder.contains("wonderFace(x, y, k, art.tint"));
@@ -10148,7 +10149,7 @@ mod tests {
     }
 
     #[test]
-    fn mountain_and_volcano_tiles_use_dark_shared_ground_with_glowing_lava() {
+    fn mountain_and_volcano_tiles_use_detailed_material_atlas_with_fallbacks() {
         assert!(EMBEDDED_INDEX.contains("const MOUNTAIN_TILE_COLOR = \"#49453e\";"));
         assert!(EMBEDDED_INDEX.contains("const VOLCANO_TILE_COLOR = \"#292421\";"));
         assert!(EMBEDDED_INDEX.contains("tile.feature === \"volcano\""));
@@ -10162,10 +10163,20 @@ mod tests {
             .nth(1)
             .and_then(|tail| tail.split("function drawFeatureEffects").next())
             .expect("shared strategic mountain icon renderer");
-        assert!(icon.contains("cx.fillStyle = volcano ? \"#37302d\" : \"#565149\""));
-        assert!(icon.contains("cx.shadowColor = \"#ff4b19\""));
-        assert!(icon.contains("cx.shadowBlur = 9"));
-        assert!(icon.contains("cx.fillStyle = \"#ffb23c\""));
+        let atlas = EMBEDDED_INDEX
+            .split("function drawStrategicAtlasCell")
+            .nth(1)
+            .and_then(|tail| tail.split("function drawStrategicMountainFallback").next())
+            .expect("shared strategic atlas-backed landform renderers");
+        let renderers = format!("{atlas}{icon}");
+        assert!(renderers.contains("MOUNTAIN_ATLAS_READY"));
+        assert!(renderers.contains("ENVIRONMENT_FEATURE_ATLAS_READY"));
+        assert!(renderers.contains("strategicMountainRockColumn(tile)"));
+        assert!(renderers.contains("ENVIRONMENT_FEATURE_CELL.volcano"));
+        assert!(renderers.contains("const alpha = stateCode === 2 ? .99 : stateCode === 1 ? .9 : .78;"));
+        assert!(icon.contains("drawStrategicMountainFallback(x, y, volcano, size)"));
+        assert!(!icon.contains("const mountainRadius = volcano ? 15 : 15.5;"));
+        assert!(!icon.contains("cx.arc(0, 0, mountainRadius, 0, 7);"));
     }
 
     #[test]
