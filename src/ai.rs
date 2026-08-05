@@ -1551,6 +1551,8 @@ pub struct BasicAi {
     pub(crate) housing_districts: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
+    /// Break a production COST TIE by which great-work slots can actually be filled.
+    pub(crate) slot_kind_tiebreak: bool,
     pursue_religion: bool,
     /// Enforce the live Firaxis rule that a religious unit inherits its
     /// purchase city's majority. Off for the frozen native controllers and
@@ -2685,6 +2687,7 @@ impl BasicAi {
             amenity_districts: false,
             housing_districts: false,
             district_coverage: false,
+            slot_kind_tiebreak: false,
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
@@ -2717,6 +2720,7 @@ impl BasicAi {
             amenity_districts: false,
             housing_districts: false,
             district_coverage: false,
+            slot_kind_tiebreak: false,
             pursue_religion: true,
             live_religious_purchase_guard: false,
             siege_muster: false,
@@ -6366,7 +6370,71 @@ impl BasicAi {
             .map(|(b, s)| (s.cost as i64, *b))
             .collect();
         if !buildable.is_empty() {
-            buildable.sort();
+            // ⚠⚠ A COST TIE WAS BEING BROKEN ALPHABETICALLY, AND IT DECIDED WHICH
+            // MUSEUM EVERY EMPIRE BUILDS. `sort()` on `(cost, Name)` falls through to
+            // `Name::cmp`, which compares text — so with Art and Archaeological
+            // Museum both at 290, `archaeological_museum` wins on the letter 'c'.
+            //
+            // They are otherwise IDENTICAL in `data/buildings.json`: same cost, same
+            // +2 culture, same maintenance, same great-person points. Only the slot
+            // kind differs, `art: 3` against `artifact: 3` — and those are not equally
+            // fillable. Writing, Art and Music slots are filled by a Great Person who
+            // arrives on their own points. An ARTIFACT slot needs an Archaeologist: a
+            // **400-production civilian** that itself requires the Archaeological
+            // Museum to exist first, then has to walk to a dig site and spend a charge.
+            // No live run has ever built one.
+            //
+            // Measured on `civvis-20260803T082856Z`, the first run ever to build a
+            // Museum: it built `BUILDING_MUSEUM_ARTIFACT` at t181 and finished with
+            // **0 great works in 6 slots**. Across 50 earlier runs, Artist 9 activated
+            // against 67 idle, Musician 0 against 31, and **0 artifact works ever
+            // held**.
+            //
+            // ⚠ This changes ONLY tied pairs. Cheapest-first is untouched as a policy
+            // — that argument belongs elsewhere — and a building with no slots keeps
+            // its exact position. What it stops is the alphabet deciding a real
+            // question.
+            let tiebreak = self.slot_kind_tiebreak;
+            let slot_worth = |b: &Name| -> f64 {
+                if !tiebreak {
+                    return 0.0;
+                }
+                g.rules.buildings[b]
+                    .great_work_slots
+                    .iter()
+                    .map(|(kind, count)| {
+                        let count = (*count).max(0) as f64;
+                        if kind == "artifact" { count * 0.5 } else { count }
+                    })
+                    .sum()
+            };
+            buildable.sort_by(|a, b| {
+                a.0.cmp(&b.0)
+                    .then_with(|| {
+                        // ⚠⚠ ONLY WHEN BOTH CANDIDATES HAVE SLOTS. My first version
+                        // compared slot worth across every cost tie, which is a far
+                        // bigger change than the one being argued for: it reordered
+                        // SIX tie groups, putting `old_god_obelisk` over `monument`,
+                        // `temple` over `market`, `cathedral` over every other worship
+                        // building, and `broadcast_center` over `research_lab`. Priced
+                        // at 50 maps it came back **-14 Elo (p=0.6875) with culture
+                        // LOWER, 151.7 against 153.8** — those are bad trades and the
+                        // measurement said so.
+                        //
+                        // Restricting it to pairs that both carry slots leaves every
+                        // one of those groups exactly as it was and decides only the
+                        // question actually at issue: Art Museum against
+                        // Archaeological Museum, identical in cost, culture,
+                        // maintenance and great-person points, separated in the old
+                        // sort by the letter 'c'.
+                        let (wa, wb) = (slot_worth(&a.1), slot_worth(&b.1));
+                        if wa <= 0.0 || wb <= 0.0 {
+                            return std::cmp::Ordering::Equal;
+                        }
+                        wb.partial_cmp(&wa).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .then_with(|| a.1.cmp(&b.1))
+            });
             return Some(Item::Building {
                 building: Name::new(&buildable[0].1),
             });
@@ -14051,6 +14119,66 @@ mod tests {
             );
         }
         println!();
+    }
+
+    /// ⚠ The two Museums are identical except for the slot KIND, both cost 290, and
+    /// `sort()` fell through to `Name::cmp` — which compares text, so
+    /// `archaeological_museum` won on the letter 'c'. That alphabetical accident
+    /// decided which Museum every empire built, and the one it picked needs a
+    /// 400-production Archaeologist that no live run has ever built.
+    #[test]
+    fn a_cost_tie_prefers_the_slots_a_great_person_can_fill() {
+        let g = Game::new_full(1, 20, 14, 37, 40, 0, false);
+        let art = &g.rules.buildings["art_museum"];
+        let dig = &g.rules.buildings["archaeological_museum"];
+
+        // Fixture preconditions: the tie is real, and the alphabet did decide it.
+        assert_eq!(art.cost, dig.cost, "same cost — this is why it is a tie");
+        assert_eq!(art.yields.culture, dig.yields.culture);
+        assert_eq!(
+            art.great_work_slots.values().sum::<i32>(),
+            dig.great_work_slots.values().sum::<i32>(),
+            "same NUMBER of slots, so counting them cannot break the tie either"
+        );
+        assert!(
+            crate::name!("archaeological_museum") < crate::name!("art_museum"),
+            "fixture precondition: the alphabet really does put artifact first"
+        );
+
+        let slot_worth = |name: &str| -> f64 {
+            g.rules.buildings[&Name::new(name)]
+                .great_work_slots
+                .iter()
+                .map(|(kind, count)| {
+                    let count = (*count).max(0) as f64;
+                    if kind == "artifact" { count * 0.5 } else { count }
+                })
+                .sum()
+        };
+        assert!(
+            slot_worth("art_museum") > slot_worth("archaeological_museum"),
+            "the tie must now break toward the Museum whose slots a Great Person fills"
+        );
+        // ⚠ Everything without an artifact slot keeps its exact weight, so this
+        // changes tied pairs only and never reorders on cost.
+        assert_eq!(slot_worth("amphitheater"), 2.0);
+        assert_eq!(slot_worth("library"), 0.0);
+
+        // ⚠ SCOPE. The rule fires only where BOTH candidates carry slots. A first
+        // version compared across every cost tie and reordered six groups —
+        // old_god_obelisk over monument, temple over market, cathedral over every
+        // other worship building, broadcast_center over research_lab — and priced at
+        // -14 Elo with culture LOWER (151.7 vs 153.8). These assertions pin the
+        // narrowing: a slotless building must never be displaced by a slotted one.
+        for (cost, slotless) in [(60, "monument"), (120, "market"), (150, "arena"),
+                                 (290, "bank"), (440, "research_lab")] {
+            let spec = &g.rules.buildings[&Name::new(slotless)];
+            assert_eq!(spec.cost as i64, cost, "fixture: {slotless} still costs {cost}");
+            assert_eq!(
+                slot_worth(slotless), 0.0,
+                "{slotless} has no slots, so the tiebreak must not touch its position"
+            );
+        }
     }
 }
 
