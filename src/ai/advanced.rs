@@ -944,6 +944,11 @@ pub struct AdvancedAi {
     /// persistent agent otherwise treats every legal oscillating escort move
     /// as renewed progress; engine controllers retain their measured behavior.
     pub linked_settler_progress: bool,
+    /// Retry the city-posting half of a live Firaxis governor appointment on a
+    /// later turn. CIVVIS applies appointment and assignment atomically, while
+    /// the host accepts them as separate asynchronous operations; this adapter
+    /// is therefore bridge-specific and remains off in engine play.
+    pub live_governor_assignment_adapter: bool,
     /// Let more than one settler exist at a time, up to the shortfall against
     /// the city target.
     ///
@@ -1635,6 +1640,7 @@ impl AdvancedAi {
             settler_avoid: BTreeMap::new(),
             settler_closest: BTreeMap::new(),
             linked_settler_progress: false,
+            live_governor_assignment_adapter: false,
             parallel_settlers: false,
             expansion_pays_back: false,
             late_expansion: false,
@@ -8376,6 +8382,46 @@ impl AdvancedAi {
             }
             think!(self.journal(), Government, Decision, "Posting {} to {where_}", plain(&governor);
                    "the city the {} plan gets most from", plan.strategy.as_str());
+        }
+
+        // Firaxis appoints a Governor and assigns its city as two asynchronous
+        // player operations. The control mod submits the assignment from the
+        // appointment callback, but the completed Rome run proved that the
+        // request can report success without sticking: Moksha stayed idle from
+        // t22 through t243 and Victor from t83 through t229. On the next turn
+        // the authoritative mirror exposes `city: None`; retry it even though
+        // there is no new title to spend. Ordinary CIVVIS games never need this
+        // because `AppointGovernor` installs the city atomically.
+        if self.live_governor_assignment_adapter {
+            let unassigned = g.players[pid]
+                .governor_roster
+                .iter()
+                .filter(|(_, state)| state.city.is_none())
+                .map(|(governor, _)| governor.to_string())
+                .collect::<Vec<_>>();
+            for governor in unassigned {
+                let Some(city) = self.best_governor_city(g, pid, &governor, plan) else {
+                    continue;
+                };
+                if g.apply(
+                    pid,
+                    &Action::ReassignGovernor {
+                        governor: Name::new(&governor),
+                        city,
+                    },
+                )
+                .is_ok()
+                {
+                    let where_ = g
+                        .cities
+                        .get(&city)
+                        .map(|city| city.name.clone())
+                        .unwrap_or_else(|| format!("city {city}"));
+                    think!(self.journal(), Government, Decision,
+                           "Retrying {}'s post to {where_}", plain(&governor);
+                           "Firaxis still reports the appointed Governor as unassigned");
+                }
+            }
         }
 
     }
@@ -17570,6 +17616,55 @@ mod tests {
             game.players[0].governor_roster["pingala"].promotions.len(),
             2
         );
+    }
+
+    #[test]
+    fn live_governor_adapter_posts_an_idle_appointee_without_a_new_title() {
+        let mut game = Game::new_full(1, 24, 16, 7_114, 200, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.players[0].governor_roster.insert(
+            "moksha".to_string(),
+            GovernorState {
+                city: None,
+                assigned_turn: game.turn,
+                disabled_until: 0,
+                promotions: BTreeSet::new(),
+            },
+        );
+        assert_eq!(game.governor_titles_available(0), 0);
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Religion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+
+        let mut control = game.clone();
+        AdvancedAi::new().strategic_governors(&mut control, 0, &plan);
+        assert_eq!(control.players[0].governor_roster["moksha"].city, None);
+
+        let mut ai = AdvancedAi::new();
+        ai.live_governor_assignment_adapter = true;
+        ai.strategic_governors(&mut game, 0, &plan);
+
+        assert_eq!(game.players[0].governor_roster["moksha"].city, Some(city));
+        assert!(game.log.iter().any(|(player, action)| {
+            *player == 0
+                && matches!(
+                    action,
+                    Action::ReassignGovernor { governor, city: target }
+                        if governor == "moksha" && *target == city
+                )
+        }));
     }
 
     #[test]

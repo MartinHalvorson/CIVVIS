@@ -1603,6 +1603,10 @@ fn main() {
     // the old counter forever.
     ai.settler_commit = true;
     ai.linked_settler_progress = true;
+    // A Firaxis appointment is asynchronous: if its same-callback assignment
+    // did not persist, the next mirrored turn must retry the posting without
+    // waiting for another Governor Title that may be dozens of turns away.
+    ai.live_governor_assignment_adapter = true;
     // ⚠ NOT `parallel_settlers`. That widens the RATE at which settlers are produced
     // and it carries a measured null; this seat's constraint is settlers that never
     // arrive, not settlers that are never built. Turning both on at once would make
