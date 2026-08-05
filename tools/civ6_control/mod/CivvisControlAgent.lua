@@ -1026,16 +1026,38 @@ local function upgradeUnit(unit)
 	-- rival 850+ with upgrade_blocked counting Warriors and Trebuchets every
 	-- turn — the COUNT is known, the reason is the decision-relevant part.
 	-- Blocked path only; the accepting path stays one call.
+	-- ⚠⚠ AND SAY WHY THE REASON IS MISSING WHEN IT IS. #1237 wired this helper
+	-- to CIVVIS's own orders and the counts finally moved — 93 attempts and 77
+	-- refusals on the first run — but `upgrade_blocked_why` came back EMPTY on
+	-- every one of them. An empty reason has FOUR distinct causes and they are
+	-- not interchangeable: the global is absent (this sandbox has no `_G`, see
+	-- the `revealed_api` lesson), `CanStartCommand` returned no table, the table
+	-- carried no FAILURE_REASONS, or the list was there and empty.
+	--
+	-- Recording WHICH costs one string per blocked unit and is the difference
+	-- between "the engine declined to answer" and "we never asked properly".
 	try(function()
 		local can, results = UnitManager.CanStartCommand(
 			unit, CMD["UNITCOMMAND_UPGRADE"], true, true);
-		if can ~= true and type(results) == "table"
-				and UnitCommandResults ~= nil then
-			local reasons = results[UnitCommandResults.FAILURE_REASONS];
-			if type(reasons) == "table" and #reasons > 0 then
-				upgradeBlockedWhy[name] = table.concat(reasons, "; ");
-			end
+		if can == true then return; end
+		if UnitCommandResults == nil then
+			upgradeBlockedWhy[name] = "?no UnitCommandResults global";
+			return;
 		end
+		if type(results) ~= "table" then
+			upgradeBlockedWhy[name] = "?no results table (" .. type(results) .. ")";
+			return;
+		end
+		local reasons = results[UnitCommandResults.FAILURE_REASONS];
+		if type(reasons) ~= "table" then
+			upgradeBlockedWhy[name] = "?no FAILURE_REASONS key";
+			return;
+		end
+		if #reasons == 0 then
+			upgradeBlockedWhy[name] = "?FAILURE_REASONS empty";
+			return;
+		end
+		upgradeBlockedWhy[name] = table.concat(reasons, "; ");
 	end);
 	return nil;
 end
